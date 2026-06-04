@@ -73,6 +73,51 @@ export const declarationStatus: Record<
   released: { label: "Bon à enlever (BAE)", tone: "green" },
 };
 
+export type CustomsStatus =
+  | "nouveau"
+  | "docs_a_completer"
+  | "verif_doc"
+  | "decl_preparee"
+  | "decl_deposee"
+  | "en_liquidation"
+  | "paiement_attente"
+  | "bae_obtenu"
+  | "mainlevee"
+  | "bloque"
+  | "cloture";
+
+export const customsStatus: Record<
+  CustomsStatus,
+  { label: string; tone: Tone }
+> = {
+  nouveau: { label: "Nouveau dossier", tone: "slate" },
+  docs_a_completer: { label: "Documents à compléter", tone: "amber" },
+  verif_doc: { label: "Vérification documentaire", tone: "blue" },
+  decl_preparee: { label: "Déclaration préparée", tone: "navy" },
+  decl_deposee: { label: "Déclaration déposée", tone: "blue" },
+  en_liquidation: { label: "En liquidation", tone: "navy" },
+  paiement_attente: { label: "Paiement en attente", tone: "amber" },
+  bae_obtenu: { label: "BAE obtenu", tone: "teal" },
+  mainlevee: { label: "Mainlevée accordée", tone: "green" },
+  bloque: { label: "Bloqué", tone: "red" },
+  cloture: { label: "Clôturé", tone: "slate" },
+};
+
+/** Display order for filters / chips (operational flow, exceptions near end). */
+export const customsStatusOrder: CustomsStatus[] = [
+  "nouveau",
+  "docs_a_completer",
+  "verif_doc",
+  "decl_preparee",
+  "decl_deposee",
+  "en_liquidation",
+  "paiement_attente",
+  "bae_obtenu",
+  "mainlevee",
+  "bloque",
+  "cloture",
+];
+
 export type Priority = "high" | "medium" | "low";
 export const priority: Record<Priority, { label: string; tone: Tone }> = {
   high: { label: "Haute", tone: "red" },
