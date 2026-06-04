@@ -48,17 +48,17 @@ export function LogoWordmark({
   subtitle?: boolean;
 }) {
   return (
-    <div className={cn("flex items-center gap-3", className)}>
-      <LogoMark className="h-10 w-10" />
+    <div className={cn("flex items-center gap-3.5", className)}>
+      <LogoMark className="h-11 w-11" />
       <div className="leading-none">
-        <span className="block text-[18px] font-extrabold uppercase leading-none tracking-[0.14em] text-white">
+        <span className="block text-[20px] font-extrabold uppercase leading-none tracking-[0.16em] text-white drop-shadow-sm">
           Effitrans
         </span>
-        <span className="mt-1 block text-[13px] font-semibold uppercase leading-none tracking-[0.30em] text-teal-300">
+        <span className="mt-1 block text-[13px] font-bold uppercase leading-none tracking-[0.32em] text-teal-300">
           Operations
         </span>
         {subtitle && (
-          <span className="mt-2 block text-[10px] font-medium uppercase tracking-[0.16em] text-slate-400">
+          <span className="mt-2 block text-[10px] font-medium uppercase tracking-[0.16em] text-slate-300">
             Transit • Logistique • Douane
           </span>
         )}
