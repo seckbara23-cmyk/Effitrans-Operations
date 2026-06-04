@@ -1,0 +1,63 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply bg-sand-100 text-navy-900;
+  }
+
+  /* Document-style mono numerals for references and figures */
+  .tabular {
+    font-feature-settings: "tnum" 1;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  /* Surface card — the document-paper container used across the app */
+  .surface {
+    @apply rounded-xl border border-slate-200/80 bg-white shadow-card;
+  }
+
+  /* Section heading eyebrow */
+  .eyebrow {
+    @apply text-[11px] font-semibold uppercase tracking-[0.14em] text-teal-700;
+  }
+
+  /* Sidebar / topbar shipping-route texture */
+  .route-lines {
+    background-image:
+      radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.06) 1px, transparent 0);
+    background-size: 22px 22px;
+  }
+
+  /* Customs-stamp dashed frame */
+  .stamp-frame {
+    @apply rounded-lg border-2 border-dashed border-amber-300/70;
+  }
+}
+
+/* Thin, professional scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100, 116, 139, 0.35) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: rgba(100, 116, 139, 0.35);
+  border-radius: 9999px;
+}
