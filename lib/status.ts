@@ -180,6 +180,59 @@ export const taskStatus: Record<TaskStatus, { label: string; tone: Tone }> = {
   done: { label: "Terminé", tone: "green" },
 };
 
+/* ---- Tasks & workflow module --------------------------------------------- */
+
+export type TaskWorkflowStatus =
+  | "todo"
+  | "in_progress"
+  | "blocked"
+  | "awaiting_client"
+  | "awaiting_customs"
+  | "done"
+  | "overdue";
+
+export const taskWorkflowStatus: Record<
+  TaskWorkflowStatus,
+  { label: string; tone: Tone }
+> = {
+  todo: { label: "À faire", tone: "slate" },
+  in_progress: { label: "En cours", tone: "blue" },
+  blocked: { label: "Bloqué", tone: "red" },
+  awaiting_client: { label: "En attente client", tone: "amber" },
+  awaiting_customs: { label: "En attente douane", tone: "amber" },
+  done: { label: "Terminé", tone: "green" },
+  overdue: { label: "En retard", tone: "red" },
+};
+
+export const taskWorkflowStatusOrder: TaskWorkflowStatus[] = [
+  "todo",
+  "in_progress",
+  "blocked",
+  "awaiting_client",
+  "awaiting_customs",
+  "overdue",
+  "done",
+];
+
+export type TaskWorkflowPriority = "low" | "normal" | "high" | "critical";
+
+export const taskWorkflowPriority: Record<
+  TaskWorkflowPriority,
+  { label: string; tone: Tone }
+> = {
+  low: { label: "Faible", tone: "slate" },
+  normal: { label: "Normale", tone: "blue" },
+  high: { label: "Haute", tone: "amber" },
+  critical: { label: "Critique", tone: "red" },
+};
+
+export const taskWorkflowPriorityOrder: TaskWorkflowPriority[] = [
+  "critical",
+  "high",
+  "normal",
+  "low",
+];
+
 export type TransportMode = "sea" | "air" | "road";
 export const transportMode: Record<
   TransportMode,
