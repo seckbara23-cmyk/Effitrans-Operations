@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { shipments, getShipment } from "@/lib/shipments";
+import { customerHref } from "@/lib/customers";
 import { shipmentStatus, transportMode } from "@/lib/status";
 import { Badge } from "@/components/ui/badge";
 import { Panel } from "@/components/ui/panel";
@@ -65,6 +66,7 @@ export default function ShipmentDetailPage({
   if (!s) notFound();
 
   const st = shipmentStatus[s.status];
+  const customerLink = customerHref(s.customer);
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -104,7 +106,15 @@ export default function ShipmentDetailPage({
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-5">
-        <SummaryCard label="Client">{s.customer}</SummaryCard>
+        <SummaryCard label="Client">
+          {customerLink ? (
+            <Link href={customerLink} className="text-teal-700 hover:text-teal-800">
+              {s.customer}
+            </Link>
+          ) : (
+            s.customer
+          )}
+        </SummaryCard>
         <SummaryCard label="Mode de transport">
           <ModeTag mode={s.mode} />
         </SummaryCard>

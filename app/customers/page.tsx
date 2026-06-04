@@ -1,9 +1,18 @@
 import type { Metadata } from "next";
-import { ModulePage } from "@/components/module-page";
-import { modules } from "@/lib/modules";
+import { PageHeader } from "@/components/ui/page-header";
+import { CustomersExplorer } from "@/components/customers/customers-explorer";
 
-export const metadata: Metadata = { title: modules.customers.title };
+export const metadata: Metadata = { title: "Clients" };
 
 export default function CustomersPage() {
-  return <ModulePage moduleKey="customers" />;
+  return (
+    <div className="animate-fade-in space-y-6">
+      <PageHeader
+        meta="Opérations"
+        title="Clients"
+        subtitle="Répertoire clients, contacts, dossiers ouverts et historique opérationnel."
+      />
+      <CustomersExplorer />
+    </div>
+  );
 }

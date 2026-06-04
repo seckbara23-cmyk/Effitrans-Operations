@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { customsFiles, getCustomsFile } from "@/lib/customs";
+import { customerHref } from "@/lib/customers";
 import { customsStatus, priority as priorityMeta } from "@/lib/status";
 import { Badge } from "@/components/ui/badge";
 import { Panel } from "@/components/ui/panel";
@@ -68,6 +69,7 @@ export default function CustomsDetailPage({
 
   const st = customsStatus[f.status];
   const pr = priorityMeta[f.priority];
+  const customerLink = customerHref(f.customer);
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -126,7 +128,15 @@ export default function CustomsDetailPage({
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">
-        <SummaryCard label="Client">{f.customer}</SummaryCard>
+        <SummaryCard label="Client">
+          {customerLink ? (
+            <Link href={customerLink} className="text-teal-700 hover:text-teal-800">
+              {f.customer}
+            </Link>
+          ) : (
+            f.customer
+          )}
+        </SummaryCard>
         <SummaryCard label="Expédition liée">
           {f.relatedShipmentArchived ? (
             <span className="tabular text-slate-500">{f.relatedShipment}</span>

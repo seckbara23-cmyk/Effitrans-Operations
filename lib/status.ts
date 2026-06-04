@@ -118,6 +118,17 @@ export const customsStatusOrder: CustomsStatus[] = [
   "cloture",
 ];
 
+export type CustomerStatus = "active" | "prospect" | "inactive";
+
+export const customerStatus: Record<
+  CustomerStatus,
+  { label: string; tone: Tone }
+> = {
+  active: { label: "Actif", tone: "green" },
+  prospect: { label: "Prospect", tone: "blue" },
+  inactive: { label: "Inactif", tone: "slate" },
+};
+
 export type Priority = "high" | "medium" | "low";
 export const priority: Record<Priority, { label: string; tone: Tone }> = {
   high: { label: "Haute", tone: "red" },
