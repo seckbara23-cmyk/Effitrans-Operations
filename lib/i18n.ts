@@ -14,7 +14,7 @@ export const t = {
     section_pilotage: "Pilotage",
     section_operations: "Opérations",
     section_administration: "Administration",
-    controlTower: "Tour de contrôle",
+    controlTower: "Centre d'opérations",
     customers: "Clients",
     shipments: "Expéditions",
     customs: "Dédouanement",
@@ -31,7 +31,7 @@ export const t = {
     notifications: "Notifications",
   },
   dashboard: {
-    title: "Tour de contrôle",
+    title: "Centre d'opérations",
     subtitle: "Vue d'ensemble des opérations du jour",
     period: "Aujourd'hui · Dakar (GMT)",
     kpi: {
@@ -70,7 +70,7 @@ export const t = {
   common: {
     none: "—",
     placeholderTitle: "Module en préparation",
-    backToDashboard: "Retour à la tour de contrôle",
+    backToDashboard: "Retour au centre d'opérations",
     emptyHint:
       "Ce module fait partie de la feuille de route Effitrans. La structure visuelle est prête ; les données et la logique métier seront ajoutées prochainement.",
   },

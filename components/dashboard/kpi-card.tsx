@@ -1,5 +1,7 @@
+import Link from "next/link";
 import { cn } from "@/lib/cn";
 import type { Kpi } from "@/lib/mock-data";
+import { IconChevronRight } from "@/lib/icons";
 
 const accent: Record<Kpi["tone"], string> = {
   navy: "before:bg-navy-700",
@@ -31,15 +33,23 @@ export function KpiCard({ kpi }: { kpi: Kpi }) {
     : (isUp && kpi.goodDirection === "up") ||
       (!isUp && kpi.goodDirection === "down");
 
-  return (
-    <div
-      className={cn(
-        "surface relative overflow-hidden p-4 transition-shadow hover:shadow-card-hover",
-        "before:absolute before:inset-y-0 before:left-0 before:w-1",
-        accent[kpi.tone],
-      )}
-    >
-      <p className="text-xs font-medium text-slate-500">{kpi.label}</p>
+  const cardClass = cn(
+    "surface relative block overflow-hidden p-4 transition-shadow hover:shadow-card-hover",
+    "before:absolute before:inset-y-0 before:left-0 before:w-1",
+    accent[kpi.tone],
+    kpi.href && "group cursor-pointer",
+  );
+
+  const body = (
+    <>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs font-medium text-slate-500 transition-colors group-hover:text-navy-700">
+          {kpi.label}
+        </p>
+        {kpi.href && (
+          <IconChevronRight className="h-4 w-4 shrink-0 text-slate-300 opacity-0 transition-opacity group-hover:opacity-100" />
+        )}
+      </div>
       <div className="mt-2 flex items-end justify-between gap-2">
         <span className="tabular text-3xl font-bold leading-none text-navy-900">
           {kpi.value}
@@ -64,6 +74,16 @@ export function KpiCard({ kpi }: { kpi: Kpi }) {
         )}
       </div>
       <p className="mt-1 text-[11px] text-slate-400">vs. hier</p>
-    </div>
+    </>
   );
+
+  if (kpi.href) {
+    return (
+      <Link href={kpi.href} className={cardClass}>
+        {body}
+      </Link>
+    );
+  }
+
+  return <div className={cardClass}>{body}</div>;
 }

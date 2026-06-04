@@ -225,6 +225,8 @@ export type Kpi = {
   /** does a positive delta read as good ("up") or bad ("down")? */
   goodDirection: "up" | "down";
   tone: "navy" | "teal" | "amber" | "red";
+  /** Optional shortcut to the related operational module. */
+  href?: string;
 };
 
 export const kpis: Kpi[] = [
@@ -235,6 +237,7 @@ export const kpis: Kpi[] = [
     delta: 4,
     goodDirection: "up",
     tone: "navy",
+    href: "/shipments",
   },
   {
     key: "shipmentsAtPort",
@@ -243,6 +246,7 @@ export const kpis: Kpi[] = [
     delta: 2,
     goodDirection: "down",
     tone: "teal",
+    href: "/shipments",
   },
   {
     key: "customsPending",
@@ -251,6 +255,7 @@ export const kpis: Kpi[] = [
     delta: -1,
     goodDirection: "down",
     tone: "amber",
+    href: "/customs",
   },
   {
     key: "delayed",
@@ -259,6 +264,7 @@ export const kpis: Kpi[] = [
     delta: 1,
     goodDirection: "down",
     tone: "red",
+    href: "/shipments",
   },
   {
     key: "tasksDue",
@@ -267,6 +273,7 @@ export const kpis: Kpi[] = [
     delta: -3,
     goodDirection: "down",
     tone: "navy",
+    href: "/tasks",
   },
   {
     key: "docsMissing",
@@ -275,5 +282,6 @@ export const kpis: Kpi[] = [
     delta: 0,
     goodDirection: "down",
     tone: "amber",
+    href: "/documents",
   },
 ];
