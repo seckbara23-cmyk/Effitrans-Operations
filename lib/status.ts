@@ -129,6 +129,42 @@ export const customerStatus: Record<
   inactive: { label: "Inactif", tone: "slate" },
 };
 
+export type DocumentStatus =
+  | "received"
+  | "pending"
+  | "missing"
+  | "to_validate"
+  | "validated"
+  | "rejected"
+  | "expiring"
+  | "expired";
+
+export const documentStatus: Record<
+  DocumentStatus,
+  { label: string; tone: Tone }
+> = {
+  received: { label: "Reçu", tone: "blue" },
+  pending: { label: "En attente", tone: "amber" },
+  missing: { label: "Manquant", tone: "red" },
+  to_validate: { label: "À valider", tone: "navy" },
+  validated: { label: "Validé", tone: "green" },
+  rejected: { label: "Rejeté", tone: "red" },
+  expiring: { label: "Expire bientôt", tone: "amber" },
+  expired: { label: "Expiré", tone: "slate" },
+};
+
+/** Display order for filters / chips. */
+export const documentStatusOrder: DocumentStatus[] = [
+  "received",
+  "pending",
+  "missing",
+  "to_validate",
+  "validated",
+  "rejected",
+  "expiring",
+  "expired",
+];
+
 export type Priority = "high" | "medium" | "low";
 export const priority: Record<Priority, { label: string; tone: Tone }> = {
   high: { label: "Haute", tone: "red" },

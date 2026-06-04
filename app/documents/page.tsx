@@ -1,9 +1,18 @@
 import type { Metadata } from "next";
-import { ModulePage } from "@/components/module-page";
-import { modules } from "@/lib/modules";
+import { PageHeader } from "@/components/ui/page-header";
+import { DocumentsExplorer } from "@/components/documents/documents-explorer";
 
-export const metadata: Metadata = { title: modules.documents.title };
+export const metadata: Metadata = { title: "Documents" };
 
 export default function DocumentsPage() {
-  return <ModulePage moduleKey="documents" />;
+  return (
+    <div className="animate-fade-in space-y-6">
+      <PageHeader
+        meta="Opérations"
+        title="Documents"
+        subtitle="Suivi des pièces clients, documents transport, documents douane et documents manquants."
+      />
+      <DocumentsExplorer />
+    </div>
+  );
 }
