@@ -58,7 +58,7 @@ export function LogoWordmark({
           Operations
         </span>
         {subtitle && (
-          <span className="mt-2 block text-[10px] font-medium uppercase tracking-[0.16em] text-slate-300">
+          <span className="mt-2 block text-[11px] font-medium uppercase tracking-[0.14em] text-slate-300">
             Transit • Logistique • Douane
           </span>
         )}

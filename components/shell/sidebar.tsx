@@ -11,10 +11,10 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
 
   return (
-    <nav className="flex-1 space-y-7 overflow-y-auto px-3 py-6">
+    <nav className="flex-1 space-y-6 overflow-y-auto px-3 py-5">
       {navSections.map((section) => (
         <div key={section.title}>
-          <p className="px-3 pb-2.5 text-[11px] font-bold uppercase tracking-[0.2em] text-teal-300">
+          <p className="px-3 pb-2.5 text-xs font-bold uppercase tracking-[0.2em] text-teal-300">
             {section.title}
           </p>
           <ul className="space-y-0.5">
@@ -30,7 +30,7 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
                     href={item.href}
                     onClick={onNavigate}
                     className={cn(
-                      "group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors",
+                      "group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-[15px] font-semibold transition-colors",
                       active
                         ? "bg-white/15 text-white shadow-sm"
                         : "text-slate-100 hover:bg-white/10 hover:text-white",
@@ -41,7 +41,7 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
                     )}
                     <Icon
                       className={cn(
-                        "h-5 w-5 shrink-0 transition-colors",
+                        "h-[22px] w-[22px] shrink-0 transition-colors",
                         active
                           ? "text-amber-400"
                           : "text-slate-200 group-hover:text-teal-200",
@@ -67,8 +67,10 @@ function SidebarFooter() {
           AN
         </div>
         <div className="min-w-0 leading-tight">
-          <p className="truncate text-sm font-semibold text-white">Awa Ndiaye</p>
-          <p className="truncate text-xs font-medium text-teal-300">
+          <p className="truncate text-[15px] font-semibold text-white">
+            Awa Ndiaye
+          </p>
+          <p className="truncate text-[13px] font-medium text-teal-300">
             Responsable opérations
           </p>
         </div>
