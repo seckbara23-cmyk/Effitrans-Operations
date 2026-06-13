@@ -20,16 +20,16 @@ Single source of truth for deciding whether Phase 1 development (Sprint S0) can 
 
 ## Executive Summary
 
-**Overall Readiness:** ☐ Not Started · ☐ In Progress · ☑ **Ready For S0 (foundation tasks)** · ☐ Ready For S1
+**Overall Readiness:** ☐ Not Started · ☐ In Progress · ☐ Ready For S0 · ☑ **S0 COMPLETE — S2 gated only on BLK-1/3/6/9**
 
 | Field | Value |
 |---|---|
 | Last Updated | 2026-06-13 |
 | Owner | Project facilitator (Bara Seck) |
-| Phase | S0 foundation Waves 0–3 **complete**; Wave 4 + security review remain before S2 |
-| Headline | **Foundation Waves 0–3 COMPLETE (2026-06-13).** RLS-1 tenant isolation **VALIDATED** (manual test: `0/1/1/0`). 15 of 18 foundation tasks done; only Wave 4 (RLS-2, AUD-2, UI-2) + the S0→S2 security review remain. S2 still blocked by BLK-1, BLK-3, BLK-6, BLK-9. |
+| Phase | **S0 Foundation Sprint COMPLETE.** Security review passed. S2 awaits the four 🔴 business blockers. |
+| Headline | **S0 FOUNDATION COMPLETE (2026-06-13).** All 18 tasks done; Waves 0–4 shipped & validated. RLS-1 (`0/1/1/0`) + RLS-2 (`1/0`) validated on the linked DB; security review PASSED ([s0-security-review.md](s0-security-review.md)). S2 business work is **cleared to begin once BLK-1, BLK-3, BLK-6, BLK-9 are Approved**. |
 
-**One-line status:** *Foundation is nearly done — Waves 0–3 shipped and RLS isolation is proven. Wave 4 (role-scope hooks, audit view, UI shell) + a security review close S0; then S2 awaits the four 🔴 workshop blockers.*
+**One-line status:** *Foundation done and security-reviewed. The platform has a proven multi-tenant, RBAC, append-only-audit base. S2 (Operational File + business modules) may begin the moment the four 🔴 workshop blockers close — no further foundation work is required.*
 
 ---
 
@@ -143,26 +143,26 @@ Assumptions in force **if S0 infrastructure work starts before all blockers clos
 
 | Metric | Value |
 |---|---|
-| Open Critical Blockers (🔴 S0-gating) | **4** (BLK-1, BLK-3, BLK-6, BLK-9) |
-| Open Medium Blockers (🟠 S1-gating) | **6** (BLK-2, BLK-8, BLK-10, BLK-RB1, BLK-RB2, BLK-DB1) |
-| Open Minor Blockers (🟡 sprint-local) | **9** |
-| Closed Blockers | **1** (BLK-AR1 — platform start-gate) |
-| Accepted Risks (ratified by management) | **1 of 7** (AR-1 platform; region pending) |
+| **S0 Foundation Sprint** | ✅ **COMPLETE & validated** (18/18 tasks; security review passed) |
+| Open 🔴 **S2-gating** blockers | **4** (BLK-1, BLK-3, BLK-6, BLK-9) — business-side; do NOT block S0 |
+| Open 🟠 blockers | **6** (BLK-2, BLK-8, BLK-10, BLK-RB1, BLK-RB2, BLK-DB1) |
+| Open 🟡 blockers | **9** |
+| Closed Blockers | **1** (BLK-AR1) + RLS-1/RLS-2 validated |
+| Accepted Risks (ratified) | **1 of 7** (AR-1 platform; region pending BLK-9) |
 
-### Readiness Score: **52 / 100**
+### Readiness Score: **60 / 100** (readiness to ENTER S2)
 
 Weighted basis:
 | Component | Weight | Done | Contribution |
 |---|---|---|---|
-| Planning documentation authored | 30% | 100% | 30 |
-| Workshop sheets prepared | 10% | 100% | 10 |
-| S0 execution start-gate (BLK-AR1 platform) | 12% | 100% | 12 |
-| Workshops completed (decisions made) | 28% | 0% | 0 |
-| 🔴 S2-gating blockers closed | 12% | 0% | 0 |
-| 🟠 S1-gating blockers closed | 8% | 0% | 0 |
-| **Total** | 100% | | **52** |
+| Planning documentation authored | 20% | 100% | 20 |
+| Workshop sheets prepared | 5% | 100% | 5 |
+| **S0 foundation built & validated** (Waves 0–4 + security review) | 35% | 100% | 35 |
+| Workshops close 🔴 BLK-1/3/6/9 | 30% | 0% | 0 |
+| 🟠 blockers closed | 10% | 0% | 0 |
+| **Total** | 100% | | **60** |
 
-Interpretation: **planning complete and the S0 execution gate is cleared (52%).** Foundation work is GO now. Score reaches **~80%** when both workshops close the 🔴 gates → **Ready For S2**. Reaches **~95%+** when 🟠 gates close → **Ready For S1 finalization**.
+Interpretation: **S0 is 100% done; the remaining 40 points are business-side decisions, not engineering.** The score reaches **~90%** once the two workshops close the four 🔴 blockers → **S2 may begin**. The 🟠 items finalize provisional RBAC (BLK-RB1/RB2) and tune scope. **No further foundation work is required to reach S2.**
 
 ---
 
@@ -212,12 +212,12 @@ The 18 allowed foundation tasks. ✅ = done · 🟡 = ready/next · ⚠️ = bui
 - ✅ **S0-AUD-1** append-only audit write path
 - ✅ **S0-RLS-1** tenant-isolation baseline — **VALIDATED 2026-06-13** (manual SQL-Editor test: `0 / 1 / 1 / 0`)
 
-**Wave 4 — ⏳ NEXT (not started; awaiting authorization):**
-- 🟡 **S0-RLS-2** role-scope policy hooks *(after RLS-1 ✅, AUTHZ-2 ✅)*
-- 🟡 **S0-AUD-2** actor/override tracking + audit view *(after AUD-1 ✅, AUTHZ-2 ✅)*
-- 🟡 **S0-UI-2** auth/session shell into app frame *(after AUTH-3 ✅, AUTHZ-2 ✅)*
+**Wave 4 — ✅ COMPLETE & VALIDATED** (commit 15a810b)
+- ✅ **S0-RLS-2** role-scope policy hooks — **VALIDATED 2026-06-13** (role-scope test `admin=1 / plain=0`; RLS-1 regression re-check `0/1/1/0` PASS)
+- ✅ **S0-AUD-2** actor/override tracking + read-only audit view (user-context client)
+- ✅ **S0-UI-2** auth/session shell + permission-filtered nav + minimal `/login`
 
-> **After Wave 4:** the S0→S2 **security review** is the final gate before any business-domain work. S2 itself remains blocked by 🔴 BLK-1/3/6/9.
+> **S0→S2 security review: ✅ PASSED** — see [s0-security-review.md](s0-security-review.md). All 18 foundation tasks complete and validated. **No further foundation work required.** S2 (business-domain) remains gated only by 🔴 BLK-1/3/6/9.
 
 > **Note on AUTHZ-1:** the role/permission **seed** (a prerequisite for AUTHZ-2) is in the allowed scope but runs on the **provisional** rbac-matrix defaults (BLK-RB1) — marked ⚠️. It is data, re-runnable, and reconciled when BLK-RB1 closes. AUTHZ-3 (named admin, BLK-RB2) is likewise provisional and is the only allowed task deferred to after AUTHZ-2/AUD-1.
 
