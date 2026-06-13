@@ -34,13 +34,14 @@ export async function listAuditEntries(limit = 100): Promise<AuditEntry[]> {
     .from("audit_log")
     .select("id, action, entity, entity_id, override_reason, occurred_at, actor:actor_id(email)")
     .order("occurred_at", { ascending: false })
-    .limit(limit);
+    .limit(limit)
+    .returns<AuditRow[]>();
 
   if (error) {
     throw new Error(`[audit] failed to read audit log: ${error.message}`);
   }
 
-  const rows = (data ?? []) as unknown as AuditRow[];
+  const rows = data ?? [];
   return rows.map((r) => ({
     id: r.id,
     action: r.action,

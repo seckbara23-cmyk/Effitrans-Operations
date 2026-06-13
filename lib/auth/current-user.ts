@@ -22,13 +22,6 @@ export type CurrentUser = {
   roles: string[];
 };
 
-type AppUserRow = {
-  id: string;
-  tenant_id: string;
-  email: string;
-  is_system_admin: boolean;
-};
-
 type UserRoleRow = { role: { code: string } | null };
 
 export async function getCurrentUser(): Promise<CurrentUser | null> {
@@ -39,21 +32,23 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
   } = await supabase.auth.getUser();
   if (!user) return null;
 
-  const { data: profileData } = await supabase
+  // Typed via the Database generic on the client.
+  const { data: profile } = await supabase
     .from("app_user")
     .select("id, tenant_id, email, is_system_admin")
     .eq("id", user.id)
     .maybeSingle();
 
-  const profile = profileData as AppUserRow | null;
   if (!profile) return null;
 
+  // Embedded relation result asserted via .returns<T>() (intentional, not a hack).
   const { data: roleData } = await supabase
     .from("user_role")
     .select("role:role_id(code)")
-    .eq("user_id", user.id);
+    .eq("user_id", user.id)
+    .returns<UserRoleRow[]>();
 
-  const roleRows = (roleData ?? []) as unknown as UserRoleRow[];
+  const roleRows = roleData ?? [];
   const roles = roleRows
     .map((r) => r.role?.code)
     .filter((c): c is string => Boolean(c));

@@ -16,6 +16,7 @@
 import "server-only";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { validateAuditEvent } from "./validate";
+import type { Json } from "@/lib/db/types";
 
 export type AuditEvent = {
   /** what happened, e.g. "user.role.assigned". Prefix "system." for unattributed system events. */
@@ -50,8 +51,8 @@ export async function writeAudit(event: AuditEvent): Promise<void> {
     actor_id: event.actorId ?? null,
     entity: event.entity ?? null,
     entity_id: event.entityId ?? null,
-    before: event.before ?? null,
-    after: event.after ?? null,
+    before: (event.before ?? null) as Json,
+    after: (event.after ?? null) as Json,
     override_reason: event.overrideReason ?? null,
   });
 

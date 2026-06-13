@@ -60,7 +60,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         return;
       }
       const { data } = await supabase.rpc("get_user_permissions", { p_user: user.id });
-      const permissions = ((data ?? []) as unknown as { code: string }[]).map((r) => r.code);
+      const permissions = (data ?? []).map((r) => r.code);
       if (active) setState({ email: user.email ?? null, permissions, loading: false, configured });
     })();
 

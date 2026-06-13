@@ -14,8 +14,6 @@ import { getServerSupabaseClient } from "@/lib/supabase/server";
 // the server client. Re-exported for existing callers.
 export { hasPermission, hasAllPermissions, hasAnyPermission } from "./check";
 
-type PermissionRow = { code: string };
-
 /** All permission codes effective for the given user (deduped union). */
 export async function getEffectivePermissions(userId: string): Promise<string[]> {
   const supabase = getServerSupabaseClient();
@@ -26,6 +24,6 @@ export async function getEffectivePermissions(userId: string): Promise<string[]>
   if (error) {
     throw new Error(`[rbac] failed to resolve permissions: ${error.message}`);
   }
-  const rows = (data ?? []) as unknown as PermissionRow[];
-  return rows.map((row) => row.code);
+  // Typed via Database["public"]["Functions"] — no cast needed.
+  return (data ?? []).map((row) => row.code);
 }
