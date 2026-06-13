@@ -4,7 +4,11 @@ Migration mechanism for the Effitrans platform per **DEC-A12**: plain, forward-o
 SQL migrations managed by the **Supabase CLI**. No ORM migration tool. The typed
 query/ORM layer is a separate, deferred decision.
 
-> **Status (Wave 4):** three foundation migrations exist —
+> **Status (Wave 4 + CI fix):** four foundation migrations exist. `…0004_grant_table_privileges.sql`
+> adds explicit `SELECT` + function `EXECUTE` grants to the `authenticated` role
+> (RLS still scopes rows; reads only; no writes; RLS stays enabled) so the schema
+> is portable to environments without Supabase default privileges (e.g. CI).
+> Earlier three —
 > `…0001_create_foundation_tables.sql` (`organization`, `app_user` FK `auth.users`,
 > append-only `audit_log`), `…0002_create_rbac_foundation.sql`
 > (`permission`, `role`, `role_permission`, `user_role` + `get_user_permissions`),
