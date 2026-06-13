@@ -26,10 +26,10 @@ Single source of truth for deciding whether Phase 1 development (Sprint S0) can 
 |---|---|
 | Last Updated | 2026-06-13 |
 | Owner | Project facilitator (Bara Seck) |
-| Phase | S0 foundation **cleared to execute**; S2+ still gated on workshops |
-| Headline | **BLK-AR1 CLOSED (Supabase approved, 2026-06-13 — DEC-A06).** The one true start-gate for S0 is cleared. All 18 allowed foundation tasks may begin now. S2+ still blocked by BLK-1, BLK-3, BLK-6, BLK-9. |
+| Phase | S0 foundation Waves 0–3 **complete**; Wave 4 + security review remain before S2 |
+| Headline | **Foundation Waves 0–3 COMPLETE (2026-06-13).** RLS-1 tenant isolation **VALIDATED** (manual test: `0/1/1/0`). 15 of 18 foundation tasks done; only Wave 4 (RLS-2, AUD-2, UI-2) + the S0→S2 security review remain. S2 still blocked by BLK-1, BLK-3, BLK-6, BLK-9. |
 
-**One-line status:** *Foundation is GO — Supabase is approved, so the blocker-independent S0 tasks start now. The four 🔴 workshop blockers still gate S2 (business schema/customs/catalog/numbering), not S0.*
+**One-line status:** *Foundation is nearly done — Waves 0–3 shipped and RLS isolation is proven. Wave 4 (role-scope hooks, audit view, UI shell) + a security review close S0; then S2 awaits the four 🔴 workshop blockers.*
 
 ---
 
@@ -185,37 +185,39 @@ Interpretation: **planning complete and the S0 execution gate is cleared (52%).*
 
 ---
 
-## S0 Execution Order
+## S0 Execution Order & Progress
 
-The 18 allowed foundation tasks, sequenced by dependency (from [s0-backlog.md](s0-backlog.md)). 🟢 = start immediately · 🟡 = starts when its dependency lands · ⚠️ = builds on a provisional default.
+The 18 allowed foundation tasks. ✅ = done · 🟡 = ready/next · ⚠️ = built on a provisional default. **Waves 0–3 complete (2026-06-13); RLS-1 validated.**
 
-**Wave 0 — start in parallel today (zero dependency):**
-- 🟢 **S0-INF-1** Provision Supabase (provisional region)
-- 🟢 **S0-DB-1** tenant_id strategy & convention
-- 🟢 **S0-UI-1** existing-UI reuse/throwaway assessment
+**Wave 0 — ✅ COMPLETE** (commit 51080cf)
+- ✅ **S0-INF-1** Provision Supabase (provisional region)
+- ✅ **S0-DB-1** tenant_id strategy & convention
+- ✅ **S0-UI-1** existing-UI reuse/throwaway assessment
 
-**Wave 1 — unlock as Wave 0 lands:**
-- 🟡 **S0-INF-2** env-var strategy *(after INF-1)*
-- 🟡 **S0-DB-4** migration tooling *(after INF-1)*
-- 🟡 **S0-INF-4** local dev setup *(after INF-1/2)*
+**Wave 1 — ✅ COMPLETE** (commit 332bcda)
+- ✅ **S0-INF-2** env-var strategy
+- ✅ **S0-DB-4** migration tooling (DEC-A12)
+- ✅ **S0-INF-4** local dev setup
 
-**Wave 2 — foundation tables + auth:**
-- 🟡 **S0-DB-2** organization table *(after DB-1, DB-4)*
-- 🟡 **S0-DB-3** audit_log table *(after DB-2)*
-- 🟡 **S0-AUTH-1** Supabase Auth *(after INF-1/2)*
-- 🟡 **S0-AUTH-2** app_user profile *(after AUTH-1, DB-2)*
-- 🟡 **S0-INF-3** CI/CD *(after INF-2, DB-4)*
+**Wave 2 — ✅ COMPLETE** (commit 7ce6f3e)
+- ✅ **S0-DB-2** organization table
+- ✅ **S0-DB-3** audit_log table (append-only)
+- ✅ **S0-AUTH-1** Supabase Auth (clients)
+- ✅ **S0-AUTH-2** app_user profile
+- ✅ **S0-INF-3** CI/CD
 
-**Wave 3 — authorization, sessions, RLS, audit:**
-- ⚠️ **S0-AUTHZ-2** user_role + union resolution *(after AUTH-2; uses the AUTHZ-1 provisional seed)*
-- 🟡 **S0-AUTH-3** session handling & route protection *(after AUTH-2, AUTHZ-2)*
-- 🟡 **S0-AUD-1** append-only audit write path *(after DB-3, AUTH-3)*
-- 🟡 **S0-RLS-1** tenant-isolation baseline *(after DB-2/3, AUTH-3)*
+**Wave 3 — ✅ COMPLETE** (commit 8e17d0f)
+- ✅ ⚠️ **S0-AUTHZ-2** user_role + union resolution *(provisional seed, pending BLK-RB1)*
+- ✅ **S0-AUTH-3** session handling & route protection
+- ✅ **S0-AUD-1** append-only audit write path
+- ✅ **S0-RLS-1** tenant-isolation baseline — **VALIDATED 2026-06-13** (manual SQL-Editor test: `0 / 1 / 1 / 0`)
 
-**Wave 4 — scope hooks, audit view, UI shell:**
-- 🟡 **S0-RLS-2** role-scope policy hooks *(after RLS-1, AUTHZ-2)*
-- 🟡 **S0-AUD-2** actor/override tracking + audit view *(after AUD-1, AUTHZ-2)*
-- 🟡 **S0-UI-2** auth/session shell into app frame *(after AUTH-3, AUTHZ-2)*
+**Wave 4 — ⏳ NEXT (not started; awaiting authorization):**
+- 🟡 **S0-RLS-2** role-scope policy hooks *(after RLS-1 ✅, AUTHZ-2 ✅)*
+- 🟡 **S0-AUD-2** actor/override tracking + audit view *(after AUD-1 ✅, AUTHZ-2 ✅)*
+- 🟡 **S0-UI-2** auth/session shell into app frame *(after AUTH-3 ✅, AUTHZ-2 ✅)*
+
+> **After Wave 4:** the S0→S2 **security review** is the final gate before any business-domain work. S2 itself remains blocked by 🔴 BLK-1/3/6/9.
 
 > **Note on AUTHZ-1:** the role/permission **seed** (a prerequisite for AUTHZ-2) is in the allowed scope but runs on the **provisional** rbac-matrix defaults (BLK-RB1) — marked ⚠️. It is data, re-runnable, and reconciled when BLK-RB1 closes. AUTHZ-3 (named admin, BLK-RB2) is likewise provisional and is the only allowed task deferred to after AUTHZ-2/AUD-1.
 
