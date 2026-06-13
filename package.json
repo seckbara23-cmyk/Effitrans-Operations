@@ -14,7 +14,8 @@
     "db:reset": "supabase db reset",
     "db:push": "supabase db push",
     "migration:new": "supabase migration new",
-    "db:types": "supabase gen types typescript --local > lib/db/types.ts"
+    "db:types": "supabase gen types typescript --local > lib/db/types.ts",
+    "test:rls": "psql \"$DATABASE_URL\" -f supabase/tests/rls_tenant_isolation_test.sql"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.0",

@@ -12,16 +12,32 @@ authenticated user with the Supabase RLS test pattern (`set role authenticated` 
 `request.jwt.claims`).
 
 ### How to run
-Requires the foundation migrations applied to a linked/local Supabase DB:
+
+**Prerequisites:** `psql` installed, and `DATABASE_URL` exported in your shell
+(it lives in your untracked `.env` — never committed). On Windows, run these in
+**Git Bash** (the `$DATABASE_URL` form needs a POSIX shell).
+
+**Option A — local Supabase stack (recommended):**
 ```
-psql "$DATABASE_URL" -f supabase/tests/rls_tenant_isolation_test.sql
-# or, with the CLI + local stack:
-supabase db reset           # apply migrations + seed
-psql "$(supabase status --output env | grep DB_URL | cut -d= -f2)" \
-  -f supabase/tests/rls_tenant_isolation_test.sql
+npm run db:start          # boots local Supabase (Docker)
+npm run db:reset          # applies both migrations + seed.sql
+export DATABASE_URL="$(supabase status --output env | grep '^DB_URL=' | cut -d= -f2-)"
+npm run test:rls          # runs the isolation test via psql
 ```
+
+**Option B — linked remote project:**
+```
+supabase link --project-ref <your-project-ref>
+supabase db push          # applies migrations to the remote DB
+export DATABASE_URL="postgresql://...":   # from Project Settings > Database
+npm run test:rls
+```
+
 A successful run prints `RLS tenant isolation: PASS`; any leak/regression raises
-an exception and aborts.
+an exception and aborts (the transaction rolls back either way).
+
+> `npm run test:rls` contains **no secret** — it reads `DATABASE_URL` from your
+> environment, which comes from the untracked `.env`.
 
 ### Execution status
 > **Not yet executed in this environment** — no local Supabase/Docker/psql is
