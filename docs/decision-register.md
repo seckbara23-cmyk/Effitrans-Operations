@@ -2,7 +2,9 @@
 
 **Purpose:** the master, authoritative record of every architecture, business, security, hosting, workflow, and integration decision for the Effitrans Operations Platform. **All future changes go through this register** — a new dated row (or a status change to `Superseded`), never a silent edit elsewhere. The planning docs are downstream of this file.
 
-**Status values:** `Accepted` (ratified, binding) · `Proposed` (default in force, pending confirmation) · `Open` (no decision yet) · `Superseded` (replaced — see successor).
+**Status values** (full definitions in [§G Decision Status Standard](#g-decision-status-standard)): `Proposed` · `Approved` · `Implemented` · `Superseded` · `Rejected`. Intake items not yet formulated as a decision are tracked as `Open` in the [Blocker Register](s0-readiness-checklist.md#critical-blockers-register) until they enter the lifecycle.
+
+**Change control:** every change follows [§F Change Control Process](#f-change-control-process). **Document impact** by decision category is mapped in [§H Document Dependency Matrix](#h-document-dependency-matrix).
 
 **Categories:** Architecture · Business · Security · Hosting · Workflow · Integration · Data · Finance · Commercial.
 
@@ -12,27 +14,27 @@ Related: [s0-readiness-checklist.md](s0-readiness-checklist.md) · [architecture
 
 ## A. Architecture & product decisions (already directed / ratified)
 
-These were directed by management across the discovery and planning prompts and are treated as **Accepted** constraints development must follow.
+These were directed by management across the discovery and planning prompts and are treated as **Approved** constraints development must follow.
 
 | Decision ID | Category | Decision | Owner | Date | Status | Related Blocker | Documents Impacted |
 |---|---|---|---|---|---|---|---|
-| DEC-A01 | Architecture | Build a focused **logistics operations control tower, NOT a full ERP** | Management | 2026-06-13 | Accepted | — | audit.md, requirements.md |
-| DEC-A02 | Architecture | **Operational File** is the single source of truth; everything attaches to it | Management | 2026-06-13 | Accepted | — | requirements.md, database-design.md |
-| DEC-A03 | Architecture | Workflow driven by a **config-driven state machine** with role-gated transitions | Dev/Architect | 2026-06-13 | Accepted | BLK-SM* | state-machine.md |
-| DEC-A04 | Workflow | **Chief-of-Transit validation gate** + **POD hard gate** are non-negotiable | Management | 2026-06-13 | Accepted | BLK-10 | state-machine.md |
-| DEC-A05 | Architecture | Single **Next.js full-stack monolith** (no microservices) | Dev/Architect | 2026-06-13 | Accepted | — | architecture.md |
+| DEC-A01 | Architecture | Build a focused **logistics operations control tower, NOT a full ERP** | Management | 2026-06-13 | Approved | — | audit.md, requirements.md |
+| DEC-A02 | Architecture | **Operational File** is the single source of truth; everything attaches to it | Management | 2026-06-13 | Approved | — | requirements.md, database-design.md |
+| DEC-A03 | Architecture | Workflow driven by a **config-driven state machine** with role-gated transitions | Dev/Architect | 2026-06-13 | Approved | BLK-SM* | state-machine.md |
+| DEC-A04 | Workflow | **Chief-of-Transit validation gate** + **POD hard gate** are non-negotiable | Management | 2026-06-13 | Approved | BLK-10 | state-machine.md |
+| DEC-A05 | Architecture | Single **Next.js full-stack monolith** (no microservices) | Dev/Architect | 2026-06-13 | Approved | — | architecture.md |
 | DEC-A06 | Architecture | **PostgreSQL via Supabase** (DB + Auth + Storage + scheduled jobs) | Dev/Architect | 2026-06-13 | Proposed | BLK-9, BLK-AR1 | architecture.md |
-| DEC-A07 | Data | Documents in **object storage**, never DB blobs | Dev/Architect | 2026-06-13 | Accepted | — | architecture.md, database-design.md |
-| DEC-A08 | Architecture | **French-first** UI (FR primary, EN secondary) | Management | 2026-06-13 | Accepted | — | requirements.md |
-| DEC-A09 | Business | **Tier-1 KPIs only** in Phase 1 (workflow-derived); financial/CSAT/employee KPIs deferred | Management | 2026-06-13 | Accepted | — | requirements.md, audit.md |
-| DEC-A10 | Business | **Phase boundaries**: no billing, GL/accounting, BI, or financial portal in Phase 1 | Management | 2026-06-13 | Accepted | — | requirements.md, phase-1-roadmap.md |
-| DEC-A11 | Business | **Minimal customer portal** = tracking + document upload + notifications only (P1) | Management | 2026-06-13 | Accepted | — | requirements.md |
+| DEC-A07 | Data | Documents in **object storage**, never DB blobs | Dev/Architect | 2026-06-13 | Approved | — | architecture.md, database-design.md |
+| DEC-A08 | Architecture | **French-first** UI (FR primary, EN secondary) | Management | 2026-06-13 | Approved | — | requirements.md |
+| DEC-A09 | Business | **Tier-1 KPIs only** in Phase 1 (workflow-derived); financial/CSAT/employee KPIs deferred | Management | 2026-06-13 | Approved | — | requirements.md, audit.md |
+| DEC-A10 | Business | **Phase boundaries**: no billing, GL/accounting, BI, or financial portal in Phase 1 | Management | 2026-06-13 | Approved | — | requirements.md, phase-1-roadmap.md |
+| DEC-A11 | Business | **Minimal customer portal** = tracking + document upload + notifications only (P1) | Management | 2026-06-13 | Approved | — | requirements.md |
 
 ---
 
 ## B. Blocker-driven decisions (pending workshop confirmation)
 
-One row per open blocker. `Proposed` = a documented default is in force; `Open` = no default, needs an answer. These flip to `Accepted` when the relevant workshop closes them.
+One row per open blocker. `Proposed` = a documented default is in force; `Open` = no default, needs an answer. These flip to `Approved` when the relevant workshop closes them.
 
 | Decision ID | Category | Decision (current) | Owner | Date | Status | Related Blocker | Documents Impacted |
 |---|---|---|---|---|---|---|---|
@@ -62,17 +64,17 @@ One row per open blocker. `Proposed` = a documented default is in force; `Open` 
 
 | Decision ID | Category | Decision | Owner | Date | Status | Related Blocker | Documents Impacted |
 |---|---|---|---|---|---|---|---|
-| DEC-C01 | Commercial | **Multi-Tenant Ready** (`tenant_id` + RLS from day one); **no SaaS control plane** built in P1 | Management | 2026-06-13 | Accepted | Q32 | architecture.md, database-design.md |
+| DEC-C01 | Commercial | **Multi-Tenant Ready** (`tenant_id` + RLS from day one); **no SaaS control plane** built in P1 | Management | 2026-06-13 | Approved | Q32 | architecture.md, database-design.md |
 | DEC-C02 | Commercial | Full SaaS commercialization (onboarding/billing/tenant admin) = **Phase 3, only if funded** | Management | 2026-06-13 | Proposed | Q32 | architecture.md |
-| DEC-C03 | Finance | **Keep Sage**; **never rebuild accounting**; integrate (export billed files) in **Phase 2** | Management | 2026-06-13 | Accepted | R1, R3 | audit.md, requirements.md |
-| DEC-C04 | Finance | **Replace Maya** with native billing in **Phase 2**; untouched in Phase 1 | Management | 2026-06-13 | Accepted | — | requirements.md, phase-1-roadmap.md |
+| DEC-C03 | Finance | **Keep Sage**; **never rebuild accounting**; integrate (export billed files) in **Phase 2** | Management | 2026-06-13 | Approved | R1, R3 | audit.md, requirements.md |
+| DEC-C04 | Finance | **Replace Maya** with native billing in **Phase 2**; untouched in Phase 1 | Management | 2026-06-13 | Approved | — | requirements.md, phase-1-roadmap.md |
 
 ---
 
 ## D. How to use this register
 1. **Every decision** (new or changed) is recorded here first, then propagated to the impacted docs listed in its row.
-2. To **change** an Accepted decision: add a new row with a successor ID, set the old row's Status to `Superseded`, and note the successor.
-3. When a **workshop closes a blocker**, update the matching `DEC-B*` row: fill the Date, set Status to `Accepted`, finalize the decision text, then update the impacted docs and the [readiness checklist](s0-readiness-checklist.md).
+2. To **change** an Approved decision: add a new row with a successor ID, set the old row's Status to `Superseded`, and note the successor.
+3. When a **workshop closes a blocker**, update the matching `DEC-B*` row: fill the Date, set Status to `Approved`, finalize the decision text, then update the impacted docs and the [readiness checklist](s0-readiness-checklist.md).
 4. The **Related Blocker** column ties each decision back to the [Critical Blockers Register](s0-readiness-checklist.md#critical-blockers-register).
 
 ---
@@ -81,9 +83,86 @@ One row per open blocker. `Proposed` = a documented default is in force; `Open` 
 
 | Status | Count | IDs |
 |---|---|---|
-| Accepted | 13 | DEC-A01–A05, A07–A11, DEC-C01, C03, C04 |
+| Approved | 13 | DEC-A01–A05, A07–A11, DEC-C01, C03, C04 |
 | Proposed (default in force) | 10 | DEC-A06, B01, B04, B05, B08, B13, B15, B16, B17, C02 |
-| Open (no decision) | 11 | DEC-B02, B03, B06, B07, B09, B10, B11, B12, B14, B18, B19 |
+| Implemented | 0 | — (no code built yet) |
 | Superseded | 0 | — |
+| Rejected | 0 | — |
+| `Open` (intake — pre-lifecycle) | 11 | DEC-B02, B03, B06, B07, B09, B10, B11, B12, B14, B18, B19 |
 
-> **The 4 hard S0 gates live in this register as:** DEC-B01 (BLK-1), DEC-B03 (BLK-3), DEC-B06 (BLK-6), DEC-B09 (BLK-9). When all four reach `Accepted`, S0's blocker-dependent work is cleared to start.
+**Total decisions tracked: 34** (+ 11 intake items awaiting formulation).
+
+> **The 4 hard S0 gates live in this register as:** DEC-B01 (BLK-1), DEC-B03 (BLK-3), DEC-B06 (BLK-6), DEC-B09 (BLK-9). When all four reach `Approved`, S0's blocker-dependent work is cleared to start.
+
+---
+
+## F. Change Control Process
+
+Every change to a decision follows one of four paths. **No assumption, requirement, or design in any downstream document may change until the corresponding decision here is updated first.**
+
+### F.1 New Decision
+1. Allocate the next ID in the appropriate series (`DEC-A##` architecture/product · `DEC-B##` blocker-driven · `DEC-C##` commercial/finance).
+2. Record: Category, Decision text, Owner, Date, Status = `Proposed`, Related Blocker, Documents Impacted (use [§H](#h-document-dependency-matrix)).
+3. On ratification, move Status → `Approved` and propagate to every impacted document.
+
+### F.2 Modified Decision (same intent, refined detail)
+1. Edit the decision text **in place**, append `(rev N, YYYY-MM-DD)` to the Date cell.
+2. Keep the same ID and Status (unless ratification level changes).
+3. Update impacted documents and note the revision in the [readiness checklist](s0-readiness-checklist.md) if a gate is affected.
+
+### F.3 Superseded Decision (intent changes)
+1. Create a **new** decision row with a new ID capturing the new intent.
+2. Set the old row's Status → `Superseded` and add `→ superseded by DEC-XXX` to its Decision cell.
+3. Record date + owner on the new row; propagate to all impacted documents.
+4. Never delete the old row — supersession preserves the audit trail.
+
+### F.4 Emergency Decision (time-critical, made outside a workshop)
+1. May be recorded directly with Status = `Approved` **only** by the Project Sponsor or IT Lead.
+2. Must include `EMERGENCY` in the Notes/Decision cell and the deciding person's name.
+3. Must be **ratified retroactively** at the next workshop; if not ratified, it is set to `Rejected` and reversed.
+4. Log it in the readiness checklist's accepted-risk section until ratified.
+
+| Change type | New ID? | Old row status | Who approves | Audit trail |
+|---|---|---|---|---|
+| New | Yes | — | Workshop owner | New row |
+| Modified | No | unchanged | Decision owner | Revision tag on Date |
+| Superseded | Yes (successor) | `Superseded` | Workshop owner | Old + new rows linked |
+| Emergency | Yes | — | Sponsor / IT Lead | `EMERGENCY` tag + retro-ratify |
+
+---
+
+## G. Decision Status Standard
+
+The canonical lifecycle for every decision ID. Status flows **Proposed → Approved → Implemented**, with **Superseded** and **Rejected** as terminal off-ramps. `Open` is a pre-lifecycle intake marker used only in the [Blocker Register](s0-readiness-checklist.md#critical-blockers-register).
+
+| Status | Meaning | Entry condition | Who sets it |
+|---|---|---|---|
+| **Proposed** | A decision (often a documented default) is on the table, **not yet ratified**. Downstream docs may reference it but flag it as provisional. | Recorded in the register | Author / facilitator |
+| **Approved** | Ratified and **binding**. Downstream documents must conform. Not yet built. | Workshop sign-off / sponsor approval | Decision owner |
+| **Implemented** | The approved decision is **realized in code/config** and verified. | Merged + verified in the platform | Dev/IT lead |
+| **Superseded** | Replaced by a newer decision. **Retained** for audit; points to its successor. | A successor decision is Approved | Workshop owner |
+| **Rejected** | Considered and **declined** (incl. un-ratified emergency decisions). Retained for the record. | Explicit rejection | Decision owner / sponsor |
+
+> `Open` (intake): a blocker exists but no decision has been formulated yet — not part of the formal lifecycle. It becomes `Proposed` the moment a candidate decision (even a default) is written into the register.
+
+---
+
+## H. Document Dependency Matrix
+
+Which planning/governance documents must be updated when a decision of each **category** changes. Use this to fill the "Documents Impacted" column and to know what to propagate after a change. ✅ = primary impact (must review/update) · ▫ = secondary (check for consistency).
+
+| Decision category | requirements | state-machine | document-catalog | database-design | rbac-matrix | architecture | phase-1-roadmap | s0-readiness | workshops |
+|---|---|---|---|---|---|---|---|---|---|
+| **Architecture** | ▫ | ▫ | | ✅ | ▫ | ✅ | ▫ | ▫ | |
+| **Security** | ▫ | | | ✅ | ✅ | ✅ | | ▫ | ▫ |
+| **Workflow** | ✅ | ✅ | ▫ | ✅ | ▫ | | ▫ | ▫ | ✅ |
+| **Documents** | ✅ | ▫ | ✅ | ✅ | | | | ▫ | ✅ |
+| **Hosting** | | | | ▫ | | ✅ | ▫ | ✅ | ✅ |
+| **Integrations** | ✅ | ▫ | | ✅ | | ✅ | ▫ | ▫ | ✅ |
+| **Notifications** | ✅ | ▫ | | ✅ | | ▫ | ▫ | | ✅ |
+| **Portal** | ✅ | | ▫ | ✅ | ✅ | ▫ | ▫ | | |
+| **RBAC** | ▫ | ▫ | | ✅ | ✅ | ▫ | | ▫ | ▫ |
+
+**Category → decision-series hint:** Architecture/Hosting/Integrations/Portal → `DEC-A*`/`DEC-B*` · Security/RBAC → `DEC-B*` (RB/DB series) · Workflow/Documents/Notifications → `DEC-A*`/`DEC-B*` · Commercial/Finance → `DEC-C*`.
+
+> **Rule:** after any decision changes status, open every ✅ document in its category row, apply the change, and confirm the ▫ documents remain consistent. Record completion in the change's row (Date cell).

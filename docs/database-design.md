@@ -1,5 +1,17 @@
 # Effitrans Operations Platform — Database Design (Phase 1)
 
+> **Governance Notice**
+>
+> This document is derived from decisions recorded in [`docs/decision-register.md`](decision-register.md).
+>
+> The Decision Register is the **authoritative source** for all business, architecture, security, workflow, hosting, integration, and platform decisions.
+>
+> Contributors must **not** change assumptions or requirements directly in this document without first updating the corresponding decision entry in the Decision Register.
+>
+> If a decision changes: (1) update or supersede the decision in the Decision Register, (2) record the date and owner, (3) update all affected downstream documents.
+>
+> **In case of conflict between documents, the Decision Register takes precedence.**
+
 **Engine:** PostgreSQL (via Supabase — see [architecture.md](architecture.md)).
 **Tenancy:** every business table carries `tenant_id` from day one; isolation enforced by **Row-Level Security (RLS)**. No SaaS control plane is built — `tenant_id` simply scopes all rows to `organization` row 1 (Effitrans) until/unless commercialization (Phase 3).
 **Visibility:** RLS policies enforce both tenant isolation AND role-based file scoping (own/team/client/all) — see [rbac-matrix.md](rbac-matrix.md).

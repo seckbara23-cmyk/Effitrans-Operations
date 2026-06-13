@@ -1,5 +1,17 @@
 # Effitrans S0 Readiness Checklist
 
+> **Governance Notice**
+>
+> This document is derived from decisions recorded in [`docs/decision-register.md`](decision-register.md). It is the single source of truth for **readiness/Go-No-Go status**; the Decision Register remains the authoritative source for the **decisions** themselves.
+>
+> The Decision Register is the **authoritative source** for all business, architecture, security, workflow, hosting, integration, and platform decisions.
+>
+> Contributors must **not** change assumptions or requirements directly in this document without first updating the corresponding decision entry in the Decision Register.
+>
+> If a decision changes: (1) update or supersede the decision in the Decision Register, (2) record the date and owner, (3) update all affected downstream documents.
+>
+> **In case of conflict between documents, the Decision Register takes precedence.**
+
 Single source of truth for deciding whether Phase 1 development (Sprint S0) can begin. Aggregates every blocker from the planning docs and both workshop sheets into one Go/No-Go view.
 
 **Sources:** [audit.md](audit.md) · [requirements.md](requirements.md) · [state-machine.md](state-machine.md) · [document-catalog.md](document-catalog.md) · [database-design.md](database-design.md) · [rbac-matrix.md](rbac-matrix.md) · [architecture.md](architecture.md) · [phase-1-roadmap.md](phase-1-roadmap.md) · [chief-of-transit-workshop.md](workshops/chief-of-transit-workshop.md) · [management-it-decision-workshop.md](workshops/management-it-decision-workshop.md) · [decision-register.md](decision-register.md)

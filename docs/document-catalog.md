@@ -1,5 +1,17 @@
 # Effitrans Operations Platform — Document Catalog & Expiry Rules (Phase 1)
 
+> **Governance Notice**
+>
+> This document is derived from decisions recorded in [`docs/decision-register.md`](decision-register.md).
+>
+> The Decision Register is the **authoritative source** for all business, architecture, security, workflow, hosting, integration, and platform decisions.
+>
+> Contributors must **not** change assumptions or requirements directly in this document without first updating the corresponding decision entry in the Decision Register.
+>
+> If a decision changes: (1) update or supersede the decision in the Decision Register, (2) record the date and owner, (3) update all affected downstream documents.
+>
+> **In case of conflict between documents, the Decision Register takes precedence.**
+
 This catalog drives two Phase-1 features: (1) **classification** of every uploaded document, and (2) the **expiry alert engine** — the flagship differentiator answering the most-repeated pain in the questionnaire (Q11.3, Q14.10: expirations discovered too late).
 
 > ⚠️ **The validity periods and alert lead times below are PLACEHOLDERS pending confirmation by the Chief of Transit ([BLK-3](#5-blocking-questions)).** Do not hardcode them — they live in the `document_type` table and are editable. This document defines the *structure*; Effitrans defines the *values*.

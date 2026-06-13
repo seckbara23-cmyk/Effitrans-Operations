@@ -1,5 +1,17 @@
 # Effitrans Operations Platform — Phase 1 Roadmap
 
+> **Governance Notice**
+>
+> This document is derived from decisions recorded in [`docs/decision-register.md`](decision-register.md).
+>
+> The Decision Register is the **authoritative source** for all business, architecture, security, workflow, hosting, integration, and platform decisions.
+>
+> Contributors must **not** change assumptions or requirements directly in this document without first updating the corresponding decision entry in the Decision Register.
+>
+> If a decision changes: (1) update or supersede the decision in the Decision Register, (2) record the date and owner, (3) update all affected downstream documents.
+>
+> **In case of conflict between documents, the Decision Register takes precedence.**
+
 **Goal (Q31/Q33):** within ~6 months, stop relying on Excel/WhatsApp/email/paper for import, export, transport & handling operations, and start producing KPIs automatically.
 **Definition of Phase 1 done:** the [MVP success scenario](#5-definition-of-done) runs end-to-end on real data.
 

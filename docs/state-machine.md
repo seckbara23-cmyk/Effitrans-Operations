@@ -1,5 +1,17 @@
 # Effitrans Operations Platform — Workflow State Machine (Phase 1)
 
+> **Governance Notice**
+>
+> This document is derived from decisions recorded in [`docs/decision-register.md`](decision-register.md).
+>
+> The Decision Register is the **authoritative source** for all business, architecture, security, workflow, hosting, integration, and platform decisions.
+>
+> Contributors must **not** change assumptions or requirements directly in this document without first updating the corresponding decision entry in the Decision Register.
+>
+> If a decision changes: (1) update or supersede the decision in the Decision Register, (2) record the date and owner, (3) update all affected downstream documents.
+>
+> **In case of conflict between documents, the Decision Register takes precedence.**
+
 The Operational File is driven by a **config-driven state machine**. Each file type (IMPORT, EXPORT, TRANSPORT, HANDLING) has an ordered set of **states**; movement between states happens only through **transitions**, each of which is gated by an **allowed role**, optionally guarded by **conditions** (checklist complete, document present, POD validated), and may fire **side effects** (notifications, timestamps, locks).
 
 Related: [requirements.md](requirements.md) · [document-catalog.md](document-catalog.md) · [rbac-matrix.md](rbac-matrix.md) · [database-design.md](database-design.md)

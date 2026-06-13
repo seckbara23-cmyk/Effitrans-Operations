@@ -1,6 +1,14 @@
 # Workshop — Chief of Transit Validation Sheet
 ## Atelier de validation — Chef de Transit
 
+> **Governance Notice**
+>
+> This workshop **produces** decisions that must be recorded in [`docs/decision-register.md`](../decision-register.md) — the **authoritative source** for all business, architecture, security, workflow, hosting, integration, and platform decisions.
+>
+> After the workshop, transfer every confirmed answer into the Decision Register before it is treated as binding: (1) add or supersede the decision, (2) record the date and owner, (3) update all affected downstream documents, then close the matching `BLK-*` items.
+>
+> **In case of conflict between documents, the Decision Register takes precedence.**
+
 **Purpose / Objet :** Validate every customs, compliance, document, expiry, and workflow business rule **before development starts**. Nothing in this sheet is a settled fact — items marked **PROPOSED** are the development team's draft assumptions and **must be confirmed or corrected**. Items left blank (`______`) **must be supplied** by the Chief of Transit.
 
 **How to use:** Conduct in French if preferred. For each row, either tick **✅ Confirm** (the proposal is correct) or write the correction in the **Correction / Réponse** field. Record every decision in the [Decision Log](#decision-log--journal-des-décisions). Anything unresolved goes to [Open Questions](#open-questions--questions-ouvertes).

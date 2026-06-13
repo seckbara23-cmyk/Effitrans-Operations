@@ -1,6 +1,14 @@
 # Workshop — Management & IT Decision Sheet
 ## Atelier de décision — Direction & SI
 
+> **Governance Notice**
+>
+> This workshop **produces** decisions that must be recorded in [`docs/decision-register.md`](../decision-register.md) — the **authoritative source** for all business, architecture, security, workflow, hosting, integration, and platform decisions.
+>
+> After the workshop, transfer every confirmed answer into the Decision Register before it is treated as binding: (1) add or supersede the decision, (2) record the date and owner, (3) update all affected downstream documents, then close the matching `BLK-*` items.
+>
+> **In case of conflict between documents, the Decision Register takes precedence.**
+
 **Purpose / Objet :** Resolve every **non-operational** blocker before development begins — hosting, data residency, migration, communication channels, identity governance, capacity, commercialization, financial-system strategy, budget, and risk acceptance. Every answer here must be **documented and approved by management**.
 
 **Companion sheet:** [chief-of-transit-workshop.md](chief-of-transit-workshop.md) resolves the customs/operational rules. This sheet resolves everything else.

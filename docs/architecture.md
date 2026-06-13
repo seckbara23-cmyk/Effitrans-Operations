@@ -1,5 +1,17 @@
 # Effitrans Operations Platform — Technical Architecture (Phase 1)
 
+> **Governance Notice**
+>
+> This document is derived from decisions recorded in [`docs/decision-register.md`](decision-register.md).
+>
+> The Decision Register is the **authoritative source** for all business, architecture, security, workflow, hosting, integration, and platform decisions.
+>
+> Contributors must **not** change assumptions or requirements directly in this document without first updating the corresponding decision entry in the Decision Register.
+>
+> If a decision changes: (1) update or supersede the decision in the Decision Register, (2) record the date and owner, (3) update all affected downstream documents.
+>
+> **In case of conflict between documents, the Decision Register takes precedence.**
+
 **What we are building:** a focused logistics **operations control tower** — Operational File + workflow state machine + documents + expiry alerts + customs reference tracking + transport/POD + dashboards. **Not** a full ERP.
 
 **Architecture principle:** keep it a single full-stack app for 65 internal users + a small client portal. No microservices, no event-sourcing, no custom auth, no rebuilt accounting. Tenant-ready underneath, but no SaaS control plane.
