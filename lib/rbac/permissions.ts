@@ -10,6 +10,10 @@
  */
 import { getServerSupabaseClient } from "@/lib/supabase/server";
 
+// Pure check helpers live in ./check so they are unit-testable without importing
+// the server client. Re-exported for existing callers.
+export { hasPermission, hasAllPermissions, hasAnyPermission } from "./check";
+
 type PermissionRow = { code: string };
 
 /** All permission codes effective for the given user (deduped union). */
@@ -24,19 +28,4 @@ export async function getEffectivePermissions(userId: string): Promise<string[]>
   }
   const rows = (data ?? []) as unknown as PermissionRow[];
   return rows.map((row) => row.code);
-}
-
-/** True if `permissions` contains `code`. Deny-by-default. */
-export function hasPermission(permissions: string[], code: string): boolean {
-  return permissions.includes(code);
-}
-
-/** True if `permissions` contains every `codes` entry. */
-export function hasAllPermissions(permissions: string[], codes: string[]): boolean {
-  return codes.every((c) => permissions.includes(c));
-}
-
-/** True if `permissions` contains at least one `codes` entry. */
-export function hasAnyPermission(permissions: string[], codes: string[]): boolean {
-  return codes.some((c) => permissions.includes(c));
 }

@@ -15,6 +15,7 @@
  */
 import "server-only";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
+import { validateAuditEvent } from "./validate";
 
 export type AuditEvent = {
   /** what happened, e.g. "user.role.assigned". Prefix "system." for unattributed system events. */
@@ -37,29 +38,10 @@ export type AuditEvent = {
   overrideReason?: string | null;
 };
 
-function isSystemAction(action: string): boolean {
-  return action.startsWith("system.");
-}
-
 /** Write one append-only audit entry. Throws on validation or write failure. */
 export async function writeAudit(event: AuditEvent): Promise<void> {
-  if (!event.action || event.action.trim() === "") {
-    throw new Error("[audit] action is required");
-  }
-
-  // Fail closed: user actions must be attributed.
-  if (!isSystemAction(event.action) && !event.actorId) {
-    throw new Error(
-      `[audit] actorId is required for non-system action "${event.action}"`,
-    );
-  }
-
-  // Governance: overrides must carry a reason.
-  if (event.isOverride && !event.overrideReason) {
-    throw new Error(
-      `[audit] overrideReason is required for override action "${event.action}"`,
-    );
-  }
+  // Validation rules live in ./validate (pure, unit-tested).
+  validateAuditEvent(event);
 
   const supabase = getAdminSupabaseClient();
   const { error } = await supabase.from("audit_log").insert({

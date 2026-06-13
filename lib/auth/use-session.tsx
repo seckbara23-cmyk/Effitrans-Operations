@@ -19,6 +19,10 @@ import {
 } from "react";
 import { getBrowserSupabaseClient } from "@/lib/supabase/client";
 
+// Pure cosmetic-visibility rule lives in its own module so it is unit-testable
+// without importing this client component. Re-exported for existing callers.
+export { canSeeNav } from "./nav-visibility";
+
 export type SessionState = {
   email: string | null;
   permissions: string[];
@@ -70,18 +74,4 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
 export function useSession(): SessionState {
   return useContext(SessionContext);
-}
-
-/**
- * Cosmetic nav visibility. Shows an item when: no permission is required, the
- * session is still loading, Supabase is unconfigured, or the user holds it.
- * Hiding here is UX only — server/RLS still enforce real access.
- */
-export function canSeeNav(
-  required: string | undefined,
-  session: SessionState,
-): boolean {
-  if (!required) return true;
-  if (!session.configured || session.loading) return true;
-  return session.permissions.includes(required);
 }
