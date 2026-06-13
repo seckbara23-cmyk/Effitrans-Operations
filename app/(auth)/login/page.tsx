@@ -14,7 +14,6 @@ import { recordLoginAudit } from "@/lib/auth/actions";
 import { t } from "@/lib/i18n";
 
 export default function LoginPage() {
-  const configured = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -56,12 +55,7 @@ export default function LoginPage() {
           <h1 className="text-lg font-semibold text-navy-900">{t.auth.title}</h1>
           <p className="mt-1 text-sm text-slate-500">{t.auth.subtitle}</p>
 
-          {!configured ? (
-            <p className="mt-6 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
-              {t.auth.notConfigured}
-            </p>
-          ) : (
-            <form onSubmit={onSubmit} className="mt-6 space-y-4">
+          <form onSubmit={onSubmit} className="mt-6 space-y-4">
               <div>
                 <label htmlFor="email" className="block text-sm font-medium text-navy-700">
                   {t.auth.email}
@@ -105,8 +99,7 @@ export default function LoginPage() {
               >
                 {submitting ? t.auth.submitting : t.auth.submit}
               </button>
-            </form>
-          )}
+          </form>
         </div>
       </div>
     </div>

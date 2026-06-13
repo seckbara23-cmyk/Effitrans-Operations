@@ -38,36 +38,52 @@ const SessionContext = createContext<SessionState>({
 });
 
 export function SessionProvider({ children }: { children: ReactNode }) {
-  const configured = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL);
+  // Deterministic initial state on the server AND the first client render — do
+  // NOT branch on env here. NEXT_PUBLIC_* are inlined at build time, so a stale
+  // client bundle can disagree with the server runtime and cause a hydration
+  // mismatch (this exact crash). Real config/session is resolved only AFTER
+  // mount, inside the effect, where server/client can safely differ.
   const [state, setState] = useState<SessionState>({
     email: null,
     permissions: [],
-    loading: configured,
-    configured,
+    loading: true,
+    configured: false,
   });
 
   useEffect(() => {
-    if (!configured) return;
-    let active = true;
-    const supabase = getBrowserSupabaseClient();
+    const configured = Boolean(
+      process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    );
+    if (!configured) {
+      setState({ email: null, permissions: [], loading: false, configured: false });
+      return;
+    }
 
+    let active = true;
     (async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) {
-        if (active) setState({ email: null, permissions: [], loading: false, configured });
-        return;
+      // Fully guarded: a client Supabase failure degrades to logged-out, never
+      // crashes the app (SessionProvider wraps the whole shell).
+      try {
+        const supabase = getBrowserSupabaseClient();
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) {
+          if (active) setState({ email: null, permissions: [], loading: false, configured: true });
+          return;
+        }
+        const { data } = await supabase.rpc("get_user_permissions", { p_user: user.id });
+        const permissions = (data ?? []).map((r) => r.code);
+        if (active) setState({ email: user.email ?? null, permissions, loading: false, configured: true });
+      } catch {
+        if (active) setState({ email: null, permissions: [], loading: false, configured: false });
       }
-      const { data } = await supabase.rpc("get_user_permissions", { p_user: user.id });
-      const permissions = (data ?? []).map((r) => r.code);
-      if (active) setState({ email: user.email ?? null, permissions, loading: false, configured });
     })();
 
     return () => {
       active = false;
     };
-  }, [configured]);
+  }, []);
 
   return <SessionContext.Provider value={state}>{children}</SessionContext.Provider>;
 }
