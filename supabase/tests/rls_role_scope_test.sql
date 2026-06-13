@@ -64,6 +64,12 @@ begin
 
   perform set_config('role', 'postgres', true);
   insert into _r values ('admin_sees_audit', v_admin), ('plain_sees_audit', v_plain);
+
+  -- CI assertion: fail (non-zero exit under ON_ERROR_STOP) on any regression.
+  if v_admin <> 1 or v_plain <> 0 then
+    raise exception 'RLS-2 role-scope FAIL: admin_sees_audit=%, plain_sees_audit=% (expected 1 / 0)',
+      v_admin, v_plain;
+  end if;
 end $$;
 
 -- Expected: admin_sees_audit = 1, plain_sees_audit = 0
