@@ -4,6 +4,8 @@ import { usePathname } from "next/navigation";
 import { allNavItems } from "@/lib/nav";
 import { t } from "@/lib/i18n";
 import { IconMenu, IconSearch, IconBell, IconPlus } from "@/lib/icons";
+import { useSession } from "@/lib/auth/use-session";
+import { getBrowserSupabaseClient } from "@/lib/supabase/client";
 
 function currentTitle(pathname: string): string {
   const match = allNavItems.find(
@@ -17,6 +19,13 @@ function currentTitle(pathname: string): string {
 export function Topbar({ onOpenMenu }: { onOpenMenu: () => void }) {
   const pathname = usePathname();
   const title = currentTitle(pathname);
+  const session = useSession();
+
+  async function signOut() {
+    const supabase = getBrowserSupabaseClient();
+    await supabase.auth.signOut();
+    window.location.href = "/login";
+  }
 
   return (
     <header className="sticky top-0 z-20 border-b border-slate-200 bg-sand-50/85 backdrop-blur supports-[backdrop-filter]:bg-sand-50/70">
@@ -61,6 +70,23 @@ export function Topbar({ onOpenMenu }: { onOpenMenu: () => void }) {
             <IconPlus className="h-4 w-4" />
             <span className="hidden sm:inline">{t.topbar.newFile}</span>
           </button>
+
+          {session.configured && session.email && (
+            <div className="flex items-center gap-2 border-l border-slate-200 pl-2 sm:pl-3">
+              <span
+                className="hidden max-w-[16ch] truncate text-sm text-slate-600 md:inline"
+                title={session.email}
+              >
+                {session.email}
+              </span>
+              <button
+                onClick={signOut}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-navy-700 hover:bg-slate-50"
+              >
+                {t.topbar.signOut}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </header>

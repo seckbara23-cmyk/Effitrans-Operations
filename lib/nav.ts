@@ -16,6 +16,11 @@ export type NavItem = {
   label: string;
   href: string;
   icon: ComponentType<SVGProps<SVGSVGElement>>;
+  /**
+   * Optional permission code required to SEE this item (cosmetic filtering only;
+   * server/RLS remain authoritative). Items without it are always shown.
+   */
+  permission?: string;
 };
 
 export type NavSection = {
@@ -45,8 +50,9 @@ export const navSections: NavSection[] = [
     items: [
       { label: t.nav.finance, href: "/finance", icon: IconFinance },
       { label: t.nav.reports, href: "/reports", icon: IconReport },
-      { label: t.nav.users, href: "/users", icon: IconUsers },
-      { label: t.nav.settings, href: "/settings", icon: IconGear },
+      { label: t.nav.users, href: "/users", icon: IconUsers, permission: "admin:users:manage" },
+      { label: t.nav.audit, href: "/settings/audit", icon: IconStamp, permission: "audit:read:all" },
+      { label: t.nav.settings, href: "/settings", icon: IconGear, permission: "admin:config:manage" },
     ],
   },
 ];

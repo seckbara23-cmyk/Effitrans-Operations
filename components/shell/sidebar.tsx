@@ -6,19 +6,28 @@ import { navSections } from "@/lib/nav";
 import { cn } from "@/lib/cn";
 import { LogoWordmark } from "@/components/brand/logo";
 import { IconClose } from "@/lib/icons";
+import { t } from "@/lib/i18n";
+import { useSession, canSeeNav } from "@/lib/auth/use-session";
 
 function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
+  const session = useSession();
 
   return (
     <nav className="flex-1 space-y-6 overflow-y-auto px-3 py-5">
-      {navSections.map((section) => (
+      {navSections.map((section) => {
+        // Cosmetic permission filtering — server/RLS remain authoritative.
+        const items = section.items.filter((item) =>
+          canSeeNav(item.permission, session),
+        );
+        if (items.length === 0) return null;
+        return (
         <div key={section.title}>
           <p className="px-3 pb-2.5 text-xs font-bold uppercase tracking-[0.2em] text-teal-300">
             {section.title}
           </p>
           <ul className="space-y-0.5">
-            {section.items.map((item) => {
+            {items.map((item) => {
               const active =
                 pathname === item.href ||
                 (item.href !== "/dashboard" &&
@@ -54,25 +63,33 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
             })}
           </ul>
         </div>
-      ))}
+        );
+      })}
     </nav>
   );
 }
 
 function SidebarFooter() {
+  const session = useSession();
+
+  // Signed-in user (real session) takes precedence; otherwise the static
+  // placeholder is shown for the unconfigured/mock experience.
+  const signedIn = session.configured && session.email;
+  const name = signedIn ? session.email! : "Awa Ndiaye";
+  const subtitle = signedIn ? t.topbar.account : "Responsable opérations";
+  const initials = signedIn
+    ? session.email!.slice(0, 2).toUpperCase()
+    : "AN";
+
   return (
     <div className="border-t border-white/10 px-4 py-4">
       <div className="flex items-center gap-3 rounded-lg bg-white/[0.07] p-3">
         <div className="flex h-9 w-9 items-center justify-center rounded-full bg-teal-500 text-sm font-semibold text-white ring-1 ring-inset ring-white/15">
-          AN
+          {initials}
         </div>
         <div className="min-w-0 leading-tight">
-          <p className="truncate text-[15px] font-semibold text-white">
-            Awa Ndiaye
-          </p>
-          <p className="truncate text-[13px] font-medium text-teal-300">
-            Responsable opérations
-          </p>
+          <p className="truncate text-[15px] font-semibold text-white">{name}</p>
+          <p className="truncate text-[13px] font-medium text-teal-300">{subtitle}</p>
         </div>
       </div>
     </div>

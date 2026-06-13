@@ -1,5 +1,12 @@
 # Supabase Tests
 
+## RLS role-scope (RLS-2)
+[`rls_role_scope_test.sql`](rls_role_scope_test.sql) proves `audit_log` reads are
+gated by the `audit:read:all` permission: a `SYSTEM_ADMIN` sees the tenant's audit
+rows; a `CUSTOMS_DECLARANT` (no audit permission) sees none. Non-destructive
+(`BEGIN … ROLLBACK`). Run the same way as the isolation test (psql / SQL Editor);
+expected result: `admin_sees_audit = 1`, `plain_sees_audit = 0`.
+
 ## RLS tenant-isolation (RLS-1)
 [`rls_tenant_isolation_test.sql`](rls_tenant_isolation_test.sql) proves the
 foundation RLS policies isolate tenants:

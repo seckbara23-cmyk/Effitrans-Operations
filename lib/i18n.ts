@@ -23,12 +23,41 @@ export const t = {
     finance: "Finance",
     reports: "Rapports",
     users: "Utilisateurs",
+    audit: "Journal d'audit",
     settings: "Paramètres",
   },
   topbar: {
     search: "Rechercher un dossier, client, conteneur…",
     newFile: "Nouveau dossier",
     notifications: "Notifications",
+    signOut: "Se déconnecter",
+    account: "Compte",
+  },
+  auth: {
+    title: "Connexion",
+    subtitle: "Plateforme d'opérations Effitrans",
+    email: "Adresse e-mail",
+    password: "Mot de passe",
+    submit: "Se connecter",
+    submitting: "Connexion…",
+    error: "Identifiants invalides.",
+    notConfigured:
+      "L'authentification n'est pas encore configurée sur cet environnement.",
+  },
+  audit: {
+    title: "Journal d'audit",
+    subtitle: "Traçabilité des actions privilégiées (lecture seule).",
+    forbidden: "Vous n'avez pas l'autorisation de consulter le journal d'audit.",
+    notConfigured:
+      "Le journal d'audit nécessite la configuration Supabase de l'environnement.",
+    empty: "Aucune entrée d'audit pour le moment.",
+    columns: {
+      when: "Horodatage",
+      action: "Action",
+      actor: "Acteur",
+      entity: "Entité",
+      reason: "Motif (override)",
+    },
   },
   dashboard: {
     title: "Centre d'opérations",
