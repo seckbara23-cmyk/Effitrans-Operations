@@ -20,16 +20,16 @@ Single source of truth for deciding whether Phase 1 development (Sprint S0) can 
 
 ## Executive Summary
 
-**Overall Readiness:** ☐ Not Started · ☑ **In Progress** · ☐ Ready For S0 · ☐ Ready For S1
+**Overall Readiness:** ☐ Not Started · ☐ In Progress · ☑ **Ready For S0 (foundation tasks)** · ☐ Ready For S1
 
 | Field | Value |
 |---|---|
 | Last Updated | 2026-06-13 |
 | Owner | Project facilitator (Bara Seck) |
-| Phase | Pre-S0 — planning complete, decisions pending |
-| Headline | All 11 governance docs + 2 workshop sheets authored. **Zero blockers ratified.** S0 cannot fully start until BLK-1, BLK-3, BLK-6, BLK-9 close. |
+| Phase | S0 foundation **cleared to execute**; S2+ still gated on workshops |
+| Headline | **BLK-AR1 CLOSED (Supabase approved, 2026-06-13 — DEC-A06).** The one true start-gate for S0 is cleared. All 18 allowed foundation tasks may begin now. S2+ still blocked by BLK-1, BLK-3, BLK-6, BLK-9. |
 
-**One-line status:** *Documentation is done; decisions are not. Run the two workshops, close the four S0-gating blockers, then start S0.*
+**One-line status:** *Foundation is GO — Supabase is approved, so the blocker-independent S0 tasks start now. The four 🔴 workshop blockers still gate S2 (business schema/customs/catalog/numbering), not S0.*
 
 ---
 
@@ -63,19 +63,26 @@ Severity: 🔴 S0-gating · 🟠 S1-gating · 🟡 sprint-local (needed later in
 
 **Tally:** 19 total — 🔴 4 (S0-gating) · 🟠 6 (S1-gating) · 🟡 9 (sprint-local). **Closed: 0. Accepted Risk: 0.**
 
+**✅ Recently closed (not in the 19 above):** **BLK-AR1** — *Is Supabase acceptable to Effitrans IT?* → **CLOSED / Approved 2026-06-13.** Management confirmed Supabase for Phase 1 foundation work. Recorded as [DEC-A06](decision-register.md). This was the sole start-gate on S0 execution; the four 🔴 blockers gate **S2**, not S0.
+
 ---
 
 ## Architecture Gates
 
-### Required Before S0
-☐ Hosting decision approved — *(BLK-9)*
+**Platform gate (start-gate for S0 execution):**
+☑ **Supabase platform approved — *(BLK-AR1 — DEC-A06, 2026-06-13)*** ✅
+
+### Required Before **S2** (business schema/customs/catalog — NOT foundation S0)
+> Per the [S0 backlog guardrail](s0-backlog.md#scope-guardrail-read-first), the foundation sprint is independent of these. They gate the **business-domain** work in S2+, not the 18 foundation tasks.
+
+☐ Hosting **region** confirmed — *(BLK-9)*
 ☐ Data residency confirmed — *(BLK-9)*
 ☐ Integration assumptions approved — *(BLK-1)*
 ☐ File numbering approved — *(BLK-6)*
 ☐ Document catalog approved — *(BLK-3)*
 ☐ Expiry rules approved — *(BLK-3)*
 
-**S0 gate status: 0 / 6 — NOT MET.**
+**S2 gate status: 0 / 6 — NOT MET** (foundation S0 does not require these).
 
 ### Required Before S1
 ☐ Admin governance approved — *(BLK-RB2)*
@@ -101,15 +108,16 @@ Severity: 🔴 S0-gating · 🟠 S1-gating · 🟡 sprint-local (needed later in
 
 | Field | Value |
 |---|---|
-| Approved By | ______ |
-| Date | ______ |
+| Approved By | Effitrans Management (BLK-AR1) |
+| Date | 2026-06-13 |
 
-**Decision:** ☐ GO · ☑ **CONDITIONAL GO** *(recommended — see Recommendation)* · ☐ NO-GO
+**Decision:** ☑ **GO — S0 foundation (18 allowed tasks)** · ☐ CONDITIONAL GO · ☐ NO-GO for S2
 
-**Conditions (must hold for the conditional GO):**
-1. Schedule and run **both workshops within ~1 week**; close 🔴 BLK-1, BLK-3, BLK-6, BLK-9 before any schema/customs/expiry work is committed.
-2. Limit immediate S0 work to **blocker-independent infrastructure** (see Accepted Risks): Supabase project, repo/CI scaffolding, RLS baseline pattern, auth shell — using documented defaults.
-3. **Do not finalize** the document_type catalog, file-numbering, or hosting region until the workshops ratify them.
+**Standing conditions (now that the platform gate is met):**
+1. Execute **only the 18 allowed foundation tasks** (INF-1..4, DB-1..4, AUTH-1..3, AUTHZ-2, RLS-1..2, AUD-1..2, UI-1..2). AUTHZ-1/AUTHZ-3 build on provisional defaults only.
+2. **Do not** implement Operational File, Workflow Engine, Document Catalog, Customs Tracking, File Numbering, or Expiry Engine — these remain **NO-GO** until 🔴 BLK-1/3/6/9 are Approved.
+3. Run **both workshops within ~1 week** to close the four 🔴 blockers and unlock S2.
+4. Supabase **region** is provisional (BLK-9); keep teardown/recreate cheap (S0-INF-1) until residency is confirmed.
 
 ---
 
@@ -119,7 +127,7 @@ Assumptions in force **if S0 infrastructure work starts before all blockers clos
 
 | # | Assumption (default) | Source | Reversal cost if wrong | Accepted by | Date |
 |---|---|---|---|---|---|
-| AR-1 | Hosting = managed cloud (Supabase), nearest compliant region | architecture.md / Mgmt-IT §1 | Medium — redeploy/region migration | ______ | ______ |
+| AR-1 | ~~Hosting = managed cloud (Supabase)~~ → **platform RATIFIED** (BLK-AR1, DEC-A06). Only the **region** stays provisional pending BLK-9. | architecture.md / Mgmt-IT §1 | Low — region only; data has no value yet | **Management** | **2026-06-13** |
 | AR-2 | GAINDE/Orbus = manual reference-tracking (no live API) | architecture.md / CoT §7 | Low — additive if API later appears | ______ | ______ |
 | AR-3 | Migration = clean start + legacy read-only archive | Mgmt-IT §2 | Low — history stays in legacy | ______ | ______ |
 | AR-4 | Channels = email + SMS only in Phase 1 | requirements.md / Mgmt-IT §3 | Low — WhatsApp additive in P2 | ______ | ______ |
@@ -138,38 +146,93 @@ Assumptions in force **if S0 infrastructure work starts before all blockers clos
 | Open Critical Blockers (🔴 S0-gating) | **4** (BLK-1, BLK-3, BLK-6, BLK-9) |
 | Open Medium Blockers (🟠 S1-gating) | **6** (BLK-2, BLK-8, BLK-10, BLK-RB1, BLK-RB2, BLK-DB1) |
 | Open Minor Blockers (🟡 sprint-local) | **9** |
-| Closed Blockers | 0 |
-| Accepted Risks (ratified by management) | 0 of 7 proposed |
+| Closed Blockers | **1** (BLK-AR1 — platform start-gate) |
+| Accepted Risks (ratified by management) | **1 of 7** (AR-1 platform; region pending) |
 
-### Readiness Score: **40 / 100**
+### Readiness Score: **52 / 100**
 
 Weighted basis:
 | Component | Weight | Done | Contribution |
 |---|---|---|---|
 | Planning documentation authored | 30% | 100% | 30 |
 | Workshop sheets prepared | 10% | 100% | 10 |
-| Workshops completed (decisions made) | 30% | 0% | 0 |
-| 🔴 S0-gating blockers closed | 20% | 0% | 0 |
-| 🟠 S1-gating blockers closed | 10% | 0% | 0 |
-| **Total** | 100% | | **40** |
+| S0 execution start-gate (BLK-AR1 platform) | 12% | 100% | 12 |
+| Workshops completed (decisions made) | 28% | 0% | 0 |
+| 🔴 S2-gating blockers closed | 12% | 0% | 0 |
+| 🟠 S1-gating blockers closed | 8% | 0% | 0 |
+| **Total** | 100% | | **52** |
 
-Interpretation: **planning phase complete (40%); decision phase not started.** Score reaches **~70%** when both workshops close the 🔴 gates → **Ready For S0**. Reaches **~90%+** when 🟠 gates close → **Ready For S1**.
+Interpretation: **planning complete and the S0 execution gate is cleared (52%).** Foundation work is GO now. Score reaches **~80%** when both workshops close the 🔴 gates → **Ready For S2**. Reaches **~95%+** when 🟠 gates close → **Ready For S1 finalization**.
 
 ---
 
 ## Recommendation
 
-**Auto-determination:** ☑ **Start S0 (Conditional)** · ☐ Delay S0 · ☐ Escalate Decision
+**Auto-determination:** ☑ **GO — Start S0 foundation now** · ☐ Conditional · ☐ Delay · ☐ Escalate
 
 ### Rationale
-- **Pure S0 (schema/customs/expiry) = NO-GO today:** 4 of 4 S0 architecture gates are unmet (BLK-1, BLK-3, BLK-6, BLK-9 all Open). Committing the document catalog, file-numbering, or hosting region now would mean building on unratified assumptions — exactly the rework the audit warns against.
-- **But the critical path need not stall.** A meaningful slice of S0 is **blocker-independent**: standing up the Supabase project, repo/CI, the RLS baseline pattern, and the auth shell does **not** depend on any open blocker and can begin immediately under the Accepted Risks above.
-- **The blockers are days away, not weeks.** Both workshop sheets are authored and ready; the 🔴 gates are answerable in two sessions. The correct move is **parallelism, not delay**: run the workshops now while the team does blocker-independent setup.
+- **BLK-AR1 is closed.** Supabase is approved (DEC-A06), which was the **only** real gate on starting S0 execution. The 18 allowed foundation tasks no longer wait on anything.
+- **The four 🔴 blockers gate S2, not S0.** Per the [S0 backlog guardrail](s0-backlog.md#scope-guardrail-read-first), the foundation sprint touches no business schema, workflow, catalog, customs, numbering, or expiry — so BLK-1/3/6/9 do not block any of the 18 tasks.
+- **Two tasks build provisionally:** AUTHZ-1 (role seed) and AUTHZ-3 (named admin) proceed on documented defaults and reconcile when BLK-RB1/RB2 close — they are **not** blocked.
 
 ### Directed next actions
-1. **This week:** schedule + run the Chief of Transit and Management/IT workshops. Target: close BLK-1, BLK-3, BLK-6, BLK-9.
-2. **In parallel:** begin S0 infrastructure (Supabase, CI, RLS baseline, auth shell) — nothing that hardcodes catalog/numbering/region.
-3. **On workshop close:** update [decision-register.md](decision-register.md), flip the architecture gates, recompute this score, and convert CONDITIONAL GO → **GO** for the blocker-dependent S0 work.
-4. **Escalate only if** a strategic-client data restriction (BLK-9) forces on-prem/regional hosting — that single answer can change the platform choice and would warrant a focused decision.
+1. **Now:** begin S0 foundation execution (see [Execution Order](#s0-execution-order) — added below).
+2. **This week, in parallel:** run the Chief of Transit and Management/IT workshops to close 🔴 BLK-1/3/6/9 and unlock S2.
+3. **Keep the region provisional** (BLK-9): cheap teardown/recreate until residency confirmed.
+4. **Escalate only if** a strategic-client restriction (BLK-9) forces on-prem/regional hosting — that would revisit DEC-A06's region, not the platform.
 
-**Bottom line:** Do **not** wait idle for the workshops. **Begin blocker-independent S0 now; gate the schema/customs/expiry work on the four 🔴 blockers, which should close within a week.**
+**Bottom line:** **S0 foundation is GO — start the 18 allowed tasks now.** S2 (Operational File, Workflow, Document Catalog, Customs, File Numbering, Expiry Engine) stays **NO-GO** until the four 🔴 blockers are Approved.
+
+---
+
+## S0 Execution Order
+
+The 18 allowed foundation tasks, sequenced by dependency (from [s0-backlog.md](s0-backlog.md)). 🟢 = start immediately · 🟡 = starts when its dependency lands · ⚠️ = builds on a provisional default.
+
+**Wave 0 — start in parallel today (zero dependency):**
+- 🟢 **S0-INF-1** Provision Supabase (provisional region)
+- 🟢 **S0-DB-1** tenant_id strategy & convention
+- 🟢 **S0-UI-1** existing-UI reuse/throwaway assessment
+
+**Wave 1 — unlock as Wave 0 lands:**
+- 🟡 **S0-INF-2** env-var strategy *(after INF-1)*
+- 🟡 **S0-DB-4** migration tooling *(after INF-1)*
+- 🟡 **S0-INF-4** local dev setup *(after INF-1/2)*
+
+**Wave 2 — foundation tables + auth:**
+- 🟡 **S0-DB-2** organization table *(after DB-1, DB-4)*
+- 🟡 **S0-DB-3** audit_log table *(after DB-2)*
+- 🟡 **S0-AUTH-1** Supabase Auth *(after INF-1/2)*
+- 🟡 **S0-AUTH-2** app_user profile *(after AUTH-1, DB-2)*
+- 🟡 **S0-INF-3** CI/CD *(after INF-2, DB-4)*
+
+**Wave 3 — authorization, sessions, RLS, audit:**
+- ⚠️ **S0-AUTHZ-2** user_role + union resolution *(after AUTH-2; uses the AUTHZ-1 provisional seed)*
+- 🟡 **S0-AUTH-3** session handling & route protection *(after AUTH-2, AUTHZ-2)*
+- 🟡 **S0-AUD-1** append-only audit write path *(after DB-3, AUTH-3)*
+- 🟡 **S0-RLS-1** tenant-isolation baseline *(after DB-2/3, AUTH-3)*
+
+**Wave 4 — scope hooks, audit view, UI shell:**
+- 🟡 **S0-RLS-2** role-scope policy hooks *(after RLS-1, AUTHZ-2)*
+- 🟡 **S0-AUD-2** actor/override tracking + audit view *(after AUD-1, AUTHZ-2)*
+- 🟡 **S0-UI-2** auth/session shell into app frame *(after AUTH-3, AUTHZ-2)*
+
+> **Note on AUTHZ-1:** the role/permission **seed** (a prerequisite for AUTHZ-2) is in the allowed scope but runs on the **provisional** rbac-matrix defaults (BLK-RB1) — marked ⚠️. It is data, re-runnable, and reconciled when BLK-RB1 closes. AUTHZ-3 (named admin, BLK-RB2) is likewise provisional and is the only allowed task deferred to after AUTHZ-2/AUD-1.
+
+### Critical path
+```
+INF-1 → DB-4 → DB-2 → DB-3 → AUD-1 ┐
+                 └→ AUTH-1 → AUTH-2 → AUTHZ-2 → AUTH-3 → RLS-1 → RLS-2 ┘ → security review → (S2 gate)
+```
+Longest chain ≈ **INF-1 → AUTH-1 → AUTH-2 → AUTHZ-2 → AUTH-3 → RLS-1 → RLS-2 → security review.** RLS-1/RLS-2 + the security review are the true critical path — they are the boundary that must be proven before S2 is authorized.
+
+### Remaining blockers before S2
+| Blocker | Closes via | Gates |
+|---|---|---|
+| 🔴 BLK-1 | CoT §7 + Mgmt/IT §1 | Customs tracking (S7) |
+| 🔴 BLK-3 | CoT §2 + §3 | Document catalog + expiry engine (S5/S6) |
+| 🔴 BLK-6 | Ops sync | File numbering → Operational File (S2) |
+| 🔴 BLK-9 (region) | Mgmt/IT §1 | Hosting region finalization (platform already approved) |
+| 🟠 BLK-RB1 / BLK-RB2 | Mgmt/IT §4 | Finalize AUTHZ-1/AUTHZ-3 (provisional now) |
+
+**S2 cannot start until all four 🔴 are Approved** in the [decision register](decision-register.md). The 🟠 items only finalize the two provisional foundation tasks; they do not block S0.

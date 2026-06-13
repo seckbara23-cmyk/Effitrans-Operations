@@ -23,7 +23,7 @@ These were directed by management across the discovery and planning prompts and 
 | DEC-A03 | Architecture | Workflow driven by a **config-driven state machine** with role-gated transitions | Dev/Architect | 2026-06-13 | Approved | BLK-SM* | state-machine.md |
 | DEC-A04 | Workflow | **Chief-of-Transit validation gate** + **POD hard gate** are non-negotiable | Management | 2026-06-13 | Approved | BLK-10 | state-machine.md |
 | DEC-A05 | Architecture | Single **Next.js full-stack monolith** (no microservices) | Dev/Architect | 2026-06-13 | Approved | — | architecture.md |
-| DEC-A06 | Architecture | **PostgreSQL via Supabase** (DB + Auth + Storage + scheduled jobs) | Dev/Architect | 2026-06-13 | Proposed | BLK-9, BLK-AR1 | architecture.md |
+| DEC-A06 | Architecture | **PostgreSQL via Supabase** (DB + Auth + Storage + scheduled jobs) — **platform APPROVED for Phase 1 foundation**. Rationale: *"Effitrans approved Supabase for Phase 1 foundation work."* Hosting **region** remains provisional pending BLK-9 (tracked by DEC-B09). | Dev/Architect + Management | 2026-06-13 (approved) | Approved | BLK-AR1 ✅ closed · BLK-9 (region) open → DEC-B09 | architecture.md |
 | DEC-A07 | Data | Documents in **object storage**, never DB blobs | Dev/Architect | 2026-06-13 | Approved | — | architecture.md, database-design.md |
 | DEC-A08 | Architecture | **French-first** UI (FR primary, EN secondary) | Management | 2026-06-13 | Approved | — | requirements.md |
 | DEC-A09 | Business | **Tier-1 KPIs only** in Phase 1 (workflow-derived); financial/CSAT/employee KPIs deferred | Management | 2026-06-13 | Approved | — | requirements.md, audit.md |
@@ -83,8 +83,8 @@ One row per open blocker. `Proposed` = a documented default is in force; `Open` 
 
 | Status | Count | IDs |
 |---|---|---|
-| Approved | 13 | DEC-A01–A05, A07–A11, DEC-C01, C03, C04 |
-| Proposed (default in force) | 10 | DEC-A06, B01, B04, B05, B08, B13, B15, B16, B17, C02 |
+| Approved | 14 | DEC-A01–A11, DEC-C01, C03, C04 |
+| Proposed (default in force) | 9 | DEC-B01, B04, B05, B08, B13, B15, B16, B17, C02 |
 | Implemented | 0 | — (no code built yet) |
 | Superseded | 0 | — |
 | Rejected | 0 | — |
