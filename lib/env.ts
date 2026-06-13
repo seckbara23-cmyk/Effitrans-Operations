@@ -1,67 +1,64 @@
 /**
- * Effitrans Operations Platform — environment validation (fail-fast stub)
+ * Effitrans Operations Platform — environment validation (fail-fast).
  * ---------------------------------------------------------------------------
- * Wave 0 (S0-INF-1). Validates that required environment variables are present
- * and fails fast with a clear message when one is missing. This is a STUB:
- * no business logic, no Supabase client construction, no auth/RBAC/RLS here.
+ * Validates required environment variables and fails fast with a clear message
+ * when one is missing.
  *
- * The Supabase clients (lib/supabase/*) are wired in a later wave and will
- * consume these values; this module only guards their presence.
- * ---------------------------------------------------------------------------
+ * ⚠️ IMPORTANT: NEXT_PUBLIC_* must be accessed via a STATIC literal key
+ * (`process.env.NEXT_PUBLIC_SUPABASE_URL`) so Next.js inlines them into the
+ * CLIENT bundle at build time. Dynamic access (`process.env[name]`) is NOT
+ * inlined and is `undefined` in the browser — which previously broke the
+ * browser Supabase client. Do not refactor these back into a dynamic loop.
  */
 
-/** Variables required for the foundation to boot. Extended in later waves. */
-const REQUIRED_ENV = [
-  "NEXT_PUBLIC_SUPABASE_URL",
-  "NEXT_PUBLIC_SUPABASE_ANON_KEY",
-] as const;
-
-/** Server-only variables — never referenced from client components. */
-const REQUIRED_SERVER_ENV = [
-  "SUPABASE_SERVICE_ROLE_KEY",
-  "DATABASE_URL",
-] as const;
-
-type RequiredEnv = (typeof REQUIRED_ENV)[number];
-type RequiredServerEnv = (typeof REQUIRED_SERVER_ENV)[number];
-
-function read(name: string): string {
-  const value = process.env[name];
+function requireValue(name: string, value: string | undefined): string {
   if (value === undefined || value === "") {
     throw new Error(
       `[env] Missing required environment variable "${name}". ` +
-        `Copy .env.example to .env and fill it in (see docs/SETUP.md).`,
+        `Set it locally (.env, see docs/SETUP.md) or in the Vercel project settings.`,
     );
   }
   return value;
 }
 
+export type PublicEnv = {
+  NEXT_PUBLIC_SUPABASE_URL: string;
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: string;
+};
+
+export type ServerEnv = PublicEnv & {
+  SUPABASE_SERVICE_ROLE_KEY: string;
+};
+
 /**
- * Validate and return the public (client-safe) environment.
- * Safe to call from anywhere.
+ * Public (client-safe) environment. Safe to call from anywhere.
+ * Static property access ensures NEXT_PUBLIC_* are inlined into the client bundle.
  */
-export function getPublicEnv(): Record<RequiredEnv, string> {
-  return REQUIRED_ENV.reduce(
-    (acc, name) => {
-      acc[name] = read(name);
-      return acc;
-    },
-    {} as Record<RequiredEnv, string>,
-  );
+export function getPublicEnv(): PublicEnv {
+  return {
+    NEXT_PUBLIC_SUPABASE_URL: requireValue(
+      "NEXT_PUBLIC_SUPABASE_URL",
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+    ),
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: requireValue(
+      "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    ),
+  };
 }
 
 /**
- * Validate and return server-only environment.
- * MUST be called only from server-side code — these values bypass RLS / are
- * privileged and must never reach the client bundle.
+ * Server-only environment. MUST be called only from server-side code — the
+ * service-role key bypasses RLS and must never reach the client bundle.
+ * (DATABASE_URL is intentionally NOT required here: it is used only by the
+ * migration CLI, never at runtime.)
  */
-export function getServerEnv(): Record<RequiredEnv | RequiredServerEnv, string> {
-  const server = REQUIRED_SERVER_ENV.reduce(
-    (acc, name) => {
-      acc[name] = read(name);
-      return acc;
-    },
-    {} as Record<RequiredServerEnv, string>,
-  );
-  return { ...getPublicEnv(), ...server };
+export function getServerEnv(): ServerEnv {
+  return {
+    ...getPublicEnv(),
+    SUPABASE_SERVICE_ROLE_KEY: requireValue(
+      "SUPABASE_SERVICE_ROLE_KEY",
+      process.env.SUPABASE_SERVICE_ROLE_KEY,
+    ),
+  };
 }
