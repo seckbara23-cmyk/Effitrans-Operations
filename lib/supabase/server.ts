@@ -1,18 +1,39 @@
 /**
- * Supabase server client — STUB (Wave 2).
+ * Supabase server client (user-context, RLS-respecting). SERVER-ONLY.
  * ---------------------------------------------------------------------------
- * SERVER-ONLY. The real client (built on @supabase/ssr with the request's
- * auth session, and the service-role key for privileged operations) is wired
- * in Wave 3 (AUTH-1 / AUTH-3). The service-role key MUST never reach the
- * client bundle — only this server module may read it (via lib/env.ts
- * getServerEnv()).
- *
- * Kept as a throwing stub so the module path exists and nothing accidentally
- * constructs an unconfigured client before Wave 3.
+ * Built on @supabase/ssr with the request cookies + the PUBLIC anon key. All
+ * queries run as the authenticated user, so RLS policies (auth.uid()) apply.
+ * This client does NOT use the service-role key — privileged writes use
+ * lib/supabase/admin.ts instead.
  */
+import { cookies } from "next/headers";
+import { createServerClient } from "@supabase/ssr";
+import { getPublicEnv } from "@/lib/env";
 
 export function getServerSupabaseClient() {
-  throw new Error(
-    "[supabase] server client is not wired yet (Wave 3 / AUTH-1). See docs/SETUP.md.",
+  const env = getPublicEnv();
+  const cookieStore = cookies();
+
+  return createServerClient(
+    env.NEXT_PUBLIC_SUPABASE_URL,
+    env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll();
+        },
+        setAll(cookiesToSet) {
+          // Called from a Server Component render in some paths — ignore there;
+          // middleware (lib/supabase/middleware.ts) is responsible for refresh.
+          try {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options),
+            );
+          } catch {
+            /* no-op: read-only cookie context */
+          }
+        },
+      },
+    },
   );
 }

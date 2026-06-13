@@ -4,12 +4,13 @@ Migration mechanism for the Effitrans platform per **DEC-A12**: plain, forward-o
 SQL migrations managed by the **Supabase CLI**. No ORM migration tool. The typed
 query/ORM layer is a separate, deferred decision.
 
-> **Status (Wave 2):** the foundation migration
-> `20260613000001_create_foundation_tables.sql` now exists — `organization`,
-> `app_user` (FK `auth.users`), and append-only `audit_log`, with a **safe
-> baseline RLS** (read-own-tenant only). Still **no** business tables (operational
-> files, documents, customs, workflow, transport, notifications). Those and full
-> business RLS are gated on later waves / the S2 blockers.
+> **Status (Wave 3):** two foundation migrations exist —
+> `…0001_create_foundation_tables.sql` (`organization`, `app_user` FK `auth.users`,
+> append-only `audit_log`) and `…0002_create_rbac_foundation.sql`
+> (`permission`, `role`, `role_permission`, `user_role` + `get_user_permissions`),
+> all with **read-own-tenant RLS**. Still **no** business tables (operational
+> files, documents, customs, workflow, transport, notifications) and **no** full
+> business RLS — gated on later waves / the S2 blockers.
 
 ---
 
