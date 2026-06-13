@@ -1,0 +1,49 @@
+# Effitrans Operations Platform — Supabase project configuration
+# -----------------------------------------------------------------------------
+# Generated for S0-INF-1 (Wave 0). Establishes a reproducible project + a home
+# for the migration pipeline (wired later in S0-DB-4).
+#
+# DECISION: DEC-A06 — PostgreSQL via Supabase APPROVED for Phase 1 (BLK-AR1).
+# REGION:   PROVISIONAL — the hosting region remains subject to BLK-9 (data
+#           residency / strategic-client restrictions). Teardown + recreate is
+#           intentionally cheap until BLK-9 is approved; no data of value exists.
+#
+# Scope guard: foundation only. No schema, auth, RBAC, RLS, or business tables.
+# -----------------------------------------------------------------------------
+
+# Project ref is set per-environment via the Supabase CLI (`supabase link`);
+# it is not hardcoded here so the provisional region can be rebuilt freely.
+project_id = "effitrans-ops"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+major_version = 15
+
+[studio]
+enabled = true
+port = 54323
+
+[auth]
+# Present so the foundation is configurable; AUTH implementation is Wave 2/3,
+# NOT this commit. No providers or policies are defined here yet.
+enabled = true
+site_url = "http://localhost:3000"
+
+[storage]
+# Enabled for later document storage (Phase 1, S5). Not used in Wave 0.
+enabled = true
+
+# -----------------------------------------------------------------------------
+# Provisional region note (BLK-9):
+#   Hosted region is selected in the Supabase dashboard at project creation and
+#   recorded as PROVISIONAL in docs/decision-register.md (DEC-A06 / DEC-B09).
+#   To change region: delete + recreate the project, re-run `supabase link`,
+#   reapply migrations. Documented in docs/SETUP.md.
+# -----------------------------------------------------------------------------
