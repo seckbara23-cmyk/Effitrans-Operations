@@ -35,11 +35,14 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
   // Typed via the Database generic on the client.
   const { data: profile } = await supabase
     .from("app_user")
-    .select("id, tenant_id, email, is_system_admin")
+    .select("id, tenant_id, email, is_system_admin, status")
     .eq("id", user.id)
     .maybeSingle();
 
   if (!profile) return null;
+
+  // Disabled users must not access protected app areas — treat as no session.
+  if (profile.status !== "active") return null;
 
   // Embedded relation result asserted via .returns<T>() (intentional, not a hack).
   const { data: roleData } = await supabase

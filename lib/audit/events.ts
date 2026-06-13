@@ -8,6 +8,7 @@
  */
 export const AuditActions = {
   USER_CREATED: "user.created",
+  USER_ACTIVATED: "user.activated",
   USER_DEACTIVATED: "user.deactivated",
   USER_ROLE_ASSIGNED: "user.role.assigned",
   USER_ROLE_REVOKED: "user.role.revoked",
