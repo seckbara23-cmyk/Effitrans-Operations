@@ -30,7 +30,17 @@ npm install
    - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` — Project Settings → API
    - `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL` — server only; never expose to the client
 
-`lib/env.ts` fails fast with a clear message if a required variable is missing.
+### Environment loading strategy (S0-INF-2)
+`lib/env.ts` is the single entry point for environment access and **fails fast**
+with a clear message if a required variable is missing:
+- `getPublicEnv()` — client-safe vars (`NEXT_PUBLIC_*`); callable anywhere.
+- `getServerEnv()` — adds server-only vars (`SUPABASE_SERVICE_ROLE_KEY`,
+  `DATABASE_URL`); **server-side only** — these bypass RLS and must never reach the
+  client bundle.
+
+Rules: read env **only** through `lib/env.ts` (don't sprinkle `process.env`
+across the app); Next.js auto-loads `.env` / `.env.local`; never import the
+server env from a client component.
 
 ## 4. Supabase project (S0-INF-1)
 The project config lives in [`supabase/config.toml`](../supabase/config.toml).
@@ -51,12 +61,32 @@ No data of value exists in Wave 0, so a region change is a rebuild:
 3. Reapply migrations (once the migration pipeline lands in S0-DB-4).
 4. Update region notes in [decision-register.md](decision-register.md) (DEC-A06 / DEC-B09).
 
+## 4b. Local database & migrations (S0-DB-4)
+Migration mechanism: **Supabase CLI SQL migrations**, forward-only (DEC-A12).
+Conventions: [`supabase/migrations/README.md`](../supabase/migrations/README.md).
+
+> **Wave 1 status:** tooling + scripts only — there are **no migrations yet**
+> (first table is `organization` in Wave 2). The commands below are ready for
+> when migrations exist.
+
+```
+npm run db:start        # start local Supabase (requires Docker + Supabase CLI)
+npm run db:status       # show local services / keys
+npm run migration:new <name>   # create supabase/migrations/<timestamp>_<name>.sql
+npm run db:reset        # rebuild schema from ALL migrations (must be reproducible)
+npm run db:push         # apply pending migrations to the linked remote project
+npm run db:types        # regenerate lib/db/types.ts from the local schema
+npm run db:stop         # stop local Supabase
+```
+Prerequisite: install the [Supabase CLI](https://supabase.com/docs/guides/cli)
+and Docker (for `db:start`). Link once with `supabase link --project-ref <ref>`.
+
 ## 5. Run the app (existing mock UI)
 ```
-npm run dev      # http://localhost:3000
-npm run lint     # lint
-npx tsc --noEmit # typecheck
-npm run build    # production build
+npm run dev        # http://localhost:3000
+npm run typecheck  # tsc --noEmit
+npm run build      # production build
+# (npm run lint — ESLint not configured yet; set up with CI in a later wave)
 ```
 The current UI runs on static mock data (`lib/*.ts`); it does **not** require the
 Supabase values to render. Those values are wired to real data from S2 onward.

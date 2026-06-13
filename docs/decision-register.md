@@ -29,6 +29,7 @@ These were directed by management across the discovery and planning prompts and 
 | DEC-A09 | Business | **Tier-1 KPIs only** in Phase 1 (workflow-derived); financial/CSAT/employee KPIs deferred | Management | 2026-06-13 | Approved | — | requirements.md, audit.md |
 | DEC-A10 | Business | **Phase boundaries**: no billing, GL/accounting, BI, or financial portal in Phase 1 | Management | 2026-06-13 | Approved | — | requirements.md, phase-1-roadmap.md |
 | DEC-A11 | Business | **Minimal customer portal** = tracking + document upload + notifications only (P1) | Management | 2026-06-13 | Approved | — | requirements.md |
+| DEC-A12 | Architecture | **Migration mechanism = Supabase CLI SQL migrations** (forward-only, plain SQL under `supabase/migrations/`), not an ORM migration tool. The typed query/ORM layer (supabase-js typed / Prisma / Drizzle) is a **separate, deferred** decision. | Dev/Architect | 2026-06-13 | Approved | — | database-design.md, s0-backlog.md, SETUP.md |
 
 ---
 
@@ -83,14 +84,14 @@ One row per open blocker. `Proposed` = a documented default is in force; `Open` 
 
 | Status | Count | IDs |
 |---|---|---|
-| Approved | 14 | DEC-A01–A11, DEC-C01, C03, C04 |
+| Approved | 15 | DEC-A01–A12, DEC-C01, C03, C04 |
 | Proposed (default in force) | 9 | DEC-B01, B04, B05, B08, B13, B15, B16, B17, C02 |
 | Implemented | 0 | — (no code built yet) |
 | Superseded | 0 | — |
 | Rejected | 0 | — |
 | `Open` (intake — pre-lifecycle) | 11 | DEC-B02, B03, B06, B07, B09, B10, B11, B12, B14, B18, B19 |
 
-**Total decisions tracked: 34** (+ 11 intake items awaiting formulation).
+**Total decisions tracked: 35** (+ 11 intake items awaiting formulation).
 
 > **The 4 hard S0 gates live in this register as:** DEC-B01 (BLK-1), DEC-B03 (BLK-3), DEC-B06 (BLK-6), DEC-B09 (BLK-9). When all four reach `Approved`, S0's blocker-dependent work is cleared to start.
 
