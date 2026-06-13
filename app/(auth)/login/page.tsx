@@ -10,6 +10,7 @@
 import { useState } from "react";
 import { LogoWordmark } from "@/components/brand/logo";
 import { getBrowserSupabaseClient } from "@/lib/supabase/client";
+import { recordLoginAudit } from "@/lib/auth/actions";
 import { t } from "@/lib/i18n";
 
 export default function LoginPage() {
@@ -34,6 +35,8 @@ export default function LoginPage() {
         setError(t.auth.error);
         return;
       }
+      // Best-effort audit (never blocks login); session cookie is now set.
+      await recordLoginAudit();
       window.location.href = "/dashboard";
     } catch {
       setError(t.auth.error);

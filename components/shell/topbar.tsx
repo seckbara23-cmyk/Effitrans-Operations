@@ -6,6 +6,7 @@ import { t } from "@/lib/i18n";
 import { IconMenu, IconSearch, IconBell, IconPlus } from "@/lib/icons";
 import { useSession } from "@/lib/auth/use-session";
 import { getBrowserSupabaseClient } from "@/lib/supabase/client";
+import { recordLogoutAudit } from "@/lib/auth/actions";
 
 function currentTitle(pathname: string): string {
   const match = allNavItems.find(
@@ -23,6 +24,8 @@ export function Topbar({ onOpenMenu }: { onOpenMenu: () => void }) {
 
   async function signOut() {
     const supabase = getBrowserSupabaseClient();
+    // Audit before signing out, while the session still resolves the user.
+    await recordLogoutAudit();
     await supabase.auth.signOut();
     window.location.href = "/login";
   }
