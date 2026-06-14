@@ -65,6 +65,11 @@ jobs:
           PGPASSWORD: postgres
         run: psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/rls_role_scope_test.sql
 
+      - name: Run RLS client-module test (Phase 1.1)
+        env:
+          PGPASSWORD: postgres
+        run: psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/rls_client_test.sql
+
       - name: Stop local Supabase
         if: always()
         run: supabase stop

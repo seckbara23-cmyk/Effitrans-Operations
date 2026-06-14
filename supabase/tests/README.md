@@ -1,5 +1,13 @@
 # Supabase Tests
 
+## RLS client module (Phase 1.1)
+[`rls_client_test.sql`](rls_client_test.sql) proves the `client` / `client_contact`
+RLS: a tenant-A user **with** `client:read` reads only tenant A's clients/contacts
+(`1`), cannot read tenant B's (`0`), and a user **without** `client:read` reads
+nothing (`0`). Non-destructive; expected row: `1 / 0 / 0` for clients and `1 / 0 / 0`
+for contacts. Run like the others (psql / SQL Editor); CI runs it in the
+`rls-tests` job.
+
 ## RLS role-scope (RLS-2)
 [`rls_role_scope_test.sql`](rls_role_scope_test.sql) proves `audit_log` reads are
 gated by the `audit:read:all` permission: a `SYSTEM_ADMIN` sees the tenant's audit
