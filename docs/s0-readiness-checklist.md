@@ -46,7 +46,7 @@ Severity: 🔴 S0-gating · 🟠 S1-gating · 🟡 sprint-local (needed later in
 | BLK-3 | 🔴 | Complete document-type list + validity periods + block-vs-warn | Chief of Transit | CoT §2 + §3 | Open | — | Drives the expiry engine (S5/S6). Hard S0 gate. |
 | BLK-4 | 🟡 | Notification matrix (event × audience × channel) | Operations | CoT §6 + Mgmt/IT §3 | Open | — | Needed by S9. Default = email+SMS to AM + next-action role. |
 | BLK-5 | 🟡 | WhatsApp Business API budget approved? | Management | Mgmt/IT §3 | Open | — | Default = email+SMS in P1, WhatsApp P2. |
-| BLK-6 | 🔴 | File-numbering scheme per type (year/branch/sequence) | Operations | Ops sync (ref requirements/DB) | Open | — | Needed for S2. Hard S0 gate. |
+| BLK-6 | 🔴 | File-numbering scheme per type (year/branch/sequence) | Operations | Ops sync | **Closed / Approved** | 2026-06-14 | `EFT-{TYPE}-{YEAR}-{SEQUENCE}`, 5-digit seq per tenant×type×year (DEC-B06). Unblocks Phase 1.2 Operational File. |
 | BLK-7 | 🟡 | Field/port offline tolerance required? | Operations | Ops sync (NFR-06) | Open | — | Affects S8 transport UX. |
 | BLK-8 | 🟠 | Migrate history vs clean start + legacy archive | Management | Mgmt/IT §2 | Open | — | Default = clean start. Affects S12 cutover. |
 | BLK-9 | 🔴 | Data residency / hosting / Supabase acceptable / client restrictions | Management + clients | Mgmt/IT §1 | Open | — | Strategic-client (BP/Woodside/Kosmos/Petrosen) restrictions must be confirmed. Hard S0 gate. |
@@ -78,7 +78,7 @@ Severity: 🔴 S0-gating · 🟠 S1-gating · 🟡 sprint-local (needed later in
 ☐ Hosting **region** confirmed — *(BLK-9)*
 ☐ Data residency confirmed — *(BLK-9)*
 ☐ Integration assumptions approved — *(BLK-1)*
-☐ File numbering approved — *(BLK-6)*
+☑ File numbering approved — *(BLK-6 — DEC-B06, 2026-06-14)*
 ☐ Document catalog approved — *(BLK-3)*
 ☐ Expiry rules approved — *(BLK-3)*
 
@@ -144,7 +144,7 @@ Assumptions in force **if S0 infrastructure work starts before all blockers clos
 | Metric | Value |
 |---|---|
 | **S0 Foundation Sprint** | ✅ **COMPLETE & validated** (18/18 tasks; security review passed) |
-| Open 🔴 **S2-gating** blockers | **4** (BLK-1, BLK-3, BLK-6, BLK-9) — business-side; do NOT block S0 |
+| Open 🔴 **S2-gating** blockers | **3** (BLK-1, BLK-3, BLK-9) — BLK-6 closed 2026-06-14 (DEC-B06); business-side; do NOT block S0 |
 | Open 🟠 blockers | **6** (BLK-2, BLK-8, BLK-10, BLK-RB1, BLK-RB2, BLK-DB1) |
 | Open 🟡 blockers | **9** |
 | Closed Blockers | **1** (BLK-AR1) + RLS-1/RLS-2 validated |
@@ -233,7 +233,7 @@ Longest chain ≈ **INF-1 → AUTH-1 → AUTH-2 → AUTHZ-2 → AUTH-3 → RLS-1
 |---|---|---|
 | 🔴 BLK-1 | CoT §7 + Mgmt/IT §1 | Customs tracking (S7) |
 | 🔴 BLK-3 | CoT §2 + §3 | Document catalog + expiry engine (S5/S6) |
-| 🔴 BLK-6 | Ops sync | File numbering → Operational File (S2) |
+| ✅ BLK-6 | **Closed 2026-06-14** | File numbering `EFT-{TYPE}-{YEAR}-{SEQUENCE}` → Operational File unblocked (DEC-B06) |
 | 🔴 BLK-9 (region) | Mgmt/IT §1 | Hosting region finalization (platform already approved) |
 | 🟠 BLK-RB1 / BLK-RB2 | Mgmt/IT §4 | Finalize AUTHZ-1/AUTHZ-3 (provisional now) |
 

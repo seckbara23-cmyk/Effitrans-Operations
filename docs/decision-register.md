@@ -44,7 +44,7 @@ One row per open blocker. `Proposed` = a documented default is in force; `Open` 
 | DEC-B03 | Workflow | Document-type catalog + validity periods + block-vs-warn **per Chief of Transit** | Chief of Transit | — | Open | **BLK-3** | document-catalog.md, state-machine.md |
 | DEC-B04 | Workflow | Notification matrix default = **email+SMS to AM + next-action role, immediate** | Operations | — | Proposed | BLK-4 | requirements.md |
 | DEC-B05 | Integration | **WhatsApp deferred to Phase 2**; Phase 1 = email + SMS | Management | — | Proposed | BLK-5 | requirements.md |
-| DEC-B06 | Data | **File-numbering scheme** per type (e.g. `IMP-2026-00042`) — to be ratified | Operations | — | Open | **BLK-6** | database-design.md |
+| DEC-B06 | Data | **File-numbering scheme APPROVED:** `EFT-{TYPE}-{YEAR}-{SEQUENCE}` — prefix `EFT`; TYPE ∈ IMP/EXP/TRP/HND; 4-digit year; **5-digit zero-padded** sequence scoped **per tenant × type × year**; numbers never reused; assigned on file creation; branch code deferred; concurrency-safe generation required. e.g. `EFT-IMP-2026-00001`. | Operations | 2026-06-14 (approved) | Approved | BLK-6 ✅ closed | database-design.md, phase-1.2 |
 | DEC-B07 | Architecture | Tolerate intermittent field/port connectivity; offline depth **TBD** | Operations | — | Open | BLK-7 | requirements.md |
 | DEC-B08 | Data | Migration = **clean start + legacy read-only archive** | Management | — | Proposed | BLK-8 | phase-1-roadmap.md |
 | DEC-B09 | Hosting | Hosting region/model pending **client data-restriction** confirmation; default managed cloud | Management + clients | — | Open | **BLK-9** | architecture.md |
@@ -84,12 +84,12 @@ One row per open blocker. `Proposed` = a documented default is in force; `Open` 
 
 | Status | Count | IDs |
 |---|---|---|
-| Approved | 15 | DEC-A01–A12, DEC-C01, C03, C04 |
+| Approved | 16 | DEC-A01–A12, DEC-B06, DEC-C01, C03, C04 |
 | Proposed (default in force) | 9 | DEC-B01, B04, B05, B08, B13, B15, B16, B17, C02 |
 | Implemented | 0 | — (no code built yet) |
 | Superseded | 0 | — |
 | Rejected | 0 | — |
-| `Open` (intake — pre-lifecycle) | 11 | DEC-B02, B03, B06, B07, B09, B10, B11, B12, B14, B18, B19 |
+| `Open` (intake — pre-lifecycle) | 10 | DEC-B02, B03, B07, B09, B10, B11, B12, B14, B18, B19 |
 
 **Total decisions tracked: 35** (+ 11 intake items awaiting formulation).
 
