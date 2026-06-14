@@ -1,5 +1,19 @@
 # Supabase Tests
 
+## RLS operational-file module (Phase 1.2)
+[`rls_operational_file_test.sql`](rls_operational_file_test.sql) proves the
+`operational_file` / `shipment` / `file_state_transition` RLS: a tenant-A user
+**with** `file:read` reads only tenant A's file/shipment/history (`1`), cannot
+read tenant B's (`0`), and a user **without** `file:read` reads nothing (`0`).
+Expected: `1 / 0 / 0 / 1 / 0 / 1`.
+
+[`numbering_test.sql`](numbering_test.sql) proves `next_file_number` produces
+`EFT-{TYPE}-{YEAR}-{SEQUENCE}` with a 5-digit sequence incrementing per
+tenant × type × year (separate sequences per type and tenant). **CI / fresh-DB
+only** — do not run against a production tenant that already has files.
+
+Both run in the `rls-tests` CI job.
+
 ## RLS client module (Phase 1.1)
 [`rls_client_test.sql`](rls_client_test.sql) proves the `client` / `client_contact`
 RLS: a tenant-A user **with** `client:read` reads only tenant A's clients/contacts

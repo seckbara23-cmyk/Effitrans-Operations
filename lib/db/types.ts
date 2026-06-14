@@ -375,12 +375,208 @@ export type Database = {
           },
         ];
       };
+      operational_file: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          file_number: string;
+          type: string;
+          client_id: string;
+          account_manager_id: string | null;
+          coordinator_id: string | null;
+          status: string;
+          priority: string;
+          opened_at: string | null;
+          archived_at: string | null;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          file_number: string;
+          type: string;
+          client_id: string;
+          account_manager_id?: string | null;
+          coordinator_id?: string | null;
+          status?: string;
+          priority?: string;
+          opened_at?: string | null;
+          archived_at?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string;
+          file_number?: string;
+          type?: string;
+          client_id?: string;
+          account_manager_id?: string | null;
+          coordinator_id?: string | null;
+          status?: string;
+          priority?: string;
+          opened_at?: string | null;
+          archived_at?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "operational_file_client_id_fkey";
+            columns: ["client_id"];
+            referencedRelation: "client";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "operational_file_tenant_id_fkey";
+            columns: ["tenant_id"];
+            referencedRelation: "organization";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      shipment: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          file_id: string;
+          transport_mode: string | null;
+          incoterm: string | null;
+          origin: string | null;
+          destination: string | null;
+          cargo_type: string | null;
+          carrier_name: string | null;
+          vessel_or_flight: string | null;
+          bl_awb_ref: string | null;
+          container_ref: string | null;
+          etd: string | null;
+          atd: string | null;
+          eta: string | null;
+          ata: string | null;
+          pickup_planned: string | null;
+          pickup_actual: string | null;
+          delivery_planned: string | null;
+          delivery_actual: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          file_id: string;
+          transport_mode?: string | null;
+          incoterm?: string | null;
+          origin?: string | null;
+          destination?: string | null;
+          cargo_type?: string | null;
+          carrier_name?: string | null;
+          vessel_or_flight?: string | null;
+          bl_awb_ref?: string | null;
+          container_ref?: string | null;
+          etd?: string | null;
+          atd?: string | null;
+          eta?: string | null;
+          ata?: string | null;
+          pickup_planned?: string | null;
+          pickup_actual?: string | null;
+          delivery_planned?: string | null;
+          delivery_actual?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string;
+          file_id?: string;
+          transport_mode?: string | null;
+          incoterm?: string | null;
+          origin?: string | null;
+          destination?: string | null;
+          cargo_type?: string | null;
+          carrier_name?: string | null;
+          vessel_or_flight?: string | null;
+          bl_awb_ref?: string | null;
+          container_ref?: string | null;
+          etd?: string | null;
+          atd?: string | null;
+          eta?: string | null;
+          ata?: string | null;
+          pickup_planned?: string | null;
+          pickup_actual?: string | null;
+          delivery_planned?: string | null;
+          delivery_actual?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "shipment_file_id_fkey";
+            columns: ["file_id"];
+            referencedRelation: "operational_file";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      file_state_transition: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          file_id: string;
+          from_status: string | null;
+          to_status: string;
+          actor_id: string | null;
+          note: string | null;
+          occurred_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          file_id: string;
+          from_status?: string | null;
+          to_status: string;
+          actor_id?: string | null;
+          note?: string | null;
+          occurred_at?: string;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string;
+          file_id?: string;
+          from_status?: string | null;
+          to_status?: string;
+          actor_id?: string | null;
+          note?: string | null;
+          occurred_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "file_state_transition_file_id_fkey";
+            columns: ["file_id"];
+            referencedRelation: "operational_file";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      file_counter: {
+        Row: { tenant_id: string; type: string; year: number; next_seq: number };
+        Insert: { tenant_id: string; type: string; year: number; next_seq?: number };
+        Update: { tenant_id?: string; type?: string; year?: number; next_seq?: number };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
       get_user_permissions: {
         Args: { p_user: string };
         Returns: { code: string }[];
+      };
+      next_file_number: {
+        Args: { p_tenant: string; p_type: string };
+        Returns: string;
       };
       auth_tenant_id: { Args: Record<string, never>; Returns: string };
       has_permission: { Args: { p_code: string }; Returns: boolean };

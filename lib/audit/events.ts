@@ -21,6 +21,11 @@ export const AuditActions = {
   CLIENT_UPDATED: "client.updated",
   CLIENT_ARCHIVED: "client.archived",
   CLIENT_RESTORED: "client.restored",
+  // Phase 1.2 — Operational File + Shipment
+  FILE_CREATED: "file.created",
+  FILE_UPDATED: "file.updated",
+  FILE_TRANSITION: "file.transition",
+  FILE_ARCHIVED: "file.archived",
 } as const;
 
 export type AuditActionCode = (typeof AuditActions)[keyof typeof AuditActions];

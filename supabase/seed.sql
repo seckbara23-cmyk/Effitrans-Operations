@@ -113,3 +113,35 @@ where r.tenant_id = '00000000-0000-0000-0000-000000000001'
   and r.code in ('CEO', 'COORDINATOR', 'OPS_SUPERVISOR')
 on conflict do nothing;
 
+-- ===========================================================================
+-- Phase 1.2 Operational File role mappings (mirror of the module migration).
+-- ===========================================================================
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code in ('file:create', 'file:read', 'file:update', 'file:delete')
+where r.tenant_id = '00000000-0000-0000-0000-000000000001' and r.code = 'SYSTEM_ADMIN'
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code in ('file:create', 'file:read', 'file:update')
+where r.tenant_id = '00000000-0000-0000-0000-000000000001' and r.code = 'ACCOUNT_MANAGER'
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code in ('file:read', 'file:update')
+where r.tenant_id = '00000000-0000-0000-0000-000000000001' and r.code = 'COORDINATOR'
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'file:read'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('CEO', 'OPS_SUPERVISOR')
+on conflict do nothing;
+
