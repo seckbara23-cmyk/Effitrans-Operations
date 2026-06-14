@@ -14,7 +14,7 @@
 
 **Owners:** Chief of Transit (catalog + validity + approval authority) · Management/IT (storage, retention, permissions).
 **Inputs:** [document-catalog.md](../document-catalog.md) (richer target catalog) · [rbac-matrix.md](../rbac-matrix.md) · Phase 1.7 visibility (`can_read_file`).
-**Status:** DRAFT for confirmation.
+**Status:** ✅ **APPROVED (recommended defaults, 2026-06-14)** — recorded as **DEC-B21** (and DEC-B03 MVP slice) in the [decision register](../decision-register.md). The full customs expiry-bearing catalog + per-type validity values remain pending Chief of Transit (Customs module).
 
 ---
 
@@ -176,18 +176,18 @@ Client portal upload/view · OCR / data extraction · automated expiry **reminde
 
 ---
 
-## Decisions to confirm (sign-off gates BLK-3)
+## Decisions — ✅ APPROVED 2026-06-14 (recommended defaults; DEC-B21)
 
-| ID | Decision | Recommendation | Owner |
-|---|---|---|---|
-| **D1** | MVP catalog (the 10 types) sufficient to start? | Yes — ship as editable table; grow later | Chief of Transit |
-| **D2** | Per-type validity (which expire, default days) **and block-vs-warn** | Only `CERTIFICATE_OF_ORIGIN` expires in MVP; **warn-only** (no transition block) until confirmed | Chief of Transit |
-| **D3** | Does "required document" **block** dossier progression or just **flag**? | **Flag/warn only** in MVP | Chief of Transit + Ops |
-| **D4** | Approval authority = `document:approve` role set | SYSTEM_ADMIN, OPS_SUPERVISOR, ACCOUNT_MANAGER, CHIEF_OF_TRANSIT, COMPLIANCE_HSSE | Management |
-| **D5** | Re-upload = **new version** (history kept) or replace? | New version row, supersedes | Chief of Transit |
-| **D6** | Delete = **soft-delete only** (retention)? Ties to **DEC-B19** | Soft-delete; hard-delete deferred pending retention policy | Management/Compliance |
-| **D7** | Max file size + allowed MIME types | e.g. ≤ 25 MB; pdf/jpg/png/docx/xlsx | Management/IT |
-| **D8** | Storage = private bucket + server-mediated signed URLs, no public URLs | Approve as recommended (§6) | Management/IT |
+| ID | Decision | Outcome (approved) |
+|---|---|---|
+| **D1** | MVP catalog (the 10 types) sufficient to start? | ✅ Yes — editable table, grow later |
+| **D2** | Per-type validity + block-vs-warn | ✅ Only `CERTIFICATE_OF_ORIGIN` expires in MVP; **warn-only**. Full customs expiry values pending (Customs module) |
+| **D3** | "Required document" block vs flag | ✅ **Flag/warn only** in MVP |
+| **D4** | `document:approve` role set | ✅ SYSTEM_ADMIN, OPS_SUPERVISOR, ACCOUNT_MANAGER, CHIEF_OF_TRANSIT, COMPLIANCE_HSSE |
+| **D5** | Re-upload = new version vs replace | ✅ **New version row** (history kept) |
+| **D6** | Delete = soft-delete only | ✅ **Soft-delete**; hard-delete deferred pending retention (DEC-B19) |
+| **D7** | Max file size + MIME types | ✅ ≤ 25 MB; pdf/jpg/png/docx/xlsx |
+| **D8** | Storage = private bucket + server-mediated signed URLs, no public URLs | ✅ Approved (§6) |
 
 ---
 
