@@ -38,6 +38,7 @@ export const navSections: NavSection[] = [
   {
     title: t.nav.section_operations,
     items: [
+      { label: t.nav.clients, href: "/clients", icon: IconUsers, permission: "client:read" },
       { label: t.nav.customers, href: "/customers", icon: IconUsers },
       { label: t.nav.shipments, href: "/shipments", icon: IconContainer },
       { label: t.nav.customs, href: "/customs", icon: IconStamp },

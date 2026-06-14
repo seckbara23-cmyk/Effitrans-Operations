@@ -16,6 +16,11 @@ export const AuditActions = {
   AUTH_LOGIN: "auth.login",
   AUTH_LOGOUT: "auth.logout",
   SYSTEM_SEED: "system.seed",
+  // Phase 1.1 — Client Management
+  CLIENT_CREATED: "client.created",
+  CLIENT_UPDATED: "client.updated",
+  CLIENT_ARCHIVED: "client.archived",
+  CLIENT_RESTORED: "client.restored",
 } as const;
 
 export type AuditActionCode = (typeof AuditActions)[keyof typeof AuditActions];

@@ -271,6 +271,110 @@ export type Database = {
           },
         ];
       };
+      client: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          name: string;
+          ninea: string | null;
+          segment: string | null;
+          email: string | null;
+          phone: string | null;
+          address: string | null;
+          account_manager_id: string | null;
+          status: string;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+          archived_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          name: string;
+          ninea?: string | null;
+          segment?: string | null;
+          email?: string | null;
+          phone?: string | null;
+          address?: string | null;
+          account_manager_id?: string | null;
+          status?: string;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          archived_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string;
+          name?: string;
+          ninea?: string | null;
+          segment?: string | null;
+          email?: string | null;
+          phone?: string | null;
+          address?: string | null;
+          account_manager_id?: string | null;
+          status?: string;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          archived_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "client_tenant_id_fkey";
+            columns: ["tenant_id"];
+            referencedRelation: "organization";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      client_contact: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          client_id: string;
+          name: string;
+          role: string | null;
+          email: string | null;
+          phone: string | null;
+          is_primary: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          client_id: string;
+          name: string;
+          role?: string | null;
+          email?: string | null;
+          phone?: string | null;
+          is_primary?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string;
+          client_id?: string;
+          name?: string;
+          role?: string | null;
+          email?: string | null;
+          phone?: string | null;
+          is_primary?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "client_contact_client_id_fkey";
+            columns: ["client_id"];
+            referencedRelation: "client";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Views: Record<string, never>;
     Functions: {

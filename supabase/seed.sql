@@ -86,3 +86,30 @@ join public.permission p on p.code = 'audit:read:all'
 where r.tenant_id = '00000000-0000-0000-0000-000000000001' and r.code = 'COMPLIANCE_HSSE'
 on conflict do nothing;
 
+-- ===========================================================================
+-- Phase 1.1 Client Management role mappings (mirror of the module migration, so
+-- fresh local `db reset` gets them after roles exist). Idempotent.
+-- ===========================================================================
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p
+  on p.code in ('client:create', 'client:read', 'client:update', 'client:delete')
+where r.tenant_id = '00000000-0000-0000-0000-000000000001' and r.code = 'SYSTEM_ADMIN'
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code in ('client:create', 'client:read', 'client:update')
+where r.tenant_id = '00000000-0000-0000-0000-000000000001' and r.code = 'ACCOUNT_MANAGER'
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'client:read'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('CEO', 'COORDINATOR', 'OPS_SUPERVISOR')
+on conflict do nothing;
+
