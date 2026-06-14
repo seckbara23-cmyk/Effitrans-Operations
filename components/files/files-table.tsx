@@ -15,6 +15,13 @@ const STATUS_STYLE: Record<string, string> = {
   CLOSED: "bg-navy-50 text-navy-700",
 };
 
+const PRIORITY_STYLE: Record<string, string> = {
+  low: "bg-slate-100 text-slate-500",
+  normal: "bg-sky-50 text-sky-700",
+  high: "bg-amber-50 text-amber-700",
+  critical: "bg-red-50 text-red-700",
+};
+
 export function FilesTable({ files, canCreate }: { files: FileListItem[]; canCreate: boolean }) {
   return (
     <div className="space-y-4">
@@ -37,6 +44,7 @@ export function FilesTable({ files, canCreate }: { files: FileListItem[]; canCre
                 <th className="px-4 py-3 font-semibold">{t.files.columns.type}</th>
                 <th className="px-4 py-3 font-semibold">{t.files.columns.client}</th>
                 <th className="px-4 py-3 font-semibold">{t.files.columns.mode}</th>
+                <th className="px-4 py-3 font-semibold">{t.files.columns.priority}</th>
                 <th className="px-4 py-3 font-semibold">{t.files.columns.status}</th>
               </tr>
             </thead>
@@ -51,6 +59,11 @@ export function FilesTable({ files, canCreate }: { files: FileListItem[]; canCre
                   <td className="px-4 py-3 text-slate-600">{t.files.types[f.type]}</td>
                   <td className="px-4 py-3 text-slate-600">{f.clientName ?? t.common.none}</td>
                   <td className="px-4 py-3 text-slate-600">{f.transportMode ? t.files.modes[f.transportMode] : t.common.none}</td>
+                  <td className="px-4 py-3">
+                    <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${PRIORITY_STYLE[f.priority] ?? "bg-slate-100 text-slate-500"}`}>
+                      {t.files.priorities[f.priority]}
+                    </span>
+                  </td>
                   <td className="px-4 py-3">
                     <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLE[f.status] ?? "bg-slate-100 text-slate-500"}`}>
                       {t.files.statuses[f.status]}

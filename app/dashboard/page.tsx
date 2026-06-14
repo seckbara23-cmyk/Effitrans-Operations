@@ -1,13 +1,12 @@
 import type { Metadata } from "next";
 import { t } from "@/lib/i18n";
-import { kpis } from "@/lib/mock-data";
-import { KpiCard } from "@/components/dashboard/kpi-card";
 import { Panel } from "@/components/ui/panel";
 import { ShipmentsTable } from "@/components/dashboard/shipments-table";
 import { CustomsTable } from "@/components/dashboard/customs-table";
 import { TasksTable } from "@/components/dashboard/tasks-table";
 import { DakarClock } from "@/components/dashboard/dakar-clock";
 import { DashboardTasks } from "@/components/dashboard/dashboard-tasks";
+import { DashboardFileKpis } from "@/components/dashboard/dashboard-file-kpis";
 import { IconShip, IconPlane, IconRoute } from "@/lib/icons";
 
 export const metadata: Metadata = {
@@ -84,17 +83,11 @@ export default function DashboardPage() {
         </div>
       </section>
 
+      {/* Real KPI band (Phase 1.4) — live operational_file counts */}
+      <DashboardFileKpis />
+
       {/* Real operational tasks (Phase 1.3) — above the mock control-tower */}
       <DashboardTasks />
-
-      {/* KPI grid */}
-      <section>
-        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3 xl:grid-cols-6">
-          {kpis.map((kpi) => (
-            <KpiCard key={kpi.key} kpi={kpi} />
-          ))}
-        </div>
-      </section>
 
       {/* Recent shipments — full width */}
       <Panel

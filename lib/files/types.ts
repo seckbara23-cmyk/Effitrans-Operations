@@ -32,6 +32,38 @@ export type FileListItem = {
   clientName: string | null;
   transportMode: TransportMode | null;
   status: FileStatus;
+  priority: Priority;
+};
+
+/** Sort keys for the dossier work queue (Phase 1.4). */
+export type FileSortKey = "newest" | "oldest" | "number" | "client" | "priority" | "status";
+
+/**
+ * Search / filter / sort criteria for listFiles (Phase 1.4). All optional —
+ * an empty object lists every dossier in the tenant (newest first).
+ */
+export type FileFilterCriteria = {
+  search?: string;
+  status?: FileStatus;
+  type?: FileType;
+  priority?: Priority;
+  clientId?: string;
+  transportMode?: TransportMode;
+  mine?: boolean;
+  overdue?: boolean;
+  sort?: FileSortKey;
+  /** Injected by the service for the `mine` filter; never comes from the URL. */
+  currentUserId?: string;
+};
+
+/** Real dashboard counters derived from operational_file (Phase 1.4). */
+export type FileKpis = {
+  active: number;
+  delivered: number;
+  closed: number;
+  highPriority: number;
+  import: number;
+  export: number;
 };
 
 export type FileTransition = {
