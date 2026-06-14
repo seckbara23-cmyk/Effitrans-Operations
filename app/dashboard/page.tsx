@@ -7,11 +7,15 @@ import { ShipmentsTable } from "@/components/dashboard/shipments-table";
 import { CustomsTable } from "@/components/dashboard/customs-table";
 import { TasksTable } from "@/components/dashboard/tasks-table";
 import { DakarClock } from "@/components/dashboard/dakar-clock";
+import { DashboardTasks } from "@/components/dashboard/dashboard-tasks";
 import { IconShip, IconPlane, IconRoute } from "@/lib/icons";
 
 export const metadata: Metadata = {
   title: t.dashboard.title,
 };
+
+// Real Tasks section reads per-request data (auth) — never prerender.
+export const dynamic = "force-dynamic";
 
 const d = t.dashboard;
 
@@ -79,6 +83,9 @@ export default function DashboardPage() {
           </div>
         </div>
       </section>
+
+      {/* Real operational tasks (Phase 1.3) — above the mock control-tower */}
+      <DashboardTasks />
 
       {/* KPI grid */}
       <section>

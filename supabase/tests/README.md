@@ -1,5 +1,12 @@
 # Supabase Tests
 
+## RLS tasks module (Phase 1.3)
+[`rls_task_test.sql`](rls_task_test.sql) proves the `task` RLS: a tenant-A user
+**with** `task:read` reads only tenant A's tasks (`1`), cannot read tenant B's
+(`0`), and a user **without** `task:read` reads nothing (`0`) — tasks follow the
+`operational_file` tenant boundary. Expected: `1 / 0 / 0`. Runs in the
+`rls-tests` CI job.
+
 ## RLS operational-file module (Phase 1.2)
 [`rls_operational_file_test.sql`](rls_operational_file_test.sql) proves the
 `operational_file` / `shipment` / `file_state_transition` RLS: a tenant-A user

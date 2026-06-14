@@ -567,6 +567,67 @@ export type Database = {
         Update: { tenant_id?: string; type?: string; year?: number; next_seq?: number };
         Relationships: [];
       };
+      task: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          file_id: string;
+          title: string;
+          description: string | null;
+          status: string;
+          priority: string;
+          due_at: string | null;
+          assigned_to: string | null;
+          created_by: string | null;
+          completed_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          file_id: string;
+          title: string;
+          description?: string | null;
+          status?: string;
+          priority?: string;
+          due_at?: string | null;
+          assigned_to?: string | null;
+          created_by?: string | null;
+          completed_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string;
+          file_id?: string;
+          title?: string;
+          description?: string | null;
+          status?: string;
+          priority?: string;
+          due_at?: string | null;
+          assigned_to?: string | null;
+          created_by?: string | null;
+          completed_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "task_file_id_fkey";
+            columns: ["file_id"];
+            referencedRelation: "operational_file";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "task_assigned_to_fkey";
+            columns: ["assigned_to"];
+            referencedRelation: "app_user";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Views: Record<string, never>;
     Functions: {

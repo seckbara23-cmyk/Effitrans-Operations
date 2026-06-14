@@ -145,3 +145,30 @@ where r.tenant_id = '00000000-0000-0000-0000-000000000001'
   and r.code in ('CEO', 'OPS_SUPERVISOR')
 on conflict do nothing;
 
+-- ===========================================================================
+-- Phase 1.3 Tasks role mappings (mirror of the module migration).
+-- ===========================================================================
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code in ('task:create', 'task:read', 'task:update', 'task:delete')
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'ACCOUNT_MANAGER', 'COORDINATOR', 'OPS_SUPERVISOR')
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code in ('task:read', 'task:update')
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('CHIEF_OF_TRANSIT', 'CUSTOMS_DECLARANT', 'TRANSPORT_OFFICER',
+                 'DOCUMENTATION_OFFICER', 'WAREHOUSE_COORDINATOR')
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'task:read'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001' and r.code = 'CEO'
+on conflict do nothing;
+

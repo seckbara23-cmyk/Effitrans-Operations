@@ -26,6 +26,13 @@ export const AuditActions = {
   FILE_UPDATED: "file.updated",
   FILE_TRANSITION: "file.transition",
   FILE_ARCHIVED: "file.archived",
+  // Phase 1.3 — Tasks
+  TASK_CREATED: "task.created",
+  TASK_UPDATED: "task.updated",
+  TASK_STATUS_CHANGED: "task.status_changed",
+  TASK_ASSIGNED: "task.assigned",
+  TASK_COMPLETED: "task.completed",
+  TASK_CANCELLED: "task.cancelled",
 } as const;
 
 export type AuditActionCode = (typeof AuditActions)[keyof typeof AuditActions];
