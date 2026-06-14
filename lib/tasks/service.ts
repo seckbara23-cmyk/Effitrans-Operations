@@ -10,6 +10,7 @@
 import "server-only";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
+import { resolveFileScope, type FileScope } from "@/lib/authz/visibility";
 import type {
   Assignee,
   DashboardTasks,
@@ -20,7 +21,7 @@ import type {
 } from "./types";
 
 const SELECT =
-  "id, file_id, title, status, priority, due_at, assigned_to, description, completed_at, file:file_id(file_number), assignee:assigned_to(email)";
+  "id, file_id, title, status, priority, due_at, assigned_to, created_by, description, completed_at, file:file_id(file_number), assignee:assigned_to(email)";
 
 type TaskRow = {
   id: string;
@@ -30,11 +31,24 @@ type TaskRow = {
   priority: string;
   due_at: string | null;
   assigned_to: string | null;
+  created_by: string | null;
   description: string | null;
   completed_at: string | null;
   file: { file_number: string } | null;
   assignee: { email: string | null } | null;
 };
+
+/**
+ * Phase 1.7: a PostgREST `.or()` clause restricting tasks to those a non-all
+ * user may read — assigned to them, created by them, or on a readable file.
+ * null when the user has task:read:all (no restriction).
+ */
+function taskScopeOr(scope: FileScope, userId: string): string | null {
+  if (scope.all) return null;
+  const clauses = [`assigned_to.eq.${userId}`, `created_by.eq.${userId}`];
+  if (scope.ids.length) clauses.push(`file_id.in.(${scope.ids.join(",")})`);
+  return clauses.join(",");
+}
 
 function toListItem(r: TaskRow): TaskListItem {
   return {
@@ -56,9 +70,12 @@ export async function listTasks(opts?: {
   overdue?: boolean;
 }): Promise<TaskListItem[]> {
   const user = await assertPermission("task:read");
+  const scope = await resolveFileScope(user.id, user.tenantId, "task:read:all");
   const supabase = getAdminSupabaseClient();
 
   let q = supabase.from("task").select(SELECT).eq("tenant_id", user.tenantId);
+  const scopeOr = taskScopeOr(scope, user.id);
+  if (scopeOr) q = q.or(scopeOr);
   if (opts?.fileId) q = q.eq("file_id", opts.fileId);
   if (opts?.status) q = q.eq("status", opts.status);
   if (opts?.mine) q = q.eq("assigned_to", user.id);
@@ -73,6 +90,7 @@ export async function listTasks(opts?: {
 
 export async function getTask(id: string): Promise<TaskDetail | null> {
   const user = await assertPermission("task:read");
+  const scope = await resolveFileScope(user.id, user.tenantId, "task:read:all");
   const supabase = getAdminSupabaseClient();
   const { data, error } = await supabase
     .from("task")
@@ -84,6 +102,12 @@ export async function getTask(id: string): Promise<TaskDetail | null> {
   if (error) throw new Error(`[tasks] read failed: ${error.message}`);
   const r = data?.[0];
   if (!r) return null;
+  // Phase 1.7: mirror can_read_task for the admin-client single read.
+  if (!scope.all) {
+    const visible =
+      r.assigned_to === user.id || r.created_by === user.id || scope.ids.includes(r.file_id);
+    if (!visible) return null;
+  }
   return {
     ...toListItem(r),
     description: r.description,
@@ -108,6 +132,7 @@ export async function listAssignees(): Promise<Assignee[]> {
 
 export async function getDashboardTasks(): Promise<DashboardTasks> {
   const user = await assertPermission("task:read");
+  const scope = await resolveFileScope(user.id, user.tenantId, "task:read:all");
   const supabase = getAdminSupabaseClient();
 
   const now = new Date();
@@ -116,7 +141,12 @@ export async function getDashboardTasks(): Promise<DashboardTasks> {
   const endOfDay = new Date(now);
   endOfDay.setHours(23, 59, 59, 999);
 
-  const base = () => supabase.from("task").select(SELECT).eq("tenant_id", user.tenantId);
+  const scopeOr = taskScopeOr(scope, user.id);
+  const base = () => {
+    let q = supabase.from("task").select(SELECT).eq("tenant_id", user.tenantId);
+    if (scopeOr) q = q.or(scopeOr);
+    return q;
+  };
 
   const [today, overdue, mine] = await Promise.all([
     base()

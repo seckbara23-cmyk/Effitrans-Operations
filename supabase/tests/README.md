@@ -1,5 +1,13 @@
 # Supabase Tests
 
+## RLS visibility scoping (Phase 1.7)
+[`rls_visibility_test.sql`](rls_visibility_test.sql) proves the own/assigned read
+model on `operational_file` + `task`: a manager (`*:read:all`) sees every tenant-A
+file/task but not tenant B; a COORDINATOR sees only the dossier they coordinate
+(and its tasks); a CHIEF_OF_TRANSIT sees the task assigned to them **and** its
+dossier, but nothing unrelated. Guards the `can_read_file` / `can_read_task`
+helpers + scoped SELECT policies. Runs in the `rls-tests` CI job.
+
 ## RLS notifications module (Phase 1.6)
 [`rls_notification_test.sql`](rls_notification_test.sql) proves the `notification`
 feed is **self-scoped**: user A reads their own notification (`1`) but not a

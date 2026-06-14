@@ -700,6 +700,12 @@ export type Database = {
       auth_tenant_id: { Args: Record<string, never>; Returns: string };
       has_permission: { Args: { p_code: string }; Returns: boolean };
       has_role: { Args: { p_code: string }; Returns: boolean };
+      user_readable_file_ids: {
+        Args: { p_user: string; p_tenant: string };
+        Returns: { id: string }[];
+      };
+      can_read_file: { Args: { p_file: string }; Returns: boolean };
+      can_read_task: { Args: { p_task: string }; Returns: boolean };
     };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;

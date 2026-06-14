@@ -172,3 +172,31 @@ join public.permission p on p.code = 'task:read'
 where r.tenant_id = '00000000-0000-0000-0000-000000000001' and r.code = 'CEO'
 on conflict do nothing;
 
+-- ===========================================================================
+-- Phase 1.7 Visibility scoping role mappings (mirror of the module migration).
+-- Tier-1 tenant-wide read; scoped file:read for execution roles + compliance.
+-- ===========================================================================
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code in ('file:read:all', 'task:read:all')
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'CEO', 'OPS_SUPERVISOR', 'ACCOUNT_MANAGER', 'COMPLIANCE_HSSE')
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'file:read'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('CHIEF_OF_TRANSIT', 'CUSTOMS_DECLARANT', 'DOCUMENTATION_OFFICER',
+                 'TRANSPORT_OFFICER', 'WAREHOUSE_COORDINATOR', 'COMPLIANCE_HSSE')
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'task:read'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001' and r.code = 'COMPLIANCE_HSSE'
+on conflict do nothing;
+

@@ -13,6 +13,7 @@ import "server-only";
 import { getServerSupabaseClient } from "@/lib/supabase/server";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
+import { resolveFileScope } from "@/lib/authz/visibility";
 import { applyFileFilters, sortFiles, type FileSearchRow } from "./filter";
 import { aggregateFiles, type FileOverview } from "./aggregate";
 import type {
@@ -50,16 +51,21 @@ type FileListRow = {
 
 export async function listFiles(criteria: FileFilterCriteria = {}): Promise<FileListItem[]> {
   const user = await assertPermission("file:read");
-  const supabase = getAdminSupabaseClient();
 
-  const { data, error } = await supabase
+  // Phase 1.7: scope to readable files (the admin client bypasses RLS).
+  const scope = await resolveFileScope(user.id, user.tenantId, "file:read:all");
+  if (!scope.all && scope.ids.length === 0) return [];
+
+  const supabase = getAdminSupabaseClient();
+  let query = supabase
     .from("operational_file")
     .select(
       "id, file_number, type, status, priority, created_at, account_manager_id, client_id, client:client_id(name), shipment(transport_mode, origin, destination, bl_awb_ref, container_ref, eta)",
     )
-    .eq("tenant_id", user.tenantId)
-    .limit(2000)
-    .returns<FileListRow[]>();
+    .eq("tenant_id", user.tenantId);
+  if (!scope.all) query = query.in("id", scope.ids);
+
+  const { data, error } = await query.limit(2000).returns<FileListRow[]>();
   if (error) throw new Error(`[files] list failed: ${error.message}`);
 
   const rows: FileSearchRow[] = (data ?? []).map((f) => {
@@ -103,12 +109,18 @@ export async function listFiles(criteria: FileFilterCriteria = {}): Promise<File
  */
 export async function getFileOverview(): Promise<FileOverview> {
   const user = await assertPermission("file:read");
-  const supabase = getAdminSupabaseClient();
 
-  const { data, error } = await supabase
+  const scope = await resolveFileScope(user.id, user.tenantId, "file:read:all");
+  if (!scope.all && scope.ids.length === 0) return aggregateFiles([], new Date());
+
+  const supabase = getAdminSupabaseClient();
+  let query = supabase
     .from("operational_file")
     .select("status, priority, shipment(transport_mode, eta)")
-    .eq("tenant_id", user.tenantId)
+    .eq("tenant_id", user.tenantId);
+  if (!scope.all) query = query.in("id", scope.ids);
+
+  const { data, error } = await query
     .limit(10000)
     .returns<
       { status: string; priority: string; shipment: { transport_mode: string | null; eta: string | null }[] | null }[]
@@ -130,14 +142,20 @@ export async function getFileOverview(): Promise<FileOverview> {
 /** Newest dossiers for the dashboard table (Phase 1.5). */
 export async function getRecentFiles(limit = 8): Promise<RecentDossier[]> {
   const user = await assertPermission("file:read");
-  const supabase = getAdminSupabaseClient();
 
-  const { data, error } = await supabase
+  const scope = await resolveFileScope(user.id, user.tenantId, "file:read:all");
+  if (!scope.all && scope.ids.length === 0) return [];
+
+  const supabase = getAdminSupabaseClient();
+  let query = supabase
     .from("operational_file")
     .select(
       "id, file_number, type, status, priority, client:client_id(name), shipment(origin, destination), account_manager:account_manager_id(email), coordinator:coordinator_id(email)",
     )
-    .eq("tenant_id", user.tenantId)
+    .eq("tenant_id", user.tenantId);
+  if (!scope.all) query = query.in("id", scope.ids);
+
+  const { data, error } = await query
     .order("created_at", { ascending: false })
     .limit(limit)
     .returns<
