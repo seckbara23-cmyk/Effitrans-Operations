@@ -12,16 +12,21 @@ import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
+import { createNotification } from "@/lib/notifications/create";
+import { t } from "@/lib/i18n";
 import { validateTask } from "./validate";
 import { canTransition, isTaskStatus, ACTIVE_STATUSES } from "./status";
 import type { ActionResult, TaskInput, TaskStatus } from "./types";
 
 type Admin = ReturnType<typeof getAdminSupabaseClient>;
 
+const fill = (tpl: string, vars: Record<string, string>) =>
+  tpl.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? "");
+
 async function loadTask(supabase: Admin, id: string, tenantId: string) {
   const { data } = await supabase
     .from("task")
-    .select("id, tenant_id, file_id, status")
+    .select("id, tenant_id, file_id, status, assigned_to")
     .eq("id", id)
     .maybeSingle();
   if (!data || data.tenant_id !== tenantId) return null;
@@ -142,6 +147,8 @@ export async function assignTask(id: string, userId: string | null): Promise<Act
     if (!target || target.tenant_id !== user.tenantId) return { ok: false, error: "invalid_assignee" };
   }
 
+  const previousAssignee = task.assigned_to as string | null;
+
   const { error } = await supabase
     .from("task")
     .update({ assigned_to: userId })
@@ -157,6 +164,30 @@ export async function assignTask(id: string, userId: string | null): Promise<Act
     entityId: id,
     after: { assigned_to: userId },
   });
+
+  // Notify the new assignee on a real change (not self-assignment). Best-effort:
+  // createNotification never throws, so a notification failure can't fail assign.
+  if (userId && userId !== previousAssignee && userId !== user.id) {
+    const { data: meta } = await supabase
+      .from("task")
+      .select("title, file:file_id(file_number)")
+      .eq("id", id)
+      .maybeSingle<{ title: string; file: { file_number: string } | null }>();
+    const taskTitle = meta?.title ?? "";
+    await createNotification({
+      tenantId: user.tenantId,
+      userId,
+      type: "TASK_ASSIGNED",
+      taskId: id,
+      fileId: task.file_id,
+      title: fill(t.notifications.assigned.title, { task: taskTitle }),
+      body: fill(t.notifications.assigned.body, {
+        actor: user.email,
+        file: meta?.file?.file_number ?? "",
+      }),
+    });
+  }
+
   revalidate(task.file_id);
   return { ok: true, id };
 }

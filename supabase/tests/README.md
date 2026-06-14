@@ -1,5 +1,12 @@
 # Supabase Tests
 
+## RLS notifications module (Phase 1.6)
+[`rls_notification_test.sql`](rls_notification_test.sql) proves the `notification`
+feed is **self-scoped**: user A reads their own notification (`1`) but not a
+same-tenant peer's (`0`) nor a tenant-B one (`0`); user B reads their own (`1`).
+Confirms the `user_id = auth.uid()` policy (which assumes `app_user.id ==
+auth.users.id`). Expected: `1 / 0 / 0 / 1`. Runs in the `rls-tests` CI job.
+
 ## RLS tasks module (Phase 1.3)
 [`rls_task_test.sql`](rls_task_test.sql) proves the `task` RLS: a tenant-A user
 **with** `task:read` reads only tenant A's tasks (`1`), cannot read tenant B's

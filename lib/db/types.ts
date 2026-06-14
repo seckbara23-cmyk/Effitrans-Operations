@@ -628,6 +628,64 @@ export type Database = {
           },
         ];
       };
+      notification: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          user_id: string;
+          type: string;
+          task_id: string | null;
+          file_id: string | null;
+          title: string;
+          body: string | null;
+          read_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          user_id: string;
+          type: string;
+          task_id?: string | null;
+          file_id?: string | null;
+          title: string;
+          body?: string | null;
+          read_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string;
+          user_id?: string;
+          type?: string;
+          task_id?: string | null;
+          file_id?: string | null;
+          title?: string;
+          body?: string | null;
+          read_at?: string | null;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "notification_user_id_fkey";
+            columns: ["user_id"];
+            referencedRelation: "app_user";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "notification_task_id_fkey";
+            columns: ["task_id"];
+            referencedRelation: "task";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "notification_file_id_fkey";
+            columns: ["file_id"];
+            referencedRelation: "operational_file";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Views: Record<string, never>;
     Functions: {

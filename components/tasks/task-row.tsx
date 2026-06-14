@@ -9,6 +9,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { t } from "@/lib/i18n";
 import { activeTargets } from "@/lib/tasks/status";
+import { classifyDue } from "@/lib/notifications/classify";
 import {
   assignTask,
   cancelTask,
@@ -61,9 +62,20 @@ export function TaskRow({
     });
   }
 
-  const terminal = task.status === "DONE" || task.status === "CANCELLED";
   const due = task.dueAt ? task.dueAt.slice(0, 10) : null;
-  const overdue = task.dueAt && !terminal && new Date(task.dueAt) < new Date();
+  const dueState = classifyDue(task.dueAt, task.status, new Date());
+  const dueClass =
+    dueState === "overdue"
+      ? "font-semibold text-red-600"
+      : dueState === "today"
+        ? "font-semibold text-amber-600"
+        : "text-slate-500";
+  const dueLabel =
+    dueState === "overdue"
+      ? `${t.tasks.dashboard.overdue} · ${due}`
+      : dueState === "today"
+        ? `${t.tasks.dashboard.today} · ${due}`
+        : due;
 
   return (
     <div className="surface p-3">
@@ -78,9 +90,7 @@ export function TaskRow({
           </Link>
         )}
         <span className="ml-auto flex items-center gap-2">
-          {due && (
-            <span className={`text-xs ${overdue ? "font-semibold text-red-600" : "text-slate-500"}`}>{due}</span>
-          )}
+          {due && <span className={`text-xs ${dueClass}`}>{dueLabel}</span>}
           <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLE[task.status]}`}>
             {t.tasks.statuses[task.status]}
           </span>

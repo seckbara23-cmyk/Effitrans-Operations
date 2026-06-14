@@ -58,6 +58,7 @@ One row per open blocker. `Proposed` = a documented default is in force; `Open` 
 | DEC-B17 | Data | Client/partner entity overlap handling — default **separate entities** | Operations/Dev | — | Proposed | BLK-DB2 | database-design.md |
 | DEC-B18 | Finance | Multi-currency in Phase 1 — default **XOF only**, multi-currency TBD | Finance/Mgmt | — | Open | BLK-DB3 | database-design.md |
 | DEC-B19 | Data | Archived-document **retention policy** (Senegal legal minimum) — TBD | Mgmt/Compliance | — | Open | BLK-DB4 | database-design.md |
+| DEC-B20 | Workflow | **Phase 1.6 in-app notifications:** durable **self-scoped** `notification` table (RLS `user_id = auth.uid()` + tenant; **no new RBAC permission** — visibility is the recipient identity). `TASK_ASSIGNED` generated on task assignment (change-only, never self); overdue / due-today are **derived** (not stored). **Scheduled reminders (`TASK_DUE_SOON`/`TASK_OVERDUE`) and the email/SMS provider are DEFERRED** — dispatch hook is a no-op stub behind `NOTIFICATIONS_EMAIL_ENABLED`. Incrementally realizes DEC-B04/DEC-B05. **No new audit events** (reuses `TASK_ASSIGNED`). | Dev/Architect | 2026-06-14 | Approved | BLK-4 (partial) | requirements.md, phase-1.6, rbac-matrix.md |
 
 ---
 

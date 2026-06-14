@@ -119,6 +119,17 @@ export const t = {
       modeNone: "Non défini",
     },
   },
+  notifications: {
+    title: "Notifications",
+    empty: "Aucune notification.",
+    markAllRead: "Tout marquer comme lu",
+    unread: "non lues",
+    // {task} / {actor} / {file} are interpolated at creation (denormalized).
+    assigned: {
+      title: "Tâche assignée : {task}",
+      body: "Assignée par {actor} · {file}",
+    },
+  },
   users: {
     title: "Gestion des utilisateurs",
     subtitle: "Annuaire, rôles et accès des collaborateurs Effitrans.",

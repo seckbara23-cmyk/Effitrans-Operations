@@ -3,10 +3,11 @@
 import { usePathname } from "next/navigation";
 import { allNavItems } from "@/lib/nav";
 import { t } from "@/lib/i18n";
-import { IconMenu, IconSearch, IconBell, IconPlus } from "@/lib/icons";
+import { IconMenu, IconSearch, IconPlus } from "@/lib/icons";
 import { useSession } from "@/lib/auth/use-session";
 import { getBrowserSupabaseClient } from "@/lib/supabase/client";
 import { recordLogoutAudit } from "@/lib/auth/actions";
+import { NotificationBell } from "@/components/notifications/notification-bell";
 
 function currentTitle(pathname: string): string {
   const match = allNavItems.find(
@@ -61,13 +62,7 @@ export function Topbar({ onOpenMenu }: { onOpenMenu: () => void }) {
             />
           </div>
 
-          <button
-            className="relative rounded-lg border border-slate-200 bg-white p-2 text-navy-700 hover:bg-slate-50"
-            aria-label={t.topbar.notifications}
-          >
-            <IconBell className="h-5 w-5" />
-            <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-amber-500 ring-2 ring-white" />
-          </button>
+          <NotificationBell />
 
           <button className="inline-flex items-center gap-2 rounded-lg bg-navy-900 px-3 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-navy-800">
             <IconPlus className="h-4 w-4" />
