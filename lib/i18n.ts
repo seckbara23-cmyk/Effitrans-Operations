@@ -97,6 +97,27 @@ export const t = {
       assignedTo: "Assigné à",
       deadline: "Échéance",
     },
+    overview: {
+      kpi: {
+        active: "Dossiers actifs",
+        opened: "Dossiers ouverts",
+        inProgress: "Dossiers en cours",
+        delivered: "Dossiers livrés",
+        closed: "Dossiers clôturés",
+        highPriority: "Priorité haute / critique",
+        overdueShipments: "Expéditions en retard",
+        tasksToday: "Tâches dues aujourd'hui",
+        tasksOverdue: "Tâches en retard",
+        tasksMine: "Mes tâches",
+      },
+      recent: {
+        title: "Dossiers récents",
+        empty: "Aucun dossier pour le moment.",
+      },
+      statusBreakdown: "Répartition par statut",
+      modeBreakdown: "Répartition par mode",
+      modeNone: "Non défini",
+    },
   },
   users: {
     title: "Gestion des utilisateurs",

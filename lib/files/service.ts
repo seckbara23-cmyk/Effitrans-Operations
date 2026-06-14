@@ -13,15 +13,16 @@ import "server-only";
 import { getServerSupabaseClient } from "@/lib/supabase/server";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
-import { applyFileFilters, sortFiles, isActiveFile, type FileSearchRow } from "./filter";
+import { applyFileFilters, sortFiles, type FileSearchRow } from "./filter";
+import { aggregateFiles, type FileOverview } from "./aggregate";
 import type {
   FileDetail,
   FileFilterCriteria,
-  FileKpis,
   FileListItem,
   FileStatus,
   FileType,
   Priority,
+  RecentDossier,
   TransportMode,
 } from "./types";
 
@@ -96,28 +97,78 @@ export async function listFiles(criteria: FileFilterCriteria = {}): Promise<File
   }));
 }
 
-/** Real dashboard counters over the tenant's operational files (Phase 1.4). */
-export async function getFileKpis(): Promise<FileKpis> {
+/**
+ * Real dashboard overview over the tenant's operational files (Phase 1.5):
+ * KPI counts + status / mode breakdowns. Aggregation is pure (./aggregate).
+ */
+export async function getFileOverview(): Promise<FileOverview> {
   const user = await assertPermission("file:read");
   const supabase = getAdminSupabaseClient();
 
   const { data, error } = await supabase
     .from("operational_file")
-    .select("status, type, priority")
+    .select("status, priority, shipment(transport_mode, eta)")
     .eq("tenant_id", user.tenantId)
     .limit(10000)
-    .returns<{ status: string; type: string; priority: string }[]>();
-  if (error) throw new Error(`[files] kpis failed: ${error.message}`);
+    .returns<
+      { status: string; priority: string; shipment: { transport_mode: string | null; eta: string | null }[] | null }[]
+    >();
+  if (error) throw new Error(`[files] overview failed: ${error.message}`);
 
-  const rows = data ?? [];
-  return {
-    active: rows.filter((r) => isActiveFile(r.status)).length,
-    delivered: rows.filter((r) => r.status === "DELIVERED").length,
-    closed: rows.filter((r) => r.status === "CLOSED").length,
-    highPriority: rows.filter((r) => r.priority === "high" || r.priority === "critical").length,
-    import: rows.filter((r) => r.type === "IMP").length,
-    export: rows.filter((r) => r.type === "EXP").length,
-  };
+  const rows = (data ?? []).map((r) => {
+    const s = r.shipment?.[0] ?? null;
+    return {
+      status: r.status,
+      priority: r.priority,
+      transportMode: s?.transport_mode ?? null,
+      eta: s?.eta ?? null,
+    };
+  });
+  return aggregateFiles(rows, new Date());
+}
+
+/** Newest dossiers for the dashboard table (Phase 1.5). */
+export async function getRecentFiles(limit = 8): Promise<RecentDossier[]> {
+  const user = await assertPermission("file:read");
+  const supabase = getAdminSupabaseClient();
+
+  const { data, error } = await supabase
+    .from("operational_file")
+    .select(
+      "id, file_number, type, status, priority, client:client_id(name), shipment(origin, destination), account_manager:account_manager_id(email), coordinator:coordinator_id(email)",
+    )
+    .eq("tenant_id", user.tenantId)
+    .order("created_at", { ascending: false })
+    .limit(limit)
+    .returns<
+      {
+        id: string;
+        file_number: string;
+        type: string;
+        status: string;
+        priority: string;
+        client: { name: string } | null;
+        shipment: { origin: string | null; destination: string | null }[] | null;
+        account_manager: { email: string | null } | null;
+        coordinator: { email: string | null } | null;
+      }[]
+    >();
+  if (error) throw new Error(`[files] recent failed: ${error.message}`);
+
+  return (data ?? []).map((f) => {
+    const s = f.shipment?.[0] ?? null;
+    return {
+      id: f.id,
+      fileNumber: f.file_number,
+      clientName: f.client?.name ?? null,
+      type: f.type as FileType,
+      origin: s?.origin ?? null,
+      destination: s?.destination ?? null,
+      status: f.status as FileStatus,
+      priority: f.priority as Priority,
+      ownerEmail: f.account_manager?.email ?? f.coordinator?.email ?? null,
+    };
+  });
 }
 
 export async function getFile(id: string): Promise<FileDetail | null> {

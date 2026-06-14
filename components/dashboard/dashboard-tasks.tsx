@@ -1,12 +1,11 @@
 /**
- * Real Tasks section for the dashboard (Phase 1.3). SERVER component.
- * Renders Overdue / Today / Mine. Hidden when the user lacks task:read or
- * Supabase is unconfigured (getDashboardTasks throws -> we return null).
+ * Real Tasks section for the dashboard (Phase 1.3; presentational since 1.5).
+ * Renders Overdue / Today / Mine from data the page fetched. Hidden when the
+ * user lacks task:read or Supabase is unconfigured (page passes null).
  */
 import Link from "next/link";
-import { getDashboardTasks } from "@/lib/tasks/service";
 import { t } from "@/lib/i18n";
-import type { TaskListItem } from "@/lib/tasks/types";
+import type { DashboardTasks as DashboardTasksData, TaskListItem } from "@/lib/tasks/types";
 
 function Column({ title, tone, items }: { title: string; tone: string; items: TaskListItem[] }) {
   return (
@@ -36,13 +35,8 @@ function Column({ title, tone, items }: { title: string; tone: string; items: Ta
   );
 }
 
-export async function DashboardTasks() {
-  let data;
-  try {
-    data = await getDashboardTasks();
-  } catch {
-    return null; // no task:read / unconfigured — hide the section
-  }
+export function DashboardTasks({ data }: { data: DashboardTasksData | null }) {
+  if (!data) return null; // no task:read / unconfigured — hide the section
 
   return (
     <section className="space-y-3">

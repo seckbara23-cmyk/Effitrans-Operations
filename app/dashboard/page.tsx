@@ -1,19 +1,20 @@
 import type { Metadata } from "next";
 import { t } from "@/lib/i18n";
-import { Panel } from "@/components/ui/panel";
-import { ShipmentsTable } from "@/components/dashboard/shipments-table";
-import { CustomsTable } from "@/components/dashboard/customs-table";
-import { TasksTable } from "@/components/dashboard/tasks-table";
+import { requireUser } from "@/lib/auth/require-user";
+import { getFileOverview, getRecentFiles } from "@/lib/files/service";
+import { getDashboardTasks } from "@/lib/tasks/service";
 import { DakarClock } from "@/components/dashboard/dakar-clock";
+import { DashboardKpis } from "@/components/dashboard/dashboard-kpis";
 import { DashboardTasks } from "@/components/dashboard/dashboard-tasks";
-import { DashboardFileKpis } from "@/components/dashboard/dashboard-file-kpis";
+import { DashboardRecentFiles } from "@/components/dashboard/dashboard-recent-files";
+import { DashboardBreakdown } from "@/components/dashboard/dashboard-breakdown";
 import { IconShip, IconPlane, IconRoute } from "@/lib/icons";
 
 export const metadata: Metadata = {
   title: t.dashboard.title,
 };
 
-// Real Tasks section reads per-request data (auth) — never prerender.
+// Reads per-request operational data (auth) — never prerender.
 export const dynamic = "force-dynamic";
 
 const d = t.dashboard;
@@ -27,7 +28,27 @@ const footprint: { label: string; icon: typeof IconShip }[] = [
   { label: "Sénégal ↔ Mauritanie", icon: IconRoute },
 ];
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  const configured = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL);
+
+  // Fetch once, here, with graceful degradation: each section renders only for
+  // the data the user is permitted to see (file:read / task:read enforced in
+  // the service via assertPermission + tenant scope).
+  let overview = null;
+  let recent: Awaited<ReturnType<typeof getRecentFiles>> = [];
+  let dashTasks = null;
+  if (configured) {
+    await requireUser();
+    [overview, recent, dashTasks] = await Promise.all([
+      getFileOverview().catch(() => null),
+      getRecentFiles(8).catch(() => []),
+      getDashboardTasks().catch(() => null),
+    ]);
+  }
+  const taskKpis = dashTasks
+    ? { dueToday: dashTasks.today.length, overdue: dashTasks.overdue.length, mine: dashTasks.mine.length }
+    : null;
+
   return (
     <div className="animate-fade-in space-y-6">
       {/* Identity hero band — Port of Dakar control strip */}
@@ -83,38 +104,17 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      {/* Real KPI band (Phase 1.4) — live operational_file counts */}
-      <DashboardFileKpis />
+      {/* Real KPI band (Phase 1.5) — live dossier + task counts */}
+      <DashboardKpis files={overview} tasks={taskKpis} />
 
-      {/* Real operational tasks (Phase 1.3) — above the mock control-tower */}
-      <DashboardTasks />
+      {/* Today's work — real tasks (Overdue / Today / Mine) */}
+      <DashboardTasks data={dashTasks} />
 
-      {/* Recent shipments — full width */}
-      <Panel
-        eyebrow="Suivi"
-        title={d.panels.recentShipments}
-        action={{ label: d.panels.viewAll, href: "/shipments" }}
-      >
-        <ShipmentsTable />
-      </Panel>
+      {/* Recent dossiers — real operational_file rows */}
+      <DashboardRecentFiles files={recent} />
 
-      {/* Customs queue + tasks */}
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <Panel
-          eyebrow="Douane"
-          title={d.panels.customsQueue}
-          action={{ label: d.panels.viewAll, href: "/customs" }}
-        >
-          <CustomsTable />
-        </Panel>
-        <Panel
-          eyebrow="Planning"
-          title={d.panels.tasksToday}
-          action={{ label: d.panels.viewAll, href: "/tasks" }}
-        >
-          <TasksTable />
-        </Panel>
-      </div>
+      {/* Status + transport-mode breakdowns */}
+      <DashboardBreakdown overview={overview} />
     </div>
   );
 }

@@ -56,14 +56,17 @@ export type FileFilterCriteria = {
   currentUserId?: string;
 };
 
-/** Real dashboard counters derived from operational_file (Phase 1.4). */
-export type FileKpis = {
-  active: number;
-  delivered: number;
-  closed: number;
-  highPriority: number;
-  import: number;
-  export: number;
+/** A row in the dashboard "recent dossiers" table (Phase 1.5). */
+export type RecentDossier = {
+  id: string;
+  fileNumber: string;
+  clientName: string | null;
+  type: FileType;
+  origin: string | null;
+  destination: string | null;
+  status: FileStatus;
+  priority: Priority;
+  ownerEmail: string | null; // account manager, else coordinator
 };
 
 export type FileTransition = {
