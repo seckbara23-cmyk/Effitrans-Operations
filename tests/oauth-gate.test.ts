@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { evaluateStaffOAuth, normalizeEmail } from "@/lib/auth/oauth-gate";
+import { evaluateStaffOAuth, isActiveStaff, normalizeEmail } from "@/lib/auth/oauth-gate";
 
 const verified = { emailVerified: true };
 
@@ -70,5 +70,13 @@ describe("staff OAuth gate (1.16)", () => {
     expect(normalizeEmail("  A@B.COM ")).toBe("a@b.com");
     expect(normalizeEmail(null)).toBe("");
     expect(normalizeEmail(undefined)).toBe("");
+  });
+});
+
+describe("staff password-recovery gate (1.16)", () => {
+  it("only an active staff profile may request/complete a reset", () => {
+    expect(isActiveStaff({ email: "b@e.sn", status: "active" })).toBe(true);
+    expect(isActiveStaff({ email: "b@e.sn", status: "inactive" })).toBe(false);
+    expect(isActiveStaff(null)).toBe(false);
   });
 });

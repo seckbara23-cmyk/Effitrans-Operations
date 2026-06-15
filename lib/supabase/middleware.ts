@@ -12,11 +12,18 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
-// Routes reachable without authentication. The OAuth callback (Phase 1.16) MUST
-// be public: it runs the code→session exchange, so the request arrives BEFORE
-// the session cookie exists — redirecting it to /login would drop the code.
+// Routes reachable without authentication. The OAuth callback + the password
+// reset page (Phase 1.16) MUST be public: they run the code→session exchange,
+// so the request arrives BEFORE the session cookie exists — redirecting it to
+// /login would drop the code. The `/auth` prefix covers /auth/callback and
+// /auth/update-password (listed explicitly for clarity).
 function isPublicPath(pathname: string): boolean {
-  return pathname === "/login" || pathname === "/auth/callback" || pathname.startsWith("/auth");
+  return (
+    pathname === "/login" ||
+    pathname === "/auth/callback" ||
+    pathname === "/auth/update-password" ||
+    pathname.startsWith("/auth")
+  );
 }
 
 export async function updateSession(request: NextRequest): Promise<NextResponse> {

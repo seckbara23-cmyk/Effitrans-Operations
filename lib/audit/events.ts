@@ -18,6 +18,9 @@ export const AuditActions = {
   // Phase 1.16 — Google OAuth (staff)
   AUTH_LOGIN_GOOGLE: "auth.login.google", // staff, attributed (actorId)
   AUTH_LOGIN_REJECTED: "auth.login.rejected", // machine: unknown/disabled/mismatch (reason only)
+  // Phase 1.16 — Staff password recovery (attributed; only emitted for an active app_user)
+  AUTH_PASSWORD_RESET_REQUESTED: "auth.password_reset.requested",
+  AUTH_PASSWORD_RESET_COMPLETED: "auth.password_reset.completed",
   SYSTEM_SEED: "system.seed",
   // Phase 1.1 — Client Management
   CLIENT_CREATED: "client.created",

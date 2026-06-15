@@ -51,3 +51,12 @@ export function evaluateStaffOAuth(input: OAuthGateInput): OAuthGateResult {
 
   return { ok: true };
 }
+
+/**
+ * Is this by-id profile an ACTIVE staff member? Used by the password-recovery
+ * gate (Phase 1.16): only active app_user accounts may request or complete a
+ * staff password reset. Pure so it stays unit-tested alongside the OAuth gate.
+ */
+export function isActiveStaff(profile: OAuthGateProfile): boolean {
+  return !!profile && profile.status === "active";
+}
