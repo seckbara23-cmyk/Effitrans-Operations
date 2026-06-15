@@ -58,6 +58,17 @@ export const AuditActions = {
   TRANSPORT_POD_RECEIVED: "transport.pod_received",
   TRANSPORT_CANCELLED: "transport.cancelled",
   TRANSPORT_DELETED: "transport.deleted",
+  // Phase 1.11 — Finance
+  CHARGE_CREATED: "charge.created",
+  CHARGE_UPDATED: "charge.updated",
+  CHARGE_DELETED: "charge.deleted",
+  INVOICE_CREATED: "invoice.created",
+  INVOICE_UPDATED: "invoice.updated",
+  INVOICE_ISSUED: "invoice.issued",
+  INVOICE_VOIDED: "invoice.voided",
+  INVOICE_DELETED: "invoice.deleted",
+  PAYMENT_RECORDED: "payment.recorded",
+  PAYMENT_REVERSED: "payment.reversed",
 } as const;
 
 export type AuditActionCode = (typeof AuditActions)[keyof typeof AuditActions];

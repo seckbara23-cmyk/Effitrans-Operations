@@ -1,5 +1,14 @@
 # Supabase Tests
 
+## RLS finance module (Phase 1.11)
+[`rls_finance_test.sql`](rls_finance_test.sql) proves finance visibility is
+**finance-role based, NOT inherited from `can_read_file`**: a `FINANCE_OFFICER`
+(`finance:read`) sees tenant-A invoices/charges but not tenant B; a COORDINATOR
+who **coordinates** the dossier (so can read it) but lacks `finance:read` sees
+**none** of its finance rows. Also checks `next_invoice_number` is per-tenant
+sequential (`EFT-INV-YYYY-00001`). Expected: `1 / 0 / 1 / 0 / 0`. Runs in the
+`rls-tests` CI job.
+
 ## RLS transport module (Phase 1.10)
 [`rls_transport_test.sql`](rls_transport_test.sql) proves `transport_record` reads
 **inherit dossier visibility** (Phase 1.7 `can_read_file`) **and** require

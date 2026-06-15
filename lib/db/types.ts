@@ -968,6 +968,220 @@ export type Database = {
           },
         ];
       };
+      billing_charge: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          file_id: string;
+          description: string;
+          quantity: number;
+          unit_amount: number;
+          tax_rate: number;
+          currency: string;
+          created_by: string | null;
+          deleted_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          file_id: string;
+          description: string;
+          quantity?: number;
+          unit_amount?: number;
+          tax_rate?: number;
+          currency?: string;
+          created_by?: string | null;
+          deleted_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string;
+          file_id?: string;
+          description?: string;
+          quantity?: number;
+          unit_amount?: number;
+          tax_rate?: number;
+          currency?: string;
+          created_by?: string | null;
+          deleted_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "billing_charge_file_id_fkey";
+            columns: ["file_id"];
+            referencedRelation: "operational_file";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      invoice: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          file_id: string;
+          client_id: string | null;
+          invoice_number: string | null;
+          status: string;
+          currency: string;
+          issue_date: string | null;
+          due_date: string | null;
+          notes: string | null;
+          created_by: string | null;
+          issued_by: string | null;
+          voided_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          file_id: string;
+          client_id?: string | null;
+          invoice_number?: string | null;
+          status?: string;
+          currency?: string;
+          issue_date?: string | null;
+          due_date?: string | null;
+          notes?: string | null;
+          created_by?: string | null;
+          issued_by?: string | null;
+          voided_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string;
+          file_id?: string;
+          client_id?: string | null;
+          invoice_number?: string | null;
+          status?: string;
+          currency?: string;
+          issue_date?: string | null;
+          due_date?: string | null;
+          notes?: string | null;
+          created_by?: string | null;
+          issued_by?: string | null;
+          voided_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "invoice_file_id_fkey";
+            columns: ["file_id"];
+            referencedRelation: "operational_file";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      invoice_line: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          invoice_id: string;
+          charge_id: string | null;
+          description: string;
+          quantity: number;
+          unit_amount: number;
+          tax_rate: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          invoice_id: string;
+          charge_id?: string | null;
+          description: string;
+          quantity?: number;
+          unit_amount?: number;
+          tax_rate?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string;
+          invoice_id?: string;
+          charge_id?: string | null;
+          description?: string;
+          quantity?: number;
+          unit_amount?: number;
+          tax_rate?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "invoice_line_invoice_id_fkey";
+            columns: ["invoice_id"];
+            referencedRelation: "invoice";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      payment: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          invoice_id: string;
+          amount: number;
+          method: string;
+          reference: string | null;
+          paid_at: string;
+          reversed_at: string | null;
+          reversed_by: string | null;
+          recorded_by: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          invoice_id: string;
+          amount: number;
+          method: string;
+          reference?: string | null;
+          paid_at?: string;
+          reversed_at?: string | null;
+          reversed_by?: string | null;
+          recorded_by?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string;
+          invoice_id?: string;
+          amount?: number;
+          method?: string;
+          reference?: string | null;
+          paid_at?: string;
+          reversed_at?: string | null;
+          reversed_by?: string | null;
+          recorded_by?: string | null;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "payment_invoice_id_fkey";
+            columns: ["invoice_id"];
+            referencedRelation: "invoice";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      invoice_counter: {
+        Row: { tenant_id: string; year: number; next_seq: number };
+        Insert: { tenant_id: string; year: number; next_seq?: number };
+        Update: { tenant_id?: string; year?: number; next_seq?: number };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
@@ -977,6 +1191,10 @@ export type Database = {
       };
       next_file_number: {
         Args: { p_tenant: string; p_type: string };
+        Returns: string;
+      };
+      next_invoice_number: {
+        Args: { p_tenant: string };
         Returns: string;
       };
       auth_tenant_id: { Args: Record<string, never>; Returns: string };

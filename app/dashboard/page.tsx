@@ -8,6 +8,7 @@ import { DashboardKpis } from "@/components/dashboard/dashboard-kpis";
 import { DashboardTasks } from "@/components/dashboard/dashboard-tasks";
 import { DashboardRecentFiles } from "@/components/dashboard/dashboard-recent-files";
 import { DashboardBreakdown } from "@/components/dashboard/dashboard-breakdown";
+import { DashboardFinanceKpis } from "@/components/dashboard/dashboard-finance-kpis";
 import { IconShip, IconPlane, IconRoute } from "@/lib/icons";
 
 export const metadata: Metadata = {
@@ -106,6 +107,9 @@ export default async function DashboardPage() {
 
       {/* Real KPI band (Phase 1.5) — live dossier + task counts */}
       <DashboardKpis files={overview} tasks={taskKpis} />
+
+      {/* Finance KPIs (Phase 1.11) — only for finance-role users */}
+      <DashboardFinanceKpis />
 
       {/* Today's work — real tasks (Overdue / Today / Mine) */}
       <DashboardTasks data={dashTasks} />

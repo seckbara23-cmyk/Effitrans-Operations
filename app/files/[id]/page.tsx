@@ -15,6 +15,8 @@ import { CustomsPanel } from "@/components/customs/customs-panel";
 import { getCustomsRecord, getMissingCustomsDocuments } from "@/lib/customs/service";
 import { TransportPanel } from "@/components/transport/transport-panel";
 import { getTransportRecord } from "@/lib/transport/service";
+import { FinancePanel } from "@/components/finance/finance-panel";
+import { getFinanceForFile } from "@/lib/finance/service";
 import { t } from "@/lib/i18n";
 
 export const metadata: Metadata = { title: t.files.title };
@@ -78,6 +80,10 @@ export default async function FileDetailPage({ params }: { params: { id: string 
   const transportRecord = canReadTransport ? await getTransportRecord(file.id) : null;
   const podApproved = documents.some((d) => d.typeCode === "DELIVERY_NOTE" && d.status === "APPROVED");
 
+  // Embedded finance (finance-role based — NOT inherited from file visibility).
+  const canReadFinance = hasPermission(permissions, "finance:read");
+  const finance = canReadFinance ? await getFinanceForFile(file.id) : null;
+
   return (
     <div className="animate-fade-in space-y-6">
       {header(`${file.fileNumber}`)}
@@ -128,6 +134,18 @@ export default async function FileDetailPage({ params }: { params: { id: string 
           canAssign={hasPermission(permissions, "transport:assign")}
           canComplete={hasPermission(permissions, "transport:complete")}
           canDelete={hasPermission(permissions, "transport:delete")}
+        />
+      )}
+      {canReadFinance && finance && (
+        <FinancePanel
+          fileId={file.id}
+          finance={finance}
+          canCreate={hasPermission(permissions, "finance:create")}
+          canUpdate={hasPermission(permissions, "finance:update")}
+          canIssueInvoice={hasPermission(permissions, "finance:issue")}
+          canPayment={hasPermission(permissions, "finance:payment")}
+          canVoidInvoice={hasPermission(permissions, "finance:void")}
+          canDelete={hasPermission(permissions, "finance:delete")}
         />
       )}
     </div>

@@ -311,3 +311,42 @@ where r.tenant_id = '00000000-0000-0000-0000-000000000001'
   and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR')
 on conflict do nothing;
 
+-- ===========================================================================
+-- Phase 1.11 Finance role mappings (mirror of the module migration).
+-- Finance-role based; no operational role gets finance by default.
+-- ===========================================================================
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.module = 'finance'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001' and r.code = 'SYSTEM_ADMIN'
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'finance:read'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001' and r.code = 'CEO'
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code in ('finance:read', 'finance:create', 'finance:update', 'finance:issue', 'finance:payment', 'finance:void')
+where r.tenant_id = '00000000-0000-0000-0000-000000000001' and r.code = 'OPS_SUPERVISOR'
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code in ('finance:read', 'finance:create', 'finance:issue')
+where r.tenant_id = '00000000-0000-0000-0000-000000000001' and r.code = 'ACCOUNT_MANAGER'
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code in ('finance:read', 'finance:create', 'finance:update', 'finance:issue', 'finance:payment', 'finance:void')
+where r.tenant_id = '00000000-0000-0000-0000-000000000001' and r.code = 'FINANCE_OFFICER'
+on conflict do nothing;
+
