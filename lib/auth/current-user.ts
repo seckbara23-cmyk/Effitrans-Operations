@@ -9,6 +9,7 @@
  * used because generated DB types (lib/db/types.ts) do not exist until the
  * project is linked and `npm run db:types` is run.
  */
+import { cache } from "react";
 import { getServerSupabaseClient } from "@/lib/supabase/server";
 
 export type CurrentUser = {
@@ -24,7 +25,12 @@ export type CurrentUser = {
 
 type UserRoleRow = { role: { code: string } | null };
 
-export async function getCurrentUser(): Promise<CurrentUser | null> {
+/**
+ * P1: request-scoped memoization. assertPermission/requireUser and every gated
+ * service call resolve the current user; React cache() dedupes them to a SINGLE
+ * app_user + user_role lookup per request render.
+ */
+export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   const supabase = getServerSupabaseClient();
 
   const {
@@ -63,4 +69,4 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
     isSystemAdmin: profile.is_system_admin,
     roles,
   };
-}
+});

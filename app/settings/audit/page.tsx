@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { PageHeader } from "@/components/ui/page-header";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
@@ -16,7 +17,7 @@ function Notice({ children }: { children: React.ReactNode }) {
   );
 }
 
-export default async function AuditPage() {
+export default async function AuditPage({ searchParams }: { searchParams?: { page?: string } }) {
   // Graceful in environments without Supabase configured (e.g. local mock).
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
     return (
@@ -39,7 +40,8 @@ export default async function AuditPage() {
     );
   }
 
-  const entries = await listAuditEntries();
+  const pageNum = Math.max(0, Number(searchParams?.page ?? 0) || 0);
+  const { entries, page, hasMore } = await listAuditEntries(pageNum);
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -74,6 +76,18 @@ export default async function AuditPage() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {(page > 0 || hasMore) && (
+        <div className="flex items-center justify-between text-sm">
+          {page > 0 ? (
+            <Link href={`/settings/audit?page=${page - 1}`} className="text-teal-700 hover:underline">← {t.audit.prev}</Link>
+          ) : <span />}
+          <span className="text-slate-400">{t.audit.page} {page + 1}</span>
+          {hasMore ? (
+            <Link href={`/settings/audit?page=${page + 1}`} className="text-teal-700 hover:underline">{t.audit.next} →</Link>
+          ) : <span />}
         </div>
       )}
     </div>

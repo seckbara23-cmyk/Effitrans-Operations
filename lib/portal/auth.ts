@@ -6,6 +6,7 @@
  * no client_user row -> null. Only ACTIVE portal users pass requirePortalUser.
  */
 import "server-only";
+import { cache } from "react";
 import { redirect } from "next/navigation";
 import { getServerSupabaseClient } from "@/lib/supabase/server";
 import type { PortalRole, PortalUserStatus } from "./access";
@@ -22,7 +23,9 @@ type Row = {
   client: { name: string } | null;
 };
 
-export async function getCurrentPortalUser(): Promise<PortalUser | null> {
+// P1: request-scoped — the portal layout guard + each portal page/action resolve
+// the client_user; React cache() dedupes them to one lookup per render.
+export const getCurrentPortalUser = cache(async (): Promise<PortalUser | null> => {
   const supabase = getServerSupabaseClient();
   const {
     data: { user },
@@ -46,7 +49,7 @@ export async function getCurrentPortalUser(): Promise<PortalUser | null> {
     role: data.role as PortalRole,
     clientName: data.client?.name ?? null,
   };
-}
+});
 
 /** Active portal user or redirect to the portal login. */
 export async function requirePortalUser(): Promise<PortalUser> {

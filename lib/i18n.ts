@@ -56,6 +56,9 @@ export const t = {
     notConfigured:
       "Le journal d'audit nécessite la configuration Supabase de l'environnement.",
     empty: "Aucune entrée d'audit pour le moment.",
+    prev: "Précédent",
+    next: "Suivant",
+    page: "Page",
     columns: {
       when: "Horodatage",
       action: "Action",
