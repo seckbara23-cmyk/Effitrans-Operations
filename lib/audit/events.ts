@@ -15,6 +15,9 @@ export const AuditActions = {
   ADMIN_OVERRIDE_ACCESS: "admin.override.access", // isOverride: true
   AUTH_LOGIN: "auth.login",
   AUTH_LOGOUT: "auth.logout",
+  // Phase 1.16 — Google OAuth (staff)
+  AUTH_LOGIN_GOOGLE: "auth.login.google", // staff, attributed (actorId)
+  AUTH_LOGIN_REJECTED: "auth.login.rejected", // machine: unknown/disabled/mismatch (reason only)
   SYSTEM_SEED: "system.seed",
   // Phase 1.1 — Client Management
   CLIENT_CREATED: "client.created",

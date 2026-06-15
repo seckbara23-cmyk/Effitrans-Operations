@@ -34,6 +34,16 @@ describe("audit event validation", () => {
     expect(() => validateAuditEvent({ action: "payment_intent.created" })).toThrow(/required/);
   });
 
+  it("allows null actor for a rejected OAuth login, but attributes a successful one (1.16)", () => {
+    // A login rejected at the gate has no authenticated actor to attribute.
+    expect(() => validateAuditEvent({ action: "auth.login.rejected" })).not.toThrow();
+    expect(isSystemAction("auth.login.rejected")).toBe(true);
+    // A successful Google login is attributed to the staff actor.
+    expect(isSystemAction("auth.login.google")).toBe(false);
+    expect(() => validateAuditEvent({ action: "auth.login.google" })).toThrow(/required/);
+    expect(() => validateAuditEvent({ action: "auth.login.google", actorId: "u1" })).not.toThrow();
+  });
+
   it("requires overrideReason when isOverride", () => {
     expect(() =>
       validateAuditEvent({ action: "admin.override.access", actorId: "u1", isOverride: true }),

@@ -47,6 +47,12 @@ export const t = {
     submit: "Se connecter",
     submitting: "Connexion…",
     error: "Identifiants invalides.",
+    google: "Continuer avec Google",
+    or: "ou",
+    googleErrors: {
+      unauthorized: "Ce compte Google n'est pas autorisé. Contactez votre administrateur.",
+      oauth: "La connexion Google a échoué. Veuillez réessayer.",
+    },
     notConfigured:
       "L'authentification n'est pas encore configurée sur cet environnement.",
   },
