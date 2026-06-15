@@ -200,3 +200,42 @@ join public.permission p on p.code = 'task:read'
 where r.tenant_id = '00000000-0000-0000-0000-000000000001' and r.code = 'COMPLIANCE_HSSE'
 on conflict do nothing;
 
+-- ===========================================================================
+-- Phase 1.8 Documents role mappings (mirror of the module migration).
+-- ===========================================================================
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'document:read'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'CEO', 'OPS_SUPERVISOR', 'ACCOUNT_MANAGER', 'COMPLIANCE_HSSE',
+                 'COORDINATOR', 'CHIEF_OF_TRANSIT', 'CUSTOMS_DECLARANT', 'DOCUMENTATION_OFFICER',
+                 'TRANSPORT_OFFICER', 'WAREHOUSE_COORDINATOR')
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code in ('document:create', 'document:update')
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'ACCOUNT_MANAGER', 'OPS_SUPERVISOR', 'COORDINATOR',
+                 'DOCUMENTATION_OFFICER', 'CHIEF_OF_TRANSIT', 'CUSTOMS_DECLARANT',
+                 'TRANSPORT_OFFICER', 'WAREHOUSE_COORDINATOR')
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'document:approve'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR', 'ACCOUNT_MANAGER', 'CHIEF_OF_TRANSIT', 'COMPLIANCE_HSSE')
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'document:delete'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR')
+on conflict do nothing;
+

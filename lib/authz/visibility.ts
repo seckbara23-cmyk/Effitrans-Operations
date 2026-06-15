@@ -35,3 +35,13 @@ export async function resolveFileScope(
   if (error) throw new Error(`[authz] file scope resolution failed: ${error.message}`);
   return { all: false, ids: (data ?? []).map((r) => r.id) };
 }
+
+/** Can this user read this specific dossier? (mirrors can_read_file for admin reads) */
+export async function isFileVisible(
+  userId: string,
+  tenantId: string,
+  fileId: string,
+): Promise<boolean> {
+  const scope = await resolveFileScope(userId, tenantId, "file:read:all");
+  return scope.all || scope.ids.includes(fileId);
+}

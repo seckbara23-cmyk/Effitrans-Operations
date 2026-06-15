@@ -686,6 +686,124 @@ export type Database = {
           },
         ];
       };
+      document_type: {
+        Row: {
+          code: string;
+          label_fr: string;
+          label_en: string | null;
+          category: string;
+          has_validity: boolean;
+          default_validity_days: number | null;
+          renewable: boolean;
+          required_for: string[];
+          conditional: boolean;
+          active: boolean;
+          sort_order: number;
+        };
+        Insert: {
+          code: string;
+          label_fr: string;
+          label_en?: string | null;
+          category: string;
+          has_validity?: boolean;
+          default_validity_days?: number | null;
+          renewable?: boolean;
+          required_for?: string[];
+          conditional?: boolean;
+          active?: boolean;
+          sort_order?: number;
+        };
+        Update: {
+          code?: string;
+          label_fr?: string;
+          label_en?: string | null;
+          category?: string;
+          has_validity?: boolean;
+          default_validity_days?: number | null;
+          renewable?: boolean;
+          required_for?: string[];
+          conditional?: boolean;
+          active?: boolean;
+          sort_order?: number;
+        };
+        Relationships: [];
+      };
+      document: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          file_id: string;
+          type_code: string;
+          title: string | null;
+          status: string;
+          version: number;
+          supersedes_id: string | null;
+          expiry_date: string | null;
+          storage_path: string;
+          mime_type: string | null;
+          size_bytes: number | null;
+          uploaded_by: string | null;
+          reviewed_by: string | null;
+          review_note: string | null;
+          deleted_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          file_id: string;
+          type_code: string;
+          title?: string | null;
+          status?: string;
+          version?: number;
+          supersedes_id?: string | null;
+          expiry_date?: string | null;
+          storage_path: string;
+          mime_type?: string | null;
+          size_bytes?: number | null;
+          uploaded_by?: string | null;
+          reviewed_by?: string | null;
+          review_note?: string | null;
+          deleted_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string;
+          file_id?: string;
+          type_code?: string;
+          title?: string | null;
+          status?: string;
+          version?: number;
+          supersedes_id?: string | null;
+          expiry_date?: string | null;
+          storage_path?: string;
+          mime_type?: string | null;
+          size_bytes?: number | null;
+          uploaded_by?: string | null;
+          reviewed_by?: string | null;
+          review_note?: string | null;
+          deleted_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "document_file_id_fkey";
+            columns: ["file_id"];
+            referencedRelation: "operational_file";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "document_type_code_fkey";
+            columns: ["type_code"];
+            referencedRelation: "document_type";
+            referencedColumns: ["code"];
+          },
+        ];
+      };
     };
     Views: Record<string, never>;
     Functions: {

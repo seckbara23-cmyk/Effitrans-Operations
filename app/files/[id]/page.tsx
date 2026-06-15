@@ -9,6 +9,8 @@ import { FileForm } from "@/components/files/file-form";
 import { FileWorkflow } from "@/components/files/file-workflow";
 import { TaskPanel } from "@/components/tasks/task-panel";
 import { listTasks, listAssignees } from "@/lib/tasks/service";
+import { DocumentsPanel } from "@/components/documents/documents-panel";
+import { listDocuments, listDocumentTypes, getMissingRequiredDocuments } from "@/lib/documents/service";
 import { t } from "@/lib/i18n";
 
 export const metadata: Metadata = { title: t.files.title };
@@ -51,6 +53,16 @@ export default async function FileDetailPage({ params }: { params: { id: string 
   const tasks = canReadTasks ? await listTasks({ fileId: file.id }) : [];
   const taskAssignees = canUpdateTasks ? await listAssignees() : [];
 
+  // Embedded documents (only if the user can read documents).
+  const canReadDocs = hasPermission(permissions, "document:read");
+  const [documents, docTypes, missingDocs] = canReadDocs
+    ? await Promise.all([
+        listDocuments(file.id),
+        listDocumentTypes(),
+        getMissingRequiredDocuments(file.id, file.type),
+      ])
+    : [[], [], []];
+
   return (
     <div className="animate-fade-in space-y-6">
       {header(`${file.fileNumber}`)}
@@ -67,6 +79,17 @@ export default async function FileDetailPage({ params }: { params: { id: string 
           canCreate={hasPermission(permissions, "task:create")}
           canUpdate={canUpdateTasks}
           canDelete={hasPermission(permissions, "task:delete")}
+        />
+      )}
+      {canReadDocs && (
+        <DocumentsPanel
+          fileId={file.id}
+          documents={documents}
+          types={docTypes}
+          missing={missingDocs}
+          canCreate={hasPermission(permissions, "document:create")}
+          canApprove={hasPermission(permissions, "document:approve")}
+          canDelete={hasPermission(permissions, "document:delete")}
         />
       )}
     </div>

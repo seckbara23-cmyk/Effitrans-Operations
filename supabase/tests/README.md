@@ -1,5 +1,12 @@
 # Supabase Tests
 
+## RLS documents module (Phase 1.8)
+[`rls_document_test.sql`](rls_document_test.sql) proves `document` reads **inherit
+dossier visibility** (Phase 1.7 `can_read_file`) **and** require `document:read`:
+a manager sees documents on any tenant-A dossier but not tenant B; a COORDINATOR
+sees only their dossier's document; a user without `document:read` sees none.
+Expected: `1 / 1 / 0 / 1 / 0 / 0`. Runs in the `rls-tests` CI job.
+
 ## RLS visibility scoping (Phase 1.7)
 [`rls_visibility_test.sql`](rls_visibility_test.sql) proves the own/assigned read
 model on `operational_file` + `task`: a manager (`*:read:all`) sees every tenant-A

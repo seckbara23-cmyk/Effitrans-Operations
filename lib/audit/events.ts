@@ -33,6 +33,13 @@ export const AuditActions = {
   TASK_ASSIGNED: "task.assigned",
   TASK_COMPLETED: "task.completed",
   TASK_CANCELLED: "task.cancelled",
+  // Phase 1.8 — Documents
+  DOCUMENT_UPLOADED: "document.uploaded",
+  DOCUMENT_UPDATED: "document.updated",
+  DOCUMENT_APPROVED: "document.approved",
+  DOCUMENT_REJECTED: "document.rejected",
+  DOCUMENT_EXPIRED: "document.expired", // reserved — set by the deferred scheduler
+  DOCUMENT_DELETED: "document.deleted",
 } as const;
 
 export type AuditActionCode = (typeof AuditActions)[keyof typeof AuditActions];
