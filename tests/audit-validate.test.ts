@@ -24,6 +24,16 @@ describe("audit event validation", () => {
     expect(isSystemAction("auth.login")).toBe(false);
   });
 
+  it("allows null actor for 1.15B machine events (webhook / TTL driven)", () => {
+    expect(() => validateAuditEvent({ action: "payment.auto_recorded" })).not.toThrow();
+    expect(() => validateAuditEvent({ action: "provider.webhook.received" })).not.toThrow();
+    expect(isSystemAction("payment_intent.succeeded")).toBe(true);
+    expect(isSystemAction("payment_intent.expired")).toBe(true);
+    // but staff/portal-initiated intent events still require an actor
+    expect(isSystemAction("payment_intent.created")).toBe(false);
+    expect(() => validateAuditEvent({ action: "payment_intent.created" })).toThrow(/required/);
+  });
+
   it("requires overrideReason when isOverride", () => {
     expect(() =>
       validateAuditEvent({ action: "admin.override.access", actorId: "u1", isOverride: true }),

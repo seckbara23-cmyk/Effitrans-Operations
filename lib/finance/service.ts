@@ -12,6 +12,8 @@ import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
 import { balanceDue, invoiceTotals, isOverdue, paidAmount } from "./calc";
 import { isMissingReference, isVerificationStatus } from "./verification";
+import { isIntentStatus, isProviderName, type IntentStatus, type ProviderName } from "./payment-intent";
+import { paymentsEnabled, usableProviders } from "./providers/config";
 import type {
   Charge,
   FinanceForFile,
@@ -21,6 +23,7 @@ import type {
   InvoiceQueueItem,
   InvoiceStatus,
   Payment,
+  PaymentIntentView,
   PaymentMethod,
   ReconciliationData,
   ReconciliationPayment,
@@ -180,7 +183,27 @@ export async function getFinanceForFile(fileId: string): Promise<FinanceForFile>
     0,
   );
 
-  return { charges, invoices, hasIssued, outstanding };
+  // 1.15B — online payment intents for this dossier's invoices + provider availability.
+  const { data: intentRows } = ids.length
+    ? await supabase
+        .from("payment_intent")
+        .select(INTENT_SELECT)
+        .eq("tenant_id", user.tenantId)
+        .in("invoice_id", ids)
+        .order("created_at", { ascending: false })
+        .returns<IntentRow[]>()
+    : { data: [] as IntentRow[] };
+  const intents = (intentRows ?? []).map(toIntentView);
+
+  return {
+    charges,
+    invoices,
+    hasIssued,
+    outstanding,
+    intents,
+    paymentsEnabled: paymentsEnabled(),
+    usableProviders: usableProviders(),
+  };
 }
 
 /** Tenant-wide invoice queue (finance:read). */
@@ -308,6 +331,20 @@ export async function getReconciliation(): Promise<ReconciliationData> {
   );
   const outstandingTotal = outstanding.reduce((s, i) => s + i.balance, 0);
 
+  // Online intents that need attention: in-flight + recently failed/expired/orphaned.
+  // SUCCEEDED became a payment (covered above); CANCELLED was intentional.
+  const { data: intentRows } = await supabase
+    .from("payment_intent")
+    .select(
+      `${INTENT_SELECT}, invoice:invoice_id(invoice_number, file_id, file:file_id(file_number, client:client_id(name)))`,
+    )
+    .eq("tenant_id", user.tenantId)
+    .in("status", ["CREATED", "PENDING", "PROCESSING", "FAILED", "EXPIRED"])
+    .order("created_at", { ascending: false })
+    .limit(50)
+    .returns<IntentRow[]>();
+  const onlineIntents = (intentRows ?? []).map(toIntentView);
+
   return {
     counts: {
       pending: pending.length,
@@ -318,10 +355,69 @@ export async function getReconciliation(): Promise<ReconciliationData> {
     pending,
     missingReference,
     recentlyResolved,
+    onlineIntents,
     outstanding,
     outstandingTotal,
     currency: outstanding[0]?.currency ?? all[0]?.currency ?? "XOF",
   };
+}
+
+// ----------------------------------------------------------- intents (1.15B) ----
+
+type IntentRow = {
+  id: string;
+  invoice_id: string;
+  provider: string;
+  amount: number;
+  currency: string;
+  status: string;
+  provider_checkout_url: string | null;
+  provider_reference: string | null;
+  expires_at: string | null;
+  last_error: string | null;
+  created_at: string;
+  invoice?: {
+    invoice_number: string | null;
+    file_id: string;
+    file: { file_number: string | null; client: { name: string } | null } | null;
+  } | null;
+};
+
+function toIntentView(r: IntentRow): PaymentIntentView {
+  return {
+    id: r.id,
+    invoiceId: r.invoice_id,
+    fileId: r.invoice?.file_id ?? null,
+    invoiceNumber: r.invoice?.invoice_number ?? null,
+    fileNumber: r.invoice?.file?.file_number ?? null,
+    clientName: r.invoice?.file?.client?.name ?? null,
+    provider: (isProviderName(r.provider) ? r.provider : "MOCK") as ProviderName,
+    amount: Number(r.amount),
+    currency: r.currency,
+    status: (isIntentStatus(r.status) ? r.status : "CREATED") as IntentStatus,
+    checkoutUrl: r.provider_checkout_url,
+    providerReference: r.provider_reference,
+    expiresAt: r.expires_at,
+    lastError: r.last_error,
+    createdAt: r.created_at,
+  };
+}
+
+const INTENT_SELECT =
+  "id, invoice_id, provider, amount, currency, status, provider_checkout_url, provider_reference, expires_at, last_error, created_at";
+
+/** Payment intents for one invoice (finance:read) — shown on the invoice card. */
+export async function getIntentsForInvoice(invoiceId: string): Promise<PaymentIntentView[]> {
+  const user = await assertPermission("finance:read");
+  const supabase = getAdminSupabaseClient();
+  const { data } = await supabase
+    .from("payment_intent")
+    .select(INTENT_SELECT)
+    .eq("tenant_id", user.tenantId)
+    .eq("invoice_id", invoiceId)
+    .order("created_at", { ascending: false })
+    .returns<IntentRow[]>();
+  return (data ?? []).map(toIntentView);
 }
 
 /** Dashboard finance KPIs (finance:read). */

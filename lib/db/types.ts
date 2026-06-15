@@ -1203,6 +1203,122 @@ export type Database = {
           },
         ];
       };
+      payment_intent: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          invoice_id: string;
+          provider: string;
+          amount: number;
+          currency: string;
+          status: string;
+          provider_intent_id: string | null;
+          provider_checkout_url: string | null;
+          provider_reference: string | null;
+          payment_id: string | null;
+          expires_at: string | null;
+          completed_at: string | null;
+          failed_at: string | null;
+          last_error: string | null;
+          created_by: string | null;
+          created_by_client: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          invoice_id: string;
+          provider: string;
+          amount: number;
+          currency?: string;
+          status?: string;
+          provider_intent_id?: string | null;
+          provider_checkout_url?: string | null;
+          provider_reference?: string | null;
+          payment_id?: string | null;
+          expires_at?: string | null;
+          completed_at?: string | null;
+          failed_at?: string | null;
+          last_error?: string | null;
+          created_by?: string | null;
+          created_by_client?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string;
+          invoice_id?: string;
+          provider?: string;
+          amount?: number;
+          currency?: string;
+          status?: string;
+          provider_intent_id?: string | null;
+          provider_checkout_url?: string | null;
+          provider_reference?: string | null;
+          payment_id?: string | null;
+          expires_at?: string | null;
+          completed_at?: string | null;
+          failed_at?: string | null;
+          last_error?: string | null;
+          created_by?: string | null;
+          created_by_client?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "payment_intent_invoice_id_fkey";
+            columns: ["invoice_id"];
+            referencedRelation: "invoice";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      provider_webhook_event: {
+        Row: {
+          id: string;
+          tenant_id: string | null;
+          provider: string;
+          provider_event_id: string;
+          event_type: string;
+          payment_intent_id: string | null;
+          signature_valid: boolean;
+          outcome: string;
+          received_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id?: string | null;
+          provider: string;
+          provider_event_id: string;
+          event_type: string;
+          payment_intent_id?: string | null;
+          signature_valid: boolean;
+          outcome: string;
+          received_at?: string;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string | null;
+          provider?: string;
+          provider_event_id?: string;
+          event_type?: string;
+          payment_intent_id?: string | null;
+          signature_valid?: boolean;
+          outcome?: string;
+          received_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "provider_webhook_event_payment_intent_id_fkey";
+            columns: ["payment_intent_id"];
+            referencedRelation: "payment_intent";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       invoice_counter: {
         Row: { tenant_id: string; year: number; next_seq: number };
         Insert: { tenant_id: string; year: number; next_seq?: number };

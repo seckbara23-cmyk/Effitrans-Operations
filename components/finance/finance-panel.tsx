@@ -147,6 +147,9 @@ export function FinancePanel({
               canVoidInvoice={canVoidInvoice}
               canDelete={canDelete}
               canEmail={canEmail}
+              intents={finance.intents.filter((i) => i.invoiceId === inv.id)}
+              paymentsEnabled={finance.paymentsEnabled}
+              usableProviders={finance.usableProviders}
             />
           ))
         )}

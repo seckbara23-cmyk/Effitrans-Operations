@@ -72,6 +72,15 @@ export const AuditActions = {
   // Phase 1.15A — Payment verification / reconciliation
   PAYMENT_VERIFIED: "payment.verified",
   PAYMENT_REJECTED: "payment.rejected",
+  // Phase 1.15B — Payment provider integration (intents + webhooks)
+  PAYMENT_INTENT_CREATED: "payment_intent.created", // staff/portal-attributed
+  PAYMENT_INTENT_CANCELLED: "payment_intent.cancelled", // staff/portal-attributed
+  PAYMENT_INTENT_SUCCEEDED: "payment_intent.succeeded", // machine (webhook)
+  PAYMENT_INTENT_FAILED: "payment_intent.failed", // machine (webhook)
+  PAYMENT_INTENT_EXPIRED: "payment_intent.expired", // machine (TTL sweep)
+  PROVIDER_WEBHOOK_RECEIVED: "provider.webhook.received", // machine
+  PROVIDER_WEBHOOK_REPLAYED: "provider.webhook.replayed", // machine (dup/replay/reject)
+  PAYMENT_AUTO_RECORDED: "payment.auto_recorded", // machine (webhook success)
   // Phase 1.12 — Customer Portal
   PORTAL_USER_INVITED: "portal.user.invited",
   PORTAL_USER_ACTIVATED: "portal.user.activated",

@@ -11,6 +11,7 @@ export type TemplateKey =
   | "document_shared"
   | "invoice_issued"
   | "payment_recorded"
+  | "payment_link"
   | "customs_released"
   | "transport_delivered"
   | "pod_received";
@@ -42,6 +43,11 @@ export const TEMPLATES: Record<TemplateKey, Template> = {
     subject: "Paiement enregistré — facture {{invoiceNumber}}",
     html: "<p>Bonjour {{clientName}},</p><p>Nous avons enregistré un paiement de {{amount}} sur la facture {{invoiceNumber}}.</p><p>Solde restant : {{balance}}</p>",
     text: "Bonjour {{clientName}},\nPaiement de {{amount}} enregistré sur la facture {{invoiceNumber}}. Solde restant : {{balance}}.",
+  },
+  payment_link: {
+    subject: "Lien de paiement — facture {{invoiceNumber}}",
+    html: "<p>Bonjour {{clientName}},</p><p>Réglez votre facture <strong>{{invoiceNumber}}</strong> d'un montant de {{amount}} en ligne :</p><p><a href=\"{{paymentLink}}\">Payer maintenant</a></p>",
+    text: "Bonjour {{clientName}},\nRéglez votre facture {{invoiceNumber}} ({{amount}}) en ligne : {{paymentLink}}",
   },
   customs_released: {
     subject: "Dédouanement libéré — dossier {{fileNumber}}",

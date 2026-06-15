@@ -22,7 +22,9 @@ import {
 } from "@/lib/finance/actions";
 import { PAYMENT_METHODS } from "@/lib/finance/calc";
 import { EmailTriggerButton } from "@/components/communications/email-trigger-button";
-import type { ActionResult, InvoiceDetail } from "@/lib/finance/types";
+import { InvoiceIntents } from "./invoice-intents";
+import type { ActionResult, InvoiceDetail, PaymentIntentView } from "@/lib/finance/types";
+import type { ProviderName } from "@/lib/finance/payment-intent";
 
 const STATUS_STYLE: Record<string, string> = {
   DRAFT: "bg-slate-100 text-slate-600",
@@ -50,6 +52,9 @@ export function InvoiceCard({
   canVoidInvoice,
   canDelete,
   canEmail = false,
+  intents = [],
+  paymentsEnabled = false,
+  usableProviders = [],
 }: {
   invoice: InvoiceDetail;
   canUpdate: boolean;
@@ -58,6 +63,9 @@ export function InvoiceCard({
   canVoidInvoice: boolean;
   canDelete: boolean;
   canEmail?: boolean;
+  intents?: PaymentIntentView[];
+  paymentsEnabled?: boolean;
+  usableProviders?: ProviderName[];
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -248,6 +256,17 @@ export function InvoiceCard({
           <EmailTriggerButton kind="invoice" id={invoice.id} label={t.communications.emailClient} />
         )}
       </div>
+
+      {/* Online payment intents (1.15B) — dark unless PAYMENTS_ENABLED + provider configured */}
+      <InvoiceIntents
+        invoiceId={invoice.id}
+        intents={intents}
+        canPayment={canPayment}
+        canVoidInvoice={canVoidInvoice}
+        isPayable={isPayable}
+        paymentsEnabled={paymentsEnabled}
+        usableProviders={usableProviders}
+      />
 
       {error && <p className="text-xs text-red-600">{error}</p>}
     </div>

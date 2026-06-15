@@ -2,6 +2,7 @@
  * Finance shared types (Phase 1.11; 1.15A verification). Client + server safe.
  */
 import type { VerificationStatus } from "./verification";
+import type { IntentStatus, ProviderName } from "./payment-intent";
 
 export type InvoiceStatus = "DRAFT" | "ISSUED" | "PARTIALLY_PAID" | "PAID" | "VOID";
 
@@ -106,6 +107,10 @@ export type FinanceForFile = {
   invoices: InvoiceDetail[];
   hasIssued: boolean;
   outstanding: number;
+  /** Phase 1.15B — online payment intents per invoice + provider availability. */
+  intents: PaymentIntentView[];
+  paymentsEnabled: boolean;
+  usableProviders: ProviderName[];
 };
 
 export type FinanceKpis = {
@@ -135,6 +140,25 @@ export type ReconciliationPayment = {
   missingReference: boolean;
 };
 
+/** A payment_intent projected for the UI (Phase 1.15B). Client-safe. */
+export type PaymentIntentView = {
+  id: string;
+  invoiceId: string;
+  fileId: string | null;
+  invoiceNumber: string | null;
+  fileNumber: string | null;
+  clientName: string | null;
+  provider: ProviderName;
+  amount: number;
+  currency: string;
+  status: IntentStatus;
+  checkoutUrl: string | null;
+  providerReference: string | null;
+  expiresAt: string | null;
+  lastError: string | null;
+  createdAt: string;
+};
+
 export type ReconciliationData = {
   counts: {
     pending: number;
@@ -145,6 +169,7 @@ export type ReconciliationData = {
   pending: ReconciliationPayment[];
   missingReference: ReconciliationPayment[];
   recentlyResolved: ReconciliationPayment[];
+  onlineIntents: PaymentIntentView[];
   outstanding: InvoiceQueueItem[];
   outstandingTotal: number;
   currency: string;

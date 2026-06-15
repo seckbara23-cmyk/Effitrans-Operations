@@ -18,8 +18,24 @@ export type AuditEventInput = {
   overrideReason?: string | null;
 };
 
+/**
+ * Machine events (Phase 1.15B): provider-webhook and TTL-sweep driven, with no
+ * human actor. They are append-only-audited and attributed via the
+ * provider_webhook_event row (provider_event_id), so — like "system." events —
+ * they are allowed without an actorId. Staff/portal-initiated intent events
+ * (payment_intent.created / .cancelled) are NOT here: they still require an actor.
+ */
+const SYSTEM_MACHINE_ACTIONS = new Set<string>([
+  "payment_intent.succeeded",
+  "payment_intent.failed",
+  "payment_intent.expired",
+  "provider.webhook.received",
+  "provider.webhook.replayed",
+  "payment.auto_recorded",
+]);
+
 export function isSystemAction(action: string): boolean {
-  return action.startsWith("system.");
+  return action.startsWith("system.") || SYSTEM_MACHINE_ACTIONS.has(action);
 }
 
 /** Throws if the event violates the audit rules. Returns void on success. */

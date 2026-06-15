@@ -3,6 +3,8 @@ import { requirePortalUser } from "@/lib/portal/auth";
 import { getPortalInvoice, auditPortalInvoiceView } from "@/lib/portal/docs-service";
 import { lineAmount } from "@/lib/finance/calc";
 import { PortalPrintButton } from "@/components/portal/portal-print-button";
+import { PortalPayButton } from "@/components/portal/portal-pay-button";
+import { paymentsEnabled, usableProviders } from "@/lib/finance/providers/config";
 import { t } from "@/lib/i18n";
 
 export const dynamic = "force-dynamic";
@@ -75,6 +77,12 @@ export default async function PortalInvoiceDetailPage({ params }: { params: { id
           <Row label={i.paid} value={fmt(inv.paid, c)} />
           <Row label={i.balance} value={fmt(inv.balance, c)} bold />
         </div>
+
+        {inv.balance > 0 && (inv.status === "ISSUED" || inv.status === "PARTIALLY_PAID") && (
+          <div className="flex justify-end">
+            <PortalPayButton invoiceId={inv.id} enabled={paymentsEnabled()} providers={usableProviders()} />
+          </div>
+        )}
 
         {inv.payments.length > 0 && (
           <div>

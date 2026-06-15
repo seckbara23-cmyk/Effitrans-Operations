@@ -137,6 +137,47 @@ export default async function ReconciliationPage() {
       </section>
 
       <section className="space-y-2">
+        <h2 className="text-sm font-semibold text-navy-900">{R.sections.onlineIntents}</h2>
+        {data.onlineIntents.length === 0 ? (
+          <Notice>{R.empty.onlineIntents}</Notice>
+        ) : (
+          <div className="surface overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-slate-200 bg-sand-50 text-xs uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-4 py-3 font-semibold">{t.finance.columns.file}</th>
+                  <th className="px-4 py-3 font-semibold">{t.finance.columns.client}</th>
+                  <th className="px-4 py-3 font-semibold">{t.finance.intents.provider}</th>
+                  <th className="px-4 py-3 font-semibold">{t.finance.invoices.amount}</th>
+                  <th className="px-4 py-3 text-right font-semibold">{t.finance.columns.status}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {data.onlineIntents.map((i) => (
+                  <tr key={i.id} className="hover:bg-slate-50/60">
+                    <td className="px-4 py-3">
+                      <Link href={`/files/${i.fileId}`} className="tabular text-teal-700 hover:underline">
+                        {i.fileNumber ?? i.invoiceNumber ?? "—"}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">{i.clientName ?? t.common.none}</td>
+                    <td className="px-4 py-3 text-slate-600">{t.finance.intents.providers[i.provider]}</td>
+                    <td className="px-4 py-3 tabular text-slate-700">{fmt(i.amount, i.currency)}</td>
+                    <td className="px-4 py-3 text-right">
+                      <span className="inline-block rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                        {t.finance.intents.statuses[i.status]}
+                      </span>
+                      {i.lastError && <span className="ml-1 text-[10px] text-red-500">{i.lastError}</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <section className="space-y-2">
         <h2 className="text-sm font-semibold text-navy-900">{R.sections.outstanding}</h2>
         {data.outstanding.length === 0 ? (
           <Notice>{R.empty.outstanding}</Notice>
