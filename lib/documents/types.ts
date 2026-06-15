@@ -34,6 +34,7 @@ export type DocumentItem = {
   uploadedByEmail: string | null;
   reviewedByEmail: string | null;
   reviewNote: string | null;
+  sharedWithClient: boolean;
   createdAt: string;
 };
 

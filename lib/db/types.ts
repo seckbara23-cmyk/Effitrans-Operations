@@ -824,6 +824,7 @@ export type Database = {
           uploaded_by: string | null;
           reviewed_by: string | null;
           review_note: string | null;
+          shared_with_client: boolean;
           deleted_at: string | null;
           created_at: string;
           updated_at: string;
@@ -844,6 +845,7 @@ export type Database = {
           uploaded_by?: string | null;
           reviewed_by?: string | null;
           review_note?: string | null;
+          shared_with_client?: boolean;
           deleted_at?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -864,6 +866,7 @@ export type Database = {
           uploaded_by?: string | null;
           reviewed_by?: string | null;
           review_note?: string | null;
+          shared_with_client?: boolean;
           deleted_at?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -1264,6 +1267,7 @@ export type Database = {
       auth_portal_client_id: { Args: Record<string, never>; Returns: string };
       auth_portal_tenant_id: { Args: Record<string, never>; Returns: string };
       portal_can_read_file: { Args: { p_file: string }; Returns: boolean };
+      portal_can_read_invoice: { Args: { p_invoice: string }; Returns: boolean };
     };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;

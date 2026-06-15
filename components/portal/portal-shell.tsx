@@ -28,6 +28,8 @@ export function PortalShell({
           <nav className="ml-2 flex gap-3 text-sm text-slate-600">
             <Link href="/portal" className="hover:text-teal-700">{t.portal.nav.dashboard}</Link>
             <Link href="/portal/files" className="hover:text-teal-700">{t.portal.nav.files}</Link>
+            <Link href="/portal/documents" className="hover:text-teal-700">{t.portal.nav.documents}</Link>
+            <Link href="/portal/invoices" className="hover:text-teal-700">{t.portal.nav.invoices}</Link>
           </nav>
           {clientName && <span className="ml-auto text-sm font-medium text-navy-900">{clientName}</span>}
           <button

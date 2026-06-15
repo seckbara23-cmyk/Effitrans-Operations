@@ -73,6 +73,8 @@ export const AuditActions = {
   PORTAL_USER_INVITED: "portal.user.invited",
   PORTAL_USER_ACTIVATED: "portal.user.activated",
   PORTAL_LOGIN: "portal.login",
+  PORTAL_DOCUMENT_DOWNLOADED: "portal.document.downloaded",
+  PORTAL_INVOICE_VIEWED: "portal.invoice.viewed",
 } as const;
 
 export type AuditActionCode = (typeof AuditActions)[keyof typeof AuditActions];

@@ -25,6 +25,7 @@ type DocRow = {
   mime_type: string | null;
   size_bytes: number | null;
   review_note: string | null;
+  shared_with_client: boolean;
   created_at: string;
   doc_type: { label_fr: string } | null;
   uploader: { email: string | null } | null;
@@ -32,7 +33,7 @@ type DocRow = {
 };
 
 const SELECT =
-  "id, file_id, type_code, title, status, version, expiry_date, mime_type, size_bytes, review_note, created_at, doc_type:type_code(label_fr), uploader:uploaded_by(email), reviewer:reviewed_by(email)";
+  "id, file_id, type_code, title, status, version, expiry_date, mime_type, size_bytes, review_note, shared_with_client, created_at, doc_type:type_code(label_fr), uploader:uploaded_by(email), reviewer:reviewed_by(email)";
 
 /** The active document-type catalog (reference data; ordered for display). */
 export async function listDocumentTypes(): Promise<DocumentTypeItem[]> {
@@ -85,6 +86,7 @@ export async function listDocuments(fileId: string): Promise<DocumentItem[]> {
     uploadedByEmail: d.uploader?.email ?? null,
     reviewedByEmail: d.reviewer?.email ?? null,
     reviewNote: d.review_note,
+    sharedWithClient: d.shared_with_client,
     createdAt: d.created_at,
   }));
 }

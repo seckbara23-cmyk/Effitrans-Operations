@@ -1,5 +1,16 @@
 # Supabase Tests
 
+## RLS portal documents & invoices (Phase 1.12B)
+[`rls_portal_documents_test.sql`](rls_portal_documents_test.sql) proves a portal
+user sees a document only when **APPROVED + `shared_with_client` + own client**
+(approved-not-shared, shared-not-approved, and other-client all → 0; staff
+unaffected). Expected `1 / 0 / 0 / 0 / 1`.
+[`rls_portal_invoice_test.sql`](rls_portal_invoice_test.sql) proves a portal user
+sees only **ISSUED/PARTIALLY_PAID/PAID** invoices of their client (DRAFT/VOID/
+other-client → 0), with `invoice_line`/`payment` inheriting invoice visibility,
+and staff (`finance:read`) still seeing drafts. Expected `1 / 1 / 0 / 0 / 0 / 1 /
+0 / 1 / 1`. Both run in the `rls-tests` CI job.
+
 ## RLS customer portal (Phase 1.12A)
 [`rls_portal_test.sql`](rls_portal_test.sql) proves the second identity class
 (`client_user`) is strictly client-scoped via the **additive** portal RLS: an

@@ -234,6 +234,41 @@ export async function deleteDocument(id: string): Promise<ActionResult> {
   return { ok: true, id };
 }
 
+/**
+ * Share / unshare an APPROVED document with the client portal (Phase 1.12B).
+ * Gated by document:approve — external disclosure is an approval-authority call.
+ */
+export async function setDocumentShared(id: string, shared: boolean): Promise<ActionResult> {
+  let user;
+  try {
+    user = await assertPermission("document:approve");
+  } catch {
+    return { ok: false, error: "forbidden" };
+  }
+  const supabase = getAdminSupabaseClient();
+  const doc = await loadDocument(supabase, id, user.tenantId);
+  if (!doc) return { ok: false, error: "not_found" };
+  if (shared && doc.status !== "APPROVED") return { ok: false, error: "not_approved" };
+
+  const { error } = await supabase
+    .from("document")
+    .update({ shared_with_client: shared })
+    .eq("id", id)
+    .eq("tenant_id", user.tenantId);
+  if (error) return { ok: false, error: error.message };
+
+  await writeAudit({
+    action: AuditActions.DOCUMENT_UPDATED,
+    actorId: user.id,
+    tenantId: user.tenantId,
+    entity: "document",
+    entityId: id,
+    after: { shared_with_client: shared },
+  });
+  revalidatePath(`/files/${doc.file_id}`);
+  return { ok: true, id };
+}
+
 /** Mint a short-TTL signed download URL after a permission + visibility check. */
 export async function createDocumentDownloadUrl(id: string): Promise<ActionResult> {
   let user;

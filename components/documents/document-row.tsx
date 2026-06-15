@@ -12,6 +12,7 @@ import {
   createDocumentDownloadUrl,
   deleteDocument,
   rejectDocument,
+  setDocumentShared,
 } from "@/lib/documents/actions";
 import { canReview } from "@/lib/documents/status";
 import type { ActionResult, DocumentItem } from "@/lib/documents/types";
@@ -97,6 +98,11 @@ export function DocumentRow({
         <span>
           {t.documents.uploadedBy}: {doc.uploadedByEmail ?? "—"}
         </span>
+        {doc.status === "APPROVED" && (
+          <span className={doc.sharedWithClient ? "text-teal-700" : "text-slate-400"}>
+            · {doc.sharedWithClient ? t.documents.shared : t.documents.notShared}
+          </span>
+        )}
         <span className="ml-auto flex flex-wrap items-center gap-2">
           <button
             onClick={download}
@@ -105,6 +111,15 @@ export function DocumentRow({
           >
             {t.documents.download}
           </button>
+          {canApprove && doc.status === "APPROVED" && (
+            <button
+              onClick={() => run(() => setDocumentShared(doc.id, !doc.sharedWithClient))}
+              disabled={pending}
+              className="rounded-md border border-slate-200 px-2 py-1 text-xs font-medium text-navy-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              {doc.sharedWithClient ? t.documents.unshare : t.documents.share}
+            </button>
+          )}
           {reviewable && (
             <>
               <button

@@ -32,6 +32,51 @@ export type PortalDashboard = {
   byStatus: Record<string, number>;
 };
 
+export type PortalDocument = {
+  id: string;
+  typeLabel: string;
+  title: string | null;
+  fileId: string;
+  fileNumber: string | null;
+  createdAt: string;
+};
+
+export type PortalInvoiceSummary = {
+  id: string;
+  invoiceNumber: string | null;
+  fileId: string;
+  fileNumber: string | null;
+  status: string;
+  currency: string;
+  total: number;
+  paid: number;
+  balance: number;
+  dueDate: string | null;
+  overdue: boolean;
+};
+
+export type PortalInvoiceLine = {
+  description: string;
+  quantity: number;
+  unitAmount: number;
+  taxRate: number;
+};
+
+export type PortalInvoicePayment = {
+  amount: number;
+  method: string;
+  reference: string | null;
+  paidAt: string;
+};
+
+export type PortalInvoiceDetail = PortalInvoiceSummary & {
+  issueDate: string | null;
+  subtotal: number;
+  tax: number;
+  lines: PortalInvoiceLine[];
+  payments: PortalInvoicePayment[];
+};
+
 /** Admin (staff) view of a portal user, for the client detail page. */
 export type PortalUserAdmin = {
   id: string;
