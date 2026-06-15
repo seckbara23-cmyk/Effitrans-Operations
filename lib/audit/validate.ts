@@ -6,12 +6,14 @@
  *
  * Rules:
  *  - action is required (non-empty)
- *  - non-"system." actions REQUIRE an actorId (fail closed)
+ *  - non-"system." actions REQUIRE an actorId OR a clientUserId (fail closed)
  *  - override actions (isOverride) REQUIRE an overrideReason
  */
 export type AuditEventInput = {
   action: string;
   actorId?: string | null;
+  /** portal (client_user) actor — an alternative to actorId for portal.* events */
+  clientUserId?: string | null;
   isOverride?: boolean;
   overrideReason?: string | null;
 };
@@ -26,9 +28,11 @@ export function validateAuditEvent(event: AuditEventInput): void {
     throw new Error("[audit] action is required");
   }
 
-  if (!isSystemAction(event.action) && !event.actorId) {
+  // Non-system actions must be attributed — to a staff actor (actorId) OR, for
+  // portal events, to a client_user actor (clientUserId). Fail closed otherwise.
+  if (!isSystemAction(event.action) && !event.actorId && !event.clientUserId) {
     throw new Error(
-      `[audit] actorId is required for non-system action "${event.action}"`,
+      `[audit] actorId or clientUserId is required for non-system action "${event.action}"`,
     );
   }
 

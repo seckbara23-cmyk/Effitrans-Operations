@@ -95,6 +95,7 @@ export type Database = {
           id: string;
           tenant_id: string | null;
           actor_id: string | null;
+          client_user_id: string | null;
           action: string;
           entity: string | null;
           entity_id: string | null;
@@ -107,6 +108,7 @@ export type Database = {
           id?: string;
           tenant_id?: string | null;
           actor_id?: string | null;
+          client_user_id?: string | null;
           action: string;
           entity?: string | null;
           entity_id?: string | null;
@@ -119,6 +121,7 @@ export type Database = {
           id?: string;
           tenant_id?: string | null;
           actor_id?: string | null;
+          client_user_id?: string | null;
           action?: string;
           entity?: string | null;
           entity_id?: string | null;
@@ -1182,6 +1185,58 @@ export type Database = {
         Update: { tenant_id?: string; year?: number; next_seq?: number };
         Relationships: [];
       };
+      client_user: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          client_id: string;
+          email: string;
+          name: string | null;
+          status: string;
+          role: string;
+          invited_by: string | null;
+          invited_at: string;
+          last_login_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id: string;
+          tenant_id: string;
+          client_id: string;
+          email: string;
+          name?: string | null;
+          status?: string;
+          role?: string;
+          invited_by?: string | null;
+          invited_at?: string;
+          last_login_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string;
+          client_id?: string;
+          email?: string;
+          name?: string | null;
+          status?: string;
+          role?: string;
+          invited_by?: string | null;
+          invited_at?: string;
+          last_login_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "client_user_client_id_fkey";
+            columns: ["client_id"];
+            referencedRelation: "client";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Views: Record<string, never>;
     Functions: {
@@ -1206,6 +1261,9 @@ export type Database = {
       };
       can_read_file: { Args: { p_file: string }; Returns: boolean };
       can_read_task: { Args: { p_task: string }; Returns: boolean };
+      auth_portal_client_id: { Args: Record<string, never>; Returns: string };
+      auth_portal_tenant_id: { Args: Record<string, never>; Returns: string };
+      portal_can_read_file: { Args: { p_file: string }; Returns: boolean };
     };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;

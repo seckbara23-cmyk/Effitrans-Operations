@@ -5,6 +5,8 @@ import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { getClient } from "@/lib/clients/service";
 import { ClientForm } from "@/components/clients/client-form";
+import { PortalUsersPanel } from "@/components/portal/portal-users-panel";
+import { listClientPortalUsers } from "@/lib/portal/admin";
 import { t } from "@/lib/i18n";
 
 export const metadata: Metadata = { title: t.clients.title };
@@ -39,6 +41,9 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
     );
   }
 
+  const canManagePortal = hasPermission(permissions, "portal:manage");
+  const portalUsers = canManagePortal ? await listClientPortalUsers(client.id) : [];
+
   return (
     <div className="animate-fade-in space-y-6">
       {header(client.name)}
@@ -52,6 +57,7 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
         canUpdate={hasPermission(permissions, "client:update")}
         canDelete={hasPermission(permissions, "client:delete")}
       />
+      {canManagePortal && <PortalUsersPanel clientId={client.id} users={portalUsers} />}
     </div>
   );
 }

@@ -7,10 +7,14 @@ describe("audit event validation", () => {
     expect(() => validateAuditEvent({ action: "   " })).toThrow(/action is required/);
   });
 
-  it("requires actorId for non-system actions (fail closed)", () => {
-    expect(() => validateAuditEvent({ action: "user.role.assigned" })).toThrow(/actorId is required/);
+  it("requires an actor (staff or portal) for non-system actions (fail closed)", () => {
+    expect(() => validateAuditEvent({ action: "user.role.assigned" })).toThrow(/actorId or clientUserId is required/);
     expect(() =>
       validateAuditEvent({ action: "user.role.assigned", actorId: "u1" }),
+    ).not.toThrow();
+    // Phase 1.12: a portal (client_user) actor also satisfies attribution.
+    expect(() =>
+      validateAuditEvent({ action: "portal.login", clientUserId: "cu1" }),
     ).not.toThrow();
   });
 

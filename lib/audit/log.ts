@@ -23,8 +23,10 @@ export type AuditEvent = {
   action: string;
   /** tenant the event belongs to (null only for pre-tenant system events) */
   tenantId?: string | null;
-  /** the acting user (app_user.id); REQUIRED unless action starts with "system." */
+  /** the acting user (app_user.id); REQUIRED unless action starts with "system." or a clientUserId is given */
   actorId?: string | null;
+  /** the acting PORTAL user (client_user.id) — for portal.* events */
+  clientUserId?: string | null;
   /** entity type touched, e.g. "app_user" */
   entity?: string | null;
   /** entity row id */
@@ -49,6 +51,7 @@ export async function writeAudit(event: AuditEvent): Promise<void> {
     action: event.action,
     tenant_id: event.tenantId ?? null,
     actor_id: event.actorId ?? null,
+    client_user_id: event.clientUserId ?? null,
     entity: event.entity ?? null,
     entity_id: event.entityId ?? null,
     before: (event.before ?? null) as Json,

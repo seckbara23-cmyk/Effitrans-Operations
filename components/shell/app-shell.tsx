@@ -15,6 +15,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return <SessionProvider>{children}</SessionProvider>;
   }
 
+  // The customer portal is a separate surface — no internal chrome / session.
+  // It provides its own shell + guard (lib/portal). Never leak internal nav.
+  if (pathname.startsWith("/portal")) {
+    return <>{children}</>;
+  }
+
   return (
     <SessionProvider>
       <div className="min-h-screen bg-sand-100">

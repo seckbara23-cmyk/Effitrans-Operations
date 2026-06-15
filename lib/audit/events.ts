@@ -69,6 +69,10 @@ export const AuditActions = {
   INVOICE_DELETED: "invoice.deleted",
   PAYMENT_RECORDED: "payment.recorded",
   PAYMENT_REVERSED: "payment.reversed",
+  // Phase 1.12 — Customer Portal
+  PORTAL_USER_INVITED: "portal.user.invited",
+  PORTAL_USER_ACTIVATED: "portal.user.activated",
+  PORTAL_LOGIN: "portal.login",
 } as const;
 
 export type AuditActionCode = (typeof AuditActions)[keyof typeof AuditActions];

@@ -1,5 +1,13 @@
 # Supabase Tests
 
+## RLS customer portal (Phase 1.12A)
+[`rls_portal_test.sql`](rls_portal_test.sql) proves the second identity class
+(`client_user`) is strictly client-scoped via the **additive** portal RLS: an
+ACTIVE portal user sees **only their own client's** dossiers — not another
+client's, not another tenant's, and **never** tasks or audit. A DISABLED portal
+user sees nothing, and **staff RLS is unaffected** (SYSTEM_ADMIN still sees the
+dossier). Expected: `1 / 0 / 0 / 0 / 0 / 0 / 1`. Runs in the `rls-tests` CI job.
+
 ## RLS finance module (Phase 1.11)
 [`rls_finance_test.sql`](rls_finance_test.sql) proves finance visibility is
 **finance-role based, NOT inherited from `can_read_file`**: a `FINANCE_OFFICER`
