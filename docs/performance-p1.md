@@ -16,11 +16,16 @@ were plain async functions. A single dossier render calls ~8 gated services
 calling `assertPermission` → **one `app_user` lookup + one `get_user_permissions`
 RPC per call**. So ~8 redundant identity lookups + ~8 RPCs per page.
 
-**Fix:** wrapped all three in React `cache()` (request-scoped memoization). One
-render now resolves identity **once** and permissions **once per userId**.
-Estimated DB round-trip reduction on a populated dossier page: **~16 → ~2**.
-Portal pages benefit identically (layout guard + page + actions dedupe). Server
-actions get the same dedupe within a single action invocation.
+**Fix:** wrapped all three in React `cache()` (request-scoped memoization) **plus
+`resolveFileScope`** (lib/authz/visibility) — the Phase-1.7 file-scope helper that
+many services call (`listFiles`, `getFileOverview`, `getRecentFiles`, `listTasks`,
+`getDashboardTasks`, `isFileVisible`, document/customs/transport/finance reads).
+For an assigned-scope user each call re-ran the `user_readable_file_ids` RPC;
+cache() collapses them to one per (args, render). One render now resolves
+identity **once**, permissions **once per userId**, and file-scope **once per
+(user, permission)**. Estimated DB round-trip reduction on a populated dossier
+page: **~24 → ~3**. Portal pages benefit identically; server actions get the same
+dedupe within a single invocation.
 
 ## 2. Database index audit — ✅ IMPLEMENTED (migration `20260615000009`)
 Existing per-module indexes were already solid (tenant_id, status, file_id,
@@ -32,6 +37,10 @@ ownership columns). Gaps for the hot composite read paths, added (IF NOT EXISTS)
 | `operational_file (tenant_id, created_at desc)` | recent dossiers, new-per-month, analytics scans |
 | `invoice (tenant_id, issue_date)` | analytics revenue-by-month / financial filters |
 | `client_user (tenant_id, client_id)` | comms recipients, portal lookups |
+
+Already present from their modules (confirmed, no migration needed):
+`invoice (tenant_id, status)` (1.11), `task (tenant_id, status)` (1.3) — so all
+seven hot composite paths are covered.
 
 > **Prod note:** on large tables prefer `CREATE INDEX CONCURRENTLY` (outside a
 > migration transaction) to avoid write locks. At current volume, in-transaction
@@ -49,14 +58,15 @@ The portal `(app)` layout guard, each portal page's `requirePortalUser`, and the
 download/view actions all resolved `client_user`. `cache(getCurrentPortalUser)`
 (item 1) collapses these to one lookup per render.
 
-## 5. Dashboard query consolidation — ◻️ PROPOSED (partially mitigated)
-`getFileOverview` and `getRecentFiles` both scan `operational_file` with
-different projections; `getDashboardTasks` + `getFinanceKpis` add more. The
-permission-cache (item 1) already removes the per-call auth overhead. **Next
-step (deferred):** a single `operational_file` fetch feeding both overview +
-recent (one projection, computed twice in TS), and folding `getFinanceKpis` into
-the same finance round-trip used elsewhere. Low risk; do when dashboard latency
-warrants.
+## 5. Dashboard query consolidation — ✅ MITIGATED (item 1) + ◻️ remainder PROPOSED
+`getFileOverview` and `getRecentFiles` both scan `operational_file`;
+`getDashboardTasks` + `getFinanceKpis` add more. The biggest duplicate-work
+source was the **repeated `resolveFileScope` RPC + auth** across these calls — now
+deduped per render by the caching in item 1 (the dashboard's 3–4 file-scope RPCs
+collapse to one). **Remaining (deferred, low value):** a single `operational_file`
+fetch feeding both overview + recent (one scan, computed twice in TS). Kept
+separate for now — the projections differ (overview = lightweight all-rows;
+recent = 8 rows with client/AM joins), so a naive merge would over-fetch joins.
 
 ## 6. Analytics snapshot / materialized-view strategy — ◻️ PROPOSED (EB-002)
 `getAnalytics` + `getExecutiveAnalytics` aggregate live over invoices/lines/
@@ -73,13 +83,15 @@ when a tenant nears ~10k files (EB-002 trigger):**
 Until then, live aggregation is acceptable and the new indexes (item 2) cover the
 scans.
 
-## 7. Lazy-load heavy analytics sections — ◻️ PROPOSED
-`/analytics` awaits `getAnalytics` then `getExecutiveAnalytics` (the latter
-depends on the former, so they're sequential). Options when needed: render the
-KPI bands first and **stream** the executive layer + charts via `<Suspense>`
-async boundaries; or move heavy aggregation behind the snapshot (item 6, the real
-fix). No client-side chart library is used (CSS/SVG only), so there is no chart
-bundle to defer.
+## 7. Lazy-load heavy analytics sections — ✅ IMPLEMENTED (streaming)
+`/analytics` now does the cheap (cached) permission gate, renders the page shell
++ header **immediately**, and **streams** the heavy aggregation
+(`getAnalytics` + `getExecutiveAnalytics` + all bands/charts, extracted into
+`AnalyticsBody`) inside `<Suspense fallback={<AnalyticsSkeleton/>}>`. TTFB is now
+the shell, not the full aggregation; the user sees a skeleton then the content.
+No calculation/layout change. The structural fix for the aggregation cost itself
+remains the snapshot (item 6). No client chart library exists (CSS/SVG only), so
+there is no chart JS bundle to defer.
 
 ## 8. Server / client component bundle audit — ◻️ FINDINGS
 - **Good:** all routes are server components; client components are small

@@ -14,16 +14,25 @@
  * tenant-wide gate permission differs.
  */
 import "server-only";
+import { cache } from "react";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { getEffectivePermissions } from "@/lib/rbac/permissions";
 
 export type FileScope = { all: true } | { all: false; ids: string[] };
 
-export async function resolveFileScope(
+/**
+ * P1: request-scoped memoization keyed by (userId, tenantId, allPermission).
+ * A dossier/dashboard render calls this from many services (listFiles,
+ * getFileOverview, getRecentFiles, listTasks, getDashboardTasks, isFileVisible,
+ * document/customs/transport/finance services). For an assigned-scope user each
+ * call otherwise re-ran the user_readable_file_ids RPC; cache() collapses them
+ * to ONE RPC per (args, render).
+ */
+export const resolveFileScope = cache(async (
   userId: string,
   tenantId: string,
   allPermission: "file:read:all" | "task:read:all",
-): Promise<FileScope> {
+): Promise<FileScope> => {
   const perms = await getEffectivePermissions(userId);
   if (perms.includes(allPermission)) return { all: true };
 
@@ -34,7 +43,7 @@ export async function resolveFileScope(
   });
   if (error) throw new Error(`[authz] file scope resolution failed: ${error.message}`);
   return { all: false, ids: (data ?? []).map((r) => r.id) };
-}
+});
 
 /** Can this user read this specific dossier? (mirrors can_read_file for admin reads) */
 export async function isFileVisible(
