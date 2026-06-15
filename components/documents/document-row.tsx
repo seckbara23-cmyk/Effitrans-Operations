@@ -15,6 +15,7 @@ import {
   setDocumentShared,
 } from "@/lib/documents/actions";
 import { canReview } from "@/lib/documents/status";
+import { EmailTriggerButton } from "@/components/communications/email-trigger-button";
 import type { ActionResult, DocumentItem } from "@/lib/documents/types";
 
 const STATUS_STYLE: Record<string, string> = {
@@ -35,10 +36,12 @@ export function DocumentRow({
   doc,
   canApprove,
   canDelete,
+  canEmail = false,
 }: {
   doc: DocumentItem;
   canApprove: boolean;
   canDelete: boolean;
+  canEmail?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -119,6 +122,9 @@ export function DocumentRow({
             >
               {doc.sharedWithClient ? t.documents.unshare : t.documents.share}
             </button>
+          )}
+          {canEmail && doc.status === "APPROVED" && doc.sharedWithClient && (
+            <EmailTriggerButton kind="document" id={doc.id} label={t.communications.notifyClient} />
           )}
           {reviewable && (
             <>

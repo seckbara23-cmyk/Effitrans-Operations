@@ -15,6 +15,7 @@ import {
   setPortalUserStatus,
 } from "@/lib/portal/admin-actions";
 import { PORTAL_ROLES } from "@/lib/portal/access";
+import { EmailTriggerButton } from "@/components/communications/email-trigger-button";
 import type { ActionResult, PortalUserAdmin } from "@/lib/portal/types";
 
 const STATUS_STYLE: Record<string, string> = {
@@ -26,9 +27,11 @@ const STATUS_STYLE: Record<string, string> = {
 export function PortalUsersPanel({
   clientId,
   users,
+  canEmail = false,
 }: {
   clientId: string;
   users: PortalUserAdmin[];
+  canEmail?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -124,6 +127,7 @@ export function PortalUsersPanel({
                 <button onClick={() => run(() => resendPortalInvite(u.id))} disabled={pending} className="rounded-md border border-slate-200 px-2 py-1 text-xs font-medium text-navy-700 hover:bg-slate-50 disabled:opacity-50">
                   {a.resend}
                 </button>
+                {canEmail && <EmailTriggerButton kind="invite" id={u.id} label={t.communications.sendInvite} />}
               </span>
             </div>
           ))}

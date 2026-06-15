@@ -1,5 +1,11 @@
 # Supabase Tests
 
+## RLS communications module (Phase 1.14)
+[`rls_communication_test.sql`](rls_communication_test.sql) proves the email
+outbox is **staff-role gated** (`communication:read`) and **tenant-isolated**: a
+user with the permission sees tenant-A messages but not tenant B; a staff user
+without it sees none. Expected: `1 / 0 / 0`. Runs in the `rls-tests` CI job.
+
 ## RLS portal documents & invoices (Phase 1.12B)
 [`rls_portal_documents_test.sql`](rls_portal_documents_test.sql) proves a portal
 user sees a document only when **APPROVED + `shared_with_client` + own client**

@@ -1188,6 +1188,78 @@ export type Database = {
         Update: { tenant_id?: string; year?: number; next_seq?: number };
         Relationships: [];
       };
+      communication_message: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          recipient_email: string;
+          recipient_name: string | null;
+          channel: string;
+          template_key: string;
+          subject: string;
+          body_html: string;
+          body_text: string;
+          payload: Json | null;
+          status: string;
+          related_entity: string | null;
+          related_entity_id: string | null;
+          file_id: string | null;
+          client_id: string | null;
+          retry_count: number;
+          last_error: string | null;
+          sent_at: string | null;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          recipient_email: string;
+          recipient_name?: string | null;
+          channel?: string;
+          template_key: string;
+          subject: string;
+          body_html: string;
+          body_text: string;
+          payload?: Json | null;
+          status?: string;
+          related_entity?: string | null;
+          related_entity_id?: string | null;
+          file_id?: string | null;
+          client_id?: string | null;
+          retry_count?: number;
+          last_error?: string | null;
+          sent_at?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string;
+          recipient_email?: string;
+          recipient_name?: string | null;
+          channel?: string;
+          template_key?: string;
+          subject?: string;
+          body_html?: string;
+          body_text?: string;
+          payload?: Json | null;
+          status?: string;
+          related_entity?: string | null;
+          related_entity_id?: string | null;
+          file_id?: string | null;
+          client_id?: string | null;
+          retry_count?: number;
+          last_error?: string | null;
+          sent_at?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       client_user: {
         Row: {
           id: string;

@@ -75,6 +75,11 @@ export const AuditActions = {
   PORTAL_LOGIN: "portal.login",
   PORTAL_DOCUMENT_DOWNLOADED: "portal.document.downloaded",
   PORTAL_INVOICE_VIEWED: "portal.invoice.viewed",
+  // Phase 1.14 — Communications Hub
+  COMMUNICATION_QUEUED: "communication.queued",
+  COMMUNICATION_SENT: "communication.sent",
+  COMMUNICATION_FAILED: "communication.failed",
+  COMMUNICATION_CANCELLED: "communication.cancelled",
 } as const;
 
 export type AuditActionCode = (typeof AuditActions)[keyof typeof AuditActions];

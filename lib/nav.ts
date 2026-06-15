@@ -10,6 +10,7 @@ import {
   IconTruck,
   IconFinance,
   IconReport,
+  IconBell,
   IconGear,
 } from "./icons";
 
@@ -54,6 +55,7 @@ export const navSections: NavSection[] = [
     items: [
       { label: t.nav.finance, href: "/finance", icon: IconFinance, permission: "finance:read" },
       { label: t.nav.analytics, href: "/analytics", icon: IconReport, permission: "analytics:read" },
+      { label: t.nav.communications, href: "/communications", icon: IconBell, permission: "communication:read" },
       { label: t.nav.reports, href: "/reports", icon: IconReport },
       { label: t.nav.users, href: "/users", icon: IconUsers, permission: "admin:users:manage" },
       { label: t.nav.audit, href: "/settings/audit", icon: IconStamp, permission: "audit:read:all" },

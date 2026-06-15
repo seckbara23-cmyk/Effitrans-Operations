@@ -22,6 +22,7 @@ export function FinancePanel({
   canPayment,
   canVoidInvoice,
   canDelete,
+  canEmail = false,
 }: {
   fileId: string;
   finance: FinanceForFile;
@@ -31,6 +32,7 @@ export function FinancePanel({
   canPayment: boolean;
   canVoidInvoice: boolean;
   canDelete: boolean;
+  canEmail?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -144,6 +146,7 @@ export function FinancePanel({
               canPayment={canPayment}
               canVoidInvoice={canVoidInvoice}
               canDelete={canDelete}
+              canEmail={canEmail}
             />
           ))
         )}

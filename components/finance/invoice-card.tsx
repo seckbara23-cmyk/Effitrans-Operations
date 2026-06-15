@@ -19,6 +19,7 @@ import {
   voidInvoice,
 } from "@/lib/finance/actions";
 import { PAYMENT_METHODS } from "@/lib/finance/calc";
+import { EmailTriggerButton } from "@/components/communications/email-trigger-button";
 import type { ActionResult, InvoiceDetail } from "@/lib/finance/types";
 
 const STATUS_STYLE: Record<string, string> = {
@@ -40,6 +41,7 @@ export function InvoiceCard({
   canPayment,
   canVoidInvoice,
   canDelete,
+  canEmail = false,
 }: {
   invoice: InvoiceDetail;
   canUpdate: boolean;
@@ -47,6 +49,7 @@ export function InvoiceCard({
   canPayment: boolean;
   canVoidInvoice: boolean;
   canDelete: boolean;
+  canEmail?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -208,6 +211,9 @@ export function InvoiceCard({
           <button onClick={() => run(() => voidInvoice(invoice.id))} disabled={pending} className="rounded-md border border-red-200 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50">
             {f.invoices.void}
           </button>
+        )}
+        {canEmail && invoice.status !== "DRAFT" && invoice.status !== "VOID" && (
+          <EmailTriggerButton kind="invoice" id={invoice.id} label={t.communications.emailClient} />
         )}
       </div>
 

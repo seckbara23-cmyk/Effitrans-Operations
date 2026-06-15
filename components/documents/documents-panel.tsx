@@ -19,6 +19,7 @@ export function DocumentsPanel({
   canCreate,
   canApprove,
   canDelete,
+  canEmail = false,
 }: {
   fileId: string;
   documents: DocumentItem[];
@@ -27,6 +28,7 @@ export function DocumentsPanel({
   canCreate: boolean;
   canApprove: boolean;
   canDelete: boolean;
+  canEmail?: boolean;
 }) {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
@@ -105,7 +107,7 @@ export function DocumentsPanel({
       ) : (
         <div className="space-y-2">
           {documents.map((doc) => (
-            <DocumentRow key={doc.id} doc={doc} canApprove={canApprove} canDelete={canDelete} />
+            <DocumentRow key={doc.id} doc={doc} canApprove={canApprove} canDelete={canDelete} canEmail={canEmail} />
           ))}
         </div>
       )}

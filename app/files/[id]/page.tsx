@@ -17,6 +17,8 @@ import { TransportPanel } from "@/components/transport/transport-panel";
 import { getTransportRecord } from "@/lib/transport/service";
 import { FinancePanel } from "@/components/finance/finance-panel";
 import { getFinanceForFile } from "@/lib/finance/service";
+import { CommunicationsTimeline } from "@/components/communications/communications-timeline";
+import { listCommunicationsForFile } from "@/lib/comms/service";
 import { t } from "@/lib/i18n";
 
 export const metadata: Metadata = { title: t.files.title };
@@ -84,6 +86,11 @@ export default async function FileDetailPage({ params }: { params: { id: string 
   const canReadFinance = hasPermission(permissions, "finance:read");
   const finance = canReadFinance ? await getFinanceForFile(file.id) : null;
 
+  // Communications (staff-role based) — timeline + manual email triggers.
+  const canEmail = hasPermission(permissions, "communication:send");
+  const canReadComms = hasPermission(permissions, "communication:read");
+  const communications = canReadComms ? await listCommunicationsForFile(file.id) : [];
+
   return (
     <div className="animate-fade-in space-y-6">
       {header(`${file.fileNumber}`)}
@@ -111,6 +118,7 @@ export default async function FileDetailPage({ params }: { params: { id: string 
           canCreate={hasPermission(permissions, "document:create")}
           canApprove={hasPermission(permissions, "document:approve")}
           canDelete={hasPermission(permissions, "document:delete")}
+          canEmail={canEmail}
         />
       )}
       {canReadCustoms && (
@@ -146,8 +154,10 @@ export default async function FileDetailPage({ params }: { params: { id: string 
           canPayment={hasPermission(permissions, "finance:payment")}
           canVoidInvoice={hasPermission(permissions, "finance:void")}
           canDelete={hasPermission(permissions, "finance:delete")}
+          canEmail={canEmail}
         />
       )}
+      {canReadComms && <CommunicationsTimeline messages={communications} />}
     </div>
   );
 }
