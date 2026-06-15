@@ -275,3 +275,39 @@ where r.tenant_id = '00000000-0000-0000-0000-000000000001'
   and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR')
 on conflict do nothing;
 
+-- ===========================================================================
+-- Phase 1.10 Transport role mappings (mirror of the module migration).
+-- ===========================================================================
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'transport:read'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'CEO', 'OPS_SUPERVISOR', 'ACCOUNT_MANAGER', 'COMPLIANCE_HSSE',
+                 'COORDINATOR', 'TRANSPORT_OFFICER', 'WAREHOUSE_COORDINATOR', 'DOCUMENTATION_OFFICER')
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code in ('transport:create', 'transport:update', 'transport:assign')
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR', 'COORDINATOR', 'TRANSPORT_OFFICER')
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'transport:complete'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR', 'TRANSPORT_OFFICER')
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'transport:delete'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR')
+on conflict do nothing;
+

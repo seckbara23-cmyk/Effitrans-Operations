@@ -13,6 +13,8 @@ import { DocumentsPanel } from "@/components/documents/documents-panel";
 import { listDocuments, listDocumentTypes, getMissingRequiredDocuments } from "@/lib/documents/service";
 import { CustomsPanel } from "@/components/customs/customs-panel";
 import { getCustomsRecord, getMissingCustomsDocuments } from "@/lib/customs/service";
+import { TransportPanel } from "@/components/transport/transport-panel";
+import { getTransportRecord } from "@/lib/transport/service";
 import { t } from "@/lib/i18n";
 
 export const metadata: Metadata = { title: t.files.title };
@@ -71,6 +73,11 @@ export default async function FileDetailPage({ params }: { params: { id: string 
     ? await Promise.all([getCustomsRecord(file.id), getMissingCustomsDocuments(file.id)])
     : [null, []];
 
+  // Embedded transport (only if the user can read transport).
+  const canReadTransport = hasPermission(permissions, "transport:read");
+  const transportRecord = canReadTransport ? await getTransportRecord(file.id) : null;
+  const podApproved = documents.some((d) => d.typeCode === "DELIVERY_NOTE" && d.status === "APPROVED");
+
   return (
     <div className="animate-fade-in space-y-6">
       {header(`${file.fileNumber}`)}
@@ -109,6 +116,18 @@ export default async function FileDetailPage({ params }: { params: { id: string 
           canUpdate={hasPermission(permissions, "customs:update")}
           canRelease={hasPermission(permissions, "customs:release")}
           canDelete={hasPermission(permissions, "customs:delete")}
+        />
+      )}
+      {canReadTransport && (
+        <TransportPanel
+          fileId={file.id}
+          record={transportRecord}
+          podApproved={podApproved}
+          canCreate={hasPermission(permissions, "transport:create")}
+          canUpdate={hasPermission(permissions, "transport:update")}
+          canAssign={hasPermission(permissions, "transport:assign")}
+          canComplete={hasPermission(permissions, "transport:complete")}
+          canDelete={hasPermission(permissions, "transport:delete")}
         />
       )}
     </div>

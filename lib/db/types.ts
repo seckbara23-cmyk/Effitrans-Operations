@@ -880,6 +880,94 @@ export type Database = {
           },
         ];
       };
+      transport_record: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          file_id: string;
+          status: string;
+          pickup_location: string | null;
+          delivery_location: string | null;
+          pickup_planned: string | null;
+          pickup_actual: string | null;
+          delivery_planned: string | null;
+          delivery_actual: string | null;
+          driver_name: string | null;
+          driver_phone: string | null;
+          vehicle_plate: string | null;
+          trailer_or_container: string | null;
+          transport_company: string | null;
+          delivery_reference: string | null;
+          pod_document_id: string | null;
+          customs_override: boolean;
+          notes: string | null;
+          created_by: string | null;
+          assigned_by: string | null;
+          deleted_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          file_id: string;
+          status?: string;
+          pickup_location?: string | null;
+          delivery_location?: string | null;
+          pickup_planned?: string | null;
+          pickup_actual?: string | null;
+          delivery_planned?: string | null;
+          delivery_actual?: string | null;
+          driver_name?: string | null;
+          driver_phone?: string | null;
+          vehicle_plate?: string | null;
+          trailer_or_container?: string | null;
+          transport_company?: string | null;
+          delivery_reference?: string | null;
+          pod_document_id?: string | null;
+          customs_override?: boolean;
+          notes?: string | null;
+          created_by?: string | null;
+          assigned_by?: string | null;
+          deleted_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string;
+          file_id?: string;
+          status?: string;
+          pickup_location?: string | null;
+          delivery_location?: string | null;
+          pickup_planned?: string | null;
+          pickup_actual?: string | null;
+          delivery_planned?: string | null;
+          delivery_actual?: string | null;
+          driver_name?: string | null;
+          driver_phone?: string | null;
+          vehicle_plate?: string | null;
+          trailer_or_container?: string | null;
+          transport_company?: string | null;
+          delivery_reference?: string | null;
+          pod_document_id?: string | null;
+          customs_override?: boolean;
+          notes?: string | null;
+          created_by?: string | null;
+          assigned_by?: string | null;
+          deleted_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "transport_record_file_id_fkey";
+            columns: ["file_id"];
+            referencedRelation: "operational_file";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Views: Record<string, never>;
     Functions: {

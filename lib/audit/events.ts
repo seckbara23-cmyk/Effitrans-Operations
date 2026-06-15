@@ -48,6 +48,16 @@ export const AuditActions = {
   CUSTOMS_RELEASED: "customs.released",
   CUSTOMS_BLOCKED: "customs.blocked",
   CUSTOMS_DELETED: "customs.deleted",
+  // Phase 1.10 — Transport
+  TRANSPORT_CREATED: "transport.created",
+  TRANSPORT_UPDATED: "transport.updated",
+  TRANSPORT_ASSIGNED: "transport.assigned",
+  TRANSPORT_STATUS_CHANGED: "transport.status_changed",
+  TRANSPORT_PICKED_UP: "transport.picked_up",
+  TRANSPORT_DELIVERED: "transport.delivered",
+  TRANSPORT_POD_RECEIVED: "transport.pod_received",
+  TRANSPORT_CANCELLED: "transport.cancelled",
+  TRANSPORT_DELETED: "transport.deleted",
 } as const;
 
 export type AuditActionCode = (typeof AuditActions)[keyof typeof AuditActions];
