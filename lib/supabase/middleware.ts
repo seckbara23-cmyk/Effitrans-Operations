@@ -12,17 +12,17 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
-// Routes reachable without authentication. The OAuth callback + the password
-// reset page (Phase 1.16) MUST be public: they run the code→session exchange,
-// so the request arrives BEFORE the session cookie exists — redirecting it to
-// /login would drop the code. The `/auth` prefix covers /auth/callback and
-// /auth/update-password (listed explicitly for clarity).
+// Routes reachable without authentication. The OAuth callbacks + the password
+// reset pages (Phase 1.16) MUST be public: they run the code→session exchange,
+// so the request arrives BEFORE the session cookie exists — redirecting them
+// would drop the code. Both the staff (/auth/*) and portal (/portal/auth/*)
+// entry points are covered, plus the two login pages.
 function isPublicPath(pathname: string): boolean {
   return (
     pathname === "/login" ||
-    pathname === "/auth/callback" ||
-    pathname === "/auth/update-password" ||
-    pathname.startsWith("/auth")
+    pathname === "/portal/login" ||
+    pathname.startsWith("/auth") || // /auth/callback, /auth/update-password
+    pathname.startsWith("/portal/auth") // /portal/auth/callback, /portal/auth/update-password
   );
 }
 
@@ -59,10 +59,11 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
 
   const pathname = request.nextUrl.pathname;
 
-  // Unauthenticated -> redirect protected routes to /login.
+  // Unauthenticated -> redirect protected routes to the matching login (portal
+  // routes to the portal login, everything else to the staff login).
   if (!user && !isPublicPath(pathname)) {
     const loginUrl = request.nextUrl.clone();
-    loginUrl.pathname = "/login";
+    loginUrl.pathname = pathname.startsWith("/portal") ? "/portal/login" : "/login";
     return NextResponse.redirect(loginUrl);
   }
 

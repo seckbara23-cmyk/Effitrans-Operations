@@ -35,6 +35,7 @@ const SYSTEM_MACHINE_ACTIONS = new Set<string>([
   // Phase 1.16 — an OAuth login rejected at the gate has, by definition, no
   // authenticated actor to attribute (the caller failed identity resolution).
   "auth.login.rejected",
+  "portal.login.rejected",
 ]);
 
 export function isSystemAction(action: string): boolean {

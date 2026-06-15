@@ -93,6 +93,11 @@ export const AuditActions = {
   PORTAL_LOGIN: "portal.login",
   PORTAL_DOCUMENT_DOWNLOADED: "portal.document.downloaded",
   PORTAL_INVOICE_VIEWED: "portal.invoice.viewed",
+  // Phase 1.16 — Portal Google OAuth + password recovery (parity with staff)
+  PORTAL_LOGIN_GOOGLE: "portal.login.google", // attributed (clientUserId)
+  PORTAL_LOGIN_REJECTED: "portal.login.rejected", // machine: unknown/disabled/mismatch
+  PORTAL_PASSWORD_RESET_REQUESTED: "portal.password_reset.requested", // attributed
+  PORTAL_PASSWORD_RESET_COMPLETED: "portal.password_reset.completed", // attributed
   // Phase 1.14 — Communications Hub
   COMMUNICATION_QUEUED: "communication.queued",
   COMMUNICATION_SENT: "communication.sent",

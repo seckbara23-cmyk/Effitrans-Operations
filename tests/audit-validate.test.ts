@@ -44,6 +44,15 @@ describe("audit event validation", () => {
     expect(() => validateAuditEvent({ action: "auth.login.google", actorId: "u1" })).not.toThrow();
   });
 
+  it("portal OAuth: rejected is a machine event, login/reset are attributed (1.16)", () => {
+    expect(() => validateAuditEvent({ action: "portal.login.rejected" })).not.toThrow();
+    expect(isSystemAction("portal.login.rejected")).toBe(true);
+    expect(isSystemAction("portal.login.google")).toBe(false);
+    expect(() => validateAuditEvent({ action: "portal.login.google" })).toThrow(/required/);
+    expect(() => validateAuditEvent({ action: "portal.login.google", clientUserId: "cu1" })).not.toThrow();
+    expect(() => validateAuditEvent({ action: "portal.password_reset.completed", clientUserId: "cu1" })).not.toThrow();
+  });
+
   it("requires overrideReason when isOverride", () => {
     expect(() =>
       validateAuditEvent({ action: "admin.override.access", actorId: "u1", isOverride: true }),
