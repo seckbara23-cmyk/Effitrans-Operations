@@ -361,3 +361,14 @@ where r.tenant_id = '00000000-0000-0000-0000-000000000001'
   and r.code in ('SYSTEM_ADMIN', 'ACCOUNT_MANAGER', 'OPS_SUPERVISOR')
 on conflict do nothing;
 
+-- ===========================================================================
+-- Phase 1.13 Analytics — read permissions (mirror).
+-- ===========================================================================
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code in ('analytics:read', 'report:read')
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'CEO', 'OPS_SUPERVISOR', 'ACCOUNT_MANAGER', 'FINANCE_OFFICER')
+on conflict do nothing;
+
