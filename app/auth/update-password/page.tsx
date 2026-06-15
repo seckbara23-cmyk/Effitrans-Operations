@@ -13,6 +13,7 @@ import { useEffect, useState } from "react";
 import { LogoWordmark } from "@/components/brand/logo";
 import { getBrowserSupabaseClient } from "@/lib/supabase/client";
 import { assertStaffRecovery, recordPasswordResetComplete } from "@/lib/auth/password-reset";
+import { validateNewPassword } from "@/lib/auth/password-rules";
 import { t } from "@/lib/i18n";
 
 type Status = "verifying" | "ready" | "invalid";
@@ -66,12 +67,9 @@ export default function UpdatePasswordPage() {
   async function onUpdate(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (pw.length < 8) {
-      setError(r.tooShort);
-      return;
-    }
-    if (pw !== pw2) {
-      setError(r.mismatch);
+    const rule = validateNewPassword(pw, pw2);
+    if (rule) {
+      setError(rule === "tooShort" ? r.tooShort : r.mismatch);
       return;
     }
     setBusy(true);
