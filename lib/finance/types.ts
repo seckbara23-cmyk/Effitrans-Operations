@@ -1,6 +1,8 @@
 /**
- * Finance shared types (Phase 1.11). Client + server safe.
+ * Finance shared types (Phase 1.11; 1.15A verification). Client + server safe.
  */
+import type { VerificationStatus } from "./verification";
+
 export type InvoiceStatus = "DRAFT" | "ISSUED" | "PARTIALLY_PAID" | "PAID" | "VOID";
 
 export type PaymentMethod =
@@ -51,6 +53,9 @@ export type Payment = {
   reference: string | null;
   paidAt: string;
   reversed: boolean;
+  providerName: string | null;
+  providerReference: string | null;
+  verificationStatus: VerificationStatus;
 };
 
 export type PaymentInput = {
@@ -58,6 +63,8 @@ export type PaymentInput = {
   method: PaymentMethod;
   reference?: string | null;
   paidAt?: string | null;
+  providerName?: string | null;
+  providerReference?: string | null;
 };
 
 export type InvoiceDetail = {
@@ -106,6 +113,41 @@ export type FinanceKpis = {
   overdueCount: number;
   draftCount: number;
   issuedCount: number;
+};
+
+/** One payment row in the reconciliation view (Phase 1.15A), with invoice context. */
+export type ReconciliationPayment = {
+  id: string;
+  invoiceId: string;
+  fileId: string;
+  invoiceNumber: string | null;
+  fileNumber: string | null;
+  clientName: string | null;
+  amount: number;
+  currency: string;
+  method: PaymentMethod;
+  reference: string | null;
+  providerName: string | null;
+  providerReference: string | null;
+  paidAt: string;
+  verificationStatus: VerificationStatus;
+  reversed: boolean;
+  missingReference: boolean;
+};
+
+export type ReconciliationData = {
+  counts: {
+    pending: number;
+    verified: number;
+    rejected: number;
+    missingReference: number;
+  };
+  pending: ReconciliationPayment[];
+  missingReference: ReconciliationPayment[];
+  recentlyResolved: ReconciliationPayment[];
+  outstanding: InvoiceQueueItem[];
+  outstandingTotal: number;
+  currency: string;
 };
 
 export type ActionResult =

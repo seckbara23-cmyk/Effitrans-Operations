@@ -16,6 +16,13 @@ import {
   canDeleteInvoice,
   isInvoiceStatus,
 } from "@/lib/finance/status";
+import {
+  canReject,
+  canVerify,
+  isMissingReference,
+  isVerificationStatus,
+  VERIFICATION_STATUSES,
+} from "@/lib/finance/verification";
 
 describe("finance calc", () => {
   const lines = [
@@ -80,5 +87,26 @@ describe("invoice workflow predicates", () => {
   it("status guard", () => {
     expect(isInvoiceStatus("PARTIALLY_PAID")).toBe(true);
     expect(isInvoiceStatus("REFUNDED")).toBe(false);
+  });
+});
+
+describe("payment verification (1.15A)", () => {
+  it("only PENDING can be verified or rejected", () => {
+    expect(canVerify("PENDING")).toBe(true);
+    expect(canVerify("VERIFIED")).toBe(false);
+    expect(canVerify("REJECTED")).toBe(false);
+    expect(canReject("PENDING")).toBe(true);
+    expect(canReject("VERIFIED")).toBe(false);
+    expect(canReject("REJECTED")).toBe(false);
+  });
+  it("status guard", () => {
+    for (const s of VERIFICATION_STATUSES) expect(isVerificationStatus(s)).toBe(true);
+    expect(isVerificationStatus("PARTIAL")).toBe(false);
+  });
+  it("missing reference = no reference AND no provider reference", () => {
+    expect(isMissingReference({ reference: null, providerReference: null })).toBe(true);
+    expect(isMissingReference({ reference: "  ", providerReference: "" })).toBe(true);
+    expect(isMissingReference({ reference: "TX-1", providerReference: null })).toBe(false);
+    expect(isMissingReference({ reference: null, providerReference: "WAVE-9" })).toBe(false);
   });
 });

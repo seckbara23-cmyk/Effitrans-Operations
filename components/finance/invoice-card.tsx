@@ -15,7 +15,9 @@ import {
   deleteInvoiceLine,
   issueInvoice,
   recordPayment,
+  rejectPayment,
   reversePayment,
+  verifyPayment,
   voidInvoice,
 } from "@/lib/finance/actions";
 import { PAYMENT_METHODS } from "@/lib/finance/calc";
@@ -28,6 +30,12 @@ const STATUS_STYLE: Record<string, string> = {
   PARTIALLY_PAID: "bg-amber-50 text-amber-700",
   PAID: "bg-teal-50 text-teal-700",
   VOID: "bg-slate-100 text-slate-400 line-through",
+};
+
+const VERIFY_STYLE: Record<string, string> = {
+  PENDING: "bg-amber-50 text-amber-700",
+  VERIFIED: "bg-teal-50 text-teal-700",
+  REJECTED: "bg-slate-100 text-slate-400",
 };
 
 export function fmt(n: number, currency: string): string {
@@ -93,6 +101,8 @@ export function InvoiceCard({
         amount: Number(fd.get("amount") ?? 0),
         method: String(fd.get("method") ?? "CASH") as (typeof PAYMENT_METHODS)[number],
         reference: String(fd.get("reference") ?? ""),
+        providerName: String(fd.get("providerName") ?? ""),
+        providerReference: String(fd.get("providerReference") ?? ""),
       }),
     );
     e.currentTarget.reset();
@@ -155,13 +165,33 @@ export function InvoiceCard({
       {invoice.payments.filter((p) => !p.reversed).length > 0 && (
         <ul className="divide-y divide-slate-100 text-xs">
           {invoice.payments.filter((p) => !p.reversed).map((p) => (
-            <li key={p.id} className="flex items-center gap-2 py-1 text-slate-600">
+            <li key={p.id} className="flex flex-wrap items-center gap-2 py-1 text-slate-600">
               <span className="tabular">{fmt(p.amount, invoice.currency)}</span>
               <span>· {t.finance.methods[p.method]}</span>
               <span>· {p.paidAt}</span>
-              {p.reference && <span>· {p.reference}</span>}
+              {(p.reference || p.providerReference) && <span>· {p.reference ?? p.providerReference}</span>}
+              <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${VERIFY_STYLE[p.verificationStatus]}`}>
+                {f.verification[p.verificationStatus]}
+              </span>
+              {canVoidInvoice && p.verificationStatus === "PENDING" && (
+                <>
+                  <button onClick={() => run(() => verifyPayment(p.id))} disabled={pending} className="ml-auto text-teal-600 hover:text-teal-800">
+                    {f.invoices.verify}
+                  </button>
+                  <button
+                    onClick={() => {
+                      const note = window.prompt(f.invoices.rejectPrompt) ?? "";
+                      run(() => rejectPayment(p.id, note.trim() || null));
+                    }}
+                    disabled={pending}
+                    className="text-slate-400 hover:text-red-600"
+                  >
+                    {f.invoices.reject}
+                  </button>
+                </>
+              )}
               {canVoidInvoice && (
-                <button onClick={() => run(() => reversePayment(p.id))} disabled={pending} className="ml-auto text-slate-400 hover:text-red-600">
+                <button onClick={() => run(() => reversePayment(p.id))} disabled={pending} className={`${p.verificationStatus === "PENDING" ? "" : "ml-auto"} text-slate-400 hover:text-red-600`}>
                   {f.invoices.reverse}
                 </button>
               )}
@@ -182,6 +212,8 @@ export function InvoiceCard({
             ))}
           </select>
           <input name="reference" placeholder={f.invoices.reference} className="rounded-md border border-slate-200 px-2 py-1 text-sm" />
+          <input name="providerName" placeholder={f.invoices.providerName} className="w-28 rounded-md border border-slate-200 px-2 py-1 text-sm" />
+          <input name="providerReference" placeholder={f.invoices.providerReference} className="rounded-md border border-slate-200 px-2 py-1 text-sm" />
           <button type="submit" disabled={pending} className="rounded-md border border-teal-200 px-2 py-1 text-xs font-medium text-teal-700 hover:bg-teal-50 disabled:opacity-50">
             {f.invoices.recordPayment}
           </button>

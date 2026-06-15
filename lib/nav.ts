@@ -54,6 +54,7 @@ export const navSections: NavSection[] = [
     title: t.nav.section_administration,
     items: [
       { label: t.nav.finance, href: "/finance", icon: IconFinance, permission: "finance:read" },
+      { label: t.nav.reconciliation, href: "/finance/reconciliation", icon: IconFinance, permission: "finance:read" },
       { label: t.nav.analytics, href: "/analytics", icon: IconReport, permission: "analytics:read" },
       { label: t.nav.communications, href: "/communications", icon: IconBell, permission: "communication:read" },
       { label: t.nav.reports, href: "/reports", icon: IconReport },

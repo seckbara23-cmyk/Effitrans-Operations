@@ -11,6 +11,7 @@ import "server-only";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
 import { balanceDue, invoiceTotals, isOverdue, paidAmount } from "./calc";
+import { isMissingReference, isVerificationStatus } from "./verification";
 import type {
   Charge,
   FinanceForFile,
@@ -21,6 +22,8 @@ import type {
   InvoiceStatus,
   Payment,
   PaymentMethod,
+  ReconciliationData,
+  ReconciliationPayment,
 } from "./types";
 
 type Admin = ReturnType<typeof getAdminSupabaseClient>;
@@ -51,6 +54,9 @@ type PaymentRow = {
   reference: string | null;
   paid_at: string;
   reversed_at: string | null;
+  provider_name: string | null;
+  provider_reference: string | null;
+  verification_status: string;
 };
 
 function buildInvoice(
@@ -73,6 +79,11 @@ function buildInvoice(
     reference: p.reference,
     paidAt: p.paid_at,
     reversed: p.reversed_at != null,
+    providerName: p.provider_name,
+    providerReference: p.provider_reference,
+    verificationStatus: isVerificationStatus(p.verification_status)
+      ? p.verification_status
+      : "PENDING",
   }));
   const { subtotal, tax, total } = invoiceTotals(lines);
   const paid = paidAmount(payments);
@@ -109,7 +120,9 @@ async function fetchLinesAndPayments(supabase: Admin, tenantId: string, invoiceI
       .returns<LineRow[]>(),
     supabase
       .from("payment")
-      .select("id, invoice_id, amount, method, reference, paid_at, reversed_at")
+      .select(
+        "id, invoice_id, amount, method, reference, paid_at, reversed_at, provider_name, provider_reference, verification_status",
+      )
       .eq("tenant_id", tenantId)
       .in("invoice_id", invoiceIds)
       .returns<PaymentRow[]>(),
@@ -222,6 +235,93 @@ export async function getFinanceQueue(opts?: { status?: string }): Promise<Invoi
       overdue: built.overdue,
     };
   });
+}
+
+type ReconRow = PaymentRow & {
+  invoice: {
+    invoice_number: string | null;
+    file_id: string;
+    currency: string;
+    file: { file_number: string | null; client: { name: string } | null } | null;
+  } | null;
+};
+
+/**
+ * Tenant-wide payment reconciliation (Phase 1.15A; finance:read).
+ * Surfaces the verification workflow: unverified payments to action, payments
+ * missing a reference, recently resolved ones, and outstanding invoice balances.
+ * Read-only aggregation — no calculation change to invoices.
+ */
+export async function getReconciliation(): Promise<ReconciliationData> {
+  const user = await assertPermission("finance:read");
+  const supabase = getAdminSupabaseClient();
+
+  const { data, error } = await supabase
+    .from("payment")
+    .select(
+      "id, invoice_id, amount, method, reference, paid_at, reversed_at, provider_name, provider_reference, verification_status, invoice:invoice_id(invoice_number, file_id, currency, file:file_id(file_number, client:client_id(name)))",
+    )
+    .eq("tenant_id", user.tenantId)
+    .order("paid_at", { ascending: false })
+    .returns<ReconRow[]>();
+  if (error) throw new Error(`[finance] reconciliation failed: ${error.message}`);
+
+  const rows = data ?? [];
+  const toRecon = (r: ReconRow): ReconciliationPayment => {
+    const reference = r.reference;
+    const providerReference = r.provider_reference;
+    return {
+      id: r.id,
+      invoiceId: r.invoice_id,
+      fileId: r.invoice?.file_id ?? "",
+      invoiceNumber: r.invoice?.invoice_number ?? null,
+      fileNumber: r.invoice?.file?.file_number ?? null,
+      clientName: r.invoice?.file?.client?.name ?? null,
+      amount: Number(r.amount),
+      currency: r.invoice?.currency ?? "XOF",
+      method: r.method as PaymentMethod,
+      reference,
+      providerName: r.provider_name,
+      providerReference,
+      paidAt: r.paid_at,
+      verificationStatus: isVerificationStatus(r.verification_status)
+        ? r.verification_status
+        : "PENDING",
+      reversed: r.reversed_at != null,
+      missingReference: isMissingReference({ reference, providerReference }),
+    };
+  };
+
+  const all = rows.map(toRecon);
+  const active = all.filter((p) => !p.reversed);
+
+  const pending = active.filter((p) => p.verificationStatus === "PENDING");
+  const missingReference = active.filter(
+    (p) => p.missingReference && p.verificationStatus !== "REJECTED",
+  );
+  const recentlyResolved = all
+    .filter((p) => p.verificationStatus !== "PENDING")
+    .slice(0, 20);
+
+  const outstanding = (await getFinanceQueue()).filter(
+    (i) => (i.status === "ISSUED" || i.status === "PARTIALLY_PAID") && i.balance > 0,
+  );
+  const outstandingTotal = outstanding.reduce((s, i) => s + i.balance, 0);
+
+  return {
+    counts: {
+      pending: pending.length,
+      verified: all.filter((p) => p.verificationStatus === "VERIFIED").length,
+      rejected: all.filter((p) => p.verificationStatus === "REJECTED").length,
+      missingReference: missingReference.length,
+    },
+    pending,
+    missingReference,
+    recentlyResolved,
+    outstanding,
+    outstandingTotal,
+    currency: outstanding[0]?.currency ?? all[0]?.currency ?? "XOF",
+  };
 }
 
 /** Dashboard finance KPIs (finance:read). */

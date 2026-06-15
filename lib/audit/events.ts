@@ -69,6 +69,9 @@ export const AuditActions = {
   INVOICE_DELETED: "invoice.deleted",
   PAYMENT_RECORDED: "payment.recorded",
   PAYMENT_REVERSED: "payment.reversed",
+  // Phase 1.15A — Payment verification / reconciliation
+  PAYMENT_VERIFIED: "payment.verified",
+  PAYMENT_REJECTED: "payment.rejected",
   // Phase 1.12 — Customer Portal
   PORTAL_USER_INVITED: "portal.user.invited",
   PORTAL_USER_ACTIVATED: "portal.user.activated",

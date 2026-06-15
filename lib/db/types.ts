@@ -1146,6 +1146,13 @@ export type Database = {
           reversed_by: string | null;
           recorded_by: string | null;
           created_at: string;
+          provider_name: string | null;
+          provider_reference: string | null;
+          received_by: string | null;
+          verification_status: string;
+          verified_by: string | null;
+          verified_at: string | null;
+          verification_note: string | null;
         };
         Insert: {
           id?: string;
@@ -1159,6 +1166,13 @@ export type Database = {
           reversed_by?: string | null;
           recorded_by?: string | null;
           created_at?: string;
+          provider_name?: string | null;
+          provider_reference?: string | null;
+          received_by?: string | null;
+          verification_status?: string;
+          verified_by?: string | null;
+          verified_at?: string | null;
+          verification_note?: string | null;
         };
         Update: {
           id?: string;
@@ -1172,6 +1186,13 @@ export type Database = {
           reversed_by?: string | null;
           recorded_by?: string | null;
           created_at?: string;
+          provider_name?: string | null;
+          provider_reference?: string | null;
+          received_by?: string | null;
+          verification_status?: string;
+          verified_by?: string | null;
+          verified_at?: string | null;
+          verification_note?: string | null;
         };
         Relationships: [
           {

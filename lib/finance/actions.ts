@@ -22,6 +22,7 @@ import {
   canVoid,
   isInvoiceStatus,
 } from "./status";
+import { canReject, canVerify, isVerificationStatus } from "./verification";
 import type {
   ActionResult,
   ChargeInput,
@@ -35,6 +36,7 @@ type Admin = ReturnType<typeof getAdminSupabaseClient>;
 function revalidate(fileId?: string) {
   if (fileId) revalidatePath(`/files/${fileId}`);
   revalidatePath("/finance");
+  revalidatePath("/finance/reconciliation");
   revalidatePath("/dashboard");
 }
 
@@ -394,8 +396,12 @@ export async function recordPayment(invoiceId: string, input: PaymentInput): Pro
     amount,
     method: input.method,
     reference: input.reference?.trim() || null,
+    provider_name: input.providerName?.trim() || null,
+    provider_reference: input.providerReference?.trim() || null,
     paid_at: input.paidAt || new Date().toISOString().slice(0, 10),
     recorded_by: user.id,
+    received_by: user.id,
+    verification_status: "PENDING",
   });
   if (error) return { ok: false, error: error.message };
 
@@ -406,6 +412,134 @@ export async function recordPayment(invoiceId: string, input: PaymentInput): Pro
   await writeAudit({ action: AuditActions.PAYMENT_RECORDED, actorId: user.id, tenantId: user.tenantId, entity: "invoice", entityId: invoiceId, after: { amount, method: input.method } });
   revalidate(inv.file_id);
   return { ok: true, id: invoiceId };
+}
+
+/** Load a payment with the fields the verification actions need. */
+async function loadPayment(supabase: Admin, paymentId: string, tenantId: string) {
+  const { data } = await supabase
+    .from("payment")
+    .select("id, invoice_id, reversed_at, verification_status")
+    .eq("id", paymentId)
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+  return data;
+}
+
+/** Confirm a recorded payment was actually received (finance:void; PENDING → VERIFIED). */
+export async function verifyPayment(paymentId: string): Promise<ActionResult> {
+  let user;
+  try {
+    user = await assertPermission("finance:void");
+  } catch {
+    return { ok: false, error: "forbidden" };
+  }
+  const supabase = getAdminSupabaseClient();
+  const pay = await loadPayment(supabase, paymentId, user.tenantId);
+  if (!pay) return { ok: false, error: "not_found" };
+  if (pay.reversed_at) return { ok: false, error: "reversed" };
+  const status = isVerificationStatus(pay.verification_status) ? pay.verification_status : "PENDING";
+  if (!canVerify(status)) return { ok: false, error: "not_pending" };
+
+  const inv = await loadInvoice(supabase, pay.invoice_id, user.tenantId);
+  if (!inv) return { ok: false, error: "not_found" };
+
+  const { error } = await supabase
+    .from("payment")
+    .update({ verification_status: "VERIFIED", verified_by: user.id, verified_at: new Date().toISOString() })
+    .eq("id", paymentId)
+    .eq("tenant_id", user.tenantId);
+  if (error) return { ok: false, error: error.message };
+
+  await writeAudit({ action: AuditActions.PAYMENT_VERIFIED, actorId: user.id, tenantId: user.tenantId, entity: "invoice", entityId: pay.invoice_id, after: { payment_id: paymentId } });
+  revalidate(inv.file_id);
+  return { ok: true, id: pay.invoice_id };
+}
+
+/**
+ * Reject a recorded payment (finance:void; PENDING → REJECTED).
+ * Reject = reverse + mark REJECTED: it also sets reversed_at so the payment
+ * leaves the paid total — the invoice payment status is then re-derived. The
+ * paid/balance formula (Σ non-reversed) is therefore unchanged.
+ */
+export async function rejectPayment(paymentId: string, note?: string | null): Promise<ActionResult> {
+  let user;
+  try {
+    user = await assertPermission("finance:void");
+  } catch {
+    return { ok: false, error: "forbidden" };
+  }
+  const supabase = getAdminSupabaseClient();
+  const pay = await loadPayment(supabase, paymentId, user.tenantId);
+  if (!pay) return { ok: false, error: "not_found" };
+  if (pay.reversed_at) return { ok: false, error: "reversed" };
+  const status = isVerificationStatus(pay.verification_status) ? pay.verification_status : "PENDING";
+  if (!canReject(status)) return { ok: false, error: "not_pending" };
+
+  const inv = await loadInvoice(supabase, pay.invoice_id, user.tenantId);
+  if (!inv) return { ok: false, error: "not_found" };
+
+  const now = new Date().toISOString();
+  const { error } = await supabase
+    .from("payment")
+    .update({
+      verification_status: "REJECTED",
+      verified_by: user.id,
+      verified_at: now,
+      verification_note: note?.trim() || null,
+      reversed_at: now,
+      reversed_by: user.id,
+    })
+    .eq("id", paymentId)
+    .eq("tenant_id", user.tenantId);
+  if (error) return { ok: false, error: error.message };
+
+  // Reject reverses the payment → re-derive the payment-driven status (VOID stays VOID).
+  if (inv.status !== "VOID") {
+    const { total, paid } = await invoiceBalance(supabase, pay.invoice_id, user.tenantId);
+    await supabase
+      .from("invoice")
+      .update({ status: paymentStatus(total, paid) })
+      .eq("id", pay.invoice_id)
+      .eq("tenant_id", user.tenantId);
+  }
+
+  await writeAudit({ action: AuditActions.PAYMENT_REJECTED, actorId: user.id, tenantId: user.tenantId, entity: "invoice", entityId: pay.invoice_id, before: { payment_id: paymentId } });
+  revalidate(inv.file_id);
+  return { ok: true, id: pay.invoice_id };
+}
+
+/** Edit a payment's reference / provider metadata (finance:update). Money is unchanged. */
+export async function updatePaymentReference(
+  paymentId: string,
+  input: { reference?: string | null; providerName?: string | null; providerReference?: string | null },
+): Promise<ActionResult> {
+  let user;
+  try {
+    user = await assertPermission("finance:update");
+  } catch {
+    return { ok: false, error: "forbidden" };
+  }
+  const supabase = getAdminSupabaseClient();
+  const pay = await loadPayment(supabase, paymentId, user.tenantId);
+  if (!pay) return { ok: false, error: "not_found" };
+
+  const inv = await loadInvoice(supabase, pay.invoice_id, user.tenantId);
+  if (!inv) return { ok: false, error: "not_found" };
+
+  const { error } = await supabase
+    .from("payment")
+    .update({
+      reference: input.reference?.trim() || null,
+      provider_name: input.providerName?.trim() || null,
+      provider_reference: input.providerReference?.trim() || null,
+    })
+    .eq("id", paymentId)
+    .eq("tenant_id", user.tenantId);
+  if (error) return { ok: false, error: error.message };
+
+  await writeAudit({ action: AuditActions.PAYMENT_RECORDED, actorId: user.id, tenantId: user.tenantId, entity: "invoice", entityId: pay.invoice_id, after: { payment_id: paymentId, updated: "reference" } });
+  revalidate(inv.file_id);
+  return { ok: true, id: pay.invoice_id };
 }
 
 export async function reversePayment(paymentId: string): Promise<ActionResult> {
