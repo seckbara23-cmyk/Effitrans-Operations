@@ -40,6 +40,14 @@ export const AuditActions = {
   DOCUMENT_REJECTED: "document.rejected",
   DOCUMENT_EXPIRED: "document.expired", // reserved — set by the deferred scheduler
   DOCUMENT_DELETED: "document.deleted",
+  // Phase 1.9 — Customs
+  CUSTOMS_CREATED: "customs.created",
+  CUSTOMS_UPDATED: "customs.updated",
+  CUSTOMS_STATUS_CHANGED: "customs.status_changed",
+  CUSTOMS_DECLARED: "customs.declared",
+  CUSTOMS_RELEASED: "customs.released",
+  CUSTOMS_BLOCKED: "customs.blocked",
+  CUSTOMS_DELETED: "customs.deleted",
 } as const;
 
 export type AuditActionCode = (typeof AuditActions)[keyof typeof AuditActions];

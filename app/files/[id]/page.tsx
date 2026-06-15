@@ -11,6 +11,8 @@ import { TaskPanel } from "@/components/tasks/task-panel";
 import { listTasks, listAssignees } from "@/lib/tasks/service";
 import { DocumentsPanel } from "@/components/documents/documents-panel";
 import { listDocuments, listDocumentTypes, getMissingRequiredDocuments } from "@/lib/documents/service";
+import { CustomsPanel } from "@/components/customs/customs-panel";
+import { getCustomsRecord, getMissingCustomsDocuments } from "@/lib/customs/service";
 import { t } from "@/lib/i18n";
 
 export const metadata: Metadata = { title: t.files.title };
@@ -63,6 +65,12 @@ export default async function FileDetailPage({ params }: { params: { id: string 
       ])
     : [[], [], []];
 
+  // Embedded customs (only if the user can read customs).
+  const canReadCustoms = hasPermission(permissions, "customs:read");
+  const [customsRecord, missingCustomsDocs] = canReadCustoms
+    ? await Promise.all([getCustomsRecord(file.id), getMissingCustomsDocuments(file.id)])
+    : [null, []];
+
   return (
     <div className="animate-fade-in space-y-6">
       {header(`${file.fileNumber}`)}
@@ -90,6 +98,17 @@ export default async function FileDetailPage({ params }: { params: { id: string 
           canCreate={hasPermission(permissions, "document:create")}
           canApprove={hasPermission(permissions, "document:approve")}
           canDelete={hasPermission(permissions, "document:delete")}
+        />
+      )}
+      {canReadCustoms && (
+        <CustomsPanel
+          fileId={file.id}
+          record={customsRecord}
+          missing={missingCustomsDocs}
+          canCreate={hasPermission(permissions, "customs:create")}
+          canUpdate={hasPermission(permissions, "customs:update")}
+          canRelease={hasPermission(permissions, "customs:release")}
+          canDelete={hasPermission(permissions, "customs:delete")}
         />
       )}
     </div>

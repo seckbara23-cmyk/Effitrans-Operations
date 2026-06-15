@@ -42,7 +42,7 @@ export const navSections: NavSection[] = [
       { label: t.nav.files, href: "/files", icon: IconContainer, permission: "file:read" },
       { label: t.nav.customers, href: "/customers", icon: IconUsers },
       { label: t.nav.shipments, href: "/shipments", icon: IconContainer },
-      { label: t.nav.customs, href: "/customs", icon: IconStamp },
+      { label: t.nav.customs, href: "/customs", icon: IconStamp, permission: "customs:read" },
       { label: t.nav.documents, href: "/documents", icon: IconDocument },
       { label: t.nav.tasks, href: "/tasks", icon: IconTask, permission: "task:read" },
     ],

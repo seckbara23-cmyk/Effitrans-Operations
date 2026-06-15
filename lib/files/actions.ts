@@ -17,6 +17,7 @@ import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
 import { validateFile } from "./validate";
 import { canTransition, isFileStatus } from "./status";
+import { canCloseFile } from "@/lib/customs/gates";
 import type { ActionResult, FileInput, FileStatus, ShipmentInput } from "./types";
 
 function shipmentRow(tenantId: string, fileId: string, s: ShipmentInput | undefined) {
@@ -149,13 +150,28 @@ export async function transitionFile(id: string, toStatus: string): Promise<Acti
   const supabase = getAdminSupabaseClient();
   const { data: file } = await supabase
     .from("operational_file")
-    .select("id, tenant_id, status")
+    .select("id, tenant_id, status, type")
     .eq("id", id)
     .maybeSingle();
   if (!file || file.tenant_id !== admin.tenantId) return { ok: false, error: "not_found" };
 
   const fromStatus = file.status as FileStatus;
   if (!canTransition(fromStatus, toStatus)) return { ok: false, error: "invalid_transition" };
+
+  // Phase 1.9 close guard: an IMP/EXP dossier with a REQUIRED customs record
+  // that isn't RELEASED/CANCELLED cannot be closed (customs.required is the
+  // escape hatch). No record / non-IMP-EXP / required=false => allowed.
+  if (toStatus === "CLOSED") {
+    const { data: customs } = await supabase
+      .from("customs_record")
+      .select("status, required")
+      .eq("file_id", id)
+      .is("deleted_at", null)
+      .maybeSingle();
+    if (!canCloseFile(file.type as string, customs ? { status: customs.status, required: customs.required } : null)) {
+      return { ok: false, error: "customs_not_released" };
+    }
+  }
 
   const patch: { status: string; opened_at?: string } = { status: toStatus };
   if (toStatus === "OPENED") patch.opened_at = new Date().toISOString();

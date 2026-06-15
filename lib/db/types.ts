@@ -699,6 +699,7 @@ export type Database = {
           conditional: boolean;
           active: boolean;
           sort_order: number;
+          gates_customs: boolean;
         };
         Insert: {
           code: string;
@@ -712,6 +713,7 @@ export type Database = {
           conditional?: boolean;
           active?: boolean;
           sort_order?: number;
+          gates_customs?: boolean;
         };
         Update: {
           code?: string;
@@ -725,8 +727,82 @@ export type Database = {
           conditional?: boolean;
           active?: boolean;
           sort_order?: number;
+          gates_customs?: boolean;
         };
         Relationships: [];
+      };
+      customs_record: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          file_id: string;
+          status: string;
+          required: boolean;
+          declaration_number: string | null;
+          customs_office: string | null;
+          regime: string | null;
+          declaration_date: string | null;
+          bae_reference: string | null;
+          release_date: string | null;
+          inspection_status: string;
+          external_ref: string | null;
+          notes: string | null;
+          created_by: string | null;
+          reviewed_by: string | null;
+          deleted_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          file_id: string;
+          status?: string;
+          required?: boolean;
+          declaration_number?: string | null;
+          customs_office?: string | null;
+          regime?: string | null;
+          declaration_date?: string | null;
+          bae_reference?: string | null;
+          release_date?: string | null;
+          inspection_status?: string;
+          external_ref?: string | null;
+          notes?: string | null;
+          created_by?: string | null;
+          reviewed_by?: string | null;
+          deleted_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string;
+          file_id?: string;
+          status?: string;
+          required?: boolean;
+          declaration_number?: string | null;
+          customs_office?: string | null;
+          regime?: string | null;
+          declaration_date?: string | null;
+          bae_reference?: string | null;
+          release_date?: string | null;
+          inspection_status?: string;
+          external_ref?: string | null;
+          notes?: string | null;
+          created_by?: string | null;
+          reviewed_by?: string | null;
+          deleted_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "customs_record_file_id_fkey";
+            columns: ["file_id"];
+            referencedRelation: "operational_file";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       document: {
         Row: {

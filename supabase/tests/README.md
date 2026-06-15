@@ -1,5 +1,12 @@
 # Supabase Tests
 
+## RLS customs module (Phase 1.9)
+[`rls_customs_test.sql`](rls_customs_test.sql) proves `customs_record` reads
+**inherit dossier visibility** (Phase 1.7 `can_read_file`) **and** require
+`customs:read`: a manager sees records on any tenant-A dossier but not tenant B;
+a COORDINATOR sees only their dossier's record; a user without `customs:read`
+sees none. Expected: `1 / 1 / 0 / 1 / 0 / 0`. Runs in the `rls-tests` CI job.
+
 ## RLS documents module (Phase 1.8)
 [`rls_document_test.sql`](rls_document_test.sql) proves `document` reads **inherit
 dossier visibility** (Phase 1.7 `can_read_file`) **and** require `document:read`:
