@@ -15,6 +15,7 @@ import {
   setUserStatus,
   assignRole,
   revokeRole,
+  sendWelcomeEmail,
 } from "@/lib/users/actions";
 import type { AdminUser, AssignableRole, ActionResult } from "@/lib/users/types";
 
@@ -165,6 +166,7 @@ export function UsersAdmin({
                 canManageRoles={canManageRoles}
                 pending={pending}
                 run={run}
+                notify={setNotice}
               />
             ))}
           </tbody>
@@ -180,12 +182,14 @@ function UserRow({
   canManageRoles,
   pending,
   run,
+  notify,
 }: {
   user: AdminUser;
   roles: AssignableRole[];
   canManageRoles: boolean;
   pending: boolean;
-  run: (fn: () => Promise<ActionResult>) => void;
+  run: (fn: () => Promise<ActionResult>, onOk?: (res: ActionResult & { ok: true }) => void) => void;
+  notify: (msg: string) => void;
 }) {
   const [roleToAdd, setRoleToAdd] = useState("");
   const assignedIds = new Set(user.roles.map((r) => r.roleId));
@@ -251,15 +255,32 @@ function UserRow({
         </span>
       </td>
       <td className="px-4 py-3">
-        <button
-          disabled={pending}
-          onClick={() =>
-            run(() => setUserStatus(user.id, user.status === "active" ? "inactive" : "active"))
-          }
-          className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-medium text-navy-700 hover:bg-slate-50 disabled:opacity-50"
-        >
-          {user.status === "active" ? t.users.actions.disable : t.users.actions.enable}
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            disabled={pending}
+            onClick={() =>
+              run(() => setUserStatus(user.id, user.status === "active" ? "inactive" : "active"))
+            }
+            className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-medium text-navy-700 hover:bg-slate-50 disabled:opacity-50"
+          >
+            {user.status === "active" ? t.users.actions.disable : t.users.actions.enable}
+          </button>
+          <button
+            disabled={pending}
+            onClick={() =>
+              run(
+                () => sendWelcomeEmail(user.id),
+                (res) => {
+                  if (res.welcome === "queued") notify(t.users.welcome.queued);
+                },
+              )
+            }
+            title={t.users.actions.resendWelcome}
+            className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-medium text-navy-700 hover:bg-slate-50 disabled:opacity-50"
+          >
+            {t.users.actions.resendWelcome}
+          </button>
+        </div>
       </td>
     </tr>
   );

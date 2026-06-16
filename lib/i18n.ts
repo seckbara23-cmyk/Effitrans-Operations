@@ -829,6 +829,7 @@ export const t = {
       addRole: "Ajouter un rôle",
       assign: "Attribuer",
       revoke: "Retirer",
+      resendWelcome: "Renvoyer l'e-mail",
     },
     form: {
       email: "Adresse e-mail",
@@ -855,6 +856,7 @@ export const t = {
         "Vous ne pouvez pas retirer votre propre rôle d'administrateur.",
       not_found: "Utilisateur introuvable.",
       invalid_role: "Rôle invalide.",
+      welcome_failed: "L'e-mail de bienvenue n'a pas pu être mis en file d'attente. Réessayez.",
       generic: "L'action a échoué. Veuillez réessayer.",
     },
     note: "L'utilisateur peut se connecter avec le mot de passe initial. Un e-mail de bienvenue (optionnel) envoie un lien sécurisé pour qu'il définisse lui-même son mot de passe ; aucun mot de passe n'est transmis par e-mail.",

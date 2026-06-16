@@ -132,6 +132,36 @@ export async function createUser(form: {
   return { ok: true, welcome };
 }
 
+/**
+ * Send / resend the secure welcome + set-password email to an EXISTING staff
+ * user (Phase 1.19B). Same template + recovery link as the create flow, no
+ * plaintext password. Best-effort: a queue failure surfaces as an error to the
+ * admin but never changes the user. Tenant-scoped + permission-gated.
+ */
+export async function sendWelcomeEmail(userId: string): Promise<ActionResult> {
+  let admin;
+  try {
+    admin = await assertPermission("admin:users:manage");
+  } catch {
+    return { ok: false, error: "forbidden" };
+  }
+
+  const supabase = getAdminSupabaseClient();
+  const { data: target } = await supabase
+    .from("app_user")
+    .select("id, tenant_id, email, name")
+    .eq("id", userId)
+    .maybeSingle();
+  if (!target || target.tenant_id !== admin.tenantId) return { ok: false, error: "not_found" };
+
+  const welcome = await queueStaffWelcome(
+    supabase,
+    { tenantId: admin.tenantId, actorId: admin.id },
+    { userId: target.id, email: target.email, name: target.name },
+  );
+  return welcome === "failed" ? { ok: false, error: "welcome_failed" } : { ok: true, welcome };
+}
+
 export async function setUserStatus(userId: string, status: "active" | "inactive"): Promise<ActionResult> {
   let admin;
   try {
