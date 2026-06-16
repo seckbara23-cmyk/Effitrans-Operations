@@ -15,8 +15,55 @@ import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
+import { queueAndSend } from "@/lib/comms/queue";
+import { reportError } from "@/lib/observability/report";
+import { staffWelcomeVars } from "./welcome";
 import { validateCreateUser } from "./validate";
-import type { ActionResult } from "./types";
+import type { ActionResult, WelcomeOutcome } from "./types";
+
+type Admin = ReturnType<typeof getAdminSupabaseClient>;
+
+/**
+ * Best-effort staff onboarding email (Option A): generate a secure self-service
+ * set-password link (Supabase recovery) and queue the `staff_welcome` template
+ * through the Communications Hub. NO plaintext password is ever emailed. Never
+ * throws — onboarding email failure must not fail user creation, and the message
+ * appears in /communications even when the email provider is the no-op stub.
+ */
+async function queueStaffWelcome(
+  supabase: Admin,
+  ctx: { tenantId: string; actorId: string },
+  recipient: { userId: string; email: string; name: string | null },
+): Promise<WelcomeOutcome> {
+  try {
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "";
+    const loginUrl = `${siteUrl}/login`;
+
+    const { data: link } = await supabase.auth.admin.generateLink({
+      type: "recovery",
+      email: recipient.email,
+      options: { redirectTo: `${siteUrl}/auth/update-password` },
+    });
+    // Fall back to the login page if no link could be generated (user still
+    // gets the welcome + can self-serve a reset from /login).
+    const setupLink = link?.properties?.action_link ?? loginUrl;
+
+    const res = await queueAndSend({
+      tenantId: ctx.tenantId,
+      createdBy: ctx.actorId,
+      templateKey: "staff_welcome",
+      vars: staffWelcomeVars({ name: recipient.name, email: recipient.email, loginUrl, setupLink }),
+      recipientEmail: recipient.email,
+      recipientName: recipient.name,
+      related: "user",
+      relatedId: recipient.userId,
+    });
+    return res.id ? "queued" : "failed";
+  } catch (e) {
+    reportError(e, { scope: "action", event: "users.welcome_email", extra: { userId: recipient.userId } });
+    return "failed";
+  }
+}
 
 async function tenantRoleIds(supabase: ReturnType<typeof getAdminSupabaseClient>, tenantId: string): Promise<Set<string>> {
   const { data } = await supabase.from("role").select("id").eq("tenant_id", tenantId);
@@ -28,6 +75,7 @@ export async function createUser(form: {
   name?: string;
   password: string;
   roleIds?: string[];
+  sendWelcome?: boolean;
 }): Promise<ActionResult> {
   let admin;
   try {
@@ -74,8 +122,14 @@ export async function createUser(form: {
     entityId: newId,
     after: { email, roles: toAssign },
   });
+
+  // Optional onboarding email (best-effort; never fails user creation).
+  const welcome: WelcomeOutcome = form.sendWelcome
+    ? await queueStaffWelcome(supabase, { tenantId: admin.tenantId, actorId: admin.id }, { userId: newId, email, name: form.name?.trim() || null })
+    : "skipped";
+
   revalidatePath("/users");
-  return { ok: true };
+  return { ok: true, welcome };
 }
 
 export async function setUserStatus(userId: string, status: "active" | "inactive"): Promise<ActionResult> {

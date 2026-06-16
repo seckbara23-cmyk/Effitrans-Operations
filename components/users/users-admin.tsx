@@ -35,22 +35,25 @@ export function UsersAdmin({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   // create form
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [newRoleIds, setNewRoleIds] = useState<string[]>([]);
+  const [sendWelcome, setSendWelcome] = useState(true);
 
-  function run(fn: () => Promise<ActionResult>, onOk?: () => void) {
+  function run(fn: () => Promise<ActionResult>, onOk?: (res: ActionResult & { ok: true }) => void) {
     setError(null);
+    setNotice(null);
     startTransition(async () => {
       const res = await fn();
       if (!res.ok) {
         setError(errorMessage(res.error));
         return;
       }
-      onOk?.();
+      onOk?.(res);
       router.refresh();
     });
   }
@@ -60,6 +63,11 @@ export function UsersAdmin({
       {error && (
         <div className="surface border-red-200 bg-red-50 p-3 text-sm text-red-700" role="alert">
           {error}
+        </div>
+      )}
+      {notice && (
+        <div className="surface border-teal-200 bg-teal-50 p-3 text-sm text-teal-800" role="status">
+          {notice}
         </div>
       )}
 
@@ -93,12 +101,14 @@ export function UsersAdmin({
             disabled={pending}
             onClick={() =>
               run(
-                () => createUser({ email, name, password, roleIds: newRoleIds }),
-                () => {
+                () => createUser({ email, name, password, roleIds: newRoleIds, sendWelcome }),
+                (res) => {
                   setEmail("");
                   setName("");
                   setPassword("");
                   setNewRoleIds([]);
+                  if (res.welcome === "queued") setNotice(t.users.welcome.queued);
+                  else if (res.welcome === "failed") setNotice(t.users.welcome.failed);
                 },
               )
             }
@@ -125,6 +135,14 @@ export function UsersAdmin({
             ))}
           </div>
         )}
+        <label className="mt-3 flex items-center gap-2 text-xs text-slate-600">
+          <input
+            type="checkbox"
+            checked={sendWelcome}
+            onChange={(e) => setSendWelcome(e.target.checked)}
+          />
+          {t.users.form.sendWelcome}
+        </label>
       </div>
 
       {/* Directory */}

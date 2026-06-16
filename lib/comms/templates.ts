@@ -6,6 +6,7 @@
  * HTML-escapes values and wraps the body in Effitrans branding.
  */
 export type TemplateKey =
+  | "staff_welcome"
   | "portal_invite"
   | "task_assigned"
   | "document_shared"
@@ -19,6 +20,28 @@ export type TemplateKey =
 export type Template = { subject: string; html: string; text: string };
 
 export const TEMPLATES: Record<TemplateKey, Template> = {
+  staff_welcome: {
+    subject: "Bienvenue sur Effitrans Operations",
+    html:
+      "<p>Bonjour {{name}},</p>" +
+      "<p>Un compte vous a été créé sur <strong>Effitrans Operations</strong>.</p>" +
+      "<ul><li>Adresse de connexion : <a href=\"{{loginUrl}}\">{{loginUrl}}</a></li>" +
+      "<li>Votre identifiant : {{email}}</li></ul>" +
+      "<p>Pour définir votre mot de passe en toute sécurité, cliquez sur le lien ci-dessous :</p>" +
+      "<p><a href=\"{{setupLink}}\">Définir mon mot de passe</a></p>" +
+      "<p>Nous vous recommandons de définir votre mot de passe dès votre première connexion.</p>" +
+      "<p>Si vous utilisez la même adresse e-mail chez Google, vous pouvez aussi vous connecter via « Se connecter avec Google ».</p>" +
+      "<p>Besoin d'aide ? Contactez votre administrateur Effitrans.</p>",
+    text:
+      "Bonjour {{name}},\n" +
+      "Un compte vous a été créé sur Effitrans Operations.\n" +
+      "Adresse de connexion : {{loginUrl}}\n" +
+      "Identifiant : {{email}}\n" +
+      "Définir votre mot de passe (lien sécurisé) : {{setupLink}}\n" +
+      "Nous vous recommandons de définir votre mot de passe dès la première connexion.\n" +
+      "Si vous utilisez la même adresse e-mail chez Google, la connexion Google est possible.\n" +
+      "Besoin d'aide ? Contactez votre administrateur Effitrans.",
+  },
   portal_invite: {
     subject: "Invitation à l'espace client Effitrans",
     html: "<p>Bonjour {{clientName}},</p><p>{{inviterName}} vous invite à accéder à votre espace client Effitrans pour suivre vos dossiers.</p><p><a href=\"{{inviteLink}}\">Activer mon accès</a></p>",

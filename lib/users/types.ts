@@ -22,6 +22,9 @@ export type AssignableRole = {
   labelFr: string | null;
 };
 
+/** Outcome of the optional welcome email queued after user creation. */
+export type WelcomeOutcome = "queued" | "skipped" | "failed";
+
 export type ActionResult =
-  | { ok: true }
+  | { ok: true; welcome?: WelcomeOutcome }
   | { ok: false; error: string };

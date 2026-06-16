@@ -838,6 +838,13 @@ export const t = {
       submit: "Créer",
       submitting: "Création…",
       noRoles: "Aucun rôle disponible",
+      sendWelcome: "Envoyer un e-mail de bienvenue (lien sécurisé pour définir le mot de passe)",
+    },
+    welcome: {
+      queued:
+        "Utilisateur créé. E-mail de bienvenue mis en file d'attente (visible dans Communications).",
+      failed:
+        "Utilisateur créé, mais l'e-mail de bienvenue n'a pas pu être mis en file d'attente. Partagez les accès manuellement.",
     },
     errors: {
       forbidden: "Action non autorisée.",
@@ -850,7 +857,7 @@ export const t = {
       invalid_role: "Rôle invalide.",
       generic: "L'action a échoué. Veuillez réessayer.",
     },
-    note: "Invitation par e-mail disponible ultérieurement (nécessite la configuration SMTP).",
+    note: "L'utilisateur peut se connecter avec le mot de passe initial. Un e-mail de bienvenue (optionnel) envoie un lien sécurisé pour qu'il définisse lui-même son mot de passe ; aucun mot de passe n'est transmis par e-mail.",
   },
   tasks: {
     title: "Tâches",
