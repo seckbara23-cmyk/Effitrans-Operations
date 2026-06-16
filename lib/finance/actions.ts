@@ -13,7 +13,7 @@ import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
-import { balanceDue, invoiceTotals, paidAmount, paymentStatus, round2 } from "./calc";
+import { balanceDue, invoiceTotals, paidAmount, paymentStatus, round2, validateLineAmounts } from "./calc";
 import {
   canDeleteInvoice,
   canEditInvoice,
@@ -88,6 +88,8 @@ export async function createCharge(fileId: string, input: ChargeInput): Promise<
     return { ok: false, error: "forbidden" };
   }
   if (!input.description?.trim()) return { ok: false, error: "description_required" };
+  const amountError = validateLineAmounts(input);
+  if (amountError) return { ok: false, error: amountError };
 
   const supabase = getAdminSupabaseClient();
   if (!(await verifyFile(supabase, fileId, user.tenantId))) return { ok: false, error: "file_not_found" };
@@ -120,6 +122,8 @@ export async function updateCharge(id: string, input: ChargeInput): Promise<Acti
     return { ok: false, error: "forbidden" };
   }
   if (!input.description?.trim()) return { ok: false, error: "description_required" };
+  const amountError = validateLineAmounts(input);
+  if (amountError) return { ok: false, error: amountError };
 
   const supabase = getAdminSupabaseClient();
   const { data: charge } = await supabase
@@ -321,6 +325,8 @@ export async function addInvoiceLine(invoiceId: string, input: InvoiceLineInput)
     return { ok: false, error: "forbidden" };
   }
   if (!input.description?.trim()) return { ok: false, error: "description_required" };
+  const amountError = validateLineAmounts(input);
+  if (amountError) return { ok: false, error: amountError };
 
   const supabase = getAdminSupabaseClient();
   const inv = await loadInvoice(supabase, invoiceId, user.tenantId);

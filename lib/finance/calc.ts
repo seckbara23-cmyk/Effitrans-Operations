@@ -20,6 +20,32 @@ export function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
+/** Upper guard against absurd / overflow line amounts (XOF; ~1 trillion). */
+export const MAX_LINE_AMOUNT = 1_000_000_000_000;
+
+/**
+ * Validate a charge / invoice-line amount triple before persistence. PURE.
+ * Returns "invalid_amount" when out of bounds, or null when valid.
+ * Rules: quantity > 0, unitAmount >= 0, 0 <= taxRate <= 100, all finite,
+ * and quantity × unitAmount within MAX_LINE_AMOUNT. Defaults mirror the
+ * insert defaults (quantity 1, unitAmount 0, taxRate 0).
+ */
+export function validateLineAmounts(input: {
+  quantity?: number;
+  unitAmount?: number;
+  taxRate?: number;
+}): "invalid_amount" | null {
+  const quantity = input.quantity ?? 1;
+  const unitAmount = input.unitAmount ?? 0;
+  const taxRate = input.taxRate ?? 0;
+  if (![quantity, unitAmount, taxRate].every((n) => Number.isFinite(n))) return "invalid_amount";
+  if (quantity <= 0) return "invalid_amount";
+  if (unitAmount < 0) return "invalid_amount";
+  if (taxRate < 0 || taxRate > 100) return "invalid_amount";
+  if (quantity * unitAmount > MAX_LINE_AMOUNT) return "invalid_amount";
+  return null;
+}
+
 type LineLike = { quantity: number; unitAmount: number; taxRate: number };
 
 export function lineAmount(line: { quantity: number; unitAmount: number }): number {

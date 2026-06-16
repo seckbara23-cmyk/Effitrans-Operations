@@ -7,6 +7,8 @@ import {
   balanceDue,
   paymentStatus,
   isOverdue,
+  validateLineAmounts,
+  MAX_LINE_AMOUNT,
 } from "@/lib/finance/calc";
 import {
   canEditInvoice,
@@ -23,6 +25,32 @@ import {
   isVerificationStatus,
   VERIFICATION_STATUSES,
 } from "@/lib/finance/verification";
+
+describe("validateLineAmounts (Phase 1.17A — amount integrity)", () => {
+  it("accepts valid amounts and empty defaults", () => {
+    expect(validateLineAmounts({ quantity: 2, unitAmount: 1000, taxRate: 18 })).toBeNull();
+    expect(validateLineAmounts({})).toBeNull(); // defaults: qty 1, amount 0, tax 0
+    expect(validateLineAmounts({ unitAmount: 0 })).toBeNull(); // zero amount allowed
+  });
+
+  it("rejects negative quantity / amount / tax", () => {
+    expect(validateLineAmounts({ quantity: -1, unitAmount: 1000 })).toBe("invalid_amount");
+    expect(validateLineAmounts({ quantity: 0, unitAmount: 1000 })).toBe("invalid_amount");
+    expect(validateLineAmounts({ unitAmount: -50 })).toBe("invalid_amount");
+    expect(validateLineAmounts({ taxRate: -1 })).toBe("invalid_amount");
+  });
+
+  it("rejects tax rate above 100", () => {
+    expect(validateLineAmounts({ taxRate: 150 })).toBe("invalid_amount");
+    expect(validateLineAmounts({ taxRate: 100 })).toBeNull();
+  });
+
+  it("rejects non-finite and overflow amounts", () => {
+    expect(validateLineAmounts({ unitAmount: Number.NaN })).toBe("invalid_amount");
+    expect(validateLineAmounts({ unitAmount: Number.POSITIVE_INFINITY })).toBe("invalid_amount");
+    expect(validateLineAmounts({ quantity: 2, unitAmount: MAX_LINE_AMOUNT })).toBe("invalid_amount");
+  });
+});
 
 describe("finance calc", () => {
   const lines = [

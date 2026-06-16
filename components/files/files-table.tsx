@@ -37,7 +37,8 @@ export function FilesTable({ files, canCreate }: { files: FileListItem[]; canCre
         <div className="surface p-6 text-sm text-slate-600">{t.files.empty}</div>
       ) : (
         <div className="surface overflow-hidden">
-          <table className="w-full text-left text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] text-left text-sm">
             <thead className="border-b border-slate-200 bg-sand-50 text-xs uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-4 py-3 font-semibold">{t.files.columns.number}</th>
@@ -73,6 +74,7 @@ export function FilesTable({ files, canCreate }: { files: FileListItem[]; canCre
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>
