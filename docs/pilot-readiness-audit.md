@@ -107,13 +107,13 @@ KPI grids (`grid-cols-2 … lg:grid-cols-4`) and the login page are properly res
 |---|---:|---|
 | Authentication | 90% | Email + Google OAuth + reset + session refresh + edge redirect + audit; test-covered. |
 | Portal | 85% | RLS-enforced, layout gate, dual-identity guard; lacks mobile hamburger. |
-| Operations | 80% | Real modules solid; dragged down by mock prototype pages in nav. |
+| Operations | 90% | Real modules solid; mock prototype pages removed from nav (B1 resolved, Phase 1.17B). |
 | Finance | 88% | Strong action gating; payment + (now) charge amounts validated; reconciliation now has a loading state. |
 | Communications | 80% | Queue-first, gated; no real delivery until provider wired. |
 | Analytics | 90% | Suspense skeleton, empty-data handling, permission-gated. |
-| Security | 80% | Robust RBAC/RLS/tenant isolation/webhook signatures; no monitoring, headers, or rate limiting. |
-| Mobile UX | 72% | Real tables fixed; mock tables + portal nav still weak on small screens. |
-| **Overall** | **~83%** | **Ready with conditions.** |
+| Security | 83% | Robust RBAC/RLS/tenant isolation/webhook signatures; nav/permission inconsistency closed (B1); no monitoring, headers, or rate limiting. |
+| Mobile UX | 85% | Real tables fixed; wide mock tables removed from nav; portal still lacks a mobile hamburger. |
+| **Overall** | **~86%** | **Ready with conditions** (B1 resolved; conditions C1–C4 remain). |
 
 ---
 
@@ -151,7 +151,7 @@ Out of scope (not done, per phase rules): no new modules, schemas, integrations,
 
 ### Pilot Blockers
 
-- **B1 — Mock/prototype data in production nav.** `/customers`, `/shipments`, `/documents` render hard-coded fake records; `/reports`, `/settings` are placeholders. All five are in the main sidebar next to real, gated modules. A pilot user will see fabricated data mixed with real data. **Must be removed from nav (or replaced) before pilot.** This single change also closes the §F permission/nav inconsistency and the mock-table mobile overflow (§E). *(No data-loss or anonymous-access risk — credibility/UX blocker.)*
+- **B1 — Mock/prototype data in production nav. ✅ RESOLVED (Phase 1.17B).** The five prototype items (`/customers`, `/shipments`, `/documents`, `/reports`, `/settings`) were removed from the sidebar. `/customers` + `/customers/[customerId]` now redirect to `/clients`; `/shipments` + `/shipments/[shipmentId]` redirect to `/files`; `/documents` shows a clear "no global document view" notice (documents live in dossiers + portal) and `/documents/[documentId]` redirects to `/files`; `/reports` and `/settings` remain only as honest data-free `ModulePage` placeholders (off-nav), with the real **Audit** link (`/settings/audit`) retained. No fake records render on any production-facing page; this also closed the §F nav/permission inconsistency and the §E mock-table mobile overflow. No remaining pilot blockers.
 
 ### Conditions (strongly recommended before or during early pilot)
 
@@ -162,4 +162,4 @@ Out of scope (not done, per phase rules): no new modules, schemas, integrations,
 
 ### Recommendation
 
-> **Ready with conditions.** The engineering core (auth, RBAC, RLS, finance, audit) is pilot-grade and the quick wins close the validation/error/loading/mobile gaps on the real surfaces. Resolve **B1** (mock pages) before exposing the app to pilot users, and address conditions **C1–C4** for a safe, observable pilot. Not "Not ready" — the blockers are scoped and low-effort; not unconditionally "Ready" — shipping mock data to pilot users would undermine trust.
+> **Ready with conditions.** The engineering core (auth, RBAC, RLS, finance, audit) is pilot-grade and the quick wins close the validation/error/loading/mobile gaps on the real surfaces. **Blocker B1 is now resolved** (Phase 1.17B — mock/prototype pages removed from nav and neutralised). Address conditions **C1–C4** (error monitoring, security headers, email-provider strategy, backups/region) for a safe, observable pilot.

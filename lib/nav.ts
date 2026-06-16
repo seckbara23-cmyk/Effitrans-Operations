@@ -5,13 +5,11 @@ import {
   IconUsers,
   IconContainer,
   IconStamp,
-  IconDocument,
   IconTask,
   IconTruck,
   IconFinance,
   IconReport,
   IconBell,
-  IconGear,
 } from "./icons";
 
 export type NavItem = {
@@ -42,11 +40,8 @@ export const navSections: NavSection[] = [
     items: [
       { label: t.nav.clients, href: "/clients", icon: IconUsers, permission: "client:read" },
       { label: t.nav.files, href: "/files", icon: IconContainer, permission: "file:read" },
-      { label: t.nav.customers, href: "/customers", icon: IconUsers },
-      { label: t.nav.shipments, href: "/shipments", icon: IconContainer },
       { label: t.nav.customs, href: "/customs", icon: IconStamp, permission: "customs:read" },
       { label: t.nav.transport, href: "/transport", icon: IconTruck, permission: "transport:read" },
-      { label: t.nav.documents, href: "/documents", icon: IconDocument },
       { label: t.nav.tasks, href: "/tasks", icon: IconTask, permission: "task:read" },
     ],
   },
@@ -57,10 +52,8 @@ export const navSections: NavSection[] = [
       { label: t.nav.reconciliation, href: "/finance/reconciliation", icon: IconFinance, permission: "finance:read" },
       { label: t.nav.analytics, href: "/analytics", icon: IconReport, permission: "analytics:read" },
       { label: t.nav.communications, href: "/communications", icon: IconBell, permission: "communication:read" },
-      { label: t.nav.reports, href: "/reports", icon: IconReport },
       { label: t.nav.users, href: "/users", icon: IconUsers, permission: "admin:users:manage" },
       { label: t.nav.audit, href: "/settings/audit", icon: IconStamp, permission: "audit:read:all" },
-      { label: t.nav.settings, href: "/settings", icon: IconGear, permission: "admin:config:manage" },
     ],
   },
 ];

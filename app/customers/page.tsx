@@ -1,18 +1,10 @@
-import type { Metadata } from "next";
-import { PageHeader } from "@/components/ui/page-header";
-import { CustomersExplorer } from "@/components/customers/customers-explorer";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = { title: "Clients" };
-
+/**
+ * Legacy prototype route (Phase 1.17B). The "Customers" page rendered hard-coded
+ * mock data; the real client directory is /clients. Removed from the sidebar and
+ * redirected here so old links/bookmarks land on the real module.
+ */
 export default function CustomersPage() {
-  return (
-    <div className="animate-fade-in space-y-6">
-      <PageHeader
-        meta="Opérations"
-        title="Clients"
-        subtitle="Répertoire clients, contacts, dossiers ouverts et historique opérationnel."
-      />
-      <CustomersExplorer />
-    </div>
-  );
+  redirect("/clients");
 }

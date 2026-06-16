@@ -1,18 +1,11 @@
-import type { Metadata } from "next";
-import { PageHeader } from "@/components/ui/page-header";
-import { ShipmentsExplorer } from "@/components/shipments/shipments-explorer";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = { title: "Dossiers d'expédition" };
-
+/**
+ * Legacy prototype route (Phase 1.17B). The "Shipments" page rendered hard-coded
+ * mock data; the real operational-file directory is /files (Dossiers). Removed
+ * from the sidebar and redirected here so old links/bookmarks land on the real
+ * module.
+ */
 export default function ShipmentsPage() {
-  return (
-    <div className="animate-fade-in space-y-6">
-      <PageHeader
-        meta="Opérations"
-        title="Dossiers d'expédition"
-        subtitle="Suivez les dossiers import/export, de la demande client jusqu'à la livraison."
-      />
-      <ShipmentsExplorer />
-    </div>
-  );
+  redirect("/files");
 }
