@@ -10,6 +10,7 @@
 import { NextResponse } from "next/server";
 import { paymentsEnabled } from "@/lib/finance/providers/config";
 import { processWebhook } from "@/lib/finance/webhook";
+import { reportError } from "@/lib/observability/report";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs"; // node:crypto for HMAC verification
@@ -33,8 +34,7 @@ export async function POST(req: Request, { params }: { params: { provider: strin
     );
   } catch (e) {
     // Never leak internals to the caller; the failure is audited server-side.
-    const message = e instanceof Error ? e.message : "error";
-    console.error("[payments webhook]", message);
+    reportError(e, { scope: "webhook", event: "payments.webhook", extra: { provider: params.provider } });
     return NextResponse.json({ error: "internal_error" }, { status: 500 });
   }
 }

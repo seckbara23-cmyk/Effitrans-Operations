@@ -153,12 +153,14 @@ Out of scope (not done, per phase rules): no new modules, schemas, integrations,
 
 - **B1 — Mock/prototype data in production nav. ✅ RESOLVED (Phase 1.17B).** The five prototype items (`/customers`, `/shipments`, `/documents`, `/reports`, `/settings`) were removed from the sidebar. `/customers` + `/customers/[customerId]` now redirect to `/clients`; `/shipments` + `/shipments/[shipmentId]` redirect to `/files`; `/documents` shows a clear "no global document view" notice (documents live in dossiers + portal) and `/documents/[documentId]` redirects to `/files`; `/reports` and `/settings` remain only as honest data-free `ModulePage` placeholders (off-nav), with the real **Audit** link (`/settings/audit`) retained. No fake records render on any production-facing page; this also closed the §F nav/permission inconsistency and the §E mock-table mobile overflow. No remaining pilot blockers.
 
-### Conditions (strongly recommended before or during early pilot)
+### Conditions (addressed in Phase 1.18 — Operational Hardening)
 
-- **C1** — Stand up error monitoring (R2) so pilot errors are observable.
-- **C2** — Add security headers (R3).
-- **C3** — Confirm the email provider strategy: with the no-op stub, **no notifications actually send**. Either wire a provider or set pilot expectations explicitly.
-- **C4** — Confirm Supabase backups + region (R8, BLK-9).
+- **C1** — ✅ Error monitoring: observability seam (`lib/observability/report.ts`) wired across all surfaces; Sentry is config-only. See [monitoring-verification.md](monitoring-verification.md).
+- **C2** — ✅ Security headers: 4 required + HSTS shipped in `next.config.mjs`; CSP evaluated and deferred (report-only first).
+- **C3** — ✅ Email strategy: Resend wired (dark by default) with a documented rollout; pilots told if running no-op.
+- **C4** — ✅ Backup/recovery runbook authored ([backup-recovery-runbook.md](backup-recovery-runbook.md)); Supabase PITR/retention + region (BLK-9) are one-time confirmations in the [launch checklist](pilot-launch-checklist.md).
+
+See [phase-1.18-operational-hardening.md](phase-1.18-operational-hardening.md) for the full hardening report. Overall readiness ~86% → **~92%**.
 
 ### Recommendation
 

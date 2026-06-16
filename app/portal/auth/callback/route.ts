@@ -10,6 +10,7 @@
 import { NextResponse } from "next/server";
 import { getServerSupabaseClient } from "@/lib/supabase/server";
 import { gatePortalOAuthLogin } from "@/lib/portal/oauth";
+import { reportMessage } from "@/lib/observability/report";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs"; // admin client (service role) for the gate + orphan cleanup
@@ -32,11 +33,13 @@ export async function GET(request: Request) {
   const supabase = getServerSupabaseClient();
   const { error } = await supabase.auth.exchangeCodeForSession(code);
   if (error) {
+    reportMessage("portal OAuth code exchange failed", { scope: "auth", event: "portal.callback.exchange" });
     return NextResponse.redirect(loginUrl("oauth"));
   }
 
   const outcome = await gatePortalOAuthLogin();
   if (!outcome.ok) {
+    reportMessage("portal OAuth login rejected by identity gate", { scope: "auth", event: "portal.callback.gate_rejected" });
     await supabase.auth.signOut();
     return NextResponse.redirect(loginUrl("unauthorized"));
   }

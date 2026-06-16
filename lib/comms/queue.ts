@@ -14,6 +14,7 @@ import type { Json } from "@/lib/db/types";
 import { renderTemplate, type TemplateVars } from "./render";
 import { sendEmail } from "./provider";
 import type { TemplateKey } from "./templates";
+import { reportMessage } from "@/lib/observability/report";
 
 export type QueueInput = {
   tenantId: string;
@@ -90,6 +91,11 @@ export async function queueAndSend(input: QueueInput): Promise<{ id: string | nu
     .from("communication_message")
     .update({ status: "FAILED", last_error: res.error ?? "send_failed", retry_count: 1 })
     .eq("id", data.id);
+  reportMessage("email send failed", {
+    scope: "comms",
+    event: "comms.send_failed",
+    extra: { messageId: data.id, template: input.templateKey, error: res.error ?? "send_failed" },
+  });
   await writeAudit({
     action: AuditActions.COMMUNICATION_FAILED,
     actorId: input.createdBy,

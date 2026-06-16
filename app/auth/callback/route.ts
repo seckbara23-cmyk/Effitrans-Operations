@@ -10,6 +10,7 @@
 import { NextResponse } from "next/server";
 import { getServerSupabaseClient } from "@/lib/supabase/server";
 import { gateStaffOAuthLogin } from "@/lib/auth/oauth";
+import { reportMessage } from "@/lib/observability/report";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs"; // admin client (service role) for the gate + orphan cleanup
@@ -32,12 +33,14 @@ export async function GET(request: Request) {
   const supabase = getServerSupabaseClient();
   const { error } = await supabase.auth.exchangeCodeForSession(code);
   if (error) {
+    reportMessage("staff OAuth code exchange failed", { scope: "auth", event: "auth.callback.exchange" });
     return NextResponse.redirect(loginUrl("oauth"));
   }
 
   const outcome = await gateStaffOAuthLogin();
   if (!outcome.ok) {
     // Unknown / disabled / wrong-flow / email-mismatch: never leave a session standing.
+    reportMessage("staff OAuth login rejected by identity gate", { scope: "auth", event: "auth.callback.gate_rejected" });
     await supabase.auth.signOut();
     return NextResponse.redirect(loginUrl("unauthorized"));
   }

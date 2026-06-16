@@ -6,6 +6,7 @@
  * stack trace or a blank screen. Keep it dependency-free so it always renders.
  */
 import { useEffect } from "react";
+import { reportError } from "@/lib/observability/report";
 
 export default function Error({
   error,
@@ -15,9 +16,9 @@ export default function Error({
   reset: () => void;
 }) {
   useEffect(() => {
-    // Surface to the server logs (and any future error monitor) without
-    // exposing details to the user.
-    console.error("[app:error]", error);
+    // Surface through the observability seam (logs now; monitor once wired)
+    // without exposing details to the user.
+    reportError(error, { scope: "client", event: "segment-error", extra: { digest: error.digest } });
   }, [error]);
 
   return (
