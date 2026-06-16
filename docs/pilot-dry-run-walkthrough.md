@@ -19,7 +19,7 @@ The lifecycle is **mechanically sound** — every mutating action is permission-
 | CEO | `CEO` | ✅ Yes — read-only oversight works everywhere |
 | Operations Coordinator | `COORDINATOR` | ⚠️ Partial — drives ops, but can't approve docs or release customs (needs hand-off) |
 | Customs Agent | `CUSTOMS_DECLARANT` | ❌ No — can declare/update customs but **cannot release** it |
-| Finance Agent | `FINANCE_OFFICER` | ❌ No — has every `finance:*` permission but **no UI to author invoices/payments** |
+| Finance Agent | `FINANCE_OFFICER` | ✅ **Yes (after A1)** — granted tenant-wide file read; full billing flow now works (see §7) |
 | Client Portal User | `CLIENT_USER` | ✅ Yes — sees files/docs/invoices; online pay is dark by default |
 
 ---
@@ -156,3 +156,32 @@ Audit coverage is **strong** — every mutating action across clients, files, do
 ## 6. Recommendation
 
 > **Ready for a controlled pilot with conditions.** The engine (permissions, state machines, audit, RLS, portal isolation) is solid. Before onboarding, resolve the **Finance Agent authoring blocker (A1)** — a one-line `file:read` grant is the cleanest fix — and ensure the pilot **staffs a customs releaser and a document approver** (A2/C2/C1). Plan the **missing client notifications (D)** as a fast follow (the trigger pattern already exists). With those addressed, all five personas can complete the Client → Dossier → Documents → Customs → Transport → Invoice → Payment → Communications → Portal lifecycle end-to-end.
+
+---
+
+## 7. A1 resolution + Finance Agent re-walkthrough (2026-06-16)
+
+**Change applied:** granted `FINANCE_OFFICER` tenant-wide file **read** — `file:read` **and** `file:read:all` — via `supabase/migrations/20260616000001_finance_file_read.sql` (mirrored in `seed.sql`). Read-only: no `file:create/update/delete`. **Customs release and document approval permissions were not touched** (per instruction).
+
+**Why both codes (not just `file:read`):** the file detail page render gate and the `operational_file` SELECT policy both require the literal `file:read` (`scope_visibility.sql:140`), and the row-level scope `can_read_file` → `user_readable_file_ids` only returns a dossier the user is *assigned to* unless they also hold `file:read:all` (`scope_visibility.sql:82`). A finance officer is never assigned to dossiers, so `file:read` **alone** would still make `getFile()` return null and 404 the page. Both grants are the minimal set that opens any dossier for billing.
+
+**Re-walkthrough — Finance Agent (`FINANCE_OFFICER`) now holds:** `finance:create/read/update/issue/payment/void/delete`, `file:read`, `file:read:all`, `analytics:read`, `communication:read/send`, `profile:*`.
+
+| Step | Path / action | Gate | Result |
+|---|---|---|---|
+| 1. Open finance queue | `/finance` | `finance:read` ✅ | Lists tenant invoices (admin client) |
+| 2. Open a dossier to bill | click row → `/files/[id]` | page gate `hasPermission("file:read")` ✅ | Passes (now granted) |
+| 3. Load the file | `getFile` (RLS) | policy `file:read` ✅ **and** `can_read_file` via `file:read:all` ✅ | Returns the file (no 404) |
+| 4. Finance panel renders | `getFinanceForFile` | `finance:read` ✅, finance ≠ null | FinancePanel shown |
+| 5. Add charge | `createCharge` | `finance:create` ✅ | OK (+ amount validation from 1.17A) |
+| 6. Build invoice lines | `addInvoiceLine` / `createInvoice` | `finance:create`/`update` ✅ | OK |
+| 7. Issue invoice | `issueInvoice` | `finance:issue` ✅ | DRAFT → ISSUED, number assigned |
+| 8. Notify client | `emailInvoiceIssued` | `communication:send` ✅ | Queued to Communications Hub |
+| 9. Record payment | `recordPayment` | `finance:payment` ✅ | PENDING payment recorded |
+| 10. Verify / reject payment | `/finance/reconciliation` → `verifyPayment`/`rejectPayment` | `finance:read` + `finance:void` ✅ | OK |
+
+**Result: the full billing flow succeeds end-to-end for the Finance Agent.** Notes: the file page degrades gracefully for the panels finance doesn't need — it uses the file's own client name when `client:read` is absent (`files/[id]/page.tsx:52`), and the tasks/documents/customs/transport panels simply don't render (no read perms). All finance writes use the admin client gated by `finance:*`, so they were never blocked — only the page *render* was, which A1 fixes.
+
+**Validation:** `tsc` clean · 160 tests pass · `next build` succeeds. No existing RLS test is affected — `rls_finance_test.sql` asserts only the finance officer's invoice/charge visibility (finance-role based), never `operational_file` reads, and FINANCE_OFFICER appears in no file-visibility RLS test. The migration mirrors the CI-validated grant pattern of `20260614000005`; CI's `rls-tests` job re-validates RLS on push (local Supabase was unavailable in this environment to run it inline).
+
+**Scope confirmation:** customs release (`customs:release`) and document approval (`document:approve`) grants are unchanged — A2/A3/C1/C2 remain as previously reported.

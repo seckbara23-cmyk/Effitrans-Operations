@@ -350,6 +350,16 @@ join public.permission p on p.code in ('finance:read', 'finance:create', 'financ
 where r.tenant_id = '00000000-0000-0000-0000-000000000001' and r.code = 'FINANCE_OFFICER'
 on conflict do nothing;
 
+-- Phase 1.19 (A1): tenant-wide file READ so finance can open any dossier to bill
+-- it (the finance panel lives on /files/[id], gated by file:read + read:all
+-- scope). Read-only; mirror of 20260616000001_finance_file_read.sql.
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code in ('file:read', 'file:read:all')
+where r.tenant_id = '00000000-0000-0000-0000-000000000001' and r.code = 'FINANCE_OFFICER'
+on conflict do nothing;
+
 -- ===========================================================================
 -- Phase 1.12A Customer Portal — internal portal:manage grant (mirror).
 -- ===========================================================================
