@@ -11,6 +11,8 @@ import type { DepartmentCardData } from "@/lib/departments/dashboard-map";
 import { DepartmentCards } from "@/components/dashboard/department-cards";
 import { getRecentActivity, type ActivityItem } from "@/lib/activity/feed";
 import { RecentActivity } from "@/components/dashboard/recent-activity";
+import { getControlTower, type ControlTowerData } from "@/lib/control-tower/service";
+import { ControlTower } from "@/components/dashboard/control-tower";
 import { getDashboardTasks } from "@/lib/tasks/service";
 import { DakarClock } from "@/components/dashboard/dakar-clock";
 import { DashboardKpis } from "@/components/dashboard/dashboard-kpis";
@@ -51,6 +53,7 @@ export default async function DashboardPage() {
   let deptCards: DepartmentCardData[] = [];
   let activity: ActivityItem[] = [];
   let canSeeActivity = false;
+  let controlTower: ControlTowerData | null = null;
   if (configured) {
     const user = await requireUser();
     [overview, recent, dashTasks] = await Promise.all([
@@ -59,6 +62,10 @@ export default async function DashboardPage() {
       getDashboardTasks().catch(() => null),
     ]);
     const permissions = await getEffectivePermissions(user.id).catch(() => [] as string[]);
+    // Phase 2.2 — operations control tower (management view).
+    if (hasPermission(permissions, "analytics:read")) {
+      controlTower = await getControlTower(permissions).catch(() => null);
+    }
     // Dashboard UX — department workload cards (only depts the viewer can read).
     deptCards = await getDepartmentCards(permissions).catch(() => []);
     // Recent activity — broad visibility (audit:read:all via RLS), finance-filtered.
@@ -132,6 +139,9 @@ export default async function DashboardPage() {
 
       {/* Real KPI band (Phase 1.5) — live dossier + task counts */}
       <DashboardKpis files={overview} tasks={taskKpis} />
+
+      {/* Operations control tower (Phase 2.2) — management view (analytics:read) */}
+      {controlTower && <ControlTower data={controlTower} />}
 
       {/* Department workload cards (Dashboard UX) — per-department, permission-scoped */}
       <DepartmentCards cards={deptCards} />
