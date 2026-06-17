@@ -4,9 +4,14 @@
 -- file:read:all in 20260616000001) can READ any dossier it is NOT assigned to
 -- (so it can reach the file page to author invoices/payments), but CANNOT
 -- perform operational WRITES on operational_file (no file:create / file:update).
---   * SELECT an unassigned dossier            -> 1   (read works tenant-wide)
---   * UPDATE that dossier                      -> 0   (no file:update; RLS hides it)
---   * INSERT a new dossier                     -> blocked (no file:create; WITH CHECK)
+--   * SELECT an unassigned dossier            -> 1        (read works tenant-wide)
+--   * UPDATE that dossier                      -> blocked  (authenticated has no
+--                                                           UPDATE grant — writes are
+--                                                           service-role only)
+--   * INSERT a new dossier                     -> blocked  (no INSERT grant either)
+-- operational_file grants SELECT-only to `authenticated` (20260614000002); all
+-- writes go through the service-role admin client in server actions. So a write
+-- here is denied at the TABLE-PRIVILEGE level (before RLS row-filtering).
 -- Requires all migrations + seed applied. Run like the other RLS tests.
 
 begin;
@@ -38,7 +43,7 @@ create temp table _r (check_name text, value int) on commit drop;
 
 do $$
 declare
-  can_read int; upd_rows int; ins_blocked int := 0;
+  can_read int; upd_blocked int := 0; ins_blocked int := 0;
 begin
   perform set_config('role', 'authenticated', true);
   perform set_config('request.jwt.claims',
@@ -48,12 +53,15 @@ begin
   select count(*) into can_read from public.operational_file
     where id = '00000000-0000-0000-0000-00000000fc01';
 
-  -- UPDATE: no file:update -> RLS makes 0 rows updatable.
-  update public.operational_file set priority = 'high'
-    where id = '00000000-0000-0000-0000-00000000fc01';
-  get diagnostics upd_rows = row_count;
+  -- UPDATE: no table-level UPDATE grant for authenticated -> denied (raises).
+  begin
+    update public.operational_file set priority = 'high'
+      where id = '00000000-0000-0000-0000-00000000fc01';
+  exception when others then
+    upd_blocked := 1;
+  end;
 
-  -- INSERT: no file:create -> WITH CHECK violation raises.
+  -- INSERT: no table-level INSERT grant for authenticated -> denied (raises).
   begin
     insert into public.operational_file (id, tenant_id, file_number, type, client_id)
     values ('00000000-0000-0000-0000-00000000fc02', '00000000-0000-0000-0000-000000000001', 'EFT-IMP-2099-98002', 'IMP', '00000000-0000-0000-0000-00000000c1f0');
@@ -64,10 +72,10 @@ begin
   perform set_config('role', 'postgres', true);
 
   insert into _r values
-    ('fin_can_read', can_read), ('fin_update_rows', upd_rows), ('fin_insert_blocked', ins_blocked);
+    ('fin_can_read', can_read), ('fin_update_blocked', upd_blocked), ('fin_insert_blocked', ins_blocked);
 
-  if can_read <> 1 or upd_rows <> 0 or ins_blocked <> 1 then
-    raise exception 'RLS FINANCE FILE-READ FAIL: read=% updRows=% insBlocked=%', can_read, upd_rows, ins_blocked;
+  if can_read <> 1 or upd_blocked <> 1 or ins_blocked <> 1 then
+    raise exception 'RLS FINANCE FILE-READ FAIL: read=% updBlocked=% insBlocked=%', can_read, upd_blocked, ins_blocked;
   end if;
 end $$;
 
