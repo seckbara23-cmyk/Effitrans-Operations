@@ -40,6 +40,14 @@ site_url = "http://localhost:3000"
 # Enabled for later document storage (Phase 1, S5). Not used in Wave 0.
 enabled = true
 
+[edge_runtime]
+# This project defines NO Edge Functions (there is no supabase/functions/ dir).
+# `supabase start` otherwise boots the Deno edge-runtime container by default and
+# blocks the whole stack on its health check. With nothing to serve, recent
+# edge-runtime images fail that check (502) and abort `supabase start` before the
+# RLS tests run. We don't use it — disable it so CI boots only what it needs.
+enabled = false
+
 # -----------------------------------------------------------------------------
 # Provisional region note (BLK-9):
 #   Hosted region is selected in the Supabase dashboard at project creation and
