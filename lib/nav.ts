@@ -10,6 +10,7 @@ import {
   IconBell,
   IconDocument,
   IconBuilding,
+  IconReport,
 } from "./icons";
 
 export type NavItem = {
@@ -58,6 +59,8 @@ export const navSections: NavSection[] = [
   {
     title: t.nav.section_administration,
     items: [
+      { label: t.nav.executive, href: "/dashboard/executive", icon: IconBuilding, permission: "analytics:read" },
+      { label: t.nav.reports, href: "/reports", icon: IconReport, permission: "analytics:read" },
       { label: t.nav.users, href: "/users", icon: IconUsers, permission: "admin:users:manage" },
       { label: t.nav.audit, href: "/settings/audit", icon: IconStamp, permission: "audit:read:all" },
     ],

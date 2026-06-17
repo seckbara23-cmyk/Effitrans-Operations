@@ -26,7 +26,8 @@ describe("Phase 2.0 — department navigation", () => {
   });
 
   it("does NOT reintroduce any removed mock / prototype route", () => {
-    for (const mock of ["/customers", "/shipments", "/documents", "/reports", "/settings"]) {
+    // /reports is now the real BI reporting center (Phase 3.0), not a mock route.
+    for (const mock of ["/customers", "/shipments", "/documents", "/settings"]) {
       expect(hrefs).not.toContain(mock);
     }
   });
