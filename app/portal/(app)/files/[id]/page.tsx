@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { getPortalFileSummary } from "@/lib/portal/service";
+import { getPortalProgress } from "@/lib/portal/progress";
+import { PortalProgressView } from "@/components/portal/portal-progress";
 import { listPortalDocuments, listPortalInvoices } from "@/lib/portal/docs-service";
 import { PortalDownloadButton } from "@/components/portal/portal-download-button";
 import { t } from "@/lib/i18n";
@@ -37,9 +39,10 @@ export default async function PortalFileDetailPage({ params }: { params: { id: s
     ? t.transport.statuses[file.transportStatus as keyof typeof t.transport.statuses] ?? file.transportStatus
     : f.notAvailable;
 
-  const [documents, invoices] = await Promise.all([
+  const [documents, invoices, progress] = await Promise.all([
     listPortalDocuments(file.id),
     listPortalInvoices(file.id),
+    getPortalProgress(file.id),
   ]);
   const di = t.portal.documents;
   const iv = t.portal.invoices;
@@ -48,6 +51,8 @@ export default async function PortalFileDetailPage({ params }: { params: { id: s
     <div className="animate-fade-in space-y-5">
       <Link href="/portal/files" className="text-sm text-teal-700 hover:underline">← {f.back}</Link>
       <h1 className="tabular text-xl font-bold text-navy-900">{file.fileNumber}</h1>
+
+      {progress && <PortalProgressView progress={progress} />}
 
       <div className="surface p-4">
         <Row label={f.type} value={t.files.types[file.type as keyof typeof t.files.types] ?? file.type} />

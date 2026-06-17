@@ -22,7 +22,7 @@ type FileRow = {
 };
 
 const LIST_SELECT =
-  "id, file_number, type, status, shipment(origin, destination, transport_mode)";
+  "id, file_number, type, status, shipment(origin, destination, transport_mode), transport:transport_record(status)";
 const DETAIL_SELECT =
   "id, file_number, type, status, shipment(origin, destination, transport_mode), customs:customs_record(status), transport:transport_record(status)";
 

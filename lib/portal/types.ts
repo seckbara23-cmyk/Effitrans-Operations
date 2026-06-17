@@ -73,6 +73,7 @@ export type PortalInvoiceDetail = PortalInvoiceSummary & {
   issueDate: string | null;
   subtotal: number;
   tax: number;
+  paymentVerifying: boolean;
   lines: PortalInvoiceLine[];
   payments: PortalInvoicePayment[];
 };

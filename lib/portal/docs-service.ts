@@ -74,7 +74,7 @@ type InvRow = {
   file: { file_number: string } | null;
 };
 type LineRow = { invoice_id: string; description: string; quantity: number; unit_amount: number; tax_rate: number };
-type PayRow = { invoice_id: string; amount: number; method: string; reference: string | null; paid_at: string; reversed_at: string | null };
+type PayRow = { invoice_id: string; amount: number; method: string; reference: string | null; paid_at: string; reversed_at: string | null; verification_status: string };
 
 function summarize(
   inv: InvRow,
@@ -109,7 +109,7 @@ async function fetchLinesPayments(supabase: ReturnType<typeof getServerSupabaseC
   if (ids.length === 0) return { lines: [] as LineRow[], payments: [] as PayRow[] };
   const [lines, payments] = await Promise.all([
     supabase.from("invoice_line").select("invoice_id, description, quantity, unit_amount, tax_rate").in("invoice_id", ids).returns<LineRow[]>(),
-    supabase.from("payment").select("invoice_id, amount, method, reference, paid_at, reversed_at").in("invoice_id", ids).returns<PayRow[]>(),
+    supabase.from("payment").select("invoice_id, amount, method, reference, paid_at, reversed_at, verification_status").in("invoice_id", ids).returns<PayRow[]>(),
   ]);
   return { lines: lines.data ?? [], payments: payments.data ?? [] };
 }
@@ -143,6 +143,9 @@ export async function getPortalInvoice(id: string): Promise<PortalInvoiceDetail 
   const base = summarize(inv, lines, payments, now);
   return {
     ...base,
+    // Customer-safe: surface only that a payment is being verified, never the
+    // internal verification status / provider refs / reconciliation detail.
+    paymentVerifying: payments.some((p) => p.reversed_at == null && p.verification_status === "PENDING"),
     lines: lines.map((l) => ({
       description: l.description,
       quantity: Number(l.quantity),

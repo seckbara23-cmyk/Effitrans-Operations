@@ -15,7 +15,12 @@ export type TemplateKey =
   | "payment_link"
   | "customs_released"
   | "transport_delivered"
-  | "pod_received";
+  | "pod_received"
+  // Phase 2.4 — customer progress templates (DEFINITIONS ONLY; no triggers/sending
+  // yet — Phase 2.5 decides the notification strategy).
+  | "shipment_progress"
+  | "shipment_delivered"
+  | "payment_received";
 
 export type Template = { subject: string; html: string; text: string };
 
@@ -86,5 +91,21 @@ export const TEMPLATES: Record<TemplateKey, Template> = {
     subject: "Preuve de livraison reçue — dossier {{fileNumber}}",
     html: "<p>Bonjour {{clientName}},</p><p>La preuve de livraison (POD) de votre dossier {{fileNumber}} a été reçue. Merci de votre confiance.</p>",
     text: "Bonjour {{clientName}},\nLa preuve de livraison (POD) du dossier {{fileNumber}} a été reçue.",
+  },
+  // --- Phase 2.4 customer progress templates (definitions only, not yet sent) ---
+  shipment_progress: {
+    subject: "Mise à jour de votre expédition — dossier {{fileNumber}}",
+    html: "<p>Bonjour {{clientName}},</p><p>Votre expédition {{fileNumber}} a progressé : <strong>{{status}}</strong>.</p><p><a href=\"{{portalLink}}\">Suivre dans mon espace client</a></p>",
+    text: "Bonjour {{clientName}},\nVotre expédition {{fileNumber}} a progressé : {{status}}.\nSuivre : {{portalLink}}",
+  },
+  shipment_delivered: {
+    subject: "Livraison effectuée — dossier {{fileNumber}}",
+    html: "<p>Bonjour {{clientName}},</p><p>Votre expédition {{fileNumber}} a été livrée. Merci de votre confiance.</p><p><a href=\"{{portalLink}}\">Voir les détails</a></p>",
+    text: "Bonjour {{clientName}},\nVotre expédition {{fileNumber}} a été livrée.\nDétails : {{portalLink}}",
+  },
+  payment_received: {
+    subject: "Paiement reçu — facture {{invoiceNumber}}",
+    html: "<p>Bonjour {{clientName}},</p><p>Nous confirmons la réception de votre paiement de {{amount}} pour la facture {{invoiceNumber}}. Merci.</p>",
+    text: "Bonjour {{clientName}},\nNous confirmons la réception de votre paiement de {{amount}} pour la facture {{invoiceNumber}}.",
   },
 };

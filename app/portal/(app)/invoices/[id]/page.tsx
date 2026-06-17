@@ -84,6 +84,10 @@ export default async function PortalInvoiceDetailPage({ params }: { params: { id
           </div>
         )}
 
+        {inv.paymentVerifying && (
+          <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">{i.paymentVerifying}</p>
+        )}
+
         {inv.payments.length > 0 && (
           <div>
             <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">{i.payments}</p>
