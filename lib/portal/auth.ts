@@ -9,6 +9,7 @@ import "server-only";
 import { cache } from "react";
 import { redirect } from "next/navigation";
 import { getServerSupabaseClient } from "@/lib/supabase/server";
+import { touchPortalSeen } from "@/lib/users/presence-track";
 import type { PortalRole, PortalUserStatus } from "./access";
 import type { PortalUser } from "./types";
 
@@ -20,6 +21,7 @@ type Row = {
   name: string | null;
   status: string;
   role: string;
+  last_seen_at: string | null;
   client: { name: string } | null;
 };
 
@@ -34,10 +36,13 @@ export const getCurrentPortalUser = cache(async (): Promise<PortalUser | null> =
 
   const { data } = await supabase
     .from("client_user")
-    .select("id, tenant_id, client_id, email, name, status, role, client:client_id(name)")
+    .select("id, tenant_id, client_id, email, name, status, role, last_seen_at, client:client_id(name)")
     .eq("id", user.id)
     .maybeSingle<Row>();
   if (!data) return null;
+
+  // Phase 2.1A — presence heartbeat on authenticated portal load (throttled).
+  await touchPortalSeen(data.id, data.last_seen_at);
 
   return {
     id: data.id,

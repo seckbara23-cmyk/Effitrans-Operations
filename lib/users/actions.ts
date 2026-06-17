@@ -58,6 +58,10 @@ async function queueStaffWelcome(
       related: "user",
       relatedId: recipient.userId,
     });
+    if (res.id) {
+      // Phase 2.1A — record that the onboarding email was sent (admin visibility).
+      await supabase.from("app_user").update({ onboarding_email_sent_at: new Date().toISOString() }).eq("id", recipient.userId);
+    }
     return res.id ? "queued" : "failed";
   } catch (e) {
     reportError(e, { scope: "action", event: "users.welcome_email", extra: { userId: recipient.userId } });

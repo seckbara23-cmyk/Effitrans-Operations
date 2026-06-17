@@ -15,6 +15,7 @@ import { getServerSupabaseClient } from "@/lib/supabase/server";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
+import { recordStaffLogin } from "@/lib/users/presence-track";
 import { evaluateStaffOAuth, type OAuthGateResult } from "./oauth-gate";
 
 export type StaffOAuthOutcome =
@@ -62,6 +63,8 @@ export async function gateStaffOAuthLogin(): Promise<StaffOAuthOutcome> {
       entityId: user.id,
       after: { method: "google" },
     });
+    // Phase 2.1A — staff Google login metadata (presence).
+    await recordStaffLogin(user.id, "google");
     return { ok: true };
   }
 

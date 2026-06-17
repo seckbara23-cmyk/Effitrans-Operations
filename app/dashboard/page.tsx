@@ -1,7 +1,11 @@
 import type { Metadata } from "next";
 import { t } from "@/lib/i18n";
 import { requireUser } from "@/lib/auth/require-user";
+import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { getFileOverview, getRecentFiles } from "@/lib/files/service";
+import { getPresenceSummary } from "@/lib/users/service";
+import { AdminPresenceCard } from "@/components/dashboard/admin-presence-card";
+import type { PresenceSummary } from "@/lib/users/types";
 import { getDashboardTasks } from "@/lib/tasks/service";
 import { DakarClock } from "@/components/dashboard/dakar-clock";
 import { DashboardKpis } from "@/components/dashboard/dashboard-kpis";
@@ -38,13 +42,19 @@ export default async function DashboardPage() {
   let overview = null;
   let recent: Awaited<ReturnType<typeof getRecentFiles>> = [];
   let dashTasks = null;
+  let presence: PresenceSummary | null = null;
   if (configured) {
-    await requireUser();
+    const user = await requireUser();
     [overview, recent, dashTasks] = await Promise.all([
       getFileOverview().catch(() => null),
       getRecentFiles(8).catch(() => []),
       getDashboardTasks().catch(() => null),
     ]);
+    // Phase 2.1A — SYSTEM_ADMIN-only presence summary.
+    const permissions = await getEffectivePermissions(user.id).catch(() => [] as string[]);
+    if (hasPermission(permissions, "admin:users:manage")) {
+      presence = await getPresenceSummary().catch(() => null);
+    }
   }
   const taskKpis = dashTasks
     ? { dueToday: dashTasks.today.length, overdue: dashTasks.overdue.length, mine: dashTasks.mine.length }
@@ -107,6 +117,9 @@ export default async function DashboardPage() {
 
       {/* Real KPI band (Phase 1.5) — live dossier + task counts */}
       <DashboardKpis files={overview} tasks={taskKpis} />
+
+      {/* Presence summary (Phase 2.1A) — SYSTEM_ADMIN / admin:users:manage only */}
+      {presence && <AdminPresenceCard summary={presence} />}
 
       {/* Finance KPIs (Phase 1.11) — only for finance-role users */}
       <DashboardFinanceKpis />

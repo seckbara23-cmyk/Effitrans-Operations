@@ -11,6 +11,7 @@
 import { getCurrentUser } from "./current-user";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
+import { recordStaffLogin } from "@/lib/users/presence-track";
 
 export async function recordLoginAudit(): Promise<void> {
   try {
@@ -23,6 +24,8 @@ export async function recordLoginAudit(): Promise<void> {
       entity: "app_user",
       entityId: user.id,
     });
+    // Phase 2.1A — staff email/password login metadata (presence).
+    await recordStaffLogin(user.id, "password");
   } catch {
     // best-effort: never block auth on audit failure
   }

@@ -11,6 +11,7 @@
  */
 import { cache } from "react";
 import { getServerSupabaseClient } from "@/lib/supabase/server";
+import { touchStaffSeen } from "@/lib/users/presence-track";
 
 export type CurrentUser = {
   /** app_user.id === auth.users.id */
@@ -41,7 +42,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   // Typed via the Database generic on the client.
   const { data: profile } = await supabase
     .from("app_user")
-    .select("id, tenant_id, email, is_system_admin, status")
+    .select("id, tenant_id, email, is_system_admin, status, last_seen_at")
     .eq("id", user.id)
     .maybeSingle();
 
@@ -49,6 +50,9 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
 
   // Disabled users must not access protected app areas — treat as no session.
   if (profile.status !== "active") return null;
+
+  // Phase 2.1A — presence heartbeat on authenticated load (throttled, best-effort).
+  await touchStaffSeen(profile.id, profile.last_seen_at);
 
   // Embedded relation result asserted via .returns<T>() (intentional, not a hack).
   const { data: roleData } = await supabase

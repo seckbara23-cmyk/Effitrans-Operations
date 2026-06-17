@@ -58,6 +58,11 @@ export type Database = {
           name: string | null;
           status: string;
           is_system_admin: boolean;
+          last_login_at: string | null;
+          last_seen_at: string | null;
+          last_login_method: string | null;
+          login_count: number;
+          onboarding_email_sent_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -68,6 +73,11 @@ export type Database = {
           name?: string | null;
           status?: string;
           is_system_admin?: boolean;
+          last_login_at?: string | null;
+          last_seen_at?: string | null;
+          last_login_method?: string | null;
+          login_count?: number;
+          onboarding_email_sent_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -78,6 +88,11 @@ export type Database = {
           name?: string | null;
           status?: string;
           is_system_admin?: boolean;
+          last_login_at?: string | null;
+          last_seen_at?: string | null;
+          last_login_method?: string | null;
+          login_count?: number;
+          onboarding_email_sent_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -1412,6 +1427,10 @@ export type Database = {
           invited_by: string | null;
           invited_at: string;
           last_login_at: string | null;
+          last_seen_at: string | null;
+          last_login_method: string | null;
+          login_count: number;
+          onboarding_email_sent_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -1426,6 +1445,10 @@ export type Database = {
           invited_by?: string | null;
           invited_at?: string;
           last_login_at?: string | null;
+          last_seen_at?: string | null;
+          last_login_method?: string | null;
+          login_count?: number;
+          onboarding_email_sent_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -1440,6 +1463,10 @@ export type Database = {
           invited_by?: string | null;
           invited_at?: string;
           last_login_at?: string | null;
+          last_seen_at?: string | null;
+          last_login_method?: string | null;
+          login_count?: number;
+          onboarding_email_sent_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };

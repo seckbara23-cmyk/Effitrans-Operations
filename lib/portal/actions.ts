@@ -23,16 +23,24 @@ export async function recordPortalLogin(): Promise<{ ok: boolean; error?: string
   const admin = getAdminSupabaseClient();
   const { data: cu } = await admin
     .from("client_user")
-    .select("id, status, tenant_id")
+    .select("id, status, tenant_id, login_count")
     .eq("id", user.id)
     .maybeSingle();
   if (!cu) return { ok: false, error: "not_portal" };
   if (cu.status === "DISABLED") return { ok: false, error: "disabled" };
 
   const wasInvited = cu.status === "INVITED";
+  // Phase 2.1A — portal password login metadata (presence).
+  const now = new Date().toISOString();
   await admin
     .from("client_user")
-    .update({ status: "ACTIVE", last_login_at: new Date().toISOString() })
+    .update({
+      status: "ACTIVE",
+      last_login_at: now,
+      last_seen_at: now,
+      last_login_method: "portal_password",
+      login_count: (cu.login_count ?? 0) + 1,
+    })
     .eq("id", user.id);
 
   if (wasInvited) {

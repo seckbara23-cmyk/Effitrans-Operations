@@ -7,6 +7,8 @@ export type AdminUserRole = {
   labelFr: string | null;
 };
 
+import type { Presence } from "./presence";
+
 export type AdminUser = {
   id: string;
   email: string;
@@ -14,6 +16,21 @@ export type AdminUser = {
   status: "active" | "inactive";
   isSystemAdmin: boolean;
   roles: AdminUserRole[];
+  // Phase 2.1A — presence & login metadata (admin visibility).
+  presence: Presence;
+  lastLoginAt: string | null;
+  lastSeenAt: string | null;
+  lastLoginMethod: string | null;
+  loginCount: number;
+  onboardingEmailSentAt: string | null;
+};
+
+/** SYSTEM_ADMIN dashboard presence summary. */
+export type PresenceSummary = {
+  online: number;
+  activeToday: number;
+  neverLoggedIn: number;
+  portalActiveToday: number;
 };
 
 export type AssignableRole = {

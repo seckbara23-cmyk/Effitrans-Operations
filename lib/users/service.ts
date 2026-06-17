@@ -9,17 +9,35 @@
 import "server-only";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
-import type { AdminUser, AdminUserRole, AssignableRole } from "./types";
+import { classifyPresence } from "./presence";
+import type { AdminUser, AdminUserRole, AssignableRole, PresenceSummary } from "./types";
+
+type UserRow = {
+  id: string;
+  email: string;
+  name: string | null;
+  status: string;
+  is_system_admin: boolean;
+  last_login_at: string | null;
+  last_seen_at: string | null;
+  last_login_method: string | null;
+  login_count: number | null;
+  onboarding_email_sent_at: string | null;
+};
 
 export async function listUsers(): Promise<AdminUser[]> {
   const admin = await assertPermission("admin:users:manage");
   const supabase = getAdminSupabaseClient();
+  const now = new Date();
 
   const { data: users, error } = await supabase
     .from("app_user")
-    .select("id, email, name, status, is_system_admin")
+    .select(
+      "id, email, name, status, is_system_admin, last_login_at, last_seen_at, last_login_method, login_count, onboarding_email_sent_at",
+    )
     .eq("tenant_id", admin.tenantId)
-    .order("email");
+    .order("email")
+    .returns<UserRow[]>();
   if (error) throw new Error(`[users] directory read failed: ${error.message}`);
 
   const { data: roleRows, error: roleErr } = await supabase
@@ -44,7 +62,48 @@ export async function listUsers(): Promise<AdminUser[]> {
     status: u.status === "inactive" ? "inactive" : "active",
     isSystemAdmin: u.is_system_admin,
     roles: byUser.get(u.id) ?? [],
+    presence: classifyPresence(
+      { lastSeenAt: u.last_seen_at, lastLoginAt: u.last_login_at, loginCount: u.login_count ?? 0 },
+      now,
+    ),
+    lastLoginAt: u.last_login_at,
+    lastSeenAt: u.last_seen_at,
+    lastLoginMethod: u.last_login_method,
+    loginCount: u.login_count ?? 0,
+    onboardingEmailSentAt: u.onboarding_email_sent_at,
   }));
+}
+
+/** SYSTEM_ADMIN presence summary (gated admin:users:manage). Derived counts only. */
+export async function getPresenceSummary(): Promise<PresenceSummary> {
+  const admin = await assertPermission("admin:users:manage");
+  const supabase = getAdminSupabaseClient();
+  const onlineSince = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+  const dayStart = new Date();
+  dayStart.setUTCHours(0, 0, 0, 0);
+  const sod = dayStart.toISOString();
+
+  const [{ data: staff }, { data: portal }] = await Promise.all([
+    supabase
+      .from("app_user")
+      .select("status, last_seen_at, last_login_at, login_count")
+      .eq("tenant_id", admin.tenantId)
+      .returns<{ status: string; last_seen_at: string | null; last_login_at: string | null; login_count: number | null }[]>(),
+    supabase
+      .from("client_user")
+      .select("last_seen_at")
+      .eq("tenant_id", admin.tenantId)
+      .returns<{ last_seen_at: string | null }[]>(),
+  ]);
+
+  const staffRows = staff ?? [];
+  const active = staffRows.filter((u) => u.status === "active");
+  return {
+    online: active.filter((u) => u.last_seen_at != null && u.last_seen_at >= onlineSince).length,
+    activeToday: active.filter((u) => u.last_seen_at != null && u.last_seen_at >= sod).length,
+    neverLoggedIn: active.filter((u) => (u.login_count ?? 0) === 0 && !u.last_login_at).length,
+    portalActiveToday: (portal ?? []).filter((u) => u.last_seen_at != null && u.last_seen_at >= sod).length,
+  };
 }
 
 export async function listAssignableRoles(): Promise<AssignableRole[]> {

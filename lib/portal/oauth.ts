@@ -13,6 +13,7 @@ import { getServerSupabaseClient } from "@/lib/supabase/server";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
+import { recordPortalLogin } from "@/lib/users/presence-track";
 import { evaluatePortalOAuth, type PortalGateResult } from "./oauth-gate";
 
 export type PortalOAuthOutcome =
@@ -47,10 +48,7 @@ export async function gatePortalOAuthLogin(): Promise<PortalOAuthOutcome> {
   if (result.ok) {
     // First Google login of an invited portal user activates them.
     if (result.activate) {
-      await admin
-        .from("client_user")
-        .update({ status: "ACTIVE", last_login_at: new Date().toISOString() })
-        .eq("id", user.id);
+      await admin.from("client_user").update({ status: "ACTIVE" }).eq("id", user.id);
       await safeAudit({
         action: AuditActions.PORTAL_USER_ACTIVATED,
         clientUserId: user.id,
@@ -58,9 +56,9 @@ export async function gatePortalOAuthLogin(): Promise<PortalOAuthOutcome> {
         entity: "client_user",
         entityId: user.id,
       });
-    } else {
-      await admin.from("client_user").update({ last_login_at: new Date().toISOString() }).eq("id", user.id);
     }
+    // Phase 2.1A — portal Google login metadata (presence): last_login/seen/method/count.
+    await recordPortalLogin(user.id, "portal_google");
     await safeAudit({
       action: AuditActions.PORTAL_LOGIN_GOOGLE,
       clientUserId: user.id,

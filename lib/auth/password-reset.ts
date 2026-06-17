@@ -21,6 +21,7 @@ import { getServerSupabaseClient } from "@/lib/supabase/server";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
+import { recordStaffLogin } from "@/lib/users/presence-track";
 import { isActiveStaff, normalizeEmail } from "./oauth-gate";
 
 /** Audit a reset request, but ONLY for an active staff email. Never leaks. */
@@ -93,5 +94,7 @@ export async function recordPasswordResetComplete(): Promise<{ ok: boolean }> {
   } catch {
     /* never block on audit */
   }
+  // Phase 2.1A — completing a recovery is an authenticated session (presence).
+  await recordStaffLogin(appUser.id, "recovery");
   return { ok: true };
 }

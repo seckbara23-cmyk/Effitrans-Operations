@@ -18,10 +18,41 @@ import {
   sendWelcomeEmail,
 } from "@/lib/users/actions";
 import type { AdminUser, AssignableRole, ActionResult } from "@/lib/users/types";
+import { loginMethodLabel, type Presence } from "@/lib/users/presence";
 
 function errorMessage(code: string): string {
   const map = t.users.errors as Record<string, string>;
   return map[code] ?? t.users.errors.generic;
+}
+
+const PRESENCE_STYLE: Record<Presence, string> = {
+  online: "bg-emerald-50 text-emerald-700",
+  recently_active: "bg-amber-50 text-amber-700",
+  offline: "bg-slate-100 text-slate-500",
+  never: "bg-slate-100 text-slate-400",
+};
+const PRESENCE_DOT: Record<Presence, string> = {
+  online: "🟢",
+  recently_active: "🟡",
+  offline: "⚪",
+  never: "○",
+};
+
+function fmtDateTime(iso: string | null): string {
+  if (!iso) return t.users.presence.none;
+  return new Date(iso).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" });
+}
+
+function PresenceBadge({ presence }: { presence: Presence }) {
+  const p = t.users.presence;
+  const label =
+    presence === "online" ? p.online : presence === "recently_active" ? p.recently_active : presence === "never" ? p.never : p.offline;
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${PRESENCE_STYLE[presence]}`}>
+      <span aria-hidden>{PRESENCE_DOT[presence]}</span>
+      {label}
+    </span>
+  );
 }
 
 export function UsersAdmin({
@@ -148,12 +179,15 @@ export function UsersAdmin({
 
       {/* Directory */}
       <div className="surface overflow-hidden">
-        <table className="w-full text-left text-sm">
+        <div className="overflow-x-auto">
+        <table className="w-full min-w-[920px] text-left text-sm">
           <thead className="border-b border-slate-200 bg-sand-50 text-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-4 py-3 font-semibold">{t.users.columns.user}</th>
               <th className="px-4 py-3 font-semibold">{t.users.columns.roles}</th>
               <th className="px-4 py-3 font-semibold">{t.users.columns.status}</th>
+              <th className="px-4 py-3 font-semibold">{t.users.presence.column}</th>
+              <th className="px-4 py-3 font-semibold">{t.users.presence.connection}</th>
               <th className="px-4 py-3 font-semibold">{t.users.columns.actions}</th>
             </tr>
           </thead>
@@ -171,6 +205,7 @@ export function UsersAdmin({
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );
@@ -253,6 +288,27 @@ function UserRow({
         >
           {user.status === "active" ? t.users.status.active : t.users.status.inactive}
         </span>
+      </td>
+      <td className="px-4 py-3">
+        <PresenceBadge presence={user.presence} />
+        {user.presence !== "never" && (
+          <div className="mt-1 text-[11px] text-slate-400">
+            {t.users.presence.lastSeen} {fmtDateTime(user.lastSeenAt)}
+          </div>
+        )}
+      </td>
+      <td className="px-4 py-3 text-xs text-slate-600">
+        <div className="tabular">{fmtDateTime(user.lastLoginAt)}</div>
+        <div className="text-[11px] text-slate-400">
+          {loginMethodLabel(user.lastLoginMethod)} · {user.loginCount} {t.users.presence.logins}
+        </div>
+        <div className="mt-0.5 text-[11px]">
+          {user.onboardingEmailSentAt ? (
+            <span className="text-teal-700">✓ {t.users.presence.onboardingSent}</span>
+          ) : (
+            <span className="text-slate-400">{t.users.presence.onboardingNot}</span>
+          )}
+        </div>
       </td>
       <td className="px-4 py-3">
         <div className="flex flex-wrap gap-2">
