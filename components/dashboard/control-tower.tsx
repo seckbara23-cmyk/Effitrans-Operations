@@ -2,6 +2,16 @@ import Link from "next/link";
 import { t } from "@/lib/i18n";
 import type { ControlTowerData } from "@/lib/control-tower/service";
 import { FUNNEL_ORDER, FLOW_ORDER } from "@/lib/control-tower/aggregate";
+import type { SlaStatus } from "@/lib/sla/classify";
+import type { DeptKey } from "@/lib/sla/aggregate";
+
+const SLA_BADGE: Record<SlaStatus, string> = {
+  normal: "bg-emerald-50 text-emerald-700",
+  warning: "bg-amber-50 text-amber-700",
+  critical: "bg-red-50 text-red-700",
+  informational: "bg-slate-100 text-slate-500",
+};
+const SLA_DOT: Record<SlaStatus, string> = { normal: "🟢", warning: "🟡", critical: "🔴", informational: "⚪" };
 
 const fmtMoney = (n: number, c: string) => `${n.toLocaleString("fr-FR")} ${c}`;
 const dash = "—";
@@ -136,6 +146,117 @@ export function ControlTower({ data }: { data: ControlTowerData }) {
                       <td className="px-4 py-3 text-slate-600">{it.reason}</td>
                       <td className="px-4 py-3 tabular text-slate-600">{it.daysWaiting}</td>
                       <td className="px-4 py-3 text-xs text-slate-500">{it.nextAction}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* SLA monitoring (Phase 2.3) */}
+      <section>
+        <h2 className="mb-3 text-sm font-semibold text-navy-900">{t.sla.monitoring}</h2>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {(["documentation", "customs", "transport", "finance"] as DeptKey[])
+            .filter((d) => d !== "finance" || data.canFinance)
+            .map((d) => {
+              const c = data.slaByDept[d];
+              return (
+                <div key={d} className="surface p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    {(t.lifecycle.departments as Record<string, string>)[d]}
+                  </p>
+                  <div className="mt-2 flex items-center justify-between text-sm">
+                    <span className="text-emerald-700">{t.sla.withinSla}</span>
+                    <span className="tabular font-bold text-emerald-700">{c.normal}</span>
+                  </div>
+                  <div className="mt-1 flex items-center justify-between text-sm">
+                    <span className="text-amber-700">{t.sla.warning}</span>
+                    <span className="tabular font-bold text-amber-700">{c.warning}</span>
+                  </div>
+                  <div className="mt-1 flex items-center justify-between text-sm">
+                    <span className="text-red-700">{t.sla.critical}</span>
+                    <span className="tabular font-bold text-red-700">{c.critical}</span>
+                  </div>
+                </div>
+              );
+            })}
+        </div>
+      </section>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        {/* Average durations (Phase 2.3 D8) */}
+        <section className="surface p-5">
+          <h2 className="mb-3 text-sm font-semibold text-navy-900">{t.sla.avgTitle}</h2>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <KpiCell label={t.sla.avg.documentation} value={data.avgTimes.documentationDays ?? "N/A"} />
+            <KpiCell label={t.sla.avg.customs} value={data.avgTimes.customsDays ?? "N/A"} />
+            <KpiCell label={t.sla.avg.transport} value={data.avgTimes.transportDays ?? "N/A"} />
+            <KpiCell label={t.sla.avg.toInvoice} value={data.canFinance ? data.avgTimes.timeToInvoiceDays ?? "N/A" : "—"} />
+            <KpiCell label={t.sla.avg.toPayment} value={data.canFinance ? data.avgTimes.timeToPaymentDays ?? "N/A" : "—"} />
+          </div>
+        </section>
+
+        {/* SLA bottleneck ranking (Phase 2.3 D9) */}
+        <section className="surface p-5">
+          <h2 className="mb-3 text-sm font-semibold text-navy-900">{t.sla.ranking.title}</h2>
+          {data.slaRanking.length === 0 ? (
+            <p className="text-sm text-slate-500">{t.controlTower.bottlenecks.empty}</p>
+          ) : (
+            <ul className="space-y-2">
+              {data.slaRanking.map((b) => (
+                <li key={b.department} className="flex items-center justify-between rounded-lg bg-sand-50/60 px-3 py-2 text-sm">
+                  <span className="font-medium text-navy-800">{(t.lifecycle.departments as Record<string, string>)[b.department]}</span>
+                  <span className="text-xs">
+                    {b.critical > 0 && <span className="mr-2 font-bold text-red-700">{b.critical} {t.sla.ranking.critical}</span>}
+                    {b.warning > 0 && <span className="font-bold text-amber-700">{b.warning} {t.sla.ranking.warning}</span>}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
+
+      {/* Delayed dossiers queue (Phase 2.3 D6) */}
+      <section>
+        <h2 className="mb-3 text-sm font-semibold text-navy-900">{t.sla.delayed.title}</h2>
+        {data.delayed.length === 0 ? (
+          <div className="surface p-6 text-sm text-slate-500">{t.sla.delayed.empty}</div>
+        ) : (
+          <div className="surface overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[820px] text-left text-sm">
+                <thead className="border-b border-slate-200 bg-sand-50 text-xs uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3 font-semibold">{C.attention.dossier}</th>
+                    <th className="px-4 py-3 font-semibold">{C.attention.client}</th>
+                    <th className="px-4 py-3 font-semibold">{C.attention.department}</th>
+                    <th className="px-4 py-3 font-semibold">{t.sla.delayed.timeInStage}</th>
+                    <th className="px-4 py-3 font-semibold">{t.sla.delayed.status}</th>
+                    <th className="px-4 py-3 font-semibold">{C.attention.nextAction}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {data.delayed.map((r) => (
+                    <tr key={r.fileId} className="hover:bg-slate-50/60">
+                      <td className="px-4 py-3">
+                        <Link href={`/files/${r.fileId}`} className="tabular font-medium text-teal-700 hover:underline">
+                          {r.fileNumber ?? dash}
+                        </Link>
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">{r.clientName ?? dash}</td>
+                      <td className="px-4 py-3 text-slate-600">{r.department ? (t.lifecycle.departments as Record<string, string>)[r.department] : dash}</td>
+                      <td className="px-4 py-3 tabular text-slate-600">{r.daysWaiting} {t.sla.days}</td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${SLA_BADGE[r.sla]}`}>
+                          <span aria-hidden>{SLA_DOT[r.sla]}</span>
+                          {(t.sla.status as Record<string, string>)[r.sla]}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-slate-500">{r.nextAction}</td>
                     </tr>
                   ))}
                 </tbody>

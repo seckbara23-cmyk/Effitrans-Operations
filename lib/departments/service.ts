@@ -25,12 +25,12 @@ export async function getDocumentationQueue(): Promise<DocDossierRow[]> {
 
   let fq = supabase
     .from("operational_file")
-    .select("id, file_number, type, priority, client:client_id(name)")
+    .select("id, file_number, type, priority, opened_at, client:client_id(name)")
     .eq("tenant_id", user.tenantId)
     .neq("status", "CLOSED");
   if (!scope.all) fq = fq.in("id", scope.ids);
   const { data: files, error: fErr } = await fq.returns<
-    { id: string; file_number: string; type: string; priority: string; client: { name: string } | null }[]
+    { id: string; file_number: string; type: string; priority: string; opened_at: string | null; client: { name: string } | null }[]
   >();
   if (fErr) throw new Error(`[departments] documentation files failed: ${fErr.message}`);
   const fileRows = files ?? [];
@@ -71,6 +71,7 @@ export async function getDocumentationQueue(): Promise<DocDossierRow[]> {
       clientName: f.client?.name ?? null,
       fileType: f.type,
       priority: f.priority,
+      openedAt: f.opened_at,
       pending: s.pending,
       verified: s.verified,
       missing: s.missing,

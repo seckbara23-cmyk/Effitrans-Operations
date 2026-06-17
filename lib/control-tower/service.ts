@@ -1,12 +1,12 @@
 /**
- * Operations control-tower data (Phase 2.2). SERVER-ONLY.
+ * Operations control-tower data (Phase 2.2 + 2.3 SLA). SERVER-ONLY.
  * ---------------------------------------------------------------------------
  * Gated by analytics:read (management view), service-role admin client + tenant
  * scope — the same crossing-domains pattern as getAnalytics. Loads the raw rows
- * ONCE (operational_file / document / customs_record / transport_record /
- * invoice + lines + payments), assembles per-dossier inputs, and runs the
- * EXISTING getDossierLifecycle per dossier — no duplicated lifecycle logic, no
- * new schema. Finance data is loaded only when the viewer holds finance:read.
+ * ONCE and runs the EXISTING getDossierLifecycle per dossier; Phase 2.3 adds
+ * derived SLA (stage duration + classification) in the same pass — no new
+ * schema, no stored values, no duplicate lifecycle logic. Finance data is loaded
+ * only when the viewer holds finance:read.
  */
 import "server-only";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
@@ -15,6 +15,18 @@ import { hasPermission } from "@/lib/rbac/check";
 import { getDossierLifecycle } from "@/lib/files/lifecycle";
 import { invoiceTotals, paidAmount, balanceDue, isOverdue } from "@/lib/finance/calc";
 import { getAnalytics } from "@/lib/analytics/service";
+import { stageDuration } from "@/lib/sla/stage-duration";
+import { classifySla, toSlaDept } from "@/lib/sla/classify";
+import {
+  slaCountsByDept,
+  delayedDossiers,
+  bottleneckRanking,
+  averageDays,
+  type SlaRow,
+  type SlaCounts,
+  type DeptKey,
+  type BottleneckRank,
+} from "@/lib/sla/aggregate";
 import {
   funnelCounts,
   flowCounts,
@@ -22,6 +34,7 @@ import {
   bottlenecks,
   needsAttention,
   transportTimeKpis,
+  ageDays,
   type DossierLifecycleRow,
   type FunnelStage,
   type FlowNode,
@@ -40,6 +53,14 @@ export type ExecutiveKpis = {
   currency: string;
 };
 
+export type AverageTimes = {
+  documentationDays: number | null;
+  customsDays: number | null;
+  transportDays: number | null;
+  timeToInvoiceDays: number | null;
+  timeToPaymentDays: number | null;
+};
+
 export type ControlTowerData = {
   funnel: Record<FunnelStage, number>;
   flow: Record<FlowNode, number>;
@@ -47,6 +68,12 @@ export type ControlTowerData = {
   bottlenecks: Bottleneck[];
   needsAttention: AttentionItem[];
   kpis: ExecutiveKpis;
+  // Phase 2.3 SLA
+  slaByDept: Record<DeptKey, SlaCounts>;
+  delayed: SlaRow[];
+  slaRanking: BottleneckRank[];
+  avgTimes: AverageTimes;
+  canFinance: boolean;
 };
 
 export async function getControlTower(permissions: string[]): Promise<ControlTowerData> {
@@ -59,35 +86,16 @@ export async function getControlTower(permissions: string[]): Promise<ControlTow
   const [filesRes, docsRes, typesRes, customsRes, transportRes, analytics] = await Promise.all([
     supabase
       .from("operational_file")
-      .select("id, file_number, type, status, priority, created_at, client:client_id(name)")
+      .select("id, file_number, type, status, priority, created_at, opened_at, updated_at, client:client_id(name)")
       .eq("tenant_id", tenant)
       .limit(2000)
       .returns<
-        { id: string; file_number: string | null; type: string; status: string; priority: string; created_at: string; client: { name: string } | null }[]
+        { id: string; file_number: string | null; type: string; status: string; priority: string; created_at: string; opened_at: string | null; updated_at: string; client: { name: string } | null }[]
       >(),
-    supabase
-      .from("document")
-      .select("file_id, type_code, status")
-      .eq("tenant_id", tenant)
-      .is("deleted_at", null)
-      .returns<{ file_id: string; type_code: string; status: string }[]>(),
-    supabase
-      .from("document_type")
-      .select("code, required_for")
-      .eq("active", true)
-      .returns<{ code: string; required_for: string[] | null }[]>(),
-    supabase
-      .from("customs_record")
-      .select("file_id, status, required")
-      .eq("tenant_id", tenant)
-      .is("deleted_at", null)
-      .returns<{ file_id: string; status: string; required: boolean }[]>(),
-    supabase
-      .from("transport_record")
-      .select("file_id, status, pickup_actual, delivery_actual")
-      .eq("tenant_id", tenant)
-      .is("deleted_at", null)
-      .returns<{ file_id: string; status: string; pickup_actual: string | null; delivery_actual: string | null }[]>(),
+    supabase.from("document").select("file_id, type_code, status").eq("tenant_id", tenant).is("deleted_at", null).returns<{ file_id: string; type_code: string; status: string }[]>(),
+    supabase.from("document_type").select("code, required_for").eq("active", true).returns<{ code: string; required_for: string[] | null }[]>(),
+    supabase.from("customs_record").select("file_id, status, required, updated_at, declaration_date, release_date").eq("tenant_id", tenant).is("deleted_at", null).returns<{ file_id: string; status: string; required: boolean; updated_at: string; declaration_date: string | null; release_date: string | null }[]>(),
+    supabase.from("transport_record").select("file_id, status, updated_at, pickup_actual, delivery_actual").eq("tenant_id", tenant).is("deleted_at", null).returns<{ file_id: string; status: string; updated_at: string; pickup_actual: string | null; delivery_actual: string | null }[]>(),
     getAnalytics(canFinance).catch(() => null),
   ]);
 
@@ -97,14 +105,17 @@ export async function getControlTower(permissions: string[]): Promise<ControlTow
   const customs = customsRes.data ?? [];
   const transport = transportRes.data ?? [];
 
-  // Finance (only with finance:read): invoices + lines + payments -> per-file balances/overdue.
+  // Finance (only with finance:read): per-file balances/overdue + invoice timestamps + payments.
   const overdueByFile = new Map<string, boolean>();
   const invoicesByFile = new Map<string, { status: string; balance: number }[]>();
+  const invoiceUpdatedByFile = new Map<string, string>();
+  const invoiceIssueByFile = new Map<string, string>();
+  const paymentPairs: { start: string | null; end: string | null }[] = [];
   if (canFinance) {
     const [invRes, lineRes, payRes] = await Promise.all([
-      supabase.from("invoice").select("id, file_id, status, due_date").eq("tenant_id", tenant).returns<{ id: string; file_id: string; status: string; due_date: string | null }[]>(),
+      supabase.from("invoice").select("id, file_id, status, due_date, issue_date, updated_at").eq("tenant_id", tenant).returns<{ id: string; file_id: string; status: string; due_date: string | null; issue_date: string | null; updated_at: string }[]>(),
       supabase.from("invoice_line").select("invoice_id, quantity, unit_amount, tax_rate").eq("tenant_id", tenant).returns<{ invoice_id: string; quantity: number; unit_amount: number; tax_rate: number }[]>(),
-      supabase.from("payment").select("invoice_id, amount, reversed_at").eq("tenant_id", tenant).returns<{ invoice_id: string; amount: number; reversed_at: string | null }[]>(),
+      supabase.from("payment").select("invoice_id, amount, reversed_at, paid_at").eq("tenant_id", tenant).returns<{ invoice_id: string; amount: number; reversed_at: string | null; paid_at: string }[]>(),
     ]);
     const linesByInv = new Map<string, { quantity: number; unitAmount: number; taxRate: number }[]>();
     for (const l of lineRes.data ?? []) {
@@ -118,13 +129,22 @@ export async function getControlTower(permissions: string[]): Promise<ControlTow
       arr.push({ amount: Number(p.amount), reversed: p.reversed_at != null });
       paysByInv.set(p.invoice_id, arr);
     }
+    const issueByInvoice = new Map<string, string | null>();
     for (const inv of invRes.data ?? []) {
+      issueByInvoice.set(inv.id, inv.issue_date);
       const { total } = invoiceTotals(linesByInv.get(inv.id) ?? []);
       const balance = balanceDue(total, paidAmount(paysByInv.get(inv.id) ?? []));
       const arr = invoicesByFile.get(inv.file_id) ?? [];
       arr.push({ status: inv.status, balance });
       invoicesByFile.set(inv.file_id, arr);
       if (isOverdue(inv.status as never, inv.due_date, balance, now)) overdueByFile.set(inv.file_id, true);
+      const prev = invoiceUpdatedByFile.get(inv.file_id);
+      if (!prev || inv.updated_at > prev) invoiceUpdatedByFile.set(inv.file_id, inv.updated_at);
+      if (inv.issue_date && !invoiceIssueByFile.has(inv.file_id)) invoiceIssueByFile.set(inv.file_id, inv.issue_date);
+    }
+    for (const p of payRes.data ?? []) {
+      if (p.reversed_at != null) continue;
+      paymentPairs.push({ start: issueByInvoice.get(p.invoice_id) ?? null, end: p.paid_at });
     }
   }
 
@@ -138,27 +158,30 @@ export async function getControlTower(permissions: string[]): Promise<ControlTow
     if (d.type_code === "DELIVERY_NOTE" && d.status === "APPROVED") podByFile.add(d.file_id);
   }
   const requiredFor = (fileType: string) => types.filter((t) => (t.required_for ?? []).includes(fileType)).map((t) => t.code);
-  const customsByFile = new Map(customs.map((c) => [c.file_id, { status: c.status, required: c.required }]));
-  const transportByFile = new Map(transport.map((tr) => [tr.file_id, { status: tr.status }]));
+  const customsByFile = new Map(customs.map((c) => [c.file_id, c]));
+  const transportByFile = new Map(transport.map((tr) => [tr.file_id, tr]));
 
-  // Assemble per-dossier lifecycle rows (reusing getDossierLifecycle).
-  const rows: DossierLifecycleRow[] = files.map((f) => {
+  const rows: DossierLifecycleRow[] = [];
+  const slaRows: SlaRow[] = [];
+
+  for (const f of files) {
     const fileDocs = docsByFile.get(f.id) ?? [];
     const approved = new Set(fileDocs.filter((d) => d.status === "APPROVED").map((d) => d.typeCode));
-    const missingRequired = requiredFor(f.type)
-      .filter((code) => !approved.has(code))
-      .map((code) => ({ label: code }));
+    const missingRequired = requiredFor(f.type).filter((code) => !approved.has(code)).map((code) => ({ label: code }));
+    const cust = customsByFile.get(f.id);
+    const tr = transportByFile.get(f.id);
     const lifecycle = getDossierLifecycle({
       fileId: f.id,
       file: { status: f.status, type: f.type },
       documents: fileDocs.map((d) => ({ status: d.status })),
       missingRequired,
-      customs: customsByFile.get(f.id) ?? null,
-      transport: transportByFile.get(f.id) ?? null,
+      customs: cust ? { status: cust.status, required: cust.required } : null,
+      transport: tr ? { status: tr.status } : null,
       invoices: invoicesByFile.get(f.id) ?? [],
       podApproved: podByFile.has(f.id),
     });
-    return {
+
+    rows.push({
       fileId: f.id,
       fileNumber: f.file_number,
       clientName: f.client?.name ?? null,
@@ -167,23 +190,56 @@ export async function getControlTower(permissions: string[]): Promise<ControlTow
       createdAt: f.created_at,
       overdueInvoice: overdueByFile.get(f.id) ?? false,
       lifecycle,
-    };
-  });
+    });
 
-  const tt = transportTimeKpis(
-    transport.map((tr) => ({ pickupActual: tr.pickup_actual, deliveryActual: tr.delivery_actual })),
-    now,
-  );
+    // Phase 2.3 — derived stage duration + SLA status (no stored values).
+    const sd = stageDuration({
+      now,
+      currentDepartment: lifecycle.currentDepartment,
+      currentStage: lifecycle.currentStep,
+      fileCreatedAt: f.created_at,
+      fileOpenedAt: f.opened_at,
+      fileUpdatedAt: f.updated_at,
+      customsUpdatedAt: cust?.updated_at ?? null,
+      transportUpdatedAt: tr?.updated_at ?? null,
+      invoiceUpdatedAt: invoiceUpdatedByFile.get(f.id) ?? null,
+    });
+    slaRows.push({
+      fileId: f.id,
+      fileNumber: f.file_number,
+      clientName: f.client?.name ?? null,
+      department: toSlaDept(lifecycle.currentDepartment),
+      stage: lifecycle.currentStep,
+      sla: classifySla(lifecycle.currentDepartment, sd.ageHours),
+      ageHours: sd.ageHours,
+      daysWaiting: ageDays(f.created_at, now),
+      nextAction: lifecycle.nextAction?.action ?? "",
+      priority: f.priority,
+      fileStatus: f.status,
+    });
+  }
+
+  const tt = transportTimeKpis(transport.map((tr) => ({ pickupActual: tr.pickup_actual, deliveryActual: tr.delivery_actual })), now);
+
+  const avgCustoms = averageDays(customs.map((c) => ({ start: c.declaration_date, end: c.release_date })));
+  const avgTransport = averageDays(transport.map((tr) => ({ start: tr.pickup_actual, end: tr.delivery_actual })));
+  const timeToInvoice = canFinance
+    ? averageDays(files.map((f) => ({ start: transportByFile.get(f.id)?.delivery_actual ?? null, end: invoiceIssueByFile.get(f.id) ?? null })))
+    : null;
+  const timeToPayment = canFinance ? averageDays(paymentPairs) : null;
 
   const kpis: ExecutiveKpis = {
     activeDossiers: analytics?.operations.active ?? rows.filter((r) => r.fileStatus !== "CLOSED" && r.fileStatus !== "DRAFT").length,
     deliveredThisMonth: tt.deliveredThisMonth,
     revenueThisMonth: analytics?.financial?.revenueThisMonth ?? null,
     outstanding: analytics?.financial?.outstanding ?? null,
-    avgCustomsDays: analytics?.customs.avgReleaseDays ?? null,
+    avgCustomsDays: analytics?.customs.avgReleaseDays ?? avgCustoms,
     avgDeliveryDays: tt.avgDeliveryDays,
     currency: analytics?.currency ?? "XOF",
   };
+
+  const sla = slaCountsByDept(slaRows);
+  if (!canFinance) sla.finance = { normal: 0, warning: 0, critical: 0 };
 
   return {
     funnel: funnelCounts(rows),
@@ -192,5 +248,16 @@ export async function getControlTower(permissions: string[]): Promise<ControlTow
     bottlenecks: bottlenecks(rows),
     needsAttention: needsAttention(rows, now),
     kpis,
+    slaByDept: sla,
+    delayed: delayedDossiers(slaRows),
+    slaRanking: bottleneckRanking(slaRows).filter((b) => canFinance || b.department !== "finance"),
+    avgTimes: {
+      documentationDays: null, // no reliable "documents verified" timestamp — N/A (documented)
+      customsDays: avgCustoms,
+      transportDays: avgTransport,
+      timeToInvoiceDays: timeToInvoice,
+      timeToPaymentDays: timeToPayment,
+    },
+    canFinance,
   };
 }

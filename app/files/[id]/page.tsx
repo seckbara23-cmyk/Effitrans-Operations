@@ -22,6 +22,8 @@ import { listCommunicationsForFile } from "@/lib/comms/service";
 import { LifecycleTracker } from "@/components/files/lifecycle-tracker";
 import { getDossierLifecycle } from "@/lib/files/lifecycle";
 import { getOpenHandoffForFile } from "@/lib/handoffs/service";
+import { getDossierStage } from "@/lib/sla/service";
+import { SlaPanel } from "@/components/files/sla-panel";
 import { t } from "@/lib/i18n";
 
 export const metadata: Metadata = { title: t.files.title };
@@ -106,6 +108,7 @@ export default async function FileDetailPage({ params }: { params: { id: string 
     podApproved,
   });
   const openHandoff = await getOpenHandoffForFile(file.id);
+  const sla = await getDossierStage(file.id, lifecycle.currentDepartment, lifecycle.currentStep).catch(() => null);
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -115,6 +118,7 @@ export default async function FileDetailPage({ params }: { params: { id: string 
       </Link>
       <FileWorkflow file={file} canUpdate={canUpdate} />
       <LifecycleTracker lifecycle={lifecycle} openHandoff={openHandoff ? { title: openHandoff.title } : null} />
+      {sla && <SlaPanel sla={sla} department={lifecycle.currentDepartment} />}
       <FileForm mode="edit" fileId={file.id} initial={file} clients={clients} canUpdate={canUpdate} />
       {canReadTasks && (
         <TaskPanel

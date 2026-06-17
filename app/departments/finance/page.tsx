@@ -7,6 +7,8 @@ import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { getFinanceQueue, getReconciliation } from "@/lib/finance/service";
 import { getFinanceMonthRevenue } from "@/lib/departments/service";
 import { readyForBillingCount } from "@/lib/handoffs/service";
+import { getDepartmentSlaSummary } from "@/lib/sla/service";
+import { DeptSlaCard } from "@/components/departments/dept-sla-card";
 import { financeCards, financeNextAction } from "@/lib/departments/classify";
 import { t } from "@/lib/i18n";
 
@@ -39,11 +41,12 @@ export default async function FinanceDepartmentPage() {
     return <div className="animate-fade-in space-y-6">{header}<Notice>{t.finance.forbidden}</Notice></div>;
   }
 
-  const [queue, recon, revenueMonth, readyForBilling] = await Promise.all([
+  const [queue, recon, revenueMonth, readyForBilling, slaCounts] = await Promise.all([
     getFinanceQueue(),
     getReconciliation(),
     getFinanceMonthRevenue(),
     readyForBillingCount(),
+    getDepartmentSlaSummary("finance"),
   ]);
   const cards = financeCards(queue, recon.counts.pending, revenueMonth);
   const currency = queue[0]?.currency ?? recon.currency ?? "XOF";
@@ -59,6 +62,7 @@ export default async function FinanceDepartmentPage() {
         <StatCard label="Revenu (mois)" value={fmt(cards.revenueMonth, currency)} tone="teal" />
         <StatCard label="Paiements à vérifier" value={cards.paymentsToVerify} tone="amber" href="/finance/reconciliation" />
       </div>
+      <DeptSlaCard counts={slaCounts} />
 
       {queue.length === 0 ? (
         <Notice>{t.finance.empty}</Notice>

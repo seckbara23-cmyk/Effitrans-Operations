@@ -6,6 +6,8 @@ import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { getTransportQueue } from "@/lib/transport/service";
 import { readyForDispatchCount } from "@/lib/handoffs/service";
+import { getDepartmentSlaSummary } from "@/lib/sla/service";
+import { DeptSlaCard } from "@/components/departments/dept-sla-card";
 import { transportCards, transportNextAction } from "@/lib/departments/classify";
 import { t } from "@/lib/i18n";
 
@@ -37,7 +39,11 @@ export default async function TransportDepartmentPage() {
     return <div className="animate-fade-in space-y-6">{header}<Notice>Accès non autorisé au transport.</Notice></div>;
   }
 
-  const [rows, ready] = await Promise.all([getTransportQueue(), readyForDispatchCount()]);
+  const [rows, ready, slaCounts] = await Promise.all([
+    getTransportQueue(),
+    readyForDispatchCount(),
+    getDepartmentSlaSummary("transport"),
+  ]);
   const cards = transportCards(rows);
 
   return (
@@ -50,6 +56,7 @@ export default async function TransportDepartmentPage() {
         <StatCard label="POD requis" value={cards.podRequired} tone="red" />
         <StatCard label="Livrés (POD reçu)" value={cards.delivered} tone="teal" />
       </div>
+      <DeptSlaCard counts={slaCounts} />
 
       {rows.length === 0 ? (
         <Notice>Aucun dossier transport à traiter.</Notice>

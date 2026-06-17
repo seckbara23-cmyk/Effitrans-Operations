@@ -6,6 +6,8 @@ import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { getCustomsQueue } from "@/lib/customs/service";
 import { readyForDeclarationCount } from "@/lib/handoffs/service";
+import { getDepartmentSlaSummary } from "@/lib/sla/service";
+import { DeptSlaCard } from "@/components/departments/dept-sla-card";
 import { customsCards, customsNextAction } from "@/lib/departments/classify";
 import { t } from "@/lib/i18n";
 
@@ -37,7 +39,11 @@ export default async function CustomsDepartmentPage() {
     return <div className="animate-fade-in space-y-6">{header}<Notice>Accès non autorisé au dédouanement.</Notice></div>;
   }
 
-  const [rows, ready] = await Promise.all([getCustomsQueue(), readyForDeclarationCount()]);
+  const [rows, ready, slaCounts] = await Promise.all([
+    getCustomsQueue(),
+    readyForDeclarationCount(),
+    getDepartmentSlaSummary("customs"),
+  ]);
   const cards = customsCards(rows);
 
   return (
@@ -50,6 +56,7 @@ export default async function CustomsDepartmentPage() {
         <StatCard label="Prêt pour mainlevée" value={cards.readyForRelease} tone="teal" />
         <StatCard label="Files douane" value={rows.length} tone="slate" />
       </div>
+      <DeptSlaCard counts={slaCounts} />
 
       {rows.length === 0 ? (
         <Notice>Aucun dossier douane à traiter.</Notice>

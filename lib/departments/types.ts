@@ -15,6 +15,7 @@ export type DocDossierRow = {
   clientName: string | null;
   fileType: string;
   priority: string;
+  openedAt: string | null;
   pending: number;
   verified: number;
   missing: number;

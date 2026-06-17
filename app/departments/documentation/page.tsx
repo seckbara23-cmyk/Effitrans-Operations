@@ -6,6 +6,8 @@ import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { getDocumentationQueue } from "@/lib/departments/service";
 import { readyForCustomsCount } from "@/lib/handoffs/service";
+import { getDepartmentSlaSummary } from "@/lib/sla/service";
+import { DeptSlaCard } from "@/components/departments/dept-sla-card";
 import { documentationCards, documentationNextAction } from "@/lib/departments/classify";
 import { t } from "@/lib/i18n";
 
@@ -38,7 +40,11 @@ export default async function DocumentationDepartmentPage() {
     return <div className="animate-fade-in space-y-6">{header}<Notice>Accès non autorisé à la documentation.</Notice></div>;
   }
 
-  const [rows, readyForCustoms] = await Promise.all([getDocumentationQueue(), readyForCustomsCount()]);
+  const [rows, readyForCustoms, slaCounts] = await Promise.all([
+    getDocumentationQueue(),
+    readyForCustomsCount(),
+    getDepartmentSlaSummary("documentation"),
+  ]);
   const cards = documentationCards(rows);
 
   return (
@@ -51,6 +57,7 @@ export default async function DocumentationDepartmentPage() {
         <StatCard label="Dossiers urgents" value={cards.urgent} tone="red" />
         <StatCard label={t.handoffs.cards.readyForCustoms} value={readyForCustoms} tone="teal" href="/departments/customs" />
       </div>
+      <DeptSlaCard counts={slaCounts} />
 
       {rows.length === 0 ? (
         <Notice>Aucun dossier ouvert à traiter.</Notice>

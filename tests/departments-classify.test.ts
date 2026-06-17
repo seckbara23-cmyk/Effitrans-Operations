@@ -28,9 +28,9 @@ describe("departments — documentation classification", () => {
   });
 
   const rows: DocDossierRow[] = [
-    { fileId: "1", fileNumber: "A", clientName: null, fileType: "IMP", priority: "high", pending: 1, verified: 0, missing: 2 },
-    { fileId: "2", fileNumber: "B", clientName: null, fileType: "IMP", priority: "normal", pending: 0, verified: 3, missing: 0 },
-    { fileId: "3", fileNumber: "C", clientName: null, fileType: "EXP", priority: "critical", pending: 2, verified: 1, missing: 0 },
+    { fileId: "1", fileNumber: "A", clientName: null, fileType: "IMP", priority: "high", openedAt: null, pending: 1, verified: 0, missing: 2 },
+    { fileId: "2", fileNumber: "B", clientName: null, fileType: "IMP", priority: "normal", openedAt: null, pending: 0, verified: 3, missing: 0 },
+    { fileId: "3", fileNumber: "C", clientName: null, fileType: "EXP", priority: "critical", openedAt: null, pending: 2, verified: 1, missing: 0 },
   ];
 
   it("counts dashboard cards", () => {
