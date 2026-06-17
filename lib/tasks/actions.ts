@@ -26,7 +26,7 @@ const fill = (tpl: string, vars: Record<string, string>) =>
 async function loadTask(supabase: Admin, id: string, tenantId: string) {
   const { data } = await supabase
     .from("task")
-    .select("id, tenant_id, file_id, status, assigned_to")
+    .select("id, tenant_id, file_id, status, assigned_to, handoff_type")
     .eq("id", id)
     .maybeSingle();
   if (!data || data.tenant_id !== tenantId) return null;
@@ -259,6 +259,18 @@ export async function completeTask(id: string): Promise<ActionResult> {
     before: { status: task.status },
     after: { status: "DONE" },
   });
+  // Phase 2.1 — a completed department handoff is audited as such.
+  const handoffType = (task as { handoff_type?: string | null }).handoff_type;
+  if (handoffType) {
+    await writeAudit({
+      action: AuditActions.HANDOFF_TASK_COMPLETED,
+      actorId: user.id,
+      tenantId: user.tenantId,
+      entity: "task",
+      entityId: id,
+      after: { dossier: task.file_id, type: handoffType, task_id: id },
+    });
+  }
   revalidate(task.file_id);
   return { ok: true, id };
 }

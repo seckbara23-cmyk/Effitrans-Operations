@@ -6,6 +6,7 @@ import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { getFinanceQueue, getReconciliation } from "@/lib/finance/service";
 import { getFinanceMonthRevenue } from "@/lib/departments/service";
+import { readyForBillingCount } from "@/lib/handoffs/service";
 import { financeCards, financeNextAction } from "@/lib/departments/classify";
 import { t } from "@/lib/i18n";
 
@@ -38,10 +39,11 @@ export default async function FinanceDepartmentPage() {
     return <div className="animate-fade-in space-y-6">{header}<Notice>{t.finance.forbidden}</Notice></div>;
   }
 
-  const [queue, recon, revenueMonth] = await Promise.all([
+  const [queue, recon, revenueMonth, readyForBilling] = await Promise.all([
     getFinanceQueue(),
     getReconciliation(),
     getFinanceMonthRevenue(),
+    readyForBillingCount(),
   ]);
   const cards = financeCards(queue, recon.counts.pending, revenueMonth);
   const currency = queue[0]?.currency ?? recon.currency ?? "XOF";
@@ -49,7 +51,8 @@ export default async function FinanceDepartmentPage() {
   return (
     <div className="animate-fade-in space-y-6">
       {header}
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-6">
+        <StatCard label={t.handoffs.cards.readyForBilling} value={readyForBilling} tone="navy" />
         <StatCard label="Factures en cours" value={cards.invoicesPending} tone="navy" />
         <StatCard label="Encours" value={fmt(cards.outstanding, currency)} tone="amber" />
         <StatCard label="En retard" value={cards.overdue} tone="red" />

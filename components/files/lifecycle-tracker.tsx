@@ -26,9 +26,16 @@ const TEXT: Record<StepStatus, string> = {
  * Desktop: department-grouped timeline (wraps horizontally). Mobile: vertical.
  * All state is DERIVED (lib/files/lifecycle) — no mutation here.
  */
-export function LifecycleTracker({ lifecycle }: { lifecycle: DossierLifecycle }) {
+export function LifecycleTracker({
+  lifecycle,
+  openHandoff,
+}: {
+  lifecycle: DossierLifecycle;
+  openHandoff?: { title: string } | null;
+}) {
   const L = t.lifecycle;
   const na = lifecycle.nextAction;
+  const deptLabel = (d: DossierLifecycle["currentDepartment"]) => (d ? L.departments[d] : null);
 
   return (
     <div className="surface space-y-4 p-5">
@@ -37,6 +44,28 @@ export function LifecycleTracker({ lifecycle }: { lifecycle: DossierLifecycle })
         <span className="text-xs font-medium text-slate-500">
           {lifecycle.completedPercent}% {L.percent}
         </span>
+      </div>
+
+      {/* current → next department + open handoff */}
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        {lifecycle.currentDepartment && (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-navy-50 px-2.5 py-1 font-medium text-navy-800">
+            {deptLabel(lifecycle.currentDepartment)}
+          </span>
+        )}
+        {lifecycle.nextDepartment && (
+          <>
+            <span className="text-slate-400">→</span>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 font-medium text-slate-600">
+              {deptLabel(lifecycle.nextDepartment)}
+            </span>
+          </>
+        )}
+        {openHandoff && (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 font-medium text-amber-700">
+            {t.handoffs.openTask}: {openHandoff.title}
+          </span>
+        )}
       </div>
 
       {/* progress bar */}

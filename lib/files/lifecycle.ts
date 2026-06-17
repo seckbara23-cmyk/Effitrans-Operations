@@ -38,6 +38,8 @@ export type LifecycleNextAction = {
 export type DossierLifecycle = {
   steps: LifecycleStep[];
   currentStep: string | null;
+  currentDepartment: Department | null;
+  nextDepartment: Department | null;
   nextAction: LifecycleNextAction | null;
   blockers: { key: string; label: string; reason: string }[];
   completedPercent: number;
@@ -286,6 +288,20 @@ export function getDossierLifecycle(input: LifecycleInput): DossierLifecycle {
 
   const frontier = steps.find((s) => s.status === "current" || s.status === "blocked") ?? null;
   const currentStep = frontier ? frontier.key : null;
+  const currentDepartment = frontier ? frontier.department : null;
+
+  // Next department = the next non-skipped step that belongs to a different department.
+  let nextDepartment: Department | null = null;
+  if (frontier) {
+    const idx = steps.findIndex((s) => s.key === frontier.key);
+    for (let i = idx + 1; i < steps.length; i++) {
+      if (steps[i].status === "skipped") continue;
+      if (steps[i].department !== frontier.department) {
+        nextDepartment = steps[i].department;
+        break;
+      }
+    }
+  }
 
   const blockers = steps
     .filter((s) => s.status === "blocked")
@@ -302,5 +318,5 @@ export function getDossierLifecycle(input: LifecycleInput): DossierLifecycle {
       }
     : null;
 
-  return { steps, currentStep, nextAction, blockers, completedPercent };
+  return { steps, currentStep, currentDepartment, nextDepartment, nextAction, blockers, completedPercent };
 }

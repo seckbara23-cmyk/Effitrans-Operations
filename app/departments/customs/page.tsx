@@ -5,6 +5,7 @@ import { StatCard } from "@/components/departments/stat-card";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { getCustomsQueue } from "@/lib/customs/service";
+import { readyForDeclarationCount } from "@/lib/handoffs/service";
 import { customsCards, customsNextAction } from "@/lib/departments/classify";
 import { t } from "@/lib/i18n";
 
@@ -36,17 +37,18 @@ export default async function CustomsDepartmentPage() {
     return <div className="animate-fade-in space-y-6">{header}<Notice>Accès non autorisé au dédouanement.</Notice></div>;
   }
 
-  const rows = await getCustomsQueue();
+  const [rows, ready] = await Promise.all([getCustomsQueue(), readyForDeclarationCount()]);
   const cards = customsCards(rows);
 
   return (
     <div className="animate-fade-in space-y-6">
       {header}
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-        <StatCard label="Prêt pour déclaration" value={cards.readyForDeclaration} tone="navy" />
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-5">
+        <StatCard label={t.handoffs.cards.readyForDeclaration} value={ready} tone="navy" />
         <StatCard label="En attente de réponse" value={cards.awaitingResponse} tone="amber" />
         <StatCard label="Sous inspection" value={cards.underInspection} tone="amber" />
         <StatCard label="Prêt pour mainlevée" value={cards.readyForRelease} tone="teal" />
+        <StatCard label="Files douane" value={rows.length} tone="slate" />
       </div>
 
       {rows.length === 0 ? (

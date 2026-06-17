@@ -5,6 +5,7 @@ import { StatCard } from "@/components/departments/stat-card";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { getDocumentationQueue } from "@/lib/departments/service";
+import { readyForCustomsCount } from "@/lib/handoffs/service";
 import { documentationCards, documentationNextAction } from "@/lib/departments/classify";
 import { t } from "@/lib/i18n";
 
@@ -37,17 +38,18 @@ export default async function DocumentationDepartmentPage() {
     return <div className="animate-fade-in space-y-6">{header}<Notice>Accès non autorisé à la documentation.</Notice></div>;
   }
 
-  const rows = await getDocumentationQueue();
+  const [rows, readyForCustoms] = await Promise.all([getDocumentationQueue(), readyForCustomsCount()]);
   const cards = documentationCards(rows);
 
   return (
     <div className="animate-fade-in space-y-6">
       {header}
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-5">
         <StatCard label="Documents en attente" value={cards.pending} tone="amber" />
         <StatCard label="Documents manquants" value={cards.missing} tone="red" />
         <StatCard label="Dossiers vérifiés" value={cards.verified} tone="teal" />
         <StatCard label="Dossiers urgents" value={cards.urgent} tone="red" />
+        <StatCard label={t.handoffs.cards.readyForCustoms} value={readyForCustoms} tone="teal" href="/departments/customs" />
       </div>
 
       {rows.length === 0 ? (

@@ -139,6 +139,17 @@ describe("getDossierLifecycle (Phase 2.0 addendum)", () => {
     expect(lc.completedPercent).toBe(100);
   });
 
+  it("exposes current and next department for handoff display", () => {
+    const lc = getDossierLifecycle(mk({
+      file: { status: "IN_PROGRESS", type: "IMP" },
+      documents: [{ status: "APPROVED" }],
+      customs: { status: "RELEASED" },
+      transport: { status: "NOT_STARTED" },
+    }));
+    expect(lc.currentDepartment).toBe("transport");
+    expect(lc.nextDepartment).toBe("finance");
+  });
+
   it("skips customs steps when customs is not applicable (required=false)", () => {
     const lc = getDossierLifecycle(mk({
       file: { status: "IN_PROGRESS", type: "IMP" },

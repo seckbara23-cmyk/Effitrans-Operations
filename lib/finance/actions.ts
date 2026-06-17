@@ -23,6 +23,7 @@ import {
   isInvoiceStatus,
 } from "./status";
 import { canReject, canVerify, isVerificationStatus } from "./verification";
+import { onPaymentRecorded } from "@/lib/handoffs/triggers";
 import type {
   ActionResult,
   ChargeInput,
@@ -416,6 +417,8 @@ export async function recordPayment(invoiceId: string, input: PaymentInput): Pro
   await supabase.from("invoice").update({ status: newStatus }).eq("id", invoiceId).eq("tenant_id", user.tenantId);
 
   await writeAudit({ action: AuditActions.PAYMENT_RECORDED, actorId: user.id, tenantId: user.tenantId, entity: "invoice", entityId: invoiceId, after: { amount, method: input.method } });
+  // Phase 2.1 — Finance → Archive handoff once the dossier is fully paid.
+  await onPaymentRecorded(supabase, { tenantId: user.tenantId, actorId: user.id }, inv.file_id);
   revalidate(inv.file_id);
   return { ok: true, id: invoiceId };
 }

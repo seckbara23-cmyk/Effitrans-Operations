@@ -14,6 +14,7 @@ import { assertPermission } from "@/lib/auth/require-permission";
 import { isFileVisible } from "@/lib/authz/visibility";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
+import { onDocumentApproved } from "@/lib/handoffs/triggers";
 import { validateDocumentInput } from "./validate";
 import { canReview, canSubmit } from "./status";
 import {
@@ -160,6 +161,10 @@ async function review(
     before: { status: doc.status },
     after: { status: to },
   });
+  // Phase 2.1 — Documentation → Customs handoff once all required docs are approved.
+  if (to === "APPROVED") {
+    await onDocumentApproved(supabase, { tenantId: user.tenantId, actorId: user.id }, doc.file_id);
+  }
   revalidatePath(`/files/${doc.file_id}`);
   return { ok: true, id };
 }

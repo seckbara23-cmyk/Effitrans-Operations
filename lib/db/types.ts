@@ -583,6 +583,7 @@ export type Database = {
           assigned_to: string | null;
           created_by: string | null;
           completed_at: string | null;
+          handoff_type: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -598,6 +599,7 @@ export type Database = {
           assigned_to?: string | null;
           created_by?: string | null;
           completed_at?: string | null;
+          handoff_type?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -613,6 +615,7 @@ export type Database = {
           assigned_to?: string | null;
           created_by?: string | null;
           completed_at?: string | null;
+          handoff_type?: string | null;
           created_at?: string;
           updated_at?: string;
         };

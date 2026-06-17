@@ -21,6 +21,7 @@ import { CommunicationsTimeline } from "@/components/communications/communicatio
 import { listCommunicationsForFile } from "@/lib/comms/service";
 import { LifecycleTracker } from "@/components/files/lifecycle-tracker";
 import { getDossierLifecycle } from "@/lib/files/lifecycle";
+import { getOpenHandoffForFile } from "@/lib/handoffs/service";
 import { t } from "@/lib/i18n";
 
 export const metadata: Metadata = { title: t.files.title };
@@ -104,6 +105,7 @@ export default async function FileDetailPage({ params }: { params: { id: string 
     invoices: (finance?.invoices ?? []).map((i) => ({ status: i.status, balance: i.balance })),
     podApproved,
   });
+  const openHandoff = await getOpenHandoffForFile(file.id);
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -112,7 +114,7 @@ export default async function FileDetailPage({ params }: { params: { id: string 
         ← {t.files.backToList}
       </Link>
       <FileWorkflow file={file} canUpdate={canUpdate} />
-      <LifecycleTracker lifecycle={lifecycle} />
+      <LifecycleTracker lifecycle={lifecycle} openHandoff={openHandoff ? { title: openHandoff.title } : null} />
       <FileForm mode="edit" fileId={file.id} initial={file} clients={clients} canUpdate={canUpdate} />
       {canReadTasks && (
         <TaskPanel

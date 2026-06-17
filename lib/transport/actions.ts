@@ -14,6 +14,7 @@ import { assertPermission } from "@/lib/auth/require-permission";
 import { isFileVisible } from "@/lib/authz/visibility";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
+import { onPodReceived } from "@/lib/handoffs/triggers";
 import { canPickup, canReceivePod } from "./gates";
 import { canTransition, isTransportStatus } from "./status";
 import type { ActionResult, TransportAssignment, TransportInput, TransportStatus } from "./types";
@@ -265,6 +266,10 @@ export async function changeTransportStatus(id: string, toStatus: string): Promi
     before: { status: from },
     after: { status: toStatus },
   });
+  // Phase 2.1 — Transport → Finance handoff once the POD is received.
+  if (toStatus === "POD_RECEIVED") {
+    await onPodReceived(supabase, { tenantId: user.tenantId, actorId: user.id }, rec.file_id);
+  }
   revalidate(rec.file_id);
   return { ok: true, id };
 }

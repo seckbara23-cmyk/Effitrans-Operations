@@ -5,6 +5,7 @@ import { StatCard } from "@/components/departments/stat-card";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { getAnalytics } from "@/lib/analytics/service";
+import { pendingHandoffsCount } from "@/lib/handoffs/service";
 import { t } from "@/lib/i18n";
 
 export const metadata: Metadata = { title: "Direction" };
@@ -36,7 +37,7 @@ export default async function ManagementDepartmentPage() {
   }
 
   const canFinance = hasPermission(permissions, "finance:read");
-  const a = await getAnalytics(canFinance);
+  const [a, pendingHandoffs] = await Promise.all([getAnalytics(canFinance), pendingHandoffsCount()]);
   const currency = a.currency;
   const customsInProcess = a.customs.pending + a.customs.underReview + a.customs.inspection;
   const transportInProcess = a.transport.planned + a.transport.inTransit;
@@ -60,6 +61,7 @@ export default async function ManagementDepartmentPage() {
           href={canFinance ? "/departments/finance" : undefined}
         />
         <StatCard label="Opérations bloquées" value={a.operations.blocked} tone="red" />
+        <StatCard label={t.handoffs.cards.pendingHandoffs} value={pendingHandoffs} tone="amber" />
       </div>
 
       <div className="surface p-5">

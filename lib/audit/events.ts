@@ -103,6 +103,9 @@ export const AuditActions = {
   COMMUNICATION_SENT: "communication.sent",
   COMMUNICATION_FAILED: "communication.failed",
   COMMUNICATION_CANCELLED: "communication.cancelled",
+  // Phase 2.1 — Automatic department handoff tasks
+  HANDOFF_TASK_CREATED: "handoff.task.created",
+  HANDOFF_TASK_COMPLETED: "handoff.task.completed",
 } as const;
 
 export type AuditActionCode = (typeof AuditActions)[keyof typeof AuditActions];

@@ -99,6 +99,24 @@ export const t = {
       in_progress: "En cours de traitement",
     },
   },
+  handoffs: {
+    titles: {
+      CUSTOMS_HANDOFF: "Dossier prêt pour déclaration douanière",
+      TRANSPORT_HANDOFF: "Dossier prêt pour transport",
+      FINANCE_HANDOFF: "Dossier prêt pour facturation",
+      ARCHIVE_HANDOFF: "Dossier prêt pour archivage",
+    },
+    notifyBody: "Dossier {file} transféré au service {dept}.",
+    cards: {
+      readyForCustoms: "Prêt pour la douane",
+      readyForDeclaration: "Prêt pour déclaration",
+      readyForDispatch: "Prêt pour dispatch",
+      readyForBilling: "Prêt pour facturation",
+      pendingHandoffs: "Transferts en attente",
+    },
+    openTask: "Transfert ouvert",
+    awaiting: "En attente — service {dept}",
+  },
   topbar: {
     search: "Rechercher un dossier, client, conteneur…",
     newFile: "Nouveau dossier",

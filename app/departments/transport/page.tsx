@@ -5,6 +5,7 @@ import { StatCard } from "@/components/departments/stat-card";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { getTransportQueue } from "@/lib/transport/service";
+import { readyForDispatchCount } from "@/lib/handoffs/service";
 import { transportCards, transportNextAction } from "@/lib/departments/classify";
 import { t } from "@/lib/i18n";
 
@@ -36,14 +37,14 @@ export default async function TransportDepartmentPage() {
     return <div className="animate-fade-in space-y-6">{header}<Notice>Accès non autorisé au transport.</Notice></div>;
   }
 
-  const rows = await getTransportQueue();
+  const [rows, ready] = await Promise.all([getTransportQueue(), readyForDispatchCount()]);
   const cards = transportCards(rows);
 
   return (
     <div className="animate-fade-in space-y-6">
       {header}
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-5">
-        <StatCard label="Prêt pour dispatch" value={cards.readyForDispatch} tone="navy" />
+        <StatCard label={t.handoffs.cards.readyForDispatch} value={ready} tone="navy" />
         <StatCard label="Chauffeur affecté" value={cards.assigned} tone="navy" />
         <StatCard label="En transit" value={cards.inTransit} tone="amber" />
         <StatCard label="POD requis" value={cards.podRequired} tone="red" />
