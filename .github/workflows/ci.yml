@@ -47,7 +47,11 @@ jobs:
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@v1
         with:
-          version: latest
+          # Pinned (was `latest`) to stop upstream CLI/runtime image changes from
+          # breaking CI without warning. v2.106.0 is the stable release our
+          # migrations + RLS tests last ran green on. Bump deliberately after
+          # verifying a newer release against `supabase start`/`db reset` locally.
+          version: 2.106.0
 
       - name: Start local Supabase (applies migrations + seed)
         run: supabase start
