@@ -19,6 +19,8 @@ import { FinancePanel } from "@/components/finance/finance-panel";
 import { getFinanceForFile } from "@/lib/finance/service";
 import { CommunicationsTimeline } from "@/components/communications/communications-timeline";
 import { listCommunicationsForFile } from "@/lib/comms/service";
+import { LifecycleTracker } from "@/components/files/lifecycle-tracker";
+import { getDossierLifecycle } from "@/lib/files/lifecycle";
 import { t } from "@/lib/i18n";
 
 export const metadata: Metadata = { title: t.files.title };
@@ -91,6 +93,18 @@ export default async function FileDetailPage({ params }: { params: { id: string 
   const canReadComms = hasPermission(permissions, "communication:read");
   const communications = canReadComms ? await listCommunicationsForFile(file.id) : [];
 
+  // Read-only derived lifecycle tracker (Phase 2.0 addendum) — no mutation.
+  const lifecycle = getDossierLifecycle({
+    fileId: file.id,
+    file: { status: file.status, type: file.type },
+    documents: documents.map((d) => ({ status: d.status })),
+    missingRequired: missingDocs.map((m) => ({ label: m.label })),
+    customs: customsRecord ? { status: customsRecord.status, required: customsRecord.required } : null,
+    transport: transportRecord ? { status: transportRecord.status } : null,
+    invoices: (finance?.invoices ?? []).map((i) => ({ status: i.status, balance: i.balance })),
+    podApproved,
+  });
+
   return (
     <div className="animate-fade-in space-y-6">
       {header(`${file.fileNumber}`)}
@@ -98,6 +112,7 @@ export default async function FileDetailPage({ params }: { params: { id: string 
         ← {t.files.backToList}
       </Link>
       <FileWorkflow file={file} canUpdate={canUpdate} />
+      <LifecycleTracker lifecycle={lifecycle} />
       <FileForm mode="edit" fileId={file.id} initial={file} clients={clients} canUpdate={canUpdate} />
       {canReadTasks && (
         <TaskPanel
@@ -110,52 +125,60 @@ export default async function FileDetailPage({ params }: { params: { id: string 
         />
       )}
       {canReadDocs && (
-        <DocumentsPanel
-          fileId={file.id}
-          documents={documents}
-          types={docTypes}
-          missing={missingDocs}
-          canCreate={hasPermission(permissions, "document:create")}
-          canApprove={hasPermission(permissions, "document:approve")}
-          canDelete={hasPermission(permissions, "document:delete")}
-          canEmail={canEmail}
-        />
+        <div id="documents" className="scroll-mt-24">
+          <DocumentsPanel
+            fileId={file.id}
+            documents={documents}
+            types={docTypes}
+            missing={missingDocs}
+            canCreate={hasPermission(permissions, "document:create")}
+            canApprove={hasPermission(permissions, "document:approve")}
+            canDelete={hasPermission(permissions, "document:delete")}
+            canEmail={canEmail}
+          />
+        </div>
       )}
       {canReadCustoms && (
-        <CustomsPanel
-          fileId={file.id}
-          record={customsRecord}
-          missing={missingCustomsDocs}
-          canCreate={hasPermission(permissions, "customs:create")}
-          canUpdate={hasPermission(permissions, "customs:update")}
-          canRelease={hasPermission(permissions, "customs:release")}
-          canDelete={hasPermission(permissions, "customs:delete")}
-        />
+        <div id="customs" className="scroll-mt-24">
+          <CustomsPanel
+            fileId={file.id}
+            record={customsRecord}
+            missing={missingCustomsDocs}
+            canCreate={hasPermission(permissions, "customs:create")}
+            canUpdate={hasPermission(permissions, "customs:update")}
+            canRelease={hasPermission(permissions, "customs:release")}
+            canDelete={hasPermission(permissions, "customs:delete")}
+          />
+        </div>
       )}
       {canReadTransport && (
-        <TransportPanel
-          fileId={file.id}
-          record={transportRecord}
-          podApproved={podApproved}
-          canCreate={hasPermission(permissions, "transport:create")}
-          canUpdate={hasPermission(permissions, "transport:update")}
-          canAssign={hasPermission(permissions, "transport:assign")}
-          canComplete={hasPermission(permissions, "transport:complete")}
-          canDelete={hasPermission(permissions, "transport:delete")}
-        />
+        <div id="transport" className="scroll-mt-24">
+          <TransportPanel
+            fileId={file.id}
+            record={transportRecord}
+            podApproved={podApproved}
+            canCreate={hasPermission(permissions, "transport:create")}
+            canUpdate={hasPermission(permissions, "transport:update")}
+            canAssign={hasPermission(permissions, "transport:assign")}
+            canComplete={hasPermission(permissions, "transport:complete")}
+            canDelete={hasPermission(permissions, "transport:delete")}
+          />
+        </div>
       )}
       {canReadFinance && finance && (
-        <FinancePanel
-          fileId={file.id}
-          finance={finance}
-          canCreate={hasPermission(permissions, "finance:create")}
-          canUpdate={hasPermission(permissions, "finance:update")}
-          canIssueInvoice={hasPermission(permissions, "finance:issue")}
-          canPayment={hasPermission(permissions, "finance:payment")}
-          canVoidInvoice={hasPermission(permissions, "finance:void")}
-          canDelete={hasPermission(permissions, "finance:delete")}
-          canEmail={canEmail}
-        />
+        <div id="finance" className="scroll-mt-24">
+          <FinancePanel
+            fileId={file.id}
+            finance={finance}
+            canCreate={hasPermission(permissions, "finance:create")}
+            canUpdate={hasPermission(permissions, "finance:update")}
+            canIssueInvoice={hasPermission(permissions, "finance:issue")}
+            canPayment={hasPermission(permissions, "finance:payment")}
+            canVoidInvoice={hasPermission(permissions, "finance:void")}
+            canDelete={hasPermission(permissions, "finance:delete")}
+            canEmail={canEmail}
+          />
+        </div>
       )}
       {canReadComms && <CommunicationsTimeline messages={communications} />}
     </div>

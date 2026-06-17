@@ -104,6 +104,17 @@ Per the phase's preferred path, automatic cross-department task creation is **no
 7. **Direction** — read-only executive cards from analytics; links to /files, dept pages, /analytics; no mutation controls.
 8. **Regression** — existing /files, /clients, /finance, /customs, /transport, /analytics, /communications, /users, /settings/audit still work; portal unchanged.
 
+## 9b. Addendum — Dossier Lifecycle Tracker
+
+A read-only, **derived** 15-step lifecycle tracker was added to `/files/[id]` (before the panels): Draft → Quote Approved → Documents Collection → Documents Verified → Customs Preparation → Declaration → Inspection → Cleared → Release Authorized → Transport Planned → In Transit → Delivered → Invoiced → Paid → Archived.
+
+- **Helper:** `lib/files/lifecycle.ts` — pure `getDossierLifecycle(input)` returns `{ steps[], currentStep, nextAction, blockers[], completedPercent }`. Each step has `key`, `label`, `department`, `status` (completed / current / pending / blocked / skipped), `description`, optional `reasonCode`/`detail`/`blocker`/`actionHref`. Derived **only** from existing records: `operational_file.status`, document completeness + missing-required, `customs_record.status`, `transport_record.status`, invoice/payment status, and the approved POD document. No new status table, no mutation.
+- **Hand-off gates** surfaced as blockers / next-actions: customs declaration is gated on "documents verified first"; transport on "customs released"; invoicing on "POD"; archive on "paid". Customs steps **skip** when not applicable (non-IMP/EXP or `required=false`).
+- **UI:** `components/files/lifecycle-tracker.tsx` (server component) — department-grouped timeline (horizontal on desktop, vertical on mobile), a progress bar, and a **Next action card** (responsible department + action + blocking reason + deep-link to the relevant panel via `#documents`/`#customs`/`#transport`/`#finance` anchors).
+- **i18n:** `t.lifecycle` (title, departments, statuses, 15 step labels, reason codes).
+- **Tests:** `tests/files-lifecycle.test.ts` — 11 cases (new dossier, missing docs → blocked, docs verified, declaration gated on docs, customs declared, customs released, delivered → POD gate, invoice issued, invoice paid, archived, customs-skipped). All derivation is asserted on stable keys/`reasonCode`.
+- **Constraints:** no schema, no duplicate status source, derived-only, no RLS change, read-only (no workflow mutation in the tracker). Validation: tsc clean · 184 tests pass · next build succeeds · boundary/secrets clean.
+
 ## 10. Constraints honoured
 
 No separate apps · no DB redesign · no new business modules · no mock/prototype pages · no RLS weakening (read-only finance grant + new RLS proof) · no portal changes · no external integrations · pilot readiness preserved.
