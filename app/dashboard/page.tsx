@@ -6,6 +6,11 @@ import { getFileOverview, getRecentFiles } from "@/lib/files/service";
 import { getPresenceSummary } from "@/lib/users/service";
 import { AdminPresenceCard } from "@/components/dashboard/admin-presence-card";
 import type { PresenceSummary } from "@/lib/users/types";
+import { getDepartmentCards } from "@/lib/departments/dashboard";
+import type { DepartmentCardData } from "@/lib/departments/dashboard-map";
+import { DepartmentCards } from "@/components/dashboard/department-cards";
+import { getRecentActivity, type ActivityItem } from "@/lib/activity/feed";
+import { RecentActivity } from "@/components/dashboard/recent-activity";
 import { getDashboardTasks } from "@/lib/tasks/service";
 import { DakarClock } from "@/components/dashboard/dakar-clock";
 import { DashboardKpis } from "@/components/dashboard/dashboard-kpis";
@@ -43,6 +48,9 @@ export default async function DashboardPage() {
   let recent: Awaited<ReturnType<typeof getRecentFiles>> = [];
   let dashTasks = null;
   let presence: PresenceSummary | null = null;
+  let deptCards: DepartmentCardData[] = [];
+  let activity: ActivityItem[] = [];
+  let canSeeActivity = false;
   if (configured) {
     const user = await requireUser();
     [overview, recent, dashTasks] = await Promise.all([
@@ -50,8 +58,15 @@ export default async function DashboardPage() {
       getRecentFiles(8).catch(() => []),
       getDashboardTasks().catch(() => null),
     ]);
-    // Phase 2.1A — SYSTEM_ADMIN-only presence summary.
     const permissions = await getEffectivePermissions(user.id).catch(() => [] as string[]);
+    // Dashboard UX — department workload cards (only depts the viewer can read).
+    deptCards = await getDepartmentCards(permissions).catch(() => []);
+    // Recent activity — broad visibility (audit:read:all via RLS), finance-filtered.
+    canSeeActivity = hasPermission(permissions, "audit:read:all");
+    if (canSeeActivity) {
+      activity = await getRecentActivity(hasPermission(permissions, "finance:read")).catch(() => []);
+    }
+    // Phase 2.1A — SYSTEM_ADMIN-only presence summary.
     if (hasPermission(permissions, "admin:users:manage")) {
       presence = await getPresenceSummary().catch(() => null);
     }
@@ -117,6 +132,12 @@ export default async function DashboardPage() {
 
       {/* Real KPI band (Phase 1.5) — live dossier + task counts */}
       <DashboardKpis files={overview} tasks={taskKpis} />
+
+      {/* Department workload cards (Dashboard UX) — per-department, permission-scoped */}
+      <DepartmentCards cards={deptCards} />
+
+      {/* Recent activity (Dashboard UX) — broad-visibility roles only */}
+      {canSeeActivity && <RecentActivity items={activity} />}
 
       {/* Presence summary (Phase 2.1A) — SYSTEM_ADMIN / admin:users:manage only */}
       {presence && <AdminPresenceCard summary={presence} />}

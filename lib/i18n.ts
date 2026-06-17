@@ -183,6 +183,14 @@ export const t = {
     title: "Centre d'opérations",
     subtitle: "Vue d'ensemble des opérations du jour",
     period: "Aujourd'hui · Dakar (GMT)",
+    deptActivity: {
+      title: "Activité par département",
+      empty: "Aucune activité départementale.",
+    },
+    recentActivity: {
+      title: "Activité récente",
+      empty: "Aucune activité récente.",
+    },
     kpi: {
       activeFiles: "Dossiers actifs",
       shipmentsAtPort: "Expéditions au port",
