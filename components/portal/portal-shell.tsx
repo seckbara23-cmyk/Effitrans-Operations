@@ -30,6 +30,7 @@ export function PortalShell({
             <Link href="/portal/files" className="hover:text-teal-700">{t.portal.nav.files}</Link>
             <Link href="/portal/documents" className="hover:text-teal-700">{t.portal.nav.documents}</Link>
             <Link href="/portal/invoices" className="hover:text-teal-700">{t.portal.nav.invoices}</Link>
+            <Link href="/portal/notifications" className="hover:text-teal-700">{t.portal.nav.notifications}</Link>
           </nav>
           {clientName && <span className="ml-auto text-sm font-medium text-navy-900">{clientName}</span>}
           <button

@@ -3,6 +3,7 @@ import { requirePortalUser } from "@/lib/portal/auth";
 import { getPortalDashboard, listPortalFiles } from "@/lib/portal/service";
 import { listPortalInvoices } from "@/lib/portal/docs-service";
 import { portalShipmentCards } from "@/lib/portal/progress-map";
+import { listClientNotifications, unreadClientNotificationCount } from "@/lib/customer-notify/service";
 import { t } from "@/lib/i18n";
 
 export const dynamic = "force-dynamic";
@@ -11,12 +12,15 @@ const STATUS_LABEL: Record<string, string> = t.files.statuses;
 
 export default async function PortalDashboardPage() {
   const user = await requirePortalUser();
-  const [data, files, invoices] = await Promise.all([
+  const [data, files, invoices, notifications, unread] = await Promise.all([
     getPortalDashboard(user.clientName),
     listPortalFiles(),
     listPortalInvoices(),
+    listClientNotifications(3),
+    unreadClientNotificationCount(),
   ]);
   const p = t.portal.dashboard;
+  const nc = t.portal.notify.center;
   const cards = portalShipmentCards(
     files.map((f) => ({ status: f.status, transportStatus: f.transportStatus })),
     invoices.map((i) => ({ status: i.status, balance: i.balance })),
@@ -61,6 +65,28 @@ export default async function PortalDashboardPage() {
           </div>
         ))}
       </div>
+
+      {/* Notifications widget (Phase 2.5) */}
+      <section>
+        <h2 className="mb-3 text-sm font-semibold text-navy-900">
+          {nc.title}
+          {unread > 0 && <span className="ml-2 rounded-full bg-teal-600 px-2 py-0.5 text-xs font-medium text-white">{unread}</span>}
+        </h2>
+        {notifications.length === 0 ? (
+          <div className="surface p-4 text-sm text-slate-500">{nc.empty}</div>
+        ) : (
+          <div className="surface divide-y divide-slate-100">
+            {notifications.map((n) => (
+              <div key={n.id} className={`p-3 text-sm ${n.readAt ? "" : "bg-teal-50/40"}`}>
+                <span className={n.readAt ? "text-navy-800" : "font-semibold text-navy-900"}>{n.title}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        <Link href="/portal/notifications" className="mt-2 inline-block text-sm font-medium text-teal-700 hover:underline">
+          {nc.viewAll} →
+        </Link>
+      </section>
 
       <Link href="/portal/files" className="inline-block text-sm font-medium text-teal-700 hover:underline">
         {p.viewFiles} →

@@ -106,6 +106,9 @@ export const AuditActions = {
   // Phase 2.1 — Automatic department handoff tasks
   HANDOFF_TASK_CREATED: "handoff.task.created",
   HANDOFF_TASK_COMPLETED: "handoff.task.completed",
+  // Phase 2.5 — Customer notifications
+  NOTIFICATION_CUSTOMER_CREATED: "notification.customer.created",
+  NOTIFICATION_CUSTOMER_SENT: "notification.customer.sent",
 } as const;
 
 export type AuditActionCode = (typeof AuditActions)[keyof typeof AuditActions];

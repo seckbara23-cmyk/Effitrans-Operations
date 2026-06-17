@@ -24,6 +24,7 @@ import {
 } from "./status";
 import { canReject, canVerify, isVerificationStatus } from "./verification";
 import { onPaymentRecorded } from "@/lib/handoffs/triggers";
+import { custInvoiceIssued, custPaymentReceived } from "@/lib/customer-notify/triggers";
 import type {
   ActionResult,
   ChargeInput,
@@ -288,6 +289,8 @@ export async function issueInvoice(id: string, dueDate?: string | null): Promise
   if (error) return { ok: false, error: error.message };
 
   await writeAudit({ action: AuditActions.INVOICE_ISSUED, actorId: user.id, tenantId: user.tenantId, entity: "invoice", entityId: id, after: { invoice_number: number } });
+  // Phase 2.5 — customer "nouvelle facture" notification.
+  await custInvoiceIssued(supabase, { tenantId: user.tenantId, actorId: user.id }, id);
   revalidate(inv.file_id);
   return { ok: true, id };
 }
@@ -460,6 +463,8 @@ export async function verifyPayment(paymentId: string): Promise<ActionResult> {
   if (error) return { ok: false, error: error.message };
 
   await writeAudit({ action: AuditActions.PAYMENT_VERIFIED, actorId: user.id, tenantId: user.tenantId, entity: "invoice", entityId: pay.invoice_id, after: { payment_id: paymentId } });
+  // Phase 2.5 — customer "paiement enregistré" notification (payment VERIFIED).
+  await custPaymentReceived(supabase, { tenantId: user.tenantId, actorId: user.id }, pay.invoice_id, paymentId);
   revalidate(inv.file_id);
   return { ok: true, id: pay.invoice_id };
 }

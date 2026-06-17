@@ -15,6 +15,7 @@ import { isFileVisible } from "@/lib/authz/visibility";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
 import { onDocumentApproved } from "@/lib/handoffs/triggers";
+import { custDocumentsReceived, custDocumentsVerified } from "@/lib/customer-notify/triggers";
 import { validateDocumentInput } from "./validate";
 import { canReview, canSubmit } from "./status";
 import {
@@ -109,6 +110,8 @@ export async function uploadDocument(fileId: string, formData: FormData): Promis
     entityId: id,
     after: { file_id: fileId, type: typeCode },
   });
+  // Phase 2.5 — customer "Documents reçus" notification (idempotent, once per dossier).
+  await custDocumentsReceived(supabase, { tenantId: user.tenantId, actorId: user.id }, fileId);
   revalidatePath(`/files/${fileId}`);
   return { ok: true, id };
 }
@@ -163,7 +166,10 @@ async function review(
   });
   // Phase 2.1 — Documentation → Customs handoff once all required docs are approved.
   if (to === "APPROVED") {
-    await onDocumentApproved(supabase, { tenantId: user.tenantId, actorId: user.id }, doc.file_id);
+    const hctx = { tenantId: user.tenantId, actorId: user.id };
+    await onDocumentApproved(supabase, hctx, doc.file_id);
+    // Phase 2.5 — customer "Dossier complet" notification when verification completes.
+    await custDocumentsVerified(supabase, hctx, doc.file_id);
   }
   revalidatePath(`/files/${doc.file_id}`);
   return { ok: true, id };

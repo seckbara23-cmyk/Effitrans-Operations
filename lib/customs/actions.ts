@@ -15,6 +15,7 @@ import { isFileVisible } from "@/lib/authz/visibility";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
 import { onCustomsReleased } from "@/lib/handoffs/triggers";
+import { custCustomsCleared } from "@/lib/customer-notify/triggers";
 import { canDeclare, canRelease, requiredCustomsDocCodes } from "./gates";
 import { canTransition, isCustomsStatus } from "./status";
 import type { ActionResult, CustomsInput, CustomsStatus } from "./types";
@@ -254,8 +255,10 @@ export async function releaseCustoms(id: string, baeReference: string): Promise<
     before: { status: rec.status },
     after: { status: "RELEASED", bae_reference: baeReference.trim() },
   });
-  // Phase 2.1 — Customs → Transport handoff.
-  await onCustomsReleased(supabase, { tenantId: user.tenantId, actorId: user.id }, rec.file_id);
+  // Phase 2.1 — Customs → Transport handoff. Phase 2.5 — customer "dédouanée" notice.
+  const cctx = { tenantId: user.tenantId, actorId: user.id };
+  await onCustomsReleased(supabase, cctx, rec.file_id);
+  await custCustomsCleared(supabase, cctx, rec.file_id);
   revalidate(rec.file_id);
   return { ok: true, id };
 }

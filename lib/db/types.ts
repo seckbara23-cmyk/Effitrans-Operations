@@ -1431,6 +1431,10 @@ export type Database = {
           last_login_method: string | null;
           login_count: number;
           onboarding_email_sent_at: string | null;
+          notify_email: boolean;
+          notify_shipment: boolean;
+          notify_invoice: boolean;
+          notify_payment: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -1449,6 +1453,10 @@ export type Database = {
           last_login_method?: string | null;
           login_count?: number;
           onboarding_email_sent_at?: string | null;
+          notify_email?: boolean;
+          notify_shipment?: boolean;
+          notify_invoice?: boolean;
+          notify_payment?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -1467,6 +1475,10 @@ export type Database = {
           last_login_method?: string | null;
           login_count?: number;
           onboarding_email_sent_at?: string | null;
+          notify_email?: boolean;
+          notify_shipment?: boolean;
+          notify_invoice?: boolean;
+          notify_payment?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -1478,6 +1490,57 @@ export type Database = {
             referencedColumns: ["id"];
           },
         ];
+      };
+      client_notification: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          client_id: string;
+          event_type: string;
+          category: string;
+          template_key: string | null;
+          title: string;
+          body: string;
+          file_id: string | null;
+          invoice_id: string | null;
+          dedup_key: string;
+          read_at: string | null;
+          archived_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          client_id: string;
+          event_type: string;
+          category: string;
+          template_key?: string | null;
+          title: string;
+          body: string;
+          file_id?: string | null;
+          invoice_id?: string | null;
+          dedup_key: string;
+          read_at?: string | null;
+          archived_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string;
+          client_id?: string;
+          event_type?: string;
+          category?: string;
+          template_key?: string | null;
+          title?: string;
+          body?: string;
+          file_id?: string | null;
+          invoice_id?: string | null;
+          dedup_key?: string;
+          read_at?: string | null;
+          archived_at?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
       };
     };
     Views: Record<string, never>;

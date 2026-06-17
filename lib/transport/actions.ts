@@ -15,6 +15,7 @@ import { isFileVisible } from "@/lib/authz/visibility";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
 import { onPodReceived } from "@/lib/handoffs/triggers";
+import { custTransportStarted, custDelivered } from "@/lib/customer-notify/triggers";
 import { canPickup, canReceivePod } from "./gates";
 import { canTransition, isTransportStatus } from "./status";
 import type { ActionResult, TransportAssignment, TransportInput, TransportStatus } from "./types";
@@ -266,10 +267,14 @@ export async function changeTransportStatus(id: string, toStatus: string): Promi
     before: { status: from },
     after: { status: toStatus },
   });
+  const tctx = { tenantId: user.tenantId, actorId: user.id };
   // Phase 2.1 — Transport → Finance handoff once the POD is received.
   if (toStatus === "POD_RECEIVED") {
-    await onPodReceived(supabase, { tenantId: user.tenantId, actorId: user.id }, rec.file_id);
+    await onPodReceived(supabase, tctx, rec.file_id);
   }
+  // Phase 2.5 — customer transport notifications (idempotent, once per dossier).
+  if (toStatus === "IN_TRANSIT") await custTransportStarted(supabase, tctx, rec.file_id);
+  if (toStatus === "DELIVERED" || toStatus === "POD_RECEIVED") await custDelivered(supabase, tctx, rec.file_id);
   revalidate(rec.file_id);
   return { ok: true, id };
 }
