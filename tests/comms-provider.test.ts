@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { buildResendPayload, isProviderConfigured, sanitizeResendError, senderDomain } from "@/lib/comms/provider";
+import {
+  buildResendPayload,
+  isProviderConfigured,
+  isTestingSenderBlocked,
+  sanitizeResendError,
+  senderDomain,
+} from "@/lib/comms/provider";
 
 describe("comms provider (Phase 1.18 — C3 Resend wiring)", () => {
   it("builds a Resend payload from an outbound email", () => {
@@ -46,6 +52,32 @@ describe("comms provider (Phase 1.18 — C3 Resend wiring)", () => {
       expect(senderDomain(null)).toBeNull();
       expect(senderDomain("")).toBeNull();
       expect(senderDomain("not-an-email")).toBeNull();
+    });
+  });
+
+  describe("isTestingSenderBlocked (production resend.dev guard)", () => {
+    const resendDevSender = "Effitrans Operations <onboarding@resend.dev>";
+    const verifiedSender = "Effitrans Operations <ops@effitrans.sn>";
+
+    it("blocks a resend.dev sender in production", () => {
+      expect(isTestingSenderBlocked(resendDevSender, "production")).toBe(true);
+    });
+
+    it("allows a verified-domain sender in production", () => {
+      expect(isTestingSenderBlocked(verifiedSender, "production")).toBe(false);
+    });
+
+    it("allows a resend.dev sender in development", () => {
+      expect(isTestingSenderBlocked(resendDevSender, "development")).toBe(false);
+    });
+
+    it("allows a resend.dev sender in test / when env is unset", () => {
+      expect(isTestingSenderBlocked(resendDevSender, "test")).toBe(false);
+      expect(isTestingSenderBlocked(resendDevSender, undefined)).toBe(false);
+    });
+
+    it("also blocks resend.dev subdomains in production", () => {
+      expect(isTestingSenderBlocked("X <bounce@mail.resend.dev>", "production")).toBe(true);
     });
   });
 

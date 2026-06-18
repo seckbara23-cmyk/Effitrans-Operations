@@ -83,6 +83,22 @@ export function senderDomain(from: string | null | undefined): string | null {
   return m ? m[1].toLowerCase() : null;
 }
 
+/**
+ * Production guard. The `resend.dev` testing sender can only deliver to the
+ * Resend account owner, so in production it silently breaks every real
+ * recipient. Refuse it outright in production; ALLOW it in dev/test/local where
+ * it's a legitimate convenience. PURE — the decision is driven entirely by the
+ * passed nodeEnv, so it is unit-tested without touching process.env or network.
+ */
+export function isTestingSenderBlocked(
+  from: string | null | undefined,
+  nodeEnv: string | undefined,
+): boolean {
+  if (nodeEnv !== "production") return false;
+  const domain = senderDomain(from);
+  return domain === "resend.dev" || (domain?.endsWith(".resend.dev") ?? false);
+}
+
 /** Build the Resend `POST /emails` body. PURE — unit-tested without network. */
 export function buildResendPayload(
   email: OutboundEmail,
@@ -123,6 +139,12 @@ export async function sendEmail(email: OutboundEmail): Promise<SendResult> {
       })}`,
     );
     if (!apiKey || !from) return { ok: false, error: "resend_not_configured" };
+    // Production guard: never let the resend.dev testing sender reach real
+    // recipients (it can only deliver to the account owner). Fails loudly
+    // instead of silently mis-sending. Allowed in dev/test/local.
+    if (isTestingSenderBlocked(from, process.env.NODE_ENV)) {
+      return { ok: false, error: "resend_testing_sender_blocked" };
+    }
     try {
       const res = await fetch("https://api.resend.com/emails", {
         method: "POST",
