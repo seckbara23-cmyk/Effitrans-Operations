@@ -37,6 +37,41 @@ function resendConfig(): { apiKey: string | null; from: string | null } {
   };
 }
 
+/** Max length of the stored/logged sanitized Resend error string. */
+const RESEND_ERROR_MAX = 500;
+
+/**
+ * Turn a non-2xx Resend response into a sanitized, length-capped diagnostic
+ * string of the form `resend_http_<status>:<reason>`. PURE — unit-tested
+ * without network. SAFE: it only ever sees the response BODY (which carries no
+ * credentials — the API key lives in the request headers, never the response),
+ * and it still defensively redacts any token-shaped substring. Falls back to the
+ * bare `resend_http_<status>` when no usable reason can be extracted.
+ */
+export function sanitizeResendError(status: number, body: string): string {
+  const prefix = `resend_http_${status}`;
+  let reason = "";
+  try {
+    // Resend errors are JSON like { "statusCode": 403, "name": "...", "message": "..." }.
+    const parsed = JSON.parse(body) as { message?: unknown; error?: unknown; name?: unknown };
+    reason =
+      (typeof parsed.message === "string" && parsed.message) ||
+      (typeof parsed.error === "string" && parsed.error) ||
+      (typeof parsed.name === "string" && parsed.name) ||
+      "";
+  } catch {
+    // Non-JSON body (HTML error page, plain text) — use it as-is, sanitized below.
+    reason = body;
+  }
+  reason = reason
+    .replace(/\s+/g, " ") // collapse newlines/whitespace into single spaces
+    .replace(/re_[A-Za-z0-9_-]+/g, "[redacted]") // never leak a Resend API key
+    .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, "Bearer [redacted]") // nor an auth header
+    .trim();
+  if (!reason) return prefix;
+  return `${prefix}:${reason}`.slice(0, RESEND_ERROR_MAX);
+}
+
 /** Build the Resend `POST /emails` body. PURE — unit-tested without network. */
 export function buildResendPayload(
   email: OutboundEmail,
@@ -74,7 +109,12 @@ export async function sendEmail(email: OutboundEmail): Promise<SendResult> {
         },
         body: JSON.stringify(buildResendPayload(email, from)),
       });
-      if (!res.ok) return { ok: false, error: `resend_http_${res.status}` };
+      if (!res.ok) {
+        // Capture the response body so the failure reason survives in last_error /
+        // logs. Sanitized + length-capped; reading it never changes the outcome.
+        const body = await res.text().catch(() => "");
+        return { ok: false, error: sanitizeResendError(res.status, body) };
+      }
       return { ok: true };
     } catch {
       return { ok: false, error: "resend_network_error" };

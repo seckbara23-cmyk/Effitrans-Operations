@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildResendPayload, isProviderConfigured } from "@/lib/comms/provider";
+import { buildResendPayload, isProviderConfigured, sanitizeResendError } from "@/lib/comms/provider";
 
 describe("comms provider (Phase 1.18 — C3 Resend wiring)", () => {
   it("builds a Resend payload from an outbound email", () => {
@@ -31,5 +31,42 @@ describe("comms provider (Phase 1.18 — C3 Resend wiring)", () => {
       if (prev === undefined) delete process.env.COMMUNICATIONS_EMAIL_PROVIDER;
       else process.env.COMMUNICATIONS_EMAIL_PROVIDER = prev;
     }
+  });
+
+  describe("sanitizeResendError (non-2xx body capture)", () => {
+    it("extracts the message from a structured Resend JSON error", () => {
+      const body = JSON.stringify({
+        statusCode: 403,
+        name: "validation_error",
+        message: "The aminata@effitrans.com domain is not verified.",
+      });
+      expect(sanitizeResendError(403, body)).toBe(
+        "resend_http_403:The aminata@effitrans.com domain is not verified.",
+      );
+    });
+
+    it("collapses newlines/whitespace in non-JSON bodies", () => {
+      expect(sanitizeResendError(502, "Bad\n  Gateway\n")).toBe("resend_http_502:Bad Gateway");
+    });
+
+    it("falls back to the bare status when no reason can be extracted", () => {
+      expect(sanitizeResendError(403, "")).toBe("resend_http_403");
+      expect(sanitizeResendError(403, "{}")).toBe("resend_http_403");
+    });
+
+    it("redacts API-key- and Bearer-token-shaped substrings", () => {
+      const body = JSON.stringify({ message: "bad key re_abc123DEF_456 via Bearer sk_live_xyz.789" });
+      const out = sanitizeResendError(401, body);
+      expect(out).not.toContain("re_abc123DEF_456");
+      expect(out).toContain("[redacted]");
+      expect(out).toContain("Bearer [redacted]");
+    });
+
+    it("caps the stored error length at 500 chars", () => {
+      const body = JSON.stringify({ message: "x".repeat(1000) });
+      const out = sanitizeResendError(403, body);
+      expect(out.length).toBe(500);
+      expect(out.startsWith("resend_http_403:")).toBe(true);
+    });
   });
 });
