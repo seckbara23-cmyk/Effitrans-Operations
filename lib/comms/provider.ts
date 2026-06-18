@@ -72,6 +72,17 @@ export function sanitizeResendError(status: number, body: string): string {
   return `${prefix}:${reason}`.slice(0, RESEND_ERROR_MAX);
 }
 
+/**
+ * Extract ONLY the domain from a sender string for safe diagnostics. PURE.
+ * Handles both `"Name <user@domain>"` and bare `"user@domain"`. Returns the
+ * domain (lowercased) or null — never the local-part, never the display name.
+ */
+export function senderDomain(from: string | null | undefined): string | null {
+  if (!from) return null;
+  const m = from.match(/@([^>\s]+)/);
+  return m ? m[1].toLowerCase() : null;
+}
+
 /** Build the Resend `POST /emails` body. PURE — unit-tested without network. */
 export function buildResendPayload(
   email: OutboundEmail,
@@ -99,6 +110,18 @@ export async function sendEmail(email: OutboundEmail): Promise<SendResult> {
 
   if (provider === "resend") {
     const { apiKey, from } = resendConfig();
+    // TEMP DIAGNOSTIC (Phase 2.5 email-failure probe): proves which sender the
+    // runtime actually resolves. Domain-only — no API key, header, or payload.
+    // Remove once COMMUNICATIONS_EMAIL_FROM is confirmed correct in production.
+    console.info(
+      `[observe] ${JSON.stringify({
+        scope: "comms",
+        event: "comms.resend_sender",
+        provider: process.env.COMMUNICATIONS_EMAIL_PROVIDER,
+        fromConfigured: !!process.env.COMMUNICATIONS_EMAIL_FROM,
+        fromValueDomain: senderDomain(from),
+      })}`,
+    );
     if (!apiKey || !from) return { ok: false, error: "resend_not_configured" };
     try {
       const res = await fetch("https://api.resend.com/emails", {

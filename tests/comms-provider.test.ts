@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildResendPayload, isProviderConfigured, sanitizeResendError } from "@/lib/comms/provider";
+import { buildResendPayload, isProviderConfigured, sanitizeResendError, senderDomain } from "@/lib/comms/provider";
 
 describe("comms provider (Phase 1.18 — C3 Resend wiring)", () => {
   it("builds a Resend payload from an outbound email", () => {
@@ -31,6 +31,22 @@ describe("comms provider (Phase 1.18 — C3 Resend wiring)", () => {
       if (prev === undefined) delete process.env.COMMUNICATIONS_EMAIL_PROVIDER;
       else process.env.COMMUNICATIONS_EMAIL_PROVIDER = prev;
     }
+  });
+
+  describe("senderDomain (safe diagnostic extraction)", () => {
+    it("extracts the domain from a 'Name <user@domain>' sender", () => {
+      expect(senderDomain("Effitrans Operations <onboarding@resend.dev>")).toBe("resend.dev");
+    });
+
+    it("extracts the domain from a bare address and lowercases it", () => {
+      expect(senderDomain("Ops@Effitrans.SN")).toBe("effitrans.sn");
+    });
+
+    it("returns null for missing/empty/malformed senders (no domain leaked)", () => {
+      expect(senderDomain(null)).toBeNull();
+      expect(senderDomain("")).toBeNull();
+      expect(senderDomain("not-an-email")).toBeNull();
+    });
   });
 
   describe("sanitizeResendError (non-2xx body capture)", () => {
