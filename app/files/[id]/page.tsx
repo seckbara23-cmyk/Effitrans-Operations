@@ -24,6 +24,7 @@ import { getDossierLifecycle } from "@/lib/files/lifecycle";
 import { getOpenHandoffForFile } from "@/lib/handoffs/service";
 import { getDossierStage } from "@/lib/sla/service";
 import { SlaPanel } from "@/components/files/sla-panel";
+import { CopilotPanel } from "@/components/copilot/copilot-panel";
 import { t } from "@/lib/i18n";
 
 export const metadata: Metadata = { title: t.files.title };
@@ -187,6 +188,7 @@ export default async function FileDetailPage({ params }: { params: { id: string 
         </div>
       )}
       {canReadComms && <CommunicationsTimeline messages={communications} />}
+      <CopilotPanel fileId={file.id} />
     </div>
   );
 }
