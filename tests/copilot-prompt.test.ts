@@ -44,6 +44,7 @@ function ctx(overrides: Partial<CopilotContext> = {}): CopilotContext {
     finance: { included: false },
     sla: { included: true, data: { status: "warning", department: "customs", stage: "customs_declaration", ageDays: 2, warningHours: 72, criticalHours: 144 } },
     tasks: { included: true, data: { total: 1, open: 1, items: [{ title: "Vérifier BL", status: "TODO", priority: "HIGH", dueAt: "2026-06-20", assignedTo: "a@b.com" }] } },
+    risk: { level: "high", score: 55, reasons: ["Un document requis est manquant."], actions: ["Réclamer ou téléverser les documents requis manquants."] },
   };
   return { ...base, ...overrides };
 }
@@ -74,6 +75,14 @@ describe("serializeContext", () => {
   it("renders missing-required documents", () => {
     const text = serializeContext(ctx());
     expect(text).toContain("Connaissement");
+  });
+
+  it("renders the risk section from the engine output (single source of truth)", () => {
+    const text = serializeContext(ctx());
+    expect(text).toContain("=== RISQUE");
+    expect(text).toContain("HIGH");
+    expect(text).toContain("55/100");
+    expect(text).toContain("Un document requis est manquant.");
   });
 
   it("contains no markdown table syntax", () => {

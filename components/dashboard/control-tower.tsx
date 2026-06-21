@@ -16,6 +16,14 @@ const SLA_DOT: Record<SlaStatus, string> = { normal: "🟢", warning: "🟡", cr
 const fmtMoney = (n: number, c: string) => `${n.toLocaleString("fr-FR")} ${c}`;
 const dash = "—";
 
+const RISK_BADGE: Record<string, string> = {
+  low: "bg-emerald-50 text-emerald-700",
+  medium: "bg-amber-50 text-amber-700",
+  high: "bg-orange-50 text-orange-700",
+  critical: "bg-red-50 text-red-700",
+};
+const RISK_DOT: Record<string, string> = { low: "🟢", medium: "🟡", high: "🟠", critical: "🔴" };
+
 function KpiCell({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="rounded-lg border border-slate-100 bg-sand-50/40 p-3">
@@ -44,6 +52,66 @@ export function ControlTower({ data }: { data: ControlTowerData }) {
           <KpiCell label={C.kpis.avgCustoms} value={k.avgCustomsDays != null ? `${k.avgCustomsDays} ${C.kpis.days}` : dash} />
           <KpiCell label={C.kpis.avgDelivery} value={k.avgDeliveryDays != null ? `${k.avgDeliveryDays} ${C.kpis.days}` : dash} />
         </div>
+      </section>
+
+      {/* Risk KPIs (Phase 3.1B) — derived, no stored values */}
+      <section className="surface p-5">
+        <h2 className="mb-3 text-sm font-semibold text-navy-900">{t.risk.kpis.title}</h2>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <KpiCell label={t.risk.kpis.critical} value={data.riskKpis.critical} />
+          <KpiCell label={t.risk.kpis.high} value={data.riskKpis.high} />
+          <KpiCell label={t.risk.kpis.slaBreaches} value={data.riskKpis.slaBreaches} />
+          <KpiCell label={t.risk.kpis.overdueFinance} value={data.riskKpis.overdueFinance ?? dash} />
+        </div>
+      </section>
+
+      {/* Needs immediate attention (Phase 3.1B) — risk-ranked, max 10 */}
+      <section>
+        <h2 className="mb-3 text-sm font-semibold text-navy-900">
+          {t.risk.attention.title}
+          {data.attentionQueue.length > 0 && (
+            <span className="ml-2 text-xs font-normal text-slate-400">({data.attentionQueue.length})</span>
+          )}
+        </h2>
+        {data.attentionQueue.length === 0 ? (
+          <div className="surface p-6 text-sm text-slate-500">{t.risk.attention.empty}</div>
+        ) : (
+          <div className="surface overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[760px] text-left text-sm">
+                <thead className="border-b border-slate-200 bg-sand-50 text-xs uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3 font-semibold">{t.risk.attention.dossier}</th>
+                    <th className="px-4 py-3 font-semibold">{t.risk.attention.client}</th>
+                    <th className="px-4 py-3 font-semibold">{t.risk.attention.level}</th>
+                    <th className="px-4 py-3 font-semibold">{t.risk.attention.reason}</th>
+                    <th className="px-4 py-3 font-semibold">{t.risk.attention.age}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {data.attentionQueue.map((it) => (
+                    <tr key={it.fileId} className="hover:bg-slate-50/60">
+                      <td className="px-4 py-3">
+                        <Link href={`/files/${it.fileId}`} className="tabular font-medium text-teal-700 hover:underline">
+                          {it.fileNumber ?? dash}
+                        </Link>
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">{it.clientName ?? dash}</td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${RISK_BADGE[it.level]}`}>
+                          <span aria-hidden>{RISK_DOT[it.level]}</span>
+                          {(t.risk.levels as Record<string, string>)[it.level]}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">{it.primaryReason}</td>
+                      <td className="px-4 py-3 tabular text-slate-600">{it.ageDays}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </section>
 
       {/* Operational funnel */}

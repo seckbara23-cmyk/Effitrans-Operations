@@ -9,6 +9,7 @@ import { getFinanceMonthRevenue } from "@/lib/departments/service";
 import { readyForBillingCount } from "@/lib/handoffs/service";
 import { getDepartmentSlaSummary } from "@/lib/sla/service";
 import { DeptSlaCard } from "@/components/departments/dept-sla-card";
+import { DeptAttentionCard } from "@/components/departments/dept-attention-card";
 import { financeCards, financeNextAction } from "@/lib/departments/classify";
 import { t } from "@/lib/i18n";
 
@@ -63,6 +64,12 @@ export default async function FinanceDepartmentPage() {
         <StatCard label="Paiements à vérifier" value={cards.paymentsToVerify} tone="amber" href="/finance/reconciliation" />
       </div>
       <DeptSlaCard counts={slaCounts} />
+      <DeptAttentionCard
+        items={[
+          { label: t.risk.dept.overdueInvoices, value: cards.overdue, tone: "red" },
+          { label: t.risk.dept.outstanding, value: fmt(cards.outstanding, currency), tone: "amber" },
+        ]}
+      />
 
       {queue.length === 0 ? (
         <Notice>{t.finance.empty}</Notice>

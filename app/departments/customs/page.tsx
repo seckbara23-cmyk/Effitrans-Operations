@@ -8,6 +8,7 @@ import { getCustomsQueue } from "@/lib/customs/service";
 import { readyForDeclarationCount } from "@/lib/handoffs/service";
 import { getDepartmentSlaSummary } from "@/lib/sla/service";
 import { DeptSlaCard } from "@/components/departments/dept-sla-card";
+import { DeptAttentionCard } from "@/components/departments/dept-attention-card";
 import { customsCards, customsNextAction } from "@/lib/departments/classify";
 import { t } from "@/lib/i18n";
 
@@ -57,6 +58,12 @@ export default async function CustomsDepartmentPage() {
         <StatCard label="Files douane" value={rows.length} tone="slate" />
       </div>
       <DeptSlaCard counts={slaCounts} />
+      <DeptAttentionCard
+        items={[
+          { label: t.risk.dept.slaExceeded, value: slaCounts.critical, tone: "red" },
+          { label: t.risk.dept.longInspections, value: cards.underInspection, tone: "amber" },
+        ]}
+      />
 
       {rows.length === 0 ? (
         <Notice>Aucun dossier douane à traiter.</Notice>

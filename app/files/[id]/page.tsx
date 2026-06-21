@@ -25,6 +25,8 @@ import { getOpenHandoffForFile } from "@/lib/handoffs/service";
 import { getDossierStage } from "@/lib/sla/service";
 import { SlaPanel } from "@/components/files/sla-panel";
 import { CopilotPanel } from "@/components/copilot/copilot-panel";
+import { RiskPanel } from "@/components/copilot/risk-panel";
+import { assessRisk, overdueDays, type RiskInput } from "@/lib/copilot/risk-engine";
 import { t } from "@/lib/i18n";
 
 export const metadata: Metadata = { title: t.files.title };
@@ -111,6 +113,32 @@ export default async function FileDetailPage({ params }: { params: { id: string 
   const openHandoff = await getOpenHandoffForFile(file.id);
   const sla = await getDossierStage(file.id, lifecycle.currentDepartment, lifecycle.currentStep).catch(() => null);
 
+  // Read-only derived risk assessment (Phase 3.1B) — same Risk Engine the
+  // Copilot, Control Tower and dashboard use. No persistence, no mutation.
+  const now = new Date();
+  const overdueInvoices = (finance?.invoices ?? []).filter((i) => i.overdue);
+  const maxOverdueDays = overdueInvoices.reduce((m, i) => Math.max(m, overdueDays(i.dueDate, now)), 0);
+  const riskInput: RiskInput = {
+    lifecycle: { currentDepartment: lifecycle.currentDepartment, nextAction: lifecycle.nextAction?.action ?? null },
+    sla: sla ? { status: sla.status } : null,
+    documents: { missingRequiredCount: canReadDocs ? missingDocs.length : 0 },
+    customs: canReadCustoms
+      ? {
+          underInspection: customsRecord?.status === "INSPECTION",
+          inspectionDays: customsRecord?.status === "INSPECTION" ? sla?.stage.ageDays ?? null : null,
+        }
+      : null,
+    transport: canReadTransport
+      ? {
+          awaitingPod: lifecycle.currentStep === "invoiced" && lifecycle.nextAction?.reasonCode === "await_pod",
+          transitExceedsSla:
+            transportRecord?.status === "IN_TRANSIT" && (sla?.status === "warning" || sla?.status === "critical"),
+        }
+      : null,
+    finance: canReadFinance && finance ? { overdueCount: overdueInvoices.length, maxOverdueDays: maxOverdueDays || null } : null,
+  };
+  const risk = assessRisk(riskInput);
+
   return (
     <div className="animate-fade-in space-y-6">
       {header(`${file.fileNumber}`)}
@@ -119,6 +147,7 @@ export default async function FileDetailPage({ params }: { params: { id: string 
       </Link>
       <FileWorkflow file={file} canUpdate={canUpdate} />
       <LifecycleTracker lifecycle={lifecycle} openHandoff={openHandoff ? { title: openHandoff.title } : null} />
+      <RiskPanel risk={risk} />
       {sla && <SlaPanel sla={sla} department={lifecycle.currentDepartment} />}
       <FileForm mode="edit" fileId={file.id} initial={file} clients={clients} canUpdate={canUpdate} />
       {canReadTasks && (

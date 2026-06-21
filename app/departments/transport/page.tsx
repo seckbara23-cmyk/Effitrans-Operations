@@ -8,6 +8,7 @@ import { getTransportQueue } from "@/lib/transport/service";
 import { readyForDispatchCount } from "@/lib/handoffs/service";
 import { getDepartmentSlaSummary } from "@/lib/sla/service";
 import { DeptSlaCard } from "@/components/departments/dept-sla-card";
+import { DeptAttentionCard } from "@/components/departments/dept-attention-card";
 import { transportCards, transportNextAction } from "@/lib/departments/classify";
 import { t } from "@/lib/i18n";
 
@@ -57,6 +58,12 @@ export default async function TransportDepartmentPage() {
         <StatCard label="Livrés (POD reçu)" value={cards.delivered} tone="teal" />
       </div>
       <DeptSlaCard counts={slaCounts} />
+      <DeptAttentionCard
+        items={[
+          { label: t.risk.dept.awaitingPod, value: cards.podRequired, tone: "red" },
+          { label: t.risk.dept.transportDelays, value: slaCounts.warning + slaCounts.critical, tone: "amber" },
+        ]}
+      />
 
       {rows.length === 0 ? (
         <Notice>Aucun dossier transport à traiter.</Notice>

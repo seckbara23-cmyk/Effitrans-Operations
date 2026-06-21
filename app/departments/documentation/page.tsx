@@ -8,6 +8,7 @@ import { getDocumentationQueue } from "@/lib/departments/service";
 import { readyForCustomsCount } from "@/lib/handoffs/service";
 import { getDepartmentSlaSummary } from "@/lib/sla/service";
 import { DeptSlaCard } from "@/components/departments/dept-sla-card";
+import { DeptAttentionCard } from "@/components/departments/dept-attention-card";
 import { documentationCards, documentationNextAction } from "@/lib/departments/classify";
 import { t } from "@/lib/i18n";
 
@@ -58,6 +59,12 @@ export default async function DocumentationDepartmentPage() {
         <StatCard label={t.handoffs.cards.readyForCustoms} value={readyForCustoms} tone="teal" href="/departments/customs" />
       </div>
       <DeptSlaCard counts={slaCounts} />
+      <DeptAttentionCard
+        items={[
+          { label: t.risk.dept.missingDocs, value: cards.missing, tone: "red" },
+          { label: t.risk.dept.verificationBottleneck, value: cards.pending, tone: "amber" },
+        ]}
+      />
 
       {rows.length === 0 ? (
         <Notice>Aucun dossier ouvert à traiter.</Notice>

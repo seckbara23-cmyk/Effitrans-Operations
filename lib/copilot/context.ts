@@ -19,6 +19,7 @@
 // NOTE: runtime service imports are loaded dynamically inside buildCopilotContext
 // (below) so that the PURE `assembleCopilotContext` — and its unit tests — never
 // pull in server-only modules (e.g. the RSC `cache()` in lib/rbac/permissions).
+import { assessRisk, riskInputFromContext, type RiskAssessment } from "@/lib/copilot/risk-engine";
 import type { DossierLifecycle } from "@/lib/files/lifecycle";
 import type { FileDetail } from "@/lib/files/types";
 import type { DocumentItem, MissingDocument } from "@/lib/documents/types";
@@ -132,6 +133,8 @@ export type CopilotContext = {
   finance: Section<CopilotFinance>;
   sla: Section<CopilotSla>;
   tasks: Section<CopilotTasks>;
+  /** Derived AI risk assessment (Phase 3.1B) — single source of truth for risk. */
+  risk: RiskAssessment;
 };
 
 /** Permission gates for each embedded section — mirrors the dossier page. */
@@ -146,6 +149,8 @@ export type CopilotAccess = {
 export type AssembleInput = {
   file: FileDetail;
   access: CopilotAccess;
+  /** Reference time for derived risk (overdue-days). Injected for determinism. */
+  now: Date;
   lifecycle: DossierLifecycle;
   openHandoff: { title: string } | null;
   documents: DocumentItem[];
@@ -317,7 +322,12 @@ export function assembleCopilotContext(input: AssembleInput): CopilotContext {
       }
     : { included: false };
 
-  return { dossier, lifecycle: lc, documents, customs, transport, finance, sla, tasks };
+  // Derived risk (Phase 3.1B) — computed from the assembled snapshot so the
+  // Copilot consumes the Risk Engine output instead of reasoning from scratch.
+  const view = { lifecycle: lc, sla, documents, customs, transport, finance };
+  const risk = assessRisk(riskInputFromContext(view, input.now));
+
+  return { dossier, lifecycle: lc, documents, customs, transport, finance, sla, tasks, risk };
 }
 
 /**
@@ -408,6 +418,7 @@ export async function buildCopilotContext(
   return assembleCopilotContext({
     file,
     access,
+    now: new Date(),
     lifecycle,
     openHandoff: openHandoff ? { title: openHandoff.title } : null,
     documents,

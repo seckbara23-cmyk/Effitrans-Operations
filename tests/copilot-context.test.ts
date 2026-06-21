@@ -65,6 +65,7 @@ function baseInput(overrides: Partial<AssembleInput> = {}): AssembleInput {
   return {
     file: FILE,
     access: FULL_ACCESS,
+    now: new Date("2026-06-21T00:00:00.000Z"),
     lifecycle: lifecycleFor(FILE),
     openHandoff: null,
     documents: DOCS,
@@ -158,6 +159,25 @@ describe("assembleCopilotContext — sla section", () => {
   it("marks SLA not-included when absent", () => {
     const ctx = assembleCopilotContext(baseInput({ sla: null }));
     expect(ctx.sla.included).toBe(false);
+  });
+});
+
+describe("assembleCopilotContext — derived risk", () => {
+  it("computes risk from the assembled snapshot (single source of truth)", () => {
+    // 1 missing doc (+20) + SLA warning (+15) + overdue invoice ≤30d (+20) = 55 → HIGH
+    const ctx = assembleCopilotContext(baseInput());
+    expect(ctx.risk.score).toBe(55);
+    expect(ctx.risk.level).toBe("high");
+    expect(ctx.risk.reasons.length).toBeGreaterThan(0);
+  });
+
+  it("a section the caller cannot read contributes no risk signal", () => {
+    const ctx = assembleCopilotContext(
+      baseInput({ access: { documents: false, customs: false, transport: false, finance: false, tasks: false } }),
+    );
+    // Only SLA warning (+15) remains visible → MEDIUM, not HIGH.
+    expect(ctx.risk.score).toBe(15);
+    expect(ctx.risk.level).toBe("low");
   });
 });
 

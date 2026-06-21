@@ -54,6 +54,18 @@ export function serializeContext(ctx: CopilotContext): string {
   out.push(line("Réf. conteneur", d.containerRef));
   out.push(line("Ouvert le", d.openedAt));
 
+  const risk = ctx.risk;
+  out.push("");
+  out.push("=== RISQUE (moteur de risque — source de vérité) ===");
+  out.push(line("Niveau", risk.level.toUpperCase()));
+  out.push(line("Score", `${risk.score}/100`));
+  out.push("Raisons :");
+  if (risk.reasons.length > 0) for (const r of risk.reasons) out.push(`  - ${r}`);
+  else out.push("  - Aucune");
+  out.push("Actions recommandées :");
+  if (risk.actions.length > 0) for (const a of risk.actions) out.push(`  - ${a}`);
+  else out.push("  - Aucune");
+
   const lc = ctx.lifecycle;
   out.push("");
   out.push("=== CYCLE DE VIE ===");
@@ -201,6 +213,7 @@ export function buildSystemPrompt(): string {
     "- Tu es en LECTURE SEULE : tu ne peux ni modifier le dossier, ni créer de tâche, ni envoyer d'e-mail, ni exécuter d'action. Si on te le demande, propose les étapes à suivre sans prétendre les avoir faites.",
     "- Réponds en texte brut. N'utilise PAS de tableaux markdown. Des listes à puces simples sont acceptées pour la lisibilité.",
     "- Pour une rédaction de message (mise à jour client, note de passation), produis un texte prêt à copier, fondé uniquement sur les faits du dossier.",
+    "- Pour toute question sur les RISQUES, ce qui est préoccupant ou le dossier à traiter en priorité, appuie-toi sur la section « RISQUE » (issue du moteur de risque) : reprends son niveau, ses raisons et ses actions. Ne recalcule pas un score et n'invente pas de risques absents de cette section.",
   ].join("\n");
 }
 

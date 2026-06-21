@@ -42,6 +42,16 @@ import {
   type Bottleneck,
   type AttentionItem,
 } from "./aggregate";
+import {
+  assessRisk,
+  rankAttention,
+  riskKpis as computeRiskKpis,
+  overdueDays,
+  type RiskInput,
+  type DossierRiskRow,
+  type AttentionRiskItem,
+  type RiskKpis,
+} from "@/lib/copilot/risk-engine";
 
 export type ExecutiveKpis = {
   activeDossiers: number;
@@ -74,6 +84,9 @@ export type ControlTowerData = {
   slaRanking: BottleneckRank[];
   avgTimes: AverageTimes;
   canFinance: boolean;
+  // Phase 3.1B — derived risk (no stored values).
+  attentionQueue: AttentionRiskItem[];
+  riskKpis: RiskKpis;
 };
 
 export async function getControlTower(permissions: string[]): Promise<ControlTowerData> {
@@ -107,6 +120,7 @@ export async function getControlTower(permissions: string[]): Promise<ControlTow
 
   // Finance (only with finance:read): per-file balances/overdue + invoice timestamps + payments.
   const overdueByFile = new Map<string, boolean>();
+  const overdueDaysByFile = new Map<string, number>();
   const invoicesByFile = new Map<string, { status: string; balance: number }[]>();
   const invoiceUpdatedByFile = new Map<string, string>();
   const invoiceIssueByFile = new Map<string, string>();
@@ -137,7 +151,11 @@ export async function getControlTower(permissions: string[]): Promise<ControlTow
       const arr = invoicesByFile.get(inv.file_id) ?? [];
       arr.push({ status: inv.status, balance });
       invoicesByFile.set(inv.file_id, arr);
-      if (isOverdue(inv.status as never, inv.due_date, balance, now)) overdueByFile.set(inv.file_id, true);
+      if (isOverdue(inv.status as never, inv.due_date, balance, now)) {
+        overdueByFile.set(inv.file_id, true);
+        const d = overdueDays(inv.due_date, now);
+        if (d > (overdueDaysByFile.get(inv.file_id) ?? 0)) overdueDaysByFile.set(inv.file_id, d);
+      }
       const prev = invoiceUpdatedByFile.get(inv.file_id);
       if (!prev || inv.updated_at > prev) invoiceUpdatedByFile.set(inv.file_id, inv.updated_at);
       if (inv.issue_date && !invoiceIssueByFile.has(inv.file_id)) invoiceIssueByFile.set(inv.file_id, inv.issue_date);
@@ -163,6 +181,7 @@ export async function getControlTower(permissions: string[]): Promise<ControlTow
 
   const rows: DossierLifecycleRow[] = [];
   const slaRows: SlaRow[] = [];
+  const riskRows: DossierRiskRow[] = [];
 
   for (const f of files) {
     const fileDocs = docsByFile.get(f.id) ?? [];
@@ -204,18 +223,44 @@ export async function getControlTower(permissions: string[]): Promise<ControlTow
       transportUpdatedAt: tr?.updated_at ?? null,
       invoiceUpdatedAt: invoiceUpdatedByFile.get(f.id) ?? null,
     });
+    const slaStatus = classifySla(lifecycle.currentDepartment, sd.ageHours);
     slaRows.push({
       fileId: f.id,
       fileNumber: f.file_number,
       clientName: f.client?.name ?? null,
       department: toSlaDept(lifecycle.currentDepartment),
       stage: lifecycle.currentStep,
-      sla: classifySla(lifecycle.currentDepartment, sd.ageHours),
+      sla: slaStatus,
       ageHours: sd.ageHours,
       daysWaiting: ageDays(f.created_at, now),
       nextAction: lifecycle.nextAction?.action ?? "",
       priority: f.priority,
       fileStatus: f.status,
+    });
+
+    // Phase 3.1B — derived per-dossier risk (reuses this same lifecycle/SLA pass).
+    const inspecting = lifecycle.currentStep === "customs_inspection";
+    const awaitingPod = lifecycle.currentStep === "invoiced" && lifecycle.nextAction?.reasonCode === "await_pod";
+    const riskInput: RiskInput = {
+      lifecycle: { currentDepartment: lifecycle.currentDepartment, nextAction: lifecycle.nextAction?.action ?? null },
+      sla: { status: slaStatus },
+      documents: { missingRequiredCount: missingRequired.length },
+      customs: cust ? { underInspection: inspecting, inspectionDays: inspecting ? Math.floor(sd.ageHours / 24) : null } : null,
+      transport: tr
+        ? { awaitingPod, transitExceedsSla: lifecycle.currentStep === "in_transit" && (slaStatus === "warning" || slaStatus === "critical") }
+        : null,
+      finance: canFinance
+        ? { overdueCount: overdueByFile.get(f.id) ? 1 : 0, maxOverdueDays: overdueDaysByFile.get(f.id) ?? null }
+        : null,
+    };
+    riskRows.push({
+      fileId: f.id,
+      fileNumber: f.file_number,
+      clientName: f.client?.name ?? null,
+      department: lifecycle.currentDepartment,
+      priority: f.priority,
+      ageDays: ageDays(f.created_at, now),
+      assessment: assessRisk(riskInput),
     });
   }
 
@@ -241,6 +286,10 @@ export async function getControlTower(permissions: string[]): Promise<ControlTow
   const sla = slaCountsByDept(slaRows);
   if (!canFinance) sla.finance = { normal: 0, warning: 0, critical: 0 };
 
+  // Phase 3.1B — attention queue + risk KPIs from the per-dossier assessments.
+  const slaBreaches = slaRows.filter((r) => r.sla === "critical").length;
+  const overdueFinance = canFinance ? overdueByFile.size : null;
+
   return {
     funnel: funnelCounts(rows),
     flow: flowCounts(rows),
@@ -259,5 +308,7 @@ export async function getControlTower(permissions: string[]): Promise<ControlTow
       timeToPaymentDays: timeToPayment,
     },
     canFinance,
+    attentionQueue: rankAttention(riskRows, 10),
+    riskKpis: computeRiskKpis(riskRows, slaBreaches, overdueFinance),
   };
 }
