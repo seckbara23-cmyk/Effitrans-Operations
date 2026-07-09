@@ -69,3 +69,15 @@ export const navSections: NavSection[] = [
 
 // Flat list (used by topbar breadcrumb / page metadata lookups)
 export const allNavItems: NavItem[] = navSections.flatMap((s) => s.items);
+
+/**
+ * Top-bar primary action — "Nouveau dossier". Points at the existing dossier
+ * creation route and is cosmetically gated by file:create (canSeeNav); the
+ * /files/new route re-checks the permission server-side. Kept as a pure
+ * descriptor so the route + gate are unit-testable without rendering the
+ * client top bar.
+ */
+export const newDossierAction = {
+  href: "/files/new",
+  permission: "file:create",
+} as const;

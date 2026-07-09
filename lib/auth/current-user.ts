@@ -52,7 +52,12 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   if (profile.status !== "active") return null;
 
   // Phase 2.1A — presence heartbeat on authenticated load (throttled, best-effort).
-  await touchStaffSeen(profile.id, profile.last_seen_at);
+  // Kicked off here but NOT awaited ahead of the roles query, so the (at most
+  // once-per-minute) write overlaps the roles fetch instead of serialising in
+  // front of it and blocking navigation. It uses the admin client — a separate
+  // connection from the roles query — so the two run in parallel. Still awaited
+  // before returning (touchStaffSeen never throws), so presence stays reliable.
+  const seen = touchStaffSeen(profile.id, profile.last_seen_at);
 
   // Embedded relation result asserted via .returns<T>() (intentional, not a hack).
   const { data: roleData } = await supabase
@@ -60,6 +65,8 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
     .select("role:role_id(code)")
     .eq("user_id", user.id)
     .returns<UserRoleRow[]>();
+
+  await seen;
 
   const roleRows = roleData ?? [];
   const roles = roleRows

@@ -1,10 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { allNavItems } from "@/lib/nav";
+import { allNavItems, newDossierAction } from "@/lib/nav";
 import { t } from "@/lib/i18n";
 import { IconMenu, IconSearch, IconPlus } from "@/lib/icons";
-import { useSession } from "@/lib/auth/use-session";
+import { useSession, canSeeNav } from "@/lib/auth/use-session";
 import { getBrowserSupabaseClient } from "@/lib/supabase/client";
 import { recordLogoutAudit } from "@/lib/auth/actions";
 import { NotificationBell } from "@/components/notifications/notification-bell";
@@ -64,10 +65,15 @@ export function Topbar({ onOpenMenu }: { onOpenMenu: () => void }) {
 
           <NotificationBell />
 
-          <button className="inline-flex items-center gap-2 rounded-lg bg-navy-900 px-3 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-navy-800">
-            <IconPlus className="h-4 w-4" />
-            <span className="hidden sm:inline">{t.topbar.newFile}</span>
-          </button>
+          {canSeeNav(newDossierAction.permission, session) && (
+            <Link
+              href={newDossierAction.href}
+              className="inline-flex items-center gap-2 rounded-lg bg-navy-900 px-3 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-navy-800"
+            >
+              <IconPlus className="h-4 w-4" />
+              <span className="hidden sm:inline">{t.topbar.newFile}</span>
+            </Link>
+          )}
 
           {session.configured && session.email && (
             <div className="flex items-center gap-2 border-l border-slate-200 pl-2 sm:pl-3">

@@ -8,6 +8,7 @@
  * (./calc). Soft-deleted charges excluded; reversed payments excluded from paid.
  */
 import "server-only";
+import { cache } from "react";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
 import { balanceDue, invoiceTotals, isOverdue, paidAmount } from "./calc";
@@ -206,8 +207,16 @@ export async function getFinanceForFile(fileId: string): Promise<FinanceForFile>
   };
 }
 
-/** Tenant-wide invoice queue (finance:read). */
-export async function getFinanceQueue(opts?: { status?: string }): Promise<InvoiceQueueItem[]> {
+/**
+ * Tenant-wide invoice queue (finance:read).
+ *
+ * P1: request-scoped memoization (React cache) keyed by the status filter. The
+ * dashboard reaches this from three places in one render — the finance KPI strip
+ * and the department finance card (both via getFinanceKpis) and reconciliation's
+ * outstanding list — so cache() collapses them to ONE invoice+lines+payments
+ * fetch. Request-scoped only, so there is no cross-request staleness.
+ */
+export const getFinanceQueue = cache(async (opts?: { status?: string }): Promise<InvoiceQueueItem[]> => {
   const user = await assertPermission("finance:read");
   const supabase = getAdminSupabaseClient();
   const now = new Date();
@@ -258,7 +267,7 @@ export async function getFinanceQueue(opts?: { status?: string }): Promise<Invoi
       overdue: built.overdue,
     };
   });
-}
+});
 
 type ReconRow = PaymentRow & {
   invoice: {

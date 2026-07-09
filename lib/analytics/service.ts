@@ -8,6 +8,7 @@
  * only computed when `includeFinance` (the page passes hasPermission('finance:read')).
  */
 import "server-only";
+import { cache } from "react";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
 import { balanceDue, invoiceTotals, paidAmount } from "@/lib/finance/calc";
@@ -31,7 +32,13 @@ import {
 } from "./calc";
 import type { AnalyticsData, InvoiceAgg } from "./types";
 
-export async function getAnalytics(includeFinance: boolean): Promise<AnalyticsData> {
+/**
+ * P1: request-scoped memoization (React cache) keyed by `includeFinance`. The
+ * dashboard resolves analytics from several places in one render (control tower
+ * + department "management" card); with cache() they all share ONE aggregation
+ * pass instead of re-running ~11 queries each. Request-scoped, so no staleness.
+ */
+export const getAnalytics = cache(async (includeFinance: boolean): Promise<AnalyticsData> => {
   const user = await assertPermission("analytics:read");
   const supabase = getAdminSupabaseClient();
   const tenant = user.tenantId;
@@ -123,4 +130,4 @@ export async function getAnalytics(includeFinance: boolean): Promise<AnalyticsDa
       transportPipeline: transportPipeline(transportRows),
     },
   };
-}
+});

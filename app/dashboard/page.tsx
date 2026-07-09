@@ -56,27 +56,38 @@ export default async function DashboardPage() {
   let controlTower: ControlTowerData | null = null;
   if (configured) {
     const user = await requireUser();
-    [overview, recent, dashTasks] = await Promise.all([
+    // Stage 1 — session-light counts + the permission set are all independent,
+    // so resolve them in ONE round of concurrent queries (permissions was
+    // previously awaited separately, serialising it after the counts).
+    let permissions: string[] = [];
+    [overview, recent, dashTasks, permissions] = await Promise.all([
       getFileOverview().catch(() => null),
       getRecentFiles(8).catch(() => []),
       getDashboardTasks().catch(() => null),
+      getEffectivePermissions(user.id).catch(() => [] as string[]),
     ]);
-    const permissions = await getEffectivePermissions(user.id).catch(() => [] as string[]);
-    // Phase 2.2 — operations control tower (management view).
-    if (hasPermission(permissions, "analytics:read")) {
-      controlTower = await getControlTower(permissions).catch(() => null);
-    }
-    // Dashboard UX — department workload cards (only depts the viewer can read).
-    deptCards = await getDepartmentCards(permissions).catch(() => []);
-    // Recent activity — broad visibility (audit:read:all via RLS), finance-filtered.
     canSeeActivity = hasPermission(permissions, "audit:read:all");
-    if (canSeeActivity) {
-      activity = await getRecentActivity(hasPermission(permissions, "finance:read")).catch(() => []);
-    }
-    // Phase 2.1A — SYSTEM_ADMIN-only presence summary.
-    if (hasPermission(permissions, "admin:users:manage")) {
-      presence = await getPresenceSummary().catch(() => null);
-    }
+    // Stage 2 — the four heavy dashboard sections are mutually independent.
+    // Fetch them concurrently: previously each was awaited in turn, so the
+    // dashboard's wall time was the SUM of control tower + department cards +
+    // activity + presence. Each stays permission-gated exactly as before and
+    // still degrades to its default on failure.
+    [controlTower, deptCards, activity, presence] = await Promise.all([
+      // Phase 2.2 — operations control tower (management view).
+      hasPermission(permissions, "analytics:read")
+        ? getControlTower(permissions).catch(() => null)
+        : Promise.resolve<ControlTowerData | null>(null),
+      // Dashboard UX — department workload cards (only depts the viewer can read).
+      getDepartmentCards(permissions).catch(() => []),
+      // Recent activity — broad visibility (audit:read:all via RLS), finance-filtered.
+      canSeeActivity
+        ? getRecentActivity(hasPermission(permissions, "finance:read")).catch(() => [])
+        : Promise.resolve<ActivityItem[]>([]),
+      // Phase 2.1A — SYSTEM_ADMIN-only presence summary.
+      hasPermission(permissions, "admin:users:manage")
+        ? getPresenceSummary().catch(() => null)
+        : Promise.resolve<PresenceSummary | null>(null),
+    ]);
   }
   const taskKpis = dashTasks
     ? { dueToday: dashTasks.today.length, overdue: dashTasks.overdue.length, mine: dashTasks.mine.length }
