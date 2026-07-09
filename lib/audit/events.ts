@@ -114,6 +114,11 @@ export const AuditActions = {
   // Phase 2.5 — Customer notifications
   NOTIFICATION_CUSTOMER_CREATED: "notification.customer.created",
   NOTIFICATION_CUSTOMER_SENT: "notification.customer.sent",
+  // Phase 3.0B — Report / Power BI exports (attributed; date range in `after`)
+  REPORT_EXPORT_CSV: "report.export.csv",
+  REPORT_EXPORT_XLSX: "report.export.xlsx",
+  REPORT_EXPORT_PDF: "report.export.pdf",
+  REPORT_EXPORT_POWERBI: "report.export.powerbi",
 } as const;
 
 export type AuditActionCode = (typeof AuditActions)[keyof typeof AuditActions];

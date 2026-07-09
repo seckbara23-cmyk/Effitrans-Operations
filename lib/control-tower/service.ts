@@ -87,14 +87,42 @@ export type ControlTowerData = {
   // Phase 3.1B — derived risk (no stored values).
   attentionQueue: AttentionRiskItem[];
   riskKpis: RiskKpis;
+  // Phase 3.0B — opt-in per-dossier export rows (Power BI / reporting). Populated
+  // ONLY when getControlTower is called with { includeDossiers: true } so the
+  // dashboard payload is unchanged. Surfaced from the SAME single pass — never a
+  // second aggregation.
+  dossiers?: DossierExportRow[];
 };
 
-export async function getControlTower(permissions: string[]): Promise<ControlTowerData> {
+/** One normalized per-dossier row for the Power BI Shipments / Risk datasets. */
+export type DossierExportRow = {
+  fileNumber: string | null;
+  clientName: string | null;
+  type: string;
+  priority: string;
+  fileStatus: string;
+  currentDepartment: string | null;
+  lifecycleStage: string | null;
+  riskLevel: string;
+  riskScore: number;
+  slaStatus: string;
+  daysOpen: number;
+  customsStatus: string | null;
+  transportStatus: string | null;
+  paymentStatus: string;
+  outstanding: number | null;
+};
+
+export async function getControlTower(
+  permissions: string[],
+  opts: { includeDossiers?: boolean } = {},
+): Promise<ControlTowerData> {
   const user = await assertPermission("analytics:read");
   const canFinance = hasPermission(permissions, "finance:read");
   const supabase = getAdminSupabaseClient();
   const tenant = user.tenantId;
   const now = new Date();
+  const dossierRows: DossierExportRow[] = [];
 
   const [filesRes, docsRes, typesRes, customsRes, transportRes, analytics] = await Promise.all([
     supabase
@@ -253,6 +281,7 @@ export async function getControlTower(permissions: string[]): Promise<ControlTow
         ? { overdueCount: overdueByFile.get(f.id) ? 1 : 0, maxOverdueDays: overdueDaysByFile.get(f.id) ?? null }
         : null,
     };
+    const assessment = assessRisk(riskInput);
     riskRows.push({
       fileId: f.id,
       fileNumber: f.file_number,
@@ -260,8 +289,40 @@ export async function getControlTower(permissions: string[]): Promise<ControlTow
       department: lifecycle.currentDepartment,
       priority: f.priority,
       ageDays: ageDays(f.created_at, now),
-      assessment: assessRisk(riskInput),
+      assessment,
     });
+
+    // Phase 3.0B — normalized per-dossier export row (same pass, opt-in only).
+    if (opts.includeDossiers) {
+      const fileInvoices = invoicesByFile.get(f.id) ?? [];
+      const outstanding = canFinance
+        ? fileInvoices.reduce((s, inv) => s + (inv.balance > 0 ? inv.balance : 0), 0)
+        : null;
+      const paymentStatus = !canFinance
+        ? "—"
+        : overdueByFile.get(f.id)
+          ? "Overdue"
+          : fileInvoices.length
+            ? "Current"
+            : "None";
+      dossierRows.push({
+        fileNumber: f.file_number,
+        clientName: f.client?.name ?? null,
+        type: f.type,
+        priority: f.priority,
+        fileStatus: f.status,
+        currentDepartment: lifecycle.currentDepartment,
+        lifecycleStage: lifecycle.currentStep,
+        riskLevel: assessment.level,
+        riskScore: assessment.score,
+        slaStatus,
+        daysOpen: ageDays(f.created_at, now),
+        customsStatus: cust?.status ?? null,
+        transportStatus: tr?.status ?? null,
+        paymentStatus,
+        outstanding,
+      });
+    }
   }
 
   const tt = transportTimeKpis(transport.map((tr) => ({ pickupActual: tr.pickup_actual, deliveryActual: tr.delivery_actual })), now);
@@ -310,5 +371,6 @@ export async function getControlTower(permissions: string[]): Promise<ControlTow
     canFinance,
     attentionQueue: rankAttention(riskRows, 10),
     riskKpis: computeRiskKpis(riskRows, slaBreaches, overdueFinance),
+    ...(opts.includeDossiers ? { dossiers: dossierRows } : {}),
   };
 }

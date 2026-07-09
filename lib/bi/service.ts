@@ -12,6 +12,7 @@ import "server-only";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
 import { hasPermission } from "@/lib/rbac/check";
+import { inDateRange, type DateRange } from "./date-range";
 import { invoiceTotals, paidAmount, balanceDue } from "@/lib/finance/calc";
 import {
   revenueMetrics,
@@ -27,7 +28,7 @@ import {
   type DepartmentProductivity,
 } from "./aggregate";
 
-export type DateRange = { from?: string | null; to?: string | null };
+export type { DateRange };
 
 export type BusinessIntelligence = {
   canFinance: boolean;
@@ -40,12 +41,7 @@ export type BusinessIntelligence = {
   productivity: DepartmentProductivity;
 };
 
-const inRange = (iso: string | null, r: DateRange): boolean => {
-  if (!iso) return false;
-  if (r.from && iso < r.from) return false;
-  if (r.to && iso > r.to) return false;
-  return true;
-};
+const inRange = inDateRange;
 
 export async function getBusinessIntelligence(permissions: string[], range: DateRange = {}): Promise<BusinessIntelligence> {
   const user = await assertPermission("analytics:read");

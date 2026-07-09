@@ -14,7 +14,7 @@ function Notice({ children }: { children: React.ReactNode }) {
   return <div className="surface p-6 text-sm text-slate-600">{children}</div>;
 }
 
-function exportHref(type: ReportType, format: "csv" | "xlsx", from?: string, to?: string): string {
+function exportHref(type: string, format: "csv" | "xlsx" | "pdf" | "zip", from?: string, to?: string): string {
   const q = new URLSearchParams({ type, format });
   if (from) q.set("from", from);
   if (to) q.set("to", to);
@@ -30,6 +30,7 @@ function ReportSection({ title, type, table, from, to }: { title: string; type: 
         <div className="flex gap-2 text-xs">
           <a href={exportHref(type, "csv", from, to)} className="rounded-md border border-slate-200 bg-white px-2.5 py-1 font-medium text-navy-700 hover:bg-slate-50">{R.csv}</a>
           <a href={exportHref(type, "xlsx", from, to)} className="rounded-md border border-slate-200 bg-white px-2.5 py-1 font-medium text-navy-700 hover:bg-slate-50">{R.xlsx}</a>
+          <a href={exportHref(type, "pdf", from, to)} className="rounded-md border border-slate-200 bg-white px-2.5 py-1 font-medium text-navy-700 hover:bg-slate-50">{R.pdf}</a>
         </div>
       </div>
       <div className="surface overflow-hidden">
@@ -87,6 +88,35 @@ export default async function ReportsPage({ searchParams }: { searchParams?: { f
         </label>
         <button type="submit" className="rounded-lg bg-navy-900 px-3 py-2 text-sm font-medium text-white hover:bg-navy-800">{R.apply}</button>
       </form>
+
+      {/* Executive report + Power BI export pack */}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <section className="surface flex flex-col justify-between gap-3 p-5">
+          <div>
+            <h2 className="text-sm font-semibold text-navy-900">{R.executiveTitle}</h2>
+            <p className="mt-1 text-xs text-slate-500">{R.executiveDesc}</p>
+          </div>
+          <div>
+            <a
+              href={exportHref("executive", "pdf", from, to)}
+              className="inline-flex items-center gap-2 rounded-lg bg-navy-900 px-3 py-2 text-sm font-medium text-white hover:bg-navy-800"
+            >
+              {R.executivePdf}
+            </a>
+          </div>
+        </section>
+
+        <section className="surface flex flex-col justify-between gap-3 p-5">
+          <div>
+            <h2 className="text-sm font-semibold text-navy-900">{R.powerbiTitle}</h2>
+            <p className="mt-1 text-xs text-slate-500">{R.powerbiDesc}</p>
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs">
+            <a href={exportHref("powerbi", "xlsx", from, to)} className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 font-medium text-navy-700 hover:bg-slate-50">{R.powerbiXlsx}</a>
+            <a href={exportHref("powerbi", "zip", from, to)} className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 font-medium text-navy-700 hover:bg-slate-50">{R.powerbiCsv}</a>
+          </div>
+        </section>
+      </div>
 
       <ReportSection title={R.revenue} type="revenue" table={revenueReport(bi)} from={from} to={to} />
       <ReportSection title={R.clients} type="clients" table={clientsReport(bi)} from={from} to={to} />
