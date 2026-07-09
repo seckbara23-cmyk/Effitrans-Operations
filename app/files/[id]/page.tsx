@@ -3,10 +3,13 @@ import Link from "next/link";
 import { PageHeader } from "@/components/ui/page-header";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
-import { getFile } from "@/lib/files/service";
+import { getFile, listAssignableStaff } from "@/lib/files/service";
+import { canCancel } from "@/lib/files/status";
 import { listClients } from "@/lib/clients/service";
 import { FileForm } from "@/components/files/file-form";
 import { FileWorkflow } from "@/components/files/file-workflow";
+import { FileAssignment } from "@/components/files/file-assignment";
+import { FileDangerZone } from "@/components/files/file-danger-zone";
 import { TaskPanel } from "@/components/tasks/task-panel";
 import { listTasks, listAssignees } from "@/lib/tasks/service";
 import { DocumentsPanel } from "@/components/documents/documents-panel";
@@ -62,6 +65,12 @@ export default async function FileDetailPage({ params }: { params: { id: string 
     : file.clientId
       ? [{ id: file.clientId, name: file.clientName ?? file.clientId }]
       : [];
+
+  // Phase 3.2A — assignment + delete/cancel controls (permission-gated).
+  const canAssign = hasPermission(permissions, "file:assign");
+  const canManageLifecycle = hasPermission(permissions, "file:delete");
+  const assignableStaff = canAssign ? await listAssignableStaff() : [];
+  const assigneeLabel = file.assigneeName ?? file.assigneeEmail;
 
   // Embedded tasks (only if the user can read tasks).
   const canReadTasks = hasPermission(permissions, "task:read");
@@ -146,6 +155,13 @@ export default async function FileDetailPage({ params }: { params: { id: string 
         ← {t.files.backToList}
       </Link>
       <FileWorkflow file={file} canUpdate={canUpdate} />
+      <FileAssignment
+        fileId={file.id}
+        currentAssigneeId={file.assignedToUserId}
+        currentAssigneeLabel={assigneeLabel}
+        staff={assignableStaff}
+        canAssign={canAssign}
+      />
       <LifecycleTracker lifecycle={lifecycle} openHandoff={openHandoff ? { title: openHandoff.title } : null} />
       <RiskPanel risk={risk} />
       {sla && <SlaPanel sla={sla} department={lifecycle.currentDepartment} />}
@@ -217,6 +233,11 @@ export default async function FileDetailPage({ params }: { params: { id: string 
         </div>
       )}
       {canReadComms && <CommunicationsTimeline messages={communications} />}
+      <FileDangerZone
+        fileId={file.id}
+        canManage={canManageLifecycle}
+        cancellable={canCancel(file.status)}
+      />
       <CopilotPanel fileId={file.id} />
     </div>
   );

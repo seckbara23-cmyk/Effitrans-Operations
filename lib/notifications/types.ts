@@ -1,7 +1,7 @@
 /**
  * Notification shared types (Phase 1.6). Client + server safe.
  */
-export type NotificationType = "TASK_ASSIGNED" | "TASK_DUE_SOON" | "TASK_OVERDUE";
+export type NotificationType = "TASK_ASSIGNED" | "TASK_DUE_SOON" | "TASK_OVERDUE" | "FILE_ASSIGNED";
 
 export type NotificationItem = {
   id: string;

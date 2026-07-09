@@ -20,6 +20,9 @@ const FILE: FileDetail = {
   priority: "high",
   openedAt: "2026-06-01T08:00:00.000Z",
   createdAt: "2026-05-30T08:00:00.000Z",
+  assignedToUserId: null,
+  assigneeName: null,
+  assigneeEmail: null,
   shipment: {
     transportMode: "SEA",
     incoterm: "CIF",

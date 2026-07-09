@@ -32,6 +32,11 @@ export const AuditActions = {
   FILE_UPDATED: "file.updated",
   FILE_TRANSITION: "file.transition",
   FILE_ARCHIVED: "file.archived",
+  // Phase 3.2A — Dossier delete/cancel + assignment
+  FILE_CANCELLED: "file.cancelled",
+  FILE_DELETED: "file.deleted",
+  FILE_ASSIGNED: "file.assigned",
+  FILE_UNASSIGNED: "file.unassigned",
   // Phase 1.3 — Tasks
   TASK_CREATED: "task.created",
   TASK_UPDATED: "task.updated",

@@ -13,6 +13,7 @@ const STATUS_STYLE: Record<string, string> = {
   IN_PROGRESS: "bg-amber-50 text-amber-700",
   DELIVERED: "bg-teal-50 text-teal-700",
   CLOSED: "bg-navy-50 text-navy-700",
+  CANCELLED: "bg-rose-50 text-rose-700",
 };
 
 const PRIORITY_STYLE: Record<string, string> = {

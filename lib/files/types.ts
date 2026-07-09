@@ -2,9 +2,12 @@
  * Operational File + Shipment shared types (Phase 1.2). Client + server safe.
  */
 export type FileType = "IMP" | "EXP" | "TRP" | "HND";
-export type FileStatus = "DRAFT" | "OPENED" | "IN_PROGRESS" | "DELIVERED" | "CLOSED";
+export type FileStatus = "DRAFT" | "OPENED" | "IN_PROGRESS" | "DELIVERED" | "CLOSED" | "CANCELLED";
 export type TransportMode = "SEA" | "AIR" | "ROAD" | "MULTIMODAL";
 export type Priority = "low" | "normal" | "high" | "critical";
+
+/** An assignable staff member for the dossier assignee picker (Phase 3.2A). */
+export type StaffOption = { id: string; label: string };
 
 export type ShipmentInput = {
   transportMode?: TransportMode | null;
@@ -88,6 +91,10 @@ export type FileDetail = {
   priority: Priority;
   openedAt: string | null;
   createdAt: string;
+  /** Assigned staff member (Phase 3.2A) — null when unassigned. */
+  assignedToUserId: string | null;
+  assigneeName: string | null;
+  assigneeEmail: string | null;
   shipment: {
     transportMode: TransportMode | null;
     incoterm: string | null;

@@ -24,6 +24,7 @@ import type {
   FileType,
   Priority,
   RecentDossier,
+  StaffOption,
   TransportMode,
 } from "./types";
 
@@ -196,11 +197,29 @@ export async function getFile(id: string): Promise<FileDetail | null> {
   const { data: file } = await supabase
     .from("operational_file")
     .select(
-      "id, tenant_id, file_number, type, client_id, status, priority, opened_at, created_at, client:client_id(name)",
+      "id, tenant_id, file_number, type, client_id, status, priority, opened_at, created_at, assigned_to_user_id, client:client_id(name)",
     )
     .eq("id", id)
     .maybeSingle();
   if (!file) return null;
+
+  // Assignee display name (Phase 3.2A). app_user is self-only under RLS, so a
+  // user-context embed can't read another staff member's row — resolve the label
+  // via the admin client (a privileged display-name read, already behind
+  // file:read + the tenant scope of the file we just loaded).
+  let assigneeName: string | null = null;
+  let assigneeEmail: string | null = null;
+  if (file.assigned_to_user_id) {
+    const admin = getAdminSupabaseClient();
+    const { data: a } = await admin
+      .from("app_user")
+      .select("name, email")
+      .eq("id", file.assigned_to_user_id)
+      .eq("tenant_id", file.tenant_id)
+      .maybeSingle();
+    assigneeName = a?.name ?? null;
+    assigneeEmail = a?.email ?? null;
+  }
 
   const { data: shipment } = await supabase
     .from("shipment")
@@ -238,6 +257,9 @@ export async function getFile(id: string): Promise<FileDetail | null> {
     priority: file.priority as FileDetail["priority"],
     openedAt: file.opened_at,
     createdAt: file.created_at,
+    assignedToUserId: file.assigned_to_user_id,
+    assigneeName,
+    assigneeEmail,
     shipment: shipment
       ? {
           transportMode: shipment.transport_mode as TransportMode | null,
@@ -259,4 +281,22 @@ export async function getFile(id: string): Promise<FileDetail | null> {
       occurredAt: h.occurred_at,
     })),
   };
+}
+
+/**
+ * Active staff in the caller's tenant, for the dossier assignee picker (Phase
+ * 3.2A). Gated by file:assign. Mirrors listAssignees (tasks) but on the file
+ * permission, so the assignee dropdown never depends on task:update.
+ */
+export async function listAssignableStaff(): Promise<StaffOption[]> {
+  const user = await assertPermission("file:assign");
+  const supabase = getAdminSupabaseClient();
+  const { data, error } = await supabase
+    .from("app_user")
+    .select("id, name, email")
+    .eq("tenant_id", user.tenantId)
+    .eq("status", "active")
+    .order("email");
+  if (error) throw new Error(`[files] assignable staff failed: ${error.message}`);
+  return (data ?? []).map((u) => ({ id: u.id, label: u.name || u.email }));
 }

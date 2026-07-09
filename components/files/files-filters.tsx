@@ -10,7 +10,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { t } from "@/lib/i18n";
 import type { FileStatus, FileType, Priority, TransportMode } from "@/lib/files/types";
 
-const STATUSES: FileStatus[] = ["DRAFT", "OPENED", "IN_PROGRESS", "DELIVERED", "CLOSED"];
+const STATUSES: FileStatus[] = ["DRAFT", "OPENED", "IN_PROGRESS", "DELIVERED", "CLOSED", "CANCELLED"];
 const TYPES: FileType[] = ["IMP", "EXP", "TRP", "HND"];
 const PRIORITIES: Priority[] = ["low", "normal", "high", "critical"];
 const MODES: TransportMode[] = ["SEA", "AIR", "ROAD", "MULTIMODAL"];

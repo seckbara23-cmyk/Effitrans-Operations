@@ -402,6 +402,7 @@ export type Database = {
           client_id: string;
           account_manager_id: string | null;
           coordinator_id: string | null;
+          assigned_to_user_id: string | null;
           status: string;
           priority: string;
           opened_at: string | null;
@@ -418,6 +419,7 @@ export type Database = {
           client_id: string;
           account_manager_id?: string | null;
           coordinator_id?: string | null;
+          assigned_to_user_id?: string | null;
           status?: string;
           priority?: string;
           opened_at?: string | null;
@@ -434,6 +436,7 @@ export type Database = {
           client_id?: string;
           account_manager_id?: string | null;
           coordinator_id?: string | null;
+          assigned_to_user_id?: string | null;
           status?: string;
           priority?: string;
           opened_at?: string | null;
@@ -447,6 +450,12 @@ export type Database = {
             foreignKeyName: "operational_file_client_id_fkey";
             columns: ["client_id"];
             referencedRelation: "client";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "operational_file_assigned_to_user_id_fkey";
+            columns: ["assigned_to_user_id"];
+            referencedRelation: "app_user";
             referencedColumns: ["id"];
           },
           {
