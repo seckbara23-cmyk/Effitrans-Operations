@@ -11,6 +11,7 @@ import { DocumentCenter } from "@/components/portal/document-center";
 import { InvoiceCenter } from "@/components/portal/invoice-center";
 import { DossierTimeline } from "@/components/portal/dossier-timeline";
 import { QuickActions } from "@/components/portal/quick-actions";
+import { ActionsRequired, ContactCard, RequestUpdateButton } from "@/components/portal/self-service";
 import { CopilotSuggestions } from "@/components/portal/copilot-suggestions";
 import { Satisfaction } from "@/components/portal/satisfaction";
 import { t } from "@/lib/i18n";
@@ -45,14 +46,19 @@ export default async function PortalFileDetailPage({ params }: { params: { id: s
       <div className="grid gap-5 lg:grid-cols-3">
         <div className="space-y-5 lg:col-span-2">
           <ShipmentMap points={tracking.mapPoints.points} hasGeo={tracking.mapPoints.hasGeo} phase={mapPhase} />
+          <ActionsRequired fileId={tracking.fileId} selfService={tracking.selfService} />
           <DossierTimeline entries={tracking.activity} />
           <DocumentCenter documents={tracking.documents.available} requirements={tracking.documents.requirements} />
           <div id="invoices" className="scroll-mt-20">
             <InvoiceCenter invoices={invoices} />
           </div>
+          <div id="contact" className="scroll-mt-20">
+            <ContactCard fileId={tracking.fileId} />
+          </div>
         </div>
         <aside className="space-y-5">
           <NextStepCard nextStep={tracking.nextStep} />
+          <RequestUpdateButton fileId={tracking.fileId} />
           <EtaWidget eta={tracking.eta} />
           <OfficerCard officer={tracking.officer} />
           <QuickActions fileId={tracking.fileId} contactEmail={tracking.officer.businessEmail} />

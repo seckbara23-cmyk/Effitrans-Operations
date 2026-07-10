@@ -37,6 +37,7 @@ import { customerSafeRoleLabel, isGenericStaffIdentity, TEAM_FALLBACK_NAME } fro
 import { buildMapPoints, type MapPoint } from "./map-points";
 import { listPortalDocuments } from "./docs-service";
 import { listClientNotifications } from "@/lib/customer-notify/service";
+import { buildSelfServiceActions, CUSTOMER_UPLOADABLE_TYPES, type SelfServiceActions } from "./self-service";
 import type { PortalDocument, PortalOfficer } from "./types";
 
 const MAP_PHASE_LABEL: Record<string, string> = {
@@ -76,6 +77,7 @@ export type PortalTracking = {
   officer: PortalOfficer;
   activity: CustomerTimelineEntry[];
   documents: { available: PortalDocument[]; requirements: DocRequirement[] };
+  selfService: SelfServiceActions;
   transport: { statusLabel: string | null } | null;
   mapPoints: { points: MapPoint[]; hasGeo: boolean };
   podAvailable: boolean;
@@ -115,7 +117,7 @@ export async function getPortalTracking(fileId: string): Promise<PortalTracking 
   // Fixed parallel read set — never per-item (no N+1). RLS-safe (own dossier) via
   // listPortalDocuments/listClientNotifications; admin reads derive the timeline.
   const [docsRes, typesRes, customsRes, transportRes, invRes, officerRes, roleRes, availableDocs, notifications] = await Promise.all([
-    admin.from("document").select("type_code, status").eq("tenant_id", tenant).eq("file_id", fileId).is("deleted_at", null).returns<{ type_code: string; status: string }[]>(),
+    admin.from("document").select("id, type_code, status, review_note, version, created_at").eq("tenant_id", tenant).eq("file_id", fileId).is("deleted_at", null).returns<{ id: string; type_code: string; status: string; review_note: string | null; version: number; created_at: string }[]>(),
     admin.from("document_type").select("code, required_for, label_fr").eq("active", true).returns<{ code: string; required_for: string[] | null; label_fr: string | null }[]>(),
     admin.from("customs_record").select("status, required").eq("tenant_id", tenant).eq("file_id", fileId).is("deleted_at", null).maybeSingle<{ status: string; required: boolean }>(),
     admin.from("transport_record").select("status, pickup_location, delivery_location, pickup_actual, delivery_planned, delivery_actual").eq("tenant_id", tenant).eq("file_id", fileId).is("deleted_at", null).maybeSingle<{ status: string; pickup_location: string | null; delivery_location: string | null; pickup_actual: string | null; delivery_planned: string | null; delivery_actual: string | null }>(),
@@ -222,6 +224,14 @@ export async function getPortalTracking(fileId: string): Promise<PortalTracking 
   const mapPoints = buildMapPoints({ origin: route.origin || ship?.origin || null, destination: route.destination || ship?.destination || null, progressPercent: timeline.percent });
   const requirements = documentRequirements({ requiredCodes, bestStatusByCode, labelByCode });
 
+  // Self-service actions (Phase 3.3B) — derived from the SAME owned rows: which
+  // rejected docs the customer may replace, what required docs are still missing,
+  // which types they may upload, and whether a payment proof is relevant.
+  const uploadableActiveTypes = docTypes
+    .filter((dt) => CUSTOMER_UPLOADABLE_TYPES.includes(dt.code) || (dt.required_for ?? []).includes(own.type))
+    .map((dt) => ({ code: dt.code, label: dt.label_fr ?? dt.code }));
+  const selfService = buildSelfServiceActions({ docs, requiredCodes, labelByCode, uploadableActiveTypes, invoices });
+
   // Customer-safe officer (never a generic/admin identity or personal email).
   const staff = officerRes.data;
   const isTeam = !staff || isGenericStaffIdentity(staff.name, staff.is_system_admin);
@@ -266,6 +276,7 @@ export async function getPortalTracking(fileId: string): Promise<PortalTracking 
     officer,
     activity,
     documents: { available: availableDocs, requirements },
+    selfService,
     transport: tr ? { statusLabel: TRANSPORT_STATUS_LABEL[tr.status] ?? null } : null,
     mapPoints,
     podAvailable,

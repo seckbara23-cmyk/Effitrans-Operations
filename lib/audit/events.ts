@@ -102,6 +102,14 @@ export const AuditActions = {
   PORTAL_LOGIN: "portal.login",
   PORTAL_DOCUMENT_DOWNLOADED: "portal.document.downloaded",
   PORTAL_INVOICE_VIEWED: "portal.invoice.viewed",
+  // Phase 3.3B — Client self-service portal (customer-initiated writes, attributed
+  // to the client_user; never bypass validation — uploads land PENDING_REVIEW,
+  // payment proofs never auto-mark an invoice paid, requests/messages are tasks).
+  PORTAL_DOCUMENT_UPLOADED: "portal.document.uploaded", // customer upload → PENDING_REVIEW
+  PORTAL_DOCUMENT_REPLACED: "portal.document.replaced", // new version supersedes a rejected doc
+  PORTAL_PAYMENT_PROOF_SUBMITTED: "portal.payment_proof.submitted", // proof doc, finance verifies
+  PORTAL_UPDATE_REQUESTED: "portal.update.requested", // rate-limited status-update request
+  PORTAL_MESSAGE_SENT: "portal.message.sent", // contact-center message → assigned dossier owner
   // Phase 1.16 — Portal Google OAuth + password recovery (parity with staff)
   PORTAL_LOGIN_GOOGLE: "portal.login.google", // attributed (clientUserId)
   PORTAL_LOGIN_REJECTED: "portal.login.rejected", // machine: unknown/disabled/mismatch

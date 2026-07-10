@@ -1,5 +1,5 @@
 import { listPortalDocuments } from "@/lib/portal/docs-service";
-import { DocumentCenter } from "@/components/portal/document-center";
+import { DownloadCenter } from "@/components/portal/download-center";
 
 export const dynamic = "force-dynamic";
 
@@ -7,7 +7,7 @@ export default async function PortalDocumentsPage() {
   const documents = await listPortalDocuments();
   return (
     <div className="animate-fade-in">
-      <DocumentCenter documents={documents} />
+      <DownloadCenter documents={documents} />
     </div>
   );
 }
