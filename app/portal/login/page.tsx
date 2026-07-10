@@ -75,7 +75,9 @@ export default function PortalLoginPage() {
         setError(res.error === "disabled" ? p.disabled : res.error === "not_portal" ? p.notPortal : p.error);
         return;
       }
-      window.location.href = "/portal";
+      // Phase 3.2B — first login with an admin-set temporary password must set a
+      // new one before reaching any portal content (the layout guard also enforces).
+      window.location.href = res.mustChangePassword ? "/portal/auth/change-password" : "/portal";
     } catch {
       setError(p.error);
     } finally {

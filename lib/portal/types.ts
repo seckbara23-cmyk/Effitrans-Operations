@@ -12,6 +12,8 @@ export type PortalUser = {
   status: PortalUserStatus;
   role: PortalRole;
   clientName: string | null;
+  /** Phase 3.2B — true after a temp-password create/reset, until first change. */
+  mustChangePassword: boolean;
 };
 
 export type PortalFileSummary = {
@@ -87,8 +89,19 @@ export type PortalUserAdmin = {
   role: PortalRole;
   invitedAt: string;
   lastLoginAt: string | null;
+  lastSeenAt: string | null;
+  lastLoginMethod: string | null;
+  mustChangePassword: boolean;
 };
 
 export type ActionResult =
-  | { ok: true; id?: string; inviteLink?: string }
+  | {
+      ok: true;
+      id?: string;
+      inviteLink?: string;
+      /** One-time temporary password — shown to the admin once, never persisted. */
+      tempPassword?: string;
+      /** Login identifier (email) shown alongside the temporary password. */
+      email?: string;
+    }
   | { ok: false; error: string };

@@ -13,7 +13,7 @@ import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
 
-export async function recordPortalLogin(): Promise<{ ok: boolean; error?: string }> {
+export async function recordPortalLogin(): Promise<{ ok: boolean; error?: string; mustChangePassword?: boolean }> {
   const ctx = getServerSupabaseClient();
   const {
     data: { user },
@@ -23,7 +23,7 @@ export async function recordPortalLogin(): Promise<{ ok: boolean; error?: string
   const admin = getAdminSupabaseClient();
   const { data: cu } = await admin
     .from("client_user")
-    .select("id, status, tenant_id, login_count")
+    .select("id, status, tenant_id, login_count, must_change_password")
     .eq("id", user.id)
     .maybeSingle();
   if (!cu) return { ok: false, error: "not_portal" };
@@ -59,5 +59,7 @@ export async function recordPortalLogin(): Promise<{ ok: boolean; error?: string
     entity: "client_user",
     entityId: user.id,
   });
-  return { ok: true };
+  // Phase 3.2B — signal the client to route through the forced change-password
+  // screen. The (app) layout guard enforces this server-side regardless.
+  return { ok: true, mustChangePassword: cu.must_change_password === true };
 }

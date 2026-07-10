@@ -15,7 +15,7 @@ export async function listClientPortalUsers(clientId: string): Promise<PortalUse
   const supabase = getAdminSupabaseClient();
   const { data, error } = await supabase
     .from("client_user")
-    .select("id, email, name, status, role, invited_at, last_login_at")
+    .select("id, email, name, status, role, invited_at, last_login_at, last_seen_at, last_login_method, must_change_password")
     .eq("tenant_id", user.tenantId)
     .eq("client_id", clientId)
     .order("created_at", { ascending: true });
@@ -28,5 +28,8 @@ export async function listClientPortalUsers(clientId: string): Promise<PortalUse
     role: u.role as PortalRole,
     invitedAt: u.invited_at,
     lastLoginAt: u.last_login_at,
+    lastSeenAt: u.last_seen_at,
+    lastLoginMethod: u.last_login_method,
+    mustChangePassword: u.must_change_password === true,
   }));
 }

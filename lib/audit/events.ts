@@ -95,6 +95,10 @@ export const AuditActions = {
   // Phase 1.12 — Customer Portal
   PORTAL_USER_INVITED: "portal.user.invited",
   PORTAL_USER_ACTIVATED: "portal.user.activated",
+  // Phase 3.2B — temporary-password onboarding (password NEVER in the payload)
+  PORTAL_USER_CREATED_WITH_TEMP_PASSWORD: "portal.user.created_with_temp_password",
+  PORTAL_USER_TEMP_PASSWORD_RESET: "portal.user.temp_password_reset",
+  PORTAL_USER_PASSWORD_CHANGED: "portal.user.password_changed",
   PORTAL_LOGIN: "portal.login",
   PORTAL_DOCUMENT_DOWNLOADED: "portal.document.downloaded",
   PORTAL_INVOICE_VIEWED: "portal.invoice.viewed",

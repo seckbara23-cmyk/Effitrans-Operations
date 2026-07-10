@@ -15,6 +15,14 @@ export function canAccessPortal(status: string): boolean {
   return status === "ACTIVE";
 }
 
+/**
+ * Phase 3.2B — a DISABLED portal user cannot be issued a temporary password
+ * (they could not use it anyway); reactivate first. Any other status is allowed.
+ */
+export function canResetPortalPassword(status: string): boolean {
+  return status !== "DISABLED";
+}
+
 export function isPortalStatus(v: string): v is PortalUserStatus {
   return (PORTAL_STATUSES as readonly string[]).includes(v);
 }

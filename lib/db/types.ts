@@ -1440,6 +1440,7 @@ export type Database = {
           last_login_method: string | null;
           login_count: number;
           onboarding_email_sent_at: string | null;
+          must_change_password: boolean;
           notify_email: boolean;
           notify_shipment: boolean;
           notify_invoice: boolean;
@@ -1462,6 +1463,7 @@ export type Database = {
           last_login_method?: string | null;
           login_count?: number;
           onboarding_email_sent_at?: string | null;
+          must_change_password?: boolean;
           notify_email?: boolean;
           notify_shipment?: boolean;
           notify_invoice?: boolean;
@@ -1484,6 +1486,7 @@ export type Database = {
           last_login_method?: string | null;
           login_count?: number;
           onboarding_email_sent_at?: string | null;
+          must_change_password?: boolean;
           notify_email?: boolean;
           notify_shipment?: boolean;
           notify_invoice?: boolean;

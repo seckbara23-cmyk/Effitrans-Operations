@@ -46,9 +46,15 @@ export async function gatePortalOAuthLogin(): Promise<PortalOAuthOutcome> {
   });
 
   if (result.ok) {
-    // First Google login of an invited portal user activates them.
+    // Phase 3.2B — Google is an already-verified strong identity, so a Google
+    // portal login BYPASSES the temporary-password change: clear
+    // must_change_password on success (documented behaviour). Combined with the
+    // first-login activation so it is a single write.
+    await admin
+      .from("client_user")
+      .update({ must_change_password: false, ...(result.activate ? { status: "ACTIVE" } : {}) })
+      .eq("id", user.id);
     if (result.activate) {
-      await admin.from("client_user").update({ status: "ACTIVE" }).eq("id", user.id);
       await safeAudit({
         action: AuditActions.PORTAL_USER_ACTIVATED,
         clientUserId: user.id,

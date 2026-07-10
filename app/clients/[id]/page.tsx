@@ -45,7 +45,6 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
 
   const canManagePortal = hasPermission(permissions, "portal:manage");
   const portalUsers = canManagePortal ? await listClientPortalUsers(client.id) : [];
-  const canEmail = hasPermission(permissions, "communication:send");
   const canReadComms = hasPermission(permissions, "communication:read");
   const communications = canReadComms ? await listCommunicationsForClient(client.id) : [];
 
@@ -62,7 +61,7 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
         canUpdate={hasPermission(permissions, "client:update")}
         canDelete={hasPermission(permissions, "client:delete")}
       />
-      {canManagePortal && <PortalUsersPanel clientId={client.id} users={portalUsers} canEmail={canEmail} />}
+      {canManagePortal && <PortalUsersPanel clientId={client.id} users={portalUsers} />}
       {canReadComms && <CommunicationsTimeline messages={communications} />}
     </div>
   );

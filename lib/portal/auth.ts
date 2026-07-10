@@ -22,6 +22,7 @@ type Row = {
   status: string;
   role: string;
   last_seen_at: string | null;
+  must_change_password: boolean;
   client: { name: string } | null;
 };
 
@@ -36,7 +37,7 @@ export const getCurrentPortalUser = cache(async (): Promise<PortalUser | null> =
 
   const { data } = await supabase
     .from("client_user")
-    .select("id, tenant_id, client_id, email, name, status, role, last_seen_at, client:client_id(name)")
+    .select("id, tenant_id, client_id, email, name, status, role, last_seen_at, must_change_password, client:client_id(name)")
     .eq("id", user.id)
     .maybeSingle<Row>();
   if (!data) return null;
@@ -53,6 +54,7 @@ export const getCurrentPortalUser = cache(async (): Promise<PortalUser | null> =
     status: data.status as PortalUserStatus,
     role: data.role as PortalRole,
     clientName: data.client?.name ?? null,
+    mustChangePassword: data.must_change_password === true,
   };
 });
 
