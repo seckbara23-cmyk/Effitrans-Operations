@@ -18,6 +18,9 @@ import { CustomsPanel } from "@/components/customs/customs-panel";
 import { getCustomsRecord, getMissingCustomsDocuments } from "@/lib/customs/service";
 import { TransportPanel } from "@/components/transport/transport-panel";
 import { getTransportRecord } from "@/lib/transport/service";
+import { TrackingTimeline } from "@/components/transport/tracking-timeline";
+import { getTrackingTimeline } from "@/lib/tracking/service";
+import { trackingEnabled } from "@/lib/tracking/config";
 import { FinancePanel } from "@/components/finance/finance-panel";
 import { getFinanceForFile } from "@/lib/finance/service";
 import { CommunicationsTimeline } from "@/components/communications/communications-timeline";
@@ -98,6 +101,12 @@ export default async function FileDetailPage({ params }: { params: { id: string 
   const canReadTransport = hasPermission(permissions, "transport:read");
   const transportRecord = canReadTransport ? await getTransportRecord(file.id) : null;
   const podApproved = documents.some((d) => d.typeCode === "DELIVERY_NOTE" && d.status === "APPROVED");
+
+  // Phase 3.4 — real-time tracking timeline. DARK BY DEFAULT: only when
+  // TRACKING_ENABLED and the user holds tracking:read; otherwise nothing changes.
+  const trackingOn = trackingEnabled();
+  const canReadTracking = hasPermission(permissions, "tracking:read");
+  const trackingEvents = trackingOn && canReadTracking ? await getTrackingTimeline(file.id) : [];
 
   // Embedded finance (finance-role based — NOT inherited from file visibility).
   const canReadFinance = hasPermission(permissions, "finance:read");
@@ -214,6 +223,15 @@ export default async function FileDetailPage({ params }: { params: { id: string 
             canAssign={hasPermission(permissions, "transport:assign")}
             canComplete={hasPermission(permissions, "transport:complete")}
             canDelete={hasPermission(permissions, "transport:delete")}
+          />
+        </div>
+      )}
+      {trackingOn && canReadTracking && (
+        <div id="tracking" className="scroll-mt-24">
+          <TrackingTimeline
+            fileId={file.id}
+            events={trackingEvents}
+            canWrite={hasPermission(permissions, "tracking:write")}
           />
         </div>
       )}

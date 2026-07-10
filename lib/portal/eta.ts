@@ -14,7 +14,17 @@
 import type { PortalStageKey } from "./progress-map";
 
 export type EtaConfidence = "low" | "medium" | "high";
-export type EtaBasis = "delivered" | "scheduled_delivery" | "transport_eta" | "operational_estimate" | "unknown";
+// Phase 3.4 adds the two real-time bases ("live_position", "last_known_position")
+// so the realtime ETA layer (lib/tracking/eta.ts) can share this union. v1
+// derivePortalEta below never produces them — it is unchanged.
+export type EtaBasis =
+  | "delivered"
+  | "scheduled_delivery"
+  | "transport_eta"
+  | "operational_estimate"
+  | "live_position"
+  | "last_known_position"
+  | "unknown";
 
 export type PortalEta = {
   estimatedDate: string | null;

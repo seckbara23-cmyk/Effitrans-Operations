@@ -126,6 +126,18 @@ export const AuditActions = {
   // Phase 2.5 — Customer notifications
   NOTIFICATION_CUSTOMER_CREATED: "notification.customer.created",
   NOTIFICATION_CUSTOMER_SENT: "notification.customer.sent",
+  // Phase 3.4 — Real-time operations tracking. Session + material operational
+  // events are audited (NOT every GPS position — that would be excessive volume).
+  TRACKING_SESSION_STARTED: "tracking.session.started",
+  TRACKING_SESSION_PAUSED: "tracking.session.paused",
+  TRACKING_SESSION_RESUMED: "tracking.session.resumed",
+  TRACKING_SESSION_COMPLETED: "tracking.session.completed",
+  TRACKING_SESSION_CANCELLED: "tracking.session.cancelled",
+  TRACKING_POSITION_MANUAL_RECORDED: "tracking.position.manual_recorded",
+  TRACKING_EVENT_CREATED: "tracking.event.created",
+  TRACKING_DELAY_REPORTED: "tracking.delay.reported",
+  TRACKING_INCIDENT_REPORTED: "tracking.incident.reported",
+  TRACKING_PROVIDER_WEBHOOK_RECEIVED: "tracking.provider.webhook_received", // machine (reserved — no provider wired)
   // Phase 3.0B — Report / Power BI exports (attributed; date range in `after`)
   REPORT_EXPORT_CSV: "report.export.csv",
   REPORT_EXPORT_XLSX: "report.export.xlsx",

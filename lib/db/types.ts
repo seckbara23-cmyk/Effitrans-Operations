@@ -936,6 +936,7 @@ export type Database = {
           notes: string | null;
           created_by: string | null;
           assigned_by: string | null;
+          driver_user_id: string | null;
           deleted_at: string | null;
           created_at: string;
           updated_at: string;
@@ -962,6 +963,7 @@ export type Database = {
           notes?: string | null;
           created_by?: string | null;
           assigned_by?: string | null;
+          driver_user_id?: string | null;
           deleted_at?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -988,6 +990,7 @@ export type Database = {
           notes?: string | null;
           created_by?: string | null;
           assigned_by?: string | null;
+          driver_user_id?: string | null;
           deleted_at?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -995,6 +998,192 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "transport_record_file_id_fkey";
+            columns: ["file_id"];
+            referencedRelation: "operational_file";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      tracking_session: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          file_id: string;
+          transport_id: string | null;
+          driver_id: string | null;
+          vehicle_plate: string | null;
+          source: string;
+          status: string;
+          started_at: string;
+          ended_at: string | null;
+          last_position_at: string | null;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          file_id: string;
+          transport_id?: string | null;
+          driver_id?: string | null;
+          vehicle_plate?: string | null;
+          source?: string;
+          status?: string;
+          started_at?: string;
+          ended_at?: string | null;
+          last_position_at?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string;
+          file_id?: string;
+          transport_id?: string | null;
+          driver_id?: string | null;
+          vehicle_plate?: string | null;
+          source?: string;
+          status?: string;
+          started_at?: string;
+          ended_at?: string | null;
+          last_position_at?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "tracking_session_file_id_fkey";
+            columns: ["file_id"];
+            referencedRelation: "operational_file";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      tracking_position: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          tracking_session_id: string | null;
+          file_id: string;
+          transport_id: string | null;
+          latitude: number;
+          longitude: number;
+          accuracy_meters: number | null;
+          heading_degrees: number | null;
+          speed_kph: number | null;
+          source: string;
+          customer_visible: boolean;
+          recorded_at: string;
+          received_at: string;
+          recorded_by: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          tracking_session_id?: string | null;
+          file_id: string;
+          transport_id?: string | null;
+          latitude: number;
+          longitude: number;
+          accuracy_meters?: number | null;
+          heading_degrees?: number | null;
+          speed_kph?: number | null;
+          source: string;
+          customer_visible?: boolean;
+          recorded_at: string;
+          received_at?: string;
+          recorded_by?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string;
+          tracking_session_id?: string | null;
+          file_id?: string;
+          transport_id?: string | null;
+          latitude?: number;
+          longitude?: number;
+          accuracy_meters?: number | null;
+          heading_degrees?: number | null;
+          speed_kph?: number | null;
+          source?: string;
+          customer_visible?: boolean;
+          recorded_at?: string;
+          received_at?: string;
+          recorded_by?: string | null;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "tracking_position_file_id_fkey";
+            columns: ["file_id"];
+            referencedRelation: "operational_file";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      tracking_event: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          tracking_session_id: string | null;
+          file_id: string;
+          transport_id: string | null;
+          type: string;
+          source: string;
+          customer_visible: boolean;
+          customer_message: string | null;
+          internal_note: string | null;
+          latitude: number | null;
+          longitude: number | null;
+          dedup_key: string | null;
+          occurred_at: string;
+          created_by: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          tracking_session_id?: string | null;
+          file_id: string;
+          transport_id?: string | null;
+          type: string;
+          source?: string;
+          customer_visible?: boolean;
+          customer_message?: string | null;
+          internal_note?: string | null;
+          latitude?: number | null;
+          longitude?: number | null;
+          dedup_key?: string | null;
+          occurred_at?: string;
+          created_by?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string;
+          tracking_session_id?: string | null;
+          file_id?: string;
+          transport_id?: string | null;
+          type?: string;
+          source?: string;
+          customer_visible?: boolean;
+          customer_message?: string | null;
+          internal_note?: string | null;
+          latitude?: number | null;
+          longitude?: number | null;
+          dedup_key?: string | null;
+          occurred_at?: string;
+          created_by?: string | null;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "tracking_event_file_id_fkey";
             columns: ["file_id"];
             referencedRelation: "operational_file";
             referencedColumns: ["id"];

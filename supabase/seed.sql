@@ -49,7 +49,8 @@ from (values
   ('OPS_SUPERVISOR',        'Superviseur opérations',     'Operations Supervisor'),
   ('COMPLIANCE_HSSE',       'Responsable conformité/HSSE','Compliance / HSSE'),
   ('CLIENT_USER',           'Client (portail)',           'Client User'),
-  ('PARTNER_AGENT',         'Partenaire / agent',         'Partner / Agent')
+  ('PARTNER_AGENT',         'Partenaire / agent',         'Partner / Agent'),
+  ('DRIVER',                'Chauffeur',                  'Driver')
 ) as r(code, label_fr, label_en)
 on conflict (tenant_id, code) do nothing;
 
@@ -429,6 +430,52 @@ insert into public.role_permission (role_id, permission_id)
 select r.id, p.id
 from public.role r
 join public.permission p on p.code = 'communication:manage'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR')
+on conflict do nothing;
+
+-- ===========================================================================
+-- Phase 3.4 Real-time tracking — permissions catalog + role mappings (mirror of
+-- 20260710000002_create_tracking.sql, so a fresh local `db reset` gets them).
+-- DARK BY DEFAULT: these are read/write perms; the feature is gated by
+-- TRACKING_ENABLED (lib/tracking/config.ts). Idempotent.
+-- ===========================================================================
+insert into public.permission (code, module, action, data_scope, description) values
+  ('tracking:read',     'tracking', 'read',   'assigned', 'View transport tracking (sessions, positions, events)'),
+  ('tracking:read:all', 'tracking', 'read',   'all',      'View tenant-wide / fleet tracking'),
+  ('tracking:write',    'tracking', 'write',  'assigned', 'Record manual updates / driver positions'),
+  ('tracking:manage',   'tracking', 'manage', 'all',      'Admin tracking controls (end session, hide position, visibility defaults)')
+on conflict (code) do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'tracking:read'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'CEO', 'OPS_SUPERVISOR', 'ACCOUNT_MANAGER', 'COMPLIANCE_HSSE',
+                 'COORDINATOR', 'TRANSPORT_OFFICER', 'WAREHOUSE_COORDINATOR', 'DOCUMENTATION_OFFICER', 'DRIVER')
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'tracking:read:all'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'CEO', 'OPS_SUPERVISOR')
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'tracking:write'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR', 'COORDINATOR', 'TRANSPORT_OFFICER', 'DRIVER')
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'tracking:manage'
 where r.tenant_id = '00000000-0000-0000-0000-000000000001'
   and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR')
 on conflict do nothing;

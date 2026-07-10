@@ -36,6 +36,8 @@ const SYSTEM_MACHINE_ACTIONS = new Set<string>([
   // authenticated actor to attribute (the caller failed identity resolution).
   "auth.login.rejected",
   "portal.login.rejected",
+  // Phase 3.4 — external GPS/carrier provider webhook (reserved; no human actor).
+  "tracking.provider.webhook_received",
 ]);
 
 export function isSystemAction(action: string): boolean {
