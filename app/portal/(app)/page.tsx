@@ -1,96 +1,52 @@
 import Link from "next/link";
 import { requirePortalUser } from "@/lib/portal/auth";
-import { getPortalDashboard, listPortalFiles } from "@/lib/portal/service";
-import { listPortalInvoices } from "@/lib/portal/docs-service";
-import { portalShipmentCards } from "@/lib/portal/progress-map";
+import { getPortalShipments } from "@/lib/portal/shipments";
 import { listClientNotifications, unreadClientNotificationCount } from "@/lib/customer-notify/service";
+import { ShipmentsBoard } from "@/components/portal/shipments-board";
+import { NotificationsFeed } from "@/components/portal/notifications-feed";
 import { t } from "@/lib/i18n";
 
 export const dynamic = "force-dynamic";
 
-const STATUS_LABEL: Record<string, string> = t.files.statuses;
-
 export default async function PortalDashboardPage() {
   const user = await requirePortalUser();
-  const [data, files, invoices, notifications, unread] = await Promise.all([
-    getPortalDashboard(user.clientName),
-    listPortalFiles(),
-    listPortalInvoices(),
-    listClientNotifications(3),
+  const [shipments, notifications, unread] = await Promise.all([
+    getPortalShipments(),
+    listClientNotifications(5),
     unreadClientNotificationCount(),
   ]);
-  const p = t.portal.dashboard;
+  const p = t.portal.premium;
   const nc = t.portal.notify.center;
-  const cards = portalShipmentCards(
-    files.map((f) => ({ status: f.status, transportStatus: f.transportStatus })),
-    invoices.map((i) => ({ status: i.status, balance: i.balance })),
-  );
+  const active = shipments.filter((s) => s.status !== "CLOSED");
 
   return (
-    <div className="animate-fade-in space-y-6">
-      <div>
-        <p className="text-sm text-slate-500">{p.welcome}</p>
-        <h1 className="text-2xl font-bold text-navy-900">{user.clientName ?? user.email}</h1>
+    <div className="animate-fade-in space-y-8">
+      {/* Hero */}
+      <div className="overflow-hidden rounded-2xl bg-gradient-to-br from-navy-900 via-navy-800 to-teal-800 px-5 py-6 text-white shadow-card sm:px-7">
+        <p className="text-[11px] uppercase tracking-[0.14em] text-teal-200">{p.welcome}</p>
+        <h1 className="mt-0.5 text-2xl font-bold sm:text-3xl">{user.clientName ?? user.email}</h1>
+        <p className="mt-1 max-w-xl text-sm text-teal-100">{p.activeSubtitle}</p>
       </div>
 
-      {/* My shipments (Phase 2.4 D7) */}
-      <section>
-        <h2 className="mb-3 text-sm font-semibold text-navy-900">{p.shipments.title}</h2>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {([
-            [p.shipments.active, cards.active, "text-navy-900"],
-            [p.shipments.inTransit, cards.inTransit, "text-amber-700"],
-            [p.shipments.delivered, cards.delivered, "text-teal-700"],
-            [p.shipments.awaitingPayment, cards.awaitingPayment, "text-red-600"],
-          ] as const).map(([label, value, tone]) => (
-            <div key={label} className="surface p-4">
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
-              <p className={`mt-2 tabular text-2xl font-bold ${tone}`}>{value}</p>
-            </div>
-          ))}
-        </div>
+      {/* Active shipments */}
+      <section className="space-y-3">
+        <h2 className="text-lg font-bold text-navy-900">{p.activeTitle}</h2>
+        <ShipmentsBoard shipments={active} />
       </section>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className="surface p-4">
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{p.total}</p>
-          <p className="mt-2 text-2xl font-bold tabular text-teal-700">{data.total}</p>
+      {/* Notifications */}
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="flex items-center gap-2 text-lg font-bold text-navy-900">
+            {nc.title}
+            {unread > 0 && <span className="rounded-full bg-teal-600 px-2 py-0.5 text-xs font-medium text-white">{unread}</span>}
+          </h2>
+          <Link href="/portal/notifications" className="text-sm font-medium text-teal-700 hover:underline">
+            {nc.viewAll} →
+          </Link>
         </div>
-        {Object.entries(data.byStatus).map(([status, count]) => (
-          <div key={status} className="surface p-4">
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-              {STATUS_LABEL[status] ?? status}
-            </p>
-            <p className="mt-2 text-2xl font-bold tabular text-navy-900">{count}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Notifications widget (Phase 2.5) */}
-      <section>
-        <h2 className="mb-3 text-sm font-semibold text-navy-900">
-          {nc.title}
-          {unread > 0 && <span className="ml-2 rounded-full bg-teal-600 px-2 py-0.5 text-xs font-medium text-white">{unread}</span>}
-        </h2>
-        {notifications.length === 0 ? (
-          <div className="surface p-4 text-sm text-slate-500">{nc.empty}</div>
-        ) : (
-          <div className="surface divide-y divide-slate-100">
-            {notifications.map((n) => (
-              <div key={n.id} className={`p-3 text-sm ${n.readAt ? "" : "bg-teal-50/40"}`}>
-                <span className={n.readAt ? "text-navy-800" : "font-semibold text-navy-900"}>{n.title}</span>
-              </div>
-            ))}
-          </div>
-        )}
-        <Link href="/portal/notifications" className="mt-2 inline-block text-sm font-medium text-teal-700 hover:underline">
-          {nc.viewAll} →
-        </Link>
+        <NotificationsFeed items={notifications} />
       </section>
-
-      <Link href="/portal/files" className="inline-block text-sm font-medium text-teal-700 hover:underline">
-        {p.viewFiles} →
-      </Link>
     </div>
   );
 }

@@ -36,18 +36,22 @@ export async function auditPortalInvoiceView(
 type DocRow = {
   id: string;
   file_id: string;
+  type_code: string;
+  status: string;
   title: string | null;
   created_at: string;
   doc_type: { label_fr: string } | null;
   file: { file_number: string } | null;
 };
 const DOC_SELECT =
-  "id, file_id, title, created_at, doc_type:type_code(label_fr), file:file_id(file_number)";
+  "id, file_id, type_code, status, title, created_at, doc_type:type_code(label_fr), file:file_id(file_number)";
 
 function toDoc(d: DocRow): PortalDocument {
   return {
     id: d.id,
-    typeLabel: d.doc_type?.label_fr ?? "",
+    typeCode: d.type_code,
+    typeLabel: d.doc_type?.label_fr ?? d.type_code,
+    status: d.status,
     title: d.title,
     fileId: d.file_id,
     fileNumber: d.file?.file_number ?? null,

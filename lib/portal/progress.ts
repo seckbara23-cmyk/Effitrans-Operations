@@ -14,13 +14,19 @@ import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { getCurrentPortalUser } from "./auth";
 import { getDossierLifecycle } from "@/lib/files/lifecycle";
 import { invoiceTotals, paidAmount, balanceDue } from "@/lib/finance/calc";
+import { assessRisk, overdueDays, type RiskInput } from "@/lib/copilot/risk-engine";
 import { toPortalTimeline, portalActivity, type PortalTimeline, type PortalStageKey } from "./progress-map";
+import { toPortalRisk, deriveEta, type PortalRiskLevel, type PortalEta } from "./shipment-view";
 
 export type PortalProgress = {
   timeline: PortalTimeline;
   activity: PortalStageKey[];
   lastUpdate: string | null;
   podAvailable: boolean;
+  // Phase 3.3 — derived, customer-safe views (reuse the Risk Engine + ETA helper).
+  risk: PortalRiskLevel;
+  eta: PortalEta;
+  currentDepartment: string | null;
 };
 
 export async function getPortalProgress(fileId: string): Promise<PortalProgress | null> {
@@ -43,8 +49,8 @@ export async function getPortalProgress(fileId: string): Promise<PortalProgress 
     admin.from("document").select("type_code, status, shared_with_client").eq("tenant_id", tenant).eq("file_id", fileId).is("deleted_at", null).returns<{ type_code: string; status: string; shared_with_client: boolean }[]>(),
     admin.from("document_type").select("code, required_for").eq("active", true).returns<{ code: string; required_for: string[] | null }[]>(),
     admin.from("customs_record").select("status, required, updated_at").eq("tenant_id", tenant).eq("file_id", fileId).is("deleted_at", null).maybeSingle<{ status: string; required: boolean; updated_at: string }>(),
-    admin.from("transport_record").select("status, updated_at").eq("tenant_id", tenant).eq("file_id", fileId).is("deleted_at", null).maybeSingle<{ status: string; updated_at: string }>(),
-    admin.from("invoice").select("id, status, updated_at").eq("tenant_id", tenant).eq("file_id", fileId).returns<{ id: string; status: string; updated_at: string }[]>(),
+    admin.from("transport_record").select("status, updated_at, delivery_planned, delivery_actual").eq("tenant_id", tenant).eq("file_id", fileId).is("deleted_at", null).maybeSingle<{ status: string; updated_at: string; delivery_planned: string | null; delivery_actual: string | null }>(),
+    admin.from("invoice").select("id, status, due_date, updated_at").eq("tenant_id", tenant).eq("file_id", fileId).returns<{ id: string; status: string; due_date: string | null; updated_at: string }[]>(),
   ]);
 
   const docs = docsRes.data ?? [];
@@ -55,7 +61,7 @@ export async function getPortalProgress(fileId: string): Promise<PortalProgress 
   const podApproved = docs.some((d) => d.type_code === "DELIVERY_NOTE" && d.status === "APPROVED");
 
   // Invoice balances for the lifecycle (no amounts exposed in the timeline).
-  const invoices: { status: string; balance: number }[] = [];
+  const invoices: { status: string; balance: number; dueDate: string | null }[] = [];
   const invIds = (invRes.data ?? []).map((i) => i.id);
   if (invIds.length) {
     const [lineRes, payRes] = await Promise.all([
@@ -65,7 +71,7 @@ export async function getPortalProgress(fileId: string): Promise<PortalProgress 
     for (const inv of invRes.data ?? []) {
       const lines = (lineRes.data ?? []).filter((l) => l.invoice_id === inv.id).map((l) => ({ quantity: Number(l.quantity), unitAmount: Number(l.unit_amount), taxRate: Number(l.tax_rate) }));
       const pays = (payRes.data ?? []).filter((p) => p.invoice_id === inv.id).map((p) => ({ amount: Number(p.amount), reversed: p.reversed_at != null }));
-      invoices.push({ status: inv.status, balance: balanceDue(invoiceTotals(lines).total, paidAmount(pays)) });
+      invoices.push({ status: inv.status, balance: balanceDue(invoiceTotals(lines).total, paidAmount(pays)), dueDate: inv.due_date });
     }
   }
 
@@ -87,5 +93,36 @@ export async function getPortalProgress(fileId: string): Promise<PortalProgress 
     .sort()
     .pop() ?? null;
 
-  return { timeline, activity: portalActivity(timeline), lastUpdate, podAvailable };
+  // Phase 3.3 — derived risk (reuse the Risk Engine) + ETA (reuse the helper).
+  const now = new Date();
+  const overdue = invoices.filter(
+    (i) => (i.status === "ISSUED" || i.status === "PARTIALLY_PAID") && i.balance > 0 && i.dueDate != null && new Date(i.dueDate).getTime() < now.getTime(),
+  );
+  const maxOverdue = overdue.reduce((m, i) => Math.max(m, overdueDays(i.dueDate, now)), 0);
+  const riskInput: RiskInput = {
+    lifecycle: { currentDepartment: lifecycle.currentDepartment, nextAction: lifecycle.nextAction?.action ?? null },
+    sla: null,
+    documents: { missingRequiredCount: missingRequired.length },
+    customs: customsRes.data ? { underInspection: customsRes.data.status === "INSPECTION", inspectionDays: null } : null,
+    transport: transportRes.data ? { awaitingPod: transportRes.data.status === "DELIVERED" && !podApproved, transitExceedsSla: false } : null,
+    finance: invoices.length ? { overdueCount: overdue.length, maxOverdueDays: maxOverdue || null } : null,
+  };
+  const risk = toPortalRisk(assessRisk(riskInput).level);
+  const eta = deriveEta({
+    deliveryPlanned: transportRes.data?.delivery_planned ?? null,
+    deliveryActual: transportRes.data?.delivery_actual ?? null,
+    delivered: timeline.stages.find((s) => s.key === "delivered")?.status === "completed",
+    lastUpdate,
+    now,
+  });
+
+  return {
+    timeline,
+    activity: portalActivity(timeline),
+    lastUpdate,
+    podAvailable,
+    risk,
+    eta,
+    currentDepartment: lifecycle.currentDepartment,
+  };
 }

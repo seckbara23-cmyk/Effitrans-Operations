@@ -2,6 +2,34 @@
  * Portal shared types (Phase 1.12A). Client + server safe.
  */
 import type { PortalRole, PortalUserStatus } from "./access";
+import type { PortalStageKey } from "./progress-map";
+import type { PortalRiskLevel, Availability } from "./shipment-view";
+
+/** Premium shipment card (Phase 3.3) — derived from existing services, batched. */
+export type PortalShipmentCard = {
+  id: string;
+  fileNumber: string;
+  reference: string | null; // BL / container / client ref
+  type: string;
+  origin: string | null;
+  destination: string | null;
+  transportMode: string | null;
+  status: string;
+  currentStageKey: PortalStageKey | null;
+  percent: number;
+  officerName: string | null;
+  eta: string | null; // estimated delivery ISO, or null
+  lastActivity: string | null;
+  risk: PortalRiskLevel;
+};
+
+/** Assigned Effitrans officer contact (Phase 3.3) — read-only, no schema change. */
+export type PortalOfficer = {
+  name: string | null;
+  email: string;
+  department: string | null;
+  availability: Availability;
+};
 
 export type PortalUser = {
   id: string;
@@ -36,7 +64,9 @@ export type PortalDashboard = {
 
 export type PortalDocument = {
   id: string;
+  typeCode: string;
   typeLabel: string;
+  status: string;
   title: string | null;
   fileId: string;
   fileNumber: string | null;
