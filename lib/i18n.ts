@@ -1428,6 +1428,8 @@ export const t = {
       upstream: "Le service IA est momentanément indisponible. Réessayez plus tard.",
       forbidden: "Vous n'êtes pas autorisé à utiliser le copilote sur ce dossier.",
       notFound: "Dossier introuvable.",
+      rateLimited: "Limite de requêtes atteinte. Réessayez dans un instant.",
+      timeout: "Le modèle n'a pas répondu dans le délai imparti. Réessayez.",
     },
   },
   risk: {

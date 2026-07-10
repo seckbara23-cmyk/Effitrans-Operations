@@ -13,11 +13,16 @@ import { t } from "@/lib/i18n";
 
 type Turn = { role: "user" | "assistant"; text: string };
 
+// Fallback only — used when the server response carries no specific { error }
+// message (e.g. the plain-text 401/403/404 guards). Normal AI failures now send
+// a precise diagnostic which is shown verbatim.
 const ERROR_BY_STATUS: Record<number, string> = {
   403: t.copilot.errors.forbidden,
   404: t.copilot.errors.notFound,
+  429: t.copilot.errors.rateLimited,
   502: t.copilot.errors.upstream,
   503: t.copilot.errors.unconfigured,
+  504: t.copilot.errors.timeout,
 };
 
 export function CopilotPanel({ fileId }: { fileId: string }) {
@@ -42,7 +47,10 @@ export function CopilotPanel({ fileId }: { fileId: string }) {
         body: JSON.stringify({ fileId, prompt: q }),
       });
       if (!res.ok) {
-        setError(ERROR_BY_STATUS[res.status] ?? t.copilot.errors.generic);
+        // Prefer the server's specific diagnostic message; fall back to a
+        // status-based message for the plain-text auth guards.
+        const detail = (await res.json().catch(() => null)) as { error?: string } | null;
+        setError(detail?.error || ERROR_BY_STATUS[res.status] || t.copilot.errors.generic);
         return;
       }
       const data = (await res.json()) as { text?: string };
