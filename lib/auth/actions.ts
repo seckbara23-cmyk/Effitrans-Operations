@@ -8,10 +8,22 @@
  * invokes them as server actions. Best-effort — an audit failure must NEVER
  * block authentication, so each swallows its own errors.
  */
-import { getCurrentUser } from "./current-user";
+import { getCurrentUser, getSessionClass } from "./current-user";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
 import { recordStaffLogin } from "@/lib/users/presence-track";
+
+/**
+ * Where a just-signed-in user belongs (Phase 3.2B hotfix). A PORTAL client who
+ * mistakenly used the STAFF /login (same Auth project accepts their password) is
+ * sent to /portal instead of /dashboard — never into the staff loop. The portal
+ * (app) layout then routes them to the forced change-password screen if needed.
+ */
+export async function loginDestination(): Promise<string> {
+  const cls = await getSessionClass();
+  if (cls === "portal") return "/portal";
+  return "/dashboard"; // staff (and the orphan edge case, which /login re-renders)
+}
 
 export async function recordLoginAudit(): Promise<void> {
   try {

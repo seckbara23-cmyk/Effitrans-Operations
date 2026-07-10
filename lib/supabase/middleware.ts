@@ -11,6 +11,7 @@
  */
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
+import { classifySession } from "@/lib/auth/session-class";
 
 // Routes reachable without authentication. The OAuth callbacks + the password
 // reset pages (Phase 1.16) MUST be public: they run the code→session exchange,
@@ -67,11 +68,21 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
     return NextResponse.redirect(loginUrl);
   }
 
-  // Authenticated user landing on /login -> send to the dashboard.
+  // Authenticated user landing on the STAFF /login -> route by identity class so
+  // a PORTAL session is never thrown into the staff /login <-> /dashboard loop.
+  // Only this rare authenticated-/login path pays the extra self-row lookups.
   if (user && pathname === "/login") {
-    const dashUrl = request.nextUrl.clone();
-    dashUrl.pathname = "/dashboard";
-    return NextResponse.redirect(dashUrl);
+    const [{ data: appUser }, { data: clientUser }] = await Promise.all([
+      supabase.from("app_user").select("id").eq("id", user.id).maybeSingle(),
+      supabase.from("client_user").select("id").eq("id", user.id).maybeSingle(),
+    ]);
+    const cls = classifySession(Boolean(appUser), Boolean(clientUser));
+    if (cls !== "none") {
+      const dest = request.nextUrl.clone();
+      dest.pathname = cls === "portal" ? "/portal" : "/dashboard";
+      return NextResponse.redirect(dest);
+    }
+    // Orphan session (no profile of either class) -> render /login, never loop.
   }
 
   return response;

@@ -63,3 +63,21 @@ export async function recordPortalLogin(): Promise<{ ok: boolean; error?: string
   // screen. The (app) layout guard enforces this server-side regardless.
   return { ok: true, mustChangePassword: cu.must_change_password === true };
 }
+
+/**
+ * Phase 3.2B hotfix — where an ALREADY-signed-in visitor to /portal/login should
+ * go: "/portal" only for an ACTIVE portal client (the (app) layout then routes to
+ * the forced change-password screen if needed). Returns null for disabled/invited
+ * portal, staff or unauthenticated visitors, so the login form renders (no loop).
+ */
+export async function activePortalHome(): Promise<string | null> {
+  const ctx = getServerSupabaseClient();
+  const {
+    data: { user },
+  } = await ctx.auth.getUser();
+  if (!user) return null;
+
+  const admin = getAdminSupabaseClient();
+  const { data: cu } = await admin.from("client_user").select("status").eq("id", user.id).maybeSingle();
+  return cu?.status === "ACTIVE" ? "/portal" : null;
+}

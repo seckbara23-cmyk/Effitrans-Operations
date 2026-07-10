@@ -7,13 +7,22 @@
  * mechanism is ready for when the login UI (AUTH-1 completion) lands.
  */
 import { redirect } from "next/navigation";
-import { getCurrentUser, type CurrentUser } from "./current-user";
+import { getCurrentUser, getSessionClass, type CurrentUser } from "./current-user";
 
-/** Returns the authenticated user, or redirects to /login if unauthenticated. */
+/**
+ * Returns the authenticated STAFF user, or redirects.
+ *
+ * Phase 3.2B hotfix: a portal client_user has NO app_user, so getCurrentUser is
+ * null for them. Redirecting them to /login triggered a loop (middleware then
+ * sent the authenticated /login back to /dashboard). A valid PORTAL session is
+ * now routed to /portal instead; only a genuinely unauthenticated (or orphan)
+ * caller goes to /login.
+ */
 export async function requireUser(): Promise<CurrentUser> {
   const user = await getCurrentUser();
   if (!user) {
-    redirect("/login");
+    const cls = await getSessionClass();
+    redirect(cls === "portal" ? "/portal" : "/login");
   }
   return user;
 }

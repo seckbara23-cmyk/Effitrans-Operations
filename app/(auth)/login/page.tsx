@@ -11,7 +11,7 @@
 import { useEffect, useState } from "react";
 import { LogoWordmark } from "@/components/brand/logo";
 import { getBrowserSupabaseClient } from "@/lib/supabase/client";
-import { recordLoginAudit } from "@/lib/auth/actions";
+import { recordLoginAudit, loginDestination } from "@/lib/auth/actions";
 import { recordPasswordResetRequest } from "@/lib/auth/password-reset";
 import { t } from "@/lib/i18n";
 
@@ -73,7 +73,9 @@ export default function LoginPage() {
         return;
       }
       await recordLoginAudit();
-      window.location.href = "/dashboard";
+      // Route by identity: a portal client who used the staff login goes to the
+      // portal, not the staff dashboard (avoids the /dashboard ⇄ /login loop).
+      window.location.href = await loginDestination();
     } catch {
       setError(t.auth.error);
     } finally {

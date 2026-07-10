@@ -10,7 +10,7 @@
  */
 import { useEffect, useState } from "react";
 import { getBrowserSupabaseClient } from "@/lib/supabase/client";
-import { recordPortalLogin } from "@/lib/portal/actions";
+import { recordPortalLogin, activePortalHome } from "@/lib/portal/actions";
 import { recordPortalPasswordResetRequest } from "@/lib/portal/password-reset";
 import { t } from "@/lib/i18n";
 
@@ -35,6 +35,23 @@ export default function PortalLoginPage() {
     if (reset === "success") setInfo(p.reset.success);
     else if (reset === "invalid") setError(p.reset.invalid);
   }, [p]);
+
+  // Phase 3.2B hotfix — an already-signed-in ACTIVE portal client shouldn't see
+  // the login form: send them home (→ change-password if still required). Safe
+  // for disabled/invited/staff/none (activePortalHome returns null → render).
+  useEffect(() => {
+    (async () => {
+      try {
+        const supabase = getBrowserSupabaseClient();
+        const { data: sess } = await supabase.auth.getSession();
+        if (!sess.session) return;
+        const dest = await activePortalHome();
+        if (dest) window.location.href = dest;
+      } catch {
+        /* ignore — render the login form */
+      }
+    })();
+  }, []);
 
   async function onGoogle() {
     setError(null);

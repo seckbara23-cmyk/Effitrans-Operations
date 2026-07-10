@@ -12,6 +12,7 @@
 import { cache } from "react";
 import { getServerSupabaseClient } from "@/lib/supabase/server";
 import { touchStaffSeen } from "@/lib/users/presence-track";
+import { classifySession, type SessionClass } from "./session-class";
 
 export type CurrentUser = {
   /** app_user.id === auth.users.id */
@@ -80,4 +81,24 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
     isSystemAdmin: profile.is_system_admin,
     roles,
   };
+});
+
+/**
+ * Classify the current session as staff / portal / none (Phase 3.2B hotfix).
+ * Used by the staff guard + staff login redirect so a valid PORTAL session is
+ * routed to the portal, never bounced into the staff /login ⇄ /dashboard loop.
+ * Request-scoped memoized. Reads own rows only (self-select RLS on both tables).
+ */
+export const getSessionClass = cache(async (): Promise<SessionClass> => {
+  const supabase = getServerSupabaseClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return "none";
+
+  const [{ data: appUser }, { data: clientUser }] = await Promise.all([
+    supabase.from("app_user").select("id").eq("id", user.id).maybeSingle(),
+    supabase.from("client_user").select("id").eq("id", user.id).maybeSingle(),
+  ]);
+  return classifySession(Boolean(appUser), Boolean(clientUser));
 });
