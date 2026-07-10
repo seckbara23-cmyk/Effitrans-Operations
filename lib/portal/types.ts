@@ -3,9 +3,10 @@
  */
 import type { PortalRole, PortalUserStatus } from "./access";
 import type { PortalStageKey } from "./progress-map";
-import type { PortalRiskLevel, Availability } from "./shipment-view";
+import type { Availability } from "./shipment-view";
+import type { DelayState } from "./tracking-derive";
 
-/** Premium shipment card (Phase 3.3) — derived from existing services, batched. */
+/** Premium shipment card (Phase 3.3 / 3.3A) — derived from existing services, batched. */
 export type PortalShipmentCard = {
   id: string;
   fileNumber: string;
@@ -13,6 +14,7 @@ export type PortalShipmentCard = {
   type: string;
   origin: string | null;
   destination: string | null;
+  routeDisplay: string; // resolved route (never "— → —")
   transportMode: string | null;
   status: string;
   currentStageKey: PortalStageKey | null;
@@ -20,15 +22,20 @@ export type PortalShipmentCard = {
   officerName: string | null;
   eta: string | null; // estimated delivery ISO, or null
   lastActivity: string | null;
-  risk: PortalRiskLevel;
+  delayState: DelayState;
+  delayLabel: string;
+  nextStepTitle: string;
 };
 
-/** Assigned Effitrans officer contact (Phase 3.3) — read-only, no schema change. */
+/** Customer-safe assigned officer (Phase 3.3A) — never a personal email or generic identity. */
 export type PortalOfficer = {
-  name: string | null;
-  email: string;
+  name: string;
+  title: string; // customer-safe role label
   department: string | null;
+  businessEmail: string | null; // env-configured business contact only
+  businessPhone: string | null;
   availability: Availability;
+  isTeam: boolean; // true when falling back to the operations team
 };
 
 export type PortalUser = {

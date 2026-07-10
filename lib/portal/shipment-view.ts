@@ -20,54 +20,8 @@ export function toPortalRisk(level: RiskLevel): PortalRiskLevel {
   return "on_track";
 }
 
-// -------------------------------------------------------------------- ETA view
-export type EtaConfidence = "high" | "medium" | "low";
-export type PortalEta = {
-  estimated: string | null; // ISO date, or null when not yet estimable
-  confidence: EtaConfidence;
-  delayDays: number; // 0 when on time / delivered
-  reasonKey: "delivered" | "on_schedule" | "delayed" | "no_estimate";
-};
-
+// The canonical ETA engine now lives in ./eta (Phase 3.3A, Deliverable 8).
 const DAY = 86_400_000;
-
-/**
- * Derive an ETA from the shipment's own timestamps (planned/actual delivery) and
- * progress. No prediction/AI — a plain, explainable estimate from existing SLA/
- * transport data.
- */
-export function deriveEta(input: {
-  deliveryPlanned: string | null;
-  deliveryActual: string | null;
-  delivered: boolean;
-  lastUpdate: string | null;
-  now: Date;
-}): PortalEta {
-  if (input.delivered || input.deliveryActual) {
-    return {
-      estimated: input.deliveryActual ?? input.lastUpdate,
-      confidence: "high",
-      delayDays: 0,
-      reasonKey: "delivered",
-    };
-  }
-  if (!input.deliveryPlanned) {
-    return { estimated: null, confidence: "low", delayDays: 0, reasonKey: "no_estimate" };
-  }
-  const planned = new Date(input.deliveryPlanned).getTime();
-  if (Number.isNaN(planned)) {
-    return { estimated: null, confidence: "low", delayDays: 0, reasonKey: "no_estimate" };
-  }
-  const overdueMs = input.now.getTime() - planned;
-  const delayDays = overdueMs > 0 ? Math.floor(overdueMs / DAY) : 0;
-  if (delayDays <= 0) {
-    return { estimated: input.deliveryPlanned, confidence: "high", delayDays: 0, reasonKey: "on_schedule" };
-  }
-  // Past the planned date but not yet delivered → still estimate the plan, with
-  // decreasing confidence as the delay grows.
-  const confidence: EtaConfidence = delayDays <= 2 ? "medium" : "low";
-  return { estimated: input.deliveryPlanned, confidence, delayDays, reasonKey: "delayed" };
-}
 
 // ---------------------------------------------------------------- availability
 export type Availability = "online" | "recent" | "offline";

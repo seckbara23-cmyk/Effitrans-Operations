@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
   toPortalRisk,
-  deriveEta,
   classifyAvailability,
   documentCategory,
   groupDocuments,
@@ -20,32 +19,6 @@ describe("toPortalRisk (customer-safe risk view)", () => {
     expect(toPortalRisk("medium")).toBe("attention");
     expect(toPortalRisk("high")).toBe("delayed");
     expect(toPortalRisk("critical")).toBe("delayed");
-  });
-});
-
-describe("deriveEta (no AI — plain, explainable)", () => {
-  it("delivered → high confidence, no delay", () => {
-    const e = deriveEta({ deliveryPlanned: null, deliveryActual: "2026-06-18", delivered: true, lastUpdate: null, now: NOW });
-    expect(e.reasonKey).toBe("delivered");
-    expect(e.delayDays).toBe(0);
-    expect(e.estimated).toBe("2026-06-18");
-  });
-  it("no planned date → no estimate", () => {
-    const e = deriveEta({ deliveryPlanned: null, deliveryActual: null, delivered: false, lastUpdate: null, now: NOW });
-    expect(e.reasonKey).toBe("no_estimate");
-    expect(e.estimated).toBeNull();
-  });
-  it("planned in the future → on schedule, high confidence", () => {
-    const e = deriveEta({ deliveryPlanned: "2026-06-25", deliveryActual: null, delivered: false, lastUpdate: null, now: NOW });
-    expect(e.reasonKey).toBe("on_schedule");
-    expect(e.confidence).toBe("high");
-    expect(e.delayDays).toBe(0);
-  });
-  it("planned in the past → delayed with day count and dropping confidence", () => {
-    const e = deriveEta({ deliveryPlanned: "2026-06-15", deliveryActual: null, delivered: false, lastUpdate: null, now: NOW });
-    expect(e.reasonKey).toBe("delayed");
-    expect(e.delayDays).toBe(5);
-    expect(e.confidence).toBe("low"); // > 2 days late
   });
 });
 

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { t } from "@/lib/i18n";
 import { relativeLabel } from "@/lib/portal/progress-map";
 import { formatShortDate } from "@/lib/portal/shipment-view";
-import { RiskBadge } from "./risk-badge";
+import { DelayBadge } from "./delay-badge";
 import type { PortalShipmentCard } from "@/lib/portal/types";
 
 const MODE_ICON: Record<string, string> = { SEA: "🚢", AIR: "✈️", ROAD: "🚚", MULTIMODAL: "🔀" };
@@ -36,10 +36,9 @@ export function ShipmentCard({ s }: { s: PortalShipmentCard }) {
 
       <div className="space-y-3 p-4">
         {/* route */}
-        <div className="flex items-center gap-2 text-sm text-navy-900">
-          <span className="truncate font-medium">{s.origin ?? "—"}</span>
-          <span className="text-teal-500">→</span>
-          <span className="truncate font-medium">{s.destination ?? "—"}</span>
+        <div className="flex items-center gap-1.5 text-sm font-medium text-navy-900">
+          <span aria-hidden className="text-teal-500">📍</span>
+          <span className="truncate">{s.routeDisplay}</span>
         </div>
 
         {/* progress bar */}
@@ -68,8 +67,14 @@ export function ShipmentCard({ s }: { s: PortalShipmentCard }) {
             <p className="font-medium text-navy-800">{relativeLabel(s.lastActivity, new Date())}</p>
           </div>
           <div className="flex items-end">
-            <RiskBadge risk={s.risk} />
+            <DelayBadge state={s.delayState} label={s.delayLabel} />
           </div>
+        </div>
+
+        {/* next step */}
+        <div className="rounded-lg bg-slate-50 px-3 py-2">
+          <p className="text-[10px] uppercase tracking-wide text-slate-400">{c.nextStep}</p>
+          <p className="text-xs font-medium text-navy-800">{s.nextStepTitle}</p>
         </div>
 
         <span className="inline-flex items-center gap-1 text-sm font-semibold text-teal-700 group-hover:gap-2">
