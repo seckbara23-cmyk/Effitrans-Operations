@@ -20,7 +20,7 @@ import { getCurrentUser } from "@/lib/auth/current-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { buildCopilotContext } from "@/lib/copilot/context";
 import { buildMessages } from "@/lib/copilot/prompt";
-import { runCopilot, CopilotError, getCopilotConfig } from "@/lib/copilot/openai";
+import { runCopilot, CopilotError, getCopilotConfig } from "@/lib/copilot/engine";
 import { reportError } from "@/lib/observability/report";
 
 export const dynamic = "force-dynamic";
@@ -41,7 +41,12 @@ export async function GET() {
     return new NextResponse("Forbidden", { status: 403 });
   }
   const config = getCopilotConfig();
-  return NextResponse.json({ configured: config.apiKeyPresent, ...config });
+  return NextResponse.json({
+    configured: config.configured,
+    provider: config.provider,
+    model: config.model,
+    apiKeyPresent: config.apiKeyPresent,
+  });
 }
 
 export async function POST(req: Request) {

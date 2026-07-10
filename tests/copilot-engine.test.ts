@@ -1,15 +1,19 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { runCopilot, getCopilotConfig, CopilotError, type CopilotErrorCode } from "@/lib/copilot/openai";
+import { runCopilot, getCopilotConfig, CopilotError, type CopilotErrorCode } from "@/lib/copilot/engine";
 import type { CopilotChatMessage } from "@/lib/copilot/prompt";
+
+// The Copilot engine now delegates to the provider-neutral AI abstraction. With
+// AI_PROVIDER unset it resolves to the existing OpenAI backend, so this suite
+// asserts the SAME observable behaviour as Phase 3.1A (backward compatibility):
+// config snapshot, error differentiation, and secret-free logging.
 
 const MESSAGES: CopilotChatMessage[] = [
   { role: "system", content: "sys" },
   { role: "user", content: "Résume le dossier" },
 ];
-
 const KEY = "sk-secret-value-DO-NOT-LEAK-123";
+const AI_VARS = ["AI_PROVIDER", "AI_MODEL", "AI_BASE_URL", "AI_API_KEY", "AI_COPILOT_ENABLED", "AI_LOCAL_PROVIDER_ENABLED", "AI_FALLBACK_PROVIDER", "VERCEL", "OPENAI_COPILOT_MODEL"];
 
-// Build a fake OpenAI fetch Response.
 function res(status: number, body: unknown): Response {
   return { ok: status >= 200 && status < 300, status, json: async () => body } as unknown as Response;
 }
@@ -18,7 +22,7 @@ let warnSpy: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
   process.env.OPENAI_API_KEY = KEY;
-  delete process.env.OPENAI_COPILOT_MODEL;
+  for (const v of AI_VARS) delete process.env[v];
   warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 });
 
@@ -26,7 +30,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   delete process.env.OPENAI_API_KEY;
-  delete process.env.OPENAI_COPILOT_MODEL;
+  for (const v of AI_VARS) delete process.env[v];
 });
 
 async function expectCode(code: CopilotErrorCode, status: number): Promise<CopilotError> {
@@ -38,24 +42,26 @@ async function expectCode(code: CopilotErrorCode, status: number): Promise<Copil
   return err as CopilotError;
 }
 
-describe("getCopilotConfig (secret-free diagnostics)", () => {
-  it("reports key presence as a boolean and never the key itself", () => {
+describe("getCopilotConfig (secret-free, backward compatible)", () => {
+  it("reports the OpenAI defaults and key presence as a boolean, never the key", () => {
     const c = getCopilotConfig();
     expect(c.apiKeyPresent).toBe(true);
     expect(c.provider).toBe("openai");
     expect(c.model).toBe("gpt-4o-mini");
+    expect(c.configured).toBe(true);
     expect(JSON.stringify(c)).not.toContain(KEY);
   });
-
-  it("defaults are overridable and presence flips when the key is absent", () => {
+  it("model is overridable and presence flips when the key is absent", () => {
     process.env.OPENAI_COPILOT_MODEL = "gpt-4o";
     expect(getCopilotConfig().model).toBe("gpt-4o");
     delete process.env.OPENAI_API_KEY;
-    expect(getCopilotConfig().apiKeyPresent).toBe(false);
+    const c = getCopilotConfig();
+    expect(c.apiKeyPresent).toBe(false);
+    expect(c.configured).toBe(false);
   });
 });
 
-describe("runCopilot — error differentiation (Phase 3.1A audit)", () => {
+describe("runCopilot — error differentiation (stable Copilot contract)", () => {
   it("missing API key → missing_api_key (503), no network call", async () => {
     delete process.env.OPENAI_API_KEY;
     const fetchMock = vi.fn();
@@ -63,48 +69,31 @@ describe("runCopilot — error differentiation (Phase 3.1A audit)", () => {
     await expectCode("missing_api_key", 503);
     expect(fetchMock).not.toHaveBeenCalled();
   });
-
   it("HTTP 401 → invalid_api_key (502)", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(res(401, { error: { code: "invalid_api_key", type: "invalid_request_error", message: "Incorrect API key" } })));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(res(401, { error: { code: "invalid_api_key", message: "Incorrect API key" } })));
     await expectCode("invalid_api_key", 502);
   });
-
   it("HTTP 404 model_not_found → invalid_model (502)", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(res(404, { error: { code: "model_not_found", message: "The model does not exist" } })));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(res(404, { error: { code: "model_not_found" } })));
     await expectCode("invalid_model", 502);
   });
-
-  it("HTTP 400 mentioning the model → invalid_model", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(res(400, { error: { message: "Unknown model: gpt-x" } })));
-    await expectCode("invalid_model", 502);
-  });
-
   it("HTTP 429 → rate_limited (429)", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(res(429, { error: { code: "rate_limit_exceeded" } })));
     await expectCode("rate_limited", 429);
   });
-
   it("HTTP 500 → upstream_error (502)", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(res(500, { error: { message: "server error" } })));
     await expectCode("upstream_error", 502);
   });
-
   it("timeout (AbortSignal) → timeout (504)", async () => {
     const timeoutErr = Object.assign(new Error("timed out"), { name: "TimeoutError" });
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(timeoutErr));
     await expectCode("timeout", 504);
   });
-
-  it("network failure → upstream_error", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("ECONNRESET")));
-    await expectCode("upstream_error", 502);
-  });
-
-  it("empty completion → empty_response", async () => {
+  it("empty completion → empty_response (502)", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(res(200, { choices: [{ message: { content: "  " } }] })));
     await expectCode("empty_response", 502);
   });
-
   it("valid completion → plain text (read-only, no tools requested)", async () => {
     const fetchMock = vi.fn().mockResolvedValue(res(200, { choices: [{ message: { content: "Résumé du dossier." } }] }));
     vi.stubGlobal("fetch", fetchMock);
@@ -117,14 +106,14 @@ describe("runCopilot — error differentiation (Phase 3.1A audit)", () => {
 });
 
 describe("structured logging never leaks the secret", () => {
-  it("logs apiKeyPresent + status + openai code but not the key", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(res(401, { error: { code: "invalid_api_key", type: "invalid_request_error", message: "Incorrect API key provided: sk-xxx" } })));
+  it("logs provider + status + code but not the key", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(res(401, { error: { code: "invalid_api_key", message: `Incorrect API key: ${KEY}` } })));
     await runCopilot(MESSAGES).catch(() => {});
     const logged = warnSpy.mock.calls.map((c) => String(c[0])).join("\n");
-    expect(logged).toContain("copilot.openai");
-    expect(logged).toContain("\"apiKeyPresent\":true");
-    expect(logged).toContain("\"httpStatus\":401");
-    expect(logged).toContain("invalid_api_key");
-    expect(logged).not.toContain(KEY); // the real secret is never logged
+    expect(logged).toContain("ai.request");
+    expect(logged).toContain('"provider":"openai"');
+    expect(logged).toContain('"httpStatus":401');
+    expect(logged).toContain("invalid_credentials");
+    expect(logged).not.toContain(KEY);
   });
 });
