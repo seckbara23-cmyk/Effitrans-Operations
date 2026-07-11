@@ -18,9 +18,11 @@ import {
   parseAllowlist,
   resolveAIConfig,
   resolveFallbackConfig,
+  resolveRetryPolicy,
   validateAIConfig,
   type AIEnv,
   type ResolvedAIConfig,
+  type RetryPolicy,
 } from "./config";
 import { createOpenAIProvider } from "./openai-provider";
 import { createOllamaProvider } from "./ollama-provider";
@@ -69,15 +71,16 @@ export function getAIProvider(env: AIEnv): AIProvider {
   return buildProvider(config);
 }
 
-async function runOnceWithRetry(provider: AIProvider, input: AIGenerateInput): Promise<AIGenerateResult> {
-  try {
-    return await provider.generate(input);
-  } catch (err) {
-    if (err instanceof AIError && err.retriable) {
-      // Exactly one bounded retry for a transient failure.
-      return provider.generate(input);
+async function runWithRetryPolicy(provider: AIProvider, input: AIGenerateInput, policy: RetryPolicy): Promise<AIGenerateResult> {
+  let attempt = 0;
+  for (;;) {
+    try {
+      return await provider.generate(input);
+    } catch (err) {
+      const canRetry = err instanceof AIError && policy.retryOn.has(err.code) && attempt < policy.maxRetries;
+      if (!canRetry) throw err;
+      attempt += 1;
     }
-    throw err;
   }
 }
 
@@ -98,9 +101,10 @@ export async function generateAI(input: AIGenerateInput, env: AIEnv): Promise<AI
   }
 
   const provider = getAIProvider(env); // may throw config/unsafe/disabled
+  const policy = resolveRetryPolicy(env);
 
   try {
-    return truncateResult(await runOnceWithRetry(provider, input));
+    return truncateResult(await runWithRetryPolicy(provider, input, policy));
   } catch (err) {
     // Explicit fallback ONLY (configured provider), and only for transient errors.
     if (err instanceof AIError && err.retriable) {

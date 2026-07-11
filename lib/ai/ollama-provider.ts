@@ -21,8 +21,17 @@ type OllamaChatResponse = {
   error?: string;
 };
 
-/** Pure request body for Ollama /api/chat (isolated + testable). */
-export function ollamaRequestBody(model: string, input: AIGenerateInput): Record<string, unknown> {
+/**
+ * Pure request body for Ollama /api/chat (isolated + testable). `opts` carries
+ * the native Ollama options resolved from config: `think` (default OFF — concise,
+ * faster on CPU) and `num_predict` (answer token cap). No tools/functions — the
+ * model only produces text.
+ */
+export function ollamaRequestBody(
+  model: string,
+  input: AIGenerateInput,
+  opts?: { think?: boolean; numPredict?: number },
+): Record<string, unknown> {
   return {
     model,
     messages: [
@@ -30,11 +39,12 @@ export function ollamaRequestBody(model: string, input: AIGenerateInput): Record
       { role: "user", content: input.userPrompt },
     ],
     stream: false,
+    // Suppress reasoning by default (Qwen "thinking") for routine ops questions.
+    think: opts?.think ?? false,
     options: {
       temperature: input.temperature ?? AI_LIMITS.defaultTemperature,
-      num_predict: input.maxTokens ?? AI_LIMITS.defaultMaxTokens,
+      num_predict: opts?.numPredict ?? input.maxTokens ?? AI_LIMITS.defaultMaxTokens,
     },
-    // No tools — Ollama would ignore them anyway; the model only produces text.
   };
 }
 
@@ -57,7 +67,7 @@ async function ollamaChat(config: ResolvedAIConfig, input: AIGenerateInput): Pro
 
   let res: Response;
   try {
-    res = await fetch(url, { method: "POST", headers, body: JSON.stringify(ollamaRequestBody(config.model, input)), signal: AbortSignal.timeout(timeoutMs) });
+    res = await fetch(url, { method: "POST", headers, body: JSON.stringify(ollamaRequestBody(config.model, input, config.ollama)), signal: AbortSignal.timeout(timeoutMs) });
   } catch (err) {
     const isTimeout = err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
     // A refused connection means the local server is not running/reachable.

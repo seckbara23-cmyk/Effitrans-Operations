@@ -63,6 +63,7 @@ export const navSections: NavSection[] = [
       { label: t.nav.reports, href: "/reports", icon: IconReport, permission: "analytics:read" },
       { label: t.nav.users, href: "/users", icon: IconUsers, permission: "admin:users:manage" },
       { label: t.nav.audit, href: "/settings/audit", icon: IconStamp, permission: "audit:read:all" },
+      { label: t.nav.aiSettings, href: "/settings/ai", icon: IconTower, permission: "admin:config:manage" },
     ],
   },
 ];

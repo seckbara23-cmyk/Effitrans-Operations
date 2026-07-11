@@ -26,6 +26,12 @@ export type AIEnv = {
   OLLAMA_BASE_URL?: string;
   OLLAMA_MODEL?: string;
   OLLAMA_REQUEST_TIMEOUT_MS?: string;
+  /** Enable model "thinking"/reasoning mode. Default OFF (faster, concise answers). */
+  OLLAMA_THINKING?: string;
+  /** Max response tokens (num_predict) for Ollama. Default 512. */
+  OLLAMA_NUM_PREDICT?: string;
+  /** Retry an Ollama TIMEOUT. Default OFF — CPU-bound retries double the wait. */
+  OLLAMA_RETRY_ON_TIMEOUT?: string;
   AI_COPILOT_ENABLED?: string;
   AI_LOCAL_PROVIDER_ENABLED?: string;
   AI_FALLBACK_PROVIDER?: string;
@@ -69,6 +75,8 @@ const OPENAI_DEFAULT_BASE = "https://api.openai.com/v1";
 const OPENAI_DEFAULT_MODEL = "gpt-4o-mini";
 const OLLAMA_DEFAULT_BASE = "http://127.0.0.1:11434";
 const OLLAMA_DEFAULT_MODEL = "qwen3:8b";
+/** Default Ollama response token cap — concise Copilot answers on CPU. */
+const OLLAMA_DEFAULT_NUM_PREDICT = 512;
 const PROVIDER_NAMES: AIProviderName[] = ["openai", "ollama", "vllm"];
 
 export function isAIProviderName(v: string): v is AIProviderName {
@@ -85,6 +93,8 @@ export type ResolvedAIConfig = {
   timeoutMs: number;
   /** ollama/vllm are "local/private" providers (dark by default). */
   isLocalProvider: boolean;
+  /** Ollama-only native options (present only for provider "ollama"). */
+  ollama?: { think: boolean; numPredict: number };
 };
 
 export type ConfigResult =
@@ -93,9 +103,9 @@ export type ConfigResult =
 
 const clean = (v: string | undefined): string => (v ?? "").trim();
 
-/** Parse a timeout env value: unset, a safe positive integer, or invalid (fail closed). */
-type TimeoutParse = { set: false } | { set: true; ok: true; value: number } | { set: true; ok: false };
-function parseTimeoutEnv(raw: string | undefined): TimeoutParse {
+/** Parse a positive-integer env value: unset, a safe positive integer, or invalid (fail closed). */
+type IntParse = { set: false } | { set: true; ok: true; value: number } | { set: true; ok: false };
+function parsePositiveIntEnv(raw: string | undefined): IntParse {
   const s = clean(raw);
   if (!s) return { set: false };
   const n = Number(s);
@@ -103,7 +113,7 @@ function parseTimeoutEnv(raw: string | undefined): TimeoutParse {
   return { set: true, ok: true, value: n };
 }
 /** The parsed value if valid, else null (unset or invalid). */
-function okTimeout(t: TimeoutParse): number | null {
+function okInt(t: IntParse): number | null {
   return t.set && t.ok ? t.value : null;
 }
 
@@ -167,24 +177,58 @@ export function resolveAIConfig(env: AIEnv): ConfigResult {
   }
 
   // timeout: OLLAMA_REQUEST_TIMEOUT_MS → AI_REQUEST_TIMEOUT_MS → provider default.
-  const genericT = parseTimeoutEnv(env.AI_REQUEST_TIMEOUT_MS);
+  const genericT = parsePositiveIntEnv(env.AI_REQUEST_TIMEOUT_MS);
   if (genericT.set && !genericT.ok) {
     return { ok: false, code: "invalid_config", reason: "AI_REQUEST_TIMEOUT_MS must be a positive integer (ms)" };
   }
-  const generic = okTimeout(genericT);
+  const generic = okInt(genericT);
   let timeoutMs: number;
+  let ollama: ResolvedAIConfig["ollama"];
   if (provider === "ollama") {
-    const ollamaT = parseTimeoutEnv(env.OLLAMA_REQUEST_TIMEOUT_MS);
+    const ollamaT = parsePositiveIntEnv(env.OLLAMA_REQUEST_TIMEOUT_MS);
     if (ollamaT.set && !ollamaT.ok) {
       return { ok: false, code: "invalid_config", reason: "OLLAMA_REQUEST_TIMEOUT_MS must be a positive integer (ms)" };
     }
-    timeoutMs = okTimeout(ollamaT) ?? generic ?? OLLAMA_DEFAULT_TIMEOUT_MS;
+    timeoutMs = okInt(ollamaT) ?? generic ?? OLLAMA_DEFAULT_TIMEOUT_MS;
+
+    // Ollama-only native options: thinking OFF by default (concise, faster on CPU);
+    // num_predict caps the answer length (positive integer, fail closed if invalid).
+    const npParse = parsePositiveIntEnv(env.OLLAMA_NUM_PREDICT);
+    if (npParse.set && !npParse.ok) {
+      return { ok: false, code: "invalid_config", reason: "OLLAMA_NUM_PREDICT must be a positive integer" };
+    }
+    ollama = {
+      think: clean(env.OLLAMA_THINKING) === "true",
+      numPredict: okInt(npParse) ?? OLLAMA_DEFAULT_NUM_PREDICT,
+    };
   } else {
     timeoutMs = generic ?? DEFAULT_AI_TIMEOUT_MS;
   }
   timeoutMs = Math.min(timeoutMs, MAX_AI_TIMEOUT_MS);
 
-  return { ok: true, config: { provider, model, baseUrl, apiKey, timeoutMs, isLocalProvider } };
+  return { ok: true, config: { provider, model, baseUrl, apiKey, timeoutMs, isLocalProvider, ...(ollama ? { ollama } : {}) } };
+}
+
+// ------------------------------------------------------------ retry policy ----
+
+/**
+ * Provider-neutral retry policy (Phase 3.4F-3). Which AIError codes get the
+ * single bounded retry, per provider — instead of hard-coding checks around the
+ * codebase. Ollama does NOT retry a TIMEOUT by default (CPU-bound retries double
+ * the wait) and fails immediately on connection refusal (provider_unavailable);
+ * a bounded 5xx (upstream_error) retry remains. OpenAI/vLLM keep the existing
+ * transient retry set.
+ */
+export type RetryPolicy = { maxRetries: number; retryOn: ReadonlySet<AIErrorCode> };
+
+export function resolveRetryPolicy(env: AIEnv): RetryPolicy {
+  const provider = clean(env.AI_PROVIDER) || "openai";
+  if (provider === "ollama") {
+    const retryOn = new Set<AIErrorCode>(["upstream_error"]);
+    if (clean(env.OLLAMA_RETRY_ON_TIMEOUT) === "true") retryOn.add("timeout");
+    return { maxRetries: 1, retryOn };
+  }
+  return { maxRetries: 1, retryOn: new Set<AIErrorCode>(["timeout", "upstream_error", "provider_unavailable"]) };
 }
 
 /** Optional explicit fallback config (never inferred — no silent paid fallback). */

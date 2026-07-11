@@ -131,22 +131,35 @@ ollama serve   # NOTE: the Ollama desktop app may already run the server,
 Invoke-RestMethod http://127.0.0.1:11434/api/tags
 ```
 
-**Configure `.env` (local only — server-side, never `NEXT_PUBLIC_`):**
+**Configure `.env.local` (local only — server-side, never `NEXT_PUBLIC_`):**
 ```
 AI_PROVIDER=ollama
 AI_LOCAL_PROVIDER_ENABLED=true
+OLLAMA_MODEL=qwen3:4b            # 4b is much faster than 8b on CPU
 OLLAMA_BASE_URL=http://127.0.0.1:11434
-OLLAMA_MODEL=qwen3:8b
-OLLAMA_REQUEST_TIMEOUT_MS=120000
+OLLAMA_REQUEST_TIMEOUT_MS=180000
+# CPU-performance / behaviour (all optional; defaults shown):
+OLLAMA_THINKING=false           # suppress Qwen "thinking" -> faster, concise
+OLLAMA_NUM_PREDICT=512          # cap answer tokens
+OLLAMA_RETRY_ON_TIMEOUT=false   # don't retry a timeout (CPU retries double the wait)
 ```
-Precedence is `OLLAMA_*` → generic `AI_*` → safe defaults, so `OLLAMA_MODEL` /
-`OLLAMA_BASE_URL` / `OLLAMA_REQUEST_TIMEOUT_MS` are optional (the defaults above
-apply). Local providers are **dark by default** — `AI_LOCAL_PROVIDER_ENABLED=true`
-is required. Restart `npm run dev` after editing `.env`.
+Precedence is `OLLAMA_*` → generic `AI_*` → safe defaults, so these are optional.
+Local providers are **dark by default** — `AI_LOCAL_PROVIDER_ENABLED=true` is
+required. **Restart `npm run dev`** after editing `.env.local`.
 
-Admins can check status at `GET /api/ai/health` (secret-free): it reports
-`reachable`, `configuredModel`, `modelPresent`, `latencyMs` (and `version` when
-available) — no URL/network detail or keys.
+**Retry policy (provider-neutral):** OpenAI/vLLM keep the bounded transient retry
+(timeout / 5xx / unavailable). **Ollama does NOT retry a timeout by default** (CPU
+retries double the wait) and fails fast on connection refusal; a bounded 5xx retry
+remains. Set `OLLAMA_RETRY_ON_TIMEOUT=true` to opt in.
+
+**CPU note:** on CPU-only, qwen3 is slow (~4–8 tok/s) and its "thinking" can make
+realistic Copilot prompts exceed the timeout. Prefer **qwen3:4b**, keep
+`OLLAMA_THINKING=false`, and a **GPU** is strongly recommended for interactive use.
+
+**Admin status:** open **`/settings/ai`** (admin `admin:config:manage`) or call
+`GET /api/ai/health` (secret-free): provider, model, `reachable`, `configuredModel`,
+`modelPresent`, `latencyMs`, `version` — no URL/network detail or keys. The page has
+a **« Tester la connexion IA »** button and a local-vs-production notice.
 
 ### Production limitation (important)
 
