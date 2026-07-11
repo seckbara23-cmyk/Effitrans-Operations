@@ -30,10 +30,11 @@ type RecordRow = {
   delivery_reference: string | null;
   customs_override: boolean;
   notes: string | null;
+  driver_user_id: string | null;
 };
 
 const RECORD_COLS =
-  "id, file_id, status, pickup_location, delivery_location, pickup_planned, pickup_actual, delivery_planned, delivery_actual, driver_name, driver_phone, vehicle_plate, trailer_or_container, transport_company, delivery_reference, customs_override, notes";
+  "id, file_id, status, pickup_location, delivery_location, pickup_planned, pickup_actual, delivery_planned, delivery_actual, driver_name, driver_phone, vehicle_plate, trailer_or_container, transport_company, delivery_reference, customs_override, notes, driver_user_id";
 
 function toRecord(r: RecordRow): TransportRecord {
   return {
@@ -54,6 +55,7 @@ function toRecord(r: RecordRow): TransportRecord {
     deliveryReference: r.delivery_reference,
     customsOverride: r.customs_override,
     notes: r.notes,
+    driverUserId: r.driver_user_id,
   };
 }
 

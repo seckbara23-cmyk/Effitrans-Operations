@@ -1079,6 +1079,7 @@ export type Database = {
           recorded_at: string;
           received_at: string;
           recorded_by: string | null;
+          idempotency_key: string | null;
           created_at: string;
         };
         Insert: {
@@ -1097,6 +1098,7 @@ export type Database = {
           recorded_at: string;
           received_at?: string;
           recorded_by?: string | null;
+          idempotency_key?: string | null;
           created_at?: string;
         };
         Update: {
@@ -1115,6 +1117,7 @@ export type Database = {
           recorded_at?: string;
           received_at?: string;
           recorded_by?: string | null;
+          idempotency_key?: string | null;
           created_at?: string;
         };
         Relationships: [
@@ -1141,6 +1144,7 @@ export type Database = {
           latitude: number | null;
           longitude: number | null;
           dedup_key: string | null;
+          detail: Json | null;
           occurred_at: string;
           created_by: string | null;
           created_at: string;
@@ -1159,6 +1163,7 @@ export type Database = {
           latitude?: number | null;
           longitude?: number | null;
           dedup_key?: string | null;
+          detail?: Json | null;
           occurred_at?: string;
           created_by?: string | null;
           created_at?: string;
@@ -1177,6 +1182,7 @@ export type Database = {
           latitude?: number | null;
           longitude?: number | null;
           dedup_key?: string | null;
+          detail?: Json | null;
           occurred_at?: string;
           created_by?: string | null;
           created_at?: string;

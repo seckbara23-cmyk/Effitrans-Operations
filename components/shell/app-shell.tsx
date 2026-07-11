@@ -21,6 +21,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return <>{children}</>;
   }
 
+  // The driver mobile workspace has its own mobile shell (Phase 3.4C) — never the
+  // staff sidebar. Drivers must not see internal staff navigation.
+  if (pathname.startsWith("/driver")) {
+    return <>{children}</>;
+  }
+
   return (
     <SessionProvider>
       <div className="min-h-screen bg-sand-100">

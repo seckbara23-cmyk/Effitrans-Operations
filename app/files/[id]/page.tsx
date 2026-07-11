@@ -21,6 +21,8 @@ import { getTransportRecord } from "@/lib/transport/service";
 import { TrackingTimeline } from "@/components/transport/tracking-timeline";
 import { getTrackingTimeline } from "@/lib/tracking/service";
 import { trackingEnabled } from "@/lib/tracking/config";
+import { DriverAssign } from "@/components/transport/driver-assign";
+import { listAssignableDrivers } from "@/lib/transport/drivers";
 import { FinancePanel } from "@/components/finance/finance-panel";
 import { getFinanceForFile } from "@/lib/finance/service";
 import { CommunicationsTimeline } from "@/components/communications/communications-timeline";
@@ -107,6 +109,9 @@ export default async function FileDetailPage({ params }: { params: { id: string 
   const trackingOn = trackingEnabled();
   const canReadTracking = hasPermission(permissions, "tracking:read");
   const trackingEvents = trackingOn && canReadTracking ? await getTrackingTimeline(file.id) : [];
+  // Phase 3.4C — dispatcher driver assignment (assign a DRIVER user for the mobile app).
+  const canAssignDriver = hasPermission(permissions, "transport:assign");
+  const assignableDrivers = trackingOn && canAssignDriver && transportRecord ? await listAssignableDrivers() : [];
 
   // Embedded finance (finance-role based — NOT inherited from file visibility).
   const canReadFinance = hasPermission(permissions, "finance:read");
@@ -225,6 +230,14 @@ export default async function FileDetailPage({ params }: { params: { id: string 
             canDelete={hasPermission(permissions, "transport:delete")}
           />
         </div>
+      )}
+      {trackingOn && canReadTransport && transportRecord && (
+        <DriverAssign
+          transportId={transportRecord.id}
+          currentDriverUserId={transportRecord.driverUserId}
+          drivers={assignableDrivers}
+          canAssign={canAssignDriver}
+        />
       )}
       {trackingOn && canReadTracking && (
         <div id="tracking" className="scroll-mt-24">

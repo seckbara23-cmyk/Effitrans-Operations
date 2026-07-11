@@ -10,6 +10,7 @@
 import { NextResponse } from "next/server";
 import { getServerSupabaseClient } from "@/lib/supabase/server";
 import { gateStaffOAuthLogin } from "@/lib/auth/oauth";
+import { getCurrentUser } from "@/lib/auth/current-user";
 import { reportMessage } from "@/lib/observability/report";
 
 export const dynamic = "force-dynamic";
@@ -45,5 +46,8 @@ export async function GET(request: Request) {
     return NextResponse.redirect(loginUrl("unauthorized"));
   }
 
-  return NextResponse.redirect(`${origin}/dashboard`);
+  // Phase 3.4C — route a DRIVER to their mobile workspace.
+  const user = await getCurrentUser();
+  const dest = user?.roles.includes("DRIVER") ? "/driver" : "/dashboard";
+  return NextResponse.redirect(`${origin}${dest}`);
 }

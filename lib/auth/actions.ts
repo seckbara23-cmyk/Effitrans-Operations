@@ -9,6 +9,7 @@
  * block authentication, so each swallows its own errors.
  */
 import { getCurrentUser, getSessionClass } from "./current-user";
+import { postLoginPath } from "./session-class";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
 import { recordStaffLogin } from "@/lib/users/presence-track";
@@ -21,8 +22,9 @@ import { recordStaffLogin } from "@/lib/users/presence-track";
  */
 export async function loginDestination(): Promise<string> {
   const cls = await getSessionClass();
-  if (cls === "portal") return "/portal";
-  return "/dashboard"; // staff (and the orphan edge case, which /login re-renders)
+  // A DRIVER (staff identity) lands on their mobile workspace; portal → /portal.
+  const roles = cls === "staff" ? (await getCurrentUser())?.roles ?? [] : [];
+  return postLoginPath(cls, roles);
 }
 
 export async function recordLoginAudit(): Promise<void> {

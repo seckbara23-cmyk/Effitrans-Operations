@@ -138,6 +138,11 @@ export const AuditActions = {
   TRACKING_DELAY_REPORTED: "tracking.delay.reported",
   TRACKING_INCIDENT_REPORTED: "tracking.incident.reported",
   TRACKING_PROVIDER_WEBHOOK_RECEIVED: "tracking.provider.webhook_received", // machine (reserved — no provider wired)
+  // Phase 3.4C — Driver mobile execution + dispatcher assignment.
+  TRANSPORT_DRIVER_ASSIGNED: "transport.driver.assigned",
+  TRANSPORT_DRIVER_UNASSIGNED: "transport.driver.unassigned",
+  TRACKING_BATCH_RECEIVED: "tracking.batch.received", // batch acceptance (NOT per GPS point)
+  TRANSPORT_POD_UPLOADED: "transport.pod.uploaded",
   // Phase 3.0B — Report / Power BI exports (attributed; date range in `after`)
   REPORT_EXPORT_CSV: "report.export.csv",
   REPORT_EXPORT_XLSX: "report.export.xlsx",

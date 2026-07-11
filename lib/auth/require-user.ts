@@ -24,5 +24,8 @@ export async function requireUser(): Promise<CurrentUser> {
     const cls = await getSessionClass();
     redirect(cls === "portal" ? "/portal" : "/login");
   }
+  // Phase 3.4C — DRIVER is a mobile-only identity; keep drivers out of staff pages
+  // (their /driver routes use requireDriver, so this never loops).
+  if (user.roles.includes("DRIVER")) redirect("/driver");
   return user;
 }

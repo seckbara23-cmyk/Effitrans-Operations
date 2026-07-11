@@ -49,6 +49,8 @@ export type TransportRecord = {
   deliveryReference: string | null;
   customsOverride: boolean;
   notes: string | null;
+  /** Assigned DRIVER app_user (Phase 3.4C) — the driver-mobile / tracking link. */
+  driverUserId: string | null;
 };
 
 export type TransportQueueItem = {
