@@ -9,7 +9,7 @@ export default defineConfig({
     environment: "node",
     include: ["scripts/eval/**/*.ts"],
     fileParallelism: false,
-    testTimeout: 2_400_000, // up to 40 min for a full slow-CPU model run
+    testTimeout: 3_000_000, // up to 50 min for a full slow-CPU model run
     hookTimeout: 60_000,
   },
   resolve: {
