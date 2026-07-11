@@ -17,7 +17,7 @@ export function createVllmProvider(config: ResolvedAIConfig): AIProvider {
     name: "vllm",
     model: config.model,
     generate: (input) =>
-      openAiCompatibleChat({ providerName: "vllm", baseUrl: config.baseUrl, apiKey: config.apiKey, model: config.model, requireAuth: false, input }),
+      openAiCompatibleChat({ providerName: "vllm", baseUrl: config.baseUrl, apiKey: config.apiKey, model: config.model, requireAuth: false, timeoutMs: config.timeoutMs, input }),
     healthCheck: () =>
       openAiCompatibleHealth({ providerName: "vllm", baseUrl: config.baseUrl, apiKey: config.apiKey, model: config.model }),
   };

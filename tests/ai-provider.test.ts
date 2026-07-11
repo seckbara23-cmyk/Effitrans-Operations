@@ -69,14 +69,15 @@ describe("config resolution + provider selection (backward compatible)", () => {
     expect(buildProvider(cfg(OLLAMA_ENV)).name).toBe("ollama");
     expect(buildProvider(cfg(VLLM_ENV)).name).toBe("vllm");
   });
-  it("requires a model for local providers and a base URL for vLLM", () => {
-    expect(resolveAIConfig({ AI_PROVIDER: "ollama" })).toMatchObject({ ok: false, code: "invalid_config" });
+  it("requires a base URL for vLLM, rejects unknown providers; ollama gets safe defaults", () => {
     expect(resolveAIConfig({ AI_PROVIDER: "vllm", AI_MODEL: "m" })).toMatchObject({ ok: false, code: "invalid_config" });
     expect(resolveAIConfig({ AI_PROVIDER: "bogus" })).toMatchObject({ ok: false, code: "invalid_config" });
+    const oll = resolveAIConfig({ AI_PROVIDER: "ollama" });
+    expect(oll.ok && oll.config).toMatchObject({ provider: "ollama", model: "qwen3:8b", baseUrl: "http://127.0.0.1:11434" });
   });
-  it("ollama defaults base URL to localhost:11434", () => {
+  it("ollama defaults base URL to 127.0.0.1:11434", () => {
     const r = resolveAIConfig(OLLAMA_ENV);
-    expect(r.ok && r.config.baseUrl).toBe("http://localhost:11434");
+    expect(r.ok && r.config.baseUrl).toBe("http://127.0.0.1:11434");
   });
   it("resolveFallbackConfig only returns a config when explicitly set", () => {
     expect(resolveFallbackConfig({})).toBeNull();
@@ -104,7 +105,7 @@ describe("flags", () => {
 });
 
 describe("production safety validation", () => {
-  const cfg: ResolvedAIConfig = { provider: "vllm", model: "m", baseUrl: "http://ai.local:8000/v1", apiKey: null, isLocalProvider: true };
+  const cfg: ResolvedAIConfig = { provider: "vllm", model: "m", baseUrl: "http://ai.local:8000/v1", apiKey: null, timeoutMs: 30_000, isLocalProvider: true };
   const opts = { hosted: true, allowInsecureHttp: false, allowNoAuth: false, allowlist: null };
 
   it("rejects localhost base URL on a hosted deployment", () => {

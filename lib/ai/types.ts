@@ -38,6 +38,13 @@ export type AIHealthResult = {
   model: string;
   latencyMs?: number;
   errorCode?: string;
+  // Enriched, SECRET-FREE health detail (providers populate what they can; e.g.
+  // Ollama distinguishes reachable/unreachable and configured-model present/missing).
+  reachable?: boolean;
+  configuredModel?: string;
+  modelPresent?: boolean;
+  /** Provider version, only when reliably available (no internal URL/network detail). */
+  version?: string;
 };
 
 /** The transport a provider implements. Text-only; no tool/function surface. */

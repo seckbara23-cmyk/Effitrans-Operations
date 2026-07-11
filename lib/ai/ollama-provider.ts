@@ -50,7 +50,7 @@ export function classifyOllama(status: number, errorText: string | undefined): A
 async function ollamaChat(config: ResolvedAIConfig, input: AIGenerateInput): Promise<AIGenerateResult> {
   const host = baseUrlHost(config.baseUrl);
   const url = `${config.baseUrl.replace(/\/$/, "")}/api/chat`;
-  const timeoutMs = Math.min(input.timeoutMs ?? AI_LIMITS.defaultTimeoutMs, AI_LIMITS.maxTimeoutMs);
+  const timeoutMs = Math.min(input.timeoutMs ?? config.timeoutMs, AI_LIMITS.maxTimeoutMs);
   const started = Date.now();
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (config.apiKey) headers.Authorization = `Bearer ${config.apiKey}`; // reverse-proxy token, if any
@@ -90,6 +90,40 @@ async function ollamaChat(config: ResolvedAIConfig, input: AIGenerateInput): Pro
   };
 }
 
+type OllamaTag = { name?: string; model?: string };
+type OllamaTagsResponse = { models?: OllamaTag[] };
+
+/**
+ * Is the configured model present in the /api/tags list? PURE + testable. Matches
+ * on the tag name/model exactly; if the configured name omits a ":tag", matches
+ * on the base name (e.g. "qwen3" matches "qwen3:8b").
+ */
+export function ollamaModelPresent(models: OllamaTag[] | undefined, configured: string): boolean {
+  const want = configured.trim().toLowerCase();
+  if (!want) return false;
+  const wantBase = want.split(":")[0];
+  return (models ?? []).some((m) => {
+    const names = [m.name, m.model].filter(Boolean).map((s) => String(s).toLowerCase());
+    return names.some((n) => n === want || (!want.includes(":") && n.split(":")[0] === wantBase));
+  });
+}
+
+/** Best-effort Ollama version (safe to surface — no URL/network detail). */
+async function ollamaVersion(config: ResolvedAIConfig, headers: Record<string, string>): Promise<string | null> {
+  try {
+    const res = await fetch(`${config.baseUrl.replace(/\/$/, "")}/api/version`, { method: "GET", headers, signal: AbortSignal.timeout(3_000) });
+    if (!res.ok) return null;
+    const data = (await res.json().catch(() => null)) as { version?: string } | null;
+    return typeof data?.version === "string" ? data.version : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Health via GET /api/tags. Distinguishes reachable/unreachable and configured-
+ * model present/missing. SECRET-FREE (no internal URL / network detail).
+ */
 async function ollamaHealth(config: ResolvedAIConfig): Promise<AIHealthResult> {
   const started = Date.now();
   const headers: Record<string, string> = {};
@@ -97,11 +131,26 @@ async function ollamaHealth(config: ResolvedAIConfig): Promise<AIHealthResult> {
   try {
     const res = await fetch(`${config.baseUrl.replace(/\/$/, "")}/api/tags`, { method: "GET", headers, signal: AbortSignal.timeout(10_000) });
     const latencyMs = Date.now() - started;
-    if (!res.ok) return { healthy: false, provider: "ollama", model: config.model, latencyMs, errorCode: "upstream_error" };
-    return { healthy: true, provider: "ollama", model: config.model, latencyMs };
+    if (!res.ok) {
+      return { healthy: false, provider: "ollama", model: config.model, latencyMs, reachable: true, configuredModel: config.model, modelPresent: false, errorCode: "upstream_error" };
+    }
+    const data = (await res.json().catch(() => null)) as OllamaTagsResponse | null;
+    const modelPresent = ollamaModelPresent(data?.models, config.model);
+    const version = await ollamaVersion(config, headers);
+    return {
+      healthy: modelPresent,
+      provider: "ollama",
+      model: config.model,
+      latencyMs,
+      reachable: true,
+      configuredModel: config.model,
+      modelPresent,
+      ...(version ? { version } : {}),
+      ...(modelPresent ? {} : { errorCode: "model_not_found" as const }),
+    };
   } catch (err) {
     const isTimeout = err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
-    return { healthy: false, provider: "ollama", model: config.model, latencyMs: Date.now() - started, errorCode: isTimeout ? "timeout" : "provider_unavailable" };
+    return { healthy: false, provider: "ollama", model: config.model, latencyMs: Date.now() - started, reachable: false, configuredModel: config.model, modelPresent: false, errorCode: isTimeout ? "timeout" : "provider_unavailable" };
   }
 }
 

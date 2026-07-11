@@ -20,6 +20,12 @@ export type AIEnv = {
   AI_MODEL?: string;
   AI_BASE_URL?: string;
   AI_API_KEY?: string;
+  /** Generic request timeout (ms) — the middle layer under provider-specific overrides. */
+  AI_REQUEST_TIMEOUT_MS?: string;
+  // Ollama provider-specific overrides (layered ABOVE the generic AI_* config).
+  OLLAMA_BASE_URL?: string;
+  OLLAMA_MODEL?: string;
+  OLLAMA_REQUEST_TIMEOUT_MS?: string;
   AI_COPILOT_ENABLED?: string;
   AI_LOCAL_PROVIDER_ENABLED?: string;
   AI_FALLBACK_PROVIDER?: string;
@@ -36,20 +42,33 @@ export type AIEnv = {
   VERCEL?: string;
 };
 
+// Timeouts (ms) — shared, named constants (no scattered literals).
+/** Generic default request timeout for cloud providers (OpenAI/vLLM). */
+export const DEFAULT_AI_TIMEOUT_MS = 30_000;
+/** Ollama's default — local models are slower to first token, so 120 s. */
+export const OLLAMA_DEFAULT_TIMEOUT_MS = 120_000;
+/**
+ * Documented safe upper bound for any AI request timeout (3 min). A configured
+ * timeout above this is clamped down — raised from the previous 60 s only as much
+ * as the 120 s Ollama default requires, with headroom for slower local models.
+ */
+export const MAX_AI_TIMEOUT_MS = 180_000;
+
 export const AI_LIMITS = {
   /** Combined system+user prompt hard cap (chars). */
   maxPromptChars: 24_000,
   /** Response hard cap (chars) — larger is truncated. */
   maxResponseChars: 20_000,
-  defaultTimeoutMs: 30_000,
-  maxTimeoutMs: 60_000,
+  defaultTimeoutMs: DEFAULT_AI_TIMEOUT_MS,
+  maxTimeoutMs: MAX_AI_TIMEOUT_MS,
   defaultMaxTokens: 1_024,
   defaultTemperature: 0.2,
 } as const;
 
 const OPENAI_DEFAULT_BASE = "https://api.openai.com/v1";
 const OPENAI_DEFAULT_MODEL = "gpt-4o-mini";
-const OLLAMA_DEFAULT_BASE = "http://localhost:11434";
+const OLLAMA_DEFAULT_BASE = "http://127.0.0.1:11434";
+const OLLAMA_DEFAULT_MODEL = "qwen3:8b";
 const PROVIDER_NAMES: AIProviderName[] = ["openai", "ollama", "vllm"];
 
 export function isAIProviderName(v: string): v is AIProviderName {
@@ -62,6 +81,8 @@ export type ResolvedAIConfig = {
   /** Fully-qualified API base (no trailing "/chat/completions"). */
   baseUrl: string;
   apiKey: string | null;
+  /** Resolved request timeout (ms), already clamped to MAX_AI_TIMEOUT_MS. */
+  timeoutMs: number;
   /** ollama/vllm are "local/private" providers (dark by default). */
   isLocalProvider: boolean;
 };
@@ -72,7 +93,34 @@ export type ConfigResult =
 
 const clean = (v: string | undefined): string => (v ?? "").trim();
 
-/** Resolve the primary provider config from env (backward compatible). */
+/** Parse a timeout env value: unset, a safe positive integer, or invalid (fail closed). */
+type TimeoutParse = { set: false } | { set: true; ok: true; value: number } | { set: true; ok: false };
+function parseTimeoutEnv(raw: string | undefined): TimeoutParse {
+  const s = clean(raw);
+  if (!s) return { set: false };
+  const n = Number(s);
+  if (!Number.isInteger(n) || n <= 0) return { set: true, ok: false };
+  return { set: true, ok: true, value: n };
+}
+/** The parsed value if valid, else null (unset or invalid). */
+function okTimeout(t: TimeoutParse): number | null {
+  return t.set && t.ok ? t.value : null;
+}
+
+/** URL protocol, or null when unparseable. Shared (config layer) — http(s) only. */
+function urlProtocol(url: string): string | null {
+  try {
+    return new URL(url).protocol;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve the primary provider config from env. Layered precedence, generic AI_*
+ * canonical: OLLAMA_* override → AI_* generic → safe default. Shared validation
+ * (http(s) URL, positive-integer timeout) lives here in the config layer.
+ */
 export function resolveAIConfig(env: AIEnv): ConfigResult {
   const providerRaw = clean(env.AI_PROVIDER) || "openai";
   if (!isAIProviderName(providerRaw)) {
@@ -81,9 +129,15 @@ export function resolveAIConfig(env: AIEnv): ConfigResult {
   const provider = providerRaw;
   const isLocalProvider = provider !== "openai";
 
-  const model =
-    clean(env.AI_MODEL) ||
-    (provider === "openai" ? clean(env.OPENAI_COPILOT_MODEL) || OPENAI_DEFAULT_MODEL : "");
+  // model: OLLAMA_MODEL → AI_MODEL → provider default (qwen3:8b for ollama).
+  let model: string;
+  if (provider === "openai") {
+    model = clean(env.AI_MODEL) || clean(env.OPENAI_COPILOT_MODEL) || OPENAI_DEFAULT_MODEL;
+  } else if (provider === "ollama") {
+    model = clean(env.OLLAMA_MODEL) || clean(env.AI_MODEL) || OLLAMA_DEFAULT_MODEL;
+  } else {
+    model = clean(env.AI_MODEL); // vllm — required
+  }
   if (!model) {
     return { ok: false, code: "invalid_config", reason: `AI_MODEL is required for provider "${provider}"` };
   }
@@ -91,20 +145,46 @@ export function resolveAIConfig(env: AIEnv): ConfigResult {
   const apiKey =
     clean(env.AI_API_KEY) || (provider === "openai" ? clean(env.OPENAI_API_KEY) : "") || null;
 
+  // baseUrl: OLLAMA_BASE_URL → AI_BASE_URL → default (127.0.0.1:11434 for ollama).
   let baseUrl: string;
   if (provider === "openai") {
     baseUrl = clean(env.AI_BASE_URL) || OPENAI_DEFAULT_BASE;
   } else if (provider === "ollama") {
-    baseUrl = clean(env.AI_BASE_URL) || OLLAMA_DEFAULT_BASE;
+    baseUrl = clean(env.OLLAMA_BASE_URL) || clean(env.AI_BASE_URL) || OLLAMA_DEFAULT_BASE;
   } else {
-    // vllm — no safe default; a private base URL must be provided.
-    baseUrl = clean(env.AI_BASE_URL);
+    baseUrl = clean(env.AI_BASE_URL); // vllm — required
     if (!baseUrl) {
       return { ok: false, code: "invalid_config", reason: 'AI_BASE_URL is required for provider "vllm"' };
     }
   }
+  baseUrl = baseUrl.replace(/\/$/, "");
+  const proto = urlProtocol(baseUrl);
+  if (proto === null) {
+    return { ok: false, code: "invalid_config", reason: `Invalid AI base URL "${baseUrl}"` };
+  }
+  if (proto !== "http:" && proto !== "https:") {
+    return { ok: false, code: "invalid_config", reason: `AI base URL must be http(s): "${baseUrl}"` };
+  }
 
-  return { ok: true, config: { provider, model, baseUrl: baseUrl.replace(/\/$/, ""), apiKey, isLocalProvider } };
+  // timeout: OLLAMA_REQUEST_TIMEOUT_MS → AI_REQUEST_TIMEOUT_MS → provider default.
+  const genericT = parseTimeoutEnv(env.AI_REQUEST_TIMEOUT_MS);
+  if (genericT.set && !genericT.ok) {
+    return { ok: false, code: "invalid_config", reason: "AI_REQUEST_TIMEOUT_MS must be a positive integer (ms)" };
+  }
+  const generic = okTimeout(genericT);
+  let timeoutMs: number;
+  if (provider === "ollama") {
+    const ollamaT = parseTimeoutEnv(env.OLLAMA_REQUEST_TIMEOUT_MS);
+    if (ollamaT.set && !ollamaT.ok) {
+      return { ok: false, code: "invalid_config", reason: "OLLAMA_REQUEST_TIMEOUT_MS must be a positive integer (ms)" };
+    }
+    timeoutMs = okTimeout(ollamaT) ?? generic ?? OLLAMA_DEFAULT_TIMEOUT_MS;
+  } else {
+    timeoutMs = generic ?? DEFAULT_AI_TIMEOUT_MS;
+  }
+  timeoutMs = Math.min(timeoutMs, MAX_AI_TIMEOUT_MS);
+
+  return { ok: true, config: { provider, model, baseUrl, apiKey, timeoutMs, isLocalProvider } };
 }
 
 /** Optional explicit fallback config (never inferred — no silent paid fallback). */

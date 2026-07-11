@@ -15,7 +15,7 @@ export function createOpenAIProvider(config: ResolvedAIConfig): AIProvider {
     name: "openai",
     model: config.model,
     generate: (input) =>
-      openAiCompatibleChat({ providerName: "openai", baseUrl: config.baseUrl, apiKey: config.apiKey, model: config.model, requireAuth: true, input }),
+      openAiCompatibleChat({ providerName: "openai", baseUrl: config.baseUrl, apiKey: config.apiKey, model: config.model, requireAuth: true, timeoutMs: config.timeoutMs, input }),
     healthCheck: () =>
       openAiCompatibleHealth({ providerName: "openai", baseUrl: config.baseUrl, apiKey: config.apiKey, model: config.model }),
   };

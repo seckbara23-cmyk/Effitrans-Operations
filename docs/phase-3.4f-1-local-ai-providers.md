@@ -45,8 +45,14 @@ DB, enable AI actions, or weaken the read-only, permission-filtered Copilot.
 | Var | Meaning | Default |
 |---|---|---|
 | `AI_PROVIDER` | `openai` \| `ollama` \| `vllm` | `openai` |
-| `AI_MODEL` | model name (supplied, never hard-coded) | `gpt-4o-mini` for openai; **required** for local |
-| `AI_BASE_URL` | provider API base | openai: `https://api.openai.com/v1`; ollama: `http://localhost:11434`; vllm: **required** |
+| `AI_MODEL` | model name (supplied, never hard-coded) | `gpt-4o-mini` (openai); `qwen3:8b` (ollama, via `OLLAMA_MODEL`→`AI_MODEL`→default); **required** for vllm |
+| `AI_BASE_URL` | provider API base | openai: `https://api.openai.com/v1`; ollama: `http://127.0.0.1:11434` (via `OLLAMA_BASE_URL`→`AI_BASE_URL`→default); vllm: **required** |
+
+> **Follow-up (Ollama focus):** the `ollama` provider also accepts provider-specific
+> `OLLAMA_BASE_URL` / `OLLAMA_MODEL` / `OLLAMA_REQUEST_TIMEOUT_MS` (layered above the
+> generic `AI_*`), defaults to `qwen3:8b` on `127.0.0.1:11434` with a 120 s timeout,
+> and its health check distinguishes reachable / model-present / model-missing. See
+> [SETUP.md §7](SETUP.md).
 | `AI_API_KEY` | key / bearer token | falls back to `OPENAI_API_KEY` for openai |
 | `AI_COPILOT_ENABLED` | master switch | unset ⇒ enabled (prod unchanged); `false` disables |
 | `AI_LOCAL_PROVIDER_ENABLED` | enable ollama/vllm | `false` (**dark by default**) |
@@ -109,9 +115,9 @@ still returns `{ configured, provider, model, apiKeyPresent }`.
 
 1. Install Ollama on an approved machine.
 2. `ollama pull <approved-qwen-model>`.
-3. `ollama serve` (default `http://localhost:11434`).
+3. `ollama serve` (default `http://127.0.0.1:11434`).
 4. Confirm the endpoint (`GET /api/tags`).
-5. Configure locally: `AI_PROVIDER=ollama`, `AI_MODEL=<model>`, `AI_BASE_URL=http://localhost:11434`, `AI_LOCAL_PROVIDER_ENABLED=true`.
+5. Configure locally: `AI_PROVIDER=ollama`, `OLLAMA_MODEL=qwen3:8b`, `OLLAMA_BASE_URL=http://127.0.0.1:11434`, `AI_LOCAL_PROVIDER_ENABLED=true`.
 6. Run the evaluation harness against it.
 7. **Never** expose the Ollama port to the public internet.
 8. Any remote use goes behind a reverse proxy with auth, TLS and firewall rules.

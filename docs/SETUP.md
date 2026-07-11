@@ -95,3 +95,67 @@ Supabase values to render. Those values are wired to real data from S2 onward.
 Database schema · auth · RBAC · RLS · business tables · workflow · customs ·
 document catalog. These are gated on later waves / the S2 blockers (BLK-1/3/6/9).
 See [s0-backlog.md](s0-backlog.md) and [s0-readiness-checklist.md](s0-readiness-checklist.md).
+
+## 7. Local AI Copilot with Ollama (optional — Qwen `qwen3:8b`)
+
+The Operations Copilot uses a provider-neutral AI layer (`lib/ai/*`). It defaults
+to OpenAI; for **local** development you can run Qwen through Ollama instead. See
+[phase-3.4f-1-local-ai-providers.md](phase-3.4f-1-local-ai-providers.md).
+
+```
+Copilot Route (/api/copilot)
+        |
+        v
+Copilot Engine (lib/copilot/engine.ts)   ← read-only, permission-filtered context
+        |
+        v
+AI Provider Factory (lib/ai/provider.ts)
+     /        |        \
+ OpenAI     Ollama      vLLM
+              |
+              v
+     http://127.0.0.1:11434  (native POST /api/chat, stream:false)
+```
+
+**Install + pull the model** (Windows PowerShell):
+```powershell
+ollama --version
+ollama list
+ollama pull qwen3:8b
+ollama serve   # NOTE: the Ollama desktop app may already run the server,
+               # so `ollama serve` may report the port is already in use — that's fine.
+```
+
+**Verify the server + model** (should list `qwen3:8b`):
+```powershell
+Invoke-RestMethod http://127.0.0.1:11434/api/tags
+```
+
+**Configure `.env` (local only — server-side, never `NEXT_PUBLIC_`):**
+```
+AI_PROVIDER=ollama
+AI_LOCAL_PROVIDER_ENABLED=true
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+OLLAMA_MODEL=qwen3:8b
+OLLAMA_REQUEST_TIMEOUT_MS=120000
+```
+Precedence is `OLLAMA_*` → generic `AI_*` → safe defaults, so `OLLAMA_MODEL` /
+`OLLAMA_BASE_URL` / `OLLAMA_REQUEST_TIMEOUT_MS` are optional (the defaults above
+apply). Local providers are **dark by default** — `AI_LOCAL_PROVIDER_ENABLED=true`
+is required. Restart `npm run dev` after editing `.env`.
+
+Admins can check status at `GET /api/ai/health` (secret-free): it reports
+`reachable`, `configuredModel`, `modelPresent`, `latencyMs` (and `version` when
+available) — no URL/network detail or keys.
+
+### Production limitation (important)
+
+`http://127.0.0.1:11434` works **only** when the Next.js server runs on the **same
+machine** as Ollama. A **Vercel deployment cannot reach Ollama on your Windows PC**
+via localhost — a hosted deployment pointed at localhost is rejected
+(`unsafe_config`). For production, use a **securely hosted inference endpoint**
+(e.g. a private vLLM/Ollama service via `AI_PROVIDER=vllm` over HTTPS with a bearer
+token + `AI_BASE_URL_ALLOWLIST`), a **private network gateway**, or a **VPN/private
+network**. Do **not** expose port `11434` publicly, add an unauthenticated tunnel,
+or hardcode a home/public IP. When `AI_PROVIDER` is not `ollama`, nothing here
+affects production — the OpenAI (or configured) backend is used unchanged.

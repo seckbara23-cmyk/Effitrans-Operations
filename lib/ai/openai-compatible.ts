@@ -40,6 +40,8 @@ export async function openAiCompatibleChat(params: {
   apiKey: string | null;
   model: string;
   requireAuth: boolean;
+  /** Config-resolved request timeout (ms). Overridable per-call via input.timeoutMs. */
+  timeoutMs: number;
   input: AIGenerateInput;
 }): Promise<AIGenerateResult> {
   const { providerName, baseUrl, apiKey, model, requireAuth, input } = params;
@@ -52,7 +54,7 @@ export async function openAiCompatibleChat(params: {
   }
 
   const url = `${baseUrl.replace(/\/$/, "")}/chat/completions`;
-  const timeoutMs = Math.min(input.timeoutMs ?? AI_LIMITS.defaultTimeoutMs, AI_LIMITS.maxTimeoutMs);
+  const timeoutMs = Math.min(input.timeoutMs ?? params.timeoutMs ?? AI_LIMITS.defaultTimeoutMs, AI_LIMITS.maxTimeoutMs);
   const started = Date.now();
 
   const headers: Record<string, string> = { "Content-Type": "application/json" };
