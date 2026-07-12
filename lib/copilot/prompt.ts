@@ -272,23 +272,43 @@ export function buildSystemPrompt(): string {
   ].join("\n");
 }
 
+export type CopilotHistoryTurn = { role: "user" | "assistant"; text: string };
+
+const HISTORY_MAX_TURNS = 6;
+const HISTORY_MAX_CHARS = 400;
+
+/** Compact recap of recent turns so the model keeps context without a rebuild (D6). */
+function renderHistory(history?: CopilotHistoryTurn[]): string {
+  if (!history || history.length === 0) return "";
+  const lines = ["HISTORIQUE DE LA CONVERSATION (contexte — ne pas répéter inutilement) :"];
+  for (const h of history.slice(-HISTORY_MAX_TURNS)) {
+    const who = h.role === "user" ? "Agent" : "Copilote";
+    const txt = (h.text ?? "").replace(/\s+/g, " ").trim().slice(0, HISTORY_MAX_CHARS);
+    if (txt) lines.push(`- ${who} : ${txt}`);
+  }
+  return lines.length > 1 ? lines.join("\n") : "";
+}
+
 /**
  * Assemble the model messages with prompt routing (D4): system prompt → skill
- * fragment (focused instruction) → dossier context + question. The skill is
- * detected upstream (lib/copilot/skills). Backward compatible — with no skill
- * the behaviour matches the prior single-prompt Copilot.
+ * fragment (focused instruction) → optional conversation history (D6) + dossier
+ * context + question. The skill is detected upstream (lib/copilot/skills).
+ * Backward compatible — with no skill/history the behaviour matches the prior
+ * single-prompt Copilot.
  */
 export function buildMessages(
   ctx: CopilotContext,
   question: string,
-  opts?: { skill?: CopilotSkill; english?: boolean },
+  opts?: { skill?: CopilotSkill; english?: boolean; history?: CopilotHistoryTurn[] },
 ): CopilotChatMessage[] {
   const brief = serializeContext(ctx);
+  const historyBlock = renderHistory(opts?.history);
   const user = [
     "CONTEXTE DU DOSSIER (source unique de vérité — ne rien inventer au-delà) :",
     "",
     brief,
     "",
+    ...(historyBlock ? [historyBlock, ""] : []),
     "---",
     "",
     `QUESTION DE L'AGENT : ${question.trim()}`,

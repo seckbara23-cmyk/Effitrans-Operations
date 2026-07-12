@@ -196,3 +196,23 @@ describe("buildMessages — skill routing (AI-2)", () => {
     expect(buildMessages(ctx(), "Bonjour", { skill: "general" })).toHaveLength(2);
   });
 });
+
+describe("buildMessages — conversation history (D6)", () => {
+  it("embeds a compact recap of prior turns before the current question", () => {
+    const history = [
+      { role: "user" as const, text: "Quels documents manquent ?" },
+      { role: "assistant" as const, text: "Il manque le certificat d'origine." },
+    ];
+    const messages = buildMessages(ctx(), "Et les risques ?", { history });
+    const user = messages[messages.length - 1].content;
+    expect(user).toContain("HISTORIQUE DE LA CONVERSATION");
+    expect(user).toContain("Agent : Quels documents manquent ?");
+    expect(user).toContain("Copilote : Il manque le certificat d'origine.");
+    // The current question still comes last.
+    expect(user).toContain("QUESTION DE L'AGENT : Et les risques ?");
+  });
+  it("omits the history block when there is none", () => {
+    const user = buildMessages(ctx(), "Résume").slice(-1)[0].content;
+    expect(user).not.toContain("HISTORIQUE DE LA CONVERSATION");
+  });
+});

@@ -22,7 +22,9 @@ import { getShipmentContext } from "@/lib/copilot/context";
 import { buildMessages } from "@/lib/copilot/prompt";
 import { detectSkill, isCopilotSkill, wantsEnglish, type CopilotSkill } from "@/lib/copilot/skills";
 import { buildTransparency } from "@/lib/copilot/transparency";
+import { copilotErrorMessage } from "@/lib/copilot/provider-ux";
 import { runCopilot, CopilotError, getCopilotConfig } from "@/lib/copilot/engine";
+import type { CopilotHistoryTurn } from "@/lib/copilot/prompt";
 import { reportError } from "@/lib/observability/report";
 
 export const dynamic = "force-dynamic";
@@ -60,7 +62,9 @@ export async function POST(req: Request) {
     return new NextResponse("Forbidden", { status: 403 });
   }
 
-  const body = (await req.json().catch(() => null)) as { fileId?: unknown; prompt?: unknown; skill?: unknown } | null;
+  const body = (await req.json().catch(() => null)) as
+    | { fileId?: unknown; prompt?: unknown; skill?: unknown; history?: unknown }
+    | null;
   const fileId = typeof body?.fileId === "string" ? body.fileId.trim() : "";
   const rawPrompt = typeof body?.prompt === "string" ? body.prompt.trim() : "";
   if (!fileId || !rawPrompt) {
@@ -74,12 +78,21 @@ export async function POST(req: Request) {
   const skill: CopilotSkill = requested ?? detectSkill(prompt);
   const english = wantsEnglish(prompt);
 
+  // Conversation history (D6) — client-supplied recent turns (stateless server).
+  const history: CopilotHistoryTurn[] = Array.isArray(body?.history)
+    ? (body.history as unknown[])
+        .filter((h): h is { role?: unknown; text?: unknown } => Boolean(h) && typeof h === "object")
+        .filter((h) => typeof h.text === "string")
+        .map((h) => ({ role: h.role === "assistant" ? ("assistant" as const) : ("user" as const), text: String(h.text).slice(0, 2000) }))
+        .slice(-6)
+    : [];
+
   // Tenant isolation + visibility are inherited from the shared read services.
   // Cached per tenant + file + permission fingerprint (D12).
   const context = await getShipmentContext(fileId, user.tenantId, permissions);
   if (!context) return new NextResponse("Not found", { status: 404 });
 
-  const messages = buildMessages(context, prompt, { skill, english });
+  const messages = buildMessages(context, prompt, { skill, english, history });
   // Transparency footer (D10/D11) is computed deterministically from the context,
   // NOT taken from the model — no fabricated certainty.
   const meta = { skill, ...buildTransparency(context, skill) };
@@ -89,8 +102,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ text, meta });
   } catch (err) {
     if (err instanceof CopilotError) {
-      // Specific, secret-free diagnostic (the openai client already logged it).
-      return NextResponse.json({ error: err.message, code: err.code }, { status: err.httpStatus });
+      // Provider-aware, secret-free diagnostic (D1) — the client shows it verbatim.
+      const cfg = getCopilotConfig();
+      return NextResponse.json(
+        { error: copilotErrorMessage(err.code, { provider: cfg.provider, model: cfg.model }), code: err.code, provider: cfg.provider },
+        { status: err.httpStatus },
+      );
     }
     // Unexpected — log and fail generic (never leak internals to the client).
     reportError(err, { scope: "route", event: "copilot.post" });
