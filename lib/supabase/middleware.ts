@@ -72,17 +72,23 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
   // a PORTAL session is never thrown into the staff /login <-> /dashboard loop.
   // Only this rare authenticated-/login path pays the extra self-row lookups.
   if (user && pathname === "/login") {
-    const [{ data: appUser }, { data: clientUser }] = await Promise.all([
+    const [{ data: appUser }, { data: clientUser }, { data: platformAdmin }] = await Promise.all([
       supabase.from("app_user").select("id").eq("id", user.id).maybeSingle(),
       supabase.from("client_user").select("id").eq("id", user.id).maybeSingle(),
+      supabase.from("platform_admin").select("id").eq("id", user.id).maybeSingle(),
     ]);
     const cls = classifySession(Boolean(appUser), Boolean(clientUser));
-    if (cls !== "none") {
-      const dest = request.nextUrl.clone();
-      dest.pathname = cls === "portal" ? "/portal" : "/dashboard";
-      return NextResponse.redirect(dest);
+    // Staff/portal land on their tenant home; a user who is ONLY a platform admin
+    // (no tenant identity) lands on /platform. Otherwise render /login (no loop).
+    let dest: string | null = null;
+    if (cls === "staff") dest = "/dashboard";
+    else if (cls === "portal") dest = "/portal";
+    else if (platformAdmin) dest = "/platform";
+    if (dest) {
+      const url = request.nextUrl.clone();
+      url.pathname = dest;
+      return NextResponse.redirect(url);
     }
-    // Orphan session (no profile of either class) -> render /login, never loop.
   }
 
   return response;

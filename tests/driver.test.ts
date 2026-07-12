@@ -65,6 +65,9 @@ describe("post-login redirect selection (DRIVER routing)", () => {
     expect(postLoginPath("staff", ["DRIVER", "SYSTEM_ADMIN"])).toBe("/driver");
     expect(postLoginPath("staff", ["OPS_SUPERVISOR"])).toBe("/dashboard");
     expect(postLoginPath("none", [])).toBe("/dashboard");
+    // Phase 4.0B — a pure platform admin (no tenant identity) lands on /platform.
+    expect(postLoginPath("none", [], true)).toBe("/platform");
+    expect(postLoginPath("staff", ["OPS_SUPERVISOR"], true)).toBe("/dashboard"); // staff home wins
   });
 });
 

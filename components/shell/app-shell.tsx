@@ -27,6 +27,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return <>{children}</>;
   }
 
+  // The platform administration surface (Phase 4.0B) has its OWN shell + guard —
+  // never the tenant sidebar. Tenant users must not see platform navigation.
+  if (pathname.startsWith("/platform")) {
+    return <>{children}</>;
+  }
+
   return (
     <SessionProvider>
       <div className="min-h-screen bg-sand-100">

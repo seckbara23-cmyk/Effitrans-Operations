@@ -13,6 +13,9 @@
  */
 import { NextResponse } from "next/server";
 import { getCurrentUser, type CurrentUser } from "@/lib/auth/current-user";
+import { getServerSupabaseClient } from "@/lib/supabase/server";
+import { resolveTenantBranding } from "@/lib/branding/service";
+import { reportBrand, exportFilename, powerbiFilename } from "@/lib/reports/brand";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { getBusinessIntelligence } from "@/lib/bi/service";
 import { getControlTower } from "@/lib/control-tower/service";
@@ -83,11 +86,22 @@ export async function GET(req: Request) {
   const from = url.searchParams.get("from");
   const to = url.searchParams.get("to");
 
+  // Tenant-resolved branding + slug for the report chrome + export filenames
+  // (Effitrans backfill reproduces today's "EFFITRANS OPERATIONS" / "effitrans-*").
+  const branding = await resolveTenantBranding(user.tenantId);
+  const { data: orgRow } = await getServerSupabaseClient()
+    .from("organization")
+    .select("slug")
+    .eq("id", user.tenantId)
+    .maybeSingle();
+  const slug = orgRow?.slug ?? null;
+
   const meta: ReportMeta = {
     title: "",
     dateRange: dateRangeLabel(from, to),
     generatedAt: new Date().toISOString().slice(0, 16).replace("T", " ") + " UTC",
     generatedBy: user.email,
+    brand: reportBrand(branding),
   };
 
   // ---- Power BI export pack (Deliverables 3 & 4) -----------------------------
@@ -100,9 +114,9 @@ export async function GET(req: Request) {
     const datasets = buildPowerBiDatasets({ bi, ct, analytics });
     await recordExport(AuditActions.REPORT_EXPORT_POWERBI, user, "powerbi", from, to);
     if (format === "csv" || format === "zip") {
-      return download(toPowerBiCsvZip(datasets), "application/zip", "effitrans_powerbi_csv.zip");
+      return download(toPowerBiCsvZip(datasets), "application/zip", powerbiFilename(slug, "zip"));
     }
-    return download(toPowerBiWorkbook(datasets), XLSX_CT, "effitrans_powerbi_export.xlsx");
+    return download(toPowerBiWorkbook(datasets), XLSX_CT, powerbiFilename(slug, "xlsx"));
   }
 
   // ---- Executive Summary PDF (Deliverable 2) ---------------------------------
@@ -114,7 +128,7 @@ export async function GET(req: Request) {
     meta.title = "Rapport exécutif";
     const pdf = buildExecutivePdf({ bi, ct, meta });
     await recordExport(AuditActions.REPORT_EXPORT_PDF, user, "executive", from, to);
-    return download(pdf, "application/pdf", "effitrans-executive.pdf");
+    return download(pdf, "application/pdf", exportFilename(slug, "executive", "pdf"));
   }
 
   // ---- Standard reports (CSV / XLSX / PDF) ------------------------------------
@@ -135,7 +149,7 @@ export async function GET(req: Request) {
     ]);
     const pdf = buildReportPdf(type, { bi, ct, meta });
     await recordExport(AuditActions.REPORT_EXPORT_PDF, user, type, from, to);
-    return download(pdf, "application/pdf", `effitrans-${type}.pdf`);
+    return download(pdf, "application/pdf", exportFilename(slug, type, "pdf"));
   }
 
   // CSV / XLSX — the existing tabular exports (unchanged output).
@@ -151,8 +165,8 @@ export async function GET(req: Request) {
 
   if (format === "xlsx") {
     await recordExport(AuditActions.REPORT_EXPORT_XLSX, user, type, from, to);
-    return download(toXlsx(table.headers, table.rows), XLSX_CT, `effitrans-${type}.xlsx`);
+    return download(toXlsx(table.headers, table.rows), XLSX_CT, exportFilename(slug, type, "xlsx"));
   }
   await recordExport(AuditActions.REPORT_EXPORT_CSV, user, type, from, to);
-  return download(toCsv(table.headers, table.rows), "text/csv; charset=utf-8", `effitrans-${type}.csv`);
+  return download(toCsv(table.headers, table.rows), "text/csv; charset=utf-8", exportFilename(slug, type, "csv"));
 }

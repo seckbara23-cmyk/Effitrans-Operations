@@ -10,6 +10,7 @@
  */
 import { getCurrentUser, getSessionClass } from "./current-user";
 import { postLoginPath } from "./session-class";
+import { isPlatformAdmin } from "@/lib/platform/auth";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
 import { recordStaffLogin } from "@/lib/users/presence-track";
@@ -24,7 +25,10 @@ export async function loginDestination(): Promise<string> {
   const cls = await getSessionClass();
   // A DRIVER (staff identity) lands on their mobile workspace; portal → /portal.
   const roles = cls === "staff" ? (await getCurrentUser())?.roles ?? [] : [];
-  return postLoginPath(cls, roles);
+  // Only pay the platform lookup when there is no tenant identity (a pure platform
+  // admin); a staff/portal user always lands on their tenant home.
+  const platform = cls === "none" ? await isPlatformAdmin() : false;
+  return postLoginPath(cls, roles, platform);
 }
 
 export async function recordLoginAudit(): Promise<void> {

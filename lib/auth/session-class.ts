@@ -20,12 +20,17 @@ export function classifySession(hasAppUser: boolean, hasClientUser: boolean): Se
 }
 
 /**
- * Post-login landing path (Phase 3.4C) — PURE. Portal → /portal; a staff DRIVER →
- * their mobile workspace; other staff → /dashboard. Shared by loginDestination +
- * the OAuth callback so the redirect rule is one tested source of truth.
+ * Post-login landing path (Phase 3.4C; platform in 4.0B) — PURE. Portal →
+ * /portal; a staff DRIVER → their mobile workspace; other staff → /dashboard; a
+ * user who is ONLY a platform admin (no tenant identity) → /platform. A user who
+ * is BOTH staff and a platform admin lands on their tenant home (staff wins) and
+ * navigates to /platform explicitly. Shared by loginDestination + the OAuth
+ * callback so the redirect rule is one tested source of truth.
  */
-export function postLoginPath(cls: SessionClass, roles: string[]): string {
+export function postLoginPath(cls: SessionClass, roles: string[], isPlatformAdmin = false): string {
   if (cls === "portal") return "/portal";
   if (cls === "staff" && roles.includes("DRIVER")) return "/driver";
+  if (cls === "staff") return "/dashboard";
+  if (isPlatformAdmin) return "/platform";
   return "/dashboard";
 }

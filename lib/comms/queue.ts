@@ -12,6 +12,7 @@ import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
 import type { Json } from "@/lib/db/types";
 import { renderTemplate, type TemplateVars } from "./render";
+import { mergeBranding } from "@/lib/branding/resolve";
 import { sendEmail } from "./provider";
 import type { TemplateKey } from "./templates";
 import { reportMessage } from "@/lib/observability/report";
@@ -31,7 +32,27 @@ export type QueueInput = {
 
 export async function queueAndSend(input: QueueInput): Promise<{ id: string | null; status: string }> {
   const supabase = getAdminSupabaseClient();
-  const rendered = renderTemplate(input.templateKey, input.vars);
+
+  // Tenant-resolved email branding (service-role read so it works even without a
+  // user session, e.g. system-triggered notifications). The Effitrans backfill
+  // keeps the footer identical; the header uses the tenant display name.
+  const [{ data: brandOrg }, { data: brandRow }] = await Promise.all([
+    supabase.from("organization").select("name, trade_name, legal_name").eq("id", input.tenantId).maybeSingle(),
+    supabase
+      .from("tenant_branding")
+      .select("display_name, email_footer, primary_color")
+      .eq("tenant_id", input.tenantId)
+      .maybeSingle(),
+  ]);
+  const branding = mergeBranding(
+    { name: brandOrg?.name ?? "", tradeName: brandOrg?.trade_name ?? null, legalName: brandOrg?.legal_name ?? null },
+    brandRow,
+  );
+  const rendered = renderTemplate(input.templateKey, input.vars, {
+    displayName: branding.displayName,
+    emailFooter: branding.emailFooter ?? branding.displayName,
+    primaryColor: branding.primaryColor ?? "#0b1f3a",
+  });
 
   const { data, error } = await supabase
     .from("communication_message")

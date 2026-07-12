@@ -44,7 +44,7 @@ export function buildExecutivePdf(input: {
   // ---- Synthèse + headline KPIs ----------------------------------------------
   L.sectionHeader("Synthèse exécutive");
   L.paragraph(
-    "Vue consolidée des opérations Effitrans dérivée des enregistrements existants : revenus, " +
+    `Vue consolidée des opérations ${input.meta.brand?.displayName ?? "Effitrans"} dérivée des enregistrements existants : revenus, ` +
       "productivité, SLA, risque et dossiers nécessitant une attention. Aucune donnée n'est recalculée " +
       "en dehors des services BI et Control Tower.",
   );

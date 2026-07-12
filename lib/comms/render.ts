@@ -28,21 +28,36 @@ function interpolate(template: string, vars: TemplateVars, escape: boolean): str
   });
 }
 
-function brandWrap(bodyHtml: string): string {
+/**
+ * Email chrome branding (Phase 4.0B-4). The default reproduces the historical
+ * Effitrans wrapper (so no-branding callers + tests are unchanged); the send
+ * pipeline passes the TENANT's resolved branding. Values are already validated
+ * (safeText rejects HTML) so they are embedded without further escaping — exactly
+ * like the original literals.
+ */
+export type EmailBrand = { displayName: string; emailFooter: string; primaryColor: string };
+
+const DEFAULT_EMAIL_BRAND: EmailBrand = {
+  displayName: "Effitrans — Transit & Logistique",
+  emailFooter: "Effitrans Operations · Dakar, Sénégal",
+  primaryColor: "#0b1f3a",
+};
+
+function brandWrap(bodyHtml: string, brand: EmailBrand = DEFAULT_EMAIL_BRAND): string {
   return (
     `<div style="font-family:system-ui,Arial,sans-serif;color:#0f172a;max-width:600px;margin:0 auto">` +
-    `<div style="background:#0b1f3a;color:#fff;padding:16px 20px;font-weight:700">Effitrans — Transit & Logistique</div>` +
+    `<div style="background:${brand.primaryColor};color:#fff;padding:16px 20px;font-weight:700">${brand.displayName}</div>` +
     `<div style="padding:20px">${bodyHtml}</div>` +
-    `<div style="padding:12px 20px;color:#64748b;font-size:12px;border-top:1px solid #e2e8f0">Effitrans Operations · Dakar, Sénégal</div>` +
+    `<div style="padding:12px 20px;color:#64748b;font-size:12px;border-top:1px solid #e2e8f0">${brand.emailFooter}</div>` +
     `</div>`
   );
 }
 
-export function renderTemplate(key: TemplateKey, vars: TemplateVars): RenderedEmail {
+export function renderTemplate(key: TemplateKey, vars: TemplateVars, brand?: EmailBrand): RenderedEmail {
   const tpl = TEMPLATES[key];
   return {
     subject: interpolate(tpl.subject, vars, false),
-    html: brandWrap(interpolate(tpl.html, vars, true)),
+    html: brandWrap(interpolate(tpl.html, vars, true), brand),
     text: interpolate(tpl.text, vars, false),
   };
 }

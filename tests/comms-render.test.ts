@@ -41,4 +41,23 @@ describe("renderTemplate", () => {
     expect(r.html).toContain("EFT-IMP-2026-00001");
     expect(r.subject).toBe("Preuve de livraison reçue — dossier EFT-IMP-2026-00001");
   });
+
+  it("wraps with TENANT branding when provided (Phase 4.0B)", () => {
+    const r = renderTemplate("pod_received", { fileNumber: "X" }, {
+      displayName: "Baobab Trading",
+      emailFooter: "Baobab Trading · Dakar",
+      primaryColor: "#123456",
+    });
+    expect(r.html).toContain("Baobab Trading");
+    expect(r.html).toContain("Baobab Trading · Dakar");
+    expect(r.html).toContain("#123456");
+    expect(r.html).not.toContain("Effitrans — Transit");
+  });
+
+  it("falls back to the default Effitrans wrapper without branding (byte-stable)", () => {
+    const r = renderTemplate("pod_received", { fileNumber: "X" });
+    expect(r.html).toContain("Effitrans — Transit & Logistique");
+    expect(r.html).toContain("Effitrans Operations · Dakar, Sénégal");
+    expect(r.html).toContain("#0b1f3a");
+  });
 });

@@ -20,6 +20,13 @@ export type RouteContext = {
   identity: SessionClass; // "none" | "staff" | "portal"
   portalStatus?: PortalStatus; // meaningful only when identity === "portal"
   mustChangePassword?: boolean; // meaningful only for an ACTIVE portal user
+  /**
+   * Platform administration is an ORTHOGONAL capability, not a tenant identity: a
+   * platform admin may also have a tenant identity (then `identity` is staff/portal)
+   * or none. Platform routes are gated by this flag; tenant routes are gated by
+   * `identity`. No implicit inheritance in either direction.
+   */
+  isPlatformAdmin?: boolean;
 };
 
 export const STAFF_LOGIN = "/login";
@@ -27,6 +34,7 @@ export const PORTAL_LOGIN = "/portal/login";
 export const PORTAL_CHANGE_PASSWORD = "/portal/auth/change-password";
 export const DASHBOARD = "/dashboard";
 export const PORTAL_HOME = "/portal";
+export const PLATFORM_HOME = "/platform";
 
 // ---- path classification -----------------------------------------------------
 export function isStaffLogin(p: string): boolean {
@@ -44,10 +52,13 @@ export function isStaffAuth(p: string): boolean {
 export function isPortalApp(p: string): boolean {
   return (p === "/portal" || p.startsWith("/portal/")) && !isPortalLogin(p) && !isPortalAuth(p);
 }
+export function isPlatformApp(p: string): boolean {
+  return p === "/platform" || p.startsWith("/platform/");
+}
 export function isRoot(p: string): boolean {
   return p === "/";
 }
-/** A protected staff route (anything not root/login/auth/portal). */
+/** A protected staff route (anything not root/login/auth/portal/platform). */
 export function isStaffApp(p: string): boolean {
   return (
     !isRoot(p) &&
@@ -55,7 +66,8 @@ export function isStaffApp(p: string): boolean {
     !isStaffAuth(p) &&
     !isPortalLogin(p) &&
     !isPortalAuth(p) &&
-    !isPortalApp(p)
+    !isPortalApp(p) &&
+    !isPlatformApp(p)
   );
 }
 
@@ -68,7 +80,8 @@ export function isPublicPath(p: string): boolean {
 
 /** Edge middleware behaviour (identity-aware only for the authenticated /login case). */
 export function middlewareRedirect(path: string, ctx: RouteContext): string | null {
-  const authed = ctx.identity !== "none";
+  // A platform admin is authenticated even with no tenant identity ("none").
+  const authed = ctx.identity !== "none" || ctx.isPlatformAdmin === true;
   if (!authed && !isPublicPath(path)) {
     return isPortalApp(path) || isPortalLogin(path) ? PORTAL_LOGIN : STAFF_LOGIN;
   }
@@ -76,6 +89,7 @@ export function middlewareRedirect(path: string, ctx: RouteContext): string | nu
     // Route by identity so a portal session is NEVER thrown into the staff loop.
     if (ctx.identity === "staff") return DASHBOARD;
     if (ctx.identity === "portal") return PORTAL_HOME;
+    if (ctx.isPlatformAdmin) return PLATFORM_HOME; // pure platform admin → platform
     return null; // orphan (no profile) → render the login page, never loop
   }
   return null;
@@ -83,11 +97,23 @@ export function middlewareRedirect(path: string, ctx: RouteContext): string | nu
 
 /** Page/guard behaviour once the middleware lets the request through. */
 export function pageRedirect(path: string, ctx: RouteContext): string | null {
-  if (isRoot(path)) return DASHBOARD; // app/page.tsx (unconditional)
+  if (isRoot(path)) {
+    // A pure platform admin (no tenant identity) lands on /platform, not /dashboard.
+    if (ctx.identity === "none" && ctx.isPlatformAdmin) return PLATFORM_HOME;
+    return DASHBOARD; // app/page.tsx
+  }
+
+  if (isPlatformApp(path)) {
+    if (ctx.isPlatformAdmin) return null; // render — the only ones allowed in
+    if (ctx.identity === "staff") return DASHBOARD; // tenant admin CANNOT access platform
+    if (ctx.identity === "portal") return PORTAL_HOME;
+    return STAFF_LOGIN; // none, not a platform admin
+  }
 
   if (isStaffApp(path)) {
     if (ctx.identity === "staff") return null; // render
     if (ctx.identity === "portal") return PORTAL_HOME; // require-user: bounce portal to portal
+    if (ctx.isPlatformAdmin) return PLATFORM_HOME; // pure platform admin → platform (no login loop)
     return STAFF_LOGIN; // none/orphan
   }
 

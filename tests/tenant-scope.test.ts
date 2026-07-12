@@ -125,6 +125,7 @@ const KNOWN_UNSCOPED_READS: Record<string, string> = {
   //     non-sensitive columns; never operational payloads.
   "lib/platform/companies.ts::app_user": "platform-wide user aggregate (platform:companies:read gated; cross-tenant by design)",
   "lib/platform/companies.ts::operational_file": "platform-wide active-dossier aggregate (platform:companies:read gated; cross-tenant by design)",
+  "lib/platform/audit-read.ts::audit_log": "platform.* audit slice (platform:audit:read gated; cross-tenant by design)",
 };
 
 const LIB_DIR = fileURLToPath(new URL("../lib", import.meta.url));

@@ -12,6 +12,9 @@ const PORTAL_OK: RouteContext = { identity: "portal", portalStatus: "ACTIVE", mu
 const PORTAL_DISABLED: RouteContext = { identity: "portal", portalStatus: "DISABLED" };
 const STAFF: RouteContext = { identity: "staff" };
 const NONE: RouteContext = { identity: "none" };
+// Platform admin capability is orthogonal to tenant identity (Phase 4.0B).
+const PLATFORM_ONLY: RouteContext = { identity: "none", isPlatformAdmin: true };
+const DUAL_STAFF_PLATFORM: RouteContext = { identity: "staff", isPlatformAdmin: true };
 
 /** Assert the chain from `start` terminates (no loop) within the hop budget. */
 function terminal(start: string, ctx: RouteContext): string {
@@ -99,13 +102,47 @@ describe("redirect contract — no loops, correct destinations", () => {
 
   // Cross-cutting: exhaustive no-loop sweep across identities × representative paths.
   it("no identity × path combination ever loops", () => {
-    const paths = ["/", "/login", "/dashboard", "/clients", "/portal", "/portal/login", "/portal/auth/change-password", "/portal/documents", "/auth/callback", "/portal/auth/callback"];
-    const ctxs: RouteContext[] = [NONE, STAFF, PORTAL_TEMP, PORTAL_OK, PORTAL_DISABLED, { identity: "portal", portalStatus: "INVITED" }];
+    const paths = ["/", "/login", "/dashboard", "/clients", "/portal", "/portal/login", "/portal/auth/change-password", "/portal/documents", "/auth/callback", "/portal/auth/callback", "/platform", "/platform/companies"];
+    const ctxs: RouteContext[] = [NONE, STAFF, PORTAL_TEMP, PORTAL_OK, PORTAL_DISABLED, { identity: "portal", portalStatus: "INVITED" }, PLATFORM_ONLY, DUAL_STAFF_PLATFORM];
     for (const path of paths) {
       for (const ctx of ctxs) {
         const res = followRedirects(path, ctx, 12);
         expect(res.looped, `LOOP: ${path} [${JSON.stringify(ctx)}] → ${res.chain.join(" → ")}`).toBe(false);
       }
     }
+  });
+});
+
+describe("platform / tenant route isolation (4.0B)", () => {
+  it("a tenant admin (staff, not platform) CANNOT access /platform — routed to dashboard", () => {
+    expect(nextRoute("/platform", STAFF)).toBe("/dashboard");
+    expect(terminal("/platform", STAFF)).toBe("/dashboard");
+    expect(terminal("/platform/companies", STAFF)).toBe("/dashboard");
+  });
+
+  it("a platform admin renders /platform and its sub-routes", () => {
+    expect(nextRoute("/platform", PLATFORM_ONLY)).toBeNull();
+    expect(terminal("/platform", PLATFORM_ONLY)).toBe("/platform");
+    expect(terminal("/platform/companies", PLATFORM_ONLY)).toBe("/platform/companies");
+  });
+
+  it("a pure platform admin lands on /platform from tenant routes and /login (no loop)", () => {
+    expect(terminal("/dashboard", PLATFORM_ONLY)).toBe("/platform");
+    expect(terminal("/login", PLATFORM_ONLY)).toBe("/platform");
+    expect(terminal("/", PLATFORM_ONLY)).toBe("/platform");
+  });
+
+  it("a dual staff+platform admin can reach BOTH surfaces", () => {
+    expect(nextRoute("/platform", DUAL_STAFF_PLATFORM)).toBeNull(); // platform renders
+    expect(nextRoute("/dashboard", DUAL_STAFF_PLATFORM)).toBeNull(); // tenant renders
+    expect(terminal("/login", DUAL_STAFF_PLATFORM)).toBe("/dashboard"); // staff home by default
+  });
+
+  it("a portal user cannot access /platform", () => {
+    expect(nextRoute("/platform", PORTAL_OK)).toBe("/portal");
+  });
+
+  it("an unauthenticated /platform request goes to /login", () => {
+    expect(terminal("/platform", NONE)).toBe("/login");
   });
 });
