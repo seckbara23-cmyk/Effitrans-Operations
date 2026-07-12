@@ -48,6 +48,15 @@ enabled = true
 # RLS tests run. We don't use it — disable it so CI boots only what it needs.
 enabled = false
 
+[analytics]
+# No analytics/log consumer is used anywhere. Recent CLIs boot the Logflare +
+# Vector analytics containers by default; in CI those fail their health check and
+# abort `supabase start` before the RLS tests run — the SAME failure mode as the
+# edge_runtime container above (which was already disabled for this reason). The
+# RLS suite only needs the Postgres database, so analytics is dead weight —
+# disable it so `supabase start` boots only what the tests require.
+enabled = false
+
 # -----------------------------------------------------------------------------
 # Provisional region note (BLK-9):
 #   Hosted region is selected in the Supabase dashboard at project creation and

@@ -54,7 +54,23 @@ jobs:
           version: 2.106.0
 
       - name: Start local Supabase (applies migrations + seed)
-        run: supabase start
+        run: |
+          if supabase start; then
+            echo "supabase start: OK"
+          else
+            code=$?
+            echo "::group::supabase start diagnostics"
+            supabase status || true
+            docker ps -a || true
+            for c in $(docker ps -a --filter 'status=exited' -q); do
+              echo "----- exited container logs: $(docker inspect --format '{{.Name}}' "$c") -----"
+              docker logs --tail 80 "$c" 2>&1 || true
+            done
+            echo "::endgroup::"
+            statuses="$(docker ps -a --format '{{.Names}}={{.Status}}' | tr '\n' '; ' | cut -c1-900)"
+            echo "::error title=supabase start failed (exit ${code})::${statuses}"
+            exit 1
+          fi
 
       - name: Reset DB (re-apply migrations + seed deterministically)
         run: supabase db reset
