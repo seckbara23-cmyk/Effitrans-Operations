@@ -16,7 +16,7 @@ import { evaluateOutput, type EvalExpectation, type EvalOutcome, type ScenarioCa
 /** Build one sanitized dossier context. Data is obviously fictional (no PII). */
 export function makeSanitizedContext(
   now: Date,
-  opts?: { hideFinance?: boolean; hideCustoms?: boolean; longContext?: boolean },
+  opts?: { hideFinance?: boolean; hideCustoms?: boolean; hideTracking?: boolean; longContext?: boolean },
 ): CopilotContext {
   const lifecycle = {
     completedPercent: 55,
@@ -154,9 +154,32 @@ export function makeSanitizedContext(
     containerRef: "CONT-DEMO-0001",
   };
 
+  const tracking = opts?.hideTracking
+    ? { included: false as const }
+    : {
+        included: true as const,
+        data: {
+          present: true,
+          driverName: "Chauffeur Démo",
+          latestPositionAt: "2099-01-20T10:00:00.000Z",
+          freshness: "stale" as const,
+          eta: { estimatedArrival: null, basis: "unavailable", confidence: "low", confidencePercent: 0, delayMinutes: null },
+          deliveredAt: null,
+          incidents: 0,
+          delays: 1,
+          events: [
+            { type: "DEPARTED", occurredAt: "2099-01-20T08:00:00.000Z", kind: "operational" as const, customerVisible: true, customerMessage: "Départ effectué", internalNote: null },
+            { type: "DELAY_REPORTED", occurredAt: "2099-01-20T10:30:00.000Z", kind: "delay" as const, customerVisible: true, customerMessage: "Retard dû à la circulation", internalNote: "Bouchon sur la N1" },
+          ],
+          omittedEvents: 0,
+          customerVisibleCount: 2,
+          lastCustomerMessage: "Retard dû à la circulation",
+        },
+      };
+
   const view = { lifecycle, sla, documents, customs, transport, finance };
   const risk = assessRisk(riskInputFromContext(view, now));
-  return { dossier, lifecycle, documents, customs, transport, finance, sla, tasks, risk };
+  return { dossier, lifecycle, documents, customs, transport, finance, sla, tasks, tracking, risk };
 }
 
 /** Per-scenario scoring metadata for the deterministic scorecard (Phase 3.4F-2). */

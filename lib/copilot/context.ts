@@ -20,6 +20,9 @@
 // (below) so that the PURE `assembleCopilotContext` — and its unit tests — never
 // pull in server-only modules (e.g. the RSC `cache()` in lib/rbac/permissions).
 import { assessRisk, riskInputFromContext, type RiskAssessment } from "@/lib/copilot/risk-engine";
+import { capItems, isCriticalEventType, COMPRESS_LIMITS } from "@/lib/copilot/compress";
+import { deriveRealtimeEta } from "@/lib/tracking/eta";
+import { classifyFreshness, DEFAULT_FRESHNESS_THRESHOLDS } from "@/lib/tracking/position";
 import type { DossierLifecycle } from "@/lib/files/lifecycle";
 import type { FileDetail } from "@/lib/files/types";
 import type { DocumentItem, MissingDocument } from "@/lib/documents/types";
@@ -28,6 +31,7 @@ import type { TransportRecord } from "@/lib/transport/types";
 import type { FinanceForFile } from "@/lib/finance/types";
 import type { TaskListItem } from "@/lib/tasks/types";
 import type { DossierSla } from "@/lib/sla/service";
+import type { TrackingEventEntry, FreshnessState } from "@/lib/tracking/types";
 
 /** A section the caller is not permitted to read carries no data. */
 type Section<T> = { included: true; data: T } | { included: false };
@@ -124,6 +128,47 @@ export type CopilotTasks = {
   items: { title: string; status: string; priority: string; dueAt: string | null; assignedTo: string | null }[];
 };
 
+/** One event on the operational timeline (classified for the model). */
+export type CopilotTrackingEvent = {
+  type: string;
+  occurredAt: string;
+  kind: "incident" | "delay" | "delivery" | "operational";
+  customerVisible: boolean;
+  customerMessage: string | null;
+  internalNote: string | null;
+};
+
+/**
+ * Tracking / driver / ETA / incidents / delays / POD / operational timeline —
+ * one permission-gated section (tracking:read). Reuses the tracking timeline +
+ * latest-position readers and the PURE realtime-ETA + freshness engines; the raw
+ * GPS trail is never exposed (only the last-known freshness + a compressed
+ * event timeline). This section IS the "what changed / chronology" source (D6).
+ */
+export type CopilotTracking = {
+  /** The tracking feature surfaced any data for this dossier. */
+  present: boolean;
+  driverName: string | null;
+  latestPositionAt: string | null;
+  freshness: FreshnessState;
+  eta: {
+    estimatedArrival: string | null;
+    basis: string;
+    confidence: string;
+    confidencePercent: number;
+    delayMinutes: number | null;
+  };
+  deliveredAt: string | null;
+  incidents: number;
+  delays: number;
+  /** Compressed operational timeline (most recent first). */
+  events: CopilotTrackingEvent[];
+  omittedEvents: number;
+  /** What the client has seen on the portal (customer-visible events). */
+  customerVisibleCount: number;
+  lastCustomerMessage: string | null;
+};
+
 export type CopilotContext = {
   dossier: CopilotDossier;
   lifecycle: CopilotLifecycle;
@@ -133,6 +178,7 @@ export type CopilotContext = {
   finance: Section<CopilotFinance>;
   sla: Section<CopilotSla>;
   tasks: Section<CopilotTasks>;
+  tracking: Section<CopilotTracking>;
   /** Derived AI risk assessment (Phase 3.1B) — single source of truth for risk. */
   risk: RiskAssessment;
 };
@@ -144,6 +190,7 @@ export type CopilotAccess = {
   transport: boolean;
   finance: boolean;
   tasks: boolean;
+  tracking: boolean;
 };
 
 export type AssembleInput = {
@@ -161,9 +208,83 @@ export type AssembleInput = {
   finance: FinanceForFile | null;
   tasks: TaskListItem[];
   sla: DossierSla | null;
+  /** Raw tracking events (newest first) — empty when tracking is dark/inaccessible. */
+  trackingEvents: TrackingEventEntry[];
+  /** recorded_at of the latest known position, or null. */
+  latestPositionAt: string | null;
 };
 
 const OPEN_TASK_STATUSES = new Set(["TODO", "IN_PROGRESS", "BLOCKED"]);
+
+/** Classify a tracking event for the model (drives incident/delay counting). */
+function eventKind(type: string): CopilotTrackingEvent["kind"] {
+  if (type === "INCIDENT_REPORTED") return "incident";
+  if (type === "DELAY_REPORTED") return "delay";
+  if (type === "DELIVERED" || type === "DELIVERY_ATTEMPTED" || type === "POD_RECEIVED") return "delivery";
+  return "operational";
+}
+
+/** Build the tracking section from raw events + latest-position time (PURE). */
+function assembleTracking(input: AssembleInput): Section<CopilotTracking> {
+  if (!input.access.tracking) return { included: false };
+
+  const evs = input.trackingEvents;
+  const transport = input.access.transport ? input.transport : null;
+  const present = evs.length > 0 || input.latestPositionAt !== null || transport !== null;
+
+  const freshness: FreshnessState = input.latestPositionAt
+    ? classifyFreshness(input.latestPositionAt, input.now, DEFAULT_FRESHNESS_THRESHOLDS)
+    : "none";
+
+  const deliveredEvent = evs.find((e) => e.type === "DELIVERED");
+  const deliveredAt = transport?.deliveryActual ?? deliveredEvent?.occurredAt ?? null;
+
+  const eta = deriveRealtimeEta({
+    deliveredActual: deliveredAt,
+    scheduledDelivery: transport?.deliveryPlanned ?? null,
+    transportEta: null,
+    pickupActual: null,
+    currentStageKey: null,
+    livePositionAt: input.latestPositionAt,
+    now: input.now,
+  });
+
+  const mapped: CopilotTrackingEvent[] = evs.map((e) => ({
+    type: e.type,
+    occurredAt: e.occurredAt,
+    kind: eventKind(e.type),
+    customerVisible: e.customerVisible,
+    customerMessage: e.customerMessage,
+    internalNote: e.internalNote,
+  }));
+  // Compress: keep every incident/delay/delivery event + most-recent routine ones.
+  const capped = capItems(mapped, COMPRESS_LIMITS.events, (e) => isCriticalEventType(e.type));
+  const customerVisible = mapped.filter((e) => e.customerVisible);
+
+  return {
+    included: true,
+    data: {
+      present,
+      driverName: transport?.driverName ?? null,
+      latestPositionAt: input.latestPositionAt,
+      freshness,
+      eta: {
+        estimatedArrival: eta.estimatedArrival,
+        basis: eta.basis,
+        confidence: eta.confidence,
+        confidencePercent: eta.confidencePercent,
+        delayMinutes: eta.delayMinutes ?? null,
+      },
+      deliveredAt,
+      incidents: mapped.filter((e) => e.kind === "incident").length,
+      delays: mapped.filter((e) => e.kind === "delay").length,
+      events: capped.items,
+      omittedEvents: capped.omitted,
+      customerVisibleCount: customerVisible.length,
+      lastCustomerMessage: customerVisible.find((e) => e.customerMessage)?.customerMessage ?? null,
+    },
+  };
+}
 
 /**
  * Pure packaging of already-fetched records into the Copilot snapshot.
@@ -322,12 +443,14 @@ export function assembleCopilotContext(input: AssembleInput): CopilotContext {
       }
     : { included: false };
 
+  const tracking = assembleTracking(input);
+
   // Derived risk (Phase 3.1B) — computed from the assembled snapshot so the
   // Copilot consumes the Risk Engine output instead of reasoning from scratch.
   const view = { lifecycle: lc, sla, documents, customs, transport, finance };
   const risk = assessRisk(riskInputFromContext(view, input.now));
 
-  return { dossier, lifecycle: lc, documents, customs, transport, finance, sla, tasks, risk };
+  return { dossier, lifecycle: lc, documents, customs, transport, finance, sla, tasks, tracking, risk };
 }
 
 /**
@@ -355,6 +478,7 @@ export async function buildCopilotContext(
     { getDossierStage },
     { getOpenHandoffForFile },
     { getDossierLifecycle },
+    { getTrackingTimeline, getLatestTrackingPosition },
   ] = await Promise.all([
     import("@/lib/rbac/permissions"),
     import("@/lib/files/service"),
@@ -366,6 +490,7 @@ export async function buildCopilotContext(
     import("@/lib/sla/service"),
     import("@/lib/handoffs/service"),
     import("@/lib/files/lifecycle"),
+    import("@/lib/tracking/service"),
   ]);
 
   if (!hasPermission(permissions, "file:read")) return null;
@@ -379,9 +504,10 @@ export async function buildCopilotContext(
     transport: hasPermission(permissions, "transport:read"),
     finance: hasPermission(permissions, "finance:read"),
     tasks: hasPermission(permissions, "task:read"),
+    tracking: hasPermission(permissions, "tracking:read"),
   };
 
-  const [documents, missingDocuments, customs, missingCustomsDocuments, transport, finance, tasks] =
+  const [documents, missingDocuments, customs, missingCustomsDocuments, transport, finance, tasks, trackingEvents, latestPosition] =
     await Promise.all([
       access.documents ? listDocuments(file.id) : Promise.resolve([] as DocumentItem[]),
       access.documents
@@ -392,6 +518,10 @@ export async function buildCopilotContext(
       access.transport ? getTransportRecord(file.id) : Promise.resolve(null),
       access.finance ? getFinanceForFile(file.id) : Promise.resolve(null),
       access.tasks ? listTasks({ fileId: file.id }) : Promise.resolve([] as TaskListItem[]),
+      // Tracking reads are themselves tracking:read + visibility gated and return
+      // [] / null when the tracking feature is dark — safe to call when permitted.
+      access.tracking ? getTrackingTimeline(file.id) : Promise.resolve([] as TrackingEventEntry[]),
+      access.tracking ? getLatestTrackingPosition(file.id) : Promise.resolve(null),
     ]);
 
   const podApproved = documents.some(
@@ -429,5 +559,55 @@ export async function buildCopilotContext(
     finance,
     tasks,
     sla,
+    trackingEvents,
+    latestPositionAt: latestPosition?.recordedAt ?? null,
   });
+}
+
+// ===========================================================================
+// Performance (D12) — short-TTL, tenant+permission-scoped context memo.
+// A dossier chat fires several questions in a row; rebuilding the same snapshot
+// each time re-runs ~9 reads. This memo returns the already-built context for a
+// few seconds. It is keyed by tenant + file + the permission fingerprint so a
+// different tenant or a differently-permissioned caller NEVER reads a cache hit
+// meant for someone else (the underlying reads are still the RLS boundary).
+// ===========================================================================
+const CONTEXT_TTL_MS = 15_000;
+const CONTEXT_CACHE_MAX = 200;
+const contextCache = new Map<string, { ctx: CopilotContext; expiresAt: number }>();
+
+/** Relevant permissions only — keeps the key stable and section-accurate. */
+const CACHE_PERMS = ["file:read", "document:read", "customs:read", "transport:read", "finance:read", "task:read", "tracking:read"] as const;
+
+export function shipmentCacheKey(fileId: string, tenantId: string, permissions: string[]): string {
+  const permKey = CACHE_PERMS.filter((p) => permissions.includes(p)).join(",");
+  return `${tenantId}::${fileId}::${permKey}`;
+}
+
+/**
+ * Cached entry point for the route (D12). Same tenant + file + permission set →
+ * one build reused for CONTEXT_TTL_MS. `buildCopilotContext` stays the uncached
+ * builder used by tests and the eval harness. `nowMs` is injectable for tests.
+ */
+export async function getShipmentContext(
+  fileId: string,
+  tenantId: string,
+  permissions: string[],
+  nowMs: number = Date.now(),
+): Promise<CopilotContext | null> {
+  const key = shipmentCacheKey(fileId, tenantId, permissions);
+  const hit = contextCache.get(key);
+  if (hit && hit.expiresAt > nowMs) return hit.ctx;
+
+  const ctx = await buildCopilotContext(fileId, permissions);
+  if (!ctx) {
+    contextCache.delete(key);
+    return null;
+  }
+  if (contextCache.size >= CONTEXT_CACHE_MAX) {
+    const oldest = contextCache.keys().next().value;
+    if (oldest !== undefined) contextCache.delete(oldest);
+  }
+  contextCache.set(key, { ctx, expiresAt: nowMs + CONTEXT_TTL_MS });
+  return ctx;
 }

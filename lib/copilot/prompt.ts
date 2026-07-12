@@ -14,11 +14,33 @@
  * Fully unit-tested. The serializer is deterministic and contains no secrets.
  */
 import type { CopilotContext } from "@/lib/copilot/context";
+import { skillPrompt, type CopilotSkill } from "@/lib/copilot/skills";
 
 export type CopilotChatMessage = { role: "system" | "user"; content: string };
 
 const NA = "Non renseigné";
 const NO_ACCESS = "ACCÈS NON AUTORISÉ — l'utilisateur ne peut pas consulter cette section. Ne pas spéculer.";
+
+const FRESHNESS_LABEL: Record<string, string> = {
+  live: "en direct",
+  recent: "récente",
+  stale: "ancienne",
+  none: "aucune",
+};
+const ETA_BASIS_LABEL: Record<string, string> = {
+  scheduled: "date planifiée",
+  transport_eta: "ETA transporteur",
+  live_position: "position en direct",
+  last_known_position: "dernière position connue",
+  operational_estimate: "estimation opérationnelle",
+  unavailable: "indisponible",
+};
+const EVENT_KIND_LABEL: Record<string, string> = {
+  incident: "INCIDENT",
+  delay: "RETARD",
+  delivery: "LIVRAISON",
+  operational: "Étape",
+};
 
 function val(v: string | number | null | undefined): string {
   if (v === null || v === undefined || v === "") return NA;
@@ -142,6 +164,37 @@ export function serializeContext(ctx: CopilotContext): string {
   }
 
   out.push("");
+  out.push("=== SUIVI / CHRONOLOGIE ===");
+  if (!ctx.tracking.included) {
+    out.push(NO_ACCESS);
+  } else if (!ctx.tracking.data.present) {
+    out.push("Aucune donnée de suivi pour ce dossier.");
+  } else {
+    const tk = ctx.tracking.data;
+    out.push(line("Chauffeur", tk.driverName));
+    out.push(line("Dernière position connue", tk.latestPositionAt));
+    out.push(line("Fraîcheur de la position", FRESHNESS_LABEL[tk.freshness] ?? tk.freshness));
+    out.push(line("ETA estimée", tk.eta.estimatedArrival));
+    out.push(line("Base de l'ETA", ETA_BASIS_LABEL[tk.eta.basis] ?? tk.eta.basis));
+    out.push(line("Confiance ETA", `${tk.eta.confidence} (${tk.eta.confidencePercent}%)`));
+    out.push(line("Livraison réelle", tk.deliveredAt));
+    out.push(line("Incidents signalés", tk.incidents));
+    out.push(line("Retards signalés", tk.delays));
+    out.push(line("Événements vus par le client", tk.customerVisibleCount));
+    if (tk.events.length > 0) {
+      out.push("Chronologie (du plus récent au plus ancien) :");
+      for (const e of tk.events) {
+        const detail = e.internalNote || e.customerMessage;
+        const suffix = detail ? ` — ${detail}` : "";
+        out.push(`  - [${e.occurredAt}] ${EVENT_KIND_LABEL[e.kind] ?? e.kind} · ${e.type}${suffix}`);
+      }
+      if (tk.omittedEvents > 0) out.push(`  - (+${tk.omittedEvents} événement(s) plus ancien(s) omis)`);
+    } else {
+      out.push("Aucun événement de suivi enregistré.");
+    }
+  }
+
+  out.push("");
   out.push("=== FINANCE ===");
   if (!ctx.finance.included) {
     out.push(NO_ACCESS);
@@ -208,17 +261,28 @@ export function buildSystemPrompt(): string {
     "",
     "RÈGLES STRICTES :",
     "- Réponds UNIQUEMENT à partir des informations du dossier fournies ci-dessous. N'invente jamais de données, de dates, de montants, de références ou de noms.",
-    "- Si une information n'est pas dans le dossier, dis explicitement qu'elle n'est pas disponible.",
-    "- Une section marquée « ACCÈS NON AUTORISÉ » est invisible pour cet utilisateur : ne formule aucune hypothèse à son sujet et signale que tu n'y as pas accès si la question la concerne.",
-    "- Tu es en LECTURE SEULE : tu ne peux ni modifier le dossier, ni créer de tâche, ni envoyer d'e-mail, ni exécuter d'action. Si on te le demande, propose les étapes à suivre sans prétendre les avoir faites.",
+    "- DISTINGUE explicitement trois cas : (1) information CONNUE (présente dans le dossier) ; (2) information INCONNUE (absente — dis clairement qu'elle n'est pas renseignée ou pas encore planifiée) ; (3) information NON AUTORISÉE (section « ACCÈS NON AUTORISÉ » — signale que tu n'y as pas accès). Ne comble jamais un vide par une supposition.",
+    "- Une section marquée « ACCÈS NON AUTORISÉ » est invisible pour cet utilisateur : ne formule aucune hypothèse à son sujet et n'en déduis rien.",
+    "- Tu es en LECTURE SEULE : tu ne peux ni modifier le dossier, ni créer de tâche, ni envoyer d'e-mail, ni exécuter d'action. Toute proposition d'action doit être introduite par « Action suggérée : » et rester une suggestion — ne prétends jamais l'avoir réalisée.",
     "- Réponds en texte brut. N'utilise PAS de tableaux markdown. Des listes à puces simples sont acceptées pour la lisibilité.",
-    "- Pour une rédaction de message (mise à jour client, note de passation), produis un texte prêt à copier, fondé uniquement sur les faits du dossier.",
+    "- Pour une rédaction de message (mise à jour client, note de passation), produis un texte prêt à copier, fondé uniquement sur les faits du dossier. Un message CLIENT ne doit jamais contenir de note interne, de seuil SLA, d'incident interne ni de donnée d'une section non autorisée.",
+    "- Pour toute question de CHRONOLOGIE (hier, aujourd'hui, depuis quand, ce qui a changé), appuie-toi sur la section « SUIVI / CHRONOLOGIE » et sur l'avancement du cycle de vie ; n'utilise que les dates réellement présentes.",
     "- Pour toute question sur les RISQUES, ce qui est préoccupant ou le dossier à traiter en priorité, appuie-toi sur la section « RISQUE » (issue du moteur de risque) : reprends son niveau, ses raisons et ses actions. Ne recalcule pas un score et n'invente pas de risques absents de cette section.",
+    "- Cite tes sources par NOM DE SECTION (Documents, Douane, Transport, Suivi, Risque, Cycle de vie…), jamais par nom de champ technique.",
   ].join("\n");
 }
 
-/** Assemble the [system, user] messages for the model. */
-export function buildMessages(ctx: CopilotContext, question: string): CopilotChatMessage[] {
+/**
+ * Assemble the model messages with prompt routing (D4): system prompt → skill
+ * fragment (focused instruction) → dossier context + question. The skill is
+ * detected upstream (lib/copilot/skills). Backward compatible — with no skill
+ * the behaviour matches the prior single-prompt Copilot.
+ */
+export function buildMessages(
+  ctx: CopilotContext,
+  question: string,
+  opts?: { skill?: CopilotSkill; english?: boolean },
+): CopilotChatMessage[] {
   const brief = serializeContext(ctx);
   const user = [
     "CONTEXTE DU DOSSIER (source unique de vérité — ne rien inventer au-delà) :",
@@ -230,8 +294,9 @@ export function buildMessages(ctx: CopilotContext, question: string): CopilotCha
     `QUESTION DE L'AGENT : ${question.trim()}`,
   ].join("\n");
 
-  return [
-    { role: "system", content: buildSystemPrompt() },
-    { role: "user", content: user },
-  ];
+  const messages: CopilotChatMessage[] = [{ role: "system", content: buildSystemPrompt() }];
+  const fragment = opts?.skill ? skillPrompt(opts.skill, { english: opts.english }) : "";
+  if (fragment) messages.push({ role: "system", content: fragment });
+  messages.push({ role: "user", content: user });
+  return messages;
 }

@@ -18,8 +18,10 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
-import { buildCopilotContext } from "@/lib/copilot/context";
+import { getShipmentContext } from "@/lib/copilot/context";
 import { buildMessages } from "@/lib/copilot/prompt";
+import { detectSkill, isCopilotSkill, wantsEnglish, type CopilotSkill } from "@/lib/copilot/skills";
+import { buildTransparency } from "@/lib/copilot/transparency";
 import { runCopilot, CopilotError, getCopilotConfig } from "@/lib/copilot/engine";
 import { reportError } from "@/lib/observability/report";
 
@@ -58,7 +60,7 @@ export async function POST(req: Request) {
     return new NextResponse("Forbidden", { status: 403 });
   }
 
-  const body = (await req.json().catch(() => null)) as { fileId?: unknown; prompt?: unknown } | null;
+  const body = (await req.json().catch(() => null)) as { fileId?: unknown; prompt?: unknown; skill?: unknown } | null;
   const fileId = typeof body?.fileId === "string" ? body.fileId.trim() : "";
   const rawPrompt = typeof body?.prompt === "string" ? body.prompt.trim() : "";
   if (!fileId || !rawPrompt) {
@@ -66,15 +68,25 @@ export async function POST(req: Request) {
   }
   const prompt = rawPrompt.slice(0, MAX_PROMPT_LENGTH);
 
+  // Skill routing (D3/D4): honour an explicit skill from a panel chip when valid,
+  // otherwise detect it from the question. Detection is deterministic + secret-free.
+  const requested = typeof body?.skill === "string" && isCopilotSkill(body.skill) ? (body.skill as CopilotSkill) : null;
+  const skill: CopilotSkill = requested ?? detectSkill(prompt);
+  const english = wantsEnglish(prompt);
+
   // Tenant isolation + visibility are inherited from the shared read services.
-  const context = await buildCopilotContext(fileId, permissions);
+  // Cached per tenant + file + permission fingerprint (D12).
+  const context = await getShipmentContext(fileId, user.tenantId, permissions);
   if (!context) return new NextResponse("Not found", { status: 404 });
 
-  const messages = buildMessages(context, prompt);
+  const messages = buildMessages(context, prompt, { skill, english });
+  // Transparency footer (D10/D11) is computed deterministically from the context,
+  // NOT taken from the model — no fabricated certainty.
+  const meta = { skill, ...buildTransparency(context, skill) };
 
   try {
     const text = await runCopilot(messages);
-    return NextResponse.json({ text });
+    return NextResponse.json({ text, meta });
   } catch (err) {
     if (err instanceof CopilotError) {
       // Specific, secret-free diagnostic (the openai client already logged it).

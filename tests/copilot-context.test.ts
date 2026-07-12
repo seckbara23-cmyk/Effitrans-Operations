@@ -8,6 +8,7 @@ import type { TransportRecord } from "@/lib/transport/types";
 import type { FinanceForFile } from "@/lib/finance/types";
 import type { TaskListItem } from "@/lib/tasks/types";
 import type { DossierSla } from "@/lib/sla/service";
+import type { TrackingEventEntry } from "@/lib/tracking/types";
 
 const FILE: FileDetail = {
   id: "file-1",
@@ -62,6 +63,7 @@ const FULL_ACCESS: CopilotAccess = {
   transport: true,
   finance: true,
   tasks: true,
+  tracking: true,
 };
 
 function baseInput(overrides: Partial<AssembleInput> = {}): AssembleInput {
@@ -92,6 +94,8 @@ function baseInput(overrides: Partial<AssembleInput> = {}): AssembleInput {
       status: "warning",
       threshold: { warningHours: 72, criticalHours: 144 },
     } as DossierSla,
+    trackingEvents: [],
+    latestPositionAt: null,
     ...overrides,
   };
 }
@@ -138,7 +142,7 @@ describe("assembleCopilotContext — tasks packaging", () => {
 describe("assembleCopilotContext — permission gating", () => {
   it("omits sections the caller cannot read (no data leaked)", () => {
     const ctx = assembleCopilotContext(
-      baseInput({ access: { documents: false, customs: false, transport: false, finance: true, tasks: false } }),
+      baseInput({ access: { documents: false, customs: false, transport: false, finance: true, tasks: false, tracking: false } }),
     );
     expect(ctx.documents.included).toBe(false);
     expect(ctx.customs.included).toBe(false);
@@ -176,7 +180,7 @@ describe("assembleCopilotContext — derived risk", () => {
 
   it("a section the caller cannot read contributes no risk signal", () => {
     const ctx = assembleCopilotContext(
-      baseInput({ access: { documents: false, customs: false, transport: false, finance: false, tasks: false } }),
+      baseInput({ access: { documents: false, customs: false, transport: false, finance: false, tasks: false, tracking: false } }),
     );
     // Only SLA warning (+15) remains visible → MEDIUM, not HIGH.
     expect(ctx.risk.score).toBe(15);
@@ -190,5 +194,53 @@ describe("assembleCopilotContext — customs/transport presence", () => {
     if (!ctx.customs.included || !ctx.transport.included) throw new Error("sections gated by access only");
     expect(ctx.customs.data.present).toBe(false);
     expect(ctx.transport.data.present).toBe(false);
+  });
+});
+
+const trackEvent = (over: Partial<TrackingEventEntry>): TrackingEventEntry => ({
+  id: "e",
+  type: "DEPARTED",
+  source: "manual",
+  customerVisible: false,
+  customerMessage: null,
+  internalNote: null,
+  occurredAt: "2026-06-20T10:00:00.000Z",
+  createdBy: null,
+  ...over,
+});
+
+describe("assembleCopilotContext — tracking section (AI-2)", () => {
+  it("gates the tracking section on tracking:read", () => {
+    const ctx = assembleCopilotContext(baseInput({ access: { ...FULL_ACCESS, tracking: false } }));
+    expect(ctx.tracking.included).toBe(false);
+    expect((ctx.tracking as { data?: unknown }).data).toBeUndefined();
+  });
+
+  it("counts incidents/delays, compresses routine events while keeping every critical", () => {
+    const events: TrackingEventEntry[] = [
+      trackEvent({ type: "INCIDENT_REPORTED", internalNote: "vol partiel" }),
+      trackEvent({ type: "INCIDENT_REPORTED", internalNote: "casse" }),
+      trackEvent({ type: "DELAY_REPORTED", customerVisible: true, customerMessage: "retard trafic" }),
+      ...Array.from({ length: 12 }, (_, i) => trackEvent({ type: "DEPARTED", id: `d${i}` })),
+    ];
+    const ctx = assembleCopilotContext(baseInput({ trackingEvents: events, latestPositionAt: "2026-06-20T23:50:00.000Z" }));
+    if (!ctx.tracking.included) throw new Error("tracking should be included");
+    const tk = ctx.tracking.data;
+    expect(tk.present).toBe(true);
+    expect(tk.incidents).toBe(2);
+    expect(tk.delays).toBe(1);
+    // 15 events, cap 12 → 3 criticals + 9 routine kept, 3 omitted.
+    expect(tk.events).toHaveLength(12);
+    expect(tk.omittedEvents).toBe(3);
+    expect(tk.events.filter((e) => e.kind === "incident")).toHaveLength(2);
+    // customer-visible summary reflects what the client saw on the portal.
+    expect(tk.customerVisibleCount).toBe(1);
+    expect(tk.lastCustomerMessage).toBe("retard trafic");
+  });
+
+  it("present:false when there are no events, no position, and no transport", () => {
+    const ctx = assembleCopilotContext(baseInput({ transport: null, trackingEvents: [], latestPositionAt: null }));
+    if (!ctx.tracking.included) throw new Error("tracking should be included");
+    expect(ctx.tracking.data.present).toBe(false);
   });
 });

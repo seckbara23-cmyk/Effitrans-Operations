@@ -44,6 +44,23 @@ function ctx(overrides: Partial<CopilotContext> = {}): CopilotContext {
     finance: { included: false },
     sla: { included: true, data: { status: "warning", department: "customs", stage: "customs_declaration", ageDays: 2, warningHours: 72, criticalHours: 144 } },
     tasks: { included: true, data: { total: 1, open: 1, items: [{ title: "Vérifier BL", status: "TODO", priority: "HIGH", dueAt: "2026-06-20", assignedTo: "a@b.com" }] } },
+    tracking: {
+      included: true,
+      data: {
+        present: false,
+        driverName: null,
+        latestPositionAt: null,
+        freshness: "none",
+        eta: { estimatedArrival: null, basis: "unavailable", confidence: "low", confidencePercent: 0, delayMinutes: null },
+        deliveredAt: null,
+        incidents: 0,
+        delays: 0,
+        events: [],
+        omittedEvents: 0,
+        customerVisibleCount: 0,
+        lastCustomerMessage: null,
+      },
+    },
     risk: { level: "high", score: 55, reasons: ["Un document requis est manquant."], actions: ["Réclamer ou téléverser les documents requis manquants."] },
   };
   return { ...base, ...overrides };
@@ -110,5 +127,72 @@ describe("buildMessages", () => {
     expect(messages[1].role).toBe("user");
     expect(messages[1].content).toContain("QUESTION DE L'AGENT : Résumer le dossier");
     expect(messages[1].content).toContain("IMP-2026-001");
+  });
+});
+
+describe("serializeContext — tracking / timeline (AI-2)", () => {
+  const withTracking = () =>
+    ctx({
+      tracking: {
+        included: true,
+        data: {
+          present: true,
+          driverName: "Chauffeur Test",
+          latestPositionAt: "2026-06-20T10:00:00.000Z",
+          freshness: "recent",
+          eta: { estimatedArrival: "2026-06-22", basis: "scheduled", confidence: "medium", confidencePercent: 70, delayMinutes: 0 },
+          deliveredAt: null,
+          incidents: 1,
+          delays: 1,
+          events: [
+            { type: "INCIDENT_REPORTED", occurredAt: "2026-06-20T09:00:00.000Z", kind: "incident", customerVisible: false, customerMessage: null, internalNote: "casse partielle" },
+          ],
+          omittedEvents: 3,
+          customerVisibleCount: 0,
+          lastCustomerMessage: null,
+        },
+      },
+    });
+
+  it("renders the SUIVI / CHRONOLOGIE section with driver, ETA and events", () => {
+    const text = serializeContext(withTracking());
+    expect(text).toContain("=== SUIVI / CHRONOLOGIE ===");
+    expect(text).toContain("Chauffeur Test");
+    expect(text).toContain("Chronologie");
+    expect(text).toContain("INCIDENT");
+    expect(text).toContain("plus ancien(s) omis"); // compression is disclosed
+  });
+
+  it("marks tracking as ACCÈS NON AUTORISÉ when restricted", () => {
+    const text = serializeContext(ctx({ tracking: { included: false } }));
+    // transport + finance + tracking are all restricted here.
+    const n = (text.match(/ACCÈS NON AUTORISÉ/g) ?? []).length;
+    expect(n).toBe(3);
+  });
+});
+
+describe("buildSystemPrompt — AI-2 grounding + recommendations", () => {
+  it("encodes Known/Unknown/Unauthorized grounding, suggested-action and timeline guidance", () => {
+    const sys = buildSystemPrompt();
+    expect(sys).toContain("Action suggérée");
+    expect(sys).toContain("NON AUTORISÉE");
+    expect(sys).toContain("INCONNUE");
+    expect(sys).toContain("CHRONOLOGIE");
+  });
+});
+
+describe("buildMessages — skill routing (AI-2)", () => {
+  it("injects the skill fragment as a second system message before the context", () => {
+    const messages = buildMessages(ctx(), "Quels documents manquent ?", { skill: "missing_documents" });
+    expect(messages).toHaveLength(3);
+    expect(messages[0].role).toBe("system");
+    expect(messages[1].role).toBe("system");
+    expect(messages[1].content).toContain("OBJECTIF (Documents manquants)");
+    expect(messages[2].role).toBe("user");
+    expect(messages[2].content).toContain("QUESTION DE L'AGENT");
+  });
+
+  it("stays a 2-message prompt for the general skill (no fragment)", () => {
+    expect(buildMessages(ctx(), "Bonjour", { skill: "general" })).toHaveLength(2);
   });
 });
