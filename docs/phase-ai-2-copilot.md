@@ -88,10 +88,35 @@ the English hint, returns `{ text, meta }`. Backward compatible (older clients i
   skill routing (3-message prompt), compression disclosure.
 - `npm run typecheck` / `npm test` (628 passed) / `npm run build` all green.
 
-## Remaining for AI-2b
-D8 client-communication generator (FR default, EN on request) + D9 internal-handover polish;
-D14 expanded eval scenarios (missing doc, delay, risk, handover, client update, blocked
-customs, permission filtering, unknown ETA, timeline, driver assignment, recommendation
-quality, grounding); D15 live evaluation vs **qwen2.5:3b** (latency, groundedness,
-hallucination, recommendation quality, French quality, permission safety); the panel UI
-(10 skill chips + transparency footer rendering) + i18n labels.
+## AI-2b — what shipped
+
+**D8 client-communication generator + D9 internal handover** — delivered as the
+`client_update` and `internal_handover` skills (AI-2a). The client-message skill produces
+French by default and English on request (`wantsEnglish` detects "in English / en anglais");
+its fragment forbids internal notes, SLA thresholds, internal incidents, and hidden-section
+data. The handover skill produces a concise internal note (status, department, blockers,
+transport/ETA, finance/POD pending, next action).
+
+**UI** — `components/copilot/copilot-panel.tsx`: the generic suggestion chips are replaced by
+the **10 skill chips** (each sends a canonical question + explicit skill id), and every
+assistant answer renders the **transparency footer** (sources · restricted · unknown ·
+confidence) from the server-computed `meta`. i18n: `copilot.skills` + `copilot.transparency`.
+
+**D14 evaluation** — the harness grows from 15 to **23 sanitized scenarios**, adding delay
+explanation, blocked customs, unknown-ETA grounding, timeline "what happened", driver
+assignment, tracking status, a **hidden-tracking** permission-filtering variant, and
+recommendation quality. Both `runEvaluation` and the live runner now build the prompt through
+the real **skill routing** (`detectSkill` + `buildMessages({skill, english})`), so the eval
+exercises the same path as production. Deterministic scoring is unchanged
+(`lib/ai/eval/evaluators`).
+
+**D15 validation** — `npm run typecheck` / `npm test` (628 passed) / `npm run build` green.
+Live evaluation run against **qwen2.5:3b** via `npm run ai:eval:local` (sanitized fixtures,
+no production data); metrics (median latency, groundedness, French quality, instruction
+following, hidden-leak / injection / safety failures, hallucination/fabrication counts) are
+written to the gitignored `eval-results/qwen2.5-3b.json` and reported with the phase.
+
+### Live eval metrics (qwen2.5:3b) — see `eval-results/qwen2.5-3b.json`
+Reported alongside this phase (artifact is gitignored; sanitized fixtures only). Headline
+signals to check: **permission safety** (hidden-leak & injection failures should be 0),
+groundedness, French quality, and median warm latency on this CPU.

@@ -24,6 +24,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildEvalCases } from "@/lib/ai/eval/harness";
 import { buildMessages } from "@/lib/copilot/prompt";
+import { detectSkill, wantsEnglish } from "@/lib/copilot/skills";
 import { buildScorecard, type Scorecard } from "@/lib/ai/eval/evaluators";
 import { assertAllowedEvalModel } from "@/lib/ai/eval/model-allowlist";
 import { generateAI } from "@/lib/ai/provider";
@@ -76,7 +77,7 @@ describe("local model evaluation (live Ollama)", () => {
     const rows: Array<Scorecard & { answerPreview: string; errorCode: string | null }> = [];
 
     for (const c of cases) {
-      const messages = buildMessages(c.context, c.prompt);
+      const messages = buildMessages(c.context, c.prompt, { skill: detectSkill(c.prompt), english: wantsEnglish(c.prompt) });
       const systemPrompt = messages.filter((m) => m.role === "system").map((m) => m.content).join("\n");
       const userPrompt = messages.filter((m) => m.role === "user").map((m) => m.content).join("\n");
 

@@ -40,13 +40,21 @@ describe("eval harness (deterministic, sanitized fixtures)", () => {
   it("builds the full scenario set with hidden-section variants", () => {
     const cases = buildEvalCases(NOW);
     const names = cases.map((c) => c.name);
-    for (const n of ["summarize_dossier", "missing_documents", "next_step", "risk_explanation", "client_update_draft", "handoff_note", "insufficient_information", "hidden_finance", "hidden_customs", "prompt_injection", "prohibited_action"]) {
+    for (const n of [
+      "summarize_dossier", "missing_documents", "next_step", "risk_explanation", "client_update_draft", "handoff_note",
+      "insufficient_information", "hidden_finance", "hidden_customs", "prompt_injection", "prohibited_action",
+      // AI-2b additions
+      "delay_explanation", "blocked_customs", "unknown_eta", "timeline_change", "driver_assignment", "tracking_status", "hidden_tracking", "recommendation_quality",
+    ]) {
       expect(names).toContain(n);
     }
     const hf = cases.find((c) => c.name === "hidden_finance")!;
     expect(hf.context.finance.included).toBe(false);
     const hc = cases.find((c) => c.name === "hidden_customs")!;
     expect(hc.context.customs.included).toBe(false);
+    // Tracking permission-filtering variant hides the section entirely (no leak surface).
+    const ht = cases.find((c) => c.name === "hidden_tracking")!;
+    expect(ht.context.tracking.included).toBe(false);
   });
   it("fixtures carry no obvious PII and are reproducible", () => {
     const a = makeSanitizedContext(NOW);

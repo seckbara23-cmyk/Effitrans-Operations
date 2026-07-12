@@ -112,12 +112,12 @@ describe("model allowlist (CLI validation)", () => {
   });
 });
 
-describe("sanitized scenario set (15 scenarios, no production data)", () => {
-  it("includes the 4 new scenarios and only demo fixtures", () => {
+describe("sanitized scenario set (23 scenarios, no production data)", () => {
+  it("includes the base + AI-2b scenarios and only demo fixtures", () => {
     const cases = buildEvalCases(NOW);
-    expect(cases).toHaveLength(15);
+    expect(cases).toHaveLength(23);
     const names = cases.map((c) => c.name);
-    for (const n of ["nonexistent_truck", "delay_no_sla", "concise_french", "long_context"]) {
+    for (const n of ["nonexistent_truck", "delay_no_sla", "concise_french", "long_context", "hidden_tracking", "unknown_eta", "recommendation_quality"]) {
       expect(names).toContain(n);
     }
     for (const c of cases) {

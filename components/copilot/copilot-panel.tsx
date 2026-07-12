@@ -10,8 +10,16 @@
  */
 import { useRef, useState } from "react";
 import { t } from "@/lib/i18n";
+import { COPILOT_SKILLS, type CopilotSkill } from "@/lib/copilot/skills";
 
-type Turn = { role: "user" | "assistant"; text: string };
+type Meta = {
+  skill: string;
+  sources: string[];
+  restricted: string[];
+  unknown: string[];
+  confidence: "high" | "medium" | "low";
+};
+type Turn = { role: "user" | "assistant"; text: string; meta?: Meta };
 
 // Fallback only — used when the server response carries no specific { error }
 // message (e.g. the plain-text 401/403/404 guards). Normal AI failures now send
@@ -33,7 +41,7 @@ export function CopilotPanel({ fileId }: { fileId: string }) {
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  async function ask(question: string) {
+  async function ask(question: string, skill?: CopilotSkill) {
     const q = question.trim();
     if (!q || loading) return;
     setError(null);
@@ -44,7 +52,7 @@ export function CopilotPanel({ fileId }: { fileId: string }) {
       const res = await fetch("/api/copilot", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fileId, prompt: q }),
+        body: JSON.stringify({ fileId, prompt: q, ...(skill ? { skill } : {}) }),
       });
       if (!res.ok) {
         // Prefer the server's specific diagnostic message; fall back to a
@@ -53,8 +61,8 @@ export function CopilotPanel({ fileId }: { fileId: string }) {
         setError(detail?.error || ERROR_BY_STATUS[res.status] || t.copilot.errors.generic);
         return;
       }
-      const data = (await res.json()) as { text?: string };
-      setTurns((prev) => [...prev, { role: "assistant", text: data.text ?? "" }]);
+      const data = (await res.json()) as { text?: string; meta?: Meta };
+      setTurns((prev) => [...prev, { role: "assistant", text: data.text ?? "", meta: data.meta }]);
       // Scroll to the latest reply on the next paint.
       requestAnimationFrame(() => {
         scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -117,6 +125,7 @@ export function CopilotPanel({ fileId }: { fileId: string }) {
             >
               {turn.text}
             </div>
+            {turn.role === "assistant" && turn.meta && <TransparencyFooter meta={turn.meta} />}
           </div>
         ))}
 
@@ -126,20 +135,23 @@ export function CopilotPanel({ fileId }: { fileId: string }) {
 
       <div className="border-t border-slate-200 px-5 py-3">
         <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-slate-400">
-          {t.copilot.suggestionsLabel}
+          {t.copilot.skillsLabel}
         </p>
         <div className="mb-3 flex flex-wrap gap-2">
-          {t.copilot.prompts.map((p) => (
-            <button
-              key={p}
-              type="button"
-              onClick={() => ask(p)}
-              disabled={loading}
-              className="rounded-full border border-slate-200 px-3 py-1 text-xs text-slate-600 hover:border-teal-500 hover:text-teal-700 disabled:opacity-50"
-            >
-              {p}
-            </button>
-          ))}
+          {COPILOT_SKILLS.map((id) => {
+            const s = t.copilot.skills[id];
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => ask(s.q, id)}
+                disabled={loading}
+                className="rounded-full border border-slate-200 px-3 py-1 text-xs text-slate-600 hover:border-teal-500 hover:text-teal-700 disabled:opacity-50"
+              >
+                {s.label}
+              </button>
+            );
+          })}
         </div>
 
         <form
@@ -173,5 +185,40 @@ export function CopilotPanel({ fileId }: { fileId: string }) {
         <p className="mt-2 text-[11px] text-slate-400">{t.copilot.disclaimer}</p>
       </div>
     </aside>
+  );
+}
+
+/**
+ * Deterministic transparency footer (D10/D11) — the values come from the server
+ * (computed from the context, never self-reported by the model). Cites sources by
+ * SECTION NAME, flags permission restrictions and genuinely-unknown facts, and
+ * shows a confidence level so the answer never reads as fabricated certainty.
+ */
+function TransparencyFooter({ meta }: { meta: Meta }) {
+  const tr = t.copilot.transparency;
+  const confClass =
+    meta.confidence === "high" ? "text-teal-700" : meta.confidence === "medium" ? "text-amber-700" : "text-red-700";
+  return (
+    <div className="mt-1.5 space-y-0.5 border-l-2 border-slate-200 pl-2 text-[10px] leading-relaxed text-slate-400">
+      {meta.sources.length > 0 && (
+        <div>
+          <span className="font-medium text-slate-500">{tr.sources} :</span> {meta.sources.join(" · ")}
+        </div>
+      )}
+      {meta.restricted.length > 0 && (
+        <div>
+          <span className="font-medium text-slate-500">{tr.restricted} :</span> {meta.restricted.join(" · ")}
+        </div>
+      )}
+      {meta.unknown.length > 0 && (
+        <div>
+          <span className="font-medium text-slate-500">{tr.unknown} :</span> {meta.unknown.join(" · ")}
+        </div>
+      )}
+      <div>
+        <span className="font-medium text-slate-500">{tr.confidence} :</span>{" "}
+        <span className={confClass}>{tr.levels[meta.confidence]}</span>
+      </div>
+    </div>
   );
 }
