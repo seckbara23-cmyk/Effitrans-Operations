@@ -45,7 +45,7 @@ export function Topbar({ onOpenMenu }: { onOpenMenu: () => void }) {
 
         <div className="hidden min-w-0 sm:block">
           <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-slate-500">
-            {t.app.company}
+            {session.brandName ?? t.app.company}
           </p>
           <h1 className="truncate text-base font-semibold text-navy-900">
             {title}

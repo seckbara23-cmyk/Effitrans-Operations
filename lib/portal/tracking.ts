@@ -33,7 +33,8 @@ import {
   type DocRequirement,
   type CustomerTimelineEntry,
 } from "./tracking-derive";
-import { customerSafeRoleLabel, isGenericStaffIdentity, TEAM_FALLBACK_NAME } from "./officer-view";
+import { customerSafeRoleLabel, isGenericStaffIdentity, teamFallbackName } from "./officer-view";
+import { resolveTenantBranding } from "@/lib/branding/service";
 import { buildMapPoints, type MapPoint } from "./map-points";
 import { listPortalDocuments } from "./docs-service";
 import { listClientNotifications } from "@/lib/customer-notify/service";
@@ -236,9 +237,10 @@ export async function getPortalTracking(fileId: string): Promise<PortalTracking 
   const staff = officerRes.data;
   const isTeam = !staff || isGenericStaffIdentity(staff.name, staff.is_system_admin);
   const roleCode = roleRes.data?.[0]?.role?.code ?? null;
+  const branding = await resolveTenantBranding(tenant);
   const officer: PortalOfficer = isTeam
     ? {
-        name: TEAM_FALLBACK_NAME,
+        name: teamFallbackName(branding.displayName),
         title: "Service des opérations",
         department: null,
         businessEmail: process.env.PORTAL_CONTACT_EMAIL ?? null,

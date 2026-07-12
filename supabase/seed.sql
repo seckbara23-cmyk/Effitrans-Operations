@@ -30,10 +30,10 @@ update public.organization set
 where id = '00000000-0000-0000-0000-000000000001';
 
 insert into public.tenant_branding
-  (tenant_id, display_name, primary_color, secondary_color, email_footer, pdf_header_text)
+  (tenant_id, display_name, primary_color, secondary_color, email_footer, pdf_header_text, tagline)
 values
   ('00000000-0000-0000-0000-000000000001', 'Effitrans Operations', '#0B1F33', '#0F766E',
-   'Effitrans Operations · Dakar, Sénégal', 'EFFITRANS OPERATIONS')
+   'Effitrans Operations · Dakar, Sénégal', 'EFFITRANS OPERATIONS', 'Transit • Logistique • Douane')
 on conflict (tenant_id) do nothing;
 
 -- ===========================================================================

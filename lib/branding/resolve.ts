@@ -31,5 +31,6 @@ export function mergeBranding(org: OrgIdentity, row?: TenantBrandingRow | null):
     invoiceFooterText: safeText(row?.invoice_footer_text),
     supportEmail: safeText(row?.support_email),
     supportPhone: safeText(row?.support_phone),
+    tagline: safeText(row?.tagline),
   };
 }

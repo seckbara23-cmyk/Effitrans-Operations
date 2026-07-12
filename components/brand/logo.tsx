@@ -1,17 +1,17 @@
 import { cn } from "@/lib/cn";
 
 /**
- * Effitrans mark: a stylised container stack inside a navigation ring —
- * port + logistics + control tower. Drawn as an inline SVG so it scales
- * crisply and recolours with the theme.
+ * Brand mark: a stylised container stack inside a navigation ring — port +
+ * logistics + control tower. Inline SVG so it scales crisply and recolours with
+ * the theme. `label` is the accessible name (tenant-resolved where available).
  */
-export function LogoMark({ className }: { className?: string }) {
+export function LogoMark({ className, label = "Effitrans" }: { className?: string; label?: string }) {
   return (
     <svg
       viewBox="0 0 40 40"
       className={cn("h-9 w-9", className)}
       role="img"
-      aria-label="Effitrans"
+      aria-label={label}
     >
       <rect width="40" height="40" rx="10" className="fill-navy-900" />
       <circle
@@ -40,26 +40,47 @@ export function LogoMark({ className }: { className?: string }) {
   );
 }
 
+/** First token → primary line, the rest → secondary line. Default = Effitrans. */
+function splitBrand(brandName?: string): [string, string] {
+  if (!brandName || !brandName.trim()) return ["Effitrans", "Operations"];
+  const parts = brandName.trim().split(/\s+/);
+  return [parts[0], parts.slice(1).join(" ")];
+}
+
+/**
+ * Tenant-resolvable wordmark. With no `brandName` (pre-auth pages) it renders the
+ * historical Effitrans wordmark unchanged. When the staff shell passes the tenant
+ * brand, it splits the display name across the two lines and uses the tenant
+ * tagline for the subtitle — a tenant without a tagline shows none (no leak).
+ */
 export function LogoWordmark({
   className,
   subtitle = true,
+  brandName,
+  tagline,
 }: {
   className?: string;
   subtitle?: boolean;
+  brandName?: string;
+  tagline?: string;
 }) {
+  const [line1, line2] = splitBrand(brandName);
+  const sub = tagline ?? (brandName ? "" : "Transit • Logistique • Douane");
   return (
     <div className={cn("flex items-center gap-3.5", className)}>
-      <LogoMark className="h-11 w-11" />
+      <LogoMark className="h-11 w-11" label={brandName || "Effitrans"} />
       <div className="leading-none">
         <span className="block text-[20px] font-extrabold uppercase leading-none tracking-[0.16em] text-white drop-shadow-sm">
-          Effitrans
+          {line1}
         </span>
-        <span className="mt-1 block text-[13px] font-bold uppercase leading-none tracking-[0.32em] text-teal-300">
-          Operations
-        </span>
-        {subtitle && (
+        {line2 && (
+          <span className="mt-1 block text-[13px] font-bold uppercase leading-none tracking-[0.32em] text-teal-300">
+            {line2}
+          </span>
+        )}
+        {subtitle && sub && (
           <span className="mt-2 block text-[11px] font-medium uppercase tracking-[0.14em] text-slate-300">
-            Transit • Logistique • Douane
+            {sub}
           </span>
         )}
       </div>

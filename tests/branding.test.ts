@@ -87,4 +87,10 @@ describe("mergeBranding — fallbacks and injection safety", () => {
     expect(a.displayName).toBe("A Corp");
     expect(c.displayName).toBe("B Corp");
   });
+
+  it("resolves a safe tagline (HTML rejected, absent → undefined)", () => {
+    expect(mergeBranding({ name: "X" }, { display_name: "X", tagline: "Fret & Douane" }).tagline).toBe("Fret & Douane");
+    expect(mergeBranding({ name: "X" }).tagline).toBeUndefined();
+    expect(mergeBranding({ name: "X" }, { tagline: "<b>x</b>" }).tagline).toBeUndefined();
+  });
 });

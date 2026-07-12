@@ -102,6 +102,7 @@ export type Database = {
           invoice_footer_text: string | null;
           support_email: string | null;
           support_phone: string | null;
+          tagline: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -117,6 +118,7 @@ export type Database = {
           invoice_footer_text?: string | null;
           support_email?: string | null;
           support_phone?: string | null;
+          tagline?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -132,6 +134,7 @@ export type Database = {
           invoice_footer_text?: string | null;
           support_email?: string | null;
           support_phone?: string | null;
+          tagline?: string | null;
           created_at?: string;
           updated_at?: string;
         };

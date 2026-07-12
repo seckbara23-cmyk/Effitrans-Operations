@@ -8,6 +8,15 @@
 export const TEAM_FALLBACK_NAME = "Équipe Opérations Effitrans";
 export const TEAM_FALLBACK_TITLE = "Service des opérations";
 
+/**
+ * Tenant-branded operations-team display name shown to customers when no specific
+ * officer is exposed. Falls back to the generic default when no brand is given.
+ */
+export function teamFallbackName(brandName?: string | null): string {
+  const b = (brandName ?? "").trim();
+  return b ? `Équipe ${b}` : TEAM_FALLBACK_NAME;
+}
+
 const ROLE_LABEL: Record<string, string> = {
   ACCOUNT_MANAGER: "Chargé de compte",
   COORDINATOR: "Coordinateur",

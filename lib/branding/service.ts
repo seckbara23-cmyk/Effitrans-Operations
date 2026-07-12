@@ -5,25 +5,29 @@
  * identity + tenant_branding row, then applying the pure merge (fallbacks). Used
  * by customer-facing outputs (PDF/email/portal/notifications) in Phase 4.0B-4.
  *
- * Reads go through the RLS-respecting server client where possible; tenant_branding
- * has a self-tenant SELECT policy. When called from a service-role context that
- * already knows the tenant, the tenant_id filter keeps the read tenant-scoped.
+ * Uses the service-role client scoped to the caller's OWN tenantId (always
+ * derived from the authenticated user — getCurrentUser / getCurrentPortalUser /
+ * requirePlatformUser — never from request input). This works for EVERY identity
+ * class: portal users have no app_user, so an RLS read of their tenant's branding
+ * would resolve nothing and wrongly fall back — the service-role read avoids that
+ * while staying scoped to the one tenant. The tenant_branding read carries an
+ * explicit tenant_id filter (tenant-scope guard compliant).
  */
 import "server-only";
 import { cache } from "react";
-import { getServerSupabaseClient } from "@/lib/supabase/server";
+import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { PLATFORM_BRANDING } from "./platform";
 import { mergeBranding } from "./resolve";
 import type { OrgIdentity, TenantBranding } from "./types";
 
 export const resolveTenantBranding = cache(async (tenantId: string): Promise<TenantBranding> => {
-  const supabase = getServerSupabaseClient();
+  const supabase = getAdminSupabaseClient();
   const [{ data: org }, { data: row }] = await Promise.all([
     supabase.from("organization").select("name, trade_name, legal_name").eq("id", tenantId).maybeSingle(),
     supabase
       .from("tenant_branding")
       .select(
-        "display_name, logo_url, portal_logo_url, primary_color, secondary_color, email_footer, pdf_header_text, invoice_footer_text, support_email, support_phone",
+        "display_name, logo_url, portal_logo_url, primary_color, secondary_color, email_footer, pdf_header_text, invoice_footer_text, support_email, support_phone, tagline",
       )
       .eq("tenant_id", tenantId)
       .maybeSingle(),

@@ -101,11 +101,12 @@ const surface =
 
 /** Desktop sidebar — fixed, always visible on lg+. */
 export function DesktopSidebar() {
+  const session = useSession();
   return (
     <aside className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:z-30 lg:flex lg:w-72 lg:flex-col">
       <div className={surface}>
         <div className="flex h-16 items-center border-b border-white/10 px-4">
-          <LogoWordmark />
+          <LogoWordmark brandName={session.brandName ?? undefined} tagline={session.tagline ?? undefined} />
         </div>
         <NavLinks />
         <SidebarFooter />
@@ -122,6 +123,7 @@ export function MobileSidebar({
   open: boolean;
   onClose: () => void;
 }) {
+  const session = useSession();
   return (
     <div
       className={cn(
@@ -145,7 +147,7 @@ export function MobileSidebar({
       >
         <div className={surface}>
           <div className="flex h-16 items-center justify-between border-b border-white/10 px-4">
-            <LogoWordmark subtitle={false} />
+            <LogoWordmark subtitle={false} brandName={session.brandName ?? undefined} tagline={session.tagline ?? undefined} />
             <button
               onClick={onClose}
               className="rounded-md p-1.5 text-slate-300 hover:bg-white/10 hover:text-white"

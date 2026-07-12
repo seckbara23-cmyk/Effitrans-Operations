@@ -18,6 +18,8 @@ export type TenantBranding = {
   invoiceFooterText?: string;
   supportEmail?: string;
   supportPhone?: string;
+  /** wordmark / report subtitle (e.g. "Transit • Logistique • Douane") */
+  tagline?: string;
 };
 
 /** Organization identity fields the resolver derives display/legal names from. */
@@ -39,4 +41,5 @@ export type TenantBrandingRow = {
   invoice_footer_text?: string | null;
   support_email?: string | null;
   support_phone?: string | null;
+  tagline?: string | null;
 };

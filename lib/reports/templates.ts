@@ -27,8 +27,18 @@ const META_H = 20;
 const FOOTER_H = 30;
 const ROW_H = 18;
 
-/** Tenant-resolved report chrome (Phase 4.0B-4). Falls back to Effitrans defaults. */
-export type ReportBrand = { header: string; footer: string; displayName: string };
+/** Tenant-resolved report chrome (Phase 4.0B-4/5). Falls back to Effitrans defaults. */
+export type ReportBrand = {
+  header: string;
+  footer: string;
+  displayName: string;
+  /** wordmark/report subtitle; empty for a tenant without a tagline (no leak) */
+  subtitle?: string;
+  /** header band colour (from tenant primary_color) */
+  primary?: RGB;
+  /** accent line colour (from tenant secondary_color) */
+  accent?: RGB;
+};
 
 export type ReportMeta = {
   title: string;
@@ -231,10 +241,13 @@ export class ReportLayout {
   private drawChrome(page: number, total: number): void {
     const d = this.doc;
     // Header band.
-    d.fillRect(0, 0, d.width, HEADER_H, NAVY);
-    d.fillRect(0, HEADER_H, d.width, 2, TEAL);
+    const brandPrimary = this.meta.brand?.primary ?? NAVY;
+    const brandAccent = this.meta.brand?.accent ?? TEAL;
+    const brandSubtitle = this.meta.brand?.subtitle ?? "";
+    d.fillRect(0, 0, d.width, HEADER_H, brandPrimary);
+    d.fillRect(0, HEADER_H, d.width, 2, brandAccent);
     d.text(MARGIN, 24, this.meta.brand?.header ?? "EFFITRANS OPERATIONS", { size: 14, bold: true, color: WHITE });
-    d.text(MARGIN, 40, "Transit • Logistique • Douane", { size: 8, color: TEAL_LIGHT });
+    d.text(MARGIN, 40, brandSubtitle, { size: 8, color: TEAL_LIGHT });
     d.text(d.width - MARGIN, 24, this.meta.title, { size: 12, bold: true, color: WHITE, align: "right" });
     d.text(d.width - MARGIN, 40, this.meta.dateRange, { size: 8, color: TEAL_LIGHT, align: "right" });
 
@@ -247,7 +260,7 @@ export class ReportLayout {
     const fy = d.height - FOOTER_H + 6;
     d.line(MARGIN, fy - 6, d.width - MARGIN, fy - 6, BORDER, 0.6);
     d.text(MARGIN, fy + 6, this.meta.brand?.footer ?? "Effitrans Operations — Document confidentiel", { size: 7.5, color: SLATE });
-    d.text(d.width / 2, fy + 6, "Transit • Logistique • Douane", { size: 7.5, color: SLATE, align: "center" });
+    d.text(d.width / 2, fy + 6, brandSubtitle, { size: 7.5, color: SLATE, align: "center" });
     d.text(d.width - MARGIN, fy + 6, `Page ${page} / ${total}`, { size: 7.5, color: SLATE, align: "right" });
   }
 }
