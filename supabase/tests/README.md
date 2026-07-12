@@ -1,5 +1,13 @@
 # Supabase Tests
 
+## RLS driver, tracking, assignment & portal temp-password (Phase 3.2–3.4)
+The following SQL RLS tests are wired into the `rls-tests` CI job (Phase 4.0A):
+- [`rls_file_assignment_test.sql`](rls_file_assignment_test.sql) — file assignment scoping (Phase 3.2A).
+- [`rls_portal_temp_password_test.sql`](rls_portal_temp_password_test.sql) — temp-password portal flow isolation (Phase 3.2B).
+- [`rls_tracking_test.sql`](rls_tracking_test.sql) — `tracking_event`/`tracking_position` staff/driver/portal audiences + tenant isolation (Phase 3.4).
+- [`rls_driver_test.sql`](rls_driver_test.sql) — driver sees only their assigned transport (Phase 3.4C).
+- [`rls_driver_ops_privacy_test.sql`](rls_driver_ops_privacy_test.sql) — driver operational-privacy boundaries (Phase 3.4C).
+
 ## RLS communications module (Phase 1.14)
 [`rls_communication_test.sql`](rls_communication_test.sql) proves the email
 outbox is **staff-role gated** (`communication:read`) and **tenant-isolated**: a
@@ -146,10 +154,11 @@ an exception and aborts (the transaction rolls back either way).
 > environment, which comes from the untracked `.env`.
 
 ### Execution status
-> **Not yet executed in this environment** — no local Supabase/Docker/psql is
-> available here. The test is authored and ready; run it once the project is
-> linked (or in a CI job that boots a local Supabase). Until then, RLS isolation
-> is **implemented + scripted, pending execution**.
+> **Executed in CI.** The `rls-tests` job in [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml)
+> boots a local Supabase, applies migrations + seed, and runs every RLS test in
+> this directory via `psql -v ON_ERROR_STOP=1` (a raised exception fails the job).
+> As of Phase 4.0A all authored RLS tests — including the driver/tracking/
+> assignment/temp-password suites above — are wired into that job.
 
 > Note: if your local `auth.users` schema rejects the minimal insert, create the
 > two test users via the service role (Supabase Auth admin API) and substitute

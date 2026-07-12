@@ -10,6 +10,7 @@
 import "server-only";
 import { cache } from "react";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
+import { scopedFrom } from "@/lib/db/tenant-scope";
 import { assertPermission } from "@/lib/auth/require-permission";
 import { balanceDue, invoiceTotals, paidAmount } from "@/lib/finance/calc";
 import {
@@ -46,16 +47,16 @@ export const getAnalytics = cache(async (includeFinance: boolean): Promise<Analy
 
   const [files, customs, transport, tasks, clientUsers, invoices, transitions, sharedDocs, downloads, invoiceViews] =
     await Promise.all([
-      supabase.from("operational_file").select("status, priority, created_at, client_id").eq("tenant_id", tenant).returns<FileRow[]>(),
-      supabase.from("customs_record").select("file_id, status, declaration_date, release_date").eq("tenant_id", tenant).is("deleted_at", null).returns<CustomsRow[]>(),
-      supabase.from("transport_record").select("file_id, status, delivery_planned, delivery_actual").eq("tenant_id", tenant).is("deleted_at", null).returns<TransportRow[]>(),
-      supabase.from("task").select("status").eq("tenant_id", tenant).returns<{ status: string }[]>(),
-      supabase.from("client_user").select("status, client_id").eq("tenant_id", tenant).returns<{ status: string; client_id: string }[]>(),
-      supabase.from("invoice").select("id, status, issue_date, due_date, client_id").eq("tenant_id", tenant).returns<{ id: string; status: string; issue_date: string | null; due_date: string | null; client_id: string | null }[]>(),
-      supabase.from("file_state_transition").select("file_id, occurred_at, to_status").eq("tenant_id", tenant).eq("to_status", "CLOSED").returns<{ file_id: string; occurred_at: string; to_status: string }[]>(),
-      supabase.from("document").select("id", { count: "exact", head: true }).eq("tenant_id", tenant).eq("shared_with_client", true).eq("status", "APPROVED").is("deleted_at", null),
-      supabase.from("audit_log").select("id", { count: "exact", head: true }).eq("tenant_id", tenant).eq("action", "portal.document.downloaded"),
-      supabase.from("audit_log").select("id", { count: "exact", head: true }).eq("tenant_id", tenant).eq("action", "portal.invoice.viewed"),
+      scopedFrom(supabase, "operational_file", tenant).select("status, priority, created_at, client_id").returns<FileRow[]>(),
+      scopedFrom(supabase, "customs_record", tenant).select("file_id, status, declaration_date, release_date").is("deleted_at", null).returns<CustomsRow[]>(),
+      scopedFrom(supabase, "transport_record", tenant).select("file_id, status, delivery_planned, delivery_actual").is("deleted_at", null).returns<TransportRow[]>(),
+      scopedFrom(supabase, "task", tenant).select("status").returns<{ status: string }[]>(),
+      scopedFrom(supabase, "client_user", tenant).select("status, client_id").returns<{ status: string; client_id: string }[]>(),
+      scopedFrom(supabase, "invoice", tenant).select("id, status, issue_date, due_date, client_id").returns<{ id: string; status: string; issue_date: string | null; due_date: string | null; client_id: string | null }[]>(),
+      scopedFrom(supabase, "file_state_transition", tenant).select("file_id, occurred_at, to_status").eq("to_status", "CLOSED").returns<{ file_id: string; occurred_at: string; to_status: string }[]>(),
+      scopedFrom(supabase, "document", tenant).select("id", { count: "exact", head: true }).eq("shared_with_client", true).eq("status", "APPROVED").is("deleted_at", null),
+      scopedFrom(supabase, "audit_log", tenant).select("id", { count: "exact", head: true }).eq("action", "portal.document.downloaded"),
+      scopedFrom(supabase, "audit_log", tenant).select("id", { count: "exact", head: true }).eq("action", "portal.invoice.viewed"),
     ]);
 
   const fileRows = files.data ?? [];
@@ -71,9 +72,9 @@ export const getAnalytics = cache(async (includeFinance: boolean): Promise<Analy
   let clientNames: Record<string, string> = {};
   if (includeFinance && invoiceIds.length > 0) {
     const [lines, payments, clients] = await Promise.all([
-      supabase.from("invoice_line").select("invoice_id, quantity, unit_amount, tax_rate").eq("tenant_id", tenant).in("invoice_id", invoiceIds),
-      supabase.from("payment").select("invoice_id, amount, reversed_at").eq("tenant_id", tenant).in("invoice_id", invoiceIds),
-      supabase.from("client").select("id, name").eq("tenant_id", tenant),
+      scopedFrom(supabase, "invoice_line", tenant).select("invoice_id, quantity, unit_amount, tax_rate").in("invoice_id", invoiceIds).returns<{ invoice_id: string; quantity: number | string; unit_amount: number | string; tax_rate: number | string }[]>(),
+      scopedFrom(supabase, "payment", tenant).select("invoice_id, amount, reversed_at").in("invoice_id", invoiceIds).returns<{ invoice_id: string; amount: number | string; reversed_at: string | null }[]>(),
+      scopedFrom(supabase, "client", tenant).select("id, name").returns<{ id: string; name: string }[]>(),
     ]);
     const linesByInv = new Map<string, { quantity: number; unitAmount: number; taxRate: number }[]>();
     for (const l of lines.data ?? []) {
@@ -104,10 +105,8 @@ export const getAnalytics = cache(async (includeFinance: boolean): Promise<Analy
 
   // Closures: join CLOSED transitions to each file's created_at (avg closure time).
   const createdByFile = new Map<string, string>();
-  const { data: fileIdRows } = await supabase
-    .from("operational_file")
+  const { data: fileIdRows } = await scopedFrom(supabase, "operational_file", tenant)
     .select("id, created_at")
-    .eq("tenant_id", tenant)
     .returns<{ id: string; created_at: string }[]>();
   for (const f of fileIdRows ?? []) createdByFile.set(f.id, f.created_at);
   const closures: ClosureRow[] = (transitions.data ?? [])

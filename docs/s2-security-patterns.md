@@ -106,6 +106,37 @@ UI (client/server component)
       → [privileged] admin client + writeAudit()  (server-only)
 ```
 
+### 4.1 Service-role reads MUST be tenant-scoped (Phase 4.0A)
+
+In practice many list/KPI/aggregate reads use the **service-role admin client**
+(it bypasses RLS for performance and for cross-cutting reads). On those paths RLS
+is **not** a backstop — tenant isolation depends entirely on a `tenant_id` filter
+being present. A single omission is a silent cross-tenant leak.
+
+Rules for any `getAdminSupabaseClient()` **read**:
+
+- **Default:** use `scopedFrom(admin, "<table>", tenantId)` from
+  [`lib/db/tenant-scope.ts`](../lib/db/tenant-scope.ts). It asserts a valid tenant
+  and injects `.eq("tenant_id", tenantId)` structurally, so the filter cannot be
+  forgotten. `.select(...)`, `.returns<T>()`, `.in/.is/.eq`, count/head all chain
+  as usual.
+- **Equivalent:** a hand-written `.eq("tenant_id", tenant)` on the same chain is
+  accepted (the pre-4.0A idiom).
+- **Exceptions** (fetch-by-unique-id after the parent was tenant-verified;
+  self-identity lookup by `auth.users` id; the intentional global dual-identity
+  guard) are enumerated with a reason in `KNOWN_UNSCOPED_READS` in
+  [`tests/tenant-scope.test.ts`](../tests/tenant-scope.test.ts). Adding an entry
+  is a deliberate, reviewed decision — prefer scoping the read instead.
+
+The **tenant-scope guard** (`tests/tenant-scope.test.ts`, runs in the unit-test
+CI job) statically fails the build if a new admin-client `.select` on a
+tenant-scoped table is neither tenant-filtered nor allow-listed. The tenant-scoped
+table registry is [`lib/db/tenant-tables.ts`](../lib/db/tenant-tables.ts).
+
+> Writes are out of this guard's scope: they filter by UUID primary key, and the
+> action layer authorizes the row first. A future increment may extend the same
+> discipline to service-role writes.
+
 ---
 
 ## 5. Storage RLS pattern (F8 — when documents arrive, S5)
