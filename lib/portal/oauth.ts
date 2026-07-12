@@ -79,8 +79,13 @@ export async function gatePortalOAuthLogin(): Promise<PortalOAuthOutcome> {
   // Rejected. Delete the auth user ONLY if it has no profile of either class.
   let orphanDeleted = false;
   if (result.reason === "not_portal") {
-    const { data: appUser } = await admin.from("app_user").select("id").eq("id", user.id).maybeSingle();
-    if (!appUser) {
+    // Only a TRUE orphan (no profile of ANY identity class) is deleted. A staff
+    // OR platform identity on this auth id must never be touched by the portal gate.
+    const [{ data: appUser }, { data: platformAdmin }] = await Promise.all([
+      admin.from("app_user").select("id").eq("id", user.id).maybeSingle(),
+      admin.from("platform_admin").select("id").eq("id", user.id).maybeSingle(),
+    ]);
+    if (!appUser && !platformAdmin) {
       try {
         await admin.auth.admin.deleteUser(user.id);
         orphanDeleted = true;

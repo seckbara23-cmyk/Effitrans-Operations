@@ -148,6 +148,14 @@ export const AuditActions = {
   REPORT_EXPORT_XLSX: "report.export.xlsx",
   REPORT_EXPORT_PDF: "report.export.pdf",
   REPORT_EXPORT_POWERBI: "report.export.powerbi",
+  // Phase 4.0B — Platform administration (attributed via platform_actor_id; the
+  // tenant_id, when set, is the TARGET tenant being administered). Never carries
+  // secrets, passwords, keys, or tenant operational payloads.
+  PLATFORM_TENANT_METADATA_UPDATED: "platform.tenant.metadata_updated",
+  PLATFORM_TENANT_STATUS_CHANGED: "platform.tenant.status_changed",
+  PLATFORM_TENANT_PLAN_CHANGED: "platform.tenant.plan_changed",
+  PLATFORM_ROLE_TEMPLATE_UPDATED: "platform.role_template.updated",
+  PLATFORM_BRANDING_UPDATED: "platform.branding.updated",
 } as const;
 
 export type AuditActionCode = (typeof AuditActions)[keyof typeof AuditActions];

@@ -184,6 +184,11 @@ jobs:
           PGPASSWORD: postgres
         run: psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/rls_driver_ops_privacy_test.sql
 
+      - name: Run RLS platform-admin boundary test (Phase 4.0B-1)
+        env:
+          PGPASSWORD: postgres
+        run: psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/rls_platform_admin_test.sql
+
       - name: Stop local Supabase
         if: always()
         run: supabase stop

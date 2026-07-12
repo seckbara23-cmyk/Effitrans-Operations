@@ -27,6 +27,8 @@ export type AuditEvent = {
   actorId?: string | null;
   /** the acting PORTAL user (client_user.id) — for portal.* events */
   clientUserId?: string | null;
+  /** the acting PLATFORM admin (platform_admin.id) — for platform.* events */
+  platformActorId?: string | null;
   /** entity type touched, e.g. "app_user" */
   entity?: string | null;
   /** entity row id */
@@ -52,6 +54,7 @@ export async function writeAudit(event: AuditEvent): Promise<void> {
     tenant_id: event.tenantId ?? null,
     actor_id: event.actorId ?? null,
     client_user_id: event.clientUserId ?? null,
+    platform_actor_id: event.platformActorId ?? null,
     entity: event.entity ?? null,
     entity_id: event.entityId ?? null,
     before: (event.before ?? null) as Json,

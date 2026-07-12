@@ -73,12 +73,13 @@ export async function gateStaffOAuthLogin(): Promise<StaffOAuthOutcome> {
   // unknown identity ever persists. A staff/portal account is never touched.
   let orphanDeleted = false;
   if (result.reason === "not_staff") {
-    const { data: clientUser } = await admin
-      .from("client_user")
-      .select("id")
-      .eq("id", user.id)
-      .maybeSingle();
-    if (!clientUser) {
+    // Only a TRUE orphan (no profile of ANY identity class) is deleted. A portal
+    // OR platform identity on this auth id must never be touched by the staff gate.
+    const [{ data: clientUser }, { data: platformAdmin }] = await Promise.all([
+      admin.from("client_user").select("id").eq("id", user.id).maybeSingle(),
+      admin.from("platform_admin").select("id").eq("id", user.id).maybeSingle(),
+    ]);
+    if (!clientUser && !platformAdmin) {
       try {
         await admin.auth.admin.deleteUser(user.id);
         orphanDeleted = true;

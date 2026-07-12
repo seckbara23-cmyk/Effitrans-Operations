@@ -72,6 +72,8 @@ export const TENANT_SCOPED_TABLES = new Set<string>([
  *   - role_permission        : scoped transitively via `role` (no tenant_id col).
  *   - provider_webhook_event : cross-tenant idempotency namespace; tenant_id is
  *                              nullable and resolved from the matched intent.
+ *   - platform_admin         : platform identity class; has NO tenant_id and is
+ *                              intentionally outside tenant scoping (Phase 4.0B).
  */
 export const GLOBAL_TABLES = new Set<string>([
   "organization",
@@ -79,6 +81,7 @@ export const GLOBAL_TABLES = new Set<string>([
   "document_type",
   "role_permission",
   "provider_webhook_event",
+  "platform_admin",
 ]);
 
 export function isTenantScopedTable(table: string): boolean {

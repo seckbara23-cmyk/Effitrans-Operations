@@ -111,6 +111,7 @@ export type Database = {
           tenant_id: string | null;
           actor_id: string | null;
           client_user_id: string | null;
+          platform_actor_id: string | null;
           action: string;
           entity: string | null;
           entity_id: string | null;
@@ -124,6 +125,7 @@ export type Database = {
           tenant_id?: string | null;
           actor_id?: string | null;
           client_user_id?: string | null;
+          platform_actor_id?: string | null;
           action: string;
           entity?: string | null;
           entity_id?: string | null;
@@ -137,6 +139,7 @@ export type Database = {
           tenant_id?: string | null;
           actor_id?: string | null;
           client_user_id?: string | null;
+          platform_actor_id?: string | null;
           action?: string;
           entity?: string | null;
           entity_id?: string | null;
@@ -156,6 +159,49 @@ export type Database = {
             foreignKeyName: "audit_log_tenant_id_fkey";
             columns: ["tenant_id"];
             referencedRelation: "organization";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "audit_log_platform_actor_id_fkey";
+            columns: ["platform_actor_id"];
+            referencedRelation: "platform_admin";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      platform_admin: {
+        Row: {
+          id: string;
+          email: string;
+          name: string | null;
+          platform_role: string;
+          status: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id: string;
+          email: string;
+          name?: string | null;
+          platform_role: string;
+          status?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          email?: string;
+          name?: string | null;
+          platform_role?: string;
+          status?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "platform_admin_id_fkey";
+            columns: ["id"];
+            referencedRelation: "users";
             referencedColumns: ["id"];
           },
         ];
@@ -1767,6 +1813,7 @@ export type Database = {
       auth_tenant_id: { Args: Record<string, never>; Returns: string };
       has_permission: { Args: { p_code: string }; Returns: boolean };
       has_role: { Args: { p_code: string }; Returns: boolean };
+      auth_is_platform_admin: { Args: Record<string, never>; Returns: boolean };
       user_readable_file_ids: {
         Args: { p_user: string; p_tenant: string };
         Returns: { id: string }[];

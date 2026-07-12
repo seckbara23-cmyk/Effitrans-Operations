@@ -7,8 +7,8 @@ describe("audit event validation", () => {
     expect(() => validateAuditEvent({ action: "   " })).toThrow(/action is required/);
   });
 
-  it("requires an actor (staff or portal) for non-system actions (fail closed)", () => {
-    expect(() => validateAuditEvent({ action: "user.role.assigned" })).toThrow(/actorId or clientUserId is required/);
+  it("requires an actor (staff, portal, or platform) for non-system actions (fail closed)", () => {
+    expect(() => validateAuditEvent({ action: "user.role.assigned" })).toThrow(/actorId, clientUserId, or platformActorId is required/);
     expect(() =>
       validateAuditEvent({ action: "user.role.assigned", actorId: "u1" }),
     ).not.toThrow();
@@ -16,6 +16,13 @@ describe("audit event validation", () => {
     expect(() =>
       validateAuditEvent({ action: "portal.login", clientUserId: "cu1" }),
     ).not.toThrow();
+    // Phase 4.0B: a platform (platform_admin) actor also satisfies attribution.
+    expect(() =>
+      validateAuditEvent({ action: "platform.tenant.status_changed", platformActorId: "pa1" }),
+    ).not.toThrow();
+    expect(() =>
+      validateAuditEvent({ action: "platform.tenant.status_changed" }),
+    ).toThrow(/required/);
   });
 
   it("allows null actor for system.* actions", () => {

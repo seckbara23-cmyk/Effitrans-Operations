@@ -14,6 +14,8 @@ export type AuditEventInput = {
   actorId?: string | null;
   /** portal (client_user) actor — an alternative to actorId for portal.* events */
   clientUserId?: string | null;
+  /** platform (platform_admin) actor — attribution for platform.* events */
+  platformActorId?: string | null;
   isOverride?: boolean;
   overrideReason?: string | null;
 };
@@ -50,11 +52,11 @@ export function validateAuditEvent(event: AuditEventInput): void {
     throw new Error("[audit] action is required");
   }
 
-  // Non-system actions must be attributed — to a staff actor (actorId) OR, for
-  // portal events, to a client_user actor (clientUserId). Fail closed otherwise.
-  if (!isSystemAction(event.action) && !event.actorId && !event.clientUserId) {
+  // Non-system actions must be attributed — to a staff actor (actorId), a portal
+  // actor (clientUserId), or a platform actor (platformActorId). Fail closed.
+  if (!isSystemAction(event.action) && !event.actorId && !event.clientUserId && !event.platformActorId) {
     throw new Error(
-      `[audit] actorId or clientUserId is required for non-system action "${event.action}"`,
+      `[audit] actorId, clientUserId, or platformActorId is required for non-system action "${event.action}"`,
     );
   }
 
