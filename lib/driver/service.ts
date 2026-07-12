@@ -37,12 +37,32 @@ export type DriverMission = {
   trackingHealth: TrackingHealth;
 };
 
+export type MissionEvidence = {
+  id: string;
+  typeCode: string;
+  title: string | null;
+  status: string;
+  createdAt: string;
+};
+
 export type MissionDetail = DriverMission & {
   events: TrackingEventEntry[];
   mapPoints: MapPoint[];
   hasGeo: boolean;
   latestPosition: { latitude: number; longitude: number; recordedAt: string } | null;
+  evidence: MissionEvidence[];
 };
+
+/** Document types a driver captures in the field (photos, signature, POD). */
+const DRIVER_EVIDENCE_TYPE_CODES = [
+  "PICKUP_PHOTO",
+  "CARGO_PHOTO",
+  "SEAL_PHOTO",
+  "INCIDENT_PHOTO",
+  "DELIVERY_PHOTO",
+  "DRIVER_SIGNATURE",
+  "DELIVERY_NOTE",
+];
 
 const TRANSPORT_COLS =
   "id, file_id, status, pickup_location, delivery_location, pickup_planned, delivery_planned, delivery_actual, vehicle_plate, driver_name, file:file_id(file_number, client:client_id(name))";
@@ -139,10 +159,11 @@ export async function getDriverMission(transportId: string): Promise<MissionDeta
     .maybeSingle<TransportRow>();
   if (!transport) return null;
 
-  const [{ data: sessions }, { data: pos }, { data: events }] = await Promise.all([
+  const [{ data: sessions }, { data: pos }, { data: events }, { data: evidenceRows }] = await Promise.all([
     supabase.from("tracking_session").select("id, transport_id, status, last_position_at, started_at").eq("tenant_id", user.tenantId).eq("transport_id", transportId).order("started_at", { ascending: false }).returns<SessionRow[]>(),
     supabase.from("tracking_position").select("latitude, longitude, recorded_at").eq("tenant_id", user.tenantId).eq("transport_id", transportId).order("recorded_at", { ascending: false }).limit(1).maybeSingle<{ latitude: number; longitude: number; recorded_at: string }>(),
     supabase.from("tracking_event").select("id, type, source, customer_visible, customer_message, internal_note, occurred_at, created_by").eq("tenant_id", user.tenantId).eq("file_id", transport.file_id).order("occurred_at", { ascending: false }).limit(30),
+    supabase.from("document").select("id, type_code, title, status, created_at").eq("tenant_id", user.tenantId).eq("file_id", transport.file_id).eq("uploaded_by", user.id).in("type_code", DRIVER_EVIDENCE_TYPE_CODES).is("deleted_at", null).order("created_at", { ascending: false }).limit(50),
   ]);
 
   const now = new Date();
@@ -171,5 +192,12 @@ export async function getDriverMission(transportId: string): Promise<MissionDeta
     mapPoints: points,
     hasGeo,
     latestPosition,
+    evidence: (evidenceRows ?? []).map((d) => ({
+      id: d.id,
+      typeCode: d.type_code,
+      title: d.title,
+      status: d.status,
+      createdAt: d.created_at,
+    })),
   };
 }

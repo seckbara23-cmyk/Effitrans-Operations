@@ -35,6 +35,11 @@
     @apply text-[11px] font-semibold uppercase tracking-[0.14em] text-teal-700;
   }
 
+  /* Compact form control (mobile driver forms) */
+  .input {
+    @apply w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-navy-900 outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500;
+  }
+
   /* Sidebar / topbar shipping-route texture */
   .route-lines {
     background-image:

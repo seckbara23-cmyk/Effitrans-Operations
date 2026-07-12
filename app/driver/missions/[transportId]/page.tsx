@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getDriverMission } from "@/lib/driver/service";
 import { driverMobileTrackingEnabled } from "@/lib/tracking/config";
 import { MissionTracker } from "@/components/driver/mission-tracker";
+import { MissionActions } from "@/components/driver/mission-actions";
 import { t } from "@/lib/i18n";
 
 export const dynamic = "force-dynamic";
@@ -57,6 +58,14 @@ export default async function DriverMissionDetailPage({ params }: { params: { tr
         transportId={mission.transportId}
         initialSessionId={mission.sessionId}
         initialSessionStatus={mission.sessionStatus}
+        trackingEnabled={trackingOn}
+      />
+
+      <MissionActions
+        transportId={mission.transportId}
+        sessionActive={mission.sessionStatus === "ACTIVE" || mission.sessionStatus === "PAUSED"}
+        status={mission.status}
+        evidence={mission.evidence}
         trackingEnabled={trackingOn}
       />
 

@@ -85,3 +85,107 @@ the Supabase CLI is available.
 mission screens. 3. `DRIVER_MOBILE_TRACKING_ENABLED=true` for one driver/transport →
 consent, GPS accept/deny, start/pause/resume/stop, offline recovery. 4. (3.4C-4) dispatcher
 live map. 5. Wider — after privacy/battery/retention approval.
+
+---
+
+# Phase 3.4C-3 — Operational events, delay/incident, photos, POD & delivery
+
+**Status:** implemented, dark by default (same `DRIVER_MOBILE_TRACKING_ENABLED` gate).
+Builds on 3.4C-1/2 (commit 6f924d7). No new transport workflow, no second POD table, no
+new notification system — everything reuses the shipped foundation. Tracking stays
+**evidence** (DEC-A02): a driver event never mutates lifecycle; only the **explicit**
+delivery confirmation invokes the existing transport transition.
+
+## Architecture reused
+- **tracking_event** (+ `detail` jsonb from 3.4C-1) for events / delay / incident /
+  delivered; `customer_visible` + `dedup_key` already present.
+- **Document workflow** (Phase 1.8): private `documents` bucket, `lib/documents/storage`
+  (server-built path, signed URLs), the `document` table + `document_type` catalog — for
+  all photos, the signature, and the POD (`DELIVERY_NOTE`).
+- **Transport state machine** `lib/transport/status.ts` (`canTransition`) + the existing
+  `transport.delivered` audit + `custDelivered` notification — via a shared helper.
+- **Notifications**: `createNotification` (`FILE_ASSIGNED`) to the dossier's dispatch owners.
+- **Assignment authority** (`driver_user_id === caller`) + `DRIVER_MOBILE_TRACKING_ENABLED`.
+
+## Files changed
+- **New (server):** `lib/driver/mission-auth.ts` (driver ctx, assignment/session loaders,
+  `notifyDispatchers`), `lib/driver/ops.ts` (`recordDriverEvent`, `reportDelay`,
+  `reportIncident`), `lib/driver/upload.ts` (`uploadDriverEvidence`),
+  `lib/driver/delivery.ts` (`confirmDelivery`), `lib/transport/transition.ts`
+  (`deliverTransport` — shared DELIVERED path).
+- **New (pure):** `lib/driver/event-kinds.ts` (event/delay/incident/severity/evidence sets
+  + guards, MIME allow-list, `delayDedupKey`/`deliveredDedupKey`).
+- **New (UI):** `components/driver/mission-actions.tsx` (events, delay, incident, photos,
+  delivery forms) wired into `app/driver/missions/[transportId]/page.tsx`.
+- **Extended:** `lib/driver/service.ts` (mission detail now returns the driver's captured
+  `evidence`); `lib/i18n.ts` (`driver.ops.*` + error codes); `app/globals.css` (`.input`).
+- **Migration:** `20260712000001_driver_evidence_types.sql` — additive `document_type`
+  rows: `PICKUP_PHOTO`, `CARGO_PHOTO`, `SEAL_PHOTO`, `INCIDENT_PHOTO`, `DELIVERY_PHOTO`,
+  `DRIVER_SIGNATURE` (`on conflict do nothing`). No table/RLS/workflow change.
+
+## Event model
+`recordDriverEvent` inserts a `tracking_event` (source `driver_mobile`) for the allowed
+kinds only — `PICKUP_CONFIRMED, DEPARTED, CHECKPOINT_REACHED, BORDER_REACHED,
+WAREHOUSE_REACHED, ARRIVED_NEAR_DESTINATION, DELIVERY_ATTEMPTED`. Guards: flag →
+assignment → **live session required** → allowed kind → valid timestamp/coordinate.
+`customer_visible` defaults from `isCustomerSafeByDefault(type)`. Evidence only — no
+status change.
+
+## Delay / incident privacy
+- **Delay** (`reportDelay`): category (traffic, breakdown, road_closure, checkpoint,
+  customs_delay, weather, incorrect_address, client_unavailable, other) + a **required
+  customer-safe message** (`customer_visible=true`), optional internal note, optional
+  expected-minutes, optional location. Metadata in `detail` jsonb. **Dedup** via
+  `delayDedupKey` (one per transport+category per 10-min bucket) enforced by the
+  `tracking_event` unique `dedup_key` index — a repeat submit returns `{ok:true}` without a
+  new row. Notifies dispatchers.
+- **Incident** (`reportIncident`): category (accident, cargo_damage, security, breakdown,
+  delivery_refusal, missing_cargo, other) + severity + a **required internal description**
+  (`internal_note`). `customer_visible` is `false` unless a customer-safe message is
+  explicitly supplied — internal detail is **never** portal-visible. The portal never
+  queries `tracking_event` at all (customer tracking is derived from lifecycle), and RLS
+  restricts any such read to `customer_visible=true`. Both layers proven by
+  `rls_driver_ops_privacy_test.sql`.
+
+## Photo / POD reuse
+`uploadDriverEvidence` (assignment-gated; drivers hold no `document:create`): validates
+MIME per kind (`isAllowedEvidenceMime` — jpeg/png; POD also pdf), size ≤ 25 MB
+(`validateDocumentInput`), an ACTIVE `document_type`; server-builds the storage path;
+uploads to the **private** bucket; inserts a `document` row (`shared_with_client=false` —
+internal until staff approve + share); audits `document.uploaded`. POD scans land
+`PENDING_REVIEW` (staff review queue → the eventual POD_RECEIVED + Finance handoff); other
+evidence `UPLOADED`. No public-bucket exposure.
+
+## Delivery transition path & handoffs
+`confirmDelivery`: flag → assignment → live session → **recipient name required** (required
+evidence) → validate timestamp/coords → validate any referenced signature/photo docs
+belong to this dossier+driver. Then, in order: (1) `deliverTransport` — the **shared**
+DELIVERED path (`canTransition` guard = duplicate protection; `transport.delivered` audit;
+idempotent `custDelivered` customer notification); (2) a customer-visible `DELIVERED`
+event (recipient/POD detail kept **internal** in `detail`; `deliveredDedupKey`); (3) the
+session is completed (`COMPLETED` + `ended_at`, `tracking.session.completed` audit,
+`TRACKING_STOPPED` event) **only after** step 1 succeeds — a failed transition leaves the
+session live. **Finance handoff is not fired here** — it stays the staff POD_RECEIVED
+approval step. Geolocation/geofence alone never delivers (explicit call + recipient).
+
+## Tests / validation
+- Unit (`tests/driver-ops.test.ts`): allowed vs forbidden driver events, delay/incident
+  category + severity guards, evidence→type mapping, MIME allow-list (photos reject
+  pdf/gif/svg; POD accepts pdf), delay/delivered dedup-key behaviour, delivery transition
+  guard (duplicate/late blocked).
+- RLS (`rls_driver_ops_privacy_test.sql`): portal sees the customer-safe delay + delivered,
+  **never** the internal incident; assigned driver sees all three. Existing
+  `rls_tracking_test.sql` already proves `customer_visible=false` is portal-invisible.
+- `npm run typecheck` / `npm test` / `npm run build` green. Reset + `.sql` where the
+  Supabase CLI is available.
+
+## Migration instructions
+Additive & forward-only. Apply `20260712000001_driver_evidence_types.sql` (via `supabase db
+reset` in dev, or the migration runner in CI/prod). No backfill, no RLS change. The six new
+`document_type` rows are dark-safe (unused until the driver captures evidence).
+
+## Remaining for 3.4C-4
+Dispatcher live console, map, and KPIs; Realtime (polling-first, behind
+`TRACKING_REALTIME_ENABLED`); optional live sync of the mission-actions session state
+(today the actions read `sessionActive` from the server render and re-validate every write
+server-side). Retention automation still pending approval (DEC-B26).
