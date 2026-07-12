@@ -16,6 +16,26 @@ values (
 )
 on conflict (id) do nothing;
 
+-- Phase 4.0B-3: platform metadata + branding for the Effitrans tenant (mirror of
+-- the 20260712110000 migration backfill, so a fresh `db reset` reproduces it —
+-- migrations run BEFORE this seed, so the backfill there is a no-op on fresh DBs).
+update public.organization set
+  legal_name        = coalesce(legal_name, 'Effitrans'),
+  trade_name        = coalesce(trade_name, 'Effitrans'),
+  slug              = coalesce(slug, 'effitrans'),
+  plan_key          = coalesce(plan_key, 'ENTERPRISE'),
+  lifecycle_status  = 'ACTIVE',
+  onboarding_status = 'complete',
+  branding_complete = true
+where id = '00000000-0000-0000-0000-000000000001';
+
+insert into public.tenant_branding
+  (tenant_id, display_name, primary_color, secondary_color, email_footer, pdf_header_text)
+values
+  ('00000000-0000-0000-0000-000000000001', 'Effitrans Operations', '#0B1F33', '#0F766E',
+   'Effitrans Operations · Dakar, Sénégal', 'EFFITRANS OPERATIONS')
+on conflict (tenant_id) do nothing;
+
 -- ===========================================================================
 -- RBAC provisional seed (PROVISIONAL pending BLK-RB1) — idempotent.
 -- Foundation/admin permissions ONLY. No business module permissions yet.

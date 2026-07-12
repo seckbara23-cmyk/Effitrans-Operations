@@ -57,6 +57,8 @@ export const TENANT_SCOPED_TABLES = new Set<string>([
   "client_notification",
   // portal
   "client_user",
+  // platform / tenant configuration
+  "tenant_branding",
   // tracking
   "tracking_session",
   "tracking_position",

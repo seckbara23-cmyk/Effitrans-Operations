@@ -119,6 +119,12 @@ const KNOWN_UNSCOPED_READS: Record<string, string> = {
   //     emails are globally unique; a staff email in ANY tenant blocks portal
   //     creation). Tenant-scoping this would defeat its purpose.
   "lib/portal/admin-actions.ts::app_user": "dual-identity guard: intentional global staff-email lookup",
+
+  // --- Platform administration: intentional PLATFORM-WIDE aggregates, gated by a
+  //     platform:* permission (a platform admin has no tenant). Reads only
+  //     non-sensitive columns; never operational payloads.
+  "lib/platform/companies.ts::app_user": "platform-wide user aggregate (platform:companies:read gated; cross-tenant by design)",
+  "lib/platform/companies.ts::operational_file": "platform-wide active-dossier aggregate (platform:companies:read gated; cross-tenant by design)",
 };
 
 const LIB_DIR = fileURLToPath(new URL("../lib", import.meta.url));

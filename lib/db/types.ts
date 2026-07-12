@@ -29,6 +29,19 @@ export type Database = {
           name: string;
           country: string | null;
           storage_region: string | null;
+          legal_name: string | null;
+          trade_name: string | null;
+          slug: string | null;
+          lifecycle_status: string;
+          product_profile: string;
+          locale: string;
+          currency: string;
+          timezone: string;
+          plan_key: string | null;
+          trial_started_at: string | null;
+          trial_ends_at: string | null;
+          onboarding_status: string;
+          branding_complete: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -37,6 +50,19 @@ export type Database = {
           name: string;
           country?: string | null;
           storage_region?: string | null;
+          legal_name?: string | null;
+          trade_name?: string | null;
+          slug?: string | null;
+          lifecycle_status?: string;
+          product_profile?: string;
+          locale?: string;
+          currency?: string;
+          timezone?: string;
+          plan_key?: string | null;
+          trial_started_at?: string | null;
+          trial_ends_at?: string | null;
+          onboarding_status?: string;
+          branding_complete?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -45,10 +71,78 @@ export type Database = {
           name?: string;
           country?: string | null;
           storage_region?: string | null;
+          legal_name?: string | null;
+          trade_name?: string | null;
+          slug?: string | null;
+          lifecycle_status?: string;
+          product_profile?: string;
+          locale?: string;
+          currency?: string;
+          timezone?: string;
+          plan_key?: string | null;
+          trial_started_at?: string | null;
+          trial_ends_at?: string | null;
+          onboarding_status?: string;
+          branding_complete?: boolean;
           created_at?: string;
           updated_at?: string;
         };
         Relationships: [];
+      };
+      tenant_branding: {
+        Row: {
+          tenant_id: string;
+          display_name: string | null;
+          logo_url: string | null;
+          portal_logo_url: string | null;
+          primary_color: string | null;
+          secondary_color: string | null;
+          email_footer: string | null;
+          pdf_header_text: string | null;
+          invoice_footer_text: string | null;
+          support_email: string | null;
+          support_phone: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          tenant_id: string;
+          display_name?: string | null;
+          logo_url?: string | null;
+          portal_logo_url?: string | null;
+          primary_color?: string | null;
+          secondary_color?: string | null;
+          email_footer?: string | null;
+          pdf_header_text?: string | null;
+          invoice_footer_text?: string | null;
+          support_email?: string | null;
+          support_phone?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          tenant_id?: string;
+          display_name?: string | null;
+          logo_url?: string | null;
+          portal_logo_url?: string | null;
+          primary_color?: string | null;
+          secondary_color?: string | null;
+          email_footer?: string | null;
+          pdf_header_text?: string | null;
+          invoice_footer_text?: string | null;
+          support_email?: string | null;
+          support_phone?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "tenant_branding_tenant_id_fkey";
+            columns: ["tenant_id"];
+            referencedRelation: "organization";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       app_user: {
         Row: {
