@@ -159,7 +159,8 @@ export const AuditActions = {
 
   // Phase 5.0B — official process engine. Payloads carry only step KEYS, state
   // names, actor ids and evidence KEYS. NEVER document contents, file bytes,
-  // secrets, passwords, or raw client data. See lib/process/engine/audit.ts.
+  // secrets, passwords, or raw client data — enforced by the audit-safety test in
+  // tests/process-engine-compat.test.ts, which scans lib/process/engine/actions.ts.
   PROCESS_INITIALIZED: "process.initialized",
   PROCESS_STEP_ACTIVATED: "process.step.activated",
   PROCESS_STEP_SUBMITTED: "process.step.submitted",
