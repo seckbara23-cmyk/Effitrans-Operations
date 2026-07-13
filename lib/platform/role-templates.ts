@@ -49,6 +49,13 @@ export type TenantRoleTemplate = {
 
 const BASE = ["profile:read:self", "profile:update:self"] as const;
 
+/**
+ * Phase 5.0B — official process engine. A role that moves work through the
+ * official 26-step process needs to see it and to send/receive handoffs.
+ * `process:override` (self-validation) is intentionally granted to NO role.
+ */
+const PROCESS_HANDOFF = ["process:handoff:receive", "process:handoff:send"] as const;
+
 export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
   {
     key: "SYSTEM_ADMIN",
@@ -69,6 +76,11 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "task:read", "task:read:all", "task:update", "tracking:manage", "tracking:read",
       "tracking:read:all", "tracking:write", "transport:assign", "transport:complete",
       "transport:create", "transport:delete", "transport:read", "transport:update",
+      // Phase 5.0B — official process engine (no process:override; see PROCESS_HANDOFF).
+      "admin_service:manage", "collections:manage", "courier:assign", "courier:deposit",
+      "customs:assign", "customs:register", "customs:validate", "finance:validate",
+      "process:completeness:review", ...PROCESS_HANDOFF, "process:manage", "process:read",
+      "quotation:approve", "quotation:create", "quotation:send", "transport:request",
     ],
   },
   {
@@ -81,8 +93,8 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     permissions: [
       "analytics:read", "audit:read:all", "client:read", "communication:read", "customs:read",
       "document:read", "file:read", "file:read:all", "finance:read", "org:read:own", ...BASE,
-      "report:read", "task:read", "task:read:all", "tracking:read", "tracking:read:all",
-      "transport:read",
+      "process:read", "report:read", "task:read", "task:read:all", "tracking:read",
+      "tracking:read:all", "transport:read",
     ],
   },
   {
@@ -90,9 +102,10 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     labelFr: "Responsable des cotations",
     labelEn: "Quotation Manager",
     genericName: "QUOTATION_MANAGER",
-    description: "Pricing/quotation lead (pricing module is Phase 2; the role exists now with base access).",
+    description:
+      "Pricing/quotation lead — owns official step 1 (Cotation). Phase 5.0B grants the quotation:* permissions; the quotation MODULE itself (quotation table, approval evidence, contract-client bypass) is Phase 5.0D, so these are inert until then.",
     requiredForEveryTenant: false,
-    permissions: [...BASE],
+    permissions: [...BASE, "quotation:approve", "quotation:create", "quotation:send"],
   },
   {
     key: "ACCOUNT_MANAGER",
@@ -105,9 +118,10 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "analytics:read", "client:create", "client:read", "client:update", "communication:read",
       "communication:send", "customs:read", "document:approve", "document:create", "document:read",
       "document:update", "file:assign", "file:create", "file:read", "file:read:all", "file:update",
-      "finance:create", "finance:issue", "finance:read", "portal:manage", ...BASE, "report:read",
-      "task:create", "task:delete", "task:read", "task:read:all", "task:update", "tracking:read",
-      "transport:read",
+      "finance:create", "finance:issue", "finance:read", "portal:manage", ...BASE,
+      "process:completeness:review", ...PROCESS_HANDOFF, "process:manage", "process:read",
+      "report:read", "task:create", "task:delete", "task:read", "task:read:all", "task:update",
+      "tracking:read", "transport:read", "transport:request",
     ],
   },
   {
@@ -118,9 +132,10 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     description: "Control tower — coordinates operations across customs, documents and transport.",
     requiredForEveryTenant: false,
     permissions: [
-      "client:read", "customs:create", "customs:read", "customs:update", "document:create",
-      "document:read", "document:update", "file:read", "file:update", ...BASE, "task:create",
-      "task:delete", "task:read", "task:update", "tracking:read", "tracking:write",
+      "client:read", "customs:assign", "customs:create", "customs:read", "customs:update",
+      "document:create", "document:read", "document:update", "file:read", "file:update", ...BASE,
+      "process:completeness:review", ...PROCESS_HANDOFF, "process:manage", "process:read",
+      "task:create", "task:delete", "task:read", "task:update", "tracking:read", "tracking:write",
       "transport:assign", "transport:create", "transport:read", "transport:update",
     ],
   },
@@ -133,8 +148,11 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     requiredForEveryTenant: false,
     businessProfile: "customsBroker",
     permissions: [
-      "customs:create", "customs:read", "customs:release", "customs:update", "document:approve",
-      "document:create", "document:read", "document:update", "file:read", ...BASE, "task:read",
+      "customs:assign", "customs:create", "customs:read", "customs:release", "customs:update",
+      // customs:validate — the CHECKER half of official step 7. Deliberately NOT
+      // held by CUSTOMS_DECLARANT: the preparer must never be able to validate.
+      "customs:validate", "document:approve", "document:create", "document:read",
+      "document:update", "file:read", ...BASE, ...PROCESS_HANDOFF, "process:read", "task:read",
       "task:update",
     ],
   },
@@ -148,7 +166,8 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     businessProfile: "customsBroker",
     permissions: [
       "customs:create", "customs:read", "customs:update", "document:create", "document:read",
-      "document:update", "file:read", ...BASE, "task:read", "task:update",
+      "document:update", "file:read", ...BASE, ...PROCESS_HANDOFF, "process:read", "task:read",
+      "task:update",
     ],
   },
   {
@@ -172,9 +191,10 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     requiredForEveryTenant: false,
     businessProfile: "roadTransport",
     permissions: [
-      "document:create", "document:read", "document:update", "file:read", ...BASE, "task:read",
-      "task:update", "tracking:read", "tracking:write", "transport:assign", "transport:complete",
-      "transport:create", "transport:read", "transport:update",
+      "document:create", "document:read", "document:update", "file:read", ...BASE,
+      ...PROCESS_HANDOFF, "process:read", "task:read", "task:update", "tracking:read",
+      "tracking:write", "transport:assign", "transport:complete", "transport:create",
+      "transport:read", "transport:request", "transport:update",
     ],
   },
   {
@@ -195,12 +215,14 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     labelFr: "Agent financier",
     labelEn: "Finance Officer",
     genericName: "FINANCE_OFFICER",
-    description: "Cost/billing — full finance module; tenant-wide file read to bill any dossier.",
+    description:
+      "Finance — full finance module plus finance:validate, the CHECKER half of official step 21 (invoice validation). Phase 5.0A recommends narrowing this role by removing finance:create once BILLING_OFFICER is staffed; 5.0B does NOT do that (it would change existing users' access), so maker != checker is enforced on IDENTITY in the engine instead. See docs/phase-5.0b-process-engine.md.",
     requiredForEveryTenant: false,
     permissions: [
-      "analytics:read", "communication:read", "communication:send", "file:read", "file:read:all",
-      "finance:create", "finance:issue", "finance:payment", "finance:read", "finance:update",
-      "finance:void", ...BASE, "report:read",
+      "analytics:read", "collections:manage", "communication:read", "communication:send",
+      "file:read", "file:read:all", "finance:create", "finance:issue", "finance:payment",
+      "finance:read", "finance:update", "finance:validate", "finance:void", ...BASE,
+      "process:read", "report:read",
     ],
   },
   {
@@ -220,6 +242,12 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "task:read", "task:read:all", "task:update", "tracking:manage", "tracking:read",
       "tracking:read:all", "tracking:write", "transport:assign", "transport:complete",
       "transport:create", "transport:delete", "transport:read", "transport:update",
+      // Phase 5.0B. A supervisor may act as either maker or checker, but the engine
+      // still blocks them from validating their OWN work (identity check).
+      "admin_service:manage", "collections:manage", "courier:assign", "customs:assign",
+      "customs:register", "customs:validate", "finance:validate", "process:completeness:review",
+      ...PROCESS_HANDOFF, "process:manage", "process:read", "quotation:approve",
+      "quotation:create", "quotation:send", "transport:request",
     ],
   },
   {
@@ -231,7 +259,8 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     requiredForEveryTenant: false,
     permissions: [
       "audit:read:all", "customs:read", "document:approve", "document:read", "file:read",
-      "file:read:all", ...BASE, "task:read", "task:read:all", "tracking:read", "transport:read",
+      "file:read:all", ...BASE, "process:read", "task:read", "task:read:all", "tracking:read",
+      "transport:read",
     ],
   },
   {
@@ -261,6 +290,106 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     requiredForEveryTenant: false,
     businessProfile: "roadTransport",
     permissions: ["profile:read:self", "profile:update:self", "tracking:read", "tracking:write"],
+  },
+
+  // =========================================================================
+  // Phase 5.0B — the seven roles Phase 5.0A found missing from the official
+  // 26-step process. Additive: no existing role was renamed and no existing user
+  // was reassigned. Mirrored exactly in supabase/seed.sql +
+  // supabase/migrations/20260713000001_process_engine.sql.
+  // =========================================================================
+  {
+    key: "BILLING_OFFICER",
+    labelFr: "Agent de facturation",
+    labelEn: "Billing Officer",
+    genericName: "BILLING_OFFICER",
+    description:
+      "Official steps 20 + 22 — drafts the invoice and dispatches it. The MAKER half of the invoice pair: holds finance:create/update/issue and deliberately NOT finance:validate, so it can never approve its own invoice. This split is what makes step 21 a real independent review.",
+    requiredForEveryTenant: false,
+    permissions: [
+      "client:read", "communication:read", "communication:send", "file:read", "file:read:all",
+      "finance:create", "finance:issue", "finance:read", "finance:update", ...BASE,
+      ...PROCESS_HANDOFF, "process:read",
+    ],
+  },
+  {
+    key: "CUSTOMS_FINANCE_OFFICER",
+    labelFr: "Finance douane",
+    labelEn: "Customs Finance Officer",
+    genericName: "CUSTOMS_FINANCE_OFFICER",
+    description:
+      "Official step 9 — registers the declaration in GAINDE (a manual milestone; no API). Exists because FINANCE_OFFICER holds no customs permission at all, so RBAC previously made this official step impossible.",
+    requiredForEveryTenant: false,
+    businessProfile: "customsBroker",
+    permissions: [
+      "customs:read", "customs:register", "file:read", "finance:read", ...BASE,
+      ...PROCESS_HANDOFF, "process:read",
+    ],
+  },
+  {
+    key: "CUSTOMS_FIELD_AGENT",
+    labelFr: "Agent de terrain douane",
+    labelEn: "Customs Field Agent",
+    genericName: "CUSTOMS_FIELD_AGENT",
+    description:
+      "Official step 13 — follows the dossier at Customs, obtains the Bon à Enlever and completes exit formalities. Holds customs:release (the BAE authority).",
+    requiredForEveryTenant: false,
+    businessProfile: "customsBroker",
+    permissions: [
+      "customs:read", "customs:release", "customs:update", "document:create", "document:read",
+      "file:read", ...BASE, ...PROCESS_HANDOFF, "process:read",
+    ],
+  },
+  {
+    key: "PICKUP_AGENT",
+    labelFr: "Agent enlèvement",
+    labelEn: "Pickup Agent",
+    genericName: "PICKUP_AGENT",
+    description:
+      "Official step 15 — picks up the merchandise and completes port-exit formalities. Distinct from DRIVER, which is a narrow mobile identity with no dossier access.",
+    requiredForEveryTenant: false,
+    permissions: [
+      "document:create", "document:read", "file:read", ...BASE, ...PROCESS_HANDOFF, "process:read",
+      "tracking:read", "transport:read", "transport:update",
+    ],
+  },
+  {
+    key: "ADMINISTRATIVE_OFFICER",
+    labelFr: "Agent administratif",
+    labelEn: "Administrative Officer",
+    genericName: "ADMINISTRATIVE_OFFICER",
+    description:
+      "Official steps 23 + 25 — prepares the invoice for physical deposit, assigns a courier, archives the dossier, and forwards the proof of deposit to Collections. Distinct from SYSTEM_ADMIN, which is the IT/config admin.",
+    requiredForEveryTenant: false,
+    permissions: [
+      "admin_service:manage", "courier:assign", "document:create", "document:read", "file:read",
+      "file:read:all", "finance:read", ...BASE, ...PROCESS_HANDOFF, "process:read",
+    ],
+  },
+  {
+    key: "COURIER",
+    labelFr: "Coursier",
+    labelEn: "Courier",
+    genericName: "COURIER",
+    description:
+      "Official step 24 — deposits the invoice with the client and returns proof of deposit. Deliberately narrow, like DRIVER: NO finance permission of any kind, so a courier can never mutate a financial status.",
+    requiredForEveryTenant: false,
+    permissions: [
+      "courier:deposit", "document:create", "document:read", "file:read", ...BASE, "process:read",
+    ],
+  },
+  {
+    key: "COLLECTIONS_OFFICER",
+    labelFr: "Agent de recouvrement",
+    labelEn: "Collections Officer",
+    genericName: "COLLECTIONS_OFFICER",
+    description:
+      "Official step 26 — monitors due dates, recovers receivables and closes the dossier ONLY after full payment. Delivered must never mean closed.",
+    requiredForEveryTenant: false,
+    permissions: [
+      "collections:manage", "communication:read", "communication:send", "file:read",
+      "file:read:all", "finance:payment", "finance:read", ...BASE, "process:read", "report:read",
+    ],
   },
 ];
 

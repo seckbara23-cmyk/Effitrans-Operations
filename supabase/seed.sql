@@ -500,3 +500,214 @@ where r.tenant_id = '00000000-0000-0000-0000-000000000001'
   and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR')
 on conflict do nothing;
 
+-- ===========================================================================
+-- Phase 5.0B — official process engine: the seven roles Phase 5.0A found missing
+-- plus the permissions the 26-step registry declares.
+-- MIRROR of supabase/migrations/20260713000001_process_engine.sql. Parity with
+-- lib/platform/role-templates.ts is enforced by tests/role-templates.test.ts,
+-- which re-parses THIS file.
+--
+-- Maker-checker: BILLING_OFFICER holds finance:create (the MAKER half) and
+-- deliberately NOT finance:validate. FINANCE_OFFICER holds finance:validate (the
+-- CHECKER half). OPS_SUPERVISOR/SYSTEM_ADMIN hold both by design — a supervisor may
+-- act in either capacity — but they still cannot validate their OWN work, because
+-- maker != checker is enforced on IDENTITY in the engine, not on permission alone.
+-- process:override is granted to NO ROLE: self-validation is off by default.
+-- ===========================================================================
+insert into public.role (tenant_id, code, label_fr, label_en, is_provisional)
+select '00000000-0000-0000-0000-000000000001', r.code, r.label_fr, r.label_en, true
+from (values
+  ('BILLING_OFFICER',         'Agent de facturation',    'Billing Officer'),
+  ('CUSTOMS_FINANCE_OFFICER', 'Finance douane',          'Customs Finance Officer'),
+  ('CUSTOMS_FIELD_AGENT',     'Agent de terrain douane', 'Customs Field Agent'),
+  ('PICKUP_AGENT',            'Agent enlèvement',        'Pickup Agent'),
+  ('ADMINISTRATIVE_OFFICER',  'Agent administratif',     'Administrative Officer'),
+  ('COURIER',                 'Coursier',                'Courier'),
+  ('COLLECTIONS_OFFICER',     'Agent de recouvrement',   'Collections Officer')
+) as r(code, label_fr, label_en)
+on conflict (tenant_id, code) do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'process:read'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'CEO', 'OPS_SUPERVISOR', 'ACCOUNT_MANAGER', 'COORDINATOR', 'CHIEF_OF_TRANSIT', 'CUSTOMS_DECLARANT', 'TRANSPORT_OFFICER', 'FINANCE_OFFICER', 'COMPLIANCE_HSSE', 'BILLING_OFFICER', 'CUSTOMS_FINANCE_OFFICER', 'CUSTOMS_FIELD_AGENT', 'PICKUP_AGENT', 'ADMINISTRATIVE_OFFICER', 'COURIER', 'COLLECTIONS_OFFICER')
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'process:manage'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR', 'ACCOUNT_MANAGER', 'COORDINATOR')
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code in ('process:handoff:send', 'process:handoff:receive')
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR', 'ACCOUNT_MANAGER', 'COORDINATOR', 'CHIEF_OF_TRANSIT', 'CUSTOMS_DECLARANT', 'TRANSPORT_OFFICER', 'BILLING_OFFICER', 'CUSTOMS_FINANCE_OFFICER', 'CUSTOMS_FIELD_AGENT', 'PICKUP_AGENT', 'ADMINISTRATIVE_OFFICER')
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'process:completeness:review'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR', 'COORDINATOR', 'ACCOUNT_MANAGER')
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'customs:assign'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR', 'CHIEF_OF_TRANSIT', 'COORDINATOR')
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'customs:validate'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR', 'CHIEF_OF_TRANSIT')
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'customs:register'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR', 'CUSTOMS_FINANCE_OFFICER')
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'finance:validate'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR', 'FINANCE_OFFICER')
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'transport:request'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR', 'ACCOUNT_MANAGER', 'TRANSPORT_OFFICER')
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code in ('admin_service:manage', 'courier:assign')
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR', 'ADMINISTRATIVE_OFFICER')
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'courier:deposit'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'COURIER')
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'collections:manage'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR', 'FINANCE_OFFICER', 'COLLECTIONS_OFFICER')
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code in ('quotation:create', 'quotation:send', 'quotation:approve')
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR', 'QUOTATION_MANAGER')
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code in ('profile:read:self', 'profile:update:self')
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('BILLING_OFFICER', 'CUSTOMS_FINANCE_OFFICER', 'CUSTOMS_FIELD_AGENT', 'PICKUP_AGENT', 'ADMINISTRATIVE_OFFICER', 'COURIER', 'COLLECTIONS_OFFICER')
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'file:read'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('BILLING_OFFICER', 'CUSTOMS_FINANCE_OFFICER', 'CUSTOMS_FIELD_AGENT', 'PICKUP_AGENT', 'ADMINISTRATIVE_OFFICER', 'COURIER', 'COLLECTIONS_OFFICER')
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'file:read:all'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('BILLING_OFFICER', 'ADMINISTRATIVE_OFFICER', 'COLLECTIONS_OFFICER')
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code in ('finance:create', 'finance:read', 'finance:update', 'finance:issue', 'client:read', 'communication:send', 'communication:read')
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code = 'BILLING_OFFICER'
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code in ('customs:read', 'finance:read')
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code = 'CUSTOMS_FINANCE_OFFICER'
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code in ('customs:read', 'customs:update', 'customs:release', 'document:create', 'document:read')
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code = 'CUSTOMS_FIELD_AGENT'
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code in ('transport:read', 'transport:update', 'document:create', 'document:read', 'tracking:read')
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code = 'PICKUP_AGENT'
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code in ('document:create', 'document:read', 'finance:read')
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code = 'ADMINISTRATIVE_OFFICER'
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code in ('document:create', 'document:read')
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code = 'COURIER'
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code in ('finance:read', 'finance:payment', 'communication:read', 'communication:send', 'report:read')
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code = 'COLLECTIONS_OFFICER'
+on conflict do nothing;
+

@@ -63,6 +63,10 @@ export const TENANT_SCOPED_TABLES = new Set<string>([
   "tracking_session",
   "tracking_position",
   "tracking_event",
+  // official process engine (Phase 5.0B)
+  "process_instance",
+  "process_step_execution",
+  "process_handoff",
 ]);
 
 /**

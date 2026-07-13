@@ -21,6 +21,9 @@ const ALL_ROLES = [
   "CHIEF_OF_TRANSIT", "CUSTOMS_DECLARANT", "DOCUMENTATION_OFFICER", "TRANSPORT_OFFICER",
   "WAREHOUSE_COORDINATOR", "FINANCE_OFFICER", "OPS_SUPERVISOR", "COMPLIANCE_HSSE",
   "CLIENT_USER", "PARTNER_AGENT", "DRIVER",
+  // Phase 5.0B — the seven roles the official 26-step process requires.
+  "BILLING_OFFICER", "CUSTOMS_FINANCE_OFFICER", "CUSTOMS_FIELD_AGENT", "PICKUP_AGENT",
+  "ADMINISTRATIVE_OFFICER", "COURIER", "COLLECTIONS_OFFICER",
 ];
 // module 'finance' codes, as seeded (visible in seed.sql explicit lists).
 const FINANCE_CODES = ["finance:read", "finance:create", "finance:update", "finance:issue", "finance:payment", "finance:void"];
@@ -53,7 +56,7 @@ function parseSeed(): Record<string, string[]> {
 describe("tenant role templates — parity with seed.sql (no drift)", () => {
   const seeded = parseSeed();
 
-  it("covers exactly the 16 seeded roles", () => {
+  it("covers exactly the 23 seeded roles", () => {
     expect([...TENANT_ROLE_KEYS].sort()).toEqual([...ALL_ROLES].sort());
   });
 

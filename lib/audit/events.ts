@@ -156,6 +156,27 @@ export const AuditActions = {
   PLATFORM_TENANT_PLAN_CHANGED: "platform.tenant.plan_changed",
   PLATFORM_ROLE_TEMPLATE_UPDATED: "platform.role_template.updated",
   PLATFORM_BRANDING_UPDATED: "platform.branding.updated",
+
+  // Phase 5.0B — official process engine. Payloads carry only step KEYS, state
+  // names, actor ids and evidence KEYS. NEVER document contents, file bytes,
+  // secrets, passwords, or raw client data. See lib/process/engine/audit.ts.
+  PROCESS_INITIALIZED: "process.initialized",
+  PROCESS_STEP_ACTIVATED: "process.step.activated",
+  PROCESS_STEP_SUBMITTED: "process.step.submitted",
+  PROCESS_STEP_APPROVED: "process.step.approved",
+  PROCESS_STEP_REJECTED: "process.step.rejected",
+  PROCESS_STEP_COMPLETED: "process.step.completed",
+  PROCESS_CORRECTION_SUBMITTED: "process.correction.submitted",
+  PROCESS_HANDOFF_SENT: "process.handoff.sent",
+  PROCESS_HANDOFF_RECEIVED: "process.handoff.received",
+  PROCESS_HANDOFF_REJECTED: "process.handoff.rejected",
+  PROCESS_GATE_BLOCKED: "process.gate.blocked",
+  PROCESS_GATE_SATISFIED: "process.gate.satisfied",
+  /** Self-validation override. Requires process:override + a justification. */
+  PROCESS_MAKER_CHECKER_OVERRIDE: "process.maker_checker.override",
+  PROCESS_COMPATIBILITY_MAPPED: "process.compatibility.mapped",
+  PROCESS_OPERATIONALLY_COMPLETED: "process.operationally_completed",
+  PROCESS_CLOSED: "process.closed",
 } as const;
 
 export type AuditActionCode = (typeof AuditActions)[keyof typeof AuditActions];
