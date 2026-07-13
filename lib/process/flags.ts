@@ -16,6 +16,13 @@
  */
 export type ProcessFlagEnv = {
   EFFITRANS_PROCESS_ENGINE_ENABLED?: string;
+  /**
+   * Phase 5.0C — the staff workspaces (My Work, the 15 department queues, the
+   * Coordinator process tower). Separate from the engine flag so the engine can
+   * be exercised by API/tests before any queue route appears in navigation.
+   * Requires the master flag: queues over a dark engine would always be empty.
+   */
+  EFFITRANS_PROCESS_WORKSPACES_ENABLED?: string;
   /** Allow initializing an instance for a LEGACY dossier (compatibility mapping). */
   EFFITRANS_PROCESS_COMPATIBILITY_ENABLED?: string;
   /**
@@ -33,6 +40,8 @@ export type ProcessFlags = {
   compatibility: boolean;
   /** Maker-checker override seam (requires master). Disabled by default. */
   overrideAllowed: boolean;
+  /** Phase 5.0C staff workspaces + queue navigation (requires master). */
+  workspaces: boolean;
 };
 
 const on = (v: string | undefined): boolean => v === "true";
@@ -44,5 +53,6 @@ export function resolveProcessFlags(env: ProcessFlagEnv): ProcessFlags {
     // A sub-capability is only live when the master flag is also on.
     compatibility: enabled && on(env.EFFITRANS_PROCESS_COMPATIBILITY_ENABLED),
     overrideAllowed: enabled && on(env.EFFITRANS_PROCESS_OVERRIDE_ENABLED),
+    workspaces: enabled && on(env.EFFITRANS_PROCESS_WORKSPACES_ENABLED),
   };
 }

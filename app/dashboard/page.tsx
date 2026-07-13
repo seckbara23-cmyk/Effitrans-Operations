@@ -13,6 +13,8 @@ import { getRecentActivity, type ActivityItem } from "@/lib/activity/feed";
 import { RecentActivity } from "@/components/dashboard/recent-activity";
 import { getControlTower, type ControlTowerData } from "@/lib/control-tower/service";
 import { ControlTower } from "@/components/dashboard/control-tower";
+import { getProcessTower, type ProcessTower } from "@/lib/process/queues/control-tower";
+import { ProcessTowerSection } from "@/components/process/process-tower";
 import { getDashboardTasks } from "@/lib/tasks/service";
 import { DakarClock } from "@/components/dashboard/dakar-clock";
 import { DashboardKpis } from "@/components/dashboard/dashboard-kpis";
@@ -54,6 +56,9 @@ export default async function DashboardPage() {
   let activity: ActivityItem[] = [];
   let canSeeActivity = false;
   let controlTower: ControlTowerData | null = null;
+  // Phase 5.0C — the Coordinator's process view is a SECTION of this Control
+  // Tower, not a second dashboard. Null (and zero cost) when the flag is off.
+  let processTower: ProcessTower | null = null;
   if (configured) {
     const user = await requireUser();
     // Stage 1 — session-light counts + the permission set are all independent,
@@ -72,7 +77,7 @@ export default async function DashboardPage() {
     // dashboard's wall time was the SUM of control tower + department cards +
     // activity + presence. Each stays permission-gated exactly as before and
     // still degrades to its default on failure.
-    [controlTower, deptCards, activity, presence] = await Promise.all([
+    [controlTower, deptCards, activity, presence, processTower] = await Promise.all([
       // Phase 2.2 — operations control tower (management view).
       hasPermission(permissions, "analytics:read")
         ? getControlTower(permissions).catch(() => null)
@@ -87,6 +92,9 @@ export default async function DashboardPage() {
       hasPermission(permissions, "admin:users:manage")
         ? getPresenceSummary().catch(() => null)
         : Promise.resolve<PresenceSummary | null>(null),
+      // Phase 5.0C — official-process tower. Returns null unless the workspaces
+      // flag is on, so /dashboard is unchanged with the flags off.
+      getProcessTower(user.tenantId, permissions).catch(() => null),
     ]);
   }
   const taskKpis = dashTasks
@@ -152,6 +160,8 @@ export default async function DashboardPage() {
       <DashboardKpis files={overview} tasks={taskKpis} />
 
       {/* Operations control tower (Phase 2.2) — management view (analytics:read) */}
+      {processTower && <ProcessTowerSection tower={processTower} />}
+
       {controlTower && <ControlTower data={controlTower} />}
 
       {/* Department workload cards (Dashboard UX) — per-department, permission-scoped */}

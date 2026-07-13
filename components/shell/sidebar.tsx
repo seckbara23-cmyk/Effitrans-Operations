@@ -2,20 +2,64 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { navSections } from "@/lib/nav";
+import { navSections, type NavSection } from "@/lib/nav";
+import type { ProcessNavSection } from "@/lib/process/queues/nav";
+import {
+  IconTower as PIconTower,
+  IconStamp as PIconStamp,
+  IconTruck as PIconTruck,
+  IconFinance as PIconFinance,
+  IconDocument as PIconDocument,
+  IconBuilding as PIconBuilding,
+  IconUsers as PIconUsers,
+} from "@/lib/icons";
 import { cn } from "@/lib/cn";
 import { LogoWordmark } from "@/components/brand/logo";
 import { IconClose } from "@/lib/icons";
 import { t } from "@/lib/i18n";
 import { useSession, canSeeNav } from "@/lib/auth/use-session";
 
-function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
+/** Phase 5.0C — icon keys cross the server->client boundary; components cannot. */
+const PROCESS_ICONS = {
+  tower: PIconTower,
+  stamp: PIconStamp,
+  truck: PIconTruck,
+  finance: PIconFinance,
+  document: PIconDocument,
+  building: PIconBuilding,
+  users: PIconUsers,
+} as const;
+
+/** Process sections carry icon KEYS; resolve them to the same NavSection shape. */
+function toNavSections(process: ProcessNavSection[]): NavSection[] {
+  return process.map((s) => ({
+    title: s.title,
+    items: s.items.map((i) => ({
+      label: i.label,
+      href: i.href,
+      icon: PROCESS_ICONS[i.iconKey],
+      permission: i.permission,
+    })),
+  }));
+}
+
+function NavLinks({
+  onNavigate,
+  processNav = [],
+}: {
+  onNavigate?: () => void;
+  processNav?: ProcessNavSection[];
+}) {
   const pathname = usePathname();
   const session = useSession();
 
+  // With the workspaces flag off, processNav is [] and this is exactly the
+  // pre-5.0C navigation.
+  const sections = [...navSections, ...toNavSections(processNav)];
+
   return (
     <nav className="flex-1 space-y-6 overflow-y-auto px-3 py-5">
-      {navSections.map((section) => {
+      {sections.map((section) => {
         // Cosmetic permission filtering — server/RLS remain authoritative.
         const items = section.items.filter((item) =>
           canSeeNav(item.permission, session),
@@ -100,7 +144,7 @@ const surface =
   "flex h-full flex-col bg-navy-900 route-lines border-r border-white/5";
 
 /** Desktop sidebar — fixed, always visible on lg+. */
-export function DesktopSidebar() {
+export function DesktopSidebar({ processNav = [] }: { processNav?: ProcessNavSection[] }) {
   const session = useSession();
   return (
     <aside className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:z-30 lg:flex lg:w-72 lg:flex-col">
@@ -108,7 +152,7 @@ export function DesktopSidebar() {
         <div className="flex h-16 items-center border-b border-white/10 px-4">
           <LogoWordmark brandName={session.brandName ?? undefined} tagline={session.tagline ?? undefined} />
         </div>
-        <NavLinks />
+        <NavLinks processNav={processNav} />
         <SidebarFooter />
       </div>
     </aside>
@@ -119,9 +163,11 @@ export function DesktopSidebar() {
 export function MobileSidebar({
   open,
   onClose,
+  processNav = [],
 }: {
   open: boolean;
   onClose: () => void;
+  processNav?: ProcessNavSection[];
 }) {
   const session = useSession();
   return (
@@ -156,7 +202,7 @@ export function MobileSidebar({
               <IconClose />
             </button>
           </div>
-          <NavLinks onNavigate={onClose} />
+          <NavLinks onNavigate={onClose} processNav={processNav} />
           <SidebarFooter />
         </div>
       </div>

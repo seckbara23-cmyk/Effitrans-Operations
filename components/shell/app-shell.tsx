@@ -5,8 +5,16 @@ import { usePathname } from "next/navigation";
 import { DesktopSidebar, MobileSidebar } from "./sidebar";
 import { Topbar } from "./topbar";
 import { SessionProvider } from "@/lib/auth/use-session";
+import type { ProcessNavSection } from "@/lib/process/queues/nav";
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({
+  children,
+  processNav = [],
+}: {
+  children: React.ReactNode;
+  /** Phase 5.0C — computed on the server (flag + roles). [] when the flag is off. */
+  processNav?: ProcessNavSection[];
+}) {
   const [menuOpen, setMenuOpen] = useState(false);
   const pathname = usePathname();
 
@@ -36,8 +44,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <SessionProvider>
       <div className="min-h-screen bg-sand-100">
-        <DesktopSidebar />
-        <MobileSidebar open={menuOpen} onClose={() => setMenuOpen(false)} />
+        <DesktopSidebar processNav={processNav} />
+        <MobileSidebar open={menuOpen} onClose={() => setMenuOpen(false)} processNav={processNav} />
 
         <div className="lg:pl-72">
           <Topbar onOpenMenu={() => setMenuOpen(true)} />

@@ -72,17 +72,38 @@ export default async function ProcessInspectorPage({ params }: { params: { id: s
   if (!hasPermission(permissions, "process:read")) notFound();
 
   const state = await getProcessState(params.id);
+
+  // LEGACY DOSSIER (Deliverable 13). No process instance exists. We do NOT create
+  // one as a side effect of rendering — initialization is an explicit, authorized
+  // act, and no prior step is ever marked completed.
   if (!state) {
+    const canInit = hasPermission(permissions, "process:manage");
     return (
       <main className="mx-auto max-w-4xl p-6">
-        <h1 className="text-lg font-semibold text-slate-900">Processus officiel Effitrans</h1>
-        <p className="mt-2 text-sm text-slate-600">
-          Aucune instance de processus pour ce dossier. Le moteur est actif mais le dossier n&apos;a pas
-          encore été initialisé.
-        </p>
-        <Link href={`/files/${params.id}`} className="mt-4 inline-block text-sm text-blue-600 hover:underline">
+        <Link href={`/files/${params.id}`} className="text-sm text-blue-600 hover:underline">
           ← Retour au dossier
         </Link>
+        <h1 className="mt-2 text-lg font-semibold text-slate-900">Processus officiel Effitrans</h1>
+
+        <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <p className="text-sm font-medium text-slate-900">Processus officiel non initialisé</p>
+          <p className="mt-1 text-sm text-slate-600">
+            Ce dossier est antérieur au moteur de processus. Aucune étape officielle n&apos;a jamais été
+            tracée pour lui : la plateforme n&apos;a pas capturé les réceptions, validations et transferts
+            du processus officiel. Rien n&apos;est initialisé automatiquement, et aucune étape passée ne
+            sera marquée comme terminée.
+          </p>
+          {canInit ? (
+            <p className="mt-3 text-xs text-slate-500">
+              Un rattachement manuel est possible (rapport de simulation d&apos;abord). Les étapes
+              antérieures seront marquées <strong>non vérifiées</strong>, jamais terminées.
+            </p>
+          ) : (
+            <p className="mt-3 text-xs text-slate-500">
+              Vous n&apos;avez pas le droit d&apos;initialiser un processus sur ce dossier.
+            </p>
+          )}
+        </div>
       </main>
     );
   }

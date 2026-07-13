@@ -12,10 +12,16 @@ export function getProcessFlags(): ProcessFlags {
     EFFITRANS_PROCESS_ENGINE_ENABLED: process.env.EFFITRANS_PROCESS_ENGINE_ENABLED,
     EFFITRANS_PROCESS_COMPATIBILITY_ENABLED: process.env.EFFITRANS_PROCESS_COMPATIBILITY_ENABLED,
     EFFITRANS_PROCESS_OVERRIDE_ENABLED: process.env.EFFITRANS_PROCESS_OVERRIDE_ENABLED,
+    EFFITRANS_PROCESS_WORKSPACES_ENABLED: process.env.EFFITRANS_PROCESS_WORKSPACES_ENABLED,
   });
 }
 
 /** True when the engine may run at all. Every engine mutation checks this first. */
 export function processEngineEnabled(): boolean {
   return getProcessFlags().enabled;
+}
+
+/** True when the Phase 5.0C staff workspaces + queue navigation are visible. */
+export function processWorkspacesEnabled(): boolean {
+  return getProcessFlags().workspaces;
 }

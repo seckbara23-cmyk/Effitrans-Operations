@@ -122,7 +122,12 @@ describe("Phase 5.0B-1 — the billing/finance maker-checker split is real", () 
 
 describe("Phase 5.0B-1 — feature flag is dark by default", () => {
   it("is off when nothing is set", () => {
-    expect(resolveProcessFlags({})).toEqual({ enabled: false, compatibility: false, overrideAllowed: false });
+    expect(resolveProcessFlags({})).toEqual({
+      enabled: false,
+      compatibility: false,
+      overrideAllowed: false,
+      workspaces: false,
+    });
   });
 
   it("turns on only with the exact string 'true'", () => {
@@ -134,8 +139,15 @@ describe("Phase 5.0B-1 — feature flag is dark by default", () => {
     const f = resolveProcessFlags({
       EFFITRANS_PROCESS_COMPATIBILITY_ENABLED: "true",
       EFFITRANS_PROCESS_OVERRIDE_ENABLED: "true",
+      // Phase 5.0C — the workspaces flag is inert without the master flag too.
+      EFFITRANS_PROCESS_WORKSPACES_ENABLED: "true",
     });
-    expect(f).toEqual({ enabled: false, compatibility: false, overrideAllowed: false });
+    expect(f).toEqual({
+      enabled: false,
+      compatibility: false,
+      overrideAllowed: false,
+      workspaces: false,
+    });
   });
 
   it("never allows the maker-checker override by default, even with the engine on", () => {
