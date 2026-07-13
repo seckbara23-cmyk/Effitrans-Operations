@@ -35,8 +35,18 @@
 -- ===========================================================================
 -- 1. Driver identity — DRIVER role (existing auth) + transport link.
 -- ===========================================================================
+-- BACKFILL, not a seed. role.tenant_id references organization(id), and on a
+-- CLEAN database (CI, a fresh environment) `organization` is still empty here:
+-- the Effitrans org row is created by supabase/seed.sql, which runs AFTER every
+-- migration. A bare `values (...)` insert therefore violated role_tenant_id_fkey
+-- and aborted the whole migration replay. Guarded with `where exists`, matching
+-- 20260712110000_company_metadata_branding.sql, so it:
+--   * no-ops on a clean DB   -> seed.sql supplies DRIVER + its tracking grants,
+--   * backfills on a live DB -> the org row exists, so DRIVER is added as before.
+-- Same idiom as the role_permission grants below, which already no-op on clean.
 insert into public.role (tenant_id, code, label_fr, label_en, is_provisional)
-values ('00000000-0000-0000-0000-000000000001', 'DRIVER', 'Chauffeur', 'Driver', true)
+select '00000000-0000-0000-0000-000000000001', 'DRIVER', 'Chauffeur', 'Driver', true
+where exists (select 1 from public.organization where id = '00000000-0000-0000-0000-000000000001')
 on conflict (tenant_id, code) do nothing;
 
 -- Additive link from a transport to its driver's app_user (nullable — free-text
