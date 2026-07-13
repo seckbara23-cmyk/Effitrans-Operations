@@ -1339,6 +1339,198 @@ export type Database = {
           },
         ];
       };
+      // ---------------------------------------------------------------------
+      // Phase 5.0B — official process engine (20260713000001_process_engine.sql).
+      // Hand-written to match the migration: `supabase gen types` needs a live DB
+      // and the agent environment has none. Keep in sync with the migration.
+      // ---------------------------------------------------------------------
+      process_instance: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          file_id: string;
+          process_version: string;
+          status: string;
+          compatibility_source: string;
+          compatibility_version: string | null;
+          started_at: string;
+          completed_at: string | null;
+          closed_at: string | null;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          file_id: string;
+          process_version?: string;
+          status?: string;
+          compatibility_source?: string;
+          compatibility_version?: string | null;
+          started_at?: string;
+          completed_at?: string | null;
+          closed_at?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          status?: string;
+          compatibility_source?: string;
+          compatibility_version?: string | null;
+          completed_at?: string | null;
+          closed_at?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "process_instance_file_id_fkey";
+            columns: ["file_id"];
+            referencedRelation: "operational_file";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      process_step_execution: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          process_instance_id: string;
+          step_key: string;
+          step_number: number | null;
+          state: string;
+          assigned_user_id: string | null;
+          assigned_role_code: string | null;
+          submitted_by: string | null;
+          submitted_at: string | null;
+          reviewed_by: string | null;
+          reviewed_at: string | null;
+          received_from_user_id: string | null;
+          received_at: string | null;
+          started_at: string | null;
+          completed_at: string | null;
+          rejected_at: string | null;
+          rejected_by: string | null;
+          rejection_reason: string | null;
+          correction_of_id: string | null;
+          override_used: boolean;
+          override_reason: string | null;
+          evidence_summary: Json | null;
+          metadata: Json | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          process_instance_id: string;
+          step_key: string;
+          step_number?: number | null;
+          state?: string;
+          assigned_user_id?: string | null;
+          assigned_role_code?: string | null;
+          submitted_by?: string | null;
+          submitted_at?: string | null;
+          reviewed_by?: string | null;
+          reviewed_at?: string | null;
+          received_from_user_id?: string | null;
+          received_at?: string | null;
+          started_at?: string | null;
+          completed_at?: string | null;
+          rejected_at?: string | null;
+          rejected_by?: string | null;
+          rejection_reason?: string | null;
+          correction_of_id?: string | null;
+          override_used?: boolean;
+          override_reason?: string | null;
+          evidence_summary?: Json | null;
+          metadata?: Json | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          state?: string;
+          assigned_user_id?: string | null;
+          assigned_role_code?: string | null;
+          submitted_by?: string | null;
+          submitted_at?: string | null;
+          reviewed_by?: string | null;
+          reviewed_at?: string | null;
+          received_from_user_id?: string | null;
+          received_at?: string | null;
+          started_at?: string | null;
+          completed_at?: string | null;
+          rejected_at?: string | null;
+          rejected_by?: string | null;
+          rejection_reason?: string | null;
+          override_used?: boolean;
+          override_reason?: string | null;
+          evidence_summary?: Json | null;
+          metadata?: Json | null;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "process_step_execution_process_instance_id_fkey";
+            columns: ["process_instance_id"];
+            referencedRelation: "process_instance";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      process_handoff: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          process_instance_id: string;
+          from_step_key: string;
+          to_step_key: string;
+          sent_by: string;
+          sent_at: string;
+          received_by: string | null;
+          received_at: string | null;
+          status: string;
+          rejection_reason: string | null;
+          returned_to_step_key: string | null;
+          dedup_key: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          process_instance_id: string;
+          from_step_key: string;
+          to_step_key: string;
+          sent_by: string;
+          sent_at?: string;
+          received_by?: string | null;
+          received_at?: string | null;
+          status?: string;
+          rejection_reason?: string | null;
+          returned_to_step_key?: string | null;
+          dedup_key: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          status?: string;
+          received_by?: string | null;
+          received_at?: string | null;
+          rejection_reason?: string | null;
+          returned_to_step_key?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "process_handoff_process_instance_id_fkey";
+            columns: ["process_instance_id"];
+            referencedRelation: "process_instance";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       billing_charge: {
         Row: {
           id: string;

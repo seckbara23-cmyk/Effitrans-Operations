@@ -118,18 +118,18 @@ export const DOCUMENT_MAPPINGS: DocumentMapping[] = [
   {
     key: "BON_A_DELIVRER",
     labelFr: "Bon à Délivrer (BAD)",
-    typeCode: null,
-    status: "missing",
+    typeCode: "BON_A_DELIVRER",
+    status: "mapped",
     steps: ["bon_a_delivrer"],
-    note: "Zero occurrences repo-wide. A hard prerequisite of the pickup join gate.",
+    note: "ADDED IN PHASE 5.0B (20260713000002). A hard prerequisite of the pickup join gate — without a document type to hold it the gate could never open, only block.",
   },
   {
     key: "PRE_GATE_AUTHORIZATION",
     labelFr: "Autorisation Pre-Gate",
-    typeCode: null,
-    status: "missing",
+    typeCode: "PRE_GATE_AUTHORIZATION",
+    status: "mapped",
     steps: ["pre_gate", "transport_docs_transmission"],
-    note: "Zero occurrences repo-wide. A hard prerequisite of the pickup join gate.",
+    note: "ADDED IN PHASE 5.0B (20260713000002). A hard prerequisite of the pickup join gate.",
   },
   {
     key: "SIGNED_DELIVERY_NOTE",
@@ -173,7 +173,14 @@ export const DOCUMENT_MAPPINGS: DocumentMapping[] = [
   },
 ];
 
-/** Document types that must be ADDED to public.document_type in Phase 5.0D. */
+/**
+ * Document types still to be ADDED in Phase 5.0D.
+ *
+ * BON_A_DELIVRER and PRE_GATE_AUTHORIZATION were originally on this list but
+ * shipped in Phase 5.0B (migration 20260713000002): the official pickup gate
+ * depends on them, and without a type to hold them the gate could only ever
+ * block, never open.
+ */
 export const MISSING_DOCUMENT_TYPES = [
   "QUOTATION",
   "QUOTATION_APPROVAL",
@@ -182,8 +189,6 @@ export const MISSING_DOCUMENT_TYPES = [
   "SPENDING_AUTHORIZATION",
   "GAINDE_SUBMISSION_EVIDENCE",
   "BON_A_ENLEVER",
-  "BON_A_DELIVRER",
-  "PRE_GATE_AUTHORIZATION",
   "PROOF_OF_DEPOSIT",
 ];
 

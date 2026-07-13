@@ -361,7 +361,7 @@ describe("required-document mapping (Deliverable 9)", () => {
     expect(new Set(DOCUMENT_MAPPINGS.map((d) => d.key)).size).toBe(17);
   });
 
-  it("records the document types missing from the catalog", () => {
+  it("records the document types still missing from the catalog (Phase 5.0D)", () => {
     expect(MISSING_DOCUMENT_TYPES).toEqual([
       "QUOTATION",
       "QUOTATION_APPROVAL",
@@ -370,10 +370,17 @@ describe("required-document mapping (Deliverable 9)", () => {
       "SPENDING_AUTHORIZATION",
       "GAINDE_SUBMISSION_EVIDENCE",
       "BON_A_ENLEVER",
-      "BON_A_DELIVRER",
-      "PRE_GATE_AUTHORIZATION",
       "PROOF_OF_DEPOSIT",
     ]);
+  });
+
+  it("shipped the two pickup-gate document types in Phase 5.0B", () => {
+    // Without a type to hold them, the official pickup gate could only ever block,
+    // never open — so these two could not wait for 5.0D.
+    expect(mapDocument("BON_A_DELIVRER").typeCode).toBe("BON_A_DELIVRER");
+    expect(mapDocument("BON_A_DELIVRER").status).toBe("mapped");
+    expect(mapDocument("PRE_GATE_AUTHORIZATION").typeCode).toBe("PRE_GATE_AUTHORIZATION");
+    expect(mapDocument("PRE_GATE_AUTHORIZATION").status).toBe("mapped");
   });
 
   it("flags the DELIVERY_NOTE conflation (prepared BL vs signed POD)", () => {
