@@ -10,7 +10,7 @@ import {
   invoiceVisibleToClient,
   portalPostDeliveryState,
 } from "@/lib/portal/closure-view";
-import { buildNavigation } from "@/lib/navigation/build";
+import { buildNavigation, workspacesFor } from "@/lib/navigation/build";
 import type { NavigationContext } from "@/lib/navigation/types";
 import { resolveProcessFlags } from "@/lib/process/flags";
 import { derivePromise } from "@/lib/collections/model";
@@ -31,22 +31,31 @@ const FLAGS_ON = resolveProcessFlags({
   EFFITRANS_COLLECTIONS_ENABLED: "true",
 });
 
-/** Phase 5.0E-1 — ONE builder now produces the whole sidebar. */
-const navHrefs = (
+const context = (
   roleCodes: string[],
   permissions: string[] = PERMS,
   featureFlags = FLAGS_ON,
-): string[] => {
-  const ctx: NavigationContext = {
-    userId: "u1",
-    tenantId: "t1",
-    roleCodes,
-    permissions,
-    identityType: "tenant",
-    featureFlags,
-  };
-  return buildNavigation(ctx).sections.flatMap((s) => s.items.map((i) => i.href));
-};
+): NavigationContext => ({
+  userId: "u1",
+  tenantId: "t1",
+  roleCodes,
+  permissions,
+  identityType: "tenant",
+  featureFlags,
+});
+
+/** The permanent sidebar. As of 5.0E-3 it holds NO role panel and NO queue. */
+const navHrefs = (...a: Parameters<typeof context>): string[] =>
+  buildNavigation(context(...a)).sections.flatMap((s) => s.items.map((i) => i.href));
+
+/**
+ * The role panels + queues, which moved OUT of the sidebar and into Mon Travail in
+ * 5.0E-3. The authorization rules are unchanged — an Account Manager still gets the
+ * portfolio and still gets no Collections. Only the placement moved, so these
+ * assertions follow it.
+ */
+const workHrefs = (...a: Parameters<typeof context>): string[] =>
+  workspacesFor(context(...a)).map((w) => w.href);
 
 // ---------------------------------------------------- DRIVER CONTACT PRIVACY ----
 
@@ -301,52 +310,58 @@ describe("portal-safe post-delivery state (Deliverables 5-6)", () => {
 
 describe("role-aware panel navigation (Deliverable 7/10; ONE builder as of 5.0E-1)", () => {
   it("gives an Account Manager the portfolio, not Collections or deposits", () => {
-    const hrefs = navHrefs(["ACCOUNT_MANAGER"]);
-    expect(hrefs).toContain("/portfolio");
-    expect(hrefs).not.toContain("/collections");
-    expect(hrefs).not.toContain("/deposits");
-    expect(hrefs).not.toContain("/courier");
+    const w = workHrefs(["ACCOUNT_MANAGER"]);
+    expect(w).toContain("/portfolio");
+    expect(w).not.toContain("/collections");
+    expect(w).not.toContain("/deposits");
+    expect(w).not.toContain("/courier");
   });
 
   it("gives Transport the readiness panel, not the portfolio or Collections", () => {
-    const hrefs = navHrefs(["TRANSPORT_OFFICER"]);
-    expect(hrefs).toContain("/transport-readiness");
-    expect(hrefs).not.toContain("/portfolio");
-    expect(hrefs).not.toContain("/collections");
+    const w = workHrefs(["TRANSPORT_OFFICER"]);
+    expect(w).toContain("/transport-readiness");
+    expect(w).not.toContain("/portfolio");
+    expect(w).not.toContain("/collections");
   });
 
-  it("a COURIER sees ONLY their own deposits — never Collections or the portfolio", () => {
-    const hrefs = navHrefs(["COURIER"]);
-    expect(hrefs).toContain("/courier");
-    expect(hrefs).not.toContain("/collections");
-    expect(hrefs).not.toContain("/portfolio");
-    expect(hrefs).not.toContain("/deposits");
+  it("puts NO role panel in the permanent sidebar (5.0E-3)", () => {
+    // They are the user's own work, not places to navigate to.
+    const sidebar = navHrefs(["SYSTEM_ADMIN"]);
+    for (const p of ["/portfolio", "/transport-readiness", "/collections", "/deposits", "/courier"]) {
+      expect(sidebar, p).not.toContain(p);
+    }
   });
 
-  it("a DRIVER gets NO staff sidebar at all — separate identity stack", () => {
-    const ctx: NavigationContext = {
-      userId: "u1",
-      tenantId: "t1",
-      roleCodes: ["DRIVER"],
-      permissions: ["tracking:read", "tracking:write"],
-      identityType: "driver",
-      featureFlags: FLAGS_ON,
-    };
-    expect(buildNavigation(ctx).sections).toEqual([]);
+  it("a DRIVER or a COURIER-only user gets NO staff sidebar — separate surfaces", () => {
+    for (const identityType of ["driver", "courier"] as const) {
+      const ctx: NavigationContext = {
+        userId: "u1",
+        tenantId: "t1",
+        roleCodes: identityType === "driver" ? ["DRIVER"] : ["COURIER"],
+        permissions: identityType === "driver" ? ["tracking:read"] : PERMS,
+        identityType,
+        featureFlags: FLAGS_ON,
+      };
+      expect(buildNavigation(ctx).sections, identityType).toEqual([]);
+      expect(workspacesFor(ctx), identityType).toEqual([]);
+    }
   });
 
   it("gives Collections the aging panel", () => {
-    const hrefs = navHrefs(["COLLECTIONS_OFFICER"]);
-    expect(hrefs).toContain("/collections");
-    expect(hrefs).not.toContain("/portfolio");
+    const w = workHrefs(["COLLECTIONS_OFFICER"]);
+    expect(w).toContain("/collections");
+    expect(w).not.toContain("/portfolio");
   });
 
   it("adds NO process entry when the workspaces flag is off — production nav unchanged", () => {
-    const hrefs = navHrefs(["OPS_SUPERVISOR"], PERMS, resolveProcessFlags({}));
-    for (const h of ["/my-work", "/collections", "/deposits", "/portfolio", "/transport-readiness"]) {
+    const off = resolveProcessFlags({});
+    const hrefs = navHrefs(["OPS_SUPERVISOR"], PERMS, off);
+    for (const h of ["/my-work", "/journeys", "/collections", "/deposits", "/portfolio", "/transport-readiness"]) {
       expect(hrefs).not.toContain(h);
     }
     expect(hrefs.some((h) => h.startsWith("/queues/"))).toBe(false);
+    // ...and no workspace either.
+    expect(workHrefs(["OPS_SUPERVISOR"], PERMS, off)).toEqual([]);
   });
 
   it("never exposes platform navigation", () => {

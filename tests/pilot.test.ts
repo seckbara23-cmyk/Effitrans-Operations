@@ -48,10 +48,17 @@ describe("pilot role matrix (Deliverable 2)", () => {
     }
   });
 
-  it("gives every role a landing page it can actually open", () => {
-    // A landing that 404s is worse than no landing: the user concludes the product
-    // is broken before they have done anything.
+  it("gives every staff role a sidebar it can actually use", () => {
+    // A landing that 404s is worse than no landing: the user concludes the product is
+    // broken before they have done anything. The Coursier is the one exception — as of
+    // 5.0E-3 they are a separate surface, like a driver, and have no staff sidebar by
+    // design (every section resolved empty for them, which is what prompted the split).
     for (const m of matrix) {
+      if (m.role.roleCode === "COURIER") {
+        expect(m.sections).toEqual([]);
+        expect(m.landing).toBe("/courier");
+        continue;
+      }
       const all = m.sections.flatMap((s) => s.items);
       expect(all.length, `${m.role.roleCode} has an empty sidebar`).toBeGreaterThan(0);
     }
@@ -83,6 +90,13 @@ describe("pilot role matrix (Deliverable 2)", () => {
     };
     for (const m of matrix) {
       expect(m.landing, m.role.roleCode).toBe(expected[m.role.roleCode]);
+    }
+  });
+
+  it("puts no queue and no role panel in ANY role's permanent sidebar (5.0E-3)", () => {
+    for (const m of matrix) {
+      const hrefs = m.sections.flatMap((s) => s.items);
+      expect(hrefs.some((h) => h.includes("/queues/")), m.role.roleCode).toBe(false);
     }
   });
 

@@ -52,11 +52,13 @@ describe("unratified thresholds are never presented as a contractual SLA", () =>
   it("uses the approved internal wording instead", () => {
     for (const approved of [
       "Alertes de délai internes",
-      "Seuils opérationnels provisoires",
+      "Surveillance des délais internes",
       "Goulots opérationnels",
     ]) {
       expect(STRINGS, approved).toContain(approved);
     }
+    // The legacy thresholds are named for what they are: provisional and internal.
+    expect(STRINGS.some((s) => s.includes("Seuil opérationnel provisoire"))).toBe(true);
   });
 
   it("keeps 'SLA' ONLY where it names an unconfigured OFFICIAL policy", () => {
@@ -74,8 +76,16 @@ describe("unratified thresholds are never presented as a contractual SLA", () =>
   });
 
   it("marks the legacy thresholds as provisional wherever they are shown", () => {
-    expect(t.sla.panel.warningThreshold).toContain("provisoire");
-    expect(t.sla.panel.criticalThreshold).toContain("provisoire");
+    expect(t.sla.panel.warningThreshold).toContain("Seuil opérationnel provisoire");
+    expect(t.sla.panel.criticalThreshold).toContain("Seuil opérationnel provisoire");
+  });
+
+  it("never implies a CUSTOMER CONTRACTUAL breach anywhere", () => {
+    // The four live thresholds are numbers a developer picked. Until management ratifies
+    // them, no string may suggest Effitrans broke a commitment to a client.
+    for (const s of STRINGS) {
+      expect(s, s).not.toMatch(/contractuel|engagement client|pénalité/i);
+    }
   });
 });
 

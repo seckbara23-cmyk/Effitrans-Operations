@@ -35,23 +35,55 @@ export const LANDING_PORTAL = "/portal";
 
 const OVERSIGHT = ["COORDINATOR", "OPS_SUPERVISOR", "SYSTEM_ADMIN"];
 
+/**
+ * Every tenant role that means "this person does operational work in the app".
+ * Used ONLY to decide whether a COURIER is courier-ONLY, so a coursier who is also,
+ * say, an Administrative Officer keeps the full staff shell.
+ */
+const OPERATIONAL_ROLES = [
+  ...OVERSIGHT,
+  "ACCOUNT_MANAGER",
+  "QUOTATION_MANAGER",
+  "CHIEF_OF_TRANSIT",
+  "CUSTOMS_DECLARANT",
+  "CUSTOMS_FINANCE_OFFICER",
+  "CUSTOMS_FIELD_AGENT",
+  "TRANSPORT_OFFICER",
+  "PICKUP_AGENT",
+  "BILLING_OFFICER",
+  "FINANCE_OFFICER",
+  "ADMINISTRATIVE_OFFICER",
+  "COLLECTIONS_OFFICER",
+  "DOCUMENTATION_OFFICER",
+  "WAREHOUSE_COORDINATOR",
+  "COMPLIANCE_HSSE",
+];
+
+/**
+ * Is this a COURIER and nothing else? (Phase 5.0E-3.)
+ *
+ * A coursier's whole job is the deposit run: no analytics:read, no file:read, exactly
+ * one queue. The staff shell for them is a sidebar of empty sections. So they get
+ * their own surface, like a driver — but ONLY when COURIER is all they are. The test
+ * is the ABSENCE of any other operational role, never the presence of COURIER.
+ */
+export function isCourierOnly(roleCodes: string[]): boolean {
+  const roles = new Set(roleCodes);
+  if (!roles.has("COURIER")) return false;
+  return !OPERATIONAL_ROLES.some((r) => roles.has(r));
+}
+
 /** Where this user should land after login, and where "/" sends them. */
 export function resolveLandingRoute(ctx: NavigationContext): string {
-  // Separate identity stacks. These never reach the tenant staff shell.
+  // Separate identity surfaces. These never reach the tenant staff shell.
   if (ctx.identityType === "platform") return LANDING_PLATFORM;
   if (ctx.identityType === "portal") return LANDING_PORTAL;
   if (ctx.identityType === "driver") return LANDING_DRIVER;
+  if (ctx.identityType === "courier") return LANDING_COURIER;
 
   const roles = new Set(ctx.roleCodes);
   const can = (p: string) => ctx.permissions.includes(p);
-  const { workspaces, physicalDeposit, collections } = ctx.featureFlags;
-
-  // A Coursier's entire job is the deposit run. They hold no analytics:read, so
-  // /dashboard is a blank page for them — this is the gap 5.0E-1 exists to close.
-  // Guarded by the deposit flag: with it off, /courier does not exist.
-  if (roles.has("COURIER") && !OVERSIGHT.some((r) => roles.has(r)) && physicalDeposit) {
-    return LANDING_COURIER;
-  }
+  const { workspaces, collections } = ctx.featureFlags;
 
   if (workspaces && can("process:read")) {
     // Oversight roles answer "who has the dossier now" — that is the control

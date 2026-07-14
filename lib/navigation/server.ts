@@ -19,7 +19,7 @@ import { getCurrentUser, getSessionClass } from "@/lib/auth/current-user";
 import { getEffectivePermissions } from "@/lib/rbac/permissions";
 import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-server";
 import { buildNavigation, legacyNavigation } from "./build";
-import { resolveLandingRoute } from "./landing";
+import { resolveLandingRoute, isCourierOnly } from "./landing";
 import { FLAGS_ALL_OFF } from "@/lib/process/rollout";
 import type { Navigation, NavigationContext } from "./types";
 
@@ -58,9 +58,15 @@ export async function getNavigationContext(): Promise<NavigationContext | null> 
     tenantId: user.tenantId,
     roleCodes: user.roles,
     permissions,
-    // DRIVER is a mobile-only identity (3.4C); requireUser already keeps them out
-    // of staff pages, and the builder gives them no staff sidebar either.
-    identityType: user.roles.includes("DRIVER") ? "driver" : "tenant",
+    // DRIVER is a mobile-only identity (3.4C); requireUser already keeps them out of
+    // staff pages. COURIER-ONLY is the same idea (5.0E-3): their whole job is the
+    // deposit run, and the staff shell for them was a sidebar of empty sections.
+    // Someone holding COURIER *and* another operational role stays staff.
+    identityType: user.roles.includes("DRIVER")
+      ? "driver"
+      : isCourierOnly(user.roles)
+        ? "courier"
+        : "tenant",
     // THE TENANT'S effective flags (5.0E-2A) — not the deployment's. This is what
     // makes navigation and the route guards agree: both resolve through the same
     // function, so a tenant can never see a link to a route that would 404 them.

@@ -51,6 +51,15 @@ export function AppShell({
     return <>{children}</>;
   }
 
+  // The coursier's deposit-run surface (Phase 5.0E-3). A courier-only user holds no
+  // analytics:read and no file:read, so every staff section resolved empty for them —
+  // we were rendering a sidebar of nothing. They get a dedicated surface, like a
+  // driver. (A COURIER who also holds an operational role is still staff, and their
+  // sidebar renders normally on every other route.)
+  if (pathname.startsWith("/courier")) {
+    return <SessionProvider>{children}</SessionProvider>;
+  }
+
   return (
     <SessionProvider>
       <div className="min-h-screen bg-sand-100">

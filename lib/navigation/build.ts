@@ -22,7 +22,6 @@
  */
 import { LEGACY_SECTIONS } from "@/lib/nav";
 import { visibleQueues } from "@/lib/process/queues/registry";
-import type { ProcessDepartment } from "@/lib/process/types";
 import { primaryRoleLabel } from "./roles";
 import { resolveLandingRoute, LANDING_MY_WORK } from "./landing";
 import type {
@@ -32,24 +31,6 @@ import type {
   NavigationSection,
   NavIconKey,
 } from "./types";
-
-const QUEUE_ICON: Record<ProcessDepartment, NavIconKey> = {
-  cotation: "report",
-  operations: "container",
-  account_management: "users",
-  coordination: "tower",
-  transit: "stamp",
-  customs_declaration: "stamp",
-  finance_customs: "finance",
-  customs_field: "stamp",
-  transport: "truck",
-  pickup: "truck",
-  billing: "finance",
-  finance: "finance",
-  administration: "building",
-  courier: "truck",
-  collections: "finance",
-};
 
 const OVERSIGHT = ["OPS_SUPERVISOR", "SYSTEM_ADMIN"];
 
@@ -97,86 +78,65 @@ export function buildNavigation(ctx: NavigationContext): Navigation {
 
   const sections: (NavigationSection | null)[] = [];
 
-  // --- MON TRAVAIL -----------------------------------------------------------
-  // First, always. The one question every operator opens the app to answer:
-  // "what is waiting on me?"
-  sections.push(
-    section(
-      "my_work",
-      "Mon travail",
-      grant(perms, [
-        {
-          key: "my_work",
-          label: "Mon travail",
-          href: LANDING_MY_WORK,
-          iconKey: "tower",
-          permission: "process:read",
-          hint: "Vos dossiers, réceptions, validations et corrections",
-        },
-        roles.has("COURIER") && physicalDeposit
-          ? {
-              key: "courier_runs",
-              label: "Mes dépôts",
-              href: "/courier",
-              iconKey: "truck",
-              permission: "courier:deposit",
-              hint: "Vos courses de dépôt de facture",
-            }
-          : null,
-      ]),
-    ),
-  );
+  // ===========================================================================
+  // THE FIVE SECTIONS (Phase 5.0E-3). The order is fixed and part of the contract:
+  //
+  //   PILOTAGE · DOSSIERS · DÉPARTEMENTS · MANAGEMENT · ADMINISTRATION
+  //
+  // The sidebar shows APPLICATIONS AND WORKSPACES. It does not show job titles.
+  //
+  // 5.0E-1 put the fifteen department queues and the five role panels in the sidebar.
+  // That was honest — each was role-gated, so nobody saw a colleague's queue — but an
+  // OPS_SUPERVISOR opened the app to twenty-odd links, and it conflated two different
+  // things: an APPLICATION you navigate to ("Douane"), and WORK that is waiting on you
+  // ("Déclarant : 3 dossiers"). The second is not navigation. It is a to-do list, and
+  // it belongs in Mon Travail — see workspacesFor() below.
+  // ===========================================================================
 
   // --- PILOTAGE --------------------------------------------------------------
-  // The Coordinator's control tower is the EXISTING /dashboard, which already
-  // carries the process section from 5.0C. We link into it; we do not build a
-  // second tower (Deliverable 4).
   sections.push(
     section(
       "pilotage",
       "Pilotage",
       grant(perms, [
+        // The control tower. NOT for everyone: a Déclarant holds no analytics:read and
+        // would open an empty page — which is how a user decides a product is broken.
+        has("COORDINATOR", ...OVERSIGHT) || perms.includes("analytics:read")
+          ? {
+              key: "operations-center",
+              label: "Centre d'Opérations",
+              href: "/dashboard",
+              iconKey: "tower" as NavIconKey,
+              hint: "Qui détient le dossier, et qu'attend-il ?",
+            }
+          : null,
         {
-          key: "control_tower",
-          label: has("COORDINATOR", ...OVERSIGHT) ? "Tour de contrôle" : "Vue d'ensemble",
-          href: "/dashboard",
-          iconKey: "tower",
-          hint: "Qui détient le dossier, et qu'attend-il ?",
+          key: "my-work",
+          label: "Mon Travail",
+          href: LANDING_MY_WORK,
+          iconKey: "container",
+          permission: "process:read",
+          hint: "Vos dossiers, réceptions, validations et corrections",
         },
         {
-          key: "executive",
-          label: "Direction",
-          href: "/dashboard/executive",
-          iconKey: "building",
-          permission: "analytics:read",
-        },
-        {
-          key: "reports",
-          label: "Rapports",
-          href: "/reports",
+          key: "file-journeys",
+          label: "Parcours des dossiers",
+          href: "/journeys",
           iconKey: "report",
-          permission: "analytics:read",
+          permission: "process:read",
+          hint: "Où en est chaque dossier dans le processus officiel",
         },
       ]),
     ),
   );
 
-  // --- RELATION CLIENT -------------------------------------------------------
+  // --- DOSSIERS --------------------------------------------------------------
   sections.push(
     section(
-      "relation_client",
-      "Relation client",
+      "files",
+      "Dossiers",
       grant(perms, [
-        has("ACCOUNT_MANAGER", ...OVERSIGHT)
-          ? {
-              key: "portfolio",
-              label: "Portefeuille clients",
-              href: "/portfolio",
-              iconKey: "users",
-              permission: "process:read",
-              hint: "Vos comptes, leurs dossiers en cours et ce qui les bloque",
-            }
-          : null,
+        { key: "files", label: "Dossiers", href: "/files", iconKey: "container", permission: "file:read" },
         { key: "clients", label: "Clients", href: "/clients", iconKey: "users", permission: "client:read" },
         {
           key: "communications",
@@ -189,109 +149,82 @@ export function buildNavigation(ctx: NavigationContext): Navigation {
     ),
   );
 
-  // --- OPÉRATIONS ------------------------------------------------------------
-  // Department modules stay reachable (Deliverable 9) — they are simply no longer
-  // the front door. They are filtered views over the same records.
+  // --- DÉPARTEMENTS ----------------------------------------------------------
+  // Business domains, never job titles: "Douane", not "Dédouanement" and not
+  // "Déclarant". Each is gated on its own domain permission, so a Déclarant sees
+  // Douane and nothing else.
   sections.push(
     section(
-      "operations",
-      "Opérations",
+      "departments",
+      "Départements",
       grant(perms, [
-        { key: "files", label: "Dossiers", href: "/files", iconKey: "container", permission: "file:read" },
         {
-          key: "dept_documentation",
+          key: "documentation",
           label: "Documentation",
           href: "/departments/documentation",
           iconKey: "document",
           permission: "document:read",
         },
         {
-          key: "dept_customs",
+          key: "customs",
           label: "Douane",
           href: "/departments/customs",
           iconKey: "stamp",
           permission: "customs:read",
         },
         {
-          key: "dept_transport",
+          key: "transport",
           label: "Transport",
           href: "/departments/transport",
           iconKey: "truck",
           permission: "transport:read",
         },
         {
-          key: "dept_finance",
+          key: "finance",
           label: "Finance",
           href: "/departments/finance",
           iconKey: "finance",
           permission: "finance:read",
         },
+      ]),
+    ),
+  );
+
+  // --- MANAGEMENT ------------------------------------------------------------
+  // "Direction" is the management DEPARTMENT workspace; "Tableau exécutif" is the
+  // executive KPI view. Before 5.0E-3 the sidebar called /dashboard/executive
+  // "Direction" AND listed /departments/management as "Management" — two names for one
+  // idea, while the actual Direction workspace was reachable under neither.
+  sections.push(
+    section(
+      "management",
+      "Management",
+      grant(perms, [
         {
-          key: "dept_management",
-          label: "Management",
+          key: "direction",
+          label: "Direction",
           href: "/departments/management",
           iconKey: "building",
           permission: "analytics:read",
+          hint: "Pilotage des opérations et de la performance",
+        },
+        { key: "reports", label: "Rapports", href: "/reports", iconKey: "report", permission: "analytics:read" },
+        {
+          key: "executive",
+          label: "Tableau exécutif",
+          href: "/dashboard/executive",
+          iconKey: "tower",
+          permission: "analytics:read",
+          hint: "Indicateurs de direction",
         },
       ]),
     ),
   );
 
-  // --- RÔLES OPÉRATIONNELS ---------------------------------------------------
-  // The 15 official queues, plus the panels that belong to a role rather than to a
-  // step. A user sees only the queues their role staffs — never all fifteen
-  // (visibleQueues enforces role AND permission).
-  const queueItems: NavigationItem[] = visibleQueues(ctx.roleCodes, perms).map((q) => ({
-    key: `queue_${q.key}`,
-    label: q.labelFr,
-    href: `/queues/${q.key}`,
-    iconKey: QUEUE_ICON[q.key],
-    permission: q.permission,
-    hint: q.description,
-  }));
-
-  const panels = grant(perms, [
-    has("TRANSPORT_OFFICER", "COORDINATOR", ...OVERSIGHT)
-      ? {
-          key: "transport_readiness",
-          label: "Préparation transport",
-          href: "/transport-readiness",
-          iconKey: "truck" as NavIconKey,
-          permission: "transport:read",
-          hint: "Véhicule, chauffeur et porte d'enlèvement",
-        }
-      : null,
-    has("ADMINISTRATIVE_OFFICER", ...OVERSIGHT) && physicalDeposit
-      ? {
-          key: "deposits",
-          label: "Dépôts physiques",
-          href: "/deposits",
-          iconKey: "building" as NavIconKey,
-          permission: "admin_service:manage",
-          hint: "Remise des factures papier et chaîne de garde",
-        }
-      : null,
-    // NOT "Recouvrement" — that label already belongs to the `collections` QUEUE
-    // above, and two identical entries pointing at different pages is precisely
-    // the confusion this phase is here to remove. The queue is step-26 handoff
-    // work; this panel is the aging balance.
-    has("COLLECTIONS_OFFICER", "FINANCE_OFFICER", ...OVERSIGHT) && collections
-      ? {
-          key: "collections_panel",
-          label: "Balance âgée",
-          href: "/collections",
-          iconKey: "finance" as NavIconKey,
-          permission: "collections:manage",
-          hint: "Créances, relances, promesses et litiges",
-        }
-      : null,
-  ]);
-
-  sections.push(section("roles", "Rôles opérationnels", [...queueItems, ...panels]));
-
   // --- ADMINISTRATION --------------------------------------------------------
-  // Tenant administration only. /platform is a different identity stack and is
-  // deliberately absent — a tenant admin must never be offered it.
+  // Tenant administration only. /platform is a separate identity stack and is
+  // deliberately absent — a tenant SYSTEM_ADMIN must never be offered it.
+  // AI settings live UNDER Paramètres rather than as a fourth top-level item.
   sections.push(
     section(
       "administration",
@@ -306,11 +239,12 @@ export function buildNavigation(ctx: NavigationContext): Navigation {
           permission: "audit:read:all",
         },
         {
-          key: "ai",
-          label: "Assistant IA",
-          href: "/settings/ai",
-          iconKey: "tower",
+          key: "settings",
+          label: "Paramètres",
+          href: "/settings",
+          iconKey: "building",
           permission: "admin:config:manage",
+          hint: "Assistant IA, console pilote, configuration",
         },
       ]),
     ),
@@ -322,6 +256,91 @@ export function buildNavigation(ctx: NavigationContext): Navigation {
     myWorkHref: LANDING_MY_WORK,
     filtered: true,
   };
+}
+
+// ===========================================================================
+// WORKSPACES — what used to clutter the permanent sidebar.
+//
+// These are not navigation; they are the user's own work. They are surfaced inside
+// Mon Travail (and remain reachable by their own guarded routes), so a Déclarant is
+// one click from their queue without every other operator carrying a link to it.
+// ===========================================================================
+
+export type WorkspaceLink = {
+  key: string;
+  label: string;
+  href: string;
+  hint: string;
+  /** A role PANEL (portfolio, aging balance…) or one of the 15 official queues. */
+  kind: "panel" | "queue";
+};
+
+/**
+ * The workspaces THIS user may open. Pure — the same authorization rules the sidebar
+ * used to apply, rendered somewhere better.
+ */
+export function workspacesFor(ctx: NavigationContext): WorkspaceLink[] {
+  if (ctx.identityType !== "tenant") return [];
+
+  const { workspaces, physicalDeposit, collections } = ctx.featureFlags;
+  const perms = ctx.permissions;
+  const roles = new Set(ctx.roleCodes);
+  const has = (...r: string[]) => r.some((x) => roles.has(x));
+  const can = (p: string) => perms.includes(p);
+
+  if (!workspaces || !can("process:read")) return [];
+
+  const out: WorkspaceLink[] = [];
+
+  if (has("ACCOUNT_MANAGER", ...OVERSIGHT)) {
+    out.push({
+      key: "portfolio",
+      label: "Portefeuille clients",
+      href: "/portfolio",
+      hint: "Vos comptes, leurs dossiers et ce qui les bloque",
+      kind: "panel",
+    });
+  }
+  if (has("TRANSPORT_OFFICER", "COORDINATOR", ...OVERSIGHT) && can("transport:read")) {
+    out.push({
+      key: "transport_readiness",
+      label: "Préparation transport",
+      href: "/transport-readiness",
+      hint: "Véhicule, chauffeur et porte d'enlèvement",
+      kind: "panel",
+    });
+  }
+  if (has("ADMINISTRATIVE_OFFICER", ...OVERSIGHT) && physicalDeposit && can("admin_service:manage")) {
+    out.push({
+      key: "deposits",
+      label: "Dépôts physiques",
+      href: "/deposits",
+      hint: "Remise des factures papier et chaîne de garde",
+      kind: "panel",
+    });
+  }
+  if (has("COLLECTIONS_OFFICER", "FINANCE_OFFICER", ...OVERSIGHT) && collections && can("collections:manage")) {
+    out.push({
+      key: "collections",
+      label: "Balance âgée",
+      href: "/collections",
+      hint: "Créances, relances, promesses et litiges",
+      kind: "panel",
+    });
+  }
+
+  // The official queues this user's roles actually staff. Never all fifteen.
+  for (const q of visibleQueues(ctx.roleCodes, perms)) {
+    out.push({
+      key: `queue_${q.key}`,
+      label: q.labelFr,
+      href: `/queues/${q.key}`,
+      hint: q.description,
+      kind: "queue",
+    });
+  }
+
+  return out;
 }
 
 /**

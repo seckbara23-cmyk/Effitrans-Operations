@@ -19,7 +19,7 @@
  * all. Those entries are the assertions; everything else is the observation.
  */
 import { buildNavigation } from "@/lib/navigation/build";
-import { resolveLandingRoute } from "@/lib/navigation/landing";
+import { resolveLandingRoute, isCourierOnly } from "@/lib/navigation/landing";
 import { primaryRoleLabel } from "@/lib/navigation/roles";
 import type { NavigationContext } from "@/lib/navigation/types";
 import { QUEUES, visibleQueues } from "@/lib/process/queues/registry";
@@ -313,7 +313,9 @@ function contextFor(role: PilotRole): NavigationContext {
     tenantId: "pilot-tenant",
     roleCodes: [role.roleCode],
     permissions: role.permissions,
-    identityType: "tenant",
+    // A courier-only user is a separate surface (5.0E-3), like a driver: no staff
+    // sidebar, their own route at /courier.
+    identityType: isCourierOnly([role.roleCode]) ? "courier" : "tenant",
     featureFlags: PILOT_FLAGS,
   };
 }

@@ -19,6 +19,8 @@ import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-server";
 import { visibleQueues } from "@/lib/process/queues/registry";
+import { workspacesFor } from "@/lib/navigation/build";
+import { getNavigationContext } from "@/lib/navigation/server";
 import { getDepartmentQueue } from "@/lib/process/queues/service";
 import {
   buildWorkbench,
@@ -105,6 +107,15 @@ export default async function MyWorkPage({
   const tabs = buildWorkbench(results.flat(), user.id);
   const waiting = actionableCount(tabs);
 
+  // Phase 5.0E-3 — the workspaces that used to live in the sidebar. They are this
+  // user's own work, not navigation, so they belong here rather than as twenty
+  // permanent links every other operator also has to carry. Same authorization rules,
+  // same guarded routes; only the placement changed.
+  const navCtx = await getNavigationContext();
+  const workspaces = navCtx ? workspacesFor(navCtx) : [];
+  const panels = workspaces.filter((w) => w.kind === "panel");
+  const queueLinks = workspaces.filter((w) => w.kind === "queue");
+
   // Default to the first tab that actually has something in it, so a user landing
   // here never opens on an empty pile while real work sits one click away.
   const requested = isTabKey(searchParams?.tab) ? searchParams.tab : undefined;
@@ -125,6 +136,33 @@ export default async function MyWorkPage({
           </span>
         </p>
       </header>
+
+      {workspaces.length > 0 && (
+        <section className="rounded-lg border border-slate-200 bg-white p-4">
+          <h2 className="mb-1 text-sm font-semibold text-navy-900">Mes espaces</h2>
+          <p className="mb-3 text-xs text-slate-500">
+            Vos espaces de travail et vos files officielles, selon vos rôles.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {[...panels, ...queueLinks].map((w) => (
+              <Link
+                key={w.key}
+                href={w.href}
+                title={w.hint}
+                className={cn(
+                  "rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500",
+                  w.kind === "panel"
+                    ? "border-teal-200 bg-teal-50 text-teal-800 hover:bg-teal-100"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
+                )}
+              >
+                {w.label}
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       {queues.length === 0 ? (
         <div className="rounded-lg border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">

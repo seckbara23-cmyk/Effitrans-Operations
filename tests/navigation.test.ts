@@ -10,8 +10,8 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, it, expect } from "vitest";
-import { buildNavigation, legacyNavigation } from "@/lib/navigation/build";
-import { resolveLandingRoute } from "@/lib/navigation/landing";
+import { buildNavigation, legacyNavigation, workspacesFor } from "@/lib/navigation/build";
+import { resolveLandingRoute, isCourierOnly } from "@/lib/navigation/landing";
 import { primaryRoleLabel, roleLabel, KNOWN_ROLE_CODES, ROLE_DISPLAY_PRIORITY } from "@/lib/navigation/roles";
 import {
   buildWorkbench,
@@ -65,6 +65,15 @@ const ctx = (over: Partial<NavigationContext> = {}): NavigationContext => ({
 
 const hrefs = (c: NavigationContext) =>
   buildNavigation(c).sections.flatMap((s) => s.items.map((i) => i.href));
+
+/**
+ * Phase 5.0E-3 — the queues and role panels left the permanent sidebar. They are the
+ * user's own WORK, not navigation, so they live in Mon Travail. The authorization
+ * rules did not change at all; only the placement did. Every assertion below that used
+ * to read the sidebar for a queue now reads here, and means exactly the same thing.
+ */
+const workHrefs = (c: NavigationContext) => workspacesFor(c).map((w) => w.href);
+const allReachable = (c: NavigationContext) => [...hrefs(c), ...workHrefs(c)];
 
 // ------------------------------------------------------------- flag safety ----
 
@@ -134,25 +143,57 @@ describe("flag off — the sidebar is EXACTLY today's sidebar", () => {
 // ------------------------------------------------------------ role-driven nav ----
 
 describe("the sidebar is role-driven, not a static list of every role", () => {
-  it("never shows one specialist another specialist's queue", () => {
-    const declarant = hrefs(ctx({ roleCodes: ["CUSTOMS_DECLARANT"] }));
-    const queues = declarant.filter((h) => h.startsWith("/queues/"));
+  it("puts NO operational role in the permanent sidebar", () => {
+    // THE point of 5.0E-3. Even a SYSTEM_ADMIN — who staffs all fifteen queues — gets a
+    // sidebar with zero queue links. A queue is work waiting on you; it is not a place.
+    const admin = hrefs(ctx({ roleCodes: ["SYSTEM_ADMIN"] }));
+    expect(admin.some((h) => h.startsWith("/queues/"))).toBe(false);
+    for (const panel of ["/portfolio", "/collections", "/deposits", "/transport-readiness", "/courier"]) {
+      expect(admin, panel).not.toContain(panel);
+    }
+  });
+
+  it("never shows one specialist another specialist's queue (now in Mon Travail)", () => {
+    const queues = workHrefs(ctx({ roleCodes: ["CUSTOMS_DECLARANT"] })).filter((h) =>
+      h.startsWith("/queues/"),
+    );
     expect(queues).toEqual(["/queues/customs_declaration"]);
   });
 
-  it("shows a supervisor every queue — and a specialist exactly one", () => {
-    const sup = hrefs(ctx({ roleCodes: ["OPS_SUPERVISOR"] })).filter((h) => h.startsWith("/queues/"));
-    // OPS_SUPERVISOR staffs every queue except the courier's own run list.
+  it("gives a supervisor every queue — and a specialist exactly one", () => {
+    const sup = workHrefs(ctx({ roleCodes: ["OPS_SUPERVISOR"] })).filter((h) => h.startsWith("/queues/"));
     expect(sup.length).toBe(QUEUES.filter((q) => q.roles.includes("OPS_SUPERVISOR")).length);
     expect(sup.length).toBeGreaterThan(10);
   });
 
-  it("puts Mon travail first, always", () => {
-    for (const role of ["CUSTOMS_DECLARANT", "COURIER", "ACCOUNT_MANAGER", "OPS_SUPERVISOR"]) {
+  it("opens with PILOTAGE, and Mon Travail is always in it", () => {
+    for (const role of ["CUSTOMS_DECLARANT", "ACCOUNT_MANAGER", "OPS_SUPERVISOR", "BILLING_OFFICER"]) {
       const nav = buildNavigation(ctx({ roleCodes: [role] }));
-      expect(nav.sections[0].key, role).toBe("my_work");
-      expect(nav.sections[0].items[0].href, role).toBe("/my-work");
+      expect(nav.sections[0].key, role).toBe("pilotage");
+      expect(nav.sections[0].items.map((i) => i.href), role).toContain("/my-work");
     }
+  });
+
+  it("keeps the five sections in the agreed order, always", () => {
+    const nav = buildNavigation(ctx({ roleCodes: ["SYSTEM_ADMIN"] }));
+    expect(nav.sections.map((s) => s.key)).toEqual([
+      "pilotage",
+      "files",
+      "departments",
+      "management",
+      "administration",
+    ]);
+  });
+
+  it("does NOT give a Déclarant the control tower — it would be an empty page", () => {
+    // A Déclarant holds no analytics:read. Linking them to /dashboard is how a user
+    // decides the product is broken.
+    const nav = buildNavigation(
+      ctx({ roleCodes: ["CUSTOMS_DECLARANT"], permissions: ["process:read", "customs:read"] }),
+    );
+    const pilotage = nav.sections.find((s) => s.key === "pilotage")!;
+    expect(pilotage.items.map((i) => i.href)).not.toContain("/dashboard");
+    expect(pilotage.items.map((i) => i.href)).toContain("/my-work");
   });
 
   it("never offers /platform to a tenant administrator", () => {
@@ -190,19 +231,20 @@ describe("the sidebar is role-driven, not a static list of every role", () => {
   });
 
   it("drops a section entirely when the user may see none of its items", () => {
-    // process:read only: no analytics, no client:read, no admin.
+    // process:read only: no analytics, no client:read, no file:read, no admin. Only
+    // PILOTAGE survives, and inside it only Mon Travail and the Parcours.
     const nav = buildNavigation(ctx({ roleCodes: ["CUSTOMS_DECLARANT"], permissions: ["process:read"] }));
-    expect(nav.sections.map((s) => s.key)).toEqual(["my_work", "pilotage", "roles"]);
+    expect(nav.sections.map((s) => s.key)).toEqual(["pilotage"]);
+    expect(nav.sections[0].items.map((i) => i.href)).toEqual(["/my-work", "/journeys"]);
   });
 
-  it("uses the canonical queue keys and labels — never a re-declared one", () => {
-    const nav = buildNavigation(ctx({ roleCodes: ["SYSTEM_ADMIN"] }));
-    const items = nav.sections.flatMap((s) => s.items).filter((i) => i.href.startsWith("/queues/"));
-    for (const i of items) {
-      const key = i.href.replace("/queues/", "");
+  it("uses the canonical queue keys and labels in Mon Travail — never a re-declared one", () => {
+    for (const w of workspacesFor(ctx({ roleCodes: ["SYSTEM_ADMIN"] }))) {
+      if (w.kind !== "queue") continue;
+      const key = w.href.replace("/queues/", "");
       const def = QUEUES.find((q) => q.key === key);
       expect(def, key).toBeDefined();
-      expect(i.label).toBe(def!.labelFr);
+      expect(w.label).toBe(def!.labelFr);
     }
   });
 });
@@ -211,25 +253,28 @@ describe("the sidebar is role-driven, not a static list of every role", () => {
 
 describe("role-driven landing (Deliverable 2)", () => {
   it("sends a coursier to their deposit runs, NOT to an empty dashboard", () => {
-    // The bug this phase exists to fix: a COURIER holds no analytics:read, so the
-    // old unconditional redirect to /dashboard gave them a blank page.
+    // A COURIER holds no analytics:read, so the old unconditional redirect to
+    // /dashboard gave them a blank page. As of 5.0E-3 they are a separate surface.
     expect(
-      resolveLandingRoute(ctx({ roleCodes: ["COURIER"], permissions: ["process:read", "courier:deposit"] })),
+      resolveLandingRoute(
+        ctx({
+          roleCodes: ["COURIER"],
+          identityType: "courier",
+          permissions: ["process:read", "courier:deposit"],
+        }),
+      ),
     ).toBe("/courier");
   });
 
-  it("never sends a coursier to /courier when the deposit flag is off", () => {
-    const r = resolveLandingRoute(
-      ctx({
-        roleCodes: ["COURIER"],
-        permissions: ["process:read", "courier:deposit"],
-        featureFlags: resolveProcessFlags({
-          EFFITRANS_PROCESS_ENGINE_ENABLED: "true",
-          EFFITRANS_PROCESS_WORKSPACES_ENABLED: "true",
-        }),
-      }),
-    );
-    expect(r).toBe("/my-work");
+  it("treats COURIER-only as a separate surface — but a COURIER who is also staff is staff", () => {
+    expect(isCourierOnly(["COURIER"])).toBe(true);
+    expect(isCourierOnly(["COURIER", "ADMINISTRATIVE_OFFICER"])).toBe(false);
+    expect(isCourierOnly(["COURIER", "OPS_SUPERVISOR"])).toBe(false);
+    expect(isCourierOnly(["ADMINISTRATIVE_OFFICER"])).toBe(false);
+
+    // ...and the staff one keeps a real sidebar.
+    const dual = buildNavigation(ctx({ roleCodes: ["COURIER", "ADMINISTRATIVE_OFFICER"] }));
+    expect(dual.sections.length).toBeGreaterThan(0);
   });
 
   it("sends oversight roles to the control tower", () => {
@@ -270,21 +315,29 @@ describe("role-driven landing (Deliverable 2)", () => {
     ).toBe("/files");
   });
 
-  it("ALWAYS lands the user on a route the sidebar also offers them", () => {
-    // The invariant that keeps a landing from bouncing into a 404.
+  it("ALWAYS lands the user on a route they can actually reach", () => {
+    // The invariant that keeps a landing from bouncing into a 404 or stranding someone
+    // on a page with no way back. After 5.0E-3 "reachable" means the sidebar OR Mon
+    // Travail — because that is where the workspaces now live.
     const roles = [
-      ["COURIER"],
       ["ACCOUNT_MANAGER"],
       ["COLLECTIONS_OFFICER"],
       ["CUSTOMS_DECLARANT"],
       ["OPS_SUPERVISOR"],
       ["SYSTEM_ADMIN"],
       ["CHIEF_OF_TRANSIT"],
+      ["BILLING_OFFICER"],
+      ["TRANSPORT_OFFICER"],
     ];
     for (const roleCodes of roles) {
       const c = ctx({ roleCodes });
-      expect(hrefs(c), roleCodes.join()).toContain(resolveLandingRoute(c));
+      expect(allReachable(c), roleCodes.join()).toContain(resolveLandingRoute(c));
     }
+
+    // The courier is the exception, deliberately: their landing IS their whole surface.
+    const courier = ctx({ roleCodes: ["COURIER"], identityType: "courier" });
+    expect(resolveLandingRoute(courier)).toBe("/courier");
+    expect(buildNavigation(courier).sections).toEqual([]);
   });
 });
 

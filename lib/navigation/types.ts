@@ -10,15 +10,21 @@
 import type { ProcessFlags } from "@/lib/process/flags";
 
 /**
- * Which identity STACK the viewer belongs to. These are separate authentication
- * systems and must never be merged: a platform admin is not a tenant user, and a
- * portal client is not staff.
+ * Which identity STACK the viewer belongs to. These are separate surfaces and must
+ * never be merged: a platform admin is not a tenant user, and a portal client is not
+ * staff.
  *
- * Note that COURIER is deliberately NOT here — a coursier is a tenant staff user
- * with a role, not a separate identity. Modelling it as an identity would have
- * given them their own shell and cut them off from the dossiers they carry.
+ * COURIER-ONLY is one of them (Phase 5.0E-3). A coursier is a tenant user with a
+ * tenant role, but their entire job is the deposit run: they hold no analytics:read,
+ * no file:read, and they staff exactly one queue. Giving them the staff sidebar meant
+ * giving them a shell whose every section was empty. They get their own surface at
+ * /courier, exactly like a driver.
+ *
+ * "Courier-ONLY" is the operative word: someone holding COURIER *and* a supervisory
+ * role is still staff. The narrow identity is inferred from the absence of any other
+ * operational role, never from the presence of COURIER.
  */
-export type IdentityType = "tenant" | "platform" | "driver" | "portal" | "anonymous";
+export type IdentityType = "tenant" | "platform" | "driver" | "courier" | "portal" | "anonymous";
 
 export type NavigationContext = {
   userId: string;

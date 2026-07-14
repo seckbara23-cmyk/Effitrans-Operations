@@ -5,7 +5,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, it, expect } from "vitest";
-import { buildNavigation } from "@/lib/navigation/build";
+import { buildNavigation, workspacesFor } from "@/lib/navigation/build";
 import type { NavigationContext } from "@/lib/navigation/types";
 import { resolveProcessFlags } from "@/lib/process/flags";
 import { QUEUES } from "@/lib/process/queues/registry";
@@ -39,13 +39,15 @@ const ctx = (
 const hrefsFor = (...args: Parameters<typeof ctx>): string[] =>
   buildNavigation(ctx(...args)).sections.flatMap((s) => s.items.map((i) => i.href));
 
-/** Only the entries the process engine contributes — queues and role panels. */
-const processHrefs = (hrefs: string[]): string[] =>
-  hrefs.filter(
-    (h) =>
-      h.startsWith("/queues/") ||
-      ["/my-work", "/courier", "/portfolio", "/collections", "/deposits", "/transport-readiness"].includes(h),
-  );
+/**
+ * Phase 5.0E-3: queues and role panels left the sidebar for Mon Travail. "Everything
+ * the process engine gives this user" is therefore the sidebar's process entries PLUS
+ * their workspaces. Same authorization, new placement.
+ */
+const processHrefs = (...args: Parameters<typeof ctx>): string[] => [
+  ...hrefsFor(...args).filter((h) => ["/my-work", "/journeys"].includes(h)),
+  ...workspacesFor(ctx(...args)).map((w) => w.href),
+];
 
 // --------------------------------------------------------------------- flags ----
 
@@ -82,43 +84,54 @@ describe("workspaces flag — off by default, and dark without the engine", () =
 describe("role-aware navigation (Deliverable 14; rebuilt on ONE builder in 5.0E-1)", () => {
   it("contributes NOTHING when the workspaces flag is off — production nav unchanged", () => {
     const hrefs = hrefsFor(["OPS_SUPERVISOR"], PERMS, FLAGS_OFF);
-    expect(processHrefs(hrefs)).toEqual([]);
+    expect(processHrefs(["OPS_SUPERVISOR"], PERMS, FLAGS_OFF)).toEqual([]);
     // ...and what remains is exactly the legacy navigation.
     expect(hrefs).toContain("/dashboard");
   });
 
   it("contributes nothing without process:read, whatever the role", () => {
-    expect(processHrefs(hrefsFor(["OPS_SUPERVISOR"], []))).toEqual([]);
+    expect(processHrefs(["OPS_SUPERVISOR"], [])).toEqual([]);
   });
 
   it("shows a courier ONLY their own work — no other department", () => {
+    // Note: a COURIER-only user gets no staff sidebar at all (5.0E-3). This context
+    // asserts the underlying authorization: even asked as a tenant, they reach nothing
+    // outside their own queue.
+    expect(processHrefs(["COURIER"], [...PERMS, "courier:deposit"])).toEqual([
+      "/my-work",
+      "/journeys",
+      "/queues/courier",
+    ]);
     const hrefs = hrefsFor(["COURIER"], [...PERMS, "courier:deposit"]);
-    expect(processHrefs(hrefs)).toEqual(["/my-work", "/courier", "/queues/courier"]);
     expect(hrefs).not.toContain("/collections");
     expect(hrefs).not.toContain("/portfolio");
     expect(hrefs).not.toContain("/deposits");
   });
 
   it("shows a Chief Transit only the transit queue", () => {
-    expect(processHrefs(hrefsFor(["CHIEF_OF_TRANSIT"]))).toEqual(["/my-work", "/queues/transit"]);
+    expect(processHrefs(["CHIEF_OF_TRANSIT"])).toEqual([
+      "/my-work",
+      "/journeys",
+      "/queues/transit",
+    ]);
   });
 
   it("never shows an empty, unauthorized department", () => {
-    const hrefs = hrefsFor(["CUSTOMS_DECLARANT"]);
-    expect(hrefs).not.toContain("/queues/billing");
-    expect(hrefs).not.toContain("/queues/finance");
-    expect(hrefs).not.toContain("/queues/collections");
+    const reachable = processHrefs(["CUSTOMS_DECLARANT"]);
+    expect(reachable).not.toContain("/queues/billing");
+    expect(reachable).not.toContain("/queues/finance");
+    expect(reachable).not.toContain("/queues/collections");
   });
 
   it("gives a supervisor the cross-department view", () => {
-    const hrefs = hrefsFor(["OPS_SUPERVISOR"]);
-    expect(hrefs.filter((h) => h.startsWith("/queues/")).length).toBeGreaterThan(10);
-    expect(hrefs).toContain("/queues/coordination");
-    expect(hrefs).toContain("/queues/billing");
+    const reachable = processHrefs(["OPS_SUPERVISOR"]);
+    expect(reachable.filter((h) => h.startsWith("/queues/")).length).toBeGreaterThan(10);
+    expect(reachable).toContain("/queues/coordination");
+    expect(reachable).toContain("/queues/billing");
   });
 
-  it("gives a user with no queue roles the My Work link and no queue", () => {
-    expect(processHrefs(hrefsFor(["COMPLIANCE_HSSE"]))).toEqual(["/my-work"]);
+  it("gives a user with no queue roles Mon Travail and no queue", () => {
+    expect(processHrefs(["COMPLIANCE_HSSE"])).toEqual(["/my-work", "/journeys"]);
   });
 
   it("never exposes platform navigation, even to a SYSTEM_ADMIN", () => {
