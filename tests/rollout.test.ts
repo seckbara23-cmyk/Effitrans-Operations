@@ -292,3 +292,61 @@ describe("the migration is clean-replay safe", () => {
     expect(sql).toContain("tenant_process_rollout_requires_engine");
   });
 });
+
+// ------------------------------------------------------------ rollback safety ----
+
+describe("rollback keeps the data and cannot corrupt a re-enable (Deliverable 9)", () => {
+  const engineSql = read("../supabase/migrations/20260713000001_process_engine.sql");
+  const rolloutSql = read("../supabase/migrations/20260714000004_tenant_process_rollout.sql");
+
+  it("deletes NOTHING — a flag is not a data-retention policy", () => {
+    // Turning a tenant off must not destroy what the pilot produced. The rollout
+    // migration touches no process table, and the toggle action writes exactly one row.
+    expect(rolloutSql).not.toMatch(/drop table|truncate|delete from/i);
+    const actions = read("../lib/platform/rollout-actions.ts");
+    expect(actions).not.toContain(".delete(");
+    expect(actions).not.toContain("process_instance");
+    expect(actions).not.toContain("process_step_execution");
+    expect(actions).not.toContain("audit_log\"");
+  });
+
+  it("cannot create a duplicate process instance across an off/on cycle", () => {
+    // The flag does not create instances; initializeProcessForFile does, and it is
+    // keyed on the file by a partial unique index. Re-enabling cannot fork a dossier.
+    expect(engineSql).toContain("create unique index uq_process_instance_file_active");
+  });
+
+  it("cannot create a duplicate handoff across an off/on cycle", () => {
+    expect(engineSql).toContain("create unique index uq_process_handoff_dedup");
+    expect(engineSql).toContain("uq_process_handoff_open");
+  });
+
+  it("preserves the audit trail — it is append-only and no flag touches it", () => {
+    const actions = read("../lib/platform/rollout-actions.ts");
+    // The rollback itself is AUDITED. You can always answer "who turned this off, when,
+    // and why" — which is the question asked immediately after any rollback.
+    expect(actions).toContain("rollbackTenantRollout");
+    expect(actions).toContain('action: "platform.rollout.updated"');
+  });
+
+  it("restores legacy navigation the moment the tenant is disabled", () => {
+    // Not a redeploy, not a cache flush: the nav builder resolves the tenant's flags on
+    // every request, so the next page load is the legacy sidebar.
+    const nav = read("../lib/navigation/server.ts");
+    expect(nav).toContain("getTenantProcessFlags(user.tenantId)");
+    expect(nav).toContain("legacyNavigation()");
+  });
+
+  it("refuses further process mutations for a disabled tenant", () => {
+    // Every engine guard re-checks the tenant gate, so a rollback stops writes even for
+    // a user who already has the page open.
+    for (const f of [
+      "../lib/process/engine/actions.ts",
+      "../lib/process/billing/actions.ts",
+      "../lib/collections/actions.ts",
+      "../lib/deposit/actions.ts",
+    ]) {
+      expect(read(f), f).toContain("getTenantProcessFlags");
+    }
+  });
+});

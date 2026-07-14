@@ -38,8 +38,10 @@ on conflict (tenant_id) do update
 
 -- Give tenant A's user EVERY role the tenant has, so the write tests below prove
 -- that no permission — not even SYSTEM_ADMIN — opens a write path.
-insert into public.user_role (user_id, role_id)
-select '00000000-0000-0000-0000-0000000cf01a', r.id
+-- user_role.tenant_id is NOT NULL and a trigger cross-checks it against both the
+-- user's and the role's tenant. Supply it from the role row, as every other suite does.
+insert into public.user_role (user_id, role_id, tenant_id)
+select '00000000-0000-0000-0000-0000000cf01a', r.id, r.tenant_id
 from public.role r
 where r.tenant_id = '00000000-0000-0000-0000-000000000001'
   and r.code = 'SYSTEM_ADMIN'
