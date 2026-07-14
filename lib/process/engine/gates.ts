@@ -151,13 +151,48 @@ export function evaluateBillingGate(executions: ExecutionView[], snap: EvidenceS
 }
 
 /**
- * Closure readiness. DELIVERED != CLOSED: a dossier closes only on FULL PAYMENT
- * plus operational completion. The legacy canCloseFile() checked customs release
- * alone, so an unbilled, unpaid dossier could be closed — this is the gate that
- * fixes that, and it never mutates the dossier in 5.0B (readiness is reported,
- * not applied).
+ * The post-delivery facts the closure gate needs, beyond the evidence snapshot.
+ * All DERIVED from existing records — nothing new is stored to answer these.
  */
-export function evaluateClosureGate(executions: ExecutionView[], snap: EvidenceSnapshot): GateResult {
+export type ClosureContext = {
+  /** invoice.validated_by is set (official step 21 passed). */
+  invoiceValidated: boolean;
+  /** A communication_message for this invoice reached SENT (official step 22). */
+  invoiceEmailed: boolean;
+  /**
+   * Whether a physical deposit is required for this dossier. EXPLICIT
+   * configuration — never implicit skipping. When false, the deposit
+   * requirements below report `notApplicable`, not `satisfied`.
+   */
+  depositRequired: boolean;
+  /** invoice_deposit reached PROOF_ACCEPTED. */
+  depositProofAccepted: boolean;
+  /** invoice_deposit reached HANDED_TO_COLLECTIONS (official step 25). */
+  handedToCollections: boolean;
+  /** Any rejected step or rejected deposit proof still awaiting correction. */
+  unresolvedCorrections: number;
+};
+
+/**
+ * FINAL CLOSURE GATE (Phase 5.0D, Deliverable 12).
+ *
+ * DELIVERED != CLOSED, and now neither does anything else on its own:
+ *   * delivery alone does not close
+ *   * a POD alone does not close
+ *   * an emailed invoice alone does not close
+ *   * FULL PAYMENT ALONE DOES NOT CLOSE — this is the important one. Money
+ *     arriving cannot short-circuit the operational workflow, so no payment
+ *     webhook can ever close a dossier as a side effect.
+ *
+ * The legacy canCloseFile() checked customs release and nothing else, so an
+ * unbilled, unpaid dossier could be closed. This is the gate that ends that.
+ * It REPORTS readiness; the explicit closure action applies it.
+ */
+export function evaluateClosureGate(
+  executions: ExecutionView[],
+  snap: EvidenceSnapshot,
+  ctx?: ClosureContext,
+): GateResult {
   const paid = fullyPaid(snap);
   const pod = podReceived(snap);
 
@@ -166,13 +201,6 @@ export function evaluateClosureGate(executions: ExecutionView[], snap: EvidenceS
   const unverified = [...live.values()].filter((e) => e.state === "UNVERIFIED_HISTORICAL");
 
   const requirements: GateRequirementResult[] = [
-    {
-      key: "fully_paid",
-      labelFr: "Paiement intégral encaissé",
-      satisfied: paid,
-      notApplicable: false,
-      detail: paid ? undefined : "balance_outstanding",
-    },
     {
       key: "pod_received",
       labelFr: "Bordereau de Livraison signé reçu",
@@ -194,8 +222,70 @@ export function evaluateClosureGate(executions: ExecutionView[], snap: EvidenceS
             ? "unverified_historical_steps"
             : "steps_incomplete",
     },
+    {
+      key: "fully_paid",
+      labelFr: "Paiement intégral encaissé",
+      satisfied: paid,
+      notApplicable: false,
+      detail: paid ? undefined : "balance_outstanding",
+    },
   ];
 
-  const missing = requirements.filter((r) => !r.satisfied).map((r) => r.key);
+  // Without the post-delivery context we can only judge what the engine sees.
+  // We do NOT assume the billing/deposit chain passed — an absent context means
+  // those requirements are unproven, so the gate stays closed.
+  if (ctx) {
+    requirements.push(
+      {
+        key: "invoice_validated",
+        labelFr: "Facture validée par la Finance",
+        satisfied: ctx.invoiceValidated,
+        notApplicable: false,
+        detail: ctx.invoiceValidated ? undefined : "invoice_not_validated",
+      },
+      {
+        key: "invoice_emailed",
+        labelFr: "Facture envoyée au client",
+        satisfied: ctx.invoiceEmailed,
+        notApplicable: false,
+        detail: ctx.invoiceEmailed ? undefined : "invoice_not_sent",
+      },
+      {
+        key: "deposit_proof_accepted",
+        labelFr: "Preuve de dépôt physique validée",
+        // Explicit configuration, never implicit skipping.
+        satisfied: ctx.depositRequired ? ctx.depositProofAccepted : false,
+        notApplicable: !ctx.depositRequired,
+        detail: !ctx.depositRequired || ctx.depositProofAccepted ? undefined : "proof_not_accepted",
+      },
+      {
+        key: "handed_to_collections",
+        labelFr: "Remis au recouvrement",
+        satisfied: ctx.depositRequired ? ctx.handedToCollections : false,
+        notApplicable: !ctx.depositRequired,
+        detail: !ctx.depositRequired || ctx.handedToCollections ? undefined : "not_handed_to_collections",
+      },
+      {
+        key: "no_unresolved_corrections",
+        labelFr: "Aucune correction en suspens",
+        satisfied: ctx.unresolvedCorrections === 0,
+        notApplicable: false,
+        detail: ctx.unresolvedCorrections === 0 ? undefined : "corrections_outstanding",
+      },
+    );
+  } else {
+    requirements.push({
+      key: "post_delivery_chain",
+      labelFr: "Chaîne facturation / dépôt / recouvrement",
+      satisfied: false,
+      notApplicable: false,
+      detail: "post_delivery_context_unavailable",
+    });
+  }
+
+  const missing = requirements
+    .filter((r) => !r.satisfied && !r.notApplicable)
+    .map((r) => r.key);
+
   return { key: "closure_readiness", ready: missing.length === 0, requirements, missing };
 }

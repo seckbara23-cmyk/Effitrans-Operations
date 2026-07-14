@@ -1531,6 +1531,127 @@ export type Database = {
           },
         ];
       };
+      // ---------------------------------------------------------------------
+      // Phase 5.0D — post-delivery chain (20260714000001).
+      // Hand-written to match the migration (no live DB to generate against).
+      // ---------------------------------------------------------------------
+      invoice_deposit: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          file_id: string;
+          invoice_id: string;
+          status: string;
+          prepared_by: string | null;
+          prepared_at: string | null;
+          courier_user_id: string | null;
+          assigned_at: string | null;
+          departed_at: string | null;
+          deposited_at: string | null;
+          recipient_name: string | null;
+          recipient_role: string | null;
+          client_location: string | null;
+          delivery_instructions: string | null;
+          proof_document_id: string | null;
+          returned_to_admin_at: string | null;
+          validated_by_admin: string | null;
+          validated_at: string | null;
+          rejection_reason: string | null;
+          failure_reason: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          file_id: string;
+          invoice_id: string;
+          status?: string;
+          prepared_by?: string | null;
+          prepared_at?: string | null;
+          courier_user_id?: string | null;
+          assigned_at?: string | null;
+          departed_at?: string | null;
+          deposited_at?: string | null;
+          recipient_name?: string | null;
+          recipient_role?: string | null;
+          client_location?: string | null;
+          delivery_instructions?: string | null;
+          proof_document_id?: string | null;
+          returned_to_admin_at?: string | null;
+          validated_by_admin?: string | null;
+          validated_at?: string | null;
+          rejection_reason?: string | null;
+          failure_reason?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          status?: string;
+          prepared_by?: string | null;
+          prepared_at?: string | null;
+          courier_user_id?: string | null;
+          assigned_at?: string | null;
+          departed_at?: string | null;
+          deposited_at?: string | null;
+          recipient_name?: string | null;
+          recipient_role?: string | null;
+          client_location?: string | null;
+          delivery_instructions?: string | null;
+          proof_document_id?: string | null;
+          returned_to_admin_at?: string | null;
+          validated_by_admin?: string | null;
+          validated_at?: string | null;
+          rejection_reason?: string | null;
+          failure_reason?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "invoice_deposit_invoice_id_fkey";
+            columns: ["invoice_id"];
+            referencedRelation: "invoice";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      collection_follow_up: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          file_id: string;
+          invoice_id: string;
+          performed_by: string | null;
+          channel: string;
+          outcome: string;
+          note: string | null;
+          promised_payment_date: string | null;
+          next_follow_up_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          file_id: string;
+          invoice_id: string;
+          performed_by?: string | null;
+          channel: string;
+          outcome: string;
+          note?: string | null;
+          promised_payment_date?: string | null;
+          next_follow_up_at?: string | null;
+          created_at?: string;
+        };
+        Update: Record<string, never>; // append-only (trigger-enforced)
+        Relationships: [
+          {
+            foreignKeyName: "collection_follow_up_invoice_id_fkey";
+            columns: ["invoice_id"];
+            referencedRelation: "invoice";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       billing_charge: {
         Row: {
           id: string;
@@ -1600,6 +1721,17 @@ export type Database = {
           voided_at: string | null;
           created_at: string;
           updated_at: string;
+          // Phase 5.0D — maker-checker (official steps 20-21) + dispute flag.
+          submitted_by: string | null;
+          submitted_at: string | null;
+          validated_by: string | null;
+          validated_at: string | null;
+          rejected_by: string | null;
+          rejected_at: string | null;
+          rejection_reason: string | null;
+          revision: number;
+          disputed_at: string | null;
+          dispute_reason: string | null;
         };
         Insert: {
           id?: string;

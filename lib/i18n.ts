@@ -736,6 +736,7 @@ export const t = {
     statuses: {
       DRAFT: "Brouillon",
       ISSUED: "Émise",
+      VALIDATED: "Validée",
       PARTIALLY_PAID: "Partiellement payée",
       PAID: "Payée",
       VOID: "Annulée",
@@ -1133,7 +1134,8 @@ export const t = {
       payError: "Le paiement en ligne n'est pas disponible pour le moment.",
       statuses: {
         ISSUED: "Émise",
-        PARTIALLY_PAID: "Partiellement payée",
+        VALIDATED: "Validée",
+      PARTIALLY_PAID: "Partiellement payée",
         PAID: "Payée",
       },
       paymentVerifying: "Paiement en cours de vérification",

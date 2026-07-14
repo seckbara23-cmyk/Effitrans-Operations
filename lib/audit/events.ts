@@ -178,6 +178,29 @@ export const AuditActions = {
   PROCESS_COMPATIBILITY_MAPPED: "process.compatibility.mapped",
   PROCESS_OPERATIONALLY_COMPLETED: "process.operationally_completed",
   PROCESS_CLOSED: "process.closed",
+
+  // Phase 5.0D — post-delivery chain (official steps 18-26). Payloads carry ids,
+  // states, actor ids, evidence KEYS, amounts and reasons. NEVER a full email body,
+  // never a collection conversation transcript, never document contents, never bank
+  // credentials. Enforced by the audit-safety test in tests/process-5d.test.ts.
+  INVOICE_DRAFT_SUBMITTED: "invoice.draft.submitted",
+  INVOICE_VALIDATED: "invoice.validated",
+  INVOICE_VALIDATION_REJECTED: "invoice.validation.rejected",
+  INVOICE_EMAILED: "invoice.emailed",
+  INVOICE_EMAIL_FAILED: "invoice.email.failed",
+  DEPOSIT_PREPARED: "deposit.prepared",
+  DEPOSIT_COURIER_ASSIGNED: "deposit.courier.assigned",
+  DEPOSIT_STARTED: "deposit.started",
+  DEPOSIT_COMPLETED: "deposit.completed",
+  DEPOSIT_FAILED: "deposit.failed",
+  DEPOSIT_PROOF_SUBMITTED: "deposit.proof.submitted",
+  DEPOSIT_PROOF_ACCEPTED: "deposit.proof.accepted",
+  DEPOSIT_PROOF_REJECTED: "deposit.proof.rejected",
+  DEPOSIT_HANDED_TO_COLLECTIONS: "deposit.handed_to_collections",
+  COLLECTION_FOLLOW_UP: "collection.follow_up",
+  COLLECTION_PROMISE_RECORDED: "collection.promise.recorded",
+  COLLECTION_DISPUTE_RECORDED: "collection.dispute.recorded",
+  CLOSURE_READINESS_EVALUATED: "closure.readiness.evaluated",
 } as const;
 
 export type AuditActionCode = (typeof AuditActions)[keyof typeof AuditActions];

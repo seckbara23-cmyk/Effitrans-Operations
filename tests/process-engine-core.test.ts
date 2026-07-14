@@ -69,6 +69,10 @@ const readySnap: EvidenceSnapshot = {
   documents: [
     { typeCode: "BON_A_DELIVRER", status: "APPROVED" },
     { typeCode: "PRE_GATE_AUTHORIZATION", status: "APPROVED" },
+    // Phase 5.0D split: the pickup gate reads the UNSIGNED delivery slip. It used
+    // to read DELIVERY_NOTE — the signed POD — which cannot exist before pickup,
+    // so the gate was unsatisfiable in real use and only this fixture hid it.
+    { typeCode: "BORDEREAU_LIVRAISON", status: "APPROVED" },
     { typeCode: "DELIVERY_NOTE", status: "APPROVED" },
   ],
   customs: {
@@ -316,6 +320,7 @@ describe("pickup convergence gate (Deliverable 6)", () => {
       documents: [
         { typeCode: "BON_A_DELIVRER", status: "PENDING_REVIEW" },
         { typeCode: "PRE_GATE_AUTHORIZATION", status: "APPROVED" },
+        { typeCode: "BORDEREAU_LIVRAISON", status: "APPROVED" },
         { typeCode: "DELIVERY_NOTE", status: "APPROVED" },
       ],
     });
@@ -428,10 +433,12 @@ describe("evidence checker (Deliverable 9)", () => {
     expect(checkEvidence("BON_A_ENLEVER", snap).status).toBe("missing");
   });
 
-  it("says so explicitly when a document type is not in the catalog yet", () => {
+  it("reports a catalogued-but-unuploaded artefact as missing, not as a catalog gap", () => {
+    // Phase 5.0D completed the catalog: PROOF_OF_DEPOSIT now has a real type, so
+    // its absence means "not uploaded", not "the platform cannot store this".
     const r = checkEvidence("PROOF_OF_DEPOSIT", emptySnap);
     expect(r.status).toBe("missing");
-    expect(r.detail).toBe("document_type_not_in_catalog");
+    expect(r.detail).toBe("not_uploaded");
   });
 
   it("evaluates every document a step requires", () => {
@@ -473,10 +480,22 @@ describe("billing readiness (Deliverable 10)", () => {
 describe("closure: DELIVERED must never mean CLOSED", () => {
   const allDone = () => Object.fromEntries(ALL_NODE_KEYS.map((k) => [k, "COMPLETED" as StepState]));
 
+  // Phase 5.0D tightened this gate: the post-delivery chain (invoice validated,
+  // emailed, deposited, proof accepted, handed to Collections) is now part of it.
+  const postDelivery = {
+    invoiceValidated: true,
+    invoiceEmailed: true,
+    depositRequired: true,
+    depositProofAccepted: true,
+    handedToCollections: true,
+    unresolvedCorrections: 0,
+  };
+
   it("refuses to close a delivered-but-unpaid dossier", () => {
     const g = evaluateClosureGate(
       execs(allDone()),
       { ...readySnap, invoices: [{ status: "ISSUED", balance: 250_000 }] },
+      postDelivery,
     );
     expect(g.ready).toBe(false);
     expect(g.missing).toEqual(["fully_paid"]);
@@ -486,13 +505,14 @@ describe("closure: DELIVERED must never mean CLOSED", () => {
     const g = evaluateClosureGate(
       execs(allDone()),
       { ...readySnap, invoices: [{ status: "PAID", balance: 0 }] },
+      postDelivery,
     );
     expect(g.ready).toBe(true);
   });
 
   it("refuses to close on the strength of UNVERIFIED_HISTORICAL steps", () => {
     const e = execs({ ...allDone(), transit_validation: "UNVERIFIED_HISTORICAL" });
-    const g = evaluateClosureGate(e, { ...readySnap, invoices: [{ status: "PAID", balance: 0 }] });
+    const g = evaluateClosureGate(e, { ...readySnap, invoices: [{ status: "PAID", balance: 0 }] }, postDelivery);
     expect(g.ready).toBe(false);
     expect(g.missing).toContain("process_complete");
     expect(g.requirements.find((r) => r.key === "process_complete")!.detail).toBe(

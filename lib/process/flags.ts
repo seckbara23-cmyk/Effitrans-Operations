@@ -31,6 +31,14 @@ export type ProcessFlagEnv = {
    * permits nothing. Off => self-validation is impossible for everyone.
    */
   EFFITRANS_PROCESS_OVERRIDE_ENABLED?: string;
+  /**
+   * Phase 5.0D — the physical invoice deposit chain (Administration -> Courier ->
+   * proof -> Collections handoff). Separate from collections so a tenant that
+   * only emails invoices never sees a courier workflow.
+   */
+  EFFITRANS_PHYSICAL_INVOICE_DEPOSIT_ENABLED?: string;
+  /** Phase 5.0D — the collections workspace (aging, follow-ups, promises). */
+  EFFITRANS_COLLECTIONS_ENABLED?: string;
 };
 
 export type ProcessFlags = {
@@ -42,6 +50,10 @@ export type ProcessFlags = {
   overrideAllowed: boolean;
   /** Phase 5.0C staff workspaces + queue navigation (requires master). */
   workspaces: boolean;
+  /** Phase 5.0D physical invoice deposit chain (requires master). */
+  physicalDeposit: boolean;
+  /** Phase 5.0D collections workspace (requires master). */
+  collections: boolean;
 };
 
 const on = (v: string | undefined): boolean => v === "true";
@@ -54,5 +66,7 @@ export function resolveProcessFlags(env: ProcessFlagEnv): ProcessFlags {
     compatibility: enabled && on(env.EFFITRANS_PROCESS_COMPATIBILITY_ENABLED),
     overrideAllowed: enabled && on(env.EFFITRANS_PROCESS_OVERRIDE_ENABLED),
     workspaces: enabled && on(env.EFFITRANS_PROCESS_WORKSPACES_ENABLED),
+    physicalDeposit: enabled && on(env.EFFITRANS_PHYSICAL_INVOICE_DEPOSIT_ENABLED),
+    collections: enabled && on(env.EFFITRANS_COLLECTIONS_ENABLED),
   };
 }

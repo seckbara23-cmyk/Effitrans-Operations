@@ -9,6 +9,8 @@ import type { InvoiceStatus } from "./types";
 
 export const INVOICE_STATUSES: InvoiceStatus[] = [
   "DRAFT",
+  // Phase 5.0D — the Finance CHECKER half of official step 21.
+  "VALIDATED",
   "ISSUED",
   "PARTIALLY_PAID",
   "PAID",

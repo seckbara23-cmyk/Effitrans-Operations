@@ -38,48 +38,48 @@ export const DOCUMENT_MAPPINGS: DocumentMapping[] = [
   {
     key: "QUOTATION",
     labelFr: "Cotation / Devis",
-    typeCode: null,
-    status: "missing",
+    typeCode: "QUOTATION",
+    status: "mapped",
     steps: ["cotation"],
     note: "Listed in docs/document-catalog.md but never migrated. No quotation entity either.",
   },
   {
     key: "QUOTATION_APPROVAL",
     labelFr: "Validation client de la cotation",
-    typeCode: null,
-    status: "missing",
+    typeCode: "QUOTATION_APPROVAL",
+    status: "mapped",
     steps: ["cotation"],
     note: "No customer-approval evidence of any kind. The lifecycle step `quote_approved` is cosmetic.",
   },
   {
     key: "TRANSPORT_REQUEST",
     labelFr: "Demande de transport",
-    typeCode: "TRANSPORT_ORDER",
-    status: "partial",
+    typeCode: "TRANSPORT_REQUEST",
+    status: "mapped",
     steps: ["am_dossier_opening"],
     note: "TRANSPORT_ORDER is an ORDER to a subcontractor, not a REQUEST raised by the Account Manager. Semantically different — needs its own type.",
   },
   {
     key: "BORDEREAU_LIVRAISON",
-    labelFr: "Bordereau de Livraison (préparé)",
-    typeCode: "DELIVERY_NOTE",
-    status: "partial",
+    labelFr: "Bordereau de Livraison (non signé)",
+    typeCode: "BORDEREAU_LIVRAISON",
+    status: "mapped",
     steps: ["am_dossier_opening", "transport_docs_transmission"],
-    note: "CONFLATION. One DELIVERY_NOTE type ('Bon de livraison / POD') serves BOTH the BL prepared at step 3 AND the signed POD at steps 16-17. The official process treats these as two distinct artefacts at two distinct steps. This must be split in Phase 5.0D.",
+    note: "SPLIT IN PHASE 5.0D (20260714000001). Until then ONE type (DELIVERY_NOTE) served both the slip prepared at step 3 and the signed POD at steps 16-17. That was not merely untidy: it made the official pickup gate UNSATISFIABLE in real use, because the only type that could satisfy it was a POD that cannot exist before delivery. DELIVERY_NOTE now means the SIGNED POD only (the driver flow is untouched); this is the unsigned operational slip the pickup gate reads.",
   },
   {
     key: "VENDOR_INVOICE",
     labelFr: "Facture tierce payable pour le client",
-    typeCode: null,
-    status: "missing",
+    typeCode: "VENDOR_INVOICE",
+    status: "mapped",
     steps: ["am_dossier_opening"],
     note: "No accounts-payable model at all. Finance is explicitly scoped 'no supplier bills'. COMMERCIAL_INVOICE is the customs-value invoice, not a vendor bill.",
   },
   {
     key: "SPENDING_AUTHORIZATION",
     labelFr: "Autorisation de dépense",
-    typeCode: null,
-    status: "missing",
+    typeCode: "SPENDING_AUTHORIZATION",
+    status: "mapped",
     steps: ["am_dossier_opening"],
     note: "Zero occurrences repo-wide. Never customer-visible.",
   },
@@ -93,25 +93,25 @@ export const DOCUMENT_MAPPINGS: DocumentMapping[] = [
   },
   {
     key: "GAINDE_DECLARATION_REFERENCE",
-    labelFr: "Référence de déclaration GAINDE",
-    typeCode: null,
-    status: "partial",
+    labelFr: "Référence + preuve d'enregistrement GAINDE",
+    typeCode: "GAINDE_REGISTRATION_EVIDENCE",
+    status: "mapped",
     steps: ["gainde_registration"],
-    note: "customs_record.external_ref exists ('reserved for GAINDE/Orbus number (manual)') but it is a bare text field — no milestone, no actor, no date, no receipt. Keep it manual (DEC-B01); add the milestone, not an API.",
+    note: "Two halves, both now real. The REFERENCE stays where it belongs, as customs_record.external_ref (manual, DEC-B01 — still no GAINDE API). The RECEIPT is now an uploadable GAINDE_REGISTRATION_EVIDENCE document (Phase 5.0D), so step 9's milestone has actor, date AND evidence instead of a bare text field.",
   },
   {
     key: "GAINDE_SUBMISSION_EVIDENCE",
     labelFr: "Preuve d'introduction des documents dans GAINDE",
-    typeCode: null,
-    status: "missing",
+    typeCode: "GAINDE_SUBMISSION_EVIDENCE",
+    status: "mapped",
     steps: ["gainde_document_submission"],
     note: "No submission evidence of any kind.",
   },
   {
     key: "BON_A_ENLEVER",
     labelFr: "Bon à Enlever (BAE)",
-    typeCode: null,
-    status: "partial",
+    typeCode: "BON_A_ENLEVER",
+    status: "mapped",
     steps: ["customs_field_clearance"],
     note: "customs_record.bae_reference exists and canRelease() requires it — but the BAE is a REFERENCE STRING, not an uploadable document. Promote it to a document type so the physical BAE can be attached as evidence.",
   },
@@ -137,7 +137,7 @@ export const DOCUMENT_MAPPINGS: DocumentMapping[] = [
     typeCode: "DELIVERY_NOTE",
     status: "mapped",
     steps: ["am_delivery_followup", "transport_pod_handoff"],
-    note: "Works: POD_RECEIVED is already gated on an APPROVED DELIVERY_NOTE, and the driver flow captures DRIVER_SIGNATURE. But see BORDEREAU_LIVRAISON — the same type is doing double duty and must be split.",
+    note: "DELIVERY_NOTE = the SIGNED POD, and after the Phase 5.0D split it means ONLY that. POD_RECEIVED is gated on an APPROVED DELIVERY_NOTE and the driver flow captures DRIVER_SIGNATURE — both unchanged by the split, deliberately: no data migration, no alias, no rewrite of existing rows.",
   },
   {
     key: "RECEIPT",
@@ -166,31 +166,23 @@ export const DOCUMENT_MAPPINGS: DocumentMapping[] = [
   {
     key: "PROOF_OF_DEPOSIT",
     labelFr: "Preuve de dépôt physique",
-    typeCode: null,
-    status: "missing",
+    typeCode: "PROOF_OF_DEPOSIT",
+    status: "mapped",
     steps: ["courier_deposit", "administration_proof_handoff"],
     note: "Zero occurrences repo-wide. Must record recipient and date, and must NOT mutate any financial status.",
   },
 ];
 
 /**
- * Document types still to be ADDED in Phase 5.0D.
+ * Document types still missing from the catalog: NONE.
  *
- * BON_A_DELIVRER and PRE_GATE_AUTHORIZATION were originally on this list but
- * shipped in Phase 5.0B (migration 20260713000002): the official pickup gate
- * depends on them, and without a type to hold them the gate could only ever
- * block, never open.
+ * Phase 5.0B shipped BON_A_DELIVRER + PRE_GATE_AUTHORIZATION (the pickup gate
+ * needed them). Phase 5.0D (20260714000001) shipped the remaining nine, including
+ * the BORDEREAU_LIVRAISON split. Every artefact the official 26-step process names
+ * can now be captured. Kept as an empty array (not deleted) so the invariant
+ * "the registry's document surface is fully backed by the catalog" stays asserted.
  */
-export const MISSING_DOCUMENT_TYPES = [
-  "QUOTATION",
-  "QUOTATION_APPROVAL",
-  "TRANSPORT_REQUEST",
-  "VENDOR_INVOICE",
-  "SPENDING_AUTHORIZATION",
-  "GAINDE_SUBMISSION_EVIDENCE",
-  "BON_A_ENLEVER",
-  "PROOF_OF_DEPOSIT",
-];
+export const MISSING_DOCUMENT_TYPES: string[] = [];
 
 const BY_KEY = new Map<string, DocumentMapping>(DOCUMENT_MAPPINGS.map((d) => [d.key, d]));
 

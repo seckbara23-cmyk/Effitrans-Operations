@@ -142,6 +142,8 @@ export function financeCards(
 export function financeNextAction(status: InvoiceStatus): NextAction {
   switch (status) {
     case "DRAFT": return { key: "issue", label: "Émettre la facture" };
+    // Phase 5.0D — validated by Finance (official step 21), awaiting dispatch.
+    case "VALIDATED": return { key: "send", label: "Envoyer la facture au client" };
     case "ISSUED": return { key: "record_payment", label: "Enregistrer le paiement" };
     case "PARTIALLY_PAID": return { key: "record_balance", label: "Enregistrer le solde" };
     case "PAID": return { key: "to_archive", label: "Payée → Archivage" };

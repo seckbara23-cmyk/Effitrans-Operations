@@ -67,6 +67,9 @@ export const TENANT_SCOPED_TABLES = new Set<string>([
   "process_instance",
   "process_step_execution",
   "process_handoff",
+  // post-delivery chain (Phase 5.0D)
+  "invoice_deposit",
+  "collection_follow_up",
 ]);
 
 /**

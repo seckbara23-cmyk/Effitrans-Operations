@@ -4,7 +4,18 @@
 import type { VerificationStatus } from "./verification";
 import type { IntentStatus, ProviderName } from "./payment-intent";
 
-export type InvoiceStatus = "DRAFT" | "ISSUED" | "PARTIALLY_PAID" | "PAID" | "VOID";
+/**
+ * Phase 5.0D — VALIDATED sits between DRAFT and ISSUED (official steps 20-21).
+ * Nothing in the shipped finance module can produce it (canIssue() accepts only
+ * DRAFT), so with the process engine dark, invoice behaviour is unchanged.
+ */
+export type InvoiceStatus =
+  | "DRAFT"
+  | "VALIDATED"
+  | "ISSUED"
+  | "PARTIALLY_PAID"
+  | "PAID"
+  | "VOID";
 
 export type PaymentMethod =
   | "CASH"

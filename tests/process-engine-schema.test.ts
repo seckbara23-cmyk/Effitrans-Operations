@@ -127,6 +127,8 @@ describe("Phase 5.0B-1 — feature flag is dark by default", () => {
       compatibility: false,
       overrideAllowed: false,
       workspaces: false,
+      physicalDeposit: false,
+      collections: false,
     });
   });
 
@@ -147,6 +149,8 @@ describe("Phase 5.0B-1 — feature flag is dark by default", () => {
       compatibility: false,
       overrideAllowed: false,
       workspaces: false,
+      physicalDeposit: false,
+      collections: false,
     });
   });
 

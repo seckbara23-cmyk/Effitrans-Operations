@@ -361,17 +361,8 @@ describe("required-document mapping (Deliverable 9)", () => {
     expect(new Set(DOCUMENT_MAPPINGS.map((d) => d.key)).size).toBe(17);
   });
 
-  it("records the document types still missing from the catalog (Phase 5.0D)", () => {
-    expect(MISSING_DOCUMENT_TYPES).toEqual([
-      "QUOTATION",
-      "QUOTATION_APPROVAL",
-      "TRANSPORT_REQUEST",
-      "VENDOR_INVOICE",
-      "SPENDING_AUTHORIZATION",
-      "GAINDE_SUBMISSION_EVIDENCE",
-      "BON_A_ENLEVER",
-      "PROOF_OF_DEPOSIT",
-    ]);
+  it("has NO document types left missing — the catalog is complete (Phase 5.0D)", () => {
+    expect(MISSING_DOCUMENT_TYPES).toEqual([]);
   });
 
   it("shipped the two pickup-gate document types in Phase 5.0B", () => {
@@ -383,10 +374,15 @@ describe("required-document mapping (Deliverable 9)", () => {
     expect(mapDocument("PRE_GATE_AUTHORIZATION").status).toBe("mapped");
   });
 
-  it("flags the DELIVERY_NOTE conflation (prepared BL vs signed POD)", () => {
-    expect(mapDocument("BORDEREAU_LIVRAISON").typeCode).toBe("DELIVERY_NOTE");
-    expect(mapDocument("BORDEREAU_LIVRAISON").status).toBe("partial");
+  it("SPLIT the DELIVERY_NOTE conflation in Phase 5.0D (prepared BL vs signed POD)", () => {
+    // The conflation was not cosmetic: it made the pickup gate unsatisfiable,
+    // because the only type that could satisfy "Bordereau de Livraison" was a POD
+    // that cannot exist until after delivery.
+    expect(mapDocument("BORDEREAU_LIVRAISON").typeCode).toBe("BORDEREAU_LIVRAISON");
     expect(mapDocument("SIGNED_DELIVERY_NOTE").typeCode).toBe("DELIVERY_NOTE");
+    expect(mapDocument("BORDEREAU_LIVRAISON").typeCode).not.toBe(
+      mapDocument("SIGNED_DELIVERY_NOTE").typeCode,
+    );
   });
 
   it("keeps the customs dossier and the final invoice as structured records, not uploads", () => {
