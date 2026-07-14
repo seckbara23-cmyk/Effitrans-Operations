@@ -2383,6 +2383,10 @@ export type Database = {
         Args: { p_tenant: string; p_type: string };
         Returns: string;
       };
+      provision_tenant: {
+        Args: { p_admin_auth_id: string; p_platform_actor_id: string; p_input: Json };
+        Returns: Json;
+      };
       next_invoice_number: {
         Args: { p_tenant: string };
         Returns: string;
