@@ -7,7 +7,7 @@ const base: NavSessionLike = { permissions: [], loading: false, configured: true
 
 describe("Phase 2.0 — department navigation", () => {
   it("adds a Départements section with the five workspace routes + permissions", () => {
-    const dept = navSections.find((s) => s.title === "Départements");
+    const dept = navSections.find((s) => s.label === "Départements");
     expect(dept).toBeDefined();
     const byHref = Object.fromEntries((dept?.items ?? []).map((i) => [i.href, i.permission]));
     expect(byHref).toEqual({

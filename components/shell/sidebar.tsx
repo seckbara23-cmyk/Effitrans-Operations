@@ -2,88 +2,94 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { navSections, type NavSection } from "@/lib/nav";
-import type { ProcessNavSection } from "@/lib/process/queues/nav";
+import type { NavigationSection, NavIconKey } from "@/lib/navigation/types";
 import {
-  IconTower as PIconTower,
-  IconStamp as PIconStamp,
-  IconTruck as PIconTruck,
-  IconFinance as PIconFinance,
-  IconDocument as PIconDocument,
-  IconBuilding as PIconBuilding,
-  IconUsers as PIconUsers,
+  IconTower,
+  IconStamp,
+  IconTruck,
+  IconFinance,
+  IconDocument,
+  IconBuilding,
+  IconUsers,
+  IconContainer,
+  IconBell,
+  IconReport,
+  IconClose,
 } from "@/lib/icons";
 import { cn } from "@/lib/cn";
 import { LogoWordmark } from "@/components/brand/logo";
-import { IconClose } from "@/lib/icons";
 import { t } from "@/lib/i18n";
 import { useSession, canSeeNav } from "@/lib/auth/use-session";
 
-/** Phase 5.0C — icon keys cross the server->client boundary; components cannot. */
-const PROCESS_ICONS = {
-  tower: PIconTower,
-  stamp: PIconStamp,
-  truck: PIconTruck,
-  finance: PIconFinance,
-  document: PIconDocument,
-  building: PIconBuilding,
-  users: PIconUsers,
-} as const;
+/** Icon KEYS cross the server→client boundary; components cannot. */
+const ICONS: Record<NavIconKey, typeof IconTower> = {
+  tower: IconTower,
+  stamp: IconStamp,
+  truck: IconTruck,
+  finance: IconFinance,
+  document: IconDocument,
+  building: IconBuilding,
+  users: IconUsers,
+  container: IconContainer,
+  bell: IconBell,
+  report: IconReport,
+};
 
-/** Process sections carry icon KEYS; resolve them to the same NavSection shape. */
-function toNavSections(process: ProcessNavSection[]): NavSection[] {
-  return process.map((s) => ({
-    title: s.title,
-    items: s.items.map((i) => ({
-      label: i.label,
-      href: i.href,
-      icon: PROCESS_ICONS[i.iconKey],
-      permission: i.permission,
-    })),
-  }));
-}
-
+/**
+ * Phase 5.0E-1: on the role-aware path the sidebar no longer decides what is
+ * visible. It used to merge a static section list with a process section list and
+ * filter both through `canSeeNav` — three places deciding one thing, and they had
+ * already drifted.
+ *
+ * When `filtered` is true the server already knew who was asking and handed us
+ * exactly what they may see, so we render it verbatim. When it is false we are on
+ * the legacy (workspaces-off) path, where the layout deliberately resolves no
+ * session — so we apply the same cosmetic filter we have applied since Phase 2.0.
+ * Either way the routes re-check server-side; nothing here is load-bearing.
+ */
 function NavLinks({
+  sections,
+  filtered,
   onNavigate,
-  processNav = [],
 }: {
+  sections: NavigationSection[];
+  filtered: boolean;
   onNavigate?: () => void;
-  processNav?: ProcessNavSection[];
 }) {
   const pathname = usePathname();
   const session = useSession();
 
-  // With the workspaces flag off, processNav is [] and this is exactly the
-  // pre-5.0C navigation.
-  const sections = [...navSections, ...toNavSections(processNav)];
+  const visible = filtered
+    ? sections
+    : sections
+        .map((s) => ({ ...s, items: s.items.filter((i) => canSeeNav(i.permission, session)) }))
+        .filter((s) => s.items.length > 0);
 
   return (
-    <nav className="flex-1 space-y-6 overflow-y-auto px-3 py-5">
-      {sections.map((section) => {
-        // Cosmetic permission filtering — server/RLS remain authoritative.
-        const items = section.items.filter((item) =>
-          canSeeNav(item.permission, session),
-        );
-        if (items.length === 0) return null;
-        return (
-        <div key={section.title}>
+    <nav className="flex-1 space-y-6 overflow-y-auto px-3 py-5" aria-label="Navigation principale">
+      {visible.map((section) => (
+        <div key={section.key}>
           <p className="px-3 pb-2.5 text-xs font-bold uppercase tracking-[0.2em] text-teal-300">
-            {section.title}
+            {section.label}
           </p>
           <ul className="space-y-0.5">
-            {items.map((item) => {
+            {section.items.map((item) => {
+              // /dashboard is a prefix of /dashboard/executive, so it must match
+              // exactly; every other entry highlights across its subtree.
               const active =
                 pathname === item.href ||
-                (item.href !== "/dashboard" &&
-                  pathname.startsWith(item.href));
-              const Icon = item.icon;
+                (item.href !== "/dashboard" && pathname.startsWith(`${item.href}/`));
+              const Icon = ICONS[item.iconKey];
               return (
-                <li key={item.href}>
+                <li key={item.key}>
                   <Link
                     href={item.href}
                     onClick={onNavigate}
+                    title={item.hint}
+                    aria-current={active ? "page" : undefined}
                     className={cn(
                       "group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-[15px] font-semibold transition-colors",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400",
                       active
                         ? "bg-white/15 text-white shadow-sm"
                         : "text-slate-100 hover:bg-white/10 hover:text-white",
@@ -95,35 +101,37 @@ function NavLinks({
                     <Icon
                       className={cn(
                         "h-[22px] w-[22px] shrink-0 transition-colors",
-                        active
-                          ? "text-amber-400"
-                          : "text-slate-200 group-hover:text-teal-200",
+                        active ? "text-amber-400" : "text-slate-200 group-hover:text-teal-200",
                       )}
                     />
-                    <span>{item.label}</span>
+                    <span className="flex-1 truncate">{item.label}</span>
+                    {typeof item.badge === "number" && item.badge > 0 && (
+                      <span
+                        className="shrink-0 rounded-full bg-amber-400 px-1.5 py-0.5 text-[11px] font-bold leading-none text-navy-900"
+                        aria-label={`${item.badge} en attente`}
+                      >
+                        {item.badge > 99 ? "99+" : item.badge}
+                      </span>
+                    )}
                   </Link>
                 </li>
               );
             })}
           </ul>
         </div>
-        );
-      })}
+      ))}
     </nav>
   );
 }
 
-function SidebarFooter() {
+function SidebarFooter({ roleLabel }: { roleLabel?: string | null }) {
   const session = useSession();
 
-  // Signed-in user (real session) takes precedence; otherwise the static
-  // placeholder is shown for the unconfigured/mock experience.
   const signedIn = session.configured && session.email;
   const name = signedIn ? session.email! : "Awa Ndiaye";
-  const subtitle = signedIn ? t.topbar.account : "Responsable opérations";
-  const initials = signedIn
-    ? session.email!.slice(0, 2).toUpperCase()
-    : "AN";
+  // The user's ROLE, in French. Never a raw role code (Deliverable 8).
+  const subtitle = roleLabel ?? (signedIn ? t.topbar.account : "Responsable opérations");
+  const initials = signedIn ? session.email!.slice(0, 2).toUpperCase() : "AN";
 
   return (
     <div className="border-t border-white/10 px-4 py-4">
@@ -140,11 +148,17 @@ function SidebarFooter() {
   );
 }
 
-const surface =
-  "flex h-full flex-col bg-navy-900 route-lines border-r border-white/5";
+const surface = "flex h-full flex-col bg-navy-900 route-lines border-r border-white/5";
+
+type SidebarProps = {
+  sections: NavigationSection[];
+  /** Whether the server already filtered `sections` for this user. */
+  filtered: boolean;
+  roleLabel?: string | null;
+};
 
 /** Desktop sidebar — fixed, always visible on lg+. */
-export function DesktopSidebar({ processNav = [] }: { processNav?: ProcessNavSection[] }) {
+export function DesktopSidebar({ sections, filtered, roleLabel }: SidebarProps) {
   const session = useSession();
   return (
     <aside className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:z-30 lg:flex lg:w-72 lg:flex-col">
@@ -152,8 +166,8 @@ export function DesktopSidebar({ processNav = [] }: { processNav?: ProcessNavSec
         <div className="flex h-16 items-center border-b border-white/10 px-4">
           <LogoWordmark brandName={session.brandName ?? undefined} tagline={session.tagline ?? undefined} />
         </div>
-        <NavLinks processNav={processNav} />
-        <SidebarFooter />
+        <NavLinks sections={sections} filtered={filtered} />
+        <SidebarFooter roleLabel={roleLabel} />
       </div>
     </aside>
   );
@@ -163,19 +177,14 @@ export function DesktopSidebar({ processNav = [] }: { processNav?: ProcessNavSec
 export function MobileSidebar({
   open,
   onClose,
-  processNav = [],
-}: {
-  open: boolean;
-  onClose: () => void;
-  processNav?: ProcessNavSection[];
-}) {
+  sections,
+  filtered,
+  roleLabel,
+}: SidebarProps & { open: boolean; onClose: () => void }) {
   const session = useSession();
   return (
     <div
-      className={cn(
-        "fixed inset-0 z-50 lg:hidden",
-        open ? "pointer-events-auto" : "pointer-events-none",
-      )}
+      className={cn("fixed inset-0 z-50 lg:hidden", open ? "pointer-events-auto" : "pointer-events-none")}
       aria-hidden={!open}
     >
       <div
@@ -196,14 +205,14 @@ export function MobileSidebar({
             <LogoWordmark subtitle={false} brandName={session.brandName ?? undefined} tagline={session.tagline ?? undefined} />
             <button
               onClick={onClose}
-              className="rounded-md p-1.5 text-slate-300 hover:bg-white/10 hover:text-white"
+              className="rounded-md p-1.5 text-slate-300 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
               aria-label="Fermer le menu"
             >
               <IconClose />
             </button>
           </div>
-          <NavLinks onNavigate={onClose} processNav={processNav} />
-          <SidebarFooter />
+          <NavLinks sections={sections} filtered={filtered} onNavigate={onClose} />
+          <SidebarFooter roleLabel={roleLabel} />
         </div>
       </div>
     </div>

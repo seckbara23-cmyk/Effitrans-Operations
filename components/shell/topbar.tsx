@@ -19,7 +19,14 @@ function currentTitle(pathname: string): string {
   return match?.label ?? t.app.short;
 }
 
-export function Topbar({ onOpenMenu }: { onOpenMenu: () => void }) {
+export function Topbar({
+  onOpenMenu,
+  roleLabel,
+}: {
+  onOpenMenu: () => void;
+  /** The user's role, in French. Resolved on the server; never a raw role code. */
+  roleLabel?: string | null;
+}) {
   const pathname = usePathname();
   const title = currentTitle(pathname);
   const session = useSession();
@@ -77,11 +84,17 @@ export function Topbar({ onOpenMenu }: { onOpenMenu: () => void }) {
 
           {session.configured && session.email && (
             <div className="flex items-center gap-2 border-l border-slate-200 pl-2 sm:pl-3">
-              <span
-                className="hidden max-w-[16ch] truncate text-sm text-slate-600 md:inline"
-                title={session.email}
-              >
-                {session.email}
+              {/* Contextual identity (5.0E-1, Deliverable 8): who you are and what
+                  you are here to do. A role CODE is never printed. */}
+              <span className="hidden min-w-0 leading-tight md:block">
+                <span className="block max-w-[18ch] truncate text-sm text-slate-600" title={session.email}>
+                  {session.email}
+                </span>
+                {roleLabel && (
+                  <span className="block max-w-[18ch] truncate text-[11px] font-semibold uppercase tracking-wide text-teal-700">
+                    {roleLabel}
+                  </span>
+                )}
               </span>
               <button
                 onClick={signOut}

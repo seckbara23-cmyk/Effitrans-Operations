@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/page-header";
+import { ProcessJourneyPanel } from "@/components/process/process-journey";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { getFile, listAssignableStaff } from "@/lib/files/service";
@@ -168,6 +169,10 @@ export default async function FileDetailPage({ params }: { params: { id: string 
       <Link href="/files" className="text-sm text-teal-700 hover:underline">
         ← {t.files.backToList}
       </Link>
+      {/* Phase 5.0E-1 (D10) — renders nothing when the engine is dark or this
+          dossier has no process instance. Not a 26-step checklist: it answers
+          "where is this, who has it, what next". */}
+      <ProcessJourneyPanel fileId={file.id} />
       <FileWorkflow file={file} canUpdate={canUpdate} />
       <FileAssignment
         fileId={file.id}

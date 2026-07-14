@@ -10,7 +10,9 @@ import {
   invoiceVisibleToClient,
   portalPostDeliveryState,
 } from "@/lib/portal/closure-view";
-import { buildProcessNav } from "@/lib/process/queues/nav";
+import { buildNavigation } from "@/lib/navigation/build";
+import type { NavigationContext } from "@/lib/navigation/types";
+import { resolveProcessFlags } from "@/lib/process/flags";
 import { derivePromise } from "@/lib/collections/model";
 
 const read = (p: string) => readFileSync(fileURLToPath(new URL(p, import.meta.url)), "utf8");
@@ -21,6 +23,30 @@ const portalDocs = read("../lib/portal/docs-service.ts");
 const collectionsPage = read("../app/collections/page.tsx");
 
 const PERMS = ["process:read", "collections:manage", "transport:read", "courier:deposit", "admin_service:manage"];
+
+const FLAGS_ON = resolveProcessFlags({
+  EFFITRANS_PROCESS_ENGINE_ENABLED: "true",
+  EFFITRANS_PROCESS_WORKSPACES_ENABLED: "true",
+  EFFITRANS_PHYSICAL_INVOICE_DEPOSIT_ENABLED: "true",
+  EFFITRANS_COLLECTIONS_ENABLED: "true",
+});
+
+/** Phase 5.0E-1 — ONE builder now produces the whole sidebar. */
+const navHrefs = (
+  roleCodes: string[],
+  permissions: string[] = PERMS,
+  featureFlags = FLAGS_ON,
+): string[] => {
+  const ctx: NavigationContext = {
+    userId: "u1",
+    tenantId: "t1",
+    roleCodes,
+    permissions,
+    identityType: "tenant",
+    featureFlags,
+  };
+  return buildNavigation(ctx).sections.flatMap((s) => s.items.map((i) => i.href));
+};
 
 // ---------------------------------------------------- DRIVER CONTACT PRIVACY ----
 
@@ -273,9 +299,9 @@ describe("portal-safe post-delivery state (Deliverables 5-6)", () => {
 
 // ------------------------------------------------------------------- nav/roles ----
 
-describe("role-aware panel navigation (Deliverable 7/10)", () => {
+describe("role-aware panel navigation (Deliverable 7/10; ONE builder as of 5.0E-1)", () => {
   it("gives an Account Manager the portfolio, not Collections or deposits", () => {
-    const hrefs = buildProcessNav(["ACCOUNT_MANAGER"], PERMS, true).flatMap((s) => s.items.map((i) => i.href));
+    const hrefs = navHrefs(["ACCOUNT_MANAGER"]);
     expect(hrefs).toContain("/portfolio");
     expect(hrefs).not.toContain("/collections");
     expect(hrefs).not.toContain("/deposits");
@@ -283,37 +309,47 @@ describe("role-aware panel navigation (Deliverable 7/10)", () => {
   });
 
   it("gives Transport the readiness panel, not the portfolio or Collections", () => {
-    const hrefs = buildProcessNav(["TRANSPORT_OFFICER"], PERMS, true).flatMap((s) => s.items.map((i) => i.href));
+    const hrefs = navHrefs(["TRANSPORT_OFFICER"]);
     expect(hrefs).toContain("/transport-readiness");
     expect(hrefs).not.toContain("/portfolio");
     expect(hrefs).not.toContain("/collections");
   });
 
   it("a COURIER sees ONLY their own deposits — never Collections or the portfolio", () => {
-    const hrefs = buildProcessNav(["COURIER"], PERMS, true).flatMap((s) => s.items.map((i) => i.href));
+    const hrefs = navHrefs(["COURIER"]);
     expect(hrefs).toContain("/courier");
     expect(hrefs).not.toContain("/collections");
     expect(hrefs).not.toContain("/portfolio");
     expect(hrefs).not.toContain("/deposits");
   });
 
-  it("a DRIVER sees NOTHING — no Collections, no portfolio, no panels at all", () => {
-    // A driver holds no process:read, so the whole process nav is empty for them.
-    expect(buildProcessNav(["DRIVER"], ["tracking:read", "tracking:write"], true)).toEqual([]);
+  it("a DRIVER gets NO staff sidebar at all — separate identity stack", () => {
+    const ctx: NavigationContext = {
+      userId: "u1",
+      tenantId: "t1",
+      roleCodes: ["DRIVER"],
+      permissions: ["tracking:read", "tracking:write"],
+      identityType: "driver",
+      featureFlags: FLAGS_ON,
+    };
+    expect(buildNavigation(ctx).sections).toEqual([]);
   });
 
-  it("gives Collections the recovery panel", () => {
-    const hrefs = buildProcessNav(["COLLECTIONS_OFFICER"], PERMS, true).flatMap((s) => s.items.map((i) => i.href));
+  it("gives Collections the aging panel", () => {
+    const hrefs = navHrefs(["COLLECTIONS_OFFICER"]);
     expect(hrefs).toContain("/collections");
     expect(hrefs).not.toContain("/portfolio");
   });
 
-  it("adds NOTHING when the workspaces flag is off — production nav unchanged", () => {
-    expect(buildProcessNav(["OPS_SUPERVISOR"], PERMS, false)).toEqual([]);
+  it("adds NO process entry when the workspaces flag is off — production nav unchanged", () => {
+    const hrefs = navHrefs(["OPS_SUPERVISOR"], PERMS, resolveProcessFlags({}));
+    for (const h of ["/my-work", "/collections", "/deposits", "/portfolio", "/transport-readiness"]) {
+      expect(hrefs).not.toContain(h);
+    }
+    expect(hrefs.some((h) => h.startsWith("/queues/"))).toBe(false);
   });
 
   it("never exposes platform navigation", () => {
-    const hrefs = buildProcessNav(["SYSTEM_ADMIN"], PERMS, true).flatMap((s) => s.items.map((i) => i.href));
-    expect(hrefs.some((h) => h.startsWith("/platform"))).toBe(false);
+    expect(navHrefs(["SYSTEM_ADMIN"]).some((h) => h.startsWith("/platform"))).toBe(false);
   });
 });

@@ -1,75 +1,69 @@
-import type { ComponentType, SVGProps } from "react";
+/**
+ * Legacy (pre-process-engine) navigation — PURE DATA.
+ * ---------------------------------------------------------------------------
+ * Phase 5.0E-1: this file used to carry React icon COMPONENTS, which is why the
+ * client sidebar had to own the visibility filtering. It is now plain data with
+ * icon KEYS, so it can cross the server→client boundary and be consumed by the
+ * single navigation builder (lib/navigation/build.ts).
+ *
+ * These sections are what a user sees when the process workspaces flag is OFF —
+ * i.e. today's production navigation. Content, order and permission gates are
+ * unchanged from Phase 2.0.
+ */
 import { t } from "./i18n";
-import {
-  IconTower,
-  IconUsers,
-  IconContainer,
-  IconStamp,
-  IconTruck,
-  IconFinance,
-  IconBell,
-  IconDocument,
-  IconBuilding,
-  IconReport,
-} from "./icons";
+import type { NavigationItem, NavigationSection } from "./navigation/types";
 
-export type NavItem = {
-  label: string;
-  href: string;
-  icon: ComponentType<SVGProps<SVGSVGElement>>;
-  /**
-   * Optional permission code required to SEE this item (cosmetic filtering only;
-   * server/RLS remain authoritative). Items without it are always shown.
-   */
-  permission?: string;
-};
+export type NavItem = NavigationItem;
+export type NavSection = NavigationSection;
 
-export type NavSection = {
-  title: string;
-  items: NavItem[];
-};
-
-export const navSections: NavSection[] = [
+export const LEGACY_SECTIONS: NavigationSection[] = [
   {
-    title: t.nav.section_pilotage,
+    key: "pilotage",
+    label: t.nav.section_pilotage,
     items: [
-      { label: t.nav.controlTower, href: "/dashboard", icon: IconTower },
+      { key: "control_tower", label: t.nav.controlTower, href: "/dashboard", iconKey: "tower" },
     ],
   },
   {
     // Phase 2.0 — department workspaces are the primary workflow entry point
     // (filtered views over the same records; direct module routes are preserved).
-    title: t.nav.section_departements,
+    key: "departements",
+    label: t.nav.section_departements,
     items: [
-      { label: t.nav.dept_documentation, href: "/departments/documentation", icon: IconDocument, permission: "document:read" },
-      { label: t.nav.dept_customs, href: "/departments/customs", icon: IconStamp, permission: "customs:read" },
-      { label: t.nav.dept_transport, href: "/departments/transport", icon: IconTruck, permission: "transport:read" },
-      { label: t.nav.dept_finance, href: "/departments/finance", icon: IconFinance, permission: "finance:read" },
-      { label: t.nav.dept_management, href: "/departments/management", icon: IconBuilding, permission: "analytics:read" },
+      { key: "dept_documentation", label: t.nav.dept_documentation, href: "/departments/documentation", iconKey: "document", permission: "document:read" },
+      { key: "dept_customs", label: t.nav.dept_customs, href: "/departments/customs", iconKey: "stamp", permission: "customs:read" },
+      { key: "dept_transport", label: t.nav.dept_transport, href: "/departments/transport", iconKey: "truck", permission: "transport:read" },
+      { key: "dept_finance", label: t.nav.dept_finance, href: "/departments/finance", iconKey: "finance", permission: "finance:read" },
+      { key: "dept_management", label: t.nav.dept_management, href: "/departments/management", iconKey: "building", permission: "analytics:read" },
     ],
   },
   {
-    title: t.nav.section_operations,
+    key: "operations",
+    label: t.nav.section_operations,
     items: [
-      { label: t.nav.files, href: "/files", icon: IconContainer, permission: "file:read" },
-      { label: t.nav.clients, href: "/clients", icon: IconUsers, permission: "client:read" },
-      { label: t.nav.communications, href: "/communications", icon: IconBell, permission: "communication:read" },
+      { key: "files", label: t.nav.files, href: "/files", iconKey: "container", permission: "file:read" },
+      { key: "clients", label: t.nav.clients, href: "/clients", iconKey: "users", permission: "client:read" },
+      { key: "communications", label: t.nav.communications, href: "/communications", iconKey: "bell", permission: "communication:read" },
     ],
   },
   {
-    title: t.nav.section_administration,
+    key: "administration",
+    label: t.nav.section_administration,
     items: [
-      { label: t.nav.executive, href: "/dashboard/executive", icon: IconBuilding, permission: "analytics:read" },
-      { label: t.nav.reports, href: "/reports", icon: IconReport, permission: "analytics:read" },
-      { label: t.nav.users, href: "/users", icon: IconUsers, permission: "admin:users:manage" },
-      { label: t.nav.audit, href: "/settings/audit", icon: IconStamp, permission: "audit:read:all" },
-      { label: t.nav.aiSettings, href: "/settings/ai", icon: IconTower, permission: "admin:config:manage" },
+      { key: "executive", label: t.nav.executive, href: "/dashboard/executive", iconKey: "building", permission: "analytics:read" },
+      { key: "reports", label: t.nav.reports, href: "/reports", iconKey: "report", permission: "analytics:read" },
+      { key: "users", label: t.nav.users, href: "/users", iconKey: "users", permission: "admin:users:manage" },
+      { key: "audit", label: t.nav.audit, href: "/settings/audit", iconKey: "stamp", permission: "audit:read:all" },
+      { key: "ai", label: t.nav.aiSettings, href: "/settings/ai", iconKey: "tower", permission: "admin:config:manage" },
     ],
   },
 ];
 
-// Flat list (used by topbar breadcrumb / page metadata lookups)
-export const allNavItems: NavItem[] = navSections.flatMap((s) => s.items);
+/** Back-compat alias — the legacy name, same data. */
+export const navSections = LEGACY_SECTIONS;
+
+/** Flat list (used by the topbar breadcrumb / page metadata lookups). */
+export const allNavItems: NavItem[] = LEGACY_SECTIONS.flatMap((s) => s.items);
 
 /**
  * Top-bar primary action — "Nouveau dossier". Points at the existing dossier

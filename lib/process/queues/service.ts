@@ -67,6 +67,8 @@ export type QueueItem = {
   receptionRequired: boolean;
   received: boolean;
   state: string;
+  /** Who submitted this step for validation, when it is SUBMITTED. */
+  submittedBy: string | null;
   ageHours: number;
   sla: { policyKey: string; state: string; label: string };
   missingPrerequisites: string[];
@@ -345,6 +347,10 @@ export async function getDepartmentQueue(req: QueueRequest): Promise<QueueResult
       receptionRequired: def.requiresReception,
       received: !openHandoff,
       state,
+      // Phase 5.0E-1 — needed to tell "I must validate this" from "I submitted this
+      // and it is out of my hands". Maker-checker is enforced on IDENTITY, so the
+      // workbench must be able to show the same distinction the action enforces.
+      submittedBy: str(e.submitted_by),
       ageHours: Math.round(ageHours),
       sla: {
         policyKey: node?.slaPolicyKey ?? "",

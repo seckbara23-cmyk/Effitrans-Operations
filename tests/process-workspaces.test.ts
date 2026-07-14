@@ -5,13 +5,47 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, it, expect } from "vitest";
-import { buildProcessNav } from "@/lib/process/queues/nav";
+import { buildNavigation } from "@/lib/navigation/build";
+import type { NavigationContext } from "@/lib/navigation/types";
 import { resolveProcessFlags } from "@/lib/process/flags";
 import { QUEUES } from "@/lib/process/queues/registry";
 
 const read = (p: string) => readFileSync(fileURLToPath(new URL(p, import.meta.url)), "utf8");
 
 const PERMS = ["process:read"];
+
+const FLAGS_ON = resolveProcessFlags({
+  EFFITRANS_PROCESS_ENGINE_ENABLED: "true",
+  EFFITRANS_PROCESS_WORKSPACES_ENABLED: "true",
+  EFFITRANS_PHYSICAL_INVOICE_DEPOSIT_ENABLED: "true",
+  EFFITRANS_COLLECTIONS_ENABLED: "true",
+});
+const FLAGS_OFF = resolveProcessFlags({});
+
+/** Phase 5.0E-1 — ONE builder now produces the whole sidebar. */
+const ctx = (
+  roleCodes: string[],
+  permissions: string[] = PERMS,
+  featureFlags = FLAGS_ON,
+): NavigationContext => ({
+  userId: "u1",
+  tenantId: "t1",
+  roleCodes,
+  permissions,
+  identityType: "tenant",
+  featureFlags,
+});
+
+const hrefsFor = (...args: Parameters<typeof ctx>): string[] =>
+  buildNavigation(ctx(...args)).sections.flatMap((s) => s.items.map((i) => i.href));
+
+/** Only the entries the process engine contributes — queues and role panels. */
+const processHrefs = (hrefs: string[]): string[] =>
+  hrefs.filter(
+    (h) =>
+      h.startsWith("/queues/") ||
+      ["/my-work", "/courier", "/portfolio", "/collections", "/deposits", "/transport-readiness"].includes(h),
+  );
 
 // --------------------------------------------------------------------- flags ----
 
@@ -45,60 +79,50 @@ describe("workspaces flag — off by default, and dark without the engine", () =
 
 // ---------------------------------------------------------------- navigation ----
 
-describe("role-aware navigation (Deliverable 14)", () => {
-  it("adds NOTHING when the workspaces flag is off — nav is unchanged", () => {
-    expect(buildProcessNav(["OPS_SUPERVISOR"], PERMS, false)).toEqual([]);
+describe("role-aware navigation (Deliverable 14; rebuilt on ONE builder in 5.0E-1)", () => {
+  it("contributes NOTHING when the workspaces flag is off — production nav unchanged", () => {
+    const hrefs = hrefsFor(["OPS_SUPERVISOR"], PERMS, FLAGS_OFF);
+    expect(processHrefs(hrefs)).toEqual([]);
+    // ...and what remains is exactly the legacy navigation.
+    expect(hrefs).toContain("/dashboard");
   });
 
-  it("adds nothing without process:read, whatever the role", () => {
-    expect(buildProcessNav(["OPS_SUPERVISOR"], [], true)).toEqual([]);
+  it("contributes nothing without process:read, whatever the role", () => {
+    expect(processHrefs(hrefsFor(["OPS_SUPERVISOR"], []))).toEqual([]);
   });
 
   it("shows a courier ONLY their own work — no other department", () => {
-    const nav = buildProcessNav(["COURIER"], PERMS, true);
-    const hrefs = nav.flatMap((s) => s.items.map((i) => i.href));
-    // Phase 5.0D-5 added the courier's own deposit panel (/courier). Still nothing
-    // from another department: no Collections, no portfolio, no admin deposits.
-    expect(hrefs).toEqual(["/my-work", "/courier", "/queues/courier"]);
+    const hrefs = hrefsFor(["COURIER"], [...PERMS, "courier:deposit"]);
+    expect(processHrefs(hrefs)).toEqual(["/my-work", "/courier", "/queues/courier"]);
     expect(hrefs).not.toContain("/collections");
     expect(hrefs).not.toContain("/portfolio");
     expect(hrefs).not.toContain("/deposits");
   });
 
   it("shows a Chief Transit only the transit queue", () => {
-    const hrefs = buildProcessNav(["CHIEF_OF_TRANSIT"], PERMS, true).flatMap((s) =>
-      s.items.map((i) => i.href),
-    );
-    expect(hrefs).toEqual(["/my-work", "/queues/transit"]);
+    expect(processHrefs(hrefsFor(["CHIEF_OF_TRANSIT"]))).toEqual(["/my-work", "/queues/transit"]);
   });
 
   it("never shows an empty, unauthorized department", () => {
-    const hrefs = buildProcessNav(["CUSTOMS_DECLARANT"], PERMS, true).flatMap((s) =>
-      s.items.map((i) => i.href),
-    );
+    const hrefs = hrefsFor(["CUSTOMS_DECLARANT"]);
     expect(hrefs).not.toContain("/queues/billing");
     expect(hrefs).not.toContain("/queues/finance");
     expect(hrefs).not.toContain("/queues/collections");
   });
 
   it("gives a supervisor the cross-department view", () => {
-    const hrefs = buildProcessNav(["OPS_SUPERVISOR"], PERMS, true).flatMap((s) =>
-      s.items.map((i) => i.href),
-    );
-    expect(hrefs.length).toBeGreaterThan(10);
+    const hrefs = hrefsFor(["OPS_SUPERVISOR"]);
+    expect(hrefs.filter((h) => h.startsWith("/queues/")).length).toBeGreaterThan(10);
     expect(hrefs).toContain("/queues/coordination");
     expect(hrefs).toContain("/queues/billing");
   });
 
-  it("gives a user with no queue roles the My Work link and nothing else", () => {
-    const nav = buildProcessNav(["COMPLIANCE_HSSE"], PERMS, true);
-    expect(nav.flatMap((s) => s.items.map((i) => i.href))).toEqual(["/my-work"]);
+  it("gives a user with no queue roles the My Work link and no queue", () => {
+    expect(processHrefs(hrefsFor(["COMPLIANCE_HSSE"]))).toEqual(["/my-work"]);
   });
 
-  it("never exposes platform navigation", () => {
-    const hrefs = buildProcessNav(["SYSTEM_ADMIN"], PERMS, true).flatMap((s) =>
-      s.items.map((i) => i.href),
-    );
+  it("never exposes platform navigation, even to a SYSTEM_ADMIN", () => {
+    const hrefs = hrefsFor(["SYSTEM_ADMIN"]);
     expect(hrefs.some((h) => h.startsWith("/platform"))).toBe(false);
   });
 });

@@ -5,15 +5,25 @@ import { usePathname } from "next/navigation";
 import { DesktopSidebar, MobileSidebar } from "./sidebar";
 import { Topbar } from "./topbar";
 import { SessionProvider } from "@/lib/auth/use-session";
-import type { ProcessNavSection } from "@/lib/process/queues/nav";
+import type { Navigation } from "@/lib/navigation/types";
+
+const EMPTY_NAV: Navigation = {
+  sections: [],
+  primaryRoleLabel: null,
+  myWorkHref: null,
+  filtered: true,
+};
 
 export function AppShell({
   children,
-  processNav = [],
+  navigation = EMPTY_NAV,
 }: {
   children: React.ReactNode;
-  /** Phase 5.0C — computed on the server (flag + roles). [] when the flag is off. */
-  processNav?: ProcessNavSection[];
+  /**
+   * Phase 5.0E-1 — the WHOLE sidebar, already filtered for this user by the single
+   * server-side builder. The shell makes no visibility decision of its own.
+   */
+  navigation?: Navigation;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const pathname = usePathname();
@@ -44,11 +54,21 @@ export function AppShell({
   return (
     <SessionProvider>
       <div className="min-h-screen bg-sand-100">
-        <DesktopSidebar processNav={processNav} />
-        <MobileSidebar open={menuOpen} onClose={() => setMenuOpen(false)} processNav={processNav} />
+        <DesktopSidebar
+          sections={navigation.sections}
+          filtered={navigation.filtered}
+          roleLabel={navigation.primaryRoleLabel}
+        />
+        <MobileSidebar
+          open={menuOpen}
+          onClose={() => setMenuOpen(false)}
+          sections={navigation.sections}
+          filtered={navigation.filtered}
+          roleLabel={navigation.primaryRoleLabel}
+        />
 
         <div className="lg:pl-72">
-          <Topbar onOpenMenu={() => setMenuOpen(true)} />
+          <Topbar onOpenMenu={() => setMenuOpen(true)} roleLabel={navigation.primaryRoleLabel} />
           <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
             {children}
           </main>
