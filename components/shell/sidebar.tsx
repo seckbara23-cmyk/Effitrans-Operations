@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { NavigationSection, NavIconKey } from "@/lib/navigation/types";
 import {
+  IconStar,
   IconTower,
   IconStamp,
   IconTruck,
@@ -23,6 +24,7 @@ import { useSession, canSeeNav } from "@/lib/auth/use-session";
 
 /** Icon KEYS cross the server→client boundary; components cannot. */
 const ICONS: Record<NavIconKey, typeof IconTower> = {
+  star: IconStar,
   tower: IconTower,
   stamp: IconStamp,
   truck: IconTruck,

@@ -103,26 +103,40 @@ export function buildNavigation(ctx: NavigationContext): Navigation {
     }
 
     // PILOTAGE is the only section the engine changes.
-    const items: (NavigationItem | null)[] = base.items.map((item) => {
-      if (item.key !== "operations-center") return item;
+    //
+    // ORDER, when the workspaces are live:
+    //
+    //   1. ⭐ Mon Travail          <- FIRST. Always.
+    //   2.    Centre d'opérations
+    //   3.    Parcours des dossiers
+    //
+    // Mon Travail goes first because the first item in the first section is the one
+    // people click without reading, and for almost everyone in the building the right
+    // answer to "what now" is their own queue — not a dashboard of everyone else's.
+    // Leaving the control tower on top made the app open on a view most staff have no
+    // permission to populate and no reason to read.
+    //
+    // The control tower STAYS — it is the supervisory entry point, and for a Coordinator
+    // it is still the landing page. It is simply not the default thing to click.
+    const controlTower = base.items.find((i) => i.key === "operations-center")!;
+
+    const items: (NavigationItem | null)[] = [
+      {
+        key: "my-work",
+        label: "Mon Travail",
+        href: LANDING_MY_WORK,
+        // The ONLY starred item in the sidebar. A star on everything marks nothing.
+        iconKey: "star",
+        permission: "process:read",
+        hint: "Vos dossiers, réceptions, validations et corrections",
+      },
       // The control tower, gated. A Déclarant holds no analytics:read and would open an
       // empty page — which is how a user decides a product is broken. We can hide it
       // safely ONLY here, in the flag-on branch, because Mon Travail now exists as the
       // better destination for them. (With the engine dark it stays visible to everyone;
       // see BASE_SECTIONS. You may only take away someone's front door once you have
       // given them another one.)
-      return has("COORDINATOR", ...OVERSIGHT) || perms.includes("analytics:read") ? item : null;
-    });
-
-    items.push(
-      {
-        key: "my-work",
-        label: "Mon Travail",
-        href: LANDING_MY_WORK,
-        iconKey: "container",
-        permission: "process:read",
-        hint: "Vos dossiers, réceptions, validations et corrections",
-      },
+      has("COORDINATOR", ...OVERSIGHT) || perms.includes("analytics:read") ? controlTower : null,
       {
         key: "file-journeys",
         label: "Parcours des dossiers",
@@ -131,7 +145,7 @@ export function buildNavigation(ctx: NavigationContext): Navigation {
         permission: "process:read",
         hint: "Où en est chaque dossier dans le processus officiel",
       },
-    );
+    ];
 
     return section(base.key, base.label, grant(perms, items));
   });

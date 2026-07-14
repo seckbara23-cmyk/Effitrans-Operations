@@ -10,9 +10,10 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, it, expect } from "vitest";
-import { buildNavigation, workspacesFor } from "@/lib/navigation/build";
+import { buildNavigation, legacyNavigation, workspacesFor } from "@/lib/navigation/build";
 import type { NavigationContext } from "@/lib/navigation/types";
 import { resolveProcessFlags } from "@/lib/process/flags";
+import { resolveLandingRoute } from "@/lib/navigation/landing";
 import {
   JOURNEY_MILESTONES,
   milestoneForStep,
@@ -79,7 +80,7 @@ describe("the sidebar is exactly the five agreed sections", () => {
     const byKey = Object.fromEntries(
       full.sections.map((s) => [s.key, s.items.map((i) => i.label)]),
     );
-    expect(byKey.pilotage).toEqual(["Centre d'opérations", "Mon Travail", "Parcours des dossiers"]);
+    expect(byKey.pilotage).toEqual(["Mon Travail", "Centre d'opérations", "Parcours des dossiers"]);
     expect(byKey.files).toEqual(["Dossiers", "Clients", "Communications"]);
     expect(byKey.departments).toEqual(["Documentation", "Douane", "Transport", "Finance"]);
     expect(byKey.management).toEqual(["Direction", "Rapports", "Tableau exécutif"]);
@@ -156,6 +157,82 @@ describe("the sidebar is exactly the five agreed sections", () => {
   it("omits an empty section entirely", () => {
     const bare = nav({ roleCodes: ["CUSTOMS_DECLARANT"], permissions: ["process:read"] });
     expect(bare.sections.map((s) => s.key)).toEqual(["pilotage"]);
+  });
+});
+
+// ============================================== PILOTAGE order (5.0E-3C) ====
+
+describe("PILOTAGE puts Mon Travail first", () => {
+  it("flag OFF: exactly [Centre d'opérations]", () => {
+    // With the engine dark there is no Mon Travail to lead with, and the control tower
+    // is the only landing an operational user has — so it stays, ungated.
+    const pil = legacyNavigation().sections.find((s) => s.key === "pilotage")!;
+    expect(pil.items.map((i) => i.label)).toEqual(["Centre d'opérations"]);
+  });
+
+  it("flag ON: exactly [Mon Travail, Centre d'opérations, Parcours des dossiers]", () => {
+    const pil = nav({ roleCodes: ["OPS_SUPERVISOR"] }).sections.find((s) => s.key === "pilotage")!;
+    expect(pil.items.map((i) => i.label)).toEqual([
+      "Mon Travail",
+      "Centre d'opérations",
+      "Parcours des dossiers",
+    ]);
+  });
+
+  it("makes Mon Travail the FIRST item of the FIRST section, for every enabled role", () => {
+    // The first item in the first section is the one people click without reading. For
+    // almost everyone in the building the right answer to "what now" is their own queue,
+    // not a dashboard of everyone else's.
+    for (const role of [
+      "CUSTOMS_DECLARANT", "CHIEF_OF_TRANSIT", "BILLING_OFFICER", "TRANSPORT_OFFICER",
+      "ACCOUNT_MANAGER", "COORDINATOR", "OPS_SUPERVISOR", "SYSTEM_ADMIN",
+    ]) {
+      const n = nav({ roleCodes: [role] });
+      expect(n.sections[0].key, role).toBe("pilotage");
+      expect(n.sections[0].items[0].href, role).toBe("/my-work");
+    }
+  });
+
+  it("never puts the control tower first once Mon Travail exists", () => {
+    for (const role of ["COORDINATOR", "OPS_SUPERVISOR", "SYSTEM_ADMIN"]) {
+      const pil = nav({ roleCodes: [role] }).sections.find((s) => s.key === "pilotage")!;
+      expect(pil.items[0].href, role).not.toBe("/dashboard");
+      // ...but it is still THERE. It is the supervisory entry point, and for a
+      // Coordinator it is still the landing page — just not the default click.
+      expect(pil.items.map((i) => i.href), role).toContain("/dashboard");
+    }
+  });
+
+  it("stars Mon Travail, and ONLY Mon Travail", () => {
+    // A star on everything marks nothing.
+    const all = nav({ roleCodes: ["SYSTEM_ADMIN"] }).sections.flatMap((s) => s.items);
+    const starred = all.filter((i) => i.iconKey === "star");
+    expect(starred).toHaveLength(1);
+    expect(starred[0].href).toBe("/my-work");
+  });
+
+  it("still hides the control tower from a role that cannot populate it", () => {
+    const pil = nav({
+      roleCodes: ["CUSTOMS_DECLARANT"],
+      permissions: ["process:read", "customs:read"],
+    }).sections.find((s) => s.key === "pilotage")!;
+    expect(pil.items.map((i) => i.href)).toEqual(["/my-work", "/journeys"]);
+  });
+
+  it("highlights /my-work on its query-string views", () => {
+    // The tabs are ?tab=…, and Next's usePathname excludes the query string, so the
+    // exact-match rule already covers them. This pins that: the sidebar must not start
+    // comparing full URLs, or every tab would un-highlight the link that opened it.
+    const src = read("../components/shell/sidebar.tsx");
+    expect(src).toContain("pathname === item.href");
+    expect(src).not.toContain("searchParams");
+    expect(src).not.toContain("window.location");
+  });
+
+  it("has no duplicate href in PILOTAGE", () => {
+    const pil = nav({ roleCodes: ["SYSTEM_ADMIN"] }).sections.find((s) => s.key === "pilotage")!;
+    const h = pil.items.map((i) => i.href);
+    expect(new Set(h).size).toBe(h.length);
   });
 });
 
@@ -429,5 +506,90 @@ describe("Parcours des dossiers (Deliverable 4)", () => {
     expect(svc).toContain("missingPrerequisites");
     // No second registry, no second queue definition.
     expect(svc).not.toContain("QUEUES");
+  });
+});
+
+// ================================================ landing + bundle safety ====
+
+describe("landing behaviour is unchanged by the PILOTAGE reorder", () => {
+  it("sends normal operational staff to /my-work", () => {
+    for (const role of [
+      "CUSTOMS_DECLARANT", "CHIEF_OF_TRANSIT", "BILLING_OFFICER",
+      "TRANSPORT_OFFICER", "PICKUP_AGENT", "CUSTOMS_FIELD_AGENT", "ADMINISTRATIVE_OFFICER",
+    ]) {
+      expect(resolveLandingRoute(ctx({ roleCodes: [role] })), role).toBe("/my-work");
+    }
+  });
+
+  it("still sends Coordinator / Supervisor / System Admin to /dashboard", () => {
+    // Reordering the sidebar must NOT change where a supervisor lands. The control tower
+    // is not the default CLICK any more; it is still their default PAGE.
+    for (const role of ["COORDINATOR", "OPS_SUPERVISOR", "SYSTEM_ADMIN"]) {
+      expect(resolveLandingRoute(ctx({ roleCodes: [role] })), role).toBe("/dashboard");
+    }
+  });
+
+  it("keeps the approved higher-value landings", () => {
+    expect(resolveLandingRoute(ctx({ roleCodes: ["ACCOUNT_MANAGER"] }))).toBe("/portfolio");
+    expect(resolveLandingRoute(ctx({ roleCodes: ["COLLECTIONS_OFFICER"] }))).toBe("/collections");
+  });
+
+  it("keeps the separate surfaces separate", () => {
+    expect(resolveLandingRoute(ctx({ identityType: "courier" }))).toBe("/courier");
+    expect(resolveLandingRoute(ctx({ identityType: "driver" }))).toBe("/driver");
+    expect(resolveLandingRoute(ctx({ identityType: "platform" }))).toBe("/platform");
+  });
+
+  it("gives driver / courier / platform NO tenant staff sidebar", () => {
+    for (const identityType of ["driver", "courier", "platform", "portal"] as const) {
+      expect(buildNavigation(ctx({ identityType })).sections, identityType).toEqual([]);
+    }
+  });
+
+  it("cannot loop: every landing is a terminal route, never / or /login", () => {
+    // A landing that resolves to the router that produced it is an infinite bounce.
+    for (const roleCodes of [
+      ["CUSTOMS_DECLARANT"], ["COORDINATOR"], ["ACCOUNT_MANAGER"],
+      ["COLLECTIONS_OFFICER"], ["SYSTEM_ADMIN"], ["BILLING_OFFICER"],
+    ]) {
+      const landing = resolveLandingRoute(ctx({ roleCodes }));
+      expect(landing, roleCodes.join()).not.toBe("/");
+      expect(landing, roleCodes.join()).not.toBe("/login");
+      expect(landing.startsWith("/"), roleCodes.join()).toBe(true);
+    }
+  });
+
+  it("falls back safely when the workspaces are dark", () => {
+    const off = resolveProcessFlags({});
+    expect(resolveLandingRoute(ctx({ roleCodes: ["OPS_SUPERVISOR"], featureFlags: off }))).toBe("/dashboard");
+    // ...and never to a route the engine owns.
+    expect(resolveLandingRoute(ctx({ roleCodes: ["CUSTOMS_DECLARANT"], featureFlags: off })))
+      .not.toBe("/my-work");
+  });
+});
+
+describe("the client is handed no permission matrix and no secret", () => {
+  const sidebar = read("../components/shell/sidebar.tsx");
+
+  it("keeps every authorization decision on the server", () => {
+    // The client renders the resolved payload. It does not know the rules.
+    expect(sidebar).not.toContain("ROLE_MAPPINGS");
+    expect(sidebar).not.toContain("PLATFORM_ROLE_PERMISSIONS");
+    expect(sidebar).not.toContain("visibleQueues");
+    expect(sidebar).not.toMatch(/roles\.(has|includes)\(/);
+  });
+
+  it("ships no secret and no service key", () => {
+    for (const f of ["../components/shell/sidebar.tsx", "../components/shell/topbar.tsx", "../components/shell/app-shell.tsx"]) {
+      const src = read(f);
+      for (const secret of ["SERVICE_ROLE", "SUPABASE_SERVICE", "process.env.EFFITRANS", "apiKey", "secret"]) {
+        expect(src.toLowerCase(), `${f} :: ${secret}`).not.toContain(secret.toLowerCase());
+      }
+    }
+  });
+
+  it("never prints a raw role code or permission string", () => {
+    expect(sidebar).not.toMatch(/"[A-Z_]{6,}"/);
+    expect(sidebar).not.toMatch(/"[a-z_]+:[a-z_:]+"/);
   });
 });
