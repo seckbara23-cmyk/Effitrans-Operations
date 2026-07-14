@@ -131,7 +131,7 @@ Covered by `tests/rollout.test.ts` ("toggling off and on is safe") and
 
 ### Database
 - [x] All migrations applied — 38, replayed twice from empty in CI
-- [x] All RLS suites green — 32/32, `ON_ERROR_STOP=1`, none skipped
+- [x] All SQL suites green — 32/32 (31 RLS + numbering), `ON_ERROR_STOP=1`, **0 skipped**
 - [x] No pending destructive migration — 5.0E-2 is additive only (one new table)
 - [ ] **Backups confirmed** — *outside this repo. Must be verified by whoever owns the
       Supabase project before the pilot writes anything.*
@@ -257,7 +257,7 @@ Until then the product must not claim a breach of commitment, and now it does no
 guarantees; the empty fields are what only a real run can tell you. Automated tests passing
 is not production readiness, and this section must not be signed off from CI alone.
 
-### Verified by automation (CI 32/32 RLS suites, 1,322 tests, build green)
+### Verified by automation (CI run 29350011333 — both jobs green, 0 skipped, 32/32 SQL suites, 1,328 tests, build green)
 
 * All 15 official roles have a landing page they can open, and a sidebar that is not empty.
 * Each specialist sees **exactly one** queue; the supervisor sees the cross-department view.
