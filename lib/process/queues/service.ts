@@ -34,6 +34,7 @@ import { evaluateStepEvidence, type EvidenceSnapshot } from "../engine/evidence"
 import { OPEN_STATES } from "../engine/types";
 import { getQueue, queueStepKeys } from "./registry";
 import { compareQueueItems, evaluatePriority, type PriorityResult } from "./priority";
+import { blockerSentence } from "../labels";
 import type { ProcessDepartment } from "../types";
 
 export type QueueFilters = {
@@ -318,13 +319,14 @@ export async function getDepartmentQueue(req: QueueRequest): Promise<QueueResult
       customerImpacting: node?.clientStage !== null && node?.clientStage !== undefined,
     });
 
-    const blockerSummary = blocked
-      ? missingPrereqs.length > 0
-        ? `Prérequis manquants : ${missingPrereqs.join(", ")}`
-        : evidence.missing.length > 0
-          ? `Preuves manquantes : ${evidence.missing.join(", ")}`
-          : "Étape bloquée"
-      : null;
+    // 5.0E-2C: French labels, never raw keys. This used to join the internal
+    // identifiers straight into the sentence a Déclarant reads:
+    //   "Preuves manquantes : BORDEREAU_LIVRAISON, BILL_OF_LADING"
+    const blockerSummary = blockerSentence({
+      blocked,
+      missingPrerequisites: missingPrereqs,
+      missingEvidence: evidence.missing,
+    });
 
     const nextStep = node?.nextSteps[0] ?? null;
 

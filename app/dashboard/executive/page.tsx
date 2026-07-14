@@ -17,7 +17,7 @@ function Notice({ children }: { children: React.ReactNode }) {
 const fmt = (n: number, c: string) => `${n.toLocaleString("fr-FR")} ${c}`;
 
 export default async function ExecutiveDashboardPage() {
-  const header = <PageHeader meta="Direction" title={t.bi.executive.title} subtitle="Vue exécutive — revenu, opérations, SLA, exposition, clients." />;
+  const header = <PageHeader meta="Direction" title={t.bi.executive.title} subtitle="Vue exécutive — revenu, opérations, délais internes, exposition, clients." />;
 
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
     return <div className="animate-fade-in space-y-6">{header}<Notice>Configuration requise.</Notice></div>;

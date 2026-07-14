@@ -15,7 +15,7 @@ import {
   stepsInBranch,
 } from "@/lib/process/effitrans-process";
 import { DOCUMENT_MAPPINGS, MISSING_DOCUMENT_TYPES, mapDocument } from "@/lib/process/documents";
-import { ROLE_MAPPINGS, mapRole, missingRoles, roleIsUsable } from "@/lib/process/roles";
+import { ROLE_MAPPINGS, mapRole, missingRoles, auditMissingRoles, roleIsUsable } from "@/lib/process/roles";
 import { PROCESS_SLA_POLICIES, SLA_UNCONFIGURED_LABEL, getSlaPolicy, slaIsEnforceable } from "@/lib/process/sla-policies";
 
 const ALL = [...EFFITRANS_PROCESS, ...PARALLEL_ACTIVITIES];
@@ -108,8 +108,10 @@ describe("responsible roles and departments", () => {
     expect(new Set(ROLE_MAPPINGS.map((m) => m.officialRole)).size).toBe(15);
   });
 
-  it("records the seven missing roles (Phase 5.0C work list)", () => {
-    expect(missingRoles().map((m) => m.officialRole).sort()).toEqual([
+  it("PRESERVES the Phase 5.0A finding: seven roles were missing at audit time", () => {
+    // The historical verdict. It is a record of what we found, not a description of
+    // the present, and it does not shrink as the gaps get closed.
+    expect(auditMissingRoles().map((m) => m.officialRole).sort()).toEqual([
       "ADMINISTRATIVE_OFFICER",
       "BILLING_OFFICER",
       "COLLECTIONS_OFFICER",
@@ -118,6 +120,18 @@ describe("responsible roles and departments", () => {
       "CUSTOMS_FINANCE_OFFICER",
       "PICKUP_AGENT",
     ]);
+  });
+
+  it("and records that Phase 5.0B CLOSED all seven — no role is missing today", () => {
+    // The map went stale here for two phases: 5.0B created these roles in the
+    // migration and the seed, but ROLE_MAPPINGS still said tenantRole: null. Nothing
+    // read it until the 5.0E-2B pilot checklist did, and it then reported 9 of 26
+    // steps as untestable — which was false. Both facts now live side by side.
+    expect(missingRoles()).toEqual([]);
+    for (const m of auditMissingRoles()) {
+      expect(m.tenantRole, m.officialRole).not.toBeNull();
+      expect(m.status, m.officialRole).toBe("mapped");
+    }
   });
 
   it("flags QUOTATION_MANAGER as inert, not usable", () => {
