@@ -51,13 +51,20 @@ const CARDS: Card[] = [
   },
   {
     href: "/settings/pilot",
-    title: "Console pilote",
+    title: "Processus officiel",
     description:
-      "État effectif du déploiement, matrice des rôles, parcours guidé des 26 étapes, observabilité et inventaire des dossiers.",
+      "État du moteur de processus, activation des espaces de travail, diagnostic du déploiement et validation du parcours officiel.",
+    // admin:config:manage is held by SYSTEM_ADMIN and by no other tenant role (see
+    // lib/platform/role-templates.ts; tests/role-templates.test.ts proves the templates
+    // and seed.sql agree). So this permission gate IS "SYSTEM_ADMIN only" — expressed as
+    // a capability rather than as a hardcoded role name, which is the pattern everywhere
+    // else in the app and the reason a role can be renamed without hunting for string
+    // literals.
     permission: "admin:config:manage",
-    // NOT gated on the process being enabled — deliberately. The console now prints WHY
-    // the process is off (which of the two gates is closed). Hiding it when the engine
-    // is disabled would hide the diagnostic exactly when someone needs it.
+    // NOT gated on the process being enabled — deliberately. This page prints WHY the
+    // process is off (which of the two gates is closed, and whether a platform admin even
+    // exists). Hiding it when the engine is disabled would hide the diagnostic exactly
+    // when someone needs it — which is how the tenant sat at "no rollout row" unnoticed.
   },
 ];
 

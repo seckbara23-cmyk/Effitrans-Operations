@@ -1,15 +1,25 @@
 /**
- * Pilot console (Phase 5.0E-2B, Deliverables 2/4/8/12). ADMIN-ONLY DIAGNOSTIC.
+ * "Processus officiel Effitrans" — SYSTEM ADMINISTRATION.
+ * (Phase 5.0E-2B, Deliverables 2/4/8/12. Reframed in 5.0E-4.)
  * ---------------------------------------------------------------------------
- * One page for whoever is running the pilot: the role matrix, the guided 26-step
- * checklist, the safe metrics, and the dossier inventory that unblocks the
- * historical-compatibility decision.
+ * This shipped as "Console pilote" — a name that read like a developer tool, and was
+ * treated like one: it sat behind a card nobody opened while the tenant quietly had no
+ * rollout row for two phases. It is not a developer tool. It is the page that tells a
+ * System Administrator whether the official process is ON for their company, and what to
+ * do about it if not. So it is named for what it is and lives under Administration →
+ * Paramètres, where a tenant admin looks for the state of their own system.
  *
- * Gated on `admin:config:manage` (SYSTEM_ADMIN). Not a staff feature and not part of
- * the workflow — it 404s for everyone else, and it is invisible in navigation.
+ * Gated on `admin:config:manage`, which SYSTEM_ADMIN alone holds (role-templates.ts, and
+ * tests/role-templates.test.ts proves the templates match seed.sql). A permission rather
+ * than a hardcoded role name — the same pattern as every other route.
  *
- * Contains NO credentials. The setup checklist tells an administrator what to CREATE;
- * it never carries a password, and this page never creates a user.
+ * A PLATFORM_SUPER_ADMIN cannot reach this page, deliberately and by construction: they
+ * have no `app_user`, so requireUser() sends them to /login. That is the Phase 4.0B
+ * identity boundary and it is worth more than the convenience of a shared page. Their
+ * equivalent is /platform/rollout, which is where the toggles actually live.
+ *
+ * Contains NO credentials. The setup checklist tells an administrator what to CREATE; it
+ * never carries a password, and this page never creates a user.
  */
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
@@ -25,7 +35,7 @@ import { getRolloutProof } from "@/lib/pilot/rollout-proof";
 import { cn } from "@/lib/cn";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Console pilote" };
+export const metadata: Metadata = { title: "Processus officiel Effitrans" };
 
 const TABS = [
   { key: "checklist", label: "Parcours guidé" },
@@ -103,9 +113,12 @@ export default async function PilotConsole({
   return (
     <main className="space-y-4">
       <header>
-        <h1 className="text-lg font-semibold text-navy-900">Console pilote</h1>
+        <h1 className="text-lg font-semibold text-navy-900">Processus officiel Effitrans</h1>
         <p className="text-sm text-slate-600">
-          Processus officiel Effitrans ·{" "}
+          État du moteur de processus, activation des espaces de travail, diagnostic du
+          déploiement et validation du parcours officiel.
+        </p>
+        <p className="mt-1 text-sm">
           {flags.enabled ? (
             <span className="font-semibold text-emerald-700">ACTIF pour ce tenant</span>
           ) : (
