@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { resolveRetryPolicy, resolveAIConfig, type AIEnv } from "@/lib/ai/config";
 import { generateAI } from "@/lib/ai/provider";
@@ -125,9 +127,21 @@ describe("ollama native options (think / num_predict)", () => {
 });
 
 describe("admin AI settings nav gate", () => {
-  it("exposes /settings/ai behind admin:config:manage", () => {
-    const item = allNavItems.find((i) => i.href === "/settings/ai");
-    expect(item).toBeTruthy();
-    expect(item?.permission).toBe("admin:config:manage");
+  it("reaches /settings/ai through Paramètres, behind admin:config:manage", () => {
+    // Phase 5.0E-3: the AI settings stopped being a top-level sidebar entry called
+    // "Paramètres IA" — a name that described the one settings page that happened to
+    // exist first. They now live under Paramètres, which is gated identically.
+    const settings = allNavItems.find((i) => i.href === "/settings");
+    expect(settings).toBeTruthy();
+    expect(settings?.label).toBe("Paramètres");
+    expect(settings?.permission).toBe("admin:config:manage");
+
+    // The AI page is one click from there, and re-checks the permission itself.
+    const hub = readFileSync(
+      fileURLToPath(new URL("../app/settings/page.tsx", import.meta.url)),
+      "utf8",
+    );
+    expect(hub).toContain('href: "/settings/ai"');
+    expect(hub).toContain('permission: "admin:config:manage"');
   });
 });

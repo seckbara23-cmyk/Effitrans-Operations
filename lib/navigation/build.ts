@@ -20,7 +20,7 @@
  * Queue labels and keys are never re-declared here; they come from the canonical
  * queue registry (Deliverable 6), which derives them from the 26-step registry.
  */
-import { LEGACY_SECTIONS } from "@/lib/nav";
+import { BASE_SECTIONS } from "@/lib/nav";
 import { visibleQueues } from "@/lib/process/queues/registry";
 import { primaryRoleLabel } from "./roles";
 import { resolveLandingRoute, LANDING_MY_WORK } from "./landing";
@@ -70,185 +70,71 @@ export function buildNavigation(ctx: NavigationContext): Navigation {
   // same permission gates; only the filtering moved from the client to here.
   // ---------------------------------------------------------------------------
   if (!process) {
-    const legacy = LEGACY_SECTIONS.map((s) =>
+    const base = BASE_SECTIONS.map((s) =>
       section(s.key, s.label, grant(perms, s.items)),
     ).filter((s): s is NavigationSection => s !== null);
-    return { sections: legacy, primaryRoleLabel: label, myWorkHref: null, filtered: true };
+    return { sections: base, primaryRoleLabel: label, myWorkHref: null, filtered: true };
   }
 
-  const sections: (NavigationSection | null)[] = [];
-
   // ===========================================================================
-  // THE FIVE SECTIONS (Phase 5.0E-3). The order is fixed and part of the contract:
+  // THE FIVE SECTIONS (Phase 5.0E-3). Order fixed, and part of the contract:
   //
   //   PILOTAGE · DOSSIERS · DÉPARTEMENTS · MANAGEMENT · ADMINISTRATION
   //
-  // The sidebar shows APPLICATIONS AND WORKSPACES. It does not show job titles.
+  // DERIVED FROM BASE_SECTIONS, never redeclared. Until 5.0E-3B this branch spelled the
+  // five sections out again, in parallel with lib/nav.ts — and they promptly drifted:
+  // production (flag off) rendered the OLD labels, "Dédouanement" and all, while the
+  // agreed structure existed only in this branch, which nobody had switched on yet.
   //
-  // 5.0E-1 put the fifteen department queues and the five role panels in the sidebar.
-  // That was honest — each was role-gated, so nobody saw a colleague's queue — but an
-  // OPS_SUPERVISOR opened the app to twenty-odd links, and it conflated two different
-  // things: an APPLICATION you navigate to ("Douane"), and WORK that is waiting on you
-  // ("Déclarant : 3 dossiers"). The second is not navigation. It is a to-do list, and
-  // it belongs in Mon Travail — see workspacesFor() below.
+  // The engine ADDS to the base. It does not replace it. Exactly two entries in the
+  // whole sidebar depend on the process engine — Mon Travail, and Parcours des dossiers.
+  //
+  // The sidebar shows APPLICATIONS AND WORKSPACES. It does not show job titles. 5.0E-1
+  // put the fifteen department queues and the five role panels here; that was honest —
+  // each was role-gated, so nobody saw a colleague's queue — but an OPS_SUPERVISOR
+  // opened the app to twenty-odd links, and it conflated an APPLICATION you navigate to
+  // ("Douane") with WORK waiting on you ("Déclarant : 3 dossiers"). The second is not
+  // navigation. It is a to-do list. See workspacesFor().
   // ===========================================================================
 
-  // --- PILOTAGE --------------------------------------------------------------
-  sections.push(
-    section(
-      "pilotage",
-      "Pilotage",
-      grant(perms, [
-        // The control tower. NOT for everyone: a Déclarant holds no analytics:read and
-        // would open an empty page — which is how a user decides a product is broken.
-        has("COORDINATOR", ...OVERSIGHT) || perms.includes("analytics:read")
-          ? {
-              key: "operations-center",
-              label: "Centre d'Opérations",
-              href: "/dashboard",
-              iconKey: "tower" as NavIconKey,
-              hint: "Qui détient le dossier, et qu'attend-il ?",
-            }
-          : null,
-        {
-          key: "my-work",
-          label: "Mon Travail",
-          href: LANDING_MY_WORK,
-          iconKey: "container",
-          permission: "process:read",
-          hint: "Vos dossiers, réceptions, validations et corrections",
-        },
-        {
-          key: "file-journeys",
-          label: "Parcours des dossiers",
-          href: "/journeys",
-          iconKey: "report",
-          permission: "process:read",
-          hint: "Où en est chaque dossier dans le processus officiel",
-        },
-      ]),
-    ),
-  );
+  const sections: (NavigationSection | null)[] = BASE_SECTIONS.map((base) => {
+    if (base.key !== "pilotage") {
+      return section(base.key, base.label, grant(perms, base.items));
+    }
 
-  // --- DOSSIERS --------------------------------------------------------------
-  sections.push(
-    section(
-      "files",
-      "Dossiers",
-      grant(perms, [
-        { key: "files", label: "Dossiers", href: "/files", iconKey: "container", permission: "file:read" },
-        { key: "clients", label: "Clients", href: "/clients", iconKey: "users", permission: "client:read" },
-        {
-          key: "communications",
-          label: "Communications",
-          href: "/communications",
-          iconKey: "bell",
-          permission: "communication:read",
-        },
-      ]),
-    ),
-  );
+    // PILOTAGE is the only section the engine changes.
+    const items: (NavigationItem | null)[] = base.items.map((item) => {
+      if (item.key !== "operations-center") return item;
+      // The control tower, gated. A Déclarant holds no analytics:read and would open an
+      // empty page — which is how a user decides a product is broken. We can hide it
+      // safely ONLY here, in the flag-on branch, because Mon Travail now exists as the
+      // better destination for them. (With the engine dark it stays visible to everyone;
+      // see BASE_SECTIONS. You may only take away someone's front door once you have
+      // given them another one.)
+      return has("COORDINATOR", ...OVERSIGHT) || perms.includes("analytics:read") ? item : null;
+    });
 
-  // --- DÉPARTEMENTS ----------------------------------------------------------
-  // Business domains, never job titles: "Douane", not "Dédouanement" and not
-  // "Déclarant". Each is gated on its own domain permission, so a Déclarant sees
-  // Douane and nothing else.
-  sections.push(
-    section(
-      "departments",
-      "Départements",
-      grant(perms, [
-        {
-          key: "documentation",
-          label: "Documentation",
-          href: "/departments/documentation",
-          iconKey: "document",
-          permission: "document:read",
-        },
-        {
-          key: "customs",
-          label: "Douane",
-          href: "/departments/customs",
-          iconKey: "stamp",
-          permission: "customs:read",
-        },
-        {
-          key: "transport",
-          label: "Transport",
-          href: "/departments/transport",
-          iconKey: "truck",
-          permission: "transport:read",
-        },
-        {
-          key: "finance",
-          label: "Finance",
-          href: "/departments/finance",
-          iconKey: "finance",
-          permission: "finance:read",
-        },
-      ]),
-    ),
-  );
+    items.push(
+      {
+        key: "my-work",
+        label: "Mon Travail",
+        href: LANDING_MY_WORK,
+        iconKey: "container",
+        permission: "process:read",
+        hint: "Vos dossiers, réceptions, validations et corrections",
+      },
+      {
+        key: "file-journeys",
+        label: "Parcours des dossiers",
+        href: "/journeys",
+        iconKey: "report",
+        permission: "process:read",
+        hint: "Où en est chaque dossier dans le processus officiel",
+      },
+    );
 
-  // --- MANAGEMENT ------------------------------------------------------------
-  // "Direction" is the management DEPARTMENT workspace; "Tableau exécutif" is the
-  // executive KPI view. Before 5.0E-3 the sidebar called /dashboard/executive
-  // "Direction" AND listed /departments/management as "Management" — two names for one
-  // idea, while the actual Direction workspace was reachable under neither.
-  sections.push(
-    section(
-      "management",
-      "Management",
-      grant(perms, [
-        {
-          key: "direction",
-          label: "Direction",
-          href: "/departments/management",
-          iconKey: "building",
-          permission: "analytics:read",
-          hint: "Pilotage des opérations et de la performance",
-        },
-        { key: "reports", label: "Rapports", href: "/reports", iconKey: "report", permission: "analytics:read" },
-        {
-          key: "executive",
-          label: "Tableau exécutif",
-          href: "/dashboard/executive",
-          iconKey: "tower",
-          permission: "analytics:read",
-          hint: "Indicateurs de direction",
-        },
-      ]),
-    ),
-  );
-
-  // --- ADMINISTRATION --------------------------------------------------------
-  // Tenant administration only. /platform is a separate identity stack and is
-  // deliberately absent — a tenant SYSTEM_ADMIN must never be offered it.
-  // AI settings live UNDER Paramètres rather than as a fourth top-level item.
-  sections.push(
-    section(
-      "administration",
-      "Administration",
-      grant(perms, [
-        { key: "users", label: "Utilisateurs", href: "/users", iconKey: "users", permission: "admin:users:manage" },
-        {
-          key: "audit",
-          label: "Journal d'audit",
-          href: "/settings/audit",
-          iconKey: "stamp",
-          permission: "audit:read:all",
-        },
-        {
-          key: "settings",
-          label: "Paramètres",
-          href: "/settings",
-          iconKey: "building",
-          permission: "admin:config:manage",
-          hint: "Assistant IA, console pilote, configuration",
-        },
-      ]),
-    ),
-  );
+    return section(base.key, base.label, grant(perms, items));
+  });
 
   return {
     sections: sections.filter((s): s is NavigationSection => s !== null),
@@ -353,7 +239,7 @@ export function workspacesFor(ctx: NavigationContext): WorkspaceLink[] {
  */
 export function legacyNavigation(): Navigation {
   return {
-    sections: LEGACY_SECTIONS,
+    sections: BASE_SECTIONS,
     primaryRoleLabel: null,
     myWorkHref: null,
     filtered: false,

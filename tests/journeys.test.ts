@@ -79,7 +79,7 @@ describe("the sidebar is exactly the five agreed sections", () => {
     const byKey = Object.fromEntries(
       full.sections.map((s) => [s.key, s.items.map((i) => i.label)]),
     );
-    expect(byKey.pilotage).toEqual(["Centre d'Opérations", "Mon Travail", "Parcours des dossiers"]);
+    expect(byKey.pilotage).toEqual(["Centre d'opérations", "Mon Travail", "Parcours des dossiers"]);
     expect(byKey.files).toEqual(["Dossiers", "Clients", "Communications"]);
     expect(byKey.departments).toEqual(["Documentation", "Douane", "Transport", "Finance"]);
     expect(byKey.management).toEqual(["Direction", "Rapports", "Tableau exécutif"]);
