@@ -114,7 +114,7 @@ export async function getRolloutProof(tenantId: string): Promise<RolloutProof> {
   const verdict = rolloutTableMissing
     ? "The tenant_process_rollout TABLE does not exist in this database. Migration 20260714000004 has never been applied here. Run `supabase db push` against the linked project — nothing else will work until you do."
     : platformAdminCount === 0 && rolloutRowMissing
-      ? "BOOTSTRAP DEADLOCK: this tenant has no rollout row, and NO platform admin exists to create one. A tenant SYSTEM_ADMIN cannot enable its own rollout (by design). Run supabase/scripts/bootstrap_platform_admin.sql once, then enable the tenant at /platform/rollout."
+      ? "BOOTSTRAP DEADLOCK: this tenant has no rollout row, and NO platform admin exists to create one. A tenant SYSTEM_ADMIN cannot enable its own rollout (by design). Run supabase/scripts/bootstrap_platform_super_admin.sql once, then enable the tenant at /platform/rollout."
       : !env.enabled
     ? "GLOBAL kill switch is OFF. EFFITRANS_PROCESS_ENGINE_ENABLED is not set in the deployment, so the engine is dark for EVERY tenant — the tenant row below is irrelevant until it is set."
     : !env.workspaces

@@ -189,7 +189,7 @@ export default async function PilotConsole({
             <code>SYSTEM_ADMIN</code> de tenant ne peut pas activer le sien (c&apos;est voulu :
             aucune police RLS, aucun privilège d&apos;écriture). Personne ne peut donc ouvrir{" "}
             <code>/platform/rollout</code>. Exécuter une fois{" "}
-            <code>supabase/scripts/bootstrap_platform_admin.sql</code>.
+            <code>supabase/scripts/bootstrap_platform_super_admin.sql</code>.
           </p>
         )}
       </section>

@@ -51,9 +51,15 @@ script and not a button.
 0. supabase db push                    # if /settings/pilot says the TABLE is missing
 1. Sign in to the app once with the email you want to promote.
 2. Supabase Dashboard → SQL Editor → run:
-      supabase/scripts/bootstrap_platform_admin.sql   (edit the email; idempotent)
+      supabase/scripts/bootstrap_platform_super_admin.sql   (edit the email; idempotent)
 3. Sign in again → /platform/rollout is now reachable.
 ```
+
+The promoted account holds **two identities at once**: `PLATFORM_SUPER_ADMIN` at `/platform/*`,
+and its existing `SYSTEM_ADMIN` inside the tenant. They are separate rows in separate tables
+(`platform_admin` vs `app_user` + `user_role`) sharing one `auth.users` id, and no route
+inherits across the boundary — the bootstrap script promotes the platform identity and does
+not touch the tenant one. `/dashboard`, `/my-work` and `/settings/pilot` are unchanged by it.
 
 Break-glass alternative, if the UI is not an option:
 `supabase/scripts/enable_tenant_rollout.sql` (edit the slug; idempotent; writes its own

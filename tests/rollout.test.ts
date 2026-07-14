@@ -464,7 +464,7 @@ describe("the app can prove its own effective rollout state (5.0E-3D)", () => {
 // --------------------------------------------------- the bootstrap deadlock ----
 
 describe("the platform can actually enable a tenant (5.0E-3E)", () => {
-  const bootstrap = read("../supabase/scripts/bootstrap_platform_admin.sql");
+  const bootstrap = read("../supabase/scripts/bootstrap_platform_super_admin.sql");
   const enable = read("../supabase/scripts/enable_tenant_rollout.sql");
   const proof = read("../lib/pilot/rollout-proof.ts");
 

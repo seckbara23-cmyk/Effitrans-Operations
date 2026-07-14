@@ -138,6 +138,28 @@ describe("platform / tenant route isolation (4.0B)", () => {
     expect(terminal("/login", DUAL_STAFF_PLATFORM)).toBe("/dashboard"); // staff home by default
   });
 
+  it("is the exact shape the permanent super-admin bootstrap produces (5.0E-4B)", () => {
+    // seckbara23@gmail.com after bootstrap_platform_super_admin.sql: a tenant SYSTEM_ADMIN
+    // (identity: "staff") who is ALSO a PLATFORM_SUPER_ADMIN (isPlatformAdmin: true). Two
+    // identities on one auth id, and each surface resolves the one it needs with no
+    // inheritance — the routing proof of the separation the SQL script preserves.
+    const owner = DUAL_STAFF_PLATFORM;
+
+    // Every platform route: reachable, no bounce.
+    for (const p of ["/platform", "/platform/rollout", "/platform/companies", "/platform/settings"]) {
+      expect(nextRoute(p, owner), p).toBeNull();
+    }
+    // Every named tenant route: still reachable, unchanged by holding the platform role.
+    for (const p of ["/dashboard", "/my-work", "/settings/pilot", "/files"]) {
+      expect(nextRoute(p, owner), p).toBeNull();
+    }
+
+    // A PURE tenant admin (no platform identity) is bounced OFF the platform — proving the
+    // platform access comes from the platform identity, never from SYSTEM_ADMIN.
+    expect(nextRoute("/platform", STAFF)).toBe("/dashboard");
+    expect(nextRoute("/platform/rollout", STAFF)).toBe("/dashboard");
+  });
+
   it("a portal user cannot access /platform", () => {
     expect(nextRoute("/platform", PORTAL_OK)).toBe("/portal");
   });
