@@ -14,7 +14,10 @@ import type { ProcessFlags } from "@/lib/process/flags";
 export type TenantRolloutRow = {
   tenantId: string;
   companyName: string;
+  /** The slug the diagnostics report. Lets an operator match console to page. */
+  slug: string | null;
   lifecycleStatus: string;
+  createdAt: string | null;
   rollout: TenantRollout;
   /** What is ACTUALLY live for this tenant: the kill switch ANDed with the row. */
   effective: TenantRollout;
@@ -37,7 +40,7 @@ export async function getRolloutOverview(): Promise<RolloutOverview> {
   const [{ data: orgs }, { data: rollouts }] = await Promise.all([
     admin
       .from("organization")
-      .select("id, name, lifecycle_status")
+      .select("id, name, slug, lifecycle_status, created_at")
       .order("name"),
     admin
       .from("tenant_process_rollout")
@@ -70,7 +73,9 @@ export async function getRolloutOverview(): Promise<RolloutOverview> {
     return {
       tenantId: o.id as string,
       companyName: (o.name as string) ?? "—",
+      slug: (o.slug as string) ?? null,
       lifecycleStatus: (o.lifecycle_status as string) ?? "ACTIVE",
+      createdAt: (o.created_at as string) ?? null,
       rollout,
       effective,
       note: (raw?.note as string) ?? null,

@@ -31,6 +31,34 @@ tenant-delegable. They are governance escape hatches (historical backfill, and t
 maker-checker override), not features; a platform admin must not be able to hand a
 tenant the ability to self-validate by ticking a box.
 
+### BOOTSTRAP — do this ONCE, before anything else
+
+There is a deadlock in the design as shipped, and it is the reason a tenant can sit at
+`Tenant Engine = false` forever:
+
+* only a `PLATFORM_SUPER_ADMIN` may write `tenant_process_rollout` (no RLS write policy,
+  no table grant — deliberately, so a tenant cannot enable its own pilot);
+* **no platform admin exists**, and nothing in the schema creates one (`platform_admin`
+  FKs `auth.users`, so no migration and no seed can);
+* therefore `/platform/rollout` is unreachable by everyone, and the tenant can never be
+  enabled.
+
+Minting the first super-admin is inherently an **out-of-band** act — the only person who
+can do it is whoever holds the database. That is by design, and it is why this is a
+script and not a button.
+
+```
+0. supabase db push                    # if /settings/pilot says the TABLE is missing
+1. Sign in to the app once with the email you want to promote.
+2. Supabase Dashboard → SQL Editor → run:
+      supabase/scripts/bootstrap_platform_admin.sql   (edit the email; idempotent)
+3. Sign in again → /platform/rollout is now reachable.
+```
+
+Break-glass alternative, if the UI is not an option:
+`supabase/scripts/enable_tenant_rollout.sql` (edit the slug; idempotent; writes its own
+audit row). The UI remains preferred because it audits the change properly.
+
 ### To start the pilot
 
 1. Set in the deployment environment (one redeploy, once):

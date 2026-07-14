@@ -46,6 +46,22 @@ export type RolloutProof = {
   organizationName: string | null;
   /** True when no row exists at all — the state every un-piloted tenant is in. */
   rolloutRowMissing: boolean;
+  /**
+   * True when the TABLE itself is absent — i.e. migration 20260714000004 has never been
+   * applied to this database.
+   *
+   * This distinction matters and the first version of this page could not make it.
+   * getTenantRollout() fails CLOSED on any error (correctly — a rollout control that
+   * opens on error is not a control), so "table does not exist" and "row does not exist"
+   * produced identical output: both said DISABLED. They call for completely different
+   * actions — one is `supabase db push`, the other is a click in the platform console —
+   * and a diagnostic that cannot tell them apart sends you to the wrong one.
+   */
+  rolloutTableMissing: boolean;
+  /** The raw Postgres error, when the lookup failed. Sanitized: code + message only. */
+  dbError: string | null;
+  /** Whether ANY platform admin exists. Without one, nobody can enable this tenant. */
+  platformAdminCount: number;
   /** Which gate is closed, in one sentence. The whole point of the page. */
   verdict: string;
 };
@@ -69,15 +85,37 @@ export async function getRolloutProof(tenantId: string): Promise<RolloutProof> {
   // A missing row and an all-false row are indistinguishable to the resolver (both mean
   // DISABLED, by design), but they are NOT the same thing to a human: one means "nobody
   // has enabled this tenant", the other means "somebody turned it off".
-  const { data: row } = await admin
+  const { data: row, error: rowError } = await admin
     .from("tenant_process_rollout")
     .select("tenant_id")
     .eq("tenant_id", tenantId)
     .maybeSingle();
 
-  const rolloutRowMissing = !row;
+  // Postgres 42P01 = undefined_table. PostgREST surfaces it as PGRST205 / "does not
+  // exist" depending on version, so we match on both the code and the text.
+  const rolloutTableMissing = Boolean(
+    rowError &&
+      (rowError.code === "42P01" ||
+        rowError.code === "PGRST205" ||
+        /does not exist|schema cache/i.test(rowError.message ?? "")),
+  );
+  const rolloutRowMissing = !row && !rolloutTableMissing;
+  const dbError = rowError ? `${rowError.code ?? "?"}: ${rowError.message ?? "unknown"}` : null;
 
-  const verdict = !env.enabled
+  // Nobody can enable a tenant without a platform admin, and none is seeded by any
+  // migration. If this is 0, the rollout console is unreachable by every human alive —
+  // which is the actual reason a tenant can sit at "no row" forever.
+  const { count } = await admin
+    .from("platform_admin")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "active");
+  const platformAdminCount = count ?? 0;
+
+  const verdict = rolloutTableMissing
+    ? "The tenant_process_rollout TABLE does not exist in this database. Migration 20260714000004 has never been applied here. Run `supabase db push` against the linked project — nothing else will work until you do."
+    : platformAdminCount === 0 && rolloutRowMissing
+      ? "BOOTSTRAP DEADLOCK: this tenant has no rollout row, and NO platform admin exists to create one. A tenant SYSTEM_ADMIN cannot enable its own rollout (by design). Run supabase/scripts/bootstrap_platform_admin.sql once, then enable the tenant at /platform/rollout."
+      : !env.enabled
     ? "GLOBAL kill switch is OFF. EFFITRANS_PROCESS_ENGINE_ENABLED is not set in the deployment, so the engine is dark for EVERY tenant — the tenant row below is irrelevant until it is set."
     : !env.workspaces
       ? "Global engine is ON but EFFITRANS_PROCESS_WORKSPACES_ENABLED is not set, so no workspace or queue is reachable for anyone."
@@ -90,6 +128,9 @@ export async function getRolloutProof(tenantId: string): Promise<RolloutProof> {
             : "LIVE. Both gates are open: the official process is active for this tenant.";
 
   return {
+    rolloutTableMissing,
+    dbError,
+    platformAdminCount,
     globalEngine: env.enabled,
     globalWorkspaces: env.workspaces,
     tenantEngine: rollout.process_engine,

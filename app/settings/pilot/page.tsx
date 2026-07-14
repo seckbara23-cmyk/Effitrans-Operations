@@ -152,11 +152,31 @@ export default async function PilotConsole({
           <span className="font-semibold">Verdict : </span>
           {proof.verdict}
         </p>
+        {proof.rolloutTableMissing && (
+          <p className="mt-2 rounded border border-red-300 bg-red-50 p-2 text-[11px] text-red-900">
+            <span className="font-bold">La table n&apos;existe pas.</span> La migration
+            <code> 20260714000004_tenant_process_rollout</code> n&apos;a jamais été appliquée à
+            cette base. Aucune activation n&apos;est possible tant que ce n&apos;est pas fait.
+            {proof.dbError && <span className="block font-mono">{proof.dbError}</span>}
+          </p>
+        )}
+
         {proof.rolloutRowMissing && (
           <p className="mt-1 text-[11px] text-slate-500">
             Aucune ligne dans <code>tenant_process_rollout</code> — ce qui signifie DÉSACTIVÉ. Une
             ligne absente et une ligne à false sont identiques pour le résolveur (c&apos;est
             voulu), mais pas pour vous : ici, personne n&apos;a encore activé ce tenant.
+          </p>
+        )}
+
+        {proof.platformAdminCount === 0 && (
+          <p className="mt-2 rounded border border-red-300 bg-red-50 p-2 text-[11px] text-red-900">
+            <span className="font-bold">Aucun administrateur plateforme n&apos;existe.</span> Seul
+            un <code>PLATFORM_SUPER_ADMIN</code> peut activer un tenant, et un{" "}
+            <code>SYSTEM_ADMIN</code> de tenant ne peut pas activer le sien (c&apos;est voulu :
+            aucune police RLS, aucun privilège d&apos;écriture). Personne ne peut donc ouvrir{" "}
+            <code>/platform/rollout</code>. Exécuter une fois{" "}
+            <code>supabase/scripts/bootstrap_platform_admin.sql</code>.
           </p>
         )}
       </section>

@@ -460,3 +460,100 @@ describe("the app can prove its own effective rollout state (5.0E-3D)", () => {
     }
   });
 });
+
+// --------------------------------------------------- the bootstrap deadlock ----
+
+describe("the platform can actually enable a tenant (5.0E-3E)", () => {
+  const bootstrap = read("../supabase/scripts/bootstrap_platform_admin.sql");
+  const enable = read("../supabase/scripts/enable_tenant_rollout.sql");
+  const proof = read("../lib/pilot/rollout-proof.ts");
+
+  it("ROOT CAUSE: nothing in the schema ever creates a platform admin", () => {
+    // This is the bug. Phase 5.0E-2A correctly forbade a tenant SYSTEM_ADMIN from
+    // enabling their own rollout, made PLATFORM_SUPER_ADMIN the only writer... and then
+    // shipped no way to create one. Only a platform admin can enable a tenant; no
+    // platform admin exists; nothing can create one. The tenant could never be enabled.
+    //
+    // This test does not assert the bug is gone — the deadlock is INHERENT (minting the
+    // first super-admin must be an out-of-band act by whoever holds the database). It
+    // asserts that the way OUT is committed, and that nobody accidentally "fixes" it by
+    // seeding an admin into a migration, which would hand every deployment a backdoor.
+    const migrations = readdirSync(fileURLToPath(new URL("../supabase/migrations", import.meta.url)));
+    for (const m of migrations) {
+      const sql = readFileSync(
+        fileURLToPath(new URL(`../supabase/migrations/${m}`, import.meta.url)),
+        "utf8",
+      );
+      expect(sql, `${m} must not seed a platform admin`).not.toMatch(
+        /insert\s+into\s+public\.platform_admin/i,
+      );
+    }
+    const seed = read("../supabase/seed.sql");
+    expect(seed).not.toMatch(/insert\s+into\s+public\.platform_admin/i);
+  });
+
+  it("ships an out-of-band bootstrap, and it is idempotent", () => {
+    expect(bootstrap).toMatch(/insert into public\.platform_admin/i);
+    expect(bootstrap).toContain("on conflict (id) do update");
+    expect(bootstrap).toContain("PLATFORM_SUPER_ADMIN");
+  });
+
+  it("the bootstrap FAILS LOUDLY when the auth user does not exist", () => {
+    // A script that "succeeds" without creating the admin is worse than one that errors.
+    expect(bootstrap).toContain("BOOTSTRAP FAILED");
+    expect(bootstrap).toMatch(/raise exception/i);
+  });
+
+  it("both scripts run in the Supabase SQL editor, not just psql", () => {
+    // psql backslash commands are silently unavailable in the dashboard editor — a
+    // script that only works from a terminal does not work where it will be run.
+    for (const [name, sql] of [["bootstrap", bootstrap], ["enable", enable]] as const) {
+      expect(sql.split("\n").some((l) => /^\s*\set\b/.test(l)), name).toBe(false);
+    }
+  });
+
+  it("the enable script resolves the tenant by SLUG, never a hardcoded uuid", () => {
+    expect(enable).toContain("target_slug");
+    expect(enable).toContain("lower(slug) = lower(target_slug)");
+    expect(enable).toMatch(/raise exception 'No organization with slug/);
+  });
+
+  it("the enable script leaves deposit and collections alone", () => {
+    // Separate decisions with separate readiness. Turning on Collections because you
+    // wanted the workflow is how a Finance team discovers an aging balance they did not
+    // ask for.
+    const doUpdate = enable.slice(enable.indexOf("on conflict (tenant_id) do update"));
+    const body = doUpdate.slice(0, doUpdate.indexOf("raise notice"));
+    expect(body).not.toMatch(/physical_invoice_deposit\s*=/);
+    expect(body).not.toMatch(/^\s*collections\s*=/m);
+  });
+
+  it("the enable script leaves an audit trail attributed to a SCRIPT, not a person", () => {
+    expect(enable).toContain("insert into public.audit_log");
+    expect(enable).toContain("system.rollout.bootstrapped");
+  });
+
+  it("the diagnostic can now tell a missing TABLE from a missing ROW", () => {
+    // getTenantRollout fails closed on ANY error, so before this the two were
+    // indistinguishable — and they call for completely different actions (`db push`
+    // versus a click in the console).
+    expect(proof).toContain("rolloutTableMissing");
+    expect(proof).toContain("42P01");
+    expect(proof).toContain("supabase db push");
+  });
+
+  it("the diagnostic reports whether ANY platform admin exists", () => {
+    expect(proof).toContain("platformAdminCount");
+    expect(proof).toContain("BOOTSTRAP DEADLOCK");
+  });
+
+  it("the platform console shows slug, id and timestamps", () => {
+    const read_ = read("../lib/platform/rollout-read.ts");
+    expect(read_).toContain("slug");
+    expect(read_).toContain("createdAt");
+    const ui = read("../components/platform/rollout-controls.tsx");
+    expect(ui).toContain("row.slug");
+    expect(ui).toContain("row.tenantId");
+    expect(ui).toContain("row.updatedAt");
+  });
+});

@@ -74,16 +74,30 @@ export function RolloutControls({
   return (
     <div className="rounded-xl border border-white/10 bg-white/5 p-5">
       <div className="mb-4 flex flex-wrap items-baseline justify-between gap-3">
-        <div>
-          <p className="text-base font-bold text-white">{row.companyName}</p>
+        <div className="min-w-0">
+          <p className="text-base font-bold text-white">
+            {row.companyName}
+            {row.slug && (
+              <span className="ml-2 rounded bg-white/10 px-1.5 py-0.5 font-mono text-[11px] font-normal text-slate-300">
+                {row.slug}
+              </span>
+            )}
+          </p>
           <p className="text-xs text-slate-500">
             {live ? "Processus officiel ACTIF" : "Processus officiel inactif"}
-            {row.firstEnabledAt && ` · première activation ${row.firstEnabledAt.slice(0, 10)}`}
             {!killSwitchOn && state.process_engine && (
               <span className="ml-1 text-amber-400">
                 (coché, mais l&apos;interrupteur global est coupé)
               </span>
             )}
+          </p>
+          <p className="mt-0.5 font-mono text-[11px] text-slate-600">
+            {row.tenantId}
+          </p>
+          <p className="text-[11px] text-slate-500">
+            {row.createdAt && `créé ${row.createdAt.slice(0, 10)}`}
+            {row.firstEnabledAt && ` · 1re activation ${row.firstEnabledAt.slice(0, 10)}`}
+            {row.updatedAt && ` · maj ${row.updatedAt.slice(0, 10)}`}
           </p>
         </div>
         {state.process_engine && (
