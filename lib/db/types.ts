@@ -448,6 +448,7 @@ export type Database = {
           created_at: string;
           updated_at: string;
           archived_at: string | null;
+          requires_physical_invoice_deposit: boolean;
         };
         Insert: {
           id?: string;
@@ -464,6 +465,7 @@ export type Database = {
           created_at?: string;
           updated_at?: string;
           archived_at?: string | null;
+          requires_physical_invoice_deposit?: boolean;
         };
         Update: {
           id?: string;
@@ -480,6 +482,7 @@ export type Database = {
           created_at?: string;
           updated_at?: string;
           archived_at?: string | null;
+          requires_physical_invoice_deposit?: boolean;
         };
         Relationships: [
           {
@@ -1535,6 +1538,53 @@ export type Database = {
       // Phase 5.0D — post-delivery chain (20260714000001).
       // Hand-written to match the migration (no live DB to generate against).
       // ---------------------------------------------------------------------
+      invoice_deposit_event: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          file_id: string;
+          invoice_id: string;
+          deposit_id: string;
+          event: string;
+          from_status: string | null;
+          to_status: string;
+          actor_id: string | null;
+          actor_role_code: string | null;
+          from_department: string | null;
+          to_department: string | null;
+          handoff_id: string | null;
+          evidence_document_id: string | null;
+          reason: string | null;
+          occurred_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          file_id: string;
+          invoice_id: string;
+          deposit_id: string;
+          event: string;
+          from_status?: string | null;
+          to_status: string;
+          actor_id?: string | null;
+          actor_role_code?: string | null;
+          from_department?: string | null;
+          to_department?: string | null;
+          handoff_id?: string | null;
+          evidence_document_id?: string | null;
+          reason?: string | null;
+          occurred_at?: string;
+        };
+        Update: Record<string, never>; // append-only (trigger-enforced)
+        Relationships: [
+          {
+            foreignKeyName: "invoice_deposit_event_deposit_id_fkey";
+            columns: ["deposit_id"];
+            referencedRelation: "invoice_deposit";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       invoice_deposit: {
         Row: {
           id: string;
@@ -1558,6 +1608,13 @@ export type Database = {
           validated_at: string | null;
           rejection_reason: string | null;
           failure_reason: string | null;
+          accepted_at: string | null;
+          declined_at: string | null;
+          decline_reason: string | null;
+          reassignment_reason: string | null;
+          package_reference: string | null;
+          recipient_org: string | null;
+          proof_submitted_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -1583,6 +1640,13 @@ export type Database = {
           validated_at?: string | null;
           rejection_reason?: string | null;
           failure_reason?: string | null;
+          accepted_at?: string | null;
+          declined_at?: string | null;
+          decline_reason?: string | null;
+          reassignment_reason?: string | null;
+          package_reference?: string | null;
+          recipient_org?: string | null;
+          proof_submitted_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -1604,6 +1668,13 @@ export type Database = {
           validated_at?: string | null;
           rejection_reason?: string | null;
           failure_reason?: string | null;
+          accepted_at?: string | null;
+          declined_at?: string | null;
+          decline_reason?: string | null;
+          reassignment_reason?: string | null;
+          package_reference?: string | null;
+          recipient_org?: string | null;
+          proof_submitted_at?: string | null;
           updated_at?: string;
         };
         Relationships: [

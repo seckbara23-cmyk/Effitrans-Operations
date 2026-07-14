@@ -70,6 +70,8 @@ export const TENANT_SCOPED_TABLES = new Set<string>([
   // post-delivery chain (Phase 5.0D)
   "invoice_deposit",
   "collection_follow_up",
+  // chain of custody (Phase 5.0D-3)
+  "invoice_deposit_event",
 ]);
 
 /**
