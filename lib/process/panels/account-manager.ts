@@ -16,7 +16,7 @@ import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { scopedFrom } from "@/lib/db/tenant-scope";
 import { hasPermission } from "@/lib/rbac/permissions";
 import { balanceDue, invoiceTotals, paidAmount } from "@/lib/finance/calc";
-import { getProcessFlags } from "../config";
+import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-server";
 import { getNode } from "../engine/state";
 import { isDone, isOpen, type StepState } from "../engine/types";
 
@@ -84,7 +84,7 @@ export async function getAmPortfolio(
     telemetry: { panel: "account_manager", count: 0, durationMs: 0, queries: 0 },
   };
 
-  const flags = getProcessFlags();
+  const flags = await getTenantProcessFlags(tenantId);
   if (!flags.workspaces) return empty;
   if (!hasPermission(permissions, "client:read") || !hasPermission(permissions, "process:read")) return empty;
 

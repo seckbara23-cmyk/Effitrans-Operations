@@ -73,6 +73,9 @@ describe("platform roles", () => {
         "platform:companies:read",
         "platform:companies:update",
         "platform:plans:read",
+        // Phase 5.0E-2A — process rollout. SUPER_ADMIN only, deliberately: enabling
+        // the workflow for a live freight forwarder is not a help-desk action.
+        "platform:rollout:manage",
         "platform:settings:manage",
         "platform:status:update",
       ],

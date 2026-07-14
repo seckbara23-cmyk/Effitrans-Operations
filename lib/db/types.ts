@@ -1538,6 +1538,43 @@ export type Database = {
       // Phase 5.0D — post-delivery chain (20260714000001).
       // Hand-written to match the migration (no live DB to generate against).
       // ---------------------------------------------------------------------
+      /** Phase 5.0E-2A — per-tenant rollout of the official process engine. */
+      tenant_process_rollout: {
+        Row: {
+          tenant_id: string;
+          process_engine: boolean;
+          process_workspaces: boolean;
+          physical_invoice_deposit: boolean;
+          collections: boolean;
+          note: string | null;
+          first_enabled_at: string | null;
+          updated_at: string;
+          updated_by: string | null;
+        };
+        Insert: {
+          tenant_id: string;
+          process_engine?: boolean;
+          process_workspaces?: boolean;
+          physical_invoice_deposit?: boolean;
+          collections?: boolean;
+          note?: string | null;
+          first_enabled_at?: string | null;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Update: {
+          tenant_id?: string;
+          process_engine?: boolean;
+          process_workspaces?: boolean;
+          physical_invoice_deposit?: boolean;
+          collections?: boolean;
+          note?: string | null;
+          first_enabled_at?: string | null;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Relationships: [];
+      };
       invoice_deposit_event: {
         Row: {
           id: string;

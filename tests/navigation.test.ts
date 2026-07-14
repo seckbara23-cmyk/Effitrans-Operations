@@ -95,7 +95,9 @@ describe("flag off — the sidebar is EXACTLY today's sidebar", () => {
     const start = src.indexOf("export async function getNavigation(");
     expect(start, "getNavigation() not found").toBeGreaterThan(-1);
     const body = src.slice(start);
-    const flagCheck = body.indexOf("getProcessFlags");
+    // 5.0E-2A renamed this to globalKillSwitch() — same rule, clearer name: it is a
+    // NECESSARY condition resolved without a session, never a sufficient one.
+    const flagCheck = body.indexOf("globalKillSwitch");
     const authCall = body.indexOf("getNavigationContext");
     expect(flagCheck).toBeGreaterThan(-1);
     expect(authCall).toBeGreaterThan(-1);

@@ -31,7 +31,7 @@ import { AuditActions } from "@/lib/audit/events";
 import { createNotification } from "@/lib/notifications/create";
 import { buildStoragePath, fileExtension, removeObject, uploadObject } from "@/lib/documents/storage";
 import { validateDocumentInput } from "@/lib/documents/validate";
-import { getProcessFlags } from "@/lib/process/config";
+import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-server";
 import { sendHandoff, submitStep } from "@/lib/process/engine/actions";
 import {
   CUSTODY_ROUTE,
@@ -91,8 +91,8 @@ type Ctx = { userId: string; tenantId: string; roles: string[]; permissions: str
 
 /** The deposit chain requires BOTH the engine flag and the deposit flag. */
 async function guard(permission: string, fileId: string): Promise<Ctx | DepositError> {
-  const flags = getProcessFlags();
-  if (!flags.enabled || !flags.physicalDeposit) return "feature_disabled";
+  const kill = globalKillSwitch();
+  if (!kill.enabled || !kill.physicalDeposit) return "feature_disabled";
 
   let user;
   try {
@@ -100,6 +100,8 @@ async function guard(permission: string, fileId: string): Promise<Ctx | DepositE
   } catch {
     return "forbidden";
   }
+  // TENANT gate (5.0E-2A): the deposit chain is off for every tenant but the pilot.
+  if (!(await getTenantProcessFlags(user.tenantId)).physicalDeposit) return "feature_disabled";
   if (!(await isFileVisible(user.id, user.tenantId, fileId))) return "cross_tenant_forbidden";
   return {
     userId: user.id,
@@ -116,14 +118,15 @@ async function guard(permission: string, fileId: string): Promise<Ctx | DepositE
  * policy also enforces independently.
  */
 async function courierGuard(): Promise<Ctx | DepositError> {
-  const flags = getProcessFlags();
-  if (!flags.enabled || !flags.physicalDeposit) return "feature_disabled";
+  const kill = globalKillSwitch();
+  if (!kill.enabled || !kill.physicalDeposit) return "feature_disabled";
   let user;
   try {
     user = await assertPermission("courier:deposit");
   } catch {
     return "forbidden";
   }
+  if (!(await getTenantProcessFlags(user.tenantId)).physicalDeposit) return "feature_disabled";
   return {
     userId: user.id,
     tenantId: user.tenantId,

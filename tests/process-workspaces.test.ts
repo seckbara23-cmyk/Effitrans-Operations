@@ -134,16 +134,20 @@ describe("route authorization", () => {
   const myWork = read("../app/my-work/page.tsx");
   const processPage = read("../app/files/[id]/process/page.tsx");
 
-  it("404s every workspace route when the flag is off", () => {
+  it("404s every workspace route when the flag is off — for the deployment AND for the tenant", () => {
+    // 5.0E-2A: two gates, both required. The global kill switch (no query, so it
+    // still works when the database is down) and the tenant's own rollout.
     for (const [name, src] of [
       ["queue", queuePage],
       ["my-work", myWork],
     ] as const) {
       expect(src, name).toContain("notFound()");
-      expect(src, name).toContain("getProcessFlags().workspaces");
+      expect(src, name).toContain("globalKillSwitch().workspaces");
+      expect(src, name).toContain("getTenantProcessFlags(user.tenantId)");
     }
     // The process inspector rides the ENGINE flag, not the workspaces flag.
-    expect(processPage).toContain("getProcessFlags().enabled");
+    expect(processPage).toContain("globalKillSwitch().enabled");
+    expect(processPage).toContain("getTenantProcessFlags(user.tenantId)");
   });
 
   it("checks BOTH the permission and the user's role before opening a queue", () => {
@@ -239,8 +243,8 @@ describe("Coordinator Control Tower (Deliverable 4)", () => {
     expect(dashboard).toContain("<ControlTower data={controlTower} />");
   });
 
-  it("returns nothing (and costs nothing) when the flag is off", () => {
-    expect(tower).toContain("if (!getProcessFlags().workspaces) return null;");
+  it("returns nothing when the workspaces flag is off FOR THAT TENANT", () => {
+    expect(tower).toContain("if (!(await getTenantProcessFlags(tenantId)).workspaces) return null;");
   });
 
   it("covers the official parallel-mismatch buckets", () => {

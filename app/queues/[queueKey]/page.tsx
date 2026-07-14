@@ -9,7 +9,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
-import { getProcessFlags } from "@/lib/process/config";
+import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-server";
 import { getQueue, isQueueKey } from "@/lib/process/queues/registry";
 import { getDepartmentQueue } from "@/lib/process/queues/service";
 import { QueueTable } from "@/components/process/queue-table";
@@ -35,11 +35,12 @@ export default async function QueuePage({
   params: { queueKey: string };
   searchParams: Search;
 }) {
-  if (!getProcessFlags().workspaces) notFound();
+  if (!globalKillSwitch().workspaces) notFound();
   if (!isQueueKey(params.queueKey)) notFound();
 
   const def = getQueue(params.queueKey)!;
   const user = await requireUser();
+  if (!(await getTenantProcessFlags(user.tenantId)).workspaces) notFound();
   const permissions = await getEffectivePermissions(user.id);
 
   // Permission AND role: an unauthorized department is never shown, not even by

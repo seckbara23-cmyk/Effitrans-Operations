@@ -298,7 +298,10 @@ describe("audit payloads carry no sensitive content (Deliverable 12)", () => {
       "rejectHandoff",
     ];
     for (const m of mutations) expect(src).toContain(`export async function ${m}`);
-    // guard() is the only path to a ctx, and it checks the flag first.
-    expect(src).toContain('if (!getProcessFlags().enabled) return "engine_disabled"');
+    // guard() is the only path to a ctx. It checks the GLOBAL kill switch first (no
+    // query), then the TENANT's rollout (5.0E-2A) — an enabled deployment is not an
+    // enabled tenant.
+    expect(src).toContain('if (!globalKillSwitch().enabled) return "engine_disabled"');
+    expect(src).toContain('if (!(await getTenantProcessFlags(user.tenantId)).enabled) return "engine_disabled"');
   });
 });

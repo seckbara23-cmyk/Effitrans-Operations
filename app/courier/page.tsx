@@ -13,7 +13,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
-import { getProcessFlags } from "@/lib/process/config";
+import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-server";
 import { listCourierDeposits } from "@/lib/deposit/service";
 import { CourierMissionCard } from "@/components/deposit/courier-mission-card";
 import type { CourierSection } from "@/lib/deposit/status";
@@ -33,10 +33,11 @@ const SECTIONS: { key: CourierSection; label: string; hint: string }[] = [
 ];
 
 export default async function CourierPage() {
-  const flags = getProcessFlags();
-  if (!flags.enabled || !flags.physicalDeposit) notFound();
+  if (!globalKillSwitch().enabled) notFound();
 
   const user = await requireUser();
+  const flags = await getTenantProcessFlags(user.tenantId);
+  if (!flags.physicalDeposit) notFound();
   const permissions = await getEffectivePermissions(user.id);
   if (!hasPermission(permissions, "courier:deposit")) notFound();
 

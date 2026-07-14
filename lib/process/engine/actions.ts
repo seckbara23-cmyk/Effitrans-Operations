@@ -32,7 +32,7 @@ import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { isFileVisible } from "@/lib/authz/visibility";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
-import { getProcessFlags } from "../config";
+import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-server";
 import { PROCESS_VERSION, buildInitialExecutions } from "./init";
 import { loadProcessSnapshot, toViews } from "./snapshot";
 import {
@@ -66,13 +66,19 @@ function revalidate(fileId: string) {
 
 /** Steps 1-3 of the checklist, shared by every mutation. */
 async function guard(permission: string, fileId: string): Promise<Ctx | EngineError> {
-  if (!getProcessFlags().enabled) return "engine_disabled";
+  // The GLOBAL kill switch first — no query, so it keeps working when the database
+  // is the thing that is broken.
+  if (!globalKillSwitch().enabled) return "engine_disabled";
   let user;
   try {
     user = await assertPermission(permission);
   } catch {
     return "forbidden";
   }
+  // Then the TENANT gate (Phase 5.0E-2A). An enabled DEPLOYMENT is not an enabled
+  // TENANT: during the pilot the engine is compiled in and switched on globally,
+  // and every tenant except the pilot must still be refused here.
+  if (!(await getTenantProcessFlags(user.tenantId)).enabled) return "engine_disabled";
   if (!(await isFileVisible(user.id, user.tenantId, fileId))) return "forbidden";
   const permissions = await getEffectivePermissions(user.id);
   return { userId: user.id, tenantId: user.tenantId, permissions };
@@ -311,7 +317,7 @@ export async function approveStep(
   if (typeof st === "string") return fail(st);
   if (st.state !== "SUBMITTED") return fail("invalid_state");
 
-  const flags = getProcessFlags();
+  const flags = await getTenantProcessFlags(c.tenantId);
   const decision = evaluateMakerChecker(st.submittedBy, c.userId, {
     overrideFlagOn: flags.overrideAllowed,
     hasOverridePermission: hasPermission(c.permissions, "process:override"),
@@ -393,7 +399,7 @@ export async function rejectStep(
   if (st.state !== "SUBMITTED") return fail("invalid_state");
 
   // A rejection is still a review: the checker may not be the maker.
-  const flags = getProcessFlags();
+  const flags = await getTenantProcessFlags(c.tenantId);
   const decision = evaluateMakerChecker(st.submittedBy, c.userId, {
     overrideFlagOn: flags.overrideAllowed,
     hasOverridePermission: hasPermission(c.permissions, "process:override"),

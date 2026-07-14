@@ -10,7 +10,7 @@ import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { scopedFrom } from "@/lib/db/tenant-scope";
 import { hasPermission } from "@/lib/rbac/permissions";
 import { balanceDue, invoiceTotals, paidAmount } from "@/lib/finance/calc";
-import { getProcessFlags } from "@/lib/process/config";
+import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-server";
 import { compareAging, evaluateAging, todayInTimezone, type Aging, type AgingBucket } from "./aging";
 import {
   derivePromise,
@@ -85,8 +85,10 @@ export async function getCollectionsQueue(
   pageSize = 25,
 ): Promise<CollectionsResultPage> {
   const empty = { rows: [], total: 0, page, pageSize };
-  const flags = getProcessFlags();
-  if (!flags.enabled || !flags.collections) return empty;
+  // TENANT-scoped (5.0E-2A): the service is handed a tenantId, so it asks about THAT
+  // tenant, not about the deployment.
+  const flags = await getTenantProcessFlags(tenantId);
+  if (!flags.collections) return empty;
   if (!hasPermission(permissions, "collections:manage")) return empty;
 
   const admin = getAdminSupabaseClient();

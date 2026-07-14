@@ -16,7 +16,7 @@ import "server-only";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { scopedFrom } from "@/lib/db/tenant-scope";
 import { hasPermission } from "@/lib/rbac/permissions";
-import { getProcessFlags } from "../config";
+import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-server";
 import { evaluatePickupGate, type GateResult } from "../engine/gates";
 import type { EvidenceSnapshot } from "../engine/evidence";
 import { evaluateBranch, type ExecutionView } from "../engine/state";
@@ -76,7 +76,7 @@ export async function getTransportPanel(
     telemetry: { panel: "transport", count: 0, durationMs: 0, queries: 0 },
   };
 
-  const flags = getProcessFlags();
+  const flags = await getTenantProcessFlags(tenantId);
   if (!flags.workspaces) return empty;
   if (!hasPermission(permissions, "transport:read")) return empty;
 

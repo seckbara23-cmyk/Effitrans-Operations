@@ -10,14 +10,13 @@
  */
 import Link from "next/link";
 import { getProcessState } from "@/lib/process/engine/service";
-import { getProcessFlags } from "@/lib/process/config";
 import { summarizeJourney } from "@/lib/navigation/journey";
 
 export async function ProcessJourneyPanel({ fileId }: { fileId: string }) {
-  if (!getProcessFlags().workspaces) return null;
-
-  // getProcessState already enforces process:read and returns null when the engine
-  // is off — it throws for nobody and leaks for nobody.
+  // No flag read here on purpose. getProcessState is the single gate: it checks the
+  // global kill switch, resolves the user, checks THAT TENANT's rollout, enforces
+  // process:read, and returns null for anything it will not answer. A second flag
+  // check here would be a second place to get the rollout rule wrong.
   const model = await getProcessState(fileId);
   if (!model) return null;
 

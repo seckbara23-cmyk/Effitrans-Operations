@@ -10,7 +10,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
-import { getProcessFlags } from "@/lib/process/config";
+import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-server";
 import { listTenantDeposits, type DepositView } from "@/lib/deposit/service";
 import { DepositRow } from "@/components/deposit/deposit-row";
 import type { DepositStatus } from "@/lib/deposit/status";
@@ -30,10 +30,11 @@ const SECTIONS: { label: string; statuses: DepositStatus[]; hint: string }[] = [
 ];
 
 export default async function DepositsPage() {
-  const flags = getProcessFlags();
-  if (!flags.enabled || !flags.physicalDeposit) notFound();
+  if (!globalKillSwitch().enabled) notFound();
 
   const user = await requireUser();
+  const flags = await getTenantProcessFlags(user.tenantId);
+  if (!flags.physicalDeposit) notFound();
   const permissions = await getEffectivePermissions(user.id);
   const canAdmin = hasPermission(permissions, "admin_service:manage");
   if (!canAdmin && !hasPermission(permissions, "collections:manage")) notFound();

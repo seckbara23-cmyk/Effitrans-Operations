@@ -12,7 +12,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
-import { getProcessFlags } from "@/lib/process/config";
+import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-server";
 import { getCollectionsQueue, type CollectionsFilters } from "@/lib/collections/service";
 import { AGING_BUCKETS, type AgingBucket } from "@/lib/collections/aging";
 import { CollectionsRowActions } from "@/components/collections/collections-row-actions";
@@ -51,10 +51,14 @@ type Search = {
 };
 
 export default async function CollectionsPage({ searchParams }: { searchParams: Search }) {
-  const flags = getProcessFlags();
-  if (!flags.enabled || !flags.collections) notFound();
+  // Kill switch first: no query, so it still works when the database is the thing
+  // that is broken. Then the TENANT gate — an enabled deployment does not mean an
+  // enabled tenant (Phase 5.0E-2A).
+  if (!globalKillSwitch().enabled) notFound();
 
   const user = await requireUser();
+  const flags = await getTenantProcessFlags(user.tenantId);
+  if (!flags.collections) notFound();
   const permissions = await getEffectivePermissions(user.id);
   if (!hasPermission(permissions, "collections:manage")) notFound();
 

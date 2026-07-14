@@ -17,9 +17,10 @@
 import "server-only";
 import { getCurrentUser, getSessionClass } from "@/lib/auth/current-user";
 import { getEffectivePermissions } from "@/lib/rbac/permissions";
-import { getProcessFlags } from "@/lib/process/config";
+import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-server";
 import { buildNavigation, legacyNavigation } from "./build";
 import { resolveLandingRoute } from "./landing";
+import { FLAGS_ALL_OFF } from "@/lib/process/rollout";
 import type { Navigation, NavigationContext } from "./types";
 
 const ANONYMOUS: Navigation = {
@@ -44,7 +45,7 @@ export async function getNavigationContext(): Promise<NavigationContext | null> 
         roleCodes: [],
         permissions: [],
         identityType: "portal",
-        featureFlags: getProcessFlags(),
+        featureFlags: FLAGS_ALL_OFF,
       };
     }
     return null;
@@ -60,7 +61,10 @@ export async function getNavigationContext(): Promise<NavigationContext | null> 
     // DRIVER is a mobile-only identity (3.4C); requireUser already keeps them out
     // of staff pages, and the builder gives them no staff sidebar either.
     identityType: user.roles.includes("DRIVER") ? "driver" : "tenant",
-    featureFlags: getProcessFlags(),
+    // THE TENANT'S effective flags (5.0E-2A) — not the deployment's. This is what
+    // makes navigation and the route guards agree: both resolve through the same
+    // function, so a tenant can never see a link to a route that would 404 them.
+    featureFlags: await getTenantProcessFlags(user.tenantId),
   };
 }
 
@@ -74,7 +78,12 @@ export async function getNavigationContext(): Promise<NavigationContext | null> 
  * reads cookies forces every route under it to render dynamically).
  */
 export async function getNavigation(): Promise<Navigation> {
-  if (!getProcessFlags().workspaces) return legacyNavigation();
+  // The GLOBAL kill switch, checked before any session is resolved. This is not an
+  // optimization: a root layout that reads cookies forces every route beneath it to
+  // render dynamically, which broke the static prerender of /login and /_not-found in
+  // 5.0E-1. The per-TENANT gate is applied afterwards, inside buildNavigation, from
+  // the flags on the context.
+  if (!globalKillSwitch().workspaces) return legacyNavigation();
 
   const ctx = await getNavigationContext();
   if (!ctx) return ANONYMOUS;

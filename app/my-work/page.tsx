@@ -17,7 +17,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
-import { getProcessFlags } from "@/lib/process/config";
+import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-server";
 import { visibleQueues } from "@/lib/process/queues/registry";
 import { getDepartmentQueue } from "@/lib/process/queues/service";
 import {
@@ -78,9 +78,10 @@ export default async function MyWorkPage({
 }: {
   searchParams?: { tab?: string };
 }) {
-  if (!getProcessFlags().workspaces) notFound();
+  if (!globalKillSwitch().workspaces) notFound();
 
   const user = await requireUser();
+  if (!(await getTenantProcessFlags(user.tenantId)).workspaces) notFound();
   const permissions = await getEffectivePermissions(user.id);
   if (!hasPermission(permissions, "process:read")) notFound();
 

@@ -12,7 +12,7 @@ import "server-only";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { scopedFrom } from "@/lib/db/tenant-scope";
 import { hasPermission } from "@/lib/rbac/permissions";
-import { getProcessFlags } from "@/lib/process/config";
+import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-server";
 import { CUSTODY_LABEL_FR, currentCustodian, type CustodyEntry, type CustodyEvent } from "./custody";
 import { courierSection, DEPOSIT_LABEL_FR, type CourierSection, type DepositStatus } from "./status";
 
@@ -82,8 +82,8 @@ export async function listDeposits(
   scope: DepositScope,
   limit = 50,
 ): Promise<DepositView[]> {
-  const flags = getProcessFlags();
-  if (!flags.enabled || !flags.physicalDeposit) return [];
+  const flags = await getTenantProcessFlags(tenantId);
+  if (!flags.physicalDeposit) return [];
 
   const canAdmin = hasPermission(permissions, "admin_service:manage");
   const canCollect = hasPermission(permissions, "collections:manage");

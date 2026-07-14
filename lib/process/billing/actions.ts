@@ -28,7 +28,7 @@ import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
 import { queueAndSend } from "@/lib/comms/queue";
 import { invoiceTotals } from "@/lib/finance/calc";
-import { getProcessFlags } from "../config";
+import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-server";
 import { approveStep, rejectStep, submitStep } from "../engine/actions";
 import { loadProcessSnapshot, toViews } from "../engine/snapshot";
 import { evaluateBillingGate } from "../engine/gates";
@@ -59,13 +59,16 @@ function revalidate(fileId: string) {
 type Ctx = { userId: string; tenantId: string; permissions: string[] };
 
 async function guard(permission: string, fileId: string): Promise<Ctx | BillingError> {
-  if (!getProcessFlags().enabled) return "feature_disabled";
+  if (!globalKillSwitch().enabled) return "feature_disabled";
   let user;
   try {
     user = await assertPermission(permission);
   } catch {
     return "forbidden";
   }
+  // Tenant gate (5.0E-2A): a globally-enabled deployment is not a globally-enabled
+  // fleet of tenants.
+  if (!(await getTenantProcessFlags(user.tenantId)).enabled) return "feature_disabled";
   // Cross-tenant / invisible dossier => the same opaque refusal.
   if (!(await isFileVisible(user.id, user.tenantId, fileId))) return "cross_tenant_forbidden";
   return { userId: user.id, tenantId: user.tenantId, permissions: await getEffectivePermissions(user.id) };

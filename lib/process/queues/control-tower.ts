@@ -12,7 +12,7 @@ import "server-only";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { scopedFrom } from "@/lib/db/tenant-scope";
 import { hasPermission } from "@/lib/rbac/permissions";
-import { getProcessFlags } from "../config";
+import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-server";
 import { evaluateBranch, type ExecutionView } from "../engine/state";
 import { evaluatePickupGate } from "../engine/gates";
 import type { EvidenceSnapshot } from "../engine/evidence";
@@ -44,7 +44,7 @@ export async function getProcessTower(
   tenantId: string,
   permissions: string[],
 ): Promise<ProcessTower | null> {
-  if (!getProcessFlags().workspaces) return null;
+  if (!(await getTenantProcessFlags(tenantId)).workspaces) return null;
   if (!hasPermission(permissions, "process:read")) return null;
 
   const admin = getAdminSupabaseClient();

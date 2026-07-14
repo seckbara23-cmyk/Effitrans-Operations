@@ -11,7 +11,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
-import { getProcessFlags } from "@/lib/process/config";
+import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-server";
 import { getProcessState } from "@/lib/process/engine/service";
 
 export const dynamic = "force-dynamic";
@@ -65,9 +65,10 @@ function Gate({ title, gate }: { title: string; gate: { ready: boolean; requirem
 
 export default async function ProcessInspectorPage({ params }: { params: { id: string } }) {
   // Dark by default: with the flag off this route does not exist.
-  if (!getProcessFlags().enabled) notFound();
+  if (!globalKillSwitch().enabled) notFound();
 
   const user = await requireUser();
+  if (!(await getTenantProcessFlags(user.tenantId)).enabled) notFound();
   const permissions = await getEffectivePermissions(user.id);
   if (!hasPermission(permissions, "process:read")) notFound();
 

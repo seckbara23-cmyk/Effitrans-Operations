@@ -398,8 +398,13 @@ describe("process synchronization and boundaries (Deliverables 11, 15)", () => {
 // -------------------------------------------------------------- flags + UI ----
 
 describe("rollout and workspace mapping", () => {
-  it("requires BOTH the engine flag and the deposit flag", () => {
-    expect(actions).toContain("if (!flags.enabled || !flags.physicalDeposit) return \"feature_disabled\"");
+  it("requires the engine flag, the deposit flag AND the tenant's rollout", () => {
+    // 5.0E-2A: the deployment kill switch, then the tenant gate. Both guards
+    // (staff + courier) go through the same two checks.
+    expect(actions).toContain('if (!kill.enabled || !kill.physicalDeposit) return "feature_disabled"');
+    expect(actions).toContain(
+      'if (!(await getTenantProcessFlags(user.tenantId)).physicalDeposit) return "feature_disabled"',
+    );
     const f = resolveProcessFlags({ EFFITRANS_PHYSICAL_INVOICE_DEPOSIT_ENABLED: "true" });
     expect(f.physicalDeposit).toBe(false); // inert without the master flag
   });

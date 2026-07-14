@@ -14,7 +14,7 @@ import { getEffectivePermissions } from "@/lib/rbac/permissions";
 import { isFileVisible } from "@/lib/authz/visibility";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { scopedFrom } from "@/lib/db/tenant-scope";
-import { getProcessFlags } from "../config";
+import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-server";
 import { COMPATIBILITY_VERSION, planCompatibilityInit, type CompatibilityPlan } from "./init";
 import { buildReadModel, type ProcessReadModel } from "./read-model";
 import { loadProcessSnapshot } from "./snapshot";
@@ -25,7 +25,7 @@ import { loadProcessSnapshot } from "./snapshot";
  * exists — the caller renders nothing and the legacy UI is untouched.
  */
 export async function getProcessState(fileId: string): Promise<ProcessReadModel | null> {
-  if (!getProcessFlags().enabled) return null;
+  if (!globalKillSwitch().enabled) return null;
 
   let user;
   try {
@@ -33,6 +33,7 @@ export async function getProcessState(fileId: string): Promise<ProcessReadModel 
   } catch {
     return null;
   }
+  if (!(await getTenantProcessFlags(user.tenantId)).enabled) return null;
   if (!(await isFileVisible(user.id, user.tenantId, fileId))) return null;
 
   const permissions = await getEffectivePermissions(user.id);
@@ -58,8 +59,8 @@ export type CompatibilityReport = {
  * "apply" counterpart in Phase 5.0B.
  */
 export async function getCompatibilityDryRun(limit = 50): Promise<CompatibilityReport[]> {
-  const flags = getProcessFlags();
-  if (!flags.enabled || !flags.compatibility) return [];
+  const kill = globalKillSwitch();
+  if (!kill.enabled || !kill.compatibility) return [];
 
   let user;
   try {
@@ -67,6 +68,9 @@ export async function getCompatibilityDryRun(limit = 50): Promise<CompatibilityR
   } catch {
     return [];
   }
+  // Compatibility mapping is environment-gated AND tenant-gated: a dry run against a
+  // tenant that is not on the engine would report a migration nobody asked for.
+  if (!(await getTenantProcessFlags(user.tenantId)).compatibility) return [];
 
   const admin = getAdminSupabaseClient();
   const { data: files } = await scopedFrom(admin, "operational_file", user.tenantId)

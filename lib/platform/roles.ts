@@ -30,6 +30,14 @@ export const PLATFORM_PERMISSIONS = [
   "platform:plans:read",
   "platform:audit:read",
   "platform:settings:manage",
+  /**
+   * Phase 5.0E-2 — enable/disable the official process engine for ONE tenant.
+   * SUPER_ADMIN only. Deliberately NOT granted to SUPPORT: a rollout is a
+   * governance decision with operational blast radius, not a support action, and
+   * turning the workflow on for a live freight forwarder is not something to do
+   * from a help desk.
+   */
+  "platform:rollout:manage",
 ] as const;
 export type PlatformPermission = (typeof PLATFORM_PERMISSIONS)[number];
 

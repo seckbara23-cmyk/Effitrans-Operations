@@ -22,7 +22,7 @@ import { isFileVisible } from "@/lib/authz/visibility";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
 import { createNotification } from "@/lib/notifications/create";
-import { getProcessFlags } from "@/lib/process/config";
+import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-server";
 import { submitStep } from "@/lib/process/engine/actions";
 import { transitionFile } from "@/lib/files/actions";
 import { evaluateClosure, type ClosureEvaluation } from "@/lib/process/engine/closure";
@@ -78,14 +78,17 @@ type Ctx = { userId: string; tenantId: string; permissions: string[] };
 
 /** Collections requires BOTH the engine flag and the collections flag. */
 async function guard(permission: string, fileId: string): Promise<Ctx | CollectionsError> {
-  const flags = getProcessFlags();
-  if (!flags.enabled || !flags.collections) return "feature_disabled";
+  // Kill switch (no query) -> identity -> TENANT gate (5.0E-2A).
+  const kill = globalKillSwitch();
+  if (!kill.enabled || !kill.collections) return "feature_disabled";
   let user;
   try {
     user = await assertPermission(permission);
   } catch {
     return "forbidden";
   }
+  const flags = await getTenantProcessFlags(user.tenantId);
+  if (!flags.collections) return "feature_disabled";
   if (!(await isFileVisible(user.id, user.tenantId, fileId))) return "cross_tenant_forbidden";
   return { userId: user.id, tenantId: user.tenantId, permissions: await getEffectivePermissions(user.id) };
 }
@@ -448,8 +451,7 @@ export async function completeCollections(invoiceId: string): Promise<Collection
 
 /** The authoritative readiness evaluation. Read-only; writes an audit trail entry. */
 export async function evaluateClosureReadiness(fileId: string): Promise<ClosureEvaluation | null> {
-  const flags = getProcessFlags();
-  if (!flags.enabled) return null;
+  if (!globalKillSwitch().enabled) return null;
 
   let user;
   try {
@@ -457,6 +459,7 @@ export async function evaluateClosureReadiness(fileId: string): Promise<ClosureE
   } catch {
     return null;
   }
+  if (!(await getTenantProcessFlags(user.tenantId)).enabled) return null;
   if (!(await isFileVisible(user.id, user.tenantId, fileId))) return null;
 
   const permissions = await getEffectivePermissions(user.id);
@@ -478,8 +481,8 @@ export async function evaluateClosureReadiness(fileId: string): Promise<ClosureE
  * Collections roles.
  */
 export async function closeDossier(fileId: string): Promise<CollectionsResult> {
-  const flags = getProcessFlags();
-  if (!flags.enabled || !flags.collections) return fail("feature_disabled");
+  const kill = globalKillSwitch();
+  if (!kill.enabled || !kill.collections) return fail("feature_disabled");
 
   let user;
   try {
@@ -487,6 +490,9 @@ export async function closeDossier(fileId: string): Promise<CollectionsResult> {
   } catch {
     return fail("forbidden");
   }
+  // TENANT gate (5.0E-2A). Closure is the most consequential action in the process;
+  // it must be impossible for a non-pilot tenant even with the deployment enabled.
+  if (!(await getTenantProcessFlags(user.tenantId)).collections) return fail("feature_disabled");
   if (!(await isFileVisible(user.id, user.tenantId, fileId))) return fail("cross_tenant_forbidden");
 
   const permissions = await getEffectivePermissions(user.id);
