@@ -60,12 +60,31 @@ export function buildProcessNav(
 
   const queues = visibleQueues(roleCodes, permissions);
 
-  const sections: ProcessNavSection[] = [
-    {
-      title: "Processus officiel",
-      items: [{ label: "Mon travail", href: "/my-work", iconKey: "tower", permission: "process:read" }],
-    },
+  const roles = new Set(roleCodes);
+
+  // Phase 5.0D-5 — the specialized panels. Role-aware: an Account Manager gets the
+  // portfolio, Transport gets readiness, Collections gets recovery. Nobody sees a
+  // panel their role does not staff.
+  const panels: ProcessNavItem[] = [
+    { label: "Mon travail", href: "/my-work", iconKey: "tower", permission: "process:read" },
   ];
+  if (["ACCOUNT_MANAGER", "OPS_SUPERVISOR", "SYSTEM_ADMIN"].some((r) => roles.has(r))) {
+    panels.push({ label: "Portefeuille clients", href: "/portfolio", iconKey: "users", permission: "process:read" });
+  }
+  if (["TRANSPORT_OFFICER", "COORDINATOR", "OPS_SUPERVISOR", "SYSTEM_ADMIN"].some((r) => roles.has(r))) {
+    panels.push({ label: "Préparation transport", href: "/transport-readiness", iconKey: "truck", permission: "transport:read" });
+  }
+  if (["COLLECTIONS_OFFICER", "FINANCE_OFFICER", "OPS_SUPERVISOR", "SYSTEM_ADMIN"].some((r) => roles.has(r))) {
+    panels.push({ label: "Recouvrement", href: "/collections", iconKey: "finance", permission: "collections:manage" });
+  }
+  if (["ADMINISTRATIVE_OFFICER", "OPS_SUPERVISOR", "SYSTEM_ADMIN"].some((r) => roles.has(r))) {
+    panels.push({ label: "Dépôts physiques", href: "/deposits", iconKey: "building", permission: "admin_service:manage" });
+  }
+  if (roles.has("COURIER")) {
+    panels.push({ label: "Mes dépôts", href: "/courier", iconKey: "truck", permission: "courier:deposit" });
+  }
+
+  const sections: ProcessNavSection[] = [{ title: "Processus officiel", items: panels }];
 
   if (queues.length > 0) {
     sections.push({

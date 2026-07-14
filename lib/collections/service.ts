@@ -35,6 +35,8 @@ export type CollectionsFilters = {
   noRecentFollowUp?: boolean;
   partiallyPaid?: boolean;
   fullyPaid?: boolean;
+  /** A payment exists but Finance has not verified it — chase Finance. */
+  pendingVerification?: boolean;
   search?: string;
   minBalance?: number;
   maxBalance?: number;
@@ -263,6 +265,7 @@ export async function getCollectionsQueue(
   if (f.missedPromise) rows = rows.filter((r) => r.promise.status === "missed");
   if (f.promiseDue) rows = rows.filter((r) => r.promise.status === "active");
   if (f.noRecentFollowUp) rows = rows.filter((r) => r.lastFollowUpAt === null);
+  if (f.pendingVerification) rows = rows.filter((r) => r.paymentAwaitingVerification);
   if (f.partiallyPaid) rows = rows.filter((r) => r.aging.partiallyPaid);
   if (f.fullyPaid) rows = rows.filter((r) => r.aging.fullyPaid);
   if (f.closureReady) rows = rows.filter((r) => r.closureBlockers.length === 0);

@@ -54,10 +54,15 @@ describe("role-aware navigation (Deliverable 14)", () => {
     expect(buildProcessNav(["OPS_SUPERVISOR"], [], true)).toEqual([]);
   });
 
-  it("shows a courier ONLY their own queue — no other department", () => {
+  it("shows a courier ONLY their own work — no other department", () => {
     const nav = buildProcessNav(["COURIER"], PERMS, true);
     const hrefs = nav.flatMap((s) => s.items.map((i) => i.href));
-    expect(hrefs).toEqual(["/my-work", "/queues/courier"]);
+    // Phase 5.0D-5 added the courier's own deposit panel (/courier). Still nothing
+    // from another department: no Collections, no portfolio, no admin deposits.
+    expect(hrefs).toEqual(["/my-work", "/courier", "/queues/courier"]);
+    expect(hrefs).not.toContain("/collections");
+    expect(hrefs).not.toContain("/portfolio");
+    expect(hrefs).not.toContain("/deposits");
   });
 
   it("shows a Chief Transit only the transit queue", () => {
@@ -250,27 +255,8 @@ describe("Coordinator Control Tower (Deliverable 4)", () => {
 });
 
 // ---------------------------------------------------------------- BLOCKER-3 ----
-
-describe("BLOCKER-3 — legacy mock routes retired (Deliverable 16)", () => {
-  const customsDetail = read("../app/customs/[customsId]/page.tsx");
-  const taskDetail = read("../app/tasks/[taskId]/page.tsx");
-
-  it("stops rendering mock data on /customs/[customsId]", () => {
-    expect(customsDetail).not.toContain('from "@/lib/customs"');
-    // No longer bakes fake customs IDs into the production build.
-    expect(customsDetail).not.toMatch(/export\s+function\s+generateStaticParams/);
-    expect(customsDetail).toContain("RETIRED");
-  });
-
-  it("stops rendering mock data on /tasks/[taskId]", () => {
-    expect(taskDetail).not.toContain('from "@/lib/tasks"');
-    expect(taskDetail).not.toMatch(/export\s+function\s+generateStaticParams/);
-    expect(taskDetail).toContain("RETIRED");
-  });
-
-  it("keeps the REAL list pages untouched", () => {
-    // /customs and /tasks lists read the database; only the mock DETAIL routes go.
-    const customsList = read("../app/customs/page.tsx");
-    expect(customsList).not.toContain('from "@/lib/customs"');
-  });
-});
+//
+// The retired-route assertions moved to tests/no-mock-modules.test.ts in Phase
+// 5.0D-5: the routes and the mock modules were DELETED outright, so there is no
+// longer a file here to read. That guard proves they are gone and fails CI if any
+// of them returns.

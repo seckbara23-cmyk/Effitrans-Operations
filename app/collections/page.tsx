@@ -44,6 +44,9 @@ type Search = {
   promise?: string;
   noFollowUp?: string;
   ready?: string;
+  verify?: string;
+  partial?: string;
+  paid?: string;
   q?: string;
 };
 
@@ -67,6 +70,9 @@ export default async function CollectionsPage({ searchParams }: { searchParams: 
     promiseDue: searchParams.promise === "1",
     noRecentFollowUp: searchParams.noFollowUp === "1",
     closureReady: searchParams.ready === "1",
+    pendingVerification: searchParams.verify === "1",
+    partiallyPaid: searchParams.partial === "1",
+    fullyPaid: searchParams.paid === "1",
     search: searchParams.q,
   };
 
@@ -112,6 +118,12 @@ export default async function CollectionsPage({ searchParams }: { searchParams: 
         </Link>
         <Link href="/collections?noFollowUp=1" className={`${chip} border-slate-200 text-slate-600`}>
           Sans relance
+        </Link>
+        <Link href="/collections?verify=1" className={`${chip} border-slate-200 text-slate-600`}>
+          Paiement à vérifier
+        </Link>
+        <Link href="/collections?partial=1" className={`${chip} border-slate-200 text-slate-600`}>
+          Partiellement payées
         </Link>
         <Link href="/collections?ready=1" className={`${chip} border-slate-200 text-slate-600`}>
           Prêtes à clôturer
