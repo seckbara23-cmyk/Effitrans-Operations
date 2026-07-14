@@ -173,14 +173,17 @@ const aging = (o: Partial<AgingInput>): AgingInput => ({
 describe("aging model (Deliverable 11) — deterministic, no AI", () => {
   it("declares the official buckets", () => {
     expect(AGING_BUCKETS).toContain("NOT_DUE");
+    expect(AGING_BUCKETS).toContain("DUE_TODAY");
     expect(AGING_BUCKETS).toContain("OVER_90_DAYS");
     expect(AGING_BUCKETS).toContain("PAID");
     expect(AGING_BUCKETS).toContain("DISPUTED");
+    expect(AGING_BUCKETS).toContain("DUE_DATE_MISSING");
   });
 
   it("NEVER calls an invoice overdue without a due date", () => {
     const r = evaluateAging(aging({ dueDate: null }));
-    expect(r.bucket).toBe("NO_DUE_DATE");
+    // Phase 5.0D-4 renamed this bucket to DUE_DATE_MISSING (the official name).
+    expect(r.bucket).toBe("DUE_DATE_MISSING");
     expect(r.labelFr).toBe("Échéance non définie");
     expect(r.overdue).toBe(false);
     expect(r.daysOutstanding).toBeNull();

@@ -711,3 +711,17 @@ where r.tenant_id = '00000000-0000-0000-0000-000000000001'
   and r.code = 'COLLECTIONS_OFFICER'
 on conflict do nothing;
 
+-- Phase 5.0D-4 — final dossier closure. Tenant-scoped, supervisors only.
+-- Deliberately NOT granted to COLLECTIONS_OFFICER (who completes the recovery),
+-- BILLING_OFFICER, COURIER, DRIVER or any portal identity.
+insert into public.permission (code, module, action, data_scope, description) values
+  ('process:close', 'process', 'close', 'all', 'Close a dossier after the full official process, including recovery, is complete. Tenant-scoped.')
+on conflict (code) do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'process:close'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR')
+on conflict do nothing;

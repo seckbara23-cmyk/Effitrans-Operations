@@ -1698,6 +1698,8 @@ export type Database = {
           note: string | null;
           promised_payment_date: string | null;
           next_follow_up_at: string | null;
+          promised_amount: number | null;
+          dispute_category: string | null;
           created_at: string;
         };
         Insert: {
@@ -1711,6 +1713,8 @@ export type Database = {
           note?: string | null;
           promised_payment_date?: string | null;
           next_follow_up_at?: string | null;
+          promised_amount?: number | null;
+          dispute_category?: string | null;
           created_at?: string;
         };
         Update: Record<string, never>; // append-only (trigger-enforced)
@@ -1803,6 +1807,14 @@ export type Database = {
           revision: number;
           disputed_at: string | null;
           dispute_reason: string | null;
+          collections_assignee_id: string | null;
+          collections_received_at: string | null;
+          dispute_category: string | null;
+          dispute_opened_by: string | null;
+          dispute_resolved_at: string | null;
+          dispute_resolution: string | null;
+          escalated_at: string | null;
+          collections_completed_at: string | null;
         };
         Insert: {
           id?: string;
@@ -1830,6 +1842,14 @@ export type Database = {
           revision?: number;
           disputed_at?: string | null;
           dispute_reason?: string | null;
+          collections_assignee_id?: string | null;
+          collections_received_at?: string | null;
+          dispute_category?: string | null;
+          dispute_opened_by?: string | null;
+          dispute_resolved_at?: string | null;
+          dispute_resolution?: string | null;
+          escalated_at?: string | null;
+          collections_completed_at?: string | null;
         };
         Update: {
           id?: string;
@@ -1857,6 +1877,14 @@ export type Database = {
           revision?: number;
           disputed_at?: string | null;
           dispute_reason?: string | null;
+          collections_assignee_id?: string | null;
+          collections_received_at?: string | null;
+          dispute_category?: string | null;
+          dispute_opened_by?: string | null;
+          dispute_resolved_at?: string | null;
+          dispute_resolution?: string | null;
+          escalated_at?: string | null;
+          collections_completed_at?: string | null;
         };
         Relationships: [
           {

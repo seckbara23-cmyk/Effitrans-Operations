@@ -79,8 +79,9 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       // Phase 5.0B — official process engine (no process:override; see PROCESS_HANDOFF).
       "admin_service:manage", "collections:manage", "courier:assign", "courier:deposit",
       "customs:assign", "customs:register", "customs:validate", "finance:validate",
-      "process:completeness:review", ...PROCESS_HANDOFF, "process:manage", "process:read",
-      "quotation:approve", "quotation:create", "quotation:send", "transport:request",
+      "process:close", "process:completeness:review", ...PROCESS_HANDOFF, "process:manage",
+      "process:read", "quotation:approve", "quotation:create", "quotation:send",
+      "transport:request",
     ],
   },
   {
@@ -245,9 +246,9 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       // Phase 5.0B. A supervisor may act as either maker or checker, but the engine
       // still blocks them from validating their OWN work (identity check).
       "admin_service:manage", "collections:manage", "courier:assign", "customs:assign",
-      "customs:register", "customs:validate", "finance:validate", "process:completeness:review",
-      ...PROCESS_HANDOFF, "process:manage", "process:read", "quotation:approve",
-      "quotation:create", "quotation:send", "transport:request",
+      "customs:register", "customs:validate", "finance:validate", "process:close",
+      "process:completeness:review", ...PROCESS_HANDOFF, "process:manage", "process:read",
+      "quotation:approve", "quotation:create", "quotation:send", "transport:request",
     ],
   },
   {

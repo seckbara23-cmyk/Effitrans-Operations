@@ -201,6 +201,18 @@ export const AuditActions = {
   COLLECTION_PROMISE_RECORDED: "collection.promise.recorded",
   COLLECTION_DISPUTE_RECORDED: "collection.dispute.recorded",
   CLOSURE_READINESS_EVALUATED: "closure.readiness.evaluated",
+
+  // Phase 5.0D-4 — Collections + explicit closure. Payloads carry ids, channels,
+  // outcomes, dates and blocker CODES. NEVER a follow-up note's content, never a
+  // conversation transcript, never bank or provider credentials.
+  COLLECTIONS_HANDOFF_RECEIVED: "collections.handoff.received",
+  COLLECTOR_ASSIGNED: "collections.collector.assigned",
+  COLLECTOR_REASSIGNED: "collections.collector.reassigned",
+  COLLECTION_PROMISE_MISSED: "collection.promise.missed",
+  COLLECTION_ESCALATED: "collection.escalated",
+  COLLECTION_DISPUTE_RESOLVED: "collection.dispute.resolved",
+  COLLECTIONS_COMPLETED: "collections.completed",
+  DOSSIER_CLOSURE_BLOCKED: "closure.blocked",
 } as const;
 
 export type AuditActionCode = (typeof AuditActions)[keyof typeof AuditActions];
