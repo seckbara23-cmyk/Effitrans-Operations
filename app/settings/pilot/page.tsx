@@ -21,6 +21,7 @@ import { buildPilotMatrix } from "@/lib/pilot/matrix";
 import { buildPilotChecklist, checklistCoverage } from "@/lib/pilot/checklist";
 import { getPilotMetrics } from "@/lib/pilot/observability";
 import { getDossierInventory } from "@/lib/pilot/inventory";
+import { getRolloutProof } from "@/lib/pilot/rollout-proof";
 import { cn } from "@/lib/cn";
 
 export const dynamic = "force-dynamic";
@@ -40,6 +41,23 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
       <h2 className="mb-3 text-sm font-semibold text-navy-900">{title}</h2>
       {children}
     </section>
+  );
+}
+
+function ProofLine({ label, value, strong }: { label: string; value: boolean; strong?: boolean }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <dt className={cn("text-slate-600", strong && "font-bold text-navy-900")}>{label}</dt>
+      <dd
+        className={cn(
+          "font-semibold",
+          value ? "text-emerald-700" : "text-red-700",
+          strong && "text-sm",
+        )}
+      >
+        {value ? "true" : "false"}
+      </dd>
+    </div>
   );
 }
 
@@ -69,6 +87,7 @@ export default async function PilotConsole({
   if (!hasPermission(permissions, "admin:config:manage")) notFound();
 
   const flags = await getTenantProcessFlags(user.tenantId);
+  const proof = await getRolloutProof(user.tenantId);
 
   const tab: TabKey = (TABS.find((t) => t.key === searchParams?.tab)?.key ?? "checklist") as TabKey;
 
@@ -96,6 +115,51 @@ export default async function PilotConsole({
           )}
         </p>
       </header>
+
+      {/* ---------------------------------------------------- ROLLOUT PROOF ----
+          The eight numbers, printed by the app itself. These are not a report ABOUT
+          the resolvers — they ARE the resolvers, called on this request, the same ones
+          the sidebar and every route guard used. If Effective Workspaces is false here,
+          Mon Travail 404s, and that is the same function saying so twice. */}
+      <section
+        className={cn(
+          "rounded-lg border p-4",
+          proof.effectiveWorkspaces
+            ? "border-emerald-200 bg-emerald-50"
+            : "border-amber-200 bg-amber-50",
+        )}
+      >
+        <h2 className="mb-2 text-sm font-semibold text-navy-900">État effectif du déploiement</h2>
+
+        <dl className="grid gap-x-6 gap-y-1 font-mono text-xs sm:grid-cols-2">
+          <ProofLine label="Global Engine" value={proof.globalEngine} />
+          <ProofLine label="Global Workspaces" value={proof.globalWorkspaces} />
+          <ProofLine label="Tenant Engine" value={proof.tenantEngine} />
+          <ProofLine label="Tenant Workspaces" value={proof.tenantWorkspaces} />
+          <ProofLine label="Effective Engine" value={proof.effectiveEngine} strong />
+          <ProofLine label="Effective Workspaces" value={proof.effectiveWorkspaces} strong />
+          <div className="flex justify-between gap-3 sm:col-span-2">
+            <dt className="text-slate-600">Organization ID</dt>
+            <dd className="truncate text-navy-900">{proof.organizationId}</dd>
+          </div>
+          <div className="flex justify-between gap-3 sm:col-span-2">
+            <dt className="text-slate-600">Organization Slug</dt>
+            <dd className="truncate text-navy-900">{proof.organizationSlug ?? "— (non défini)"}</dd>
+          </div>
+        </dl>
+
+        <p className="mt-3 border-t border-black/5 pt-2 text-xs text-slate-700">
+          <span className="font-semibold">Verdict : </span>
+          {proof.verdict}
+        </p>
+        {proof.rolloutRowMissing && (
+          <p className="mt-1 text-[11px] text-slate-500">
+            Aucune ligne dans <code>tenant_process_rollout</code> — ce qui signifie DÉSACTIVÉ. Une
+            ligne absente et une ligne à false sont identiques pour le résolveur (c&apos;est
+            voulu), mais pas pour vous : ici, personne n&apos;a encore activé ce tenant.
+          </p>
+        )}
+      </section>
 
       <nav className="flex flex-wrap gap-1.5 border-b border-slate-200 pb-2">
         {TABS.map((t) => (

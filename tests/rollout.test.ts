@@ -231,14 +231,23 @@ describe("no code path still asks the DEPLOYMENT what a TENANT is allowed to do"
   it("leaves getProcessFlags() callable ONLY from the rollout resolver", () => {
     // This is the guard that stops the next phase from quietly reintroducing an
     // environment-wide check on a tenant-scoped decision.
+    //
+    // It scans the CODE, not the comments. A file that DOCUMENTS why it must not call
+    // getProcessFlags() is doing exactly the right thing, and a guard that flags it for
+    // saying so teaches people to stop explaining themselves.
     const ALLOWED = ["lib/process/config.ts", "lib/process/rollout-server.ts", "lib/platform/rollout-read.ts"];
     const offenders: string[] = [];
+
+    const stripComments = (src: string) =>
+      src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 
     for (const dir of SRC_DIRS) {
       for (const file of walk(dir)) {
         const rel = file.replace(/\\/g, "/").split(/\/(?=app\/|lib\/|components\/)/).pop()!;
         if (ALLOWED.some((a) => rel.endsWith(a))) continue;
-        if (readFileSync(file, "utf8").includes("getProcessFlags()")) offenders.push(rel);
+        if (stripComments(readFileSync(file, "utf8")).includes("getProcessFlags()")) {
+          offenders.push(rel);
+        }
       }
     }
     expect(offenders).toEqual([]);
@@ -347,6 +356,107 @@ describe("rollback keeps the data and cannot corrupt a re-enable (Deliverable 9)
       "../lib/deposit/actions.ts",
     ]) {
       expect(read(f), f).toContain("getTenantProcessFlags");
+    }
+  });
+});
+
+// ------------------------------------------------------------ rollout proof ----
+
+describe("the app can prove its own effective rollout state (5.0E-3D)", () => {
+  const proof = read("../lib/pilot/rollout-proof.ts");
+  const page = read("../app/settings/pilot/page.tsx");
+  const settings = read("../app/settings/page.tsx");
+
+  it("prints all eight required values", () => {
+    for (const field of [
+      "globalEngine",
+      "globalWorkspaces",
+      "tenantEngine",
+      "tenantWorkspaces",
+      "effectiveEngine",
+      "effectiveWorkspaces",
+      "organizationId",
+      "organizationSlug",
+    ]) {
+      expect(proof, field).toContain(field);
+    }
+    for (const label of [
+      "Global Engine",
+      "Global Workspaces",
+      "Tenant Engine",
+      "Tenant Workspaces",
+      "Effective Engine",
+      "Effective Workspaces",
+      "Organization ID",
+      "Organization Slug",
+    ]) {
+      expect(page, label).toContain(label);
+    }
+  });
+
+  it("calls the SAME resolvers the sidebar and the route guards call", () => {
+    // Not a report ABOUT the rollout — the rollout itself, resolved on that request. A
+    // diagnostic with its own copy of the rule would eventually disagree with the rule,
+    // and it would be the diagnostic everyone believed.
+    expect(proof).toContain("globalKillSwitch()");
+    expect(proof).toContain("getTenantRollout(tenantId)");
+    expect(proof).toContain("getTenantProcessFlags(tenantId)");
+    expect(proof).not.toContain("resolveEffectiveFlags"); // does not re-derive; it ASKS
+  });
+
+  it("distinguishes 'nobody enabled it' from 'somebody turned it off'", () => {
+    // Identical to the resolver (both mean DISABLED, by design) — but not to a human
+    // trying to work out what happened.
+    expect(proof).toContain("rolloutRowMissing");
+  });
+
+  it("names WHICH gate is closed", () => {
+    expect(proof).toContain("verdict");
+    expect(proof).toContain("GLOBAL kill switch is OFF");
+    expect(proof).toContain("NO rollout row");
+  });
+
+  it("stays reachable when the engine is OFF — that is when it is needed", () => {
+    // The first cut hid the pilot console behind flags.enabled, which would have hidden
+    // the page that explains why the engine is off, exactly when someone needed it.
+    expect(settings).toContain('href: "/settings/pilot"');
+    expect(settings).not.toContain("requiresProcess");
+  });
+
+  it("is admin-only and exposes no other tenant and no secret", () => {
+    expect(page).toContain('hasPermission(permissions, "admin:config:manage")');
+    expect(proof).toContain('.eq("id", tenantId)');
+    expect(proof).toContain('.eq("tenant_id", tenantId)');
+    for (const secret of ["SERVICE_ROLE", "SUPABASE_SERVICE", "anon_key", "password"]) {
+      expect(proof.toLowerCase(), secret).not.toContain(secret.toLowerCase());
+    }
+  });
+
+  it("agrees with the rule it is proving, in every combination", () => {
+    // The page reports `effective`; this is the function behind it. If these ever
+    // disagreed, the proof would be worthless.
+    const cases: [boolean, boolean, boolean, boolean, boolean, boolean][] = [
+      // globalEng, globalWs, tenantEng, tenantWs -> effEng, effWs
+      [false, false, true, true, false, false], // kill switch cut
+      [true, true, false, false, false, false], // tenant not enabled (or no row)
+      [true, false, true, true, true, false], // workspaces not shipped globally
+      [true, true, true, false, true, false], // tenant engine on, workspaces off
+      [true, true, true, true, true, true], // live
+    ];
+    for (const [gE, gW, tE, tW, eE, eW] of cases) {
+      const env = resolveProcessFlags({
+        ...(gE ? { EFFITRANS_PROCESS_ENGINE_ENABLED: "true" } : {}),
+        ...(gW ? { EFFITRANS_PROCESS_WORKSPACES_ENABLED: "true" } : {}),
+      });
+      const f = resolveEffectiveFlags(env, {
+        process_engine: tE,
+        process_workspaces: tW,
+        physical_invoice_deposit: false,
+        collections: false,
+      });
+      const label = `g=${gE}/${gW} t=${tE}/${tW}`;
+      expect(f.enabled, label).toBe(eE);
+      expect(f.workspaces, label).toBe(eW);
     }
   });
 });

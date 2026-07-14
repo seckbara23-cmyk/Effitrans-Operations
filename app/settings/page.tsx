@@ -19,7 +19,6 @@ import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui/page-header";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
-import { getTenantProcessFlags } from "@/lib/process/rollout-server";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Paramètres" };
@@ -29,8 +28,6 @@ type Card = {
   title: string;
   description: string;
   permission: string;
-  /** Shown only when the official process is live for this tenant. */
-  requiresProcess?: boolean;
 };
 
 const CARDS: Card[] = [
@@ -56,9 +53,11 @@ const CARDS: Card[] = [
     href: "/settings/pilot",
     title: "Console pilote",
     description:
-      "Matrice des rôles, parcours guidé des 26 étapes, observabilité et inventaire des dossiers.",
+      "État effectif du déploiement, matrice des rôles, parcours guidé des 26 étapes, observabilité et inventaire des dossiers.",
     permission: "admin:config:manage",
-    requiresProcess: true,
+    // NOT gated on the process being enabled — deliberately. The console now prints WHY
+    // the process is off (which of the two gates is closed). Hiding it when the engine
+    // is disabled would hide the diagnostic exactly when someone needs it.
   },
 ];
 
@@ -70,11 +69,7 @@ export default async function SettingsPage() {
   // has never been the authorization.
   if (!hasPermission(permissions, "admin:config:manage")) notFound();
 
-  const flags = await getTenantProcessFlags(user.tenantId);
-
-  const cards = CARDS.filter(
-    (c) => hasPermission(permissions, c.permission) && (!c.requiresProcess || flags.enabled),
-  );
+  const cards = CARDS.filter((c) => hasPermission(permissions, c.permission));
 
   return (
     <div className="animate-fade-in space-y-6">
