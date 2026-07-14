@@ -1749,6 +1749,16 @@ export type Database = {
           voided_at?: string | null;
           created_at?: string;
           updated_at?: string;
+          submitted_by?: string | null;
+          submitted_at?: string | null;
+          validated_by?: string | null;
+          validated_at?: string | null;
+          rejected_by?: string | null;
+          rejected_at?: string | null;
+          rejection_reason?: string | null;
+          revision?: number;
+          disputed_at?: string | null;
+          dispute_reason?: string | null;
         };
         Update: {
           id?: string;
@@ -1766,6 +1776,16 @@ export type Database = {
           voided_at?: string | null;
           created_at?: string;
           updated_at?: string;
+          submitted_by?: string | null;
+          submitted_at?: string | null;
+          validated_by?: string | null;
+          validated_at?: string | null;
+          rejected_by?: string | null;
+          rejected_at?: string | null;
+          rejection_reason?: string | null;
+          revision?: number;
+          disputed_at?: string | null;
+          dispute_reason?: string | null;
         };
         Relationships: [
           {

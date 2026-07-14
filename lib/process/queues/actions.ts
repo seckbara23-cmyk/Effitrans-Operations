@@ -21,7 +21,15 @@ import {
   sendHandoff,
   submitStep,
 } from "../engine/actions";
+import {
+  approveInvoice,
+  emailValidatedInvoice,
+  prepareInvoiceDraft,
+  rejectInvoice,
+  submitInvoiceToFinance,
+} from "../billing/actions";
 import { isQueueKey } from "./registry";
+import type { BillingResult } from "../billing/actions";
 import type { EngineResult } from "../engine/types";
 
 function refresh(queueKey: string, fileId: string) {
@@ -102,5 +110,53 @@ export async function queueSendHandoff(
 ): Promise<EngineResult> {
   const r = await sendHandoff(fileId, fromStepKey, toStepKey);
   if (r.ok) refresh(queueKey, fileId);
+  return r;
+}
+
+// ------------------------------------------------- billing (Phase 5.0D-2) ----
+//
+// The Billing and Finance-validation queues act on the INVOICE, so they call the
+// billing workflow rather than the raw step actions. Those actions still drive the
+// process engine internally (submitStep / approveStep / rejectStep), so the
+// official steps 20-22 stay in sync and the maker-checker rule is enforced twice:
+// once on the invoice identity, once on the process execution row.
+
+export async function queuePrepareInvoice(fileId: string): Promise<BillingResult<{ id: string }>> {
+  const r = await prepareInvoiceDraft(fileId);
+  if (r.ok) refresh("billing", fileId);
+  return r;
+}
+
+export async function queueSubmitInvoice(fileId: string, invoiceId: string): Promise<BillingResult> {
+  const r = await submitInvoiceToFinance(invoiceId);
+  if (r.ok) refresh("billing", fileId);
+  return r;
+}
+
+/** The CHECKER approves. Refused if this user drafted the invoice. */
+export async function queueApproveInvoice(fileId: string, invoiceId: string): Promise<BillingResult> {
+  const r = await approveInvoice(invoiceId);
+  if (r.ok) refresh("finance", fileId);
+  return r;
+}
+
+/** The CHECKER rejects. A reason is mandatory. */
+export async function queueRejectInvoice(
+  fileId: string,
+  invoiceId: string,
+  reason: string,
+): Promise<BillingResult> {
+  const r = await rejectInvoice(invoiceId, reason);
+  if (r.ok) refresh("finance", fileId);
+  return r;
+}
+
+/** Only a VALIDATED invoice may be emailed. A failed send stays retryable. */
+export async function queueEmailInvoice(
+  fileId: string,
+  invoiceId: string,
+): Promise<BillingResult<{ id: string; status: string }>> {
+  const r = await emailValidatedInvoice(invoiceId);
+  if (r.ok) refresh("billing", fileId);
   return r;
 }

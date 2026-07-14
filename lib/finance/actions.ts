@@ -54,7 +54,7 @@ async function verifyFile(supabase: Admin, fileId: string, tenantId: string) {
 async function loadInvoice(supabase: Admin, id: string, tenantId: string) {
   const { data } = await supabase
     .from("invoice")
-    .select("id, file_id, status")
+    .select("id, file_id, status, submitted_at, validated_at")
     .eq("id", id)
     .eq("tenant_id", tenantId)
     .maybeSingle();
@@ -222,6 +222,11 @@ export async function updateInvoice(
   const inv = await loadInvoice(supabase, id, user.tenantId);
   if (!inv) return { ok: false, error: "not_found" };
   if (!canEditInvoice(inv.status as InvoiceStatus)) return { ok: false, error: "not_draft" };
+  // Phase 5.0D-2 — an invoice SUBMITTED to Finance is frozen. Without this a maker
+  // could edit after submitting and the checker would approve something other than
+  // what they reviewed. Legacy invoices have submitted_at = null and are unaffected,
+  // so shipped behaviour is unchanged.
+  if (inv.submitted_at && !inv.validated_at) return { ok: false, error: "awaiting_validation" };
 
   const { error } = await supabase
     .from("invoice")
