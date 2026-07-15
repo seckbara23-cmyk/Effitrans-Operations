@@ -19,6 +19,7 @@ export const PLATFORM_SECTION_TITLE = "Plateforme";
 export const platformNav: readonly PlatformNavItem[] = [
   { label: "Tableau de bord", href: "/platform" },
   { label: "Entreprises", href: "/platform/companies", permission: "platform:companies:read" },
+  { label: "Copilote plateforme", href: "/platform/copilot", permission: "platform:copilot:read" },
   { label: "Plans", href: "/platform/plans", permission: "platform:plans:read" },
   { label: "Déploiement processus", href: "/platform/rollout", permission: "platform:rollout:manage" },
   { label: "Santé système", href: "/platform/health", permission: "platform:companies:read" },

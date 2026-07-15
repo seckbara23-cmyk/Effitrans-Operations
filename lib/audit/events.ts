@@ -165,6 +165,10 @@ export const AuditActions = {
   PLATFORM_TENANT_PLAN_CHANGED: "platform.tenant.plan_changed",
   PLATFORM_ROLE_TEMPLATE_UPDATED: "platform.role_template.updated",
   PLATFORM_BRANDING_UPDATED: "platform.branding.updated",
+  // Phase 6.0F — a Platform Copilot query. Records SAFE metadata only (actor, provider,
+  // model, tenant count, context categories, token/outcome) — never the prompt, the
+  // answer, or any tenant secret.
+  PLATFORM_COPILOT_QUERY: "platform.copilot.query",
 
   // Phase 5.0B — official process engine. Payloads carry only step KEYS, state
   // names, actor ids and evidence KEYS. NEVER document contents, file bytes,

@@ -72,6 +72,8 @@ describe("platform roles", () => {
         "platform:companies:create",
         "platform:companies:read",
         "platform:companies:update",
+        // Phase 6.0F — read-only Platform Copilot awareness.
+        "platform:copilot:read",
         "platform:plans:read",
         // Phase 5.0E-2A — process rollout. SUPER_ADMIN only, deliberately: enabling
         // the workflow for a live freight forwarder is not a help-desk action.
@@ -79,9 +81,9 @@ describe("platform roles", () => {
         "platform:settings:manage",
         "platform:status:update",
       ],
-      PLATFORM_SUPPORT: ["platform:audit:read", "platform:companies:read", "platform:plans:read"],
+      PLATFORM_SUPPORT: ["platform:audit:read", "platform:companies:read", "platform:copilot:read", "platform:plans:read"],
       PLATFORM_BILLING: ["platform:companies:read", "platform:plans:read"],
-      PLATFORM_READ_ONLY: ["platform:audit:read", "platform:companies:read", "platform:plans:read"],
+      PLATFORM_READ_ONLY: ["platform:audit:read", "platform:companies:read", "platform:copilot:read", "platform:plans:read"],
     });
   });
 
