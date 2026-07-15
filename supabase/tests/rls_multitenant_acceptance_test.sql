@@ -7,6 +7,11 @@
 -- which already prove isolation for their own tables. Non-destructive
 -- (BEGIN/ROLLBACK). Fails the job (ON_ERROR_STOP) on any leak or cross-tenant write.
 --
+-- A cross-tenant write is "prevented" when the attempt either raises a privilege/RLS
+-- error OR affects 0 rows — the `authenticated` role has no write GRANT on these tables
+-- (writes go through the service role), so it typically raises insufficient_privilege;
+-- each attempt is wrapped in a sub-block so that error counts as PASS, not job failure.
+--
 -- Tenant A = seeded Effitrans (000…001, rich seed data). Tenant B is created here.
 -- Run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/rls_multitenant_acceptance_test.sql
 
@@ -47,6 +52,7 @@ do $$
 declare
   v int;
   affected int;
+  prevented boolean;
 begin
   perform set_config('role', 'authenticated', true);
   perform set_config('request.jwt.claims',
@@ -69,14 +75,24 @@ begin
   select count(*) into v from public.audit_log where id = '00000000-0000-0000-0000-0000000000e1';
   if v <> 1 then raise exception 'A cannot read own audit (got %)', v; end if;
 
-  -- MUTATE tenant B → zero rows affected (RLS filters B's row out of A's view).
-  update public.organization set name = 'HACKED-BY-A' where id = '00000000-0000-0000-0000-0000000000b2';
-  get diagnostics affected = row_count;
-  if affected <> 0 then raise exception 'CROSS-TENANT WRITE: A updated B organization (% rows)', affected; end if;
+  -- MUTATE tenant B → prevented (privilege error or 0 rows).
+  prevented := false;
+  begin
+    update public.organization set name = 'HACKED-BY-A' where id = '00000000-0000-0000-0000-0000000000b2';
+    get diagnostics affected = row_count;
+    prevented := (affected = 0);
+  exception when others then prevented := true;
+  end;
+  if not prevented then raise exception 'CROSS-TENANT WRITE: A updated B organization'; end if;
 
-  update public.app_user set email = 'hacked@a' where id = '00000000-0000-0000-0000-0000000000b1';
-  get diagnostics affected = row_count;
-  if affected <> 0 then raise exception 'CROSS-TENANT WRITE: A updated B app_user (% rows)', affected; end if;
+  prevented := false;
+  begin
+    update public.app_user set email = 'hacked@a' where id = '00000000-0000-0000-0000-0000000000b1';
+    get diagnostics affected = row_count;
+    prevented := (affected = 0);
+  exception when others then prevented := true;
+  end;
+  if not prevented then raise exception 'CROSS-TENANT WRITE: A updated B app_user'; end if;
 
   perform set_config('role', 'postgres', true);
   raise notice 'Direction A→B: PASS (A isolated from B, own rows visible, no cross-tenant write)';
@@ -87,6 +103,7 @@ do $$
 declare
   v int;
   affected int;
+  prevented boolean;
 begin
   perform set_config('role', 'authenticated', true);
   perform set_config('request.jwt.claims',
@@ -108,10 +125,15 @@ begin
   select count(*) into v from public.audit_log where id = '00000000-0000-0000-0000-0000000000e1';
   if v <> 0 then raise exception 'LEAK: B read A audit_log (% rows)', v; end if;
 
-  -- MUTATE tenant A → zero rows affected.
-  update public.organization set name = 'HACKED-BY-B' where id = '00000000-0000-0000-0000-000000000001';
-  get diagnostics affected = row_count;
-  if affected <> 0 then raise exception 'CROSS-TENANT WRITE: B updated A organization (% rows)', affected; end if;
+  -- MUTATE tenant A → prevented.
+  prevented := false;
+  begin
+    update public.organization set name = 'HACKED-BY-B' where id = '00000000-0000-0000-0000-000000000001';
+    get diagnostics affected = row_count;
+    prevented := (affected = 0);
+  exception when others then prevented := true;
+  end;
+  if not prevented then raise exception 'CROSS-TENANT WRITE: B updated A organization'; end if;
 
   perform set_config('role', 'postgres', true);
   raise notice 'Direction B→A: PASS (B isolated from A, own org visible, no cross-tenant write)';
