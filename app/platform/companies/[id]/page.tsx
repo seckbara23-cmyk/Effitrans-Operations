@@ -24,6 +24,7 @@ import { getTenantBrandingRow } from "@/lib/platform/branding-actions";
 import { BrandingEditor } from "@/components/platform/branding-editor";
 import { deriveTrialState, deriveCompanyHealth, type TrialState } from "@/lib/platform/console/table";
 import { lifecycleBadge, onboardingBadge, HEALTH_BADGES, TONE_CLASS } from "@/lib/platform/console/badges";
+import { deriveOnboardingChecklist } from "@/lib/platform/console/onboarding";
 import { resolveTenantModules, isPlanKey } from "@/lib/platform/entitlements";
 import { RolloutControls } from "@/components/platform/rollout-controls";
 import { CopyButton } from "@/components/platform/copy-button";
@@ -36,6 +37,7 @@ export const metadata: Metadata = { title: "Entreprise" };
 
 const TABS = [
   { key: "overview", label: "Aperçu" },
+  { key: "onboarding", label: "Onboarding" },
   { key: "branding", label: "Marque" },
   { key: "subscription", label: "Abonnement" },
   { key: "users", label: "Utilisateurs" },
@@ -137,6 +139,7 @@ export default async function PlatformCompanyDetail({
       </nav>
 
       {tab === "overview" && <OverviewTab company={c} trialLabel={trialText(trial)} />}
+      {tab === "onboarding" && <OnboardingTab company={c} />}
       {tab === "branding" && <BrandingTab tenantId={c.id} orgDisplayName={c.displayName} />}
       {tab === "subscription" && <SubscriptionTab company={c} trialLabel={trialText(trial)} />}
       {tab === "users" && <UsersTab tenantId={c.id} />}
@@ -164,6 +167,64 @@ function OverviewTab({ company: c, trialLabel }: { company: CompanySummary; tria
       <Field label="Pays / langue" value={`${c.country ?? "—"} · ${c.locale}`} />
       <Field label="Créée le" value={c.createdAt.slice(0, 10)} />
       <Field label="Dernière connexion" value={c.lastTenantLoginAt ? c.lastTenantLoginAt.slice(0, 16).replace("T", " ") : "—"} />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- Onboarding ----
+async function OnboardingTab({ company: c }: { company: CompanySummary }) {
+  // Derived from facts we already read + the tenant's rollout row (one bounded read,
+  // only when this tab is opened). Nothing here mutates onboarding_status.
+  const overview = await getRolloutOverview();
+  const row = overview.rows.find((r) => r.tenantId === c.id);
+  const checklist = deriveOnboardingChecklist(c, {
+    rowExists: Boolean(row),
+    live: row?.effective.process_engine ?? false,
+  });
+  const pct = Math.round((checklist.completed / checklist.total) * 100);
+
+  return (
+    <div className="space-y-4">
+      <Panel title="Progression de l'onboarding">
+        <div className="flex items-center gap-3">
+          <span className="text-2xl font-bold text-white">{checklist.completed}</span>
+          <span className="text-sm text-slate-400">/ {checklist.total} étapes · {checklist.summary}</span>
+        </div>
+        <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-white/10" role="progressbar" aria-valuenow={checklist.completed} aria-valuemin={0} aria-valuemax={checklist.total} aria-label="Progression de l'onboarding">
+          <div className="h-full rounded-full bg-teal-500" style={{ width: `${pct}%` }} />
+        </div>
+        <p className="mt-3 text-xs text-slate-500">
+          Cet état est <strong>dérivé</strong> des données existantes (utilisateurs, connexions, marque,
+          déploiement, dossiers). Rien n'est marqué manuellement ; le champ « onboarding » reste descriptif.
+        </p>
+      </Panel>
+
+      <Panel title="Étapes">
+        <ul className="space-y-2">
+          {checklist.items.map((item) => (
+            <li key={item.key} className="flex items-start gap-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2.5">
+              <span className={cn("mt-0.5 inline-block h-3 w-3 shrink-0 rounded-full", item.complete ? "bg-emerald-400" : "bg-slate-600")} aria-hidden />
+              <span className="min-w-0 flex-1">
+                <span className="flex flex-wrap items-center gap-2">
+                  <span className={item.complete ? "text-sm font-medium text-slate-100" : "text-sm font-medium text-slate-300"}>{item.label}</span>
+                  <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold", item.complete ? "bg-emerald-400/15 text-emerald-200" : "bg-slate-600/30 text-slate-400")}>
+                    {item.complete ? "Terminé" : "À faire"}
+                  </span>
+                </span>
+                <span className="mt-0.5 block text-xs text-slate-500">
+                  {item.evidence}
+                  {item.timestamp ? ` · ${item.timestamp.slice(0, 10)}` : ""}
+                </span>
+              </span>
+              {item.tab && (
+                <Link href={`/platform/companies/${c.id}?tab=${item.tab}`} className="shrink-0 self-center text-xs font-medium text-teal-300 hover:text-teal-200">
+                  Ouvrir →
+                </Link>
+              )}
+            </li>
+          ))}
+        </ul>
+      </Panel>
     </div>
   );
 }
