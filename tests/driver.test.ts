@@ -62,7 +62,10 @@ describe("post-login redirect selection (DRIVER routing)", () => {
   it("routes portal, staff-driver, and other staff correctly", () => {
     expect(postLoginPath("portal", [])).toBe("/portal");
     expect(postLoginPath("staff", ["DRIVER"])).toBe("/driver");
-    expect(postLoginPath("staff", ["DRIVER", "SYSTEM_ADMIN"])).toBe("/driver");
+    // Phase 5.0E FIX (was the production regression): this line previously asserted
+    // "/driver" — encoding the bug that merely HOLDING the driver role overrode
+    // SYSTEM_ADMIN. A staff user who is also an admin must land on the admin workspace.
+    expect(postLoginPath("staff", ["DRIVER", "SYSTEM_ADMIN"])).toBe("/dashboard");
     expect(postLoginPath("staff", ["OPS_SUPERVISOR"])).toBe("/dashboard");
     expect(postLoginPath("none", [])).toBe("/dashboard");
     // Phase 4.0B — a pure platform admin (no tenant identity) lands on /platform.

@@ -13,6 +13,7 @@ import {
   getStaffTenantBlockReason,
   type CurrentUser,
 } from "./current-user";
+import { isDriverOnly } from "./staff-identity";
 
 /**
  * Returns the authenticated STAFF user, or redirects.
@@ -37,8 +38,12 @@ export async function requireUser(): Promise<CurrentUser> {
     const cls = await getSessionClass();
     redirect(cls === "portal" ? "/portal" : "/login");
   }
-  // Phase 3.4C — DRIVER is a mobile-only identity; keep drivers out of staff pages
-  // (their /driver routes use requireDriver, so this never loops).
-  if (user.roles.includes("DRIVER")) redirect("/driver");
+  // Phase 3.4C — a DRIVER-ONLY user is a mobile-only identity; keep them out of staff
+  // pages (their /driver routes use requireDriver, so this never loops).
+  //
+  // Phase 5.0E fix: gate on isDriverOnly, NOT roles.includes("DRIVER"). A SYSTEM_ADMIN who
+  // also holds the driver role is STAFF and must render the staff page, not be bounced to
+  // /driver. Membership in DRIVER is not a driver IDENTITY.
+  if (isDriverOnly(user.roles)) redirect("/driver");
   return user;
 }

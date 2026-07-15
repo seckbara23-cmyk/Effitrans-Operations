@@ -22,6 +22,7 @@
  * Collections (aging), Courier (deposit runs).
  */
 import type { NavigationContext } from "./types";
+import { OVERSIGHT_ROLES } from "@/lib/auth/staff-identity";
 
 export const LANDING_MY_WORK = "/my-work";
 export const LANDING_DASHBOARD = "/dashboard";
@@ -33,45 +34,13 @@ export const LANDING_DRIVER = "/driver";
 export const LANDING_PLATFORM = "/platform";
 export const LANDING_PORTAL = "/portal";
 
-const OVERSIGHT = ["COORDINATOR", "OPS_SUPERVISOR", "SYSTEM_ADMIN"];
+const OVERSIGHT = [...OVERSIGHT_ROLES];
 
-/**
- * Every tenant role that means "this person does operational work in the app".
- * Used ONLY to decide whether a COURIER is courier-ONLY, so a coursier who is also,
- * say, an Administrative Officer keeps the full staff shell.
- */
-const OPERATIONAL_ROLES = [
-  ...OVERSIGHT,
-  "ACCOUNT_MANAGER",
-  "QUOTATION_MANAGER",
-  "CHIEF_OF_TRANSIT",
-  "CUSTOMS_DECLARANT",
-  "CUSTOMS_FINANCE_OFFICER",
-  "CUSTOMS_FIELD_AGENT",
-  "TRANSPORT_OFFICER",
-  "PICKUP_AGENT",
-  "BILLING_OFFICER",
-  "FINANCE_OFFICER",
-  "ADMINISTRATIVE_OFFICER",
-  "COLLECTIONS_OFFICER",
-  "DOCUMENTATION_OFFICER",
-  "WAREHOUSE_COORDINATOR",
-  "COMPLIANCE_HSSE",
-];
-
-/**
- * Is this a COURIER and nothing else? (Phase 5.0E-3.)
- *
- * A coursier's whole job is the deposit run: no analytics:read, no file:read, exactly
- * one queue. The staff shell for them is a sidebar of empty sections. So they get
- * their own surface, like a driver — but ONLY when COURIER is all they are. The test
- * is the ABSENCE of any other operational role, never the presence of COURIER.
- */
-export function isCourierOnly(roleCodes: string[]): boolean {
-  const roles = new Set(roleCodes);
-  if (!roles.has("COURIER")) return false;
-  return !OPERATIONAL_ROLES.some((r) => roles.has(r));
-}
+// The narrow-identity predicates now live in ONE pure, edge-safe source of truth
+// (lib/auth/staff-identity) shared with the login redirect, the route guard and the
+// navigation resolver — so "who is a driver / courier" cannot drift between them. Re-
+// exported here for the existing importers.
+export { isCourierOnly, isDriverOnly } from "@/lib/auth/staff-identity";
 
 /** Where this user should land after login, and where "/" sends them. */
 export function resolveLandingRoute(ctx: NavigationContext): string {
