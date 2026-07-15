@@ -9,6 +9,7 @@ import { useSession, canSeeNav } from "@/lib/auth/use-session";
 import { getBrowserSupabaseClient } from "@/lib/supabase/client";
 import { recordLogoutAudit } from "@/lib/auth/actions";
 import { NotificationBell } from "@/components/notifications/notification-bell";
+import { WorkspaceSwitcher } from "@/components/workspace/workspace-switcher";
 
 function currentTitle(pathname: string): string {
   const match = allNavItems.find(
@@ -69,6 +70,10 @@ export function Topbar({
               className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-navy-900 placeholder:text-slate-400 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
             />
           </div>
+
+          {/* Workspace switcher (6.0H) — renders only when there is more than one
+              destination (a platform admin with a tenant, or multiple memberships). */}
+          <WorkspaceSwitcher variant="tenant" />
 
           <NotificationBell />
 

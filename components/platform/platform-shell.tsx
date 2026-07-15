@@ -14,6 +14,7 @@ import { cn } from "@/lib/cn";
 import { getBrowserSupabaseClient } from "@/lib/supabase/client";
 import { visiblePlatformNav } from "@/lib/platform/nav";
 import { PLATFORM_BRANDING } from "@/lib/branding/platform";
+import { WorkspaceSwitcher } from "@/components/workspace/workspace-switcher";
 
 export function PlatformShell({
   email,
@@ -64,6 +65,11 @@ export function PlatformShell({
         <div className="border-t border-white/10 px-4 py-4">
           <p className="truncate text-[13px] font-semibold text-white">{email}</p>
           <p className="mb-3 truncate text-[12px] font-medium text-teal-300">{role}</p>
+          {/* Workspace switcher (6.0H) — jump to a tenant workspace the admin belongs to.
+              Renders only when there is somewhere to switch to. */}
+          <div className="mb-3">
+            <WorkspaceSwitcher variant="platform" />
+          </div>
           <button
             onClick={signOut}
             className="w-full rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm font-medium text-slate-200 hover:bg-white/10"
