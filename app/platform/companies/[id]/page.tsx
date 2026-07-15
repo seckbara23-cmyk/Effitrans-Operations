@@ -7,10 +7,11 @@
  * the Audit tab paginates the EXISTING audit_log through a per-tenant read. Every read
  * is one of the bounded, platform-gated readers — no engine change, no new mutation.
  *
- * Only ACTIONS THAT EXIST are surfaced (rollout toggles, copy slug/id). Suspend /
- * resume / archive are deliberately absent: no lifecycle action or enforcement exists
- * yet (a later sub-phase), and a button that changes a flag which blocks nothing would
- * mislead.
+ * Only ACTIONS THAT EXIST are surfaced (rollout toggles, copy slug/id). The lifecycle
+ * controls (Suspend / Reactivate / Archive, Phase 6.0D) are real: each calls a
+ * platform-gated server action, and the block is enforced in getCurrentUser — so a
+ * suspended/archived tenant's next request resolves to no session. Only the transitions
+ * valid from the current status are shown (canTransition); an archived tenant offers none.
  */
 import type { Metadata } from "next";
 import Link from "next/link";

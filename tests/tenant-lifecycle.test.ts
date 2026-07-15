@@ -231,3 +231,62 @@ describe("the detail console surfaces valid actions only, with a real dialog", (
     }
   });
 });
+
+// ---------------------------------------- every protected entry point obeys the point ----
+
+describe("narrow portals and API routes resolve through the single enforcement point", () => {
+  const driverAuth = read("../lib/driver/auth.ts");
+  const courierPage = read("../app/courier/page.tsx");
+  const requirePermission = read("../lib/auth/require-permission.ts");
+
+  it("the driver portal guard resolves via getCurrentUser — a suspended tenant's driver is denied", () => {
+    // requireDriver → getCurrentUser (null when the tenant is blocked) → redirect to
+    // /login, never the /driver surface. It never re-reads the lifecycle itself.
+    expect(driverAuth).toContain("getCurrentUser()");
+    expect(code("../lib/driver/auth.ts")).toContain("if (!user)");
+    expect(driverAuth).not.toContain("tenantBlockReason"); // no scattered second check
+  });
+
+  it("the courier workspace resolves via requireUser → getCurrentUser", () => {
+    expect(courierPage).toContain("requireUser()");
+  });
+
+  it("every gated server action resolves via getCurrentUser (assertPermission)", () => {
+    expect(requirePermission).toContain("getCurrentUser()");
+    expect(requirePermission).toContain("if (!user) throw");
+  });
+
+  it("the authenticated API routes resolve via getCurrentUser", () => {
+    for (const p of [
+      "../app/api/driver/positions/route.ts",
+      "../app/api/reports/export/route.ts",
+      "../app/api/copilot/route.ts",
+      "../app/api/ai/health/route.ts",
+    ]) {
+      expect(read(p), p).toContain("getCurrentUser");
+    }
+  });
+});
+
+describe("lifecycle enforcement precedes narrow-identity routing (identity-regression compat)", () => {
+  it("requireUser redirects a BLOCKED user before it can ever route a driver to /driver", () => {
+    // A suspended SYSTEM_ADMIN+DRIVER: getCurrentUser → null → the !user block redirects
+    // (to /login with the reason). The isDriverOnly redirect sits AFTER that block, so it
+    // is unreachable for a blocked user — lifecycle wins over /driver, structurally.
+    const src = code("../lib/auth/require-user.ts");
+    const nullGuard = src.indexOf("if (!user)");
+    const driverRedirect = src.indexOf("isDriverOnly(user.roles)");
+    expect(nullGuard).toBeGreaterThanOrEqual(0);
+    expect(driverRedirect).toBeGreaterThan(nullGuard);
+  });
+
+  it("lifecycle code never reintroduces raw driver/courier membership routing", () => {
+    // The enforcement path keys on tenant STATUS, never on roles, so it cannot regress the
+    // identity fix. Neither lifecycle source mentions DRIVER/COURIER membership at all.
+    for (const p of ["../lib/platform/lifecycle-actions.ts", "../lib/platform/company-metadata.ts"]) {
+      const src = read(p);
+      expect(src, p).not.toContain('roles.includes("DRIVER")');
+      expect(src, p).not.toContain('roles.includes("COURIER")');
+    }
+  });
+});
