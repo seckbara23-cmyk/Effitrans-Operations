@@ -217,7 +217,12 @@ describe("the detail console surfaces valid actions only, with a real dialog", (
     expect(lifecycleUi).not.toMatch(/\balert\(/);
     expect(lifecycleUi).not.toContain("window.confirm");
     expect(lifecycleUi).toContain("IRRÉVERSIBLE"); // archive is spelled out as terminal
-    expect(lifecycleUi).toContain("Les données sont conservées");
+    expect(lifecycleUi).toContain("Les données sont conservées"); // suspend states data remains
+    // Archive states the ENFORCED contract accurately: it blocks tenant access, it is NOT
+    // a tenant-side "read-only" mode (5.0E validation). The data is readable only by
+    // platform admins.
+    expect(lifecycleUi).toContain("L'accès au tenant est définitivement désactivé");
+    expect(lifecycleUi).not.toContain("Le tenant devient définitivement en lecture seule");
   });
 
   it("holds no authority and no service-role credential", () => {

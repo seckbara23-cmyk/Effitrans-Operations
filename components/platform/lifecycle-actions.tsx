@@ -52,7 +52,11 @@ const META: Record<LifecycleAction, Meta> = {
     label: "Archiver",
     tone: "border-red-500/40 bg-red-500/10 text-red-200 hover:bg-red-500/20",
     title: "Archiver l'entreprise",
-    body: "Le tenant devient définitivement en lecture seule : connexion désactivée, provisionnement et déploiement bloqués. Les données ne sont jamais supprimées et restent lisibles par les administrateurs plateforme.",
+    // Accurate to the enforced contract (5.0E validation): archiving BLOCKS all tenant
+    // access — it is not a tenant-side "read-only" mode. The data is preserved and stays
+    // readable ONLY by platform administrators (their reads use the service role, not the
+    // tenant session that archiving denies).
+    body: "L'accès au tenant est définitivement désactivé : connexion, provisionnement et déploiement bloqués. Aucune donnée n'est supprimée ; elle reste consultable uniquement par les administrateurs plateforme.",
     reversible: "IRRÉVERSIBLE — un tenant archivé ne peut pas être réactivé.",
     needsReason: true,
     run: archiveTenant,
