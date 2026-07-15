@@ -38,6 +38,22 @@ scoped to server runtime only. No secret belongs in a `NEXT_PUBLIC_*` name.
 
 ## Procedures
 
+### Execute the staging acceptance run (release gate — Phase 6.0G)
+Before onboarding the first external customer, run the acceptance harness
+`docs/phase-6.0g-staging-acceptance.md` against staging with operator credentials:
+1. Confirm the deployed SHA equals the release-candidate SHA (`65240a8`) — reject "latest"
+   without an exact match — and that CI is green on it.
+2. Fill the run header (environment, URLs, operator, date) and the environment-readiness
+   table (present / missing / invalid / disabled — **never values**).
+3. Work Parts 1–18, recording only safe evidence (event ids, route names, counts, PASS/FAIL).
+   Provision the tenant **Effitrans Staging Acceptance Tenant / effitrans-staging-acceptance**
+   with an operator-controlled first-admin email.
+4. Record the outcome in the harness and confirm the release decision
+   (`docs/phase-6.0g-release-decision.md`): all ⏳ steps PASS → GO; any NO-GO trigger → NO-GO.
+5. Clean up per Part 18 (**suspend** to keep the tenant reusable; archive is terminal). Never
+   commit a setup link or temporary password; delete local screenshots/emails with one-time
+   material.
+
 ### Provision a tenant
 1. `/platform/companies/new` → complete the 7 steps (Identity → Profile → Branding → Modules/Rollout → Roles → First Administrator → Review).
 2. Submit once. The wizard uses one provisioning key; a retry reuses the same key (idempotent RPC + slug guard). No partial rows appear before submit.
