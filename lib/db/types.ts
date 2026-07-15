@@ -1575,6 +1575,102 @@ export type Database = {
         };
         Relationships: [];
       };
+      brand_asset: {
+        Row: {
+          id: string; tenant_id: string; kind: string; title: string | null; storage_path: string;
+          version: number; mime: string; bytes: number; width: number | null; height: number | null;
+          alt_text: string; checksum: string | null; status: string; source_note: string | null;
+          uploaded_by: string | null; created_at: string; retired_at: string | null;
+        };
+        Insert: {
+          id?: string; tenant_id: string; kind: string; title?: string | null; storage_path: string;
+          version?: number; mime: string; bytes: number; width?: number | null; height?: number | null;
+          alt_text: string; checksum?: string | null; status?: string; source_note?: string | null;
+          uploaded_by?: string | null; created_at?: string; retired_at?: string | null;
+        };
+        Update: {
+          id?: string; tenant_id?: string; kind?: string; title?: string | null; storage_path?: string;
+          version?: number; mime?: string; bytes?: number; width?: number | null; height?: number | null;
+          alt_text?: string; checksum?: string | null; status?: string; source_note?: string | null;
+          uploaded_by?: string | null; created_at?: string; retired_at?: string | null;
+        };
+        Relationships: [];
+      };
+      tenant_brand_profile: {
+        Row: {
+          tenant_id: string; color_green: string | null; color_gold: string | null; color_anthracite: string | null;
+          font_heading: string | null; font_body: string | null; font_email_fallback: string | null;
+          slogan: string | null; value_proposition: string | null; address: string | null; legal_identifiers: string | null;
+          website_url: string | null; linkedin_url: string | null; whistleblower_url: string | null;
+          compliance_title: string | null; compliance_subtitle: string | null; compliance_description: string | null;
+          compliance_button_label: string | null; sustainability_statement: string | null;
+          environmental_print_statement: string | null; footer_line: string | null;
+          created_at: string; updated_at: string; updated_by: string | null;
+        };
+        Insert: {
+          tenant_id: string; color_green?: string | null; color_gold?: string | null; color_anthracite?: string | null;
+          font_heading?: string | null; font_body?: string | null; font_email_fallback?: string | null;
+          slogan?: string | null; value_proposition?: string | null; address?: string | null; legal_identifiers?: string | null;
+          website_url?: string | null; linkedin_url?: string | null; whistleblower_url?: string | null;
+          compliance_title?: string | null; compliance_subtitle?: string | null; compliance_description?: string | null;
+          compliance_button_label?: string | null; sustainability_statement?: string | null;
+          environmental_print_statement?: string | null; footer_line?: string | null;
+          created_at?: string; updated_at?: string; updated_by?: string | null;
+        };
+        Update: {
+          tenant_id?: string; color_green?: string | null; color_gold?: string | null; color_anthracite?: string | null;
+          font_heading?: string | null; font_body?: string | null; font_email_fallback?: string | null;
+          slogan?: string | null; value_proposition?: string | null; address?: string | null; legal_identifiers?: string | null;
+          website_url?: string | null; linkedin_url?: string | null; whistleblower_url?: string | null;
+          compliance_title?: string | null; compliance_subtitle?: string | null; compliance_description?: string | null;
+          compliance_button_label?: string | null; sustainability_statement?: string | null;
+          environmental_print_statement?: string | null; footer_line?: string | null;
+          created_at?: string; updated_at?: string; updated_by?: string | null;
+        };
+        Relationships: [];
+      };
+      tenant_membership_registry: {
+        Row: {
+          id: string; tenant_id: string; organization_name: string; membership_id: string | null;
+          official_url: string | null; status: string; valid_from: string | null; expires_at: string | null;
+          display_order: number; logo_asset_id: string | null; asset_use_notes: string | null;
+          created_at: string; updated_at: string; updated_by: string | null;
+        };
+        Insert: {
+          id?: string; tenant_id: string; organization_name: string; membership_id?: string | null;
+          official_url?: string | null; status?: string; valid_from?: string | null; expires_at?: string | null;
+          display_order?: number; logo_asset_id?: string | null; asset_use_notes?: string | null;
+          created_at?: string; updated_at?: string; updated_by?: string | null;
+        };
+        Update: {
+          id?: string; tenant_id?: string; organization_name?: string; membership_id?: string | null;
+          official_url?: string | null; status?: string; valid_from?: string | null; expires_at?: string | null;
+          display_order?: number; logo_asset_id?: string | null; asset_use_notes?: string | null;
+          created_at?: string; updated_at?: string; updated_by?: string | null;
+        };
+        Relationships: [];
+      };
+      workforce_profile: {
+        Row: {
+          user_id: string; tenant_id: string; job_title: string | null; phone_office: string | null;
+          phone_mobile: string | null; whatsapp: string | null; photo_asset_id: string | null;
+          signature_variant: string; public_card_enabled: boolean; public_card_token: string | null;
+          token_rotated_at: string | null; created_at: string; updated_at: string; updated_by: string | null;
+        };
+        Insert: {
+          user_id: string; tenant_id: string; job_title?: string | null; phone_office?: string | null;
+          phone_mobile?: string | null; whatsapp?: string | null; photo_asset_id?: string | null;
+          signature_variant?: string; public_card_enabled?: boolean; public_card_token?: string | null;
+          token_rotated_at?: string | null; created_at?: string; updated_at?: string; updated_by?: string | null;
+        };
+        Update: {
+          user_id?: string; tenant_id?: string; job_title?: string | null; phone_office?: string | null;
+          phone_mobile?: string | null; whatsapp?: string | null; photo_asset_id?: string | null;
+          signature_variant?: string; public_card_enabled?: boolean; public_card_token?: string | null;
+          token_rotated_at?: string | null; created_at?: string; updated_at?: string; updated_by?: string | null;
+        };
+        Relationships: [];
+      };
       invoice_deposit_event: {
         Row: {
           id: string;

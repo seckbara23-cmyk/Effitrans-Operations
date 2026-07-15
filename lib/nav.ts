@@ -126,6 +126,8 @@ export const BASE_SECTIONS: NavigationSection[] = [
     label: "Administration",
     items: [
       { key: "users", label: "Utilisateurs", href: "/users", iconKey: "users", permission: "admin:users:manage" },
+      // DBC-1 — Digital Brand Center (tenant module). Gated by admin:config:manage.
+      { key: "brand-center", label: "Centre de marque", href: "/brand-center", iconKey: "building", permission: "admin:config:manage" },
       { key: "audit", label: "Journal d'audit", href: "/settings/audit", iconKey: "stamp", permission: "audit:read:all" },
       // Paramètres is the hub. The AI settings live UNDER it (/settings/ai) rather than
       // as a fourth top-level entry called "Paramètres IA", which described the one

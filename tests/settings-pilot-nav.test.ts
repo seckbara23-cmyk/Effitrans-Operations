@@ -61,7 +61,8 @@ describe("Processus officiel lives under Paramètres", () => {
   });
 
   it("adds NO new top-level sidebar entry", () => {
-    // It is a settings page, reached through Paramètres. ADMINISTRATION stays at three.
+    // It is a settings page, reached through Paramètres. (DBC-1 added "Centre de marque"
+    // as a real Administration item — it is a page, not the pilot settings link.)
     const admin = buildNavigation(
       ctx({
         roleCodes: ["SYSTEM_ADMIN"],
@@ -71,6 +72,7 @@ describe("Processus officiel lives under Paramètres", () => {
 
     expect(admin.items.map((i) => i.label)).toEqual([
       "Utilisateurs",
+      "Centre de marque",
       "Journal d'audit",
       "Paramètres",
     ]);

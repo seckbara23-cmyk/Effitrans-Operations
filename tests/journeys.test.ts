@@ -84,7 +84,7 @@ describe("the sidebar is exactly the five agreed sections", () => {
     expect(byKey.files).toEqual(["Dossiers", "Clients", "Communications"]);
     expect(byKey.departments).toEqual(["Documentation", "Douane", "Transport", "Finance"]);
     expect(byKey.management).toEqual(["Direction", "Rapports", "Tableau exécutif"]);
-    expect(byKey.administration).toEqual(["Utilisateurs", "Journal d'audit", "Paramètres"]);
+    expect(byKey.administration).toEqual(["Utilisateurs", "Centre de marque", "Journal d'audit", "Paramètres"]);
   });
 
   it("points every item at a route that EXISTS", () => {
@@ -104,6 +104,7 @@ describe("the sidebar is exactly the five agreed sections", () => {
       "/reports": "../app/reports/page.tsx",
       "/dashboard/executive": "../app/dashboard/executive/page.tsx",
       "/users": "../app/users/page.tsx",
+      "/brand-center": "../app/brand-center/page.tsx",
       "/settings/audit": "../app/settings/audit/page.tsx",
       "/settings": "../app/settings/page.tsx",
     };
