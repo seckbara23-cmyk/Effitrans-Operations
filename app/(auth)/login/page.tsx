@@ -36,6 +36,12 @@ export default function LoginPage() {
     const reset = params.get("reset");
     if (reset === "success") setInfo(t.auth.reset.success);
     else if (reset === "invalid") setError(t.auth.reset.invalid);
+    // Phase 6.0D — a lifecycle-blocked tenant lands here with a reason. Generic, no
+    // detail beyond "unavailable"; the platform admin knows the specifics.
+    const tenant = params.get("tenant");
+    if (tenant === "suspended") setError("Ce compte est suspendu. Contactez votre administrateur.");
+    else if (tenant === "archived") setError("Ce compte est archivé et n'est plus accessible.");
+    else if (tenant === "trial_expired") setError("La période d'essai est terminée. Contactez votre administrateur.");
   }, []);
 
   async function onGoogle() {

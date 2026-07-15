@@ -41,6 +41,62 @@ export function isTenantOperable(status: LifecycleStatus): boolean {
 }
 
 /**
+ * Why a tenant is blocked, or null when access is allowed (Phase 6.0D). This is THE
+ * lifecycle predicate the single enforcement point (getCurrentUser) calls.
+ *
+ * Two reasons, both derived — no cron, no manual step:
+ *   - the lifecycle status is SUSPENDED or ARCHIVED (an explicit platform decision);
+ *   - the status is TRIAL and the trial window has ended (the "Trial → expired →
+ *     blocked" flow, computed at read time from the trial end date already on the row).
+ *
+ * `now` is injected so the whole thing is deterministic and unit-testable.
+ */
+export type TenantBlockReason = "SUSPENDED" | "ARCHIVED" | "TRIAL_EXPIRED";
+
+export function tenantBlockReason(
+  status: LifecycleStatus,
+  trialEndsAt: string | null,
+  now: number,
+): TenantBlockReason | null {
+  if (status === "SUSPENDED") return "SUSPENDED";
+  if (status === "ARCHIVED") return "ARCHIVED";
+  if (status === "TRIAL" && trialEndsAt && new Date(trialEndsAt).getTime() < now) {
+    return "TRIAL_EXPIRED";
+  }
+  return null;
+}
+
+/** Access is allowed exactly when there is no block reason. */
+export function isTenantAccessAllowed(
+  status: LifecycleStatus,
+  trialEndsAt: string | null,
+  now: number,
+): boolean {
+  return tenantBlockReason(status, trialEndsAt, now) === null;
+}
+
+/**
+ * The lifecycle transitions the platform may perform (Phase 6.0D). A small, explicit
+ * state machine — never an arbitrary status write. ARCHIVED is terminal ("no hard
+ * delete, permanently read-only"): nothing transitions out of it.
+ */
+export const LIFECYCLE_TRANSITIONS: Record<"suspend" | "reactivate" | "archive", {
+  from: readonly LifecycleStatus[];
+  to: LifecycleStatus;
+}> = {
+  suspend: { from: ["ACTIVE", "TRIAL"], to: "SUSPENDED" },
+  reactivate: { from: ["SUSPENDED"], to: "ACTIVE" },
+  archive: { from: ["ACTIVE", "TRIAL", "SUSPENDED"], to: "ARCHIVED" },
+};
+
+export type LifecycleAction = keyof typeof LIFECYCLE_TRANSITIONS;
+
+/** Whether `action` is valid from the current status. Drives both the guard and the UI. */
+export function canTransition(action: LifecycleAction, from: LifecycleStatus): boolean {
+  return LIFECYCLE_TRANSITIONS[action].from.includes(from);
+}
+
+/**
  * A product profile NEVER implies access to another tenant. This is a constant
  * assertion of the safeguard above, referenced by tests so the invariant is
  * explicit and cannot be quietly changed.

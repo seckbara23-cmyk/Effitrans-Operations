@@ -14,6 +14,7 @@
 import { revalidatePath } from "next/cache";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPlatformPermission, PlatformAuthError } from "./auth";
+import { isTenantOperable, isLifecycleStatus } from "./company-metadata";
 import { writeAudit } from "@/lib/audit/log";
 import {
   normalizeRollout,
@@ -57,10 +58,18 @@ export async function setTenantRollout(input: RolloutInput): Promise<RolloutResu
   // row (the FK would catch it, but with an opaque error).
   const { data: org } = await admin
     .from("organization")
-    .select("id")
+    .select("id, lifecycle_status")
     .eq("id", input.tenantId)
     .maybeSingle();
   if (!org) return { ok: false, error: "tenant_not_found" };
+
+  // Phase 6.0D — deny rollout changes on a non-operable tenant. Suspend/archive must
+  // block rollout actions; a suspended tenant's users cannot reach the engine anyway
+  // (they resolve to no session), so enabling it would be meaningless, and archived is
+  // permanently read-only. Only ACTIVE/TRIAL tenants may have their rollout changed.
+  if (isLifecycleStatus(org.lifecycle_status) && !isTenantOperable(org.lifecycle_status)) {
+    return { ok: false, error: "tenant_not_operable" };
+  }
 
   const { data: existing } = await admin
     .from("tenant_process_rollout")

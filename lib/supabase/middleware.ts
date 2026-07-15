@@ -12,6 +12,23 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { classifySession } from "@/lib/auth/session-class";
+import { tenantBlockReason, isLifecycleStatus, type LifecycleStatus } from "@/lib/platform/company-metadata";
+
+/** True when the staff row's embedded organization is lifecycle-blocked (6.0D). */
+function isStaffTenantBlocked(appUser: unknown): boolean {
+  const rel = (appUser as { organization?: unknown } | null)?.organization;
+  const row = Array.isArray(rel) ? rel[0] : rel;
+  const status = (row as { lifecycle_status?: unknown } | null)?.lifecycle_status;
+  const trialEndsAt = (row as { trial_ends_at?: unknown } | null)?.trial_ends_at;
+  if (typeof status !== "string" || !isLifecycleStatus(status)) return false;
+  return (
+    tenantBlockReason(
+      status as LifecycleStatus,
+      typeof trialEndsAt === "string" ? trialEndsAt : null,
+      Date.now(),
+    ) !== null
+  );
+}
 
 // Routes reachable without authentication. The OAuth callbacks + the password
 // reset pages (Phase 1.16) MUST be public: they run the code→session exchange,
@@ -73,15 +90,25 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
   // Only this rare authenticated-/login path pays the extra self-row lookups.
   if (user && pathname === "/login") {
     const [{ data: appUser }, { data: clientUser }, { data: platformAdmin }] = await Promise.all([
-      supabase.from("app_user").select("id").eq("id", user.id).maybeSingle(),
+      // Phase 6.0D — the staff lookup carries the tenant lifecycle so a blocked tenant
+      // is NOT bounced back to /dashboard (which would loop, since the dashboard's
+      // requireUser resolves them to null again). A blocked staff user stays on /login,
+      // where the page shows the reason.
+      supabase
+        .from("app_user")
+        .select("id, organization:tenant_id(lifecycle_status, trial_ends_at)")
+        .eq("id", user.id)
+        .maybeSingle(),
       supabase.from("client_user").select("id").eq("id", user.id).maybeSingle(),
       supabase.from("platform_admin").select("id").eq("id", user.id).maybeSingle(),
     ]);
     const cls = classifySession(Boolean(appUser), Boolean(clientUser));
+    const staffBlocked = cls === "staff" && isStaffTenantBlocked(appUser);
     // Staff/portal land on their tenant home; a user who is ONLY a platform admin
-    // (no tenant identity) lands on /platform. Otherwise render /login (no loop).
+    // (no tenant identity) lands on /platform. A lifecycle-blocked staff user stays on
+    // /login. Otherwise render /login (no loop).
     let dest: string | null = null;
-    if (cls === "staff") dest = "/dashboard";
+    if (cls === "staff") dest = staffBlocked ? null : "/dashboard";
     else if (cls === "portal") dest = "/portal";
     else if (platformAdmin) dest = "/platform";
     if (dest) {

@@ -25,6 +25,8 @@ import { lifecycleBadge, onboardingBadge, HEALTH_BADGES, TONE_CLASS } from "@/li
 import { resolveTenantModules, isPlanKey } from "@/lib/platform/entitlements";
 import { RolloutControls } from "@/components/platform/rollout-controls";
 import { CopyButton } from "@/components/platform/copy-button";
+import { LifecycleActions } from "@/components/platform/lifecycle-actions";
+import { isLifecycleStatus } from "@/lib/platform/company-metadata";
 import { cn } from "@/lib/cn";
 
 export const dynamic = "force-dynamic";
@@ -106,6 +108,14 @@ export default async function PlatformCompanyDetail({
           </div>
         </div>
         <p className="mt-1 font-mono text-xs text-slate-500">{c.slug ?? "—"} · {c.id}</p>
+
+        {/* Lifecycle controls (6.0D). Only the transitions valid from the current status
+            are shown; enforcement lives in getCurrentUser, so these buttons are real. */}
+        {isLifecycleStatus(c.lifecycleStatus) && (
+          <div className="mt-4">
+            <LifecycleActions tenantId={c.id} status={c.lifecycleStatus} />
+          </div>
+        )}
       </div>
 
       <nav className="flex flex-wrap gap-1.5 border-b border-white/10 pb-2" aria-label="Sections">

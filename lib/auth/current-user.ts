@@ -13,6 +13,12 @@ import { cache } from "react";
 import { getServerSupabaseClient } from "@/lib/supabase/server";
 import { touchStaffSeen } from "@/lib/users/presence-track";
 import { classifySession, type SessionClass } from "./session-class";
+import {
+  tenantBlockReason,
+  isLifecycleStatus,
+  type LifecycleStatus,
+  type TenantBlockReason,
+} from "@/lib/platform/company-metadata";
 
 export type CurrentUser = {
   /** app_user.id === auth.users.id */
@@ -27,6 +33,20 @@ export type CurrentUser = {
 
 type UserRoleRow = { role: { code: string } | null };
 
+type OrgLifecycle = { lifecycle_status: string; trial_ends_at: string | null };
+
+/** Supabase returns an embedded to-one relation as an object OR a one-element array. */
+function normalizeOrg(rel: unknown): OrgLifecycle | null {
+  const row = Array.isArray(rel) ? rel[0] : rel;
+  if (!row || typeof row !== "object") return null;
+  const r = row as Record<string, unknown>;
+  if (typeof r.lifecycle_status !== "string") return null;
+  return {
+    lifecycle_status: r.lifecycle_status,
+    trial_ends_at: typeof r.trial_ends_at === "string" ? r.trial_ends_at : null,
+  };
+}
+
 /**
  * P1: request-scoped memoization. assertPermission/requireUser and every gated
  * service call resolve the current user; React cache() dedupes them to a SINGLE
@@ -40,10 +60,14 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   } = await supabase.auth.getUser();
   if (!user) return null;
 
-  // Typed via the Database generic on the client.
+  // Typed via the Database generic on the client. The embedded organization read is
+  // the LIFECYCLE ENFORCEMENT input (Phase 6.0D): a tenant user may read their own
+  // org row (organization_select_own RLS), so this costs no extra query.
   const { data: profile } = await supabase
     .from("app_user")
-    .select("id, tenant_id, email, is_system_admin, status, last_seen_at")
+    .select(
+      "id, tenant_id, email, is_system_admin, status, last_seen_at, organization:tenant_id(lifecycle_status, trial_ends_at)",
+    )
     .eq("id", user.id)
     .maybeSingle();
 
@@ -51,6 +75,19 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
 
   // Disabled users must not access protected app areas — treat as no session.
   if (profile.status !== "active") return null;
+
+  // THE SINGLE LIFECYCLE ENFORCEMENT POINT (Phase 6.0D). A suspended / archived tenant
+  // — or a trial whose window has ended — resolves to NO session, exactly like a
+  // disabled user. Because every protected page (requireUser) and every gated action
+  // (assertPermission) funnels through here, that one line denies logins, authenticated
+  // requests, engine/background actions and rollout for the whole tenant. Platform
+  // admins are unaffected: they have no app_user and resolve via getPlatformUser.
+  const org = normalizeOrg(profile.organization);
+  if (org && isLifecycleStatus(org.lifecycle_status)) {
+    if (tenantBlockReason(org.lifecycle_status, org.trial_ends_at, Date.now()) !== null) {
+      return null;
+    }
+  }
 
   // Phase 2.1A — presence heartbeat on authenticated load (throttled, best-effort).
   // Kicked off here but NOT awaited ahead of the roles query, so the (at most
@@ -81,6 +118,34 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
     isSystemAdmin: profile.is_system_admin,
     roles,
   };
+});
+
+/**
+ * Why the current STAFF session is blocked by lifecycle, or null (Phase 6.0D).
+ *
+ * getCurrentUser() returns null for a blocked tenant, which is correct for enforcement
+ * but indistinguishable from "not logged in" — and that ambiguity is what would loop a
+ * suspended user between /login and /dashboard. This tells the routing layer (requireUser,
+ * the login page) the REASON, so a blocked user lands on /login with an explanation
+ * instead of bouncing. Reads own rows only (RLS); request-memoized.
+ */
+export const getStaffTenantBlockReason = cache(async (): Promise<TenantBlockReason | null> => {
+  const supabase = getServerSupabaseClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  const { data } = await supabase
+    .from("app_user")
+    .select("status, organization:tenant_id(lifecycle_status, trial_ends_at)")
+    .eq("id", user.id)
+    .maybeSingle();
+  if (!data || data.status !== "active") return null;
+
+  const org = normalizeOrg(data.organization);
+  if (!org || !isLifecycleStatus(org.lifecycle_status)) return null;
+  return tenantBlockReason(org.lifecycle_status as LifecycleStatus, org.trial_ends_at, Date.now());
 });
 
 /**

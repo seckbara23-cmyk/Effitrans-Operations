@@ -7,7 +7,12 @@
  * mechanism is ready for when the login UI (AUTH-1 completion) lands.
  */
 import { redirect } from "next/navigation";
-import { getCurrentUser, getSessionClass, type CurrentUser } from "./current-user";
+import {
+  getCurrentUser,
+  getSessionClass,
+  getStaffTenantBlockReason,
+  type CurrentUser,
+} from "./current-user";
 
 /**
  * Returns the authenticated STAFF user, or redirects.
@@ -21,6 +26,14 @@ import { getCurrentUser, getSessionClass, type CurrentUser } from "./current-use
 export async function requireUser(): Promise<CurrentUser> {
   const user = await getCurrentUser();
   if (!user) {
+    // Phase 6.0D — a staff user whose TENANT is suspended/archived/trial-expired
+    // resolves to null just like a signed-out user. Route them to /login WITH the
+    // reason (so the page explains it and the middleware does not bounce them back to
+    // /dashboard — the loop that would otherwise result). This is routing, not a second
+    // enforcement point: the deny already happened in getCurrentUser.
+    const blocked = await getStaffTenantBlockReason();
+    if (blocked) redirect(`/login?tenant=${blocked.toLowerCase()}`);
+
     const cls = await getSessionClass();
     redirect(cls === "portal" ? "/portal" : "/login");
   }
