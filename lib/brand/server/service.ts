@@ -49,16 +49,21 @@ function pub(supabase: ReturnType<typeof getAdminSupabaseClient>, path: string):
   return supabase.storage.from(PUBLIC_BUCKET).getPublicUrl(path).data.publicUrl;
 }
 
-export async function getBrandCenterOverview(): Promise<BrandCenterOverview> {
-  const admin = await assertPermission("admin:config:manage");
-  const supabase = getAdminSupabaseClient();
+export type BrandCore = { profile: BrandProfile; assets: BrandAssetView[]; memberships: MembershipView[]; legalName: string | null; displayName: string };
 
-  const [profileRes, assetsRes, membersRes, orgRes, wfRes] = await Promise.all([
-    supabase.from("tenant_brand_profile").select("*").eq("tenant_id", admin.tenantId).maybeSingle(),
-    supabase.from("brand_asset").select("id, kind, title, storage_path, version, mime, bytes, width, height, alt_text, status, created_at").eq("tenant_id", admin.tenantId).order("created_at", { ascending: false }),
-    supabase.from("tenant_membership_registry").select("*").eq("tenant_id", admin.tenantId).order("display_order"),
-    supabase.from("organization").select("legal_name, trade_name, name").eq("id", admin.tenantId).maybeSingle(),
-    supabase.from("workforce_profile").select("job_title").eq("tenant_id", admin.tenantId),
+/**
+ * The core brand data for ONE tenant (profile + assets + memberships). INTERNAL, ungated —
+ * the caller must have already authorized (getBrandCenterOverview gates config:manage; the
+ * signature path gates users:manage). Scoped to `tenantId`, which the caller resolves from
+ * the session, never from client input.
+ */
+export async function readBrandCore(tenantId: string): Promise<BrandCore> {
+  const supabase = getAdminSupabaseClient();
+  const [profileRes, assetsRes, membersRes, orgRes] = await Promise.all([
+    supabase.from("tenant_brand_profile").select("*").eq("tenant_id", tenantId).maybeSingle(),
+    supabase.from("brand_asset").select("id, kind, title, storage_path, version, mime, bytes, width, height, alt_text, status, created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
+    supabase.from("tenant_membership_registry").select("*").eq("tenant_id", tenantId).order("display_order"),
+    supabase.from("organization").select("legal_name, trade_name, name").eq("id", tenantId).maybeSingle(),
   ]);
 
   const p = (profileRes.data ?? {}) as Record<string, string | null>;
@@ -74,21 +79,27 @@ export async function getBrandCenterOverview(): Promise<BrandCenterOverview> {
       footer_line: p.footer_line,
     }),
   };
-
   const assets: BrandAssetView[] = (assetsRes.data ?? []).map((a) => ({
     id: a.id, kind: a.kind as AssetKind, title: a.title, publicUrl: pub(supabase, a.storage_path), version: a.version,
     mime: a.mime, bytes: a.bytes, width: a.width, height: a.height, altText: a.alt_text, status: a.status, createdAt: a.created_at,
   }));
-
   const memberships: MembershipView[] = (membersRes.data ?? []).map((m) => ({
     id: m.id, organizationName: m.organization_name, membershipId: m.membership_id, officialUrl: m.official_url,
     status: m.status, validFrom: m.valid_from, expiresAt: m.expires_at, displayOrder: m.display_order,
     logoAssetId: m.logo_asset_id, assetUseNotes: m.asset_use_notes,
   }));
-
   const org = orgRes.data as { legal_name: string | null; trade_name: string | null; name: string } | null;
+  return { profile, assets, memberships, legalName: org?.legal_name ?? null, displayName: org?.trade_name ?? org?.name ?? "" };
+}
+
+export async function getBrandCenterOverview(): Promise<BrandCenterOverview> {
+  const admin = await assertPermission("admin:config:manage");
+  const supabase = getAdminSupabaseClient();
+  const { profile, assets, memberships, legalName } = await readBrandCore(admin.tenantId);
+  const { data: wfData } = await supabase.from("workforce_profile").select("job_title").eq("tenant_id", admin.tenantId);
+
   const publishedKinds = assets.filter((a) => a.status === "PUBLISHED").map((a) => a.kind);
-  const workforceWithTitleCount = (wfRes.data ?? []).filter((w) => w.job_title && String(w.job_title).trim() !== "").length;
+  const workforceWithTitleCount = (wfData ?? []).filter((w) => w.job_title && String(w.job_title).trim() !== "").length;
 
   const completeness = deriveBrandCompleteness({
     colors: { green: profile.colorGreen, gold: profile.colorGold, anthracite: profile.colorAnthracite },
@@ -100,7 +111,7 @@ export async function getBrandCenterOverview(): Promise<BrandCenterOverview> {
     workforceWithTitleCount,
   });
 
-  return { profile, legalName: org?.legal_name ?? null, assets, memberships, completeness };
+  return { profile, legalName, assets, memberships, completeness };
 }
 
 export type WorkforceView = {

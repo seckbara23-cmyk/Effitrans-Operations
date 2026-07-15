@@ -9,6 +9,7 @@
  * no public route exists in DBC-1.
  */
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { updateWorkforceProfile, type WorkforceInput } from "@/lib/brand/server/actions";
 import { SIGNATURE_VARIANTS } from "@/lib/brand/model";
@@ -35,6 +36,9 @@ export function PeopleManager({ people }: { people: WorkforceView[] }) {
                   <Chip ok={p.hasPhone}>Tél.</Chip>
                   <Chip ok={p.hasPhoto}>Photo</Chip>
                 </div>
+                <Link href={`/brand-center/signature/${p.userId}`} className="rounded-md border border-teal-200 bg-teal-50 px-2.5 py-1 text-xs font-medium text-teal-700 hover:bg-teal-100">
+                  Signature
+                </Link>
                 <button type="button" onClick={() => setOpenId(openId === p.userId ? null : p.userId)} className="rounded-md border border-slate-200 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50">
                   {openId === p.userId ? "Fermer" : "Modifier"}
                 </button>

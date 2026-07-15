@@ -181,6 +181,12 @@ export const AuditActions = {
   BRAND_MEMBERSHIP_UPDATED: "brand.membership.updated",
   BRAND_MEMBERSHIP_RETIRED: "brand.membership.retired",
   BRAND_WORKFORCE_PROFILE_UPDATED: "brand.workforce_profile.updated",
+  // DBC-2 — email signature engine. Safe metadata only (actor/tenant/employee/variant/
+  // format) — NEVER the generated HTML, plain text, URLs, or phone values.
+  BRAND_SIGNATURE_PREVIEWED: "brand.signature.previewed",
+  BRAND_SIGNATURE_GENERATED: "brand.signature.generated",
+  BRAND_SIGNATURE_DOWNLOADED: "brand.signature.downloaded",
+  BRAND_SIGNATURE_COPIED: "brand.signature.copied",
 
   // Phase 5.0B — official process engine. Payloads carry only step KEYS, state
   // names, actor ids and evidence KEYS. NEVER document contents, file bytes,
