@@ -224,7 +224,10 @@ describe("platform authorization is enforced server-side, everywhere", () => {
 
   it("reuses the existing audit and branding reads", () => {
     expect(detail).toContain("listCompanyAuditEvents");
-    expect(detail).toContain("resolveTenantBranding");
+    // Phase 6.0E-1 — the Branding tab became an editor; it reads the SAME tenant_branding
+    // source via getTenantBrandingRow (the raw persisted row) instead of the merged,
+    // read-only resolveTenantBranding view. One persisted source, now editable.
+    expect(detail).toContain("getTenantBrandingRow");
   });
 });
 

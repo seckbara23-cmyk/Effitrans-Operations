@@ -20,7 +20,8 @@ import { assertPlatformPermission } from "@/lib/platform/auth";
 import { getCompany, type CompanySummary } from "@/lib/platform/companies";
 import { listCompanyUsers, listCompanyAuditEvents } from "@/lib/platform/company-detail";
 import { getRolloutOverview } from "@/lib/platform/rollout-read";
-import { resolveTenantBranding } from "@/lib/branding/service";
+import { getTenantBrandingRow } from "@/lib/platform/branding-actions";
+import { BrandingEditor } from "@/components/platform/branding-editor";
 import { deriveTrialState, deriveCompanyHealth, type TrialState } from "@/lib/platform/console/table";
 import { lifecycleBadge, onboardingBadge, HEALTH_BADGES, TONE_CLASS } from "@/lib/platform/console/badges";
 import { resolveTenantModules, isPlanKey } from "@/lib/platform/entitlements";
@@ -136,7 +137,7 @@ export default async function PlatformCompanyDetail({
       </nav>
 
       {tab === "overview" && <OverviewTab company={c} trialLabel={trialText(trial)} />}
-      {tab === "branding" && <BrandingTab tenantId={c.id} />}
+      {tab === "branding" && <BrandingTab tenantId={c.id} orgDisplayName={c.displayName} />}
       {tab === "subscription" && <SubscriptionTab company={c} trialLabel={trialText(trial)} />}
       {tab === "users" && <UsersTab tenantId={c.id} />}
       {tab === "rollout" && <RolloutTab tenantId={c.id} />}
@@ -168,24 +169,11 @@ function OverviewTab({ company: c, trialLabel }: { company: CompanySummary; tria
 }
 
 // ---------------------------------------------------------------- Branding ----
-async function BrandingTab({ tenantId }: { tenantId: string }) {
-  const b = await resolveTenantBranding(tenantId);
-  return (
-    <Panel title="Image de marque du tenant">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <Field label="Nom d'affichage" value={b.displayName || "—"} />
-        <Field label="Nom légal" value={b.legalName || "—"} />
-        <Field label="E-mail de support" value={b.supportEmail || "—"} />
-        <Field label="Téléphone de support" value={b.supportPhone || "—"} />
-        <Field label="Couleur primaire" value={b.primaryColor || "—"} />
-        <Field label="Couleur secondaire" value={b.secondaryColor || "—"} />
-      </div>
-      <p className="mt-3 text-xs text-slate-500">
-        Lecture seule. L'édition de la marque (logo, couleurs) n'est pas encore disponible dans la
-        console plateforme.
-      </p>
-    </Panel>
-  );
+async function BrandingTab({ tenantId, orgDisplayName }: { tenantId: string; orgDisplayName: string }) {
+  // The RAW persisted editable row (not the merged/fallback render form) so the admin
+  // sees what is actually stored. The editor and the tenant runtime share one source.
+  const row = await getTenantBrandingRow(tenantId);
+  return <BrandingEditor tenantId={tenantId} initial={row} orgDisplayName={orgDisplayName} />;
 }
 
 // ---------------------------------------------------------------- Subscription ----
