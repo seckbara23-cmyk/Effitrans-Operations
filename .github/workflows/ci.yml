@@ -245,6 +245,11 @@ jobs:
           PGPASSWORD: postgres
         run: psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/rls_tenant_lifecycle_test.sql
 
+      - name: Run multi-tenant bidirectional isolation acceptance (Phase 6.0F)
+        env:
+          PGPASSWORD: postgres
+        run: psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/rls_multitenant_acceptance_test.sql
+
       - name: Stop local Supabase
         if: always()
         run: supabase stop
