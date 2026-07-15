@@ -347,8 +347,10 @@ describe("the companies list still renders and gains one entry point", () => {
   it("adds a single 'Nouvelle entreprise' link to /platform/companies/new", () => {
     expect(listPage).toContain("Nouvelle entreprise");
     expect(listPage).toContain('href="/platform/companies/new"');
-    // The existing table is untouched.
-    expect(listPage).toContain("listCompanies");
-    expect(listPage).toContain("Dossiers actifs");
+    // 6.0C rebuilt this page into the Companies Console; it still renders companies and
+    // still gates on the platform read. (The table internals moved to the client
+    // console + loadConsoleRows — tested in tests/platform-console.test.ts.)
+    expect(listPage).toContain("CompaniesConsole");
+    expect(listPage).toContain('assertPlatformPermission("platform:companies:read")');
   });
 });

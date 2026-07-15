@@ -35,6 +35,11 @@ export type CompanySummary = {
   lastTenantLoginAt: string | null;
   enabledModules: ModuleKey[];
   createdAt: string;
+  /** Trial window (Phase 6.0C — surfaced for the console; already on the row). */
+  trialStartedAt: string | null;
+  trialEndsAt: string | null;
+  /** The tenant's SYSTEM_ADMIN login, for the console's admin-email search. */
+  administratorEmail: string | null;
 };
 
 export type PlatformCompanyStats = {
@@ -59,12 +64,15 @@ export async function listCompanies(): Promise<CompanySummary[]> {
     admin
       .from("organization")
       .select(
-        "id, name, trade_name, slug, lifecycle_status, product_profile, plan_key, country, locale, currency, timezone, onboarding_status, branding_complete, created_at",
+        "id, name, trade_name, slug, lifecycle_status, product_profile, plan_key, country, locale, currency, timezone, onboarding_status, branding_complete, created_at, trial_started_at, trial_ends_at",
       )
       .order("created_at"),
     // platform-wide aggregate (no tenant filter — cross-tenant by design); ONLY
     // non-sensitive columns are read.
-    admin.from("app_user").select("tenant_id, last_login_at"),
+    // Safe platform metadata only: tenant, login recency, and the SYSTEM_ADMIN's
+    // email for search. No names, no other PII beyond the admin login the platform
+    // itself provisioned.
+    admin.from("app_user").select("tenant_id, email, last_login_at, is_system_admin"),
     admin.from("operational_file").select("tenant_id, status"),
   ]);
 
@@ -72,10 +80,14 @@ export async function listCompanies(): Promise<CompanySummary[]> {
 
   const userCount = new Map<string, number>();
   const lastLogin = new Map<string, string>();
+  const adminEmail = new Map<string, string>();
   for (const u of usersRes.data ?? []) {
     userCount.set(u.tenant_id, (userCount.get(u.tenant_id) ?? 0) + 1);
     if (u.last_login_at && (!lastLogin.has(u.tenant_id) || u.last_login_at > lastLogin.get(u.tenant_id)!)) {
       lastLogin.set(u.tenant_id, u.last_login_at);
+    }
+    if (u.is_system_admin && u.email && !adminEmail.has(u.tenant_id)) {
+      adminEmail.set(u.tenant_id, u.email as string);
     }
   }
   const activeFiles = new Map<string, number>();
@@ -106,6 +118,9 @@ export async function listCompanies(): Promise<CompanySummary[]> {
       lastTenantLoginAt: lastLogin.get(o.id) ?? null,
       enabledModules: modules,
       createdAt: o.created_at,
+      trialStartedAt: (o as Record<string, unknown>).trial_started_at as string ?? null,
+      trialEndsAt: (o as Record<string, unknown>).trial_ends_at as string ?? null,
+      administratorEmail: adminEmail.get(o.id) ?? null,
     };
   });
 }
