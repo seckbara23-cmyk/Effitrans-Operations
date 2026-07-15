@@ -175,7 +175,9 @@ describe("lifecycle actions: gated, validated, audited, non-destructive", () => 
     expect(actions).toContain("AuditActions.PLATFORM_TENANT_STATUS_CHANGED");
     expect(actions).toContain("platformActorId: actor.id");
     expect(actions).toContain("before: { lifecycleStatus: from }");
-    expect(actions).toMatch(/after: \{ lifecycleStatus: to/);
+    // The after payload became multi-line in 6.0E-4 (it now also carries the revocation
+    // summary) — match across the newline.
+    expect(actions).toMatch(/after: \{\s*lifecycleStatus: to/);
   });
 
   it("DELETES NOTHING — status column only, no soft-delete architecture", () => {

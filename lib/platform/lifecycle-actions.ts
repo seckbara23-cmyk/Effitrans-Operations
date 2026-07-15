@@ -27,6 +27,7 @@ import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPlatformPermission, PlatformAuthError } from "./auth";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
+import { setTenantAuthBan, type RevocationSummary } from "./session-revocation";
 import {
   LIFECYCLE_TRANSITIONS,
   canTransition,
@@ -36,7 +37,10 @@ import {
 } from "./company-metadata";
 
 export type LifecycleResult =
-  | { ok: true; from: LifecycleStatus; to: LifecycleStatus }
+  // A successful transition may carry a session-revocation summary (Phase 6.0E-4). Its
+  // presence/failure NEVER makes the transition itself "failed" — next-request enforcement
+  // already protects the platform; revocation is an added, honest best-effort.
+  | { ok: true; from: LifecycleStatus; to: LifecycleStatus; revocation?: RevocationSummary }
   | { ok: false; error: "unauthorized" | "not_found" | "invalid_transition" | "write_failed" };
 
 async function performLifecycle(
@@ -69,15 +73,29 @@ async function performLifecycle(
   }
   const to = LIFECYCLE_TRANSITIONS[action].to;
 
+  // Stage 1 — the lifecycle transition (compare-and-set: only from the state we
+  // validated, so two admins acting at once cannot double-apply).
   const { error } = await admin
     .from("organization")
     .update({ lifecycle_status: to, updated_at: new Date().toISOString() })
     .eq("id", tenantId)
-    // Compare-and-set: only transition from the state we validated, so two admins
-    // acting at once cannot double-apply.
     .eq("lifecycle_status", from);
   if (error) return { ok: false, error: "write_failed" };
 
+  // Stage 2 — session revocation (Phase 6.0E-4), best-effort. Suspend/archive BAN the
+  // tenant's auth users (revoking new logins + refresh); reactivate UN-BANS so they can
+  // authenticate again (this manufactures no session). A partial provider failure is
+  // counted, never thrown: the transition in Stage 1 already stands, and next-request
+  // enforcement (6.0D) protects the platform regardless.
+  let revocation: RevocationSummary | undefined;
+  if (action === "suspend" || action === "archive") {
+    revocation = await setTenantAuthBan(admin, tenantId, true);
+  } else if (action === "reactivate") {
+    revocation = await setTenantAuthBan(admin, tenantId, false);
+  }
+
+  // Stage 3 — audit the operational outcome: the transition + a SAFE revocation summary
+  // (counts only — never a token, session id, or provider error).
   await writeAudit({
     action: AuditActions.PLATFORM_TENANT_STATUS_CHANGED,
     tenantId,
@@ -87,12 +105,17 @@ async function performLifecycle(
     before: { lifecycleStatus: from },
     // The reason is a platform-internal note. It lives ONLY in the platform-gated audit
     // log, never on the org row (which the tenant can read) — so it does not leak.
-    after: { lifecycleStatus: to, action, reason: reason ?? null },
+    after: {
+      lifecycleStatus: to,
+      action,
+      reason: reason ?? null,
+      ...(revocation ? { sessionRevocation: revocation } : {}),
+    },
   });
 
   revalidatePath(`/platform/companies/${tenantId}`);
   revalidatePath("/platform/companies");
-  return { ok: true, from, to };
+  return { ok: true, from, to, ...(revocation ? { revocation } : {}) };
 }
 
 /** Block a tenant: no login, no authenticated request, no engine/rollout action. */
