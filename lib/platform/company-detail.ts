@@ -25,6 +25,8 @@ export type CompanyUser = {
   isSystemAdmin: boolean;
   roles: string[];
   lastLoginAt: string | null;
+  /** Provider-backed welcome delivery time — the invitation-state signal (6.0E-3). */
+  onboardingEmailSentAt: string | null;
   createdAt: string;
 };
 
@@ -40,7 +42,7 @@ export async function listCompanyUsers(tenantId: string): Promise<CompanyUser[]>
   const [usersRes, rolesRes, roleDefsRes] = await Promise.all([
     admin
       .from("app_user")
-      .select("id, email, name, status, is_system_admin, last_login_at, created_at")
+      .select("id, email, name, status, is_system_admin, last_login_at, onboarding_email_sent_at, created_at")
       .eq("tenant_id", tenantId)
       .order("created_at"),
     admin.from("user_role").select("user_id, role_id").eq("tenant_id", tenantId),
@@ -67,6 +69,7 @@ export async function listCompanyUsers(tenantId: string): Promise<CompanyUser[]>
     isSystemAdmin: u.is_system_admin,
     roles: (rolesByUser.get(u.id) ?? []).sort(),
     lastLoginAt: u.last_login_at,
+    onboardingEmailSentAt: u.onboarding_email_sent_at,
     createdAt: u.created_at,
   }));
 }

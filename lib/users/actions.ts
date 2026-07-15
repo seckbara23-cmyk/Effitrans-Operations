@@ -15,110 +15,15 @@ import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
-import { queueAndSend } from "@/lib/comms/queue";
-import { isProviderConfigured } from "@/lib/comms/provider";
 import { reportError } from "@/lib/observability/report";
-import { staffWelcomeVars } from "./welcome";
 import { validateCreateUser } from "./validate";
 import { generateTempPassword } from "@/lib/portal/temp-password";
-import { classifyWelcome, isDelivered, returnsLink } from "./welcome-outcome";
-import type { ActionResult, WelcomeOutcome, CredentialMode, CreateUserError } from "./types";
+// The secure welcome / set-password pipeline now lives in ONE shared module (6.0E-3),
+// reused by this tenant action and the platform invitation action alike.
+import { sendStaffWelcome, returnsLink, type WelcomeResult } from "./welcome-send";
+import type { ActionResult, CredentialMode, CreateUserError } from "./types";
 
 type Admin = ReturnType<typeof getAdminSupabaseClient>;
-
-/** A welcome attempt's outcome plus the one-time link when there is no provider. */
-type WelcomeResult = { outcome: WelcomeOutcome; setupLink?: string };
-
-/**
- * Best-effort staff onboarding email (Option A): generate a secure self-service
- * set-password link (Supabase recovery) and queue the `staff_welcome` template
- * through the Communications Hub. NO plaintext password is ever emailed. Never
- * throws — onboarding email failure must not fail user creation, and the message
- * appears in /communications even when the email provider is the no-op stub.
- */
-/**
- * The secure welcome / set-password flow (Phase 5.0E-4). HONEST by construction:
- *
- *   - it distinguishes "no provider" from "provider failed" from "link couldn't be
- *     minted" from "delivery failed" (classifyWelcome);
- *   - when there is no provider it returns the one-time link for the admin to deliver
- *     out of band, and NEVER claims an email was sent;
- *   - it marks onboarding_email_sent_at ONLY on a true, provider-backed delivery — so
- *     the "E-mail non envoyé" indicator reflects real delivery history, not a no-op;
- *   - it NEVER emails a password (only a recovery link), and the link is never logged,
- *     audited or persisted.
- *
- * Never throws — a welcome failure must never fail user creation.
- */
-async function queueStaffWelcome(
-  supabase: Admin,
-  ctx: { tenantId: string; actorId: string },
-  recipient: { userId: string; email: string; name: string | null },
-): Promise<WelcomeResult> {
-  try {
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "";
-    const loginUrl = `${siteUrl}/login`;
-    const providerConfigured = isProviderConfigured();
-
-    // Mint the secure set-password link (GoTrue recovery). This is the ONLY credential
-    // mechanism that travels — a link, never a password.
-    const { data: link } = await supabase.auth.admin.generateLink({
-      type: "recovery",
-      email: recipient.email,
-      options: { redirectTo: `${siteUrl}/auth/update-password` },
-    });
-    const setupLink = link?.properties?.action_link ?? null;
-
-    // No provider: do not pretend to email. Hand the link back (or report unavailable).
-    if (!providerConfigured) {
-      const outcome = classifyWelcome({ providerConfigured: false, linkGenerated: !!setupLink, deliveryAccepted: false });
-      // Audited as a distinct, safe event — the ID and template, NEVER the link.
-      await writeAudit({
-        action: AuditActions.USER_WELCOME_LINK_RETURNED,
-        actorId: ctx.actorId,
-        tenantId: ctx.tenantId,
-        entity: "app_user",
-        entityId: recipient.userId,
-        after: { providerConfigured: false, linkGenerated: !!setupLink },
-      });
-      return { outcome, setupLink: outcome === "link_returned" ? (setupLink as string) : undefined };
-    }
-
-    if (!setupLink) {
-      return { outcome: classifyWelcome({ providerConfigured: true, linkGenerated: false, deliveryAccepted: false }) };
-    }
-
-    // Provider configured + link minted: attempt delivery through the existing pipeline
-    // (which audits COMMUNICATION_QUEUED / SENT / FAILED itself).
-    const res = await queueAndSend({
-      tenantId: ctx.tenantId,
-      createdBy: ctx.actorId,
-      templateKey: "staff_welcome",
-      vars: staffWelcomeVars({ name: recipient.name, email: recipient.email, loginUrl, setupLink }),
-      recipientEmail: recipient.email,
-      recipientName: recipient.name,
-      related: "user",
-      relatedId: recipient.userId,
-    });
-    const outcome = classifyWelcome({
-      providerConfigured: true,
-      linkGenerated: true,
-      deliveryAccepted: res.status === "SENT",
-    });
-
-    // Record delivery ONLY when it truly happened — so the users list is honest.
-    if (isDelivered(outcome)) {
-      await supabase
-        .from("app_user")
-        .update({ onboarding_email_sent_at: new Date().toISOString() })
-        .eq("id", recipient.userId);
-    }
-    return { outcome };
-  } catch (e) {
-    reportError(e, { scope: "action", event: "users.welcome_email", extra: { userId: recipient.userId } });
-    return { outcome: "delivery_failed" };
-  }
-}
 
 /**
  * Find an existing auth user by email, or null. GoTrue's admin API has no get-by-email;
@@ -276,7 +181,7 @@ export async function createUser(form: {
   // link, generate/manual send one only if the admin asked. --------------------------
   const wantWelcome = mode === "setup_email" || form.sendWelcome === true;
   const welcome: WelcomeResult = wantWelcome
-    ? await queueStaffWelcome(
+    ? await sendStaffWelcome(
         supabase,
         { tenantId: admin.tenantId, actorId: admin.id },
         { userId: authId, email, name: form.name?.trim() || null },
@@ -325,7 +230,7 @@ export async function sendWelcomeEmail(userId: string): Promise<ActionResult> {
     entityId: target.id,
   });
 
-  const welcome = await queueStaffWelcome(
+  const welcome = await sendStaffWelcome(
     supabase,
     { tenantId: admin.tenantId, actorId: admin.id },
     { userId: target.id, email: target.email, name: target.name },

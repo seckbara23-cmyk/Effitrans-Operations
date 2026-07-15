@@ -17,6 +17,10 @@ const read = (p: string) => readFileSync(fileURLToPath(new URL(p, import.meta.ur
 const code = (p: string) => read(p).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 const actions = read("../lib/users/actions.ts");
 const actionsCode = code("../lib/users/actions.ts");
+// Phase 6.0E-3 — the welcome/recovery send was extracted (unchanged) into a shared module
+// reused by the platform invitation action; the honesty assertions follow it there.
+const welcomeSend = read("../lib/users/welcome-send.ts");
+const welcomeSendCode = code("../lib/users/welcome-send.ts");
 const component = read("../components/users/users-admin.tsx");
 const componentCode = code("../components/users/users-admin.tsx");
 
@@ -186,30 +190,31 @@ describe("the temporary password never leaks", () => {
 
 describe("welcome email is honest and audited", () => {
   it("marks the user as emailed ONLY on a true, provider-backed delivery", () => {
-    expect(actionsCode).toContain("if (isDelivered(outcome)) {");
-    const deliverBlock = actionsCode.slice(actionsCode.indexOf("if (isDelivered(outcome))"), actionsCode.indexOf("return { outcome };"));
+    expect(welcomeSendCode).toContain("if (isDelivered(outcome)) {");
+    const deliverBlock = welcomeSendCode.slice(welcomeSendCode.indexOf("if (isDelivered(outcome))"), welcomeSendCode.indexOf("return { outcome };"));
     expect(deliverBlock).toContain("onboarding_email_sent_at");
   });
 
   it("audits the link-returned and resend paths, without the link", () => {
-    expect(actions).toContain("USER_WELCOME_LINK_RETURNED");
+    expect(welcomeSend).toContain("USER_WELCOME_LINK_RETURNED");
+    // The resend request is still audited by the tenant action itself.
     expect(actions).toContain("USER_WELCOME_RESEND_REQUESTED");
     // The link-returned audit records BOOLEANS (linkGenerated: !!setupLink), never the
     // link value or action_link.
-    const block = actionsCode.slice(actionsCode.indexOf("USER_WELCOME_LINK_RETURNED"));
-    const after = block.slice(0, block.indexOf("})") + 2);
+    const block = welcomeSendCode.slice(welcomeSendCode.indexOf("USER_WELCOME_LINK_RETURNED"));
+    const after = block.slice(0, block.indexOf("});") + 3); // the writeAudit close
     expect(after).toContain("!!setupLink");
     expect(after).not.toContain("action_link");
     expect(after).not.toMatch(/setupLink:\s/); // never stored as a value
   });
 
   it("never emails a password — only a recovery link travels", () => {
-    expect(actionsCode).toContain('type: "recovery"');
-    // No path passes a password into the email pipeline.
-    const welcomeFn = actionsCode
-      .slice(actionsCode.indexOf("async function queueStaffWelcome"), actionsCode.indexOf("async function findAuthUserByEmail"))
-      .replace(/auth\/update-password/g, ""); // the recovery redirect URL is not a secret
-    // No password VALUE is passed into the email vars/pipeline.
+    expect(welcomeSendCode).toContain('type: "recovery"');
+    // No path passes a password into the email pipeline (the /auth/update-password
+    // redirect URL is not a password value).
+    const welcomeFn = welcomeSendCode
+      .slice(welcomeSendCode.indexOf("export async function sendStaffWelcome"), welcomeSendCode.indexOf("catch (e)"))
+      .replace(/auth\/update-password/g, "");
     expect(welcomeFn).not.toMatch(/password/i);
   });
 });

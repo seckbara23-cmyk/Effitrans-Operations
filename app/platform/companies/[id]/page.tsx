@@ -25,6 +25,8 @@ import { BrandingEditor } from "@/components/platform/branding-editor";
 import { deriveTrialState, deriveCompanyHealth, type TrialState } from "@/lib/platform/console/table";
 import { lifecycleBadge, onboardingBadge, HEALTH_BADGES, TONE_CLASS } from "@/lib/platform/console/badges";
 import { deriveOnboardingChecklist } from "@/lib/platform/console/onboarding";
+import { deriveInvitationState, type InvitationState } from "@/lib/users/invitation-state";
+import { InvitationActions } from "@/components/platform/invitation-actions";
 import { resolveTenantModules, isPlanKey } from "@/lib/platform/entitlements";
 import { RolloutControls } from "@/components/platform/rollout-controls";
 import { CopyButton } from "@/components/platform/copy-button";
@@ -271,6 +273,13 @@ function SubscriptionTab({ company: c, trialLabel }: { company: CompanySummary; 
 }
 
 // ---------------------------------------------------------------- Users ----
+const INVITATION_BADGE: Record<InvitationState, { label: string; tone: keyof typeof TONE_CLASS }> = {
+  setup_completed: { label: "Configuré", tone: "green" },
+  email_sent: { label: "Invitation envoyée", tone: "blue" },
+  cancelled: { label: "Annulée", tone: "red" },
+  no_invitation: { label: "Aucune invitation", tone: "slate" },
+};
+
 async function UsersTab({ tenantId }: { tenantId: string }) {
   const users = await listCompanyUsers(tenantId);
   return (
@@ -285,24 +294,37 @@ async function UsersTab({ tenantId }: { tenantId: string }) {
                 <th className="px-3 py-2 font-semibold">Utilisateur</th>
                 <th className="px-3 py-2 font-semibold">Rôles</th>
                 <th className="px-3 py-2 font-semibold">Statut</th>
+                <th className="px-3 py-2 font-semibold">Invitation</th>
                 <th className="px-3 py-2 font-semibold">Dernière connexion</th>
-                <th className="px-3 py-2 font-semibold">Créé</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/10">
-              {users.map((u) => (
-                <tr key={u.id}>
-                  <td className="px-3 py-2">
-                    <span className="text-white">{u.name ?? u.email}</span>
-                    {u.isSystemAdmin && <span className="ml-2 rounded bg-teal-400/15 px-1.5 py-0.5 text-[10px] font-bold text-teal-200">ADMIN</span>}
-                    <span className="block text-xs text-slate-500">{u.email}</span>
-                  </td>
-                  <td className="px-3 py-2 text-slate-300">{u.roles.join(", ") || "—"}</td>
-                  <td className="px-3 py-2 text-slate-300">{u.status}</td>
-                  <td className="px-3 py-2 text-slate-400">{u.lastLoginAt ? u.lastLoginAt.slice(0, 10) : "—"}</td>
-                  <td className="px-3 py-2 text-slate-400">{u.createdAt.slice(0, 10)}</td>
-                </tr>
-              ))}
+              {users.map((u) => {
+                const state = deriveInvitationState({
+                  status: u.status,
+                  lastLoginAt: u.lastLoginAt,
+                  onboardingEmailSentAt: u.onboardingEmailSentAt,
+                });
+                const badge = INVITATION_BADGE[state];
+                return (
+                  <tr key={u.id}>
+                    <td className="px-3 py-2 align-top">
+                      <span className="text-white">{u.name ?? u.email}</span>
+                      {u.isSystemAdmin && <span className="ml-2 rounded bg-teal-400/15 px-1.5 py-0.5 text-[10px] font-bold text-teal-200">ADMIN</span>}
+                      <span className="block text-xs text-slate-500">{u.email}</span>
+                    </td>
+                    <td className="px-3 py-2 align-top text-slate-300">{u.roles.join(", ") || "—"}</td>
+                    <td className="px-3 py-2 align-top text-slate-300">{u.status}</td>
+                    <td className="px-3 py-2 align-top">
+                      <Badge label={badge.label} tone={badge.tone} />
+                      <div className="mt-2">
+                        <InvitationActions tenantId={tenantId} userId={u.id} state={state} />
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 align-top text-slate-400">{u.lastLoginAt ? u.lastLoginAt.slice(0, 10) : "—"}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

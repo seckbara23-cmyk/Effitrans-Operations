@@ -18,6 +18,9 @@ export const AuditActions = {
   // Phase 5.0E-4 — welcome / setup-link lifecycle (safe metadata only; NEVER the link).
   USER_WELCOME_RESEND_REQUESTED: "user.welcome.resend_requested",
   USER_WELCOME_LINK_RETURNED: "user.welcome.link_returned",
+  // Phase 6.0E-3 — an outstanding invitation cancelled (the user is deactivated, which
+  // getCurrentUser enforces, so the outstanding setup link becomes unusable).
+  USER_INVITATION_CANCELLED: "user.invitation.cancelled",
   ADMIN_OVERRIDE_ACCESS: "admin.override.access", // isOverride: true
   AUTH_LOGIN: "auth.login",
   AUTH_LOGOUT: "auth.logout",
