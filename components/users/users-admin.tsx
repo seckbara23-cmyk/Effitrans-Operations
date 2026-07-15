@@ -17,13 +17,28 @@ import {
   revokeRole,
   sendWelcomeEmail,
 } from "@/lib/users/actions";
-import type { AdminUser, AssignableRole, ActionResult } from "@/lib/users/types";
+import type { AdminUser, AssignableRole, ActionResult, CredentialMode, WelcomeOutcome } from "@/lib/users/types";
 import { loginMethodLabel, type Presence } from "@/lib/users/presence";
 
 function errorMessage(code: string): string {
   const map = t.users.errors as Record<string, string>;
   return map[code] ?? t.users.errors.generic;
 }
+
+/** Honest French message for each welcome outcome — never claims a send that did not happen. */
+function welcomeNotice(outcome: WelcomeOutcome | undefined): string | null {
+  if (!outcome || outcome === "skipped") return null;
+  const map = t.users.welcome as Record<string, string>;
+  return map[outcome] ?? null;
+}
+
+/** The one-time credential result — held ONLY in React state, never persisted. */
+type CredentialResult = {
+  email: string;
+  name: string;
+  temporaryPassword?: string;
+  setupLink?: string;
+};
 
 const PRESENCE_STYLE: Record<Presence, string> = {
   online: "bg-emerald-50 text-emerald-700",
@@ -55,6 +70,73 @@ function PresenceBadge({ presence }: { presence: Presence }) {
   );
 }
 
+/**
+ * One-time credential result (Phase 5.0E-4). The generated temporary password (or the
+ * returned setup link) is shown ONCE, here, from React state only. It is never in the
+ * URL, storage, a cookie, a log or an audit payload; dismissing or refreshing loses it.
+ */
+function CredentialPanel({ result, onDismiss }: { result: CredentialResult; onDismiss: () => void }) {
+  const [copied, setCopied] = useState<"pw" | "link" | null>(null);
+  const c = t.users.credential;
+  const copy = (value: string, which: "pw" | "link") => {
+    void navigator.clipboard?.writeText(value);
+    setCopied(which);
+    setTimeout(() => setCopied(null), 1500);
+  };
+  return (
+    <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4" role="status">
+      {result.temporaryPassword && (
+        <>
+          <p className="text-sm font-semibold text-amber-900">{c.title}</p>
+          <p className="mt-1 text-xs text-amber-800">
+            {result.name || result.email} · {result.email}
+          </p>
+          <div className="mt-2 flex items-center gap-2">
+            <code className="flex-1 rounded bg-white px-2 py-1.5 font-mono text-sm text-navy-900">
+              {result.temporaryPassword}
+            </code>
+            <button
+              type="button"
+              onClick={() => copy(result.temporaryPassword!, "pw")}
+              className="shrink-0 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-600"
+            >
+              {copied === "pw" ? c.copied : c.copy}
+            </button>
+          </div>
+          <p className="mt-2 text-[11px] text-amber-800">{c.warning}</p>
+        </>
+      )}
+
+      {result.setupLink && (
+        <div className={result.temporaryPassword ? "mt-4 border-t border-amber-200 pt-3" : ""}>
+          <p className="text-sm font-semibold text-amber-900">{c.linkTitle}</p>
+          <div className="mt-2 flex items-center gap-2">
+            <code className="flex-1 truncate rounded bg-white px-2 py-1.5 text-xs text-navy-900">
+              {result.setupLink}
+            </code>
+            <button
+              type="button"
+              onClick={() => copy(result.setupLink!, "link")}
+              className="shrink-0 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-600"
+            >
+              {copied === "link" ? c.copied : c.copy}
+            </button>
+          </div>
+          <p className="mt-2 text-[11px] text-amber-800">{c.linkWarning}</p>
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={onDismiss}
+        className="mt-3 rounded-lg border border-amber-300 px-3 py-1.5 text-xs font-medium text-amber-900 hover:bg-amber-100"
+      >
+        {c.done}
+      </button>
+    </div>
+  );
+}
+
 export function UsersAdmin({
   users,
   roles,
@@ -73,8 +155,13 @@ export function UsersAdmin({
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [credentialMode, setCredentialMode] = useState<CredentialMode>("setup_email");
   const [newRoleIds, setNewRoleIds] = useState<string[]>([]);
   const [sendWelcome, setSendWelcome] = useState(true);
+  // The one-time credential result (generated password / returned setup link). Lives
+  // ONLY here in memory; dismissing or refreshing loses it, by design.
+  const [credential, setCredential] = useState<CredentialResult | null>(null);
 
   function run(fn: () => Promise<ActionResult>, onOk?: (res: ActionResult & { ok: true }) => void) {
     setError(null);
@@ -122,25 +209,53 @@ export function UsersAdmin({
             onChange={(e) => setName(e.target.value)}
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
           />
-          <input
-            type="password"
-            placeholder={t.users.form.password}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
-          />
+          {/* The password field appears ONLY in manual mode — no always-required field. */}
+          {credentialMode === "manual" ? (
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                placeholder={t.users.form.password}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 pr-14 text-sm"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-500 hover:text-navy-700"
+                aria-label={showPassword ? "Masquer" : "Afficher"}
+              >
+                {showPassword ? "Masquer" : "Afficher"}
+              </button>
+            </div>
+          ) : (
+            <div className="hidden sm:block" aria-hidden />
+          )}
           <button
             disabled={pending}
             onClick={() =>
               run(
-                () => createUser({ email, name, password, roleIds: newRoleIds, sendWelcome }),
+                () =>
+                  createUser({
+                    email,
+                    name,
+                    credentialMode,
+                    ...(credentialMode === "manual" ? { password } : {}),
+                    roleIds: newRoleIds,
+                    sendWelcome,
+                  }),
                 (res) => {
                   setEmail("");
                   setName("");
                   setPassword("");
                   setNewRoleIds([]);
-                  if (res.welcome === "queued") setNotice(t.users.welcome.queued);
-                  else if (res.welcome === "failed") setNotice(t.users.welcome.failed);
+                  // A one-time secret (generated password) or a returned link goes into a
+                  // dedicated result panel; otherwise show the honest welcome notice.
+                  if (res.temporaryPassword || res.setupLink) {
+                    setCredential({ email, name, temporaryPassword: res.temporaryPassword, setupLink: res.setupLink });
+                  } else {
+                    setNotice(welcomeNotice(res.welcome));
+                  }
                 },
               )
             }
@@ -149,6 +264,33 @@ export function UsersAdmin({
             {pending ? t.users.form.submitting : t.users.form.submit}
           </button>
         </div>
+
+        {/* Credential mode selector (5.0E-4). Secure setup email is the default. */}
+        <fieldset className="mt-3">
+          <legend className="text-xs font-medium text-slate-600">{t.users.form.credentialMode}</legend>
+          <div className="mt-1.5 flex flex-wrap gap-4">
+            {([
+              ["setup_email", t.users.form.modeSetupEmail],
+              ["generate", t.users.form.modeGenerate],
+              ["manual", t.users.form.modeManual],
+            ] as [CredentialMode, string][]).map(([mode, label]) => (
+              <label key={mode} className="flex items-center gap-1.5 text-xs text-slate-600">
+                <input
+                  type="radio"
+                  name="credentialMode"
+                  checked={credentialMode === mode}
+                  onChange={() => setCredentialMode(mode)}
+                />
+                {label}
+              </label>
+            ))}
+          </div>
+          <p className="mt-1 text-[11px] text-slate-400">{t.users.form.passwordHint}</p>
+        </fieldset>
+
+        {credential && (
+          <CredentialPanel result={credential} onDismiss={() => setCredential(null)} />
+        )}
         {roles.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-3">
             {roles.map((r) => (
@@ -167,14 +309,18 @@ export function UsersAdmin({
             ))}
           </div>
         )}
-        <label className="mt-3 flex items-center gap-2 text-xs text-slate-600">
-          <input
-            type="checkbox"
-            checked={sendWelcome}
-            onChange={(e) => setSendWelcome(e.target.checked)}
-          />
-          {t.users.form.sendWelcome}
-        </label>
+        {/* In setup_email mode the secure link IS the mechanism (always sent); the
+            opt-in checkbox only makes sense for the password modes. */}
+        {credentialMode !== "setup_email" && (
+          <label className="mt-3 flex items-center gap-2 text-xs text-slate-600">
+            <input
+              type="checkbox"
+              checked={sendWelcome}
+              onChange={(e) => setSendWelcome(e.target.checked)}
+            />
+            {t.users.form.sendWelcome}
+          </label>
+        )}
       </div>
 
       {/* Directory */}
@@ -327,7 +473,9 @@ function UserRow({
               run(
                 () => sendWelcomeEmail(user.id),
                 (res) => {
-                  if (res.welcome === "queued") notify(t.users.welcome.queued);
+                  // link_returned hands back a one-time link; otherwise an honest notice.
+                  if (res.setupLink) notify(`${t.users.welcome.link_returned} ${res.setupLink}`);
+                  else notify(welcomeNotice(res.welcome) ?? t.users.welcome.resent);
                 },
               )
             }

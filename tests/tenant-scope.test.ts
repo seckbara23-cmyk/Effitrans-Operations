@@ -95,6 +95,7 @@ const KNOWN_UNSCOPED_READS: Record<string, string> = {
   //     caller is). Safe: an auth id maps to exactly one identity row.
   "lib/auth/oauth.ts::client_user": "self identity lookup by auth id (orphan-cleanup gate)",
   "lib/auth/password-reset.ts::app_user": "self staff lookup by auth id to gate recovery",
+  "lib/users/actions.ts::app_user": "duplicate-detection: intentional GLOBAL profile lookup by auth id (a profile in ANY tenant => email_conflict; tenant-scoping would defeat it)",
   "lib/portal/actions.ts::client_user": "self portal identity lookup by auth id",
   "lib/portal/oauth.ts::app_user": "self identity lookup by auth id (orphan-cleanup gate)",
   "lib/portal/password-change.ts::client_user": "self portal identity lookup by auth id",

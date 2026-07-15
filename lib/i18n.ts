@@ -1425,18 +1425,43 @@ export const t = {
     form: {
       email: "Adresse e-mail",
       name: "Nom",
-      password: "Mot de passe initial",
+      password: "Mot de passe temporaire",
       roles: "Rôles",
       submit: "Créer",
       submitting: "Création…",
       noRoles: "Aucun rôle disponible",
       sendWelcome: "Envoyer un e-mail de bienvenue (lien sécurisé pour définir le mot de passe)",
+      // Phase 5.0E-4 — credential-mode selector.
+      credentialMode: "Identifiant initial",
+      modeSetupEmail: "Envoyer un lien sécurisé de création de mot de passe",
+      modeGenerate: "Générer un mot de passe temporaire",
+      modeManual: "Saisir un mot de passe temporaire",
+      passwordHint: "Aucun mot de passe n'est jamais envoyé par e-mail — uniquement un lien sécurisé.",
     },
+    // Credential result panel (generate mode) — shown ONCE.
+    credential: {
+      title: "Utilisateur créé — mot de passe temporaire",
+      warning:
+        "Ce mot de passe ne sera plus affiché après avoir quitté ou rafraîchi cette page. Transmettez-le de façon sécurisée ; l'utilisateur devra le changer à la première connexion.",
+      copy: "Copier",
+      copied: "Copié",
+      done: "Terminé",
+      linkTitle: "Lien d'installation à usage unique",
+      linkWarning:
+        "Aucun service d'e-mail n'est configuré : l'e-mail n'a pas été envoyé. Transmettez ce lien de façon sécurisée. Il ne sera plus affiché après avoir quitté cette page.",
+    },
+    // Honest welcome outcomes — the UI never claims an email was sent when it was not.
     welcome: {
-      queued:
-        "Utilisateur créé. E-mail de bienvenue mis en file d'attente (visible dans Communications).",
-      failed:
-        "Utilisateur créé, mais l'e-mail de bienvenue n'a pas pu être mis en file d'attente. Partagez les accès manuellement.",
+      email_sent: "Utilisateur créé. E-mail de bienvenue envoyé.",
+      link_returned:
+        "Utilisateur créé. Aucun service d'e-mail configuré — utilisez le lien sécurisé affiché.",
+      provider_unavailable:
+        "Utilisateur créé, mais l'e-mail n'a pas pu être envoyé (fournisseur non configuré et lien indisponible).",
+      link_generation_failed:
+        "Utilisateur créé, mais le lien de création de mot de passe n'a pas pu être généré.",
+      delivery_failed:
+        "Utilisateur créé, mais l'e-mail de bienvenue n'a pas pu être envoyé. Réessayez.",
+      resent: "E-mail de bienvenue renvoyé.",
     },
     errors: {
       forbidden: "Action non autorisée.",
@@ -1446,11 +1471,15 @@ export const t = {
       cannot_revoke_own_admin:
         "Vous ne pouvez pas retirer votre propre rôle d'administrateur.",
       not_found: "Utilisateur introuvable.",
-      invalid_role: "Rôle invalide.",
-      welcome_failed: "L'e-mail de bienvenue n'a pas pu être mis en file d'attente. Réessayez.",
+      invalid_role: "Un ou plusieurs rôles sélectionnés ne sont pas valides pour cette entreprise.",
+      email_conflict: "Cette adresse e-mail est déjà utilisée.",
+      auth_failed: "Le compte d'authentification n'a pas pu être créé. Réessayez.",
+      profile_failed:
+        "Le compte d'authentification a été créé, mais le profil collaborateur n'a pas pu être finalisé. Réessayez.",
+      welcome_failed: "L'e-mail de bienvenue n'a pas pu être envoyé. Réessayez.",
       generic: "L'action a échoué. Veuillez réessayer.",
     },
-    note: "L'utilisateur peut se connecter avec le mot de passe initial. Un e-mail de bienvenue (optionnel) envoie un lien sécurisé pour qu'il définisse lui-même son mot de passe ; aucun mot de passe n'est transmis par e-mail.",
+    note: "Choisissez comment l'utilisateur obtient son premier accès. Aucun mot de passe n'est jamais transmis par e-mail — seul un lien sécurisé l'est.",
     presence: {
       column: "Présence",
       connection: "Connexion",

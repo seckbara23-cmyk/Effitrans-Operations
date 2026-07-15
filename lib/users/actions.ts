@@ -16,12 +16,18 @@ import { assertPermission } from "@/lib/auth/require-permission";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
 import { queueAndSend } from "@/lib/comms/queue";
+import { isProviderConfigured } from "@/lib/comms/provider";
 import { reportError } from "@/lib/observability/report";
 import { staffWelcomeVars } from "./welcome";
 import { validateCreateUser } from "./validate";
-import type { ActionResult, WelcomeOutcome } from "./types";
+import { generateTempPassword } from "@/lib/portal/temp-password";
+import { classifyWelcome, isDelivered, returnsLink } from "./welcome-outcome";
+import type { ActionResult, WelcomeOutcome, CredentialMode, CreateUserError } from "./types";
 
 type Admin = ReturnType<typeof getAdminSupabaseClient>;
+
+/** A welcome attempt's outcome plus the one-time link when there is no provider. */
+type WelcomeResult = { outcome: WelcomeOutcome; setupLink?: string };
 
 /**
  * Best-effort staff onboarding email (Option A): generate a secure self-service
@@ -30,24 +36,60 @@ type Admin = ReturnType<typeof getAdminSupabaseClient>;
  * throws — onboarding email failure must not fail user creation, and the message
  * appears in /communications even when the email provider is the no-op stub.
  */
+/**
+ * The secure welcome / set-password flow (Phase 5.0E-4). HONEST by construction:
+ *
+ *   - it distinguishes "no provider" from "provider failed" from "link couldn't be
+ *     minted" from "delivery failed" (classifyWelcome);
+ *   - when there is no provider it returns the one-time link for the admin to deliver
+ *     out of band, and NEVER claims an email was sent;
+ *   - it marks onboarding_email_sent_at ONLY on a true, provider-backed delivery — so
+ *     the "E-mail non envoyé" indicator reflects real delivery history, not a no-op;
+ *   - it NEVER emails a password (only a recovery link), and the link is never logged,
+ *     audited or persisted.
+ *
+ * Never throws — a welcome failure must never fail user creation.
+ */
 async function queueStaffWelcome(
   supabase: Admin,
   ctx: { tenantId: string; actorId: string },
   recipient: { userId: string; email: string; name: string | null },
-): Promise<WelcomeOutcome> {
+): Promise<WelcomeResult> {
   try {
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "";
     const loginUrl = `${siteUrl}/login`;
+    const providerConfigured = isProviderConfigured();
 
+    // Mint the secure set-password link (GoTrue recovery). This is the ONLY credential
+    // mechanism that travels — a link, never a password.
     const { data: link } = await supabase.auth.admin.generateLink({
       type: "recovery",
       email: recipient.email,
       options: { redirectTo: `${siteUrl}/auth/update-password` },
     });
-    // Fall back to the login page if no link could be generated (user still
-    // gets the welcome + can self-serve a reset from /login).
-    const setupLink = link?.properties?.action_link ?? loginUrl;
+    const setupLink = link?.properties?.action_link ?? null;
 
+    // No provider: do not pretend to email. Hand the link back (or report unavailable).
+    if (!providerConfigured) {
+      const outcome = classifyWelcome({ providerConfigured: false, linkGenerated: !!setupLink, deliveryAccepted: false });
+      // Audited as a distinct, safe event — the ID and template, NEVER the link.
+      await writeAudit({
+        action: AuditActions.USER_WELCOME_LINK_RETURNED,
+        actorId: ctx.actorId,
+        tenantId: ctx.tenantId,
+        entity: "app_user",
+        entityId: recipient.userId,
+        after: { providerConfigured: false, linkGenerated: !!setupLink },
+      });
+      return { outcome, setupLink: outcome === "link_returned" ? (setupLink as string) : undefined };
+    }
+
+    if (!setupLink) {
+      return { outcome: classifyWelcome({ providerConfigured: true, linkGenerated: false, deliveryAccepted: false }) };
+    }
+
+    // Provider configured + link minted: attempt delivery through the existing pipeline
+    // (which audits COMMUNICATION_QUEUED / SENT / FAILED itself).
     const res = await queueAndSend({
       tenantId: ctx.tenantId,
       createdBy: ctx.actorId,
@@ -58,15 +100,40 @@ async function queueStaffWelcome(
       related: "user",
       relatedId: recipient.userId,
     });
-    if (res.id) {
-      // Phase 2.1A — record that the onboarding email was sent (admin visibility).
-      await supabase.from("app_user").update({ onboarding_email_sent_at: new Date().toISOString() }).eq("id", recipient.userId);
+    const outcome = classifyWelcome({
+      providerConfigured: true,
+      linkGenerated: true,
+      deliveryAccepted: res.status === "SENT",
+    });
+
+    // Record delivery ONLY when it truly happened — so the users list is honest.
+    if (isDelivered(outcome)) {
+      await supabase
+        .from("app_user")
+        .update({ onboarding_email_sent_at: new Date().toISOString() })
+        .eq("id", recipient.userId);
     }
-    return res.id ? "queued" : "failed";
+    return { outcome };
   } catch (e) {
     reportError(e, { scope: "action", event: "users.welcome_email", extra: { userId: recipient.userId } });
-    return "failed";
+    return { outcome: "delivery_failed" };
   }
+}
+
+/**
+ * Find an existing auth user by email, or null. GoTrue's admin API has no get-by-email;
+ * page until found or exhausted. (Same shape as the 6.0A provisioning engine.)
+ */
+async function findAuthUserByEmail(supabase: Admin, email: string): Promise<string | null> {
+  const target = email.toLowerCase();
+  for (let page = 1; page <= 20; page++) {
+    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage: 200 });
+    if (error) return null;
+    const hit = data.users.find((u) => (u.email ?? "").toLowerCase() === target);
+    if (hit) return hit.id;
+    if (data.users.length < 200) break;
+  }
+  return null;
 }
 
 async function tenantRoleIds(supabase: ReturnType<typeof getAdminSupabaseClient>, tenantId: string): Promise<Set<string>> {
@@ -74,12 +141,29 @@ async function tenantRoleIds(supabase: ReturnType<typeof getAdminSupabaseClient>
   return new Set((data ?? []).map((r) => r.id));
 }
 
+/**
+ * Create a tenant staff user (Phase 5.0E-4 — repaired).
+ *
+ * THE ROOT-CAUSE FIXES this rewrite carries:
+ *   1. RECONCILE, don't blindly create. An email whose auth user exists but has NO
+ *      app_user is REUSED (the orphan from a prior partial failure heals) rather than
+ *      failing forever on "already registered". An email that already has an app_user
+ *      is a real duplicate → email_conflict.
+ *   2. COMPENSATE on partial failure — but ONLY delete an auth user THIS call created.
+ *      A pre-existing auth user is never deleted. No more orphans, no more unusable
+ *      half-created users.
+ *   3. CLOSED, SAFE ERROR CODES — never a raw GoTrue/Supabase/service-role string.
+ *
+ * CREDENTIAL MODES: setup_email (no password; secure link), generate (CSPRNG temp
+ * password shown once), manual (admin-entered). A password is NEVER emailed in any mode.
+ */
 export async function createUser(form: {
   email: string;
   name?: string;
-  password: string;
+  password?: string;
   roleIds?: string[];
   sendWelcome?: boolean;
+  credentialMode?: CredentialMode;
 }): Promise<ActionResult> {
   let admin;
   try {
@@ -88,52 +172,126 @@ export async function createUser(form: {
     return { ok: false, error: "forbidden" };
   }
 
-  const invalid = validateCreateUser({ email: form.email, name: form.name, password: form.password });
-  if (invalid) return { ok: false, error: invalid };
+  const mode: CredentialMode = form.credentialMode ?? "setup_email";
+  const email = form.email.trim().toLowerCase();
+
+  // Validate. In manual mode the entered password must meet the policy; in the other
+  // modes there is no admin-entered password to validate.
+  if (mode === "manual") {
+    // validateCreateUser returns "invalid_email" | "weak_password" | null — both are
+    // members of the safe CreateUserError vocabulary.
+    const invalid = validateCreateUser({ email, name: form.name, password: form.password ?? "" });
+    if (invalid === "invalid_email" || invalid === "weak_password") return { ok: false, error: invalid };
+  } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return { ok: false, error: "invalid_email" };
+  }
 
   const supabase = getAdminSupabaseClient();
-  const email = form.email.trim();
 
-  const { data, error } = await supabase.auth.admin.createUser({
-    email,
-    password: form.password,
-    email_confirm: true,
-  });
-  if (error || !data.user) return { ok: false, error: error?.message ?? "create_failed" };
+  // Roles: EVERY submitted role must be a real role of THIS tenant. We reject rather
+  // than silently drop, so the admin learns their selection was rejected.
+  const validRoleIds = await tenantRoleIds(supabase, admin.tenantId);
+  const requestedRoles = form.roleIds ?? [];
+  if (requestedRoles.some((id) => !validRoleIds.has(id))) {
+    return { ok: false, error: "invalid_role" };
+  }
 
-  const newId = data.user.id;
+  // The credential we hand GoTrue. setup_email: none (they set it via the link).
+  const generated = mode === "generate" ? generateTempPassword() : null;
+  const password = mode === "manual" ? form.password : mode === "generate" ? generated! : undefined;
+
+  // --- Stage 1: reconcile or create the auth user -----------------------------------
+  const existingAuthId = await findAuthUserByEmail(supabase, email);
+  let authId: string;
+  let createdHere: boolean;
+
+  if (existingAuthId) {
+    // Does this auth user already belong to a tenant? If so it is a genuine duplicate.
+    const { data: existingProfile } = await supabase
+      .from("app_user")
+      .select("id")
+      .eq("id", existingAuthId)
+      .maybeSingle();
+    if (existingProfile) return { ok: false, error: "email_conflict" };
+
+    // Orphan (auth user, no profile): REUSE it. Set the password if one was chosen.
+    authId = existingAuthId;
+    createdHere = false;
+    if (password) {
+      const { error } = await supabase.auth.admin.updateUserById(authId, { password });
+      if (error) return { ok: false, error: "auth_failed" };
+    }
+  } else {
+    const { data, error } = await supabase.auth.admin.createUser({
+      email,
+      ...(password ? { password } : {}),
+      email_confirm: true,
+    });
+    if (error || !data.user) {
+      reportError(error, { scope: "action", event: "users.auth_create" });
+      // GoTrue's own duplicate signal, mapped to the safe code.
+      const msg = (error?.message ?? "").toLowerCase();
+      return { ok: false, error: /already|registered|exists/.test(msg) ? "email_conflict" : "auth_failed" };
+    }
+    authId = data.user.id;
+    createdHere = true;
+  }
+
+  // --- Stage 2: the tenant profile --------------------------------------------------
   const { error: insErr } = await supabase.from("app_user").insert({
-    id: newId,
+    id: authId,
     tenant_id: admin.tenantId,
     email,
     name: form.name?.trim() || null,
     status: "active",
   });
-  if (insErr) return { ok: false, error: insErr.message };
-
-  // Only assign roles that belong to the caller's tenant (defends against tampered input).
-  const validRoleIds = await tenantRoleIds(supabase, admin.tenantId);
-  const toAssign = (form.roleIds ?? []).filter((id) => validRoleIds.has(id));
-  for (const roleId of toAssign) {
-    await supabase.from("user_role").insert({ user_id: newId, role_id: roleId, tenant_id: admin.tenantId });
+  if (insErr) {
+    // COMPENSATE: undo ONLY what we created. A reused (pre-existing) auth user is left
+    // untouched — deleting it could destroy a real login. A created one is removed so
+    // the email is not poisoned for the retry.
+    if (createdHere) {
+      const { error: delErr } = await supabase.auth.admin.deleteUser(authId);
+      if (delErr) reportError(delErr, { scope: "action", event: "users.compensation_failed", extra: { authId } });
+    }
+    reportError(insErr, { scope: "action", event: "users.profile_insert" });
+    return { ok: false, error: "profile_failed" };
   }
 
+  // --- Stage 3: roles (all validated above) -----------------------------------------
+  for (const roleId of requestedRoles) {
+    await supabase.from("user_role").insert({ user_id: authId, role_id: roleId, tenant_id: admin.tenantId });
+  }
+
+  // --- Audit. The generated password NEVER appears here — only that one was issued. --
   await writeAudit({
-    action: AuditActions.USER_CREATED,
+    action: generated ? AuditActions.USER_CREATED_WITH_TEMP_PASSWORD : AuditActions.USER_CREATED,
     actorId: admin.id,
     tenantId: admin.tenantId,
     entity: "app_user",
-    entityId: newId,
-    after: { email, roles: toAssign },
+    entityId: authId,
+    after: { email, roles: requestedRoles, credentialMode: mode, reusedAuthUser: !createdHere },
   });
 
-  // Optional onboarding email (best-effort; never fails user creation).
-  const welcome: WelcomeOutcome = form.sendWelcome
-    ? await queueStaffWelcome(supabase, { tenantId: admin.tenantId, actorId: admin.id }, { userId: newId, email, name: form.name?.trim() || null })
-    : "skipped";
+  // --- Welcome (best-effort). A password is never emailed; setup_email always sends a
+  // link, generate/manual send one only if the admin asked. --------------------------
+  const wantWelcome = mode === "setup_email" || form.sendWelcome === true;
+  const welcome: WelcomeResult = wantWelcome
+    ? await queueStaffWelcome(
+        supabase,
+        { tenantId: admin.tenantId, actorId: admin.id },
+        { userId: authId, email, name: form.name?.trim() || null },
+      )
+    : { outcome: "skipped" };
 
   revalidatePath("/users");
-  return { ok: true, welcome };
+  return {
+    ok: true,
+    userId: authId,
+    welcome: welcome.outcome,
+    // The one-time secret, returned ONCE, in the result only. Never persisted/logged.
+    ...(generated ? { temporaryPassword: generated } : {}),
+    ...(returnsLink(welcome.outcome) && welcome.setupLink ? { setupLink: welcome.setupLink } : {}),
+  };
 }
 
 /**
@@ -158,12 +316,33 @@ export async function sendWelcomeEmail(userId: string): Promise<ActionResult> {
     .maybeSingle();
   if (!target || target.tenant_id !== admin.tenantId) return { ok: false, error: "not_found" };
 
+  // A distinct audit trail for the resend request itself (safe metadata only).
+  await writeAudit({
+    action: AuditActions.USER_WELCOME_RESEND_REQUESTED,
+    actorId: admin.id,
+    tenantId: admin.tenantId,
+    entity: "app_user",
+    entityId: target.id,
+  });
+
   const welcome = await queueStaffWelcome(
     supabase,
     { tenantId: admin.tenantId, actorId: admin.id },
     { userId: target.id, email: target.email, name: target.name },
   );
-  return welcome === "failed" ? { ok: false, error: "welcome_failed" } : { ok: true, welcome };
+
+  // Honest: only a real, provider-backed delivery — or the deliberate no-provider
+  // "link returned" — counts as success. A generation/delivery failure is an error.
+  const hardFail =
+    welcome.outcome === "provider_unavailable" ||
+    welcome.outcome === "link_generation_failed" ||
+    welcome.outcome === "delivery_failed";
+  if (hardFail) return { ok: false, error: "welcome_failed" as CreateUserError };
+  return {
+    ok: true,
+    welcome: welcome.outcome,
+    ...(welcome.setupLink ? { setupLink: welcome.setupLink } : {}),
+  };
 }
 
 export async function setUserStatus(userId: string, status: "active" | "inactive"): Promise<ActionResult> {
@@ -189,7 +368,10 @@ export async function setUserStatus(userId: string, status: "active" | "inactive
     .update({ status })
     .eq("id", userId)
     .eq("tenant_id", admin.tenantId);
-  if (error) return { ok: false, error: error.message };
+  if (error) {
+    reportError(error, { scope: "action", event: "users.set_status" });
+    return { ok: false, error: "generic" };
+  }
 
   await writeAudit({
     action: status === "active" ? AuditActions.USER_ACTIVATED : AuditActions.USER_DEACTIVATED,
@@ -222,7 +404,10 @@ export async function assignRole(userId: string, roleId: string): Promise<Action
   const { error } = await supabase
     .from("user_role")
     .insert({ user_id: userId, role_id: roleId, tenant_id: admin.tenantId });
-  if (error && !/duplicate|unique/i.test(error.message)) return { ok: false, error: error.message };
+  if (error && !/duplicate|unique/i.test(error.message)) {
+    reportError(error, { scope: "action", event: "users.assign_role" });
+    return { ok: false, error: "generic" };
+  }
 
   await writeAudit({
     action: AuditActions.USER_ROLE_ASSIGNED,
@@ -257,7 +442,10 @@ export async function revokeRole(userId: string, roleId: string): Promise<Action
     .eq("user_id", userId)
     .eq("role_id", roleId)
     .eq("tenant_id", admin.tenantId);
-  if (error) return { ok: false, error: error.message };
+  if (error) {
+    reportError(error, { scope: "action", event: "users.revoke_role" });
+    return { ok: false, error: "generic" };
+  }
 
   await writeAudit({
     action: AuditActions.USER_ROLE_REVOKED,
