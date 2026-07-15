@@ -170,6 +170,18 @@ export const AuditActions = {
   // answer, or any tenant secret.
   PLATFORM_COPILOT_QUERY: "platform.copilot.query",
 
+  // DBC-1 — Digital Brand Center. Payloads carry only changed field NAMES, asset kinds/ids,
+  // membership ids, status transitions, and safe file metadata (size/MIME). NEVER raw files,
+  // the whistleblower URL, public-card tokens, signed URLs, or full profile contents.
+  BRAND_PROFILE_UPDATED: "brand.profile.updated",
+  BRAND_ASSET_UPLOADED: "brand.asset.uploaded",
+  BRAND_ASSET_REPLACED: "brand.asset.replaced",
+  BRAND_ASSET_RETIRED: "brand.asset.retired",
+  BRAND_MEMBERSHIP_CREATED: "brand.membership.created",
+  BRAND_MEMBERSHIP_UPDATED: "brand.membership.updated",
+  BRAND_MEMBERSHIP_RETIRED: "brand.membership.retired",
+  BRAND_WORKFORCE_PROFILE_UPDATED: "brand.workforce_profile.updated",
+
   // Phase 5.0B — official process engine. Payloads carry only step KEYS, state
   // names, actor ids and evidence KEYS. NEVER document contents, file bytes,
   // secrets, passwords, or raw client data — enforced by the audit-safety test in
