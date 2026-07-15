@@ -8,9 +8,17 @@ export default async function PlatformCompanies() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-white">Entreprises</h1>
-        <p className="mt-1 text-sm text-slate-400">{companies.length} entreprise(s) sur la plateforme.</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Entreprises</h1>
+          <p className="mt-1 text-sm text-slate-400">{companies.length} entreprise(s) sur la plateforme.</p>
+        </div>
+        <Link
+          href="/platform/companies/new"
+          className="rounded-lg bg-teal-500 px-4 py-2 text-sm font-semibold text-navy-950 hover:bg-teal-400"
+        >
+          Nouvelle entreprise
+        </Link>
       </div>
 
       {companies.length === 0 ? (
