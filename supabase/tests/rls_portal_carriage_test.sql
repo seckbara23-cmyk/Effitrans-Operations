@@ -38,6 +38,7 @@ on conflict (id) do nothing;
 
 insert into public.operational_file (id, tenant_id, file_number, type, client_id) values
   ('00000000-0000-0000-0000-00000000cf01', '00000000-0000-0000-0000-000000000001', 'EFT-IMP-2099-95001', 'IMP', '00000000-0000-0000-0000-00000000cc01'),
+  ('00000000-0000-0000-0000-00000000cf0a', '00000000-0000-0000-0000-000000000001', 'EFT-IMP-2099-95004', 'IMP', '00000000-0000-0000-0000-00000000cc01'),
   ('00000000-0000-0000-0000-00000000cf02', '00000000-0000-0000-0000-000000000001', 'EFT-IMP-2099-95002', 'IMP', '00000000-0000-0000-0000-00000000cc02'),
   ('00000000-0000-0000-0000-00000000cf0b', '00000000-0000-0000-0000-0000000000c2', 'EFT-IMP-2099-95003', 'IMP', '00000000-0000-0000-0000-00000000cc0b')
 on conflict (id) do nothing;
@@ -47,7 +48,7 @@ insert into public.shipment (id, tenant_id, file_id, transport_mode, ocean_miles
   ('00000000-0000-0000-0000-00000000c50b', '00000000-0000-0000-0000-0000000000c2', '00000000-0000-0000-0000-00000000cf0b', 'SEA', 'VESSEL_ARRIVED')
 on conflict (id) do nothing;
 insert into public.shipment (id, tenant_id, file_id, transport_mode, air_milestone) values
-  ('00000000-0000-0000-0000-00000000c5a1', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-00000000cf01', 'AIR', 'DEPARTED')
+  ('00000000-0000-0000-0000-00000000c5a1', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-00000000cf0a', 'AIR', 'DEPARTED')
 on conflict (id) do nothing;
 
 insert into public.ocean_container (id, tenant_id, shipment_id, container_number) values
