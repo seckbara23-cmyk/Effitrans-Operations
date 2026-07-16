@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getPortalTracking } from "@/lib/portal/tracking";
+import { getPortalCarriage } from "@/lib/portal/carriage";
 import { listPortalInvoices } from "@/lib/portal/docs-service";
 import { stageToMapPhase } from "@/lib/portal/shipment-view";
 import { SummaryCard } from "@/components/portal/summary-card";
@@ -7,6 +8,8 @@ import { NextStepCard } from "@/components/portal/next-step-card";
 import { EtaWidget } from "@/components/portal/eta-widget";
 import { OfficerCard } from "@/components/portal/officer-card";
 import { ShipmentMap } from "@/components/portal/shipment-map";
+import { ShipmentMapLoader } from "@/components/shipping/shipment-map-loader";
+import { CarriagePanel } from "@/components/portal/carriage-panel";
 import { DocumentCenter } from "@/components/portal/document-center";
 import { InvoiceCenter } from "@/components/portal/invoice-center";
 import { DossierTimeline } from "@/components/portal/dossier-timeline";
@@ -20,8 +23,9 @@ export const dynamic = "force-dynamic";
 
 export default async function PortalFileDetailPage({ params }: { params: { id: string } }) {
   const f = t.portal.files;
-  const [tracking, invoices] = await Promise.all([
+  const [tracking, carriage, invoices] = await Promise.all([
     getPortalTracking(params.id),
+    getPortalCarriage(params.id),
     listPortalInvoices(params.id),
   ]);
 
@@ -45,7 +49,15 @@ export default async function PortalFileDetailPage({ params }: { params: { id: s
 
       <div className="grid gap-5 lg:grid-cols-3">
         <div className="space-y-5 lg:col-span-2">
-          <ShipmentMap points={tracking.mapPoints.points} hasGeo={tracking.mapPoints.hasGeo} phase={mapPhase} />
+          {/* Ocean/air shipments render the SHARED provider-neutral map (position + milestones +
+              confidence/freshness/warnings). Road-only / no-geo dossiers fall back to the
+              origin→destination pin map. */}
+          {carriage?.hasGeo ? (
+            <ShipmentMapLoader projection={carriage.map} />
+          ) : (
+            <ShipmentMap points={tracking.mapPoints.points} hasGeo={tracking.mapPoints.hasGeo} phase={mapPhase} />
+          )}
+          {carriage && <CarriagePanel carriage={carriage} />}
           <ActionsRequired fileId={tracking.fileId} selfService={tracking.selfService} />
           <DossierTimeline entries={tracking.activity} />
           <DocumentCenter documents={tracking.documents.available} requirements={tracking.documents.requirements} />
