@@ -51,9 +51,11 @@ describe("the workspace is composed + discoverable (Phase 7.2C)", () => {
     for (const h of hrefs) expect(ROUTES[h], `orphan tab ${h}`).toBeDefined();
   });
   it("the Transport department exposes a prominent Ocean Shipping entry", () => {
+    // Phase 7.3C superseded the simple links with the Logistics Command Center platform
+    // cards; the Ocean Shipping entry is now a card CTA + quick-nav link.
     const dept = read("../app/departments/transport/page.tsx");
     expect(dept).toContain('href="/shipping"');
-    expect(dept).toContain("Plateformes de transport");
+    expect(dept).toContain("Ocean Shipping");
   });
   it("cross-links: shipment detail reaches its containers and customs", () => {
     const detail = read("../app/shipping/shipments/[shipmentId]/page.tsx");

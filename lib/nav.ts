@@ -89,8 +89,11 @@ export const BASE_SECTIONS: NavigationSection[] = [
       // job title.
       { key: "customs", label: "Douane", href: "/departments/customs", iconKey: "stamp", permission: "customs:read" },
       {
+        // Phase 7.3C — the department page is now the unified Logistics Command Center
+        // (road + ocean + air + customs overview). Label broadened; route/permission/key
+        // unchanged. Asserted verbatim in tests/journeys.test.ts.
         key: "transport",
-        label: "Transport",
+        label: "Transport & Logistique",
         href: "/departments/transport",
         iconKey: "truck",
         permission: "transport:read",

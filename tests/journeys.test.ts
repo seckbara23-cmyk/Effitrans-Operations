@@ -82,7 +82,7 @@ describe("the sidebar is exactly the five agreed sections", () => {
     );
     expect(byKey.pilotage).toEqual(["Mon Travail", "Centre d'opérations", "Parcours des dossiers"]);
     expect(byKey.files).toEqual(["Dossiers", "Clients", "Communications"]);
-    expect(byKey.departments).toEqual(["Documentation", "Douane", "Transport", "Finance"]);
+    expect(byKey.departments).toEqual(["Documentation", "Douane", "Transport & Logistique", "Finance"]);
     expect(byKey.management).toEqual(["Direction", "Rapports", "Tableau exécutif"]);
     expect(byKey.administration).toEqual(["Utilisateurs", "Centre de marque", "Journal d'audit", "Paramètres"]);
   });
