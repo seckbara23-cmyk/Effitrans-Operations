@@ -20,6 +20,7 @@ import { getAirDashboard, listAirShipments } from "@/lib/air/intelligence/servic
 import { getAirAttentionQueue } from "@/lib/air/intelligence/manage-service";
 import { airMilestoneLabel } from "@/lib/air/intelligence/milestones";
 import { getIntelligenceDashboard } from "@/lib/customs/intelligence/service";
+import { getReviewQueueSummary } from "@/lib/docintel/service";
 import {
   platformState, mergeAttention, headlineKpis, sortUpcoming, countBySeverity,
   type ModuleSummary, type PlatformState, type UnifiedAlert, type UpcomingMovement, type HeadlineKpis,
@@ -41,6 +42,7 @@ export type CommandCenter = {
   roadRows: RoadQueueRow[];
   roadAvailable: boolean;
   customsAuthorized: boolean;
+  docIntel: { readyForReview: number; failed: number } | null; // bounded indicator (document:read)
 };
 
 const ACTIVE_ROAD = ["NOT_STARTED", "PLANNED", "DRIVER_ASSIGNED", "PICKED_UP", "IN_TRANSIT", "DELIVERED"];
@@ -134,12 +136,15 @@ export async function getCommandCenter(): Promise<CommandCenter> {
   const now = new Date();
   const nowMs = now.getTime();
 
-  const [roadR, oceanR, airR, customsR, journeyR] = await Promise.allSettled([
+  const [roadR, oceanR, airR, customsR, journeyR, docIntelR] = await Promise.allSettled([
     loadRoad(nowMs), loadOcean(nowMs), loadAir(nowMs),
     canCustoms ? loadCustoms() : Promise.reject(new Error("unauthorized")),
     loadJourney(admin, user.tenantId, canCustoms),
+    getReviewQueueSummary(), // document:read; degrades to null if unauthorized
   ]);
   const road = settled(roadR), ocean = settled(oceanR), air = settled(airR), customs = settled(customsR);
+  const dq = settled(docIntelR);
+  const docIntel = dq ? { readyForReview: dq.readyForReview, failed: dq.failed } : null;
 
   const attention = mergeAttention([...(road?.attention ?? []), ...(ocean?.attention ?? []), ...(air?.attention ?? []), ...(customs?.attention ?? [])]);
   const upcoming = sortUpcoming([...(road?.upcoming ?? []), ...(ocean?.upcoming ?? []), ...(air?.upcoming ?? [])]);
@@ -152,5 +157,5 @@ export async function getCommandCenter(): Promise<CommandCenter> {
     { mode: "customs", available: !!customs, state: platformState(summary(!!customs, customs?.hasData ?? false, customs?.kpis.blockedRejected ?? 0, (customs?.kpis.inspection ?? 0) + (customs?.kpis.awaitingPayment ?? 0))), kpis: customs ? [{ label: "En cours", value: customs.kpis.pending }, { label: "Inspections", value: customs.kpis.inspection }, { label: "Attente paiement", value: customs.kpis.awaitingPayment }, { label: "Mainlevées", value: customs.kpis.released }, { label: "Bloquées/rejetées", value: customs.kpis.blockedRejected }] : [] },
   ];
 
-  return { headline, cards, attention, upcoming, journey: settled(journeyR) ?? [], roadRows: road?.queue ?? [], roadAvailable: !!road, customsAuthorized: canCustoms };
+  return { headline, cards, attention, upcoming, journey: settled(journeyR) ?? [], roadRows: road?.queue ?? [], roadAvailable: !!road, customsAuthorized: canCustoms, docIntel };
 }

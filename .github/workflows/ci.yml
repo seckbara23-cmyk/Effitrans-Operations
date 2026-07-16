@@ -270,6 +270,11 @@ jobs:
           PGPASSWORD: postgres
         run: psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/rls_air_test.sql
 
+      - name: Run document intelligence isolation test (Phase 7.4A)
+        env:
+          PGPASSWORD: postgres
+        run: psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/rls_document_intelligence_test.sql
+
       - name: Stop local Supabase
         if: always()
         run: supabase stop

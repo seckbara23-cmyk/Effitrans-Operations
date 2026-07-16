@@ -316,6 +316,18 @@ export const AuditActions = {
   AIR_TRACKING_MANUAL_EVENT: "air.tracking.manual_event_added",
   AIR_MILESTONE_CHANGED: "air.milestone.changed",
   AIR_ETA_UPDATED: "air.eta.updated",
+
+  // Phase 7.4A — Document Intelligence. SAFE metadata ONLY (document id, class, job id,
+  // provider code, field KEY, review decision, target domain, outcome category, counts).
+  // NEVER extracted text, document contents, invoice values, customer names, evidence
+  // excerpts, provider credentials, raw AI response, or prompts with customer data.
+  DOCUMENT_INTELLIGENCE_REQUESTED: "document.intelligence.requested",
+  DOCUMENT_CLASSIFIED: "document.classified",
+  DOCUMENT_EXTRACTION_COMPLETED: "document.extraction.completed",
+  DOCUMENT_EXTRACTION_FAILED: "document.extraction.failed",
+  DOCUMENT_REVIEW_COMPLETED: "document.review.completed",
+  DOCUMENT_FIELD_APPLIED: "document.field.applied",
+  DOCUMENT_FIELD_APPLICATION_FAILED: "document.field.application_failed",
 } as const;
 
 export type AuditActionCode = (typeof AuditActions)[keyof typeof AuditActions];

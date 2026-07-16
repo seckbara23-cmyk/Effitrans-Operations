@@ -90,6 +90,9 @@ export const TENANT_SCOPED_TABLES = new Set<string>([
   "air_uld",
   "air_cargo_piece",
   "air_tracking_event",
+  // document intelligence (Phase 7.4A)
+  "document_intelligence_job",
+  "document_candidate_field",
 ]);
 
 /**

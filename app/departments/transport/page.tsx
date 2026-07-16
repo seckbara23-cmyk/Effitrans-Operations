@@ -186,6 +186,9 @@ export default async function LogisticsCommandCenterPage() {
           <Link href="/air" className="rounded-lg border border-slate-200 px-3 py-1.5 hover:border-teal-300">✈️ Air Cargo</Link>
           <Link href="/customs/intelligence" className="rounded-lg border border-slate-200 px-3 py-1.5 hover:border-teal-300">🛃 Intelligence douanière</Link>
           <Link href="/shipping/alerts" className="rounded-lg border border-slate-200 px-3 py-1.5 hover:border-teal-300">Alertes</Link>
+          {cc.docIntel && (cc.docIntel.readyForReview > 0 || cc.docIntel.failed > 0) && (
+            <Link href="/files" className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-1.5 text-sky-800 hover:border-sky-300">📄 Documents à revoir ({cc.docIntel.readyForReview}{cc.docIntel.failed > 0 ? ` · ${cc.docIntel.failed} échec` : ""})</Link>
+          )}
         </div>
         <p className="mt-2 text-xs text-slate-400">Centre de suivi : positions, routes, escales, vols et livraisons disponibles depuis chaque plateforme.</p>
       </div>
