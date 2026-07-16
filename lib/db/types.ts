@@ -648,6 +648,10 @@ export type Database = {
           eta_previous: string | null;
           tracking_synced_at: string | null;
           tracking_version: number;
+          air_milestone: string;
+          air_provider_code: string;
+          airline_id: string | null;
+          air_tracking_version: number;
           created_at: string;
           updated_at: string;
         };
@@ -685,6 +689,10 @@ export type Database = {
           eta_previous?: string | null;
           tracking_synced_at?: string | null;
           tracking_version?: number;
+          air_milestone?: string;
+          air_provider_code?: string;
+          airline_id?: string | null;
+          air_tracking_version?: number;
           created_at?: string;
           updated_at?: string;
         };
@@ -722,6 +730,10 @@ export type Database = {
           eta_previous?: string | null;
           tracking_synced_at?: string | null;
           tracking_version?: number;
+          air_milestone?: string;
+          air_provider_code?: string;
+          airline_id?: string | null;
+          air_tracking_version?: number;
           created_at?: string;
           updated_at?: string;
         };
@@ -781,6 +793,55 @@ export type Database = {
         Row: { id: string; tenant_id: string; shipment_id: string; container_id: string | null; event_type: string; occurred_at: string; received_at: string; source: string; provider_code: string; confidence: string; location_name: string | null; location_unlocode: string | null; latitude: number | null; longitude: number | null; vessel_imo: string | null; vessel_mmsi: string | null; vessel_name: string | null; voyage_reference: string | null; description: string | null; fingerprint: string; provider_event_id: string | null; created_by: string | null; created_at: string };
         Insert: { id?: string; tenant_id: string; shipment_id: string; container_id?: string | null; event_type: string; occurred_at: string; received_at?: string; source: string; provider_code?: string; confidence: string; location_name?: string | null; location_unlocode?: string | null; latitude?: number | null; longitude?: number | null; vessel_imo?: string | null; vessel_mmsi?: string | null; vessel_name?: string | null; voyage_reference?: string | null; description?: string | null; fingerprint: string; provider_event_id?: string | null; created_by?: string | null; created_at?: string };
         Update: { id?: string; tenant_id?: string; shipment_id?: string; container_id?: string | null; event_type?: string; occurred_at?: string; received_at?: string; source?: string; provider_code?: string; confidence?: string; location_name?: string | null; location_unlocode?: string | null; latitude?: number | null; longitude?: number | null; vessel_imo?: string | null; vessel_mmsi?: string | null; vessel_name?: string | null; voyage_reference?: string | null; description?: string | null; fingerprint?: string; provider_event_id?: string | null; created_by?: string | null; created_at?: string };
+        Relationships: [];
+      };
+      // Phase 7.3A — Air Cargo Platform (sibling ocean tables).
+      air_airline: {
+        Row: { id: string; tenant_id: string; name: string; iata: string | null; icao: string | null; website: string | null; active: boolean; notes: string | null; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; name: string; iata?: string | null; icao?: string | null; website?: string | null; active?: boolean; notes?: string | null; created_at?: string; updated_at?: string };
+        Update: { id?: string; tenant_id?: string; name?: string; iata?: string | null; icao?: string | null; website?: string | null; active?: boolean; notes?: string | null; created_at?: string; updated_at?: string };
+        Relationships: [];
+      };
+      air_airport: {
+        Row: { id: string; tenant_id: string; iata: string | null; icao: string | null; name: string; city: string | null; country: string | null; latitude: number | null; longitude: number | null; timezone: string | null; active: boolean; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; iata?: string | null; icao?: string | null; name: string; city?: string | null; country?: string | null; latitude?: number | null; longitude?: number | null; timezone?: string | null; active?: boolean; created_at?: string; updated_at?: string };
+        Update: { id?: string; tenant_id?: string; iata?: string | null; icao?: string | null; name?: string; city?: string | null; country?: string | null; latitude?: number | null; longitude?: number | null; timezone?: string | null; active?: boolean; created_at?: string; updated_at?: string };
+        Relationships: [];
+      };
+      air_flight: {
+        Row: { id: string; tenant_id: string; flight_number: string | null; airline_id: string | null; origin_airport_id: string | null; destination_airport_id: string | null; scheduled_departure: string | null; scheduled_arrival: string | null; actual_departure: string | null; actual_arrival: string | null; status: string; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; flight_number?: string | null; airline_id?: string | null; origin_airport_id?: string | null; destination_airport_id?: string | null; scheduled_departure?: string | null; scheduled_arrival?: string | null; actual_departure?: string | null; actual_arrival?: string | null; status?: string; created_at?: string; updated_at?: string };
+        Update: { id?: string; tenant_id?: string; flight_number?: string | null; airline_id?: string | null; origin_airport_id?: string | null; destination_airport_id?: string | null; scheduled_departure?: string | null; scheduled_arrival?: string | null; actual_departure?: string | null; actual_arrival?: string | null; status?: string; created_at?: string; updated_at?: string };
+        Relationships: [];
+      };
+      air_flight_leg: {
+        Row: { id: string; tenant_id: string; flight_id: string; sequence: number; origin_airport_id: string | null; destination_airport_id: string | null; connection_airport_id: string | null; std: string | null; sta: string | null; atd: string | null; ata: string | null; status: string; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; flight_id: string; sequence: number; origin_airport_id?: string | null; destination_airport_id?: string | null; connection_airport_id?: string | null; std?: string | null; sta?: string | null; atd?: string | null; ata?: string | null; status?: string; created_at?: string; updated_at?: string };
+        Update: { id?: string; tenant_id?: string; flight_id?: string; sequence?: number; origin_airport_id?: string | null; destination_airport_id?: string | null; connection_airport_id?: string | null; std?: string | null; sta?: string | null; atd?: string | null; ata?: string | null; status?: string; created_at?: string; updated_at?: string };
+        Relationships: [];
+      };
+      air_awb: {
+        Row: { id: string; tenant_id: string; shipment_id: string; flight_id: string | null; mawb: string | null; hawb: string | null; status: string; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; shipment_id: string; flight_id?: string | null; mawb?: string | null; hawb?: string | null; status?: string; created_at?: string; updated_at?: string };
+        Update: { id?: string; tenant_id?: string; shipment_id?: string; flight_id?: string | null; mawb?: string | null; hawb?: string | null; status?: string; created_at?: string; updated_at?: string };
+        Relationships: [];
+      };
+      air_uld: {
+        Row: { id: string; tenant_id: string; shipment_id: string; flight_id: string | null; uld_number: string; uld_type: string | null; owner: string | null; status: string; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; shipment_id: string; flight_id?: string | null; uld_number: string; uld_type?: string | null; owner?: string | null; status?: string; created_at?: string; updated_at?: string };
+        Update: { id?: string; tenant_id?: string; shipment_id?: string; flight_id?: string | null; uld_number?: string; uld_type?: string | null; owner?: string | null; status?: string; created_at?: string; updated_at?: string };
+        Relationships: [];
+      };
+      air_cargo_piece: {
+        Row: { id: string; tenant_id: string; shipment_id: string; uld_id: string | null; piece_count: number; weight_kg: number | null; volume_m3: number | null; dimensions: string | null; special_handling: string | null; dangerous_goods: boolean; temperature_controlled: boolean; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; shipment_id: string; uld_id?: string | null; piece_count?: number; weight_kg?: number | null; volume_m3?: number | null; dimensions?: string | null; special_handling?: string | null; dangerous_goods?: boolean; temperature_controlled?: boolean; created_at?: string; updated_at?: string };
+        Update: { id?: string; tenant_id?: string; shipment_id?: string; uld_id?: string | null; piece_count?: number; weight_kg?: number | null; volume_m3?: number | null; dimensions?: string | null; special_handling?: string | null; dangerous_goods?: boolean; temperature_controlled?: boolean; created_at?: string; updated_at?: string };
+        Relationships: [];
+      };
+      air_tracking_event: {
+        Row: { id: string; tenant_id: string; shipment_id: string; uld_id: string | null; event_type: string; occurred_at: string; received_at: string; source: string; provider_code: string; confidence: string; location_name: string | null; location_iata: string | null; latitude: number | null; longitude: number | null; flight_number: string | null; description: string | null; fingerprint: string; provider_event_id: string | null; created_by: string | null; created_at: string };
+        Insert: { id?: string; tenant_id: string; shipment_id: string; uld_id?: string | null; event_type: string; occurred_at: string; received_at?: string; source: string; provider_code?: string; confidence: string; location_name?: string | null; location_iata?: string | null; latitude?: number | null; longitude?: number | null; flight_number?: string | null; description?: string | null; fingerprint: string; provider_event_id?: string | null; created_by?: string | null; created_at?: string };
+        Update: { id?: string; tenant_id?: string; shipment_id?: string; uld_id?: string | null; event_type?: string; occurred_at?: string; received_at?: string; source?: string; provider_code?: string; confidence?: string; location_name?: string | null; location_iata?: string | null; latitude?: number | null; longitude?: number | null; flight_number?: string | null; description?: string | null; fingerprint?: string; provider_event_id?: string | null; created_by?: string | null; created_at?: string };
         Relationships: [];
       };
       file_state_transition: {

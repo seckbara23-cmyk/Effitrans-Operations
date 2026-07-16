@@ -108,7 +108,7 @@ export default async function TransportDepartmentPage() {
         </div>
       )}
       <p className="text-xs text-slate-400">
-        Démarrer / affecter / livrer et téléverser le POD s&apos;effectue dans le dossier (volet Transport) · <Link href="/transport" className="text-teal-700 hover:underline">vue transport complète</Link> · <Link href="/shipping" className="text-teal-700 hover:underline">Lignes maritimes</Link>.
+        Démarrer / affecter / livrer et téléverser le POD s&apos;effectue dans le dossier (volet Transport) · <Link href="/transport" className="text-teal-700 hover:underline">vue transport complète</Link> · <Link href="/shipping" className="text-teal-700 hover:underline">Lignes maritimes</Link> · <Link href="/air" className="text-teal-700 hover:underline">Fret aérien</Link>.
       </p>
     </div>
   );

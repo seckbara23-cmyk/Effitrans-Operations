@@ -81,6 +81,15 @@ export const TENANT_SCOPED_TABLES = new Set<string>([
   "ocean_route_leg",
   "ocean_port_call",
   "ocean_tracking_event",
+  // air cargo platform (Phase 7.3A)
+  "air_airline",
+  "air_airport",
+  "air_flight",
+  "air_flight_leg",
+  "air_awb",
+  "air_uld",
+  "air_cargo_piece",
+  "air_tracking_event",
 ]);
 
 /**

@@ -299,6 +299,23 @@ export const AuditActions = {
   SHIPPING_CONTAINER_REASSIGNED: "shipping.container.reassigned",
   SHIPPING_ROUTE_UPDATED: "shipping.route.updated",
   SHIPPING_ETA_UPDATED: "shipping.eta.updated",
+
+  // Phase 7.3A — Air Cargo (sibling of shipping; same safe-metadata rule — actor/tenant/
+  // entity id/changed field NAMES/milestones only; NEVER coordinates, PII, credentials, raw
+  // telemetry). High-volume air events live in air_tracking_event, not the audit log.
+  AIR_AIRLINE_CREATED: "air.airline.created",
+  AIR_AIRLINE_UPDATED: "air.airline.updated",
+  AIR_AIRPORT_CREATED: "air.airport.created",
+  AIR_AIRPORT_UPDATED: "air.airport.updated",
+  AIR_FLIGHT_CREATED: "air.flight.created",
+  AIR_FLIGHT_UPDATED: "air.flight.updated",
+  AIR_FLIGHT_LEG_UPDATED: "air.flight_leg.updated",
+  AIR_AWB_UPDATED: "air.awb.updated",
+  AIR_ULD_CREATED: "air.uld.created",
+  AIR_CARGO_CREATED: "air.cargo.created",
+  AIR_TRACKING_MANUAL_EVENT: "air.tracking.manual_event_added",
+  AIR_MILESTONE_CHANGED: "air.milestone.changed",
+  AIR_ETA_UPDATED: "air.eta.updated",
 } as const;
 
 export type AuditActionCode = (typeof AuditActions)[keyof typeof AuditActions];

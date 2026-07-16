@@ -36,7 +36,7 @@ export type ShipmentMapProjection = {
   warnings: string[];
 };
 
-export type MilestoneMarkerInput = { milestone: ShippingMilestone; latitude: number | null; longitude: number | null; occurredAt?: string | null };
+export type MilestoneMarkerInput = { milestone: ShippingMilestone; latitude: number | null; longitude: number | null; occurredAt?: string | null; label?: string };
 
 export type ProjectionInputs = {
   origin?: MapPoint | null;
@@ -80,7 +80,9 @@ export function buildShipmentMapProjection(inputs: ProjectionInputs): ShipmentMa
       const marker: MapMarker = {
         latitude: m.latitude as number,
         longitude: m.longitude as number,
-        label: milestoneLabel(m.milestone),
+        // Air (and other siblings) may pass a pre-computed label; ocean falls back to the
+        // milestone label. Additive — existing callers are unaffected.
+        label: m.label ?? milestoneLabel(m.milestone),
         kind: "milestone",
         occurredAt: m.occurredAt ?? null,
       };
