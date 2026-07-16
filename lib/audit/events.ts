@@ -286,6 +286,19 @@ export const AuditActions = {
   SHIPPING_PROVIDER_REFRESH_SUCCEEDED: "shipping.provider.refresh_succeeded",
   SHIPPING_PROVIDER_REFRESH_FAILED: "shipping.provider.refresh_failed",
   SHIPPING_ETA_CHANGED: "shipping.eta.changed",
+  // Phase 7.2B — ocean management (same safe-metadata rule as above).
+  SHIPPING_CARRIER_CREATED: "shipping.carrier.created",
+  SHIPPING_CARRIER_UPDATED: "shipping.carrier.updated",
+  SHIPPING_PORT_CREATED: "shipping.port.created",
+  SHIPPING_PORT_UPDATED: "shipping.port.updated",
+  SHIPPING_VESSEL_CREATED: "shipping.vessel.created",
+  SHIPPING_VESSEL_UPDATED: "shipping.vessel.updated",
+  SHIPPING_VOYAGE_CREATED: "shipping.voyage.created",
+  SHIPPING_VOYAGE_UPDATED: "shipping.voyage.updated",
+  SHIPPING_CONTAINER_CREATED: "shipping.container.created",
+  SHIPPING_CONTAINER_REASSIGNED: "shipping.container.reassigned",
+  SHIPPING_ROUTE_UPDATED: "shipping.route.updated",
+  SHIPPING_ETA_UPDATED: "shipping.eta.updated",
 } as const;
 
 export type AuditActionCode = (typeof AuditActions)[keyof typeof AuditActions];

@@ -60,7 +60,12 @@ export default async function ShippingDashboardPage() {
       <div className="flex flex-wrap gap-2 text-sm">
         <Link href="/shipping/shipments" className="rounded-lg border border-slate-200 px-3 py-1.5 hover:border-teal-300">Expéditions</Link>
         <Link href="/shipping/containers" className="rounded-lg border border-slate-200 px-3 py-1.5 hover:border-teal-300">Conteneurs</Link>
+        <Link href="/shipping/alerts" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-amber-800 hover:border-amber-300">File d&apos;attention</Link>
+        <span className="mx-1 text-slate-300">·</span>
+        <Link href="/shipping/carriers" className="rounded-lg border border-slate-200 px-3 py-1.5 hover:border-teal-300">Transporteurs</Link>
+        <Link href="/shipping/ports" className="rounded-lg border border-slate-200 px-3 py-1.5 hover:border-teal-300">Ports</Link>
         <Link href="/shipping/vessels" className="rounded-lg border border-slate-200 px-3 py-1.5 hover:border-teal-300">Navires</Link>
+        <Link href="/shipping/voyages" className="rounded-lg border border-slate-200 px-3 py-1.5 hover:border-teal-300">Voyages</Link>
       </div>
 
       {/* Provider readiness — carriers and AIS reported honestly, never as live integrations. */}

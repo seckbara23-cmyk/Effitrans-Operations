@@ -736,21 +736,21 @@ export type Database = {
       };
       // Phase 7.2A — Shipping Line Platform (ocean satellite tables).
       ocean_carrier: {
-        Row: { id: string; tenant_id: string; code: string; name: string; scac: string | null; website: string | null; created_at: string; updated_at: string };
-        Insert: { id?: string; tenant_id: string; code: string; name: string; scac?: string | null; website?: string | null; created_at?: string; updated_at?: string };
-        Update: { id?: string; tenant_id?: string; code?: string; name?: string; scac?: string | null; website?: string | null; created_at?: string; updated_at?: string };
+        Row: { id: string; tenant_id: string; code: string; name: string; scac: string | null; website: string | null; active: boolean; notes: string | null; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; code: string; name: string; scac?: string | null; website?: string | null; active?: boolean; notes?: string | null; created_at?: string; updated_at?: string };
+        Update: { id?: string; tenant_id?: string; code?: string; name?: string; scac?: string | null; website?: string | null; active?: boolean; notes?: string | null; created_at?: string; updated_at?: string };
         Relationships: [];
       };
       ocean_port: {
-        Row: { id: string; tenant_id: string; unlocode: string | null; name: string; country: string | null; latitude: number | null; longitude: number | null; timezone: string | null; created_at: string; updated_at: string };
-        Insert: { id?: string; tenant_id: string; unlocode?: string | null; name: string; country?: string | null; latitude?: number | null; longitude?: number | null; timezone?: string | null; created_at?: string; updated_at?: string };
-        Update: { id?: string; tenant_id?: string; unlocode?: string | null; name?: string; country?: string | null; latitude?: number | null; longitude?: number | null; timezone?: string | null; created_at?: string; updated_at?: string };
+        Row: { id: string; tenant_id: string; unlocode: string | null; name: string; country: string | null; latitude: number | null; longitude: number | null; timezone: string | null; active: boolean; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; unlocode?: string | null; name: string; country?: string | null; latitude?: number | null; longitude?: number | null; timezone?: string | null; active?: boolean; created_at?: string; updated_at?: string };
+        Update: { id?: string; tenant_id?: string; unlocode?: string | null; name?: string; country?: string | null; latitude?: number | null; longitude?: number | null; timezone?: string | null; active?: boolean; created_at?: string; updated_at?: string };
         Relationships: [];
       };
       ocean_vessel: {
-        Row: { id: string; tenant_id: string; name: string; imo: string | null; mmsi: string | null; flag: string | null; carrier_id: string | null; created_at: string; updated_at: string };
-        Insert: { id?: string; tenant_id: string; name: string; imo?: string | null; mmsi?: string | null; flag?: string | null; carrier_id?: string | null; created_at?: string; updated_at?: string };
-        Update: { id?: string; tenant_id?: string; name?: string; imo?: string | null; mmsi?: string | null; flag?: string | null; carrier_id?: string | null; created_at?: string; updated_at?: string };
+        Row: { id: string; tenant_id: string; name: string; imo: string | null; mmsi: string | null; flag: string | null; carrier_id: string | null; active: boolean; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; name: string; imo?: string | null; mmsi?: string | null; flag?: string | null; carrier_id?: string | null; active?: boolean; created_at?: string; updated_at?: string };
+        Update: { id?: string; tenant_id?: string; name?: string; imo?: string | null; mmsi?: string | null; flag?: string | null; carrier_id?: string | null; active?: boolean; created_at?: string; updated_at?: string };
         Relationships: [];
       };
       ocean_voyage: {

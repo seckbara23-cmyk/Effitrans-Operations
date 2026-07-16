@@ -32,6 +32,8 @@ export type ManualEventInput = {
   latitude?: number | null;
   longitude?: number | null;
   description?: string | null;
+  /** Required to apply a regression / correction milestone (an earlier-than-current one). */
+  confirmCorrection?: boolean;
 };
 
 export type ShippingActionResult =
@@ -92,6 +94,8 @@ export async function addManualTrackingEvent(shipmentId: string, input: ManualEv
   if (isMilestone && isShippingMilestone(input.eventType)) {
     const verdict = classifyMilestone(current, input.eventType as ShippingMilestone);
     if (!verdict.ok) return { ok: false, error: verdict.reason };
+    // A correction (moving to an earlier milestone) must be explicitly confirmed.
+    if (verdict.kind === "regress" && !input.confirmCorrection) return { ok: false, error: "confirmation_required" };
   }
 
   const occurredAt = occurred.toISOString();

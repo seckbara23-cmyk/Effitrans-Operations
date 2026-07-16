@@ -70,11 +70,17 @@ insert into public.ocean_tracking_event (id, tenant_id, shipment_id, event_type,
   ('00000000-0000-0000-0000-00000000eb11', '00000000-0000-0000-0000-0000000000c2', '00000000-0000-0000-0000-00000000b501', 'VESSEL_DEPARTED', now(), 'MANUAL', 'MANUAL', 'fpB')
 on conflict do nothing;
 
+-- Phase 7.2B — reference tables (carrier) are tenant-isolated too.
+insert into public.ocean_carrier (id, tenant_id, code, name) values
+  ('00000000-0000-0000-0000-00000000aca1', '00000000-0000-0000-0000-000000000001', 'CARA', 'Carrier A'),
+  ('00000000-0000-0000-0000-00000000acb1', '00000000-0000-0000-0000-0000000000c2', 'CARB', 'Carrier B')
+on conflict (id) do nothing;
+
 create temp table _r (check_name text, value int) on commit drop;
 
 do $$
 declare
-  a_ownC int; a_otherC int; a_ownE int; a_otherE int;
+  a_ownC int; a_otherC int; a_ownE int; a_otherE int; a_ownCar int; a_otherCar int;
   b_ownC int; b_otherC int;
   n_c int;
 begin
@@ -87,6 +93,8 @@ begin
   select count(*) into a_otherC from public.ocean_container where id='00000000-0000-0000-0000-00000000cb11';
   select count(*) into a_ownE   from public.ocean_tracking_event where id='00000000-0000-0000-0000-00000000ea11';
   select count(*) into a_otherE from public.ocean_tracking_event where id='00000000-0000-0000-0000-00000000eb11';
+  select count(*) into a_ownCar   from public.ocean_carrier where id='00000000-0000-0000-0000-00000000aca1';
+  select count(*) into a_otherCar from public.ocean_carrier where id='00000000-0000-0000-0000-00000000acb1';
 
   -- Tenant-B operator (transport:read via B_OPS) — opposite direction.
   perform set_config('request.jwt.claims',
@@ -103,12 +111,13 @@ begin
   insert into _r values
     ('A_ownContainer', a_ownC), ('A_otherContainer', a_otherC),
     ('A_ownEvent', a_ownE), ('A_otherEvent', a_otherE),
+    ('A_ownCarrier', a_ownCar), ('A_otherCarrier', a_otherCar),
     ('B_ownContainer', b_ownC), ('B_otherContainer', b_otherC),
     ('noperm_container', n_c);
 
-  if a_ownC<>1 or a_otherC<>0 or a_ownE<>1 or a_otherE<>0 or b_ownC<>1 or b_otherC<>0 or n_c<>0 then
-    raise exception 'RLS SHIPPING FAIL: A(own=% other=% ownE=% otherE=%) B(own=% other=%) noperm=%',
-      a_ownC, a_otherC, a_ownE, a_otherE, b_ownC, b_otherC, n_c;
+  if a_ownC<>1 or a_otherC<>0 or a_ownE<>1 or a_otherE<>0 or a_ownCar<>1 or a_otherCar<>0 or b_ownC<>1 or b_otherC<>0 or n_c<>0 then
+    raise exception 'RLS SHIPPING FAIL: A(own=% other=% ownE=% otherE=% ownCar=% otherCar=%) B(own=% other=%) noperm=%',
+      a_ownC, a_otherC, a_ownE, a_otherE, a_ownCar, a_otherCar, b_ownC, b_otherC, n_c;
   end if;
 end $$;
 

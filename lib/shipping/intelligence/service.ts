@@ -312,15 +312,20 @@ function nextMilestoneOptions(current: ShippingMilestone): ShippingMilestone[] {
 // ------------------------------------------------------------------- containers / vessels ----
 
 export type ContainerListItem = { id: string; number: string; isoType: string | null; status: string; shipmentId: string; fileNumber: string | null; milestone: ShippingMilestone };
+export type ContainerFilters = { search?: string; status?: string; isoType?: string };
 
-export async function listContainers(page = 0, pageSize = LIST_PAGE_SIZE): Promise<{ items: ContainerListItem[]; page: number; pageSize: number; hasMore: boolean }> {
+export async function listContainers(filters: ContainerFilters = {}, page = 0, pageSize = LIST_PAGE_SIZE): Promise<{ items: ContainerListItem[]; page: number; pageSize: number; hasMore: boolean }> {
   const { admin, tenantId } = await gate();
   const size = Math.min(Math.max(1, pageSize), MAX_PAGE);
   const from = Math.max(0, page) * size;
-  const { data, error } = await admin
+  let q = admin
     .from("ocean_container")
     .select("id, container_number, iso_type, status, shipment_id, shipment:shipment_id(ocean_milestone, file:file_id(file_number))")
-    .eq("tenant_id", tenantId)
+    .eq("tenant_id", tenantId);
+  if (filters.status) q = q.eq("status", filters.status);
+  if (filters.isoType) q = q.eq("iso_type", filters.isoType);
+  if (filters.search?.trim()) { const s = filters.search.trim().replace(/[^a-zA-Z0-9\- ]/g, "").trim(); if (s) q = q.ilike("container_number", `*${s}*`); }
+  const { data, error } = await q
     .order("updated_at", { ascending: false })
     .range(from, from + size)
     .returns<{ id: string; container_number: string; iso_type: string | null; status: string; shipment_id: string; shipment: { ocean_milestone: string; file: { file_number: string } | null } | null }[]>();
