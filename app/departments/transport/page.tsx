@@ -65,6 +65,16 @@ export default async function TransportDepartmentPage() {
         ]}
       />
 
+      {/* Transport platforms (Phase 7.2C/7.3A) — discoverable entry points. */}
+      <div className="surface p-4">
+        <h2 className="mb-2 text-sm font-semibold text-navy-900">Plateformes de transport</h2>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/shipping" className="rounded-lg border border-teal-200 bg-teal-50 px-4 py-2 text-sm font-medium text-teal-800 hover:border-teal-300">🚢 Lignes maritimes (Ocean Shipping)</Link>
+          <Link href="/air" className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-2 text-sm font-medium text-sky-800 hover:border-sky-300">✈️ Fret aérien (Air Cargo)</Link>
+        </div>
+        <p className="mt-2 text-xs text-slate-500">Suivi océanique/aérien : escales, jalons, conteneurs/ULD, position et ETA — au-dessus des dossiers existants.</p>
+      </div>
+
       {rows.length === 0 ? (
         <Notice>Aucun dossier transport à traiter.</Notice>
       ) : (

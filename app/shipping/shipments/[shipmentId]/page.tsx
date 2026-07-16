@@ -128,7 +128,10 @@ export default async function ShipmentDetailPage({ params }: { params: { shipmen
           </div>
           {/* Containers */}
           <div className="surface p-4 text-sm">
-            <h2 className="mb-2 text-sm font-semibold text-navy-900">Conteneurs ({containers.length})</h2>
+            <div className="mb-2 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-navy-900">Conteneurs ({containers.length})</h2>
+              <Link href="/shipping/containers" className="text-xs text-teal-700 hover:underline">Tous les conteneurs →</Link>
+            </div>
             {containers.length === 0 ? <p className="text-xs text-slate-500">Aucun conteneur.</p> : (
               <ul className="space-y-1">{containers.map((c) => <li key={c.id} className="flex items-center justify-between text-xs"><span className="tabular font-medium text-navy-800">{c.number}</span><span className="text-slate-500">{c.isoType ?? "—"} · {c.status}</span></li>)}</ul>
             )}
