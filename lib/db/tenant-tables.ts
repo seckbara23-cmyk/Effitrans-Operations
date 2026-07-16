@@ -72,6 +72,15 @@ export const TENANT_SCOPED_TABLES = new Set<string>([
   "collection_follow_up",
   // chain of custody (Phase 5.0D-3)
   "invoice_deposit_event",
+  // shipping line platform (Phase 7.2A)
+  "ocean_carrier",
+  "ocean_port",
+  "ocean_vessel",
+  "ocean_voyage",
+  "ocean_container",
+  "ocean_route_leg",
+  "ocean_port_call",
+  "ocean_tracking_event",
 ]);
 
 /**

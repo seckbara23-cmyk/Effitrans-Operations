@@ -260,6 +260,11 @@ jobs:
           PGPASSWORD: postgres
         run: psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/rls_brand_template_test.sql
 
+      - name: Run shipping line platform isolation test (Phase 7.2A)
+        env:
+          PGPASSWORD: postgres
+        run: psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/rls_shipping_test.sql
+
       - name: Stop local Supabase
         if: always()
         run: supabase stop

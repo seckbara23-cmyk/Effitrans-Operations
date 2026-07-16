@@ -271,6 +271,21 @@ export const AuditActions = {
   COLLECTION_DISPUTE_RESOLVED: "collection.dispute.resolved",
   COLLECTIONS_COMPLETED: "collections.completed",
   DOSSIER_CLOSURE_BLOCKED: "closure.blocked",
+
+  // Phase 7.2A — Shipping Line Platform. Operator/system actions + SAFE summaries only
+  // (shipment id, milestone, provider code, event type, safe error category). NEVER a raw
+  // provider payload, provider credentials, tokens, full documents, customer PII, or
+  // unrestricted telemetry — the high-volume external tracking events live in the dedicated
+  // ocean_tracking_event store, NOT here.
+  SHIPPING_SHIPMENT_UPDATED: "shipping.shipment.updated",
+  SHIPPING_BOOKING_UPDATED: "shipping.booking.updated",
+  SHIPPING_CONTAINER_LINKED: "shipping.container.linked",
+  SHIPPING_TRACKING_MANUAL_EVENT: "shipping.tracking.manual_event_added",
+  SHIPPING_MILESTONE_CHANGED: "shipping.milestone.changed",
+  SHIPPING_PROVIDER_REFRESH_REQUESTED: "shipping.provider.refresh_requested",
+  SHIPPING_PROVIDER_REFRESH_SUCCEEDED: "shipping.provider.refresh_succeeded",
+  SHIPPING_PROVIDER_REFRESH_FAILED: "shipping.provider.refresh_failed",
+  SHIPPING_ETA_CHANGED: "shipping.eta.changed",
 } as const;
 
 export type AuditActionCode = (typeof AuditActions)[keyof typeof AuditActions];

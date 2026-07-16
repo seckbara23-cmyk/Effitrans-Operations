@@ -634,6 +634,20 @@ export type Database = {
           pickup_actual: string | null;
           delivery_planned: string | null;
           delivery_actual: string | null;
+          // Phase 7.2A — shipment-level ocean state (additive).
+          ocean_milestone: string;
+          provider_code: string;
+          carrier_id: string | null;
+          booking_reference: string | null;
+          booking_status: string | null;
+          master_bl: string | null;
+          house_bl: string | null;
+          eta_source: string | null;
+          eta_confidence: string | null;
+          eta_calculated_at: string | null;
+          eta_previous: string | null;
+          tracking_synced_at: string | null;
+          tracking_version: number;
           created_at: string;
           updated_at: string;
         };
@@ -658,6 +672,19 @@ export type Database = {
           pickup_actual?: string | null;
           delivery_planned?: string | null;
           delivery_actual?: string | null;
+          ocean_milestone?: string;
+          provider_code?: string;
+          carrier_id?: string | null;
+          booking_reference?: string | null;
+          booking_status?: string | null;
+          master_bl?: string | null;
+          house_bl?: string | null;
+          eta_source?: string | null;
+          eta_confidence?: string | null;
+          eta_calculated_at?: string | null;
+          eta_previous?: string | null;
+          tracking_synced_at?: string | null;
+          tracking_version?: number;
           created_at?: string;
           updated_at?: string;
         };
@@ -682,6 +709,19 @@ export type Database = {
           pickup_actual?: string | null;
           delivery_planned?: string | null;
           delivery_actual?: string | null;
+          ocean_milestone?: string;
+          provider_code?: string;
+          carrier_id?: string | null;
+          booking_reference?: string | null;
+          booking_status?: string | null;
+          master_bl?: string | null;
+          house_bl?: string | null;
+          eta_source?: string | null;
+          eta_confidence?: string | null;
+          eta_calculated_at?: string | null;
+          eta_previous?: string | null;
+          tracking_synced_at?: string | null;
+          tracking_version?: number;
           created_at?: string;
           updated_at?: string;
         };
@@ -693,6 +733,55 @@ export type Database = {
             referencedColumns: ["id"];
           },
         ];
+      };
+      // Phase 7.2A — Shipping Line Platform (ocean satellite tables).
+      ocean_carrier: {
+        Row: { id: string; tenant_id: string; code: string; name: string; scac: string | null; website: string | null; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; code: string; name: string; scac?: string | null; website?: string | null; created_at?: string; updated_at?: string };
+        Update: { id?: string; tenant_id?: string; code?: string; name?: string; scac?: string | null; website?: string | null; created_at?: string; updated_at?: string };
+        Relationships: [];
+      };
+      ocean_port: {
+        Row: { id: string; tenant_id: string; unlocode: string | null; name: string; country: string | null; latitude: number | null; longitude: number | null; timezone: string | null; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; unlocode?: string | null; name: string; country?: string | null; latitude?: number | null; longitude?: number | null; timezone?: string | null; created_at?: string; updated_at?: string };
+        Update: { id?: string; tenant_id?: string; unlocode?: string | null; name?: string; country?: string | null; latitude?: number | null; longitude?: number | null; timezone?: string | null; created_at?: string; updated_at?: string };
+        Relationships: [];
+      };
+      ocean_vessel: {
+        Row: { id: string; tenant_id: string; name: string; imo: string | null; mmsi: string | null; flag: string | null; carrier_id: string | null; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; name: string; imo?: string | null; mmsi?: string | null; flag?: string | null; carrier_id?: string | null; created_at?: string; updated_at?: string };
+        Update: { id?: string; tenant_id?: string; name?: string; imo?: string | null; mmsi?: string | null; flag?: string | null; carrier_id?: string | null; created_at?: string; updated_at?: string };
+        Relationships: [];
+      };
+      ocean_voyage: {
+        Row: { id: string; tenant_id: string; carrier_voyage_ref: string | null; vessel_id: string | null; origin_port_id: string | null; destination_port_id: string | null; planned_departure: string | null; actual_departure: string | null; planned_arrival: string | null; actual_arrival: string | null; status: string; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; carrier_voyage_ref?: string | null; vessel_id?: string | null; origin_port_id?: string | null; destination_port_id?: string | null; planned_departure?: string | null; actual_departure?: string | null; planned_arrival?: string | null; actual_arrival?: string | null; status?: string; created_at?: string; updated_at?: string };
+        Update: { id?: string; tenant_id?: string; carrier_voyage_ref?: string | null; vessel_id?: string | null; origin_port_id?: string | null; destination_port_id?: string | null; planned_departure?: string | null; actual_departure?: string | null; planned_arrival?: string | null; actual_arrival?: string | null; status?: string; created_at?: string; updated_at?: string };
+        Relationships: [];
+      };
+      ocean_container: {
+        Row: { id: string; tenant_id: string; shipment_id: string; container_number: string; iso_type: string | null; seal_number: string | null; gross_weight_kg: number | null; status: string; vessel_id: string | null; voyage_id: string | null; last_event_at: string | null; position_confidence: string | null; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; shipment_id: string; container_number: string; iso_type?: string | null; seal_number?: string | null; gross_weight_kg?: number | null; status?: string; vessel_id?: string | null; voyage_id?: string | null; last_event_at?: string | null; position_confidence?: string | null; created_at?: string; updated_at?: string };
+        Update: { id?: string; tenant_id?: string; shipment_id?: string; container_number?: string; iso_type?: string | null; seal_number?: string | null; gross_weight_kg?: number | null; status?: string; vessel_id?: string | null; voyage_id?: string | null; last_event_at?: string | null; position_confidence?: string | null; created_at?: string; updated_at?: string };
+        Relationships: [];
+      };
+      ocean_route_leg: {
+        Row: { id: string; tenant_id: string; shipment_id: string; sequence: number; origin_port_id: string | null; destination_port_id: string | null; mode: string; vessel_id: string | null; voyage_id: string | null; planned_departure: string | null; actual_departure: string | null; planned_arrival: string | null; actual_arrival: string | null; status: string; source: string; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; shipment_id: string; sequence: number; origin_port_id?: string | null; destination_port_id?: string | null; mode?: string; vessel_id?: string | null; voyage_id?: string | null; planned_departure?: string | null; actual_departure?: string | null; planned_arrival?: string | null; actual_arrival?: string | null; status?: string; source?: string; created_at?: string; updated_at?: string };
+        Update: { id?: string; tenant_id?: string; shipment_id?: string; sequence?: number; origin_port_id?: string | null; destination_port_id?: string | null; mode?: string; vessel_id?: string | null; voyage_id?: string | null; planned_departure?: string | null; actual_departure?: string | null; planned_arrival?: string | null; actual_arrival?: string | null; status?: string; source?: string; created_at?: string; updated_at?: string };
+        Relationships: [];
+      };
+      ocean_port_call: {
+        Row: { id: string; tenant_id: string; shipment_id: string; voyage_id: string | null; port_id: string | null; arrival: string | null; berth: string | null; departure: string | null; terminal: string | null; source: string; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; shipment_id: string; voyage_id?: string | null; port_id?: string | null; arrival?: string | null; berth?: string | null; departure?: string | null; terminal?: string | null; source?: string; created_at?: string; updated_at?: string };
+        Update: { id?: string; tenant_id?: string; shipment_id?: string; voyage_id?: string | null; port_id?: string | null; arrival?: string | null; berth?: string | null; departure?: string | null; terminal?: string | null; source?: string; created_at?: string; updated_at?: string };
+        Relationships: [];
+      };
+      ocean_tracking_event: {
+        Row: { id: string; tenant_id: string; shipment_id: string; container_id: string | null; event_type: string; occurred_at: string; received_at: string; source: string; provider_code: string; confidence: string; location_name: string | null; location_unlocode: string | null; latitude: number | null; longitude: number | null; vessel_imo: string | null; vessel_mmsi: string | null; vessel_name: string | null; voyage_reference: string | null; description: string | null; fingerprint: string; provider_event_id: string | null; created_by: string | null; created_at: string };
+        Insert: { id?: string; tenant_id: string; shipment_id: string; container_id?: string | null; event_type: string; occurred_at: string; received_at?: string; source: string; provider_code?: string; confidence: string; location_name?: string | null; location_unlocode?: string | null; latitude?: number | null; longitude?: number | null; vessel_imo?: string | null; vessel_mmsi?: string | null; vessel_name?: string | null; voyage_reference?: string | null; description?: string | null; fingerprint: string; provider_event_id?: string | null; created_by?: string | null; created_at?: string };
+        Update: { id?: string; tenant_id?: string; shipment_id?: string; container_id?: string | null; event_type?: string; occurred_at?: string; received_at?: string; source?: string; provider_code?: string; confidence?: string; location_name?: string | null; location_unlocode?: string | null; latitude?: number | null; longitude?: number | null; vessel_imo?: string | null; vessel_mmsi?: string | null; vessel_name?: string | null; voyage_reference?: string | null; description?: string | null; fingerprint?: string; provider_event_id?: string | null; created_by?: string | null; created_at?: string };
+        Relationships: [];
       };
       file_state_transition: {
         Row: {
