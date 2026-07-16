@@ -3,6 +3,7 @@ import Link from "next/link";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/departments/stat-card";
 import { PlatformCard } from "@/components/logistics/platform-card";
+import { LogisticsCopilotPanel } from "@/components/logistics/copilot-panel";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { getCommandCenter } from "@/lib/logistics/reader";
@@ -63,6 +64,9 @@ export default async function LogisticsCommandCenterPage() {
         <PlatformCard card={card("air")} title="Fret aérien" icon={MODE_ICON.air} href="/air" cta="Ouvrir Air Cargo" />
         <PlatformCard card={card("customs")} title="Intelligence douanière" icon={MODE_ICON.customs} href="/customs/intelligence" cta="Ouvrir Customs Intelligence" unauthorized={!cc.customsAuthorized} />
       </div>
+
+      {/* Logistics AI Copilot — read-only, grounded recommendations (Phase 7.6A). Gated. */}
+      {hasPermission(permissions, "logistics:copilot:read") && <LogisticsCopilotPanel />}
 
       <div className="grid gap-4 lg:grid-cols-2">
         {/* Unified attention queue. */}

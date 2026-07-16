@@ -81,7 +81,7 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "customs:assign", "customs:register", "customs:validate", "finance:validate",
       "process:close", "process:completeness:review", ...PROCESS_HANDOFF, "process:manage",
       "process:read", "quotation:approve", "quotation:create", "quotation:send",
-      "transport:request",
+      "transport:request", "logistics:copilot:read",
     ],
   },
   {
@@ -95,7 +95,7 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "analytics:read", "audit:read:all", "client:read", "communication:read", "customs:read",
       "document:read", "file:read", "file:read:all", "finance:read", "org:read:own", ...BASE,
       "process:read", "report:read", "task:read", "task:read:all", "tracking:read",
-      "tracking:read:all", "transport:read",
+      "tracking:read:all", "transport:read", "logistics:copilot:read",
     ],
   },
   {
@@ -122,7 +122,7 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "finance:create", "finance:issue", "finance:read", "portal:manage", ...BASE,
       "process:completeness:review", ...PROCESS_HANDOFF, "process:manage", "process:read",
       "report:read", "task:create", "task:delete", "task:read", "task:read:all", "task:update",
-      "tracking:read", "transport:read", "transport:request",
+      "tracking:read", "transport:read", "transport:request", "logistics:copilot:read",
     ],
   },
   {
@@ -138,6 +138,7 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "process:completeness:review", ...PROCESS_HANDOFF, "process:manage", "process:read",
       "task:create", "task:delete", "task:read", "task:update", "tracking:read", "tracking:write",
       "transport:assign", "transport:create", "transport:read", "transport:update",
+      "logistics:copilot:read",
     ],
   },
   {
@@ -154,7 +155,7 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       // held by CUSTOMS_DECLARANT: the preparer must never be able to validate.
       "customs:validate", "document:approve", "document:create", "document:read",
       "document:update", "file:read", ...BASE, ...PROCESS_HANDOFF, "process:read", "task:read",
-      "task:update",
+      "task:update", "logistics:copilot:read",
     ],
   },
   {
@@ -168,7 +169,7 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     permissions: [
       "customs:create", "customs:read", "customs:update", "document:create", "document:read",
       "document:update", "file:read", ...BASE, ...PROCESS_HANDOFF, "process:read", "task:read",
-      "task:update",
+      "task:update", "logistics:copilot:read",
     ],
   },
   {
@@ -195,7 +196,7 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "document:create", "document:read", "document:update", "file:read", ...BASE,
       ...PROCESS_HANDOFF, "process:read", "task:read", "task:update", "tracking:read",
       "tracking:write", "transport:assign", "transport:complete", "transport:create",
-      "transport:read", "transport:request", "transport:update",
+      "transport:read", "transport:request", "transport:update", "logistics:copilot:read",
     ],
   },
   {
@@ -223,7 +224,7 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "analytics:read", "collections:manage", "communication:read", "communication:send",
       "file:read", "file:read:all", "finance:create", "finance:issue", "finance:payment",
       "finance:read", "finance:update", "finance:validate", "finance:void", ...BASE,
-      "process:read", "report:read",
+      "process:read", "report:read", "logistics:copilot:read",
     ],
   },
   {
@@ -249,6 +250,7 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "customs:register", "customs:validate", "finance:validate", "process:close",
       "process:completeness:review", ...PROCESS_HANDOFF, "process:manage", "process:read",
       "quotation:approve", "quotation:create", "quotation:send", "transport:request",
+      "logistics:copilot:read",
     ],
   },
   {
@@ -261,7 +263,7 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     permissions: [
       "audit:read:all", "customs:read", "document:approve", "document:read", "file:read",
       "file:read:all", ...BASE, "process:read", "task:read", "task:read:all", "tracking:read",
-      "transport:read",
+      "transport:read", "logistics:copilot:read",
     ],
   },
   {
@@ -310,7 +312,7 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     permissions: [
       "client:read", "communication:read", "communication:send", "file:read", "file:read:all",
       "finance:create", "finance:issue", "finance:read", "finance:update", ...BASE,
-      ...PROCESS_HANDOFF, "process:read",
+      ...PROCESS_HANDOFF, "process:read", "logistics:copilot:read",
     ],
   },
   {
@@ -324,7 +326,7 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     businessProfile: "customsBroker",
     permissions: [
       "customs:read", "customs:register", "file:read", "finance:read", ...BASE,
-      ...PROCESS_HANDOFF, "process:read",
+      ...PROCESS_HANDOFF, "process:read", "logistics:copilot:read",
     ],
   },
   {
@@ -338,7 +340,7 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     businessProfile: "customsBroker",
     permissions: [
       "customs:read", "customs:release", "customs:update", "document:create", "document:read",
-      "file:read", ...BASE, ...PROCESS_HANDOFF, "process:read",
+      "file:read", ...BASE, ...PROCESS_HANDOFF, "process:read", "logistics:copilot:read",
     ],
   },
   {
@@ -351,7 +353,7 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     requiredForEveryTenant: false,
     permissions: [
       "document:create", "document:read", "file:read", ...BASE, ...PROCESS_HANDOFF, "process:read",
-      "tracking:read", "transport:read", "transport:update",
+      "tracking:read", "transport:read", "transport:update", "logistics:copilot:read",
     ],
   },
   {
@@ -365,6 +367,7 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     permissions: [
       "admin_service:manage", "courier:assign", "document:create", "document:read", "file:read",
       "file:read:all", "finance:read", ...BASE, ...PROCESS_HANDOFF, "process:read",
+      "logistics:copilot:read",
     ],
   },
   {
@@ -377,6 +380,7 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     requiredForEveryTenant: false,
     permissions: [
       "courier:deposit", "document:create", "document:read", "file:read", ...BASE, "process:read",
+      "logistics:copilot:read",
     ],
   },
   {
@@ -390,6 +394,7 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     permissions: [
       "collections:manage", "communication:read", "communication:send", "file:read",
       "file:read:all", "finance:payment", "finance:read", ...BASE, "process:read", "report:read",
+      "logistics:copilot:read",
     ],
   },
 ];

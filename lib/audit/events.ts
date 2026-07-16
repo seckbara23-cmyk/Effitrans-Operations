@@ -169,6 +169,10 @@ export const AuditActions = {
   // model, tenant count, context categories, token/outcome) — never the prompt, the
   // answer, or any tenant secret.
   PLATFORM_COPILOT_QUERY: "platform.copilot.query",
+  // Phase 7.6A — a Logistics Copilot query (tenant-scoped). Records SAFE metadata only
+  // (actor, tenant, provider, model, modules consulted, recommendation count, duration,
+  // outcome) — NEVER the prompt body, the answer, or any operational secret.
+  LOGISTICS_COPILOT_QUERY: "logistics.copilot.query",
 
   // DBC-1 — Digital Brand Center. Payloads carry only changed field NAMES, asset kinds/ids,
   // membership ids, status transitions, and safe file metadata (size/MIME). NEVER raw files,

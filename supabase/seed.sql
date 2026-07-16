@@ -639,6 +639,25 @@ where r.tenant_id = '00000000-0000-0000-0000-000000000001'
   and r.code in ('BILLING_OFFICER', 'CUSTOMS_FINANCE_OFFICER', 'CUSTOMS_FIELD_AGENT', 'PICKUP_AGENT', 'ADMINISTRATIVE_OFFICER', 'COURIER', 'COLLECTIONS_OFFICER')
 on conflict do nothing;
 
+-- ===========================================================================
+-- Phase 7.6A — Logistics AI Copilot: a read-only cross-modal operational
+-- assistant. Granted to internal operational staff (the process:read set);
+-- NEVER to CLIENT_USER / PARTNER_AGENT / DRIVER. Mirrors migration
+-- 20260718000001_logistics_copilot.sql and lib/platform/role-templates.ts
+-- (parity enforced by tests/role-templates.test.ts).
+-- ===========================================================================
+insert into public.permission (code, module, action, data_scope, description) values
+  ('logistics:copilot:read', 'logistics', 'copilot', 'read', 'Read-only Logistics Copilot awareness over road/ocean/air/customs')
+on conflict (code) do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'logistics:copilot:read'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'CEO', 'OPS_SUPERVISOR', 'ACCOUNT_MANAGER', 'COORDINATOR', 'CHIEF_OF_TRANSIT', 'CUSTOMS_DECLARANT', 'TRANSPORT_OFFICER', 'FINANCE_OFFICER', 'COMPLIANCE_HSSE', 'BILLING_OFFICER', 'CUSTOMS_FINANCE_OFFICER', 'CUSTOMS_FIELD_AGENT', 'PICKUP_AGENT', 'ADMINISTRATIVE_OFFICER', 'COURIER', 'COLLECTIONS_OFFICER')
+on conflict do nothing;
+
 insert into public.role_permission (role_id, permission_id)
 select r.id, p.id
 from public.role r
