@@ -1671,6 +1671,21 @@ export type Database = {
         };
         Relationships: [];
       };
+      brand_template: {
+        Row: {
+          id: string; tenant_id: string; category: string; template_key: string;
+          lifecycle_status: string; version: number; updated_by: string | null; created_at: string; updated_at: string;
+        };
+        Insert: {
+          id?: string; tenant_id: string; category: string; template_key: string;
+          lifecycle_status?: string; version?: number; updated_by?: string | null; created_at?: string; updated_at?: string;
+        };
+        Update: {
+          id?: string; tenant_id?: string; category?: string; template_key?: string;
+          lifecycle_status?: string; version?: number; updated_by?: string | null; created_at?: string; updated_at?: string;
+        };
+        Relationships: [];
+      };
       invoice_deposit_event: {
         Row: {
           id: string;

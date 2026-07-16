@@ -17,9 +17,12 @@ const SECTIONS = [
   { href: "/brand-center/documents", label: "Modèles de documents", desc: "En-tête, devis, facture, proposition (PDF + DOCX)." },
   { href: "/brand-center/presentations", label: "Présentations", desc: "Deck d'entreprise éditable (PPTX)." },
   { href: "/brand-center/social", label: "Réseaux sociaux", desc: "Bannières LinkedIn, publications, annonces (SVG)." },
+  { href: "/brand-center/marketing", label: "E-mailing marketing", desc: "Modèles HTML portables (Mailchimp, HubSpot, Dynamics)." },
+  { href: "/brand-center/governance", label: "Gouvernance", desc: "Cycle de vie des modèles (brouillon → publié)." },
+  { href: "/brand-center/downloads", label: "Centre de téléchargement", desc: "Tous les livrables de marque, un seul endroit." },
 ];
 
-const SOON = ["E-mailing marketing"];
+const SOON: string[] = [];
 
 export default async function BrandCenterPage() {
   const user = await requireUser();
@@ -71,15 +74,16 @@ export default async function BrandCenterPage() {
         ))}
       </div>
 
-      <section className="surface p-5">
-        <p className="text-sm font-semibold text-navy-900">Bientôt disponible</p>
-        <p className="mt-1 text-xs text-slate-500">Ces modules s'appuieront sur les valeurs et ressources définies ici. La publication de signatures nécessitera au préalable des valeurs de marque approuvées et un logo PNG approuvé.</p>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {SOON.map((s) => (
-            <span key={s} className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-400">{s}</span>
-          ))}
-        </div>
-      </section>
+      {SOON.length > 0 && (
+        <section className="surface p-5">
+          <p className="text-sm font-semibold text-navy-900">Bientôt disponible</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {SOON.map((s) => (
+              <span key={s} className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-400">{s}</span>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }

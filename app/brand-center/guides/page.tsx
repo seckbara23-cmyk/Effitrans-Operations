@@ -3,6 +3,8 @@ import Link from "next/link";
 import { PageHeader } from "@/components/ui/page-header";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
+import { writeAudit } from "@/lib/audit/log";
+import { AuditActions } from "@/lib/audit/events";
 
 export const metadata: Metadata = { title: "Guides d'installation" };
 export const dynamic = "force-dynamic";
@@ -14,6 +16,9 @@ const GUIDES: { client: string; steps: string[] }[] = [
   { client: "Apple Mail (macOS)", steps: ["Mail → Réglages → Signatures.", "Décochez « Toujours utiliser la police par défaut », puis collez la signature.", "Glissez la signature sur le compte souhaité."] },
   { client: "iPhone / iPad (Mail iOS)", steps: ["Réglages → Mail → Signature.", "Collez le texte ou la signature copiée ; le HTML riche est limité sur iOS.", "Pour un rendu riche, envoyez-vous la signature et copiez-la depuis Mail."] },
   { client: "Android (Gmail)", steps: ["Application Gmail → Menu → Paramètres → votre compte → Signature mobile.", "Le HTML riche est limité : utilisez la version texte pour un rendu fiable sur mobile."] },
+  { client: "Mailchimp (e-mailing)", steps: ["Créez une campagne → Modèle → Coder votre propre HTML.", "Collez le HTML marketing généré ; les balises *|FNAME|* / *|UNSUB|* sont déjà intégrées.", "Mailchimp gère l'envoi et le désabonnement — le Centre de marque ne fait aucun envoi."] },
+  { client: "HubSpot (e-mailing)", steps: ["Marketing → E-mail → Nouveau → Coller le code HTML.", "Les jetons {{ contact.firstname }} et {{ unsubscribe_link }} sont déjà présents.", "L'envoi et le suivi restent gérés par HubSpot."] },
+  { client: "Microsoft Dynamics (e-mailing)", steps: ["Marketing → E-mails → Nouveau → Éditeur HTML.", "Collez le HTML ; adaptez les jetons {{FirstName}} / {{Unsubscribe}} si nécessaire.", "L'envoi est géré par Dynamics."] },
 ];
 
 export default async function GuidesPage() {
@@ -22,6 +27,8 @@ export default async function GuidesPage() {
   if (!hasPermission(permissions, "admin:users:manage")) {
     return <div className="surface p-6 text-sm text-slate-600">Accès non autorisé.</div>;
   }
+  // Safe view audit — actor/tenant only, no content.
+  await writeAudit({ action: AuditActions.BRAND_GUIDE_VIEWED, actorId: user.id, tenantId: user.tenantId, entity: "brand_guide", entityId: "install" });
   return (
     <div className="animate-fade-in space-y-6">
       <PageHeader meta="Centre de marque" title="Guides d'installation des signatures" subtitle="Instructions par client de messagerie. Le rendu final peut varier ; aucune compatibilité pixel-perfect n'est garantie." />
