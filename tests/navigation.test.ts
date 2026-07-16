@@ -51,6 +51,9 @@ const ALL_PERMS = [
   "admin:users:manage",
   "audit:read:all",
   "admin:config:manage",
+  // Phase 7.7 — the executive dashboard is gated on its own narrower permission, no longer on
+  // analytics:read (which remains the wider Direction/Rapports audience).
+  "executive:dashboard:read",
 ];
 
 const ctx = (over: Partial<NavigationContext> = {}): NavigationContext => ({

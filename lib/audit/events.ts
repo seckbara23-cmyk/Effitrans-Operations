@@ -177,6 +177,12 @@ export const AuditActions = {
   // (actor, tenant, provider, model, modules consulted, recommendation count, duration,
   // outcome) — NEVER the prompt body, the answer, or any operational secret.
   LOGISTICS_COPILOT_QUERY: "logistics.copilot.query",
+  // Phase 7.7 — Executive Intelligence Dashboard. Records ACCESS only (who looked, what
+  // degraded), never the metrics themselves: executive figures are derived on read from the
+  // authoritative module readers and are never stored or snapshotted in the audit.
+  EXECUTIVE_DASHBOARD_VIEWED: "executive.dashboard.viewed",
+  EXECUTIVE_DASHBOARD_EXPORTED: "executive.dashboard.exported",
+  EXECUTIVE_COPILOT_QUERY: "executive.copilot.query",
 
   // DBC-1 — Digital Brand Center. Payloads carry only changed field NAMES, asset kinds/ids,
   // membership ids, status transitions, and safe file metadata (size/MIME). NEVER raw files,

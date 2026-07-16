@@ -744,3 +744,26 @@ join public.permission p on p.code = 'process:close'
 where r.tenant_id = '00000000-0000-0000-0000-000000000001'
   and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR')
 on conflict do nothing;
+
+-- ===========================================================================
+-- Phase 7.7 — Executive Intelligence Dashboard: a READ-ONLY, organization-wide
+-- command center composed from the existing module readers. A NARROWER boundary
+-- than analytics:read (which remains the wider reporting audience for /reports
+-- and Direction): granted only to the executive/management tier that exists —
+-- SYSTEM_ADMIN (platform administrator), CEO (Direction générale), and
+-- OPS_SUPERVISOR (MANAGER). Grants NO operational update capability; each module
+-- reader still enforces its own read permission. NEVER to CLIENT_USER /
+-- PARTNER_AGENT / DRIVER. Mirrors migration 20260719000001_executive_dashboard.sql
+-- and lib/platform/role-templates.ts (parity enforced by tests/role-templates.test.ts).
+-- ===========================================================================
+insert into public.permission (code, module, action, data_scope, description) values
+  ('executive:dashboard:read', 'executive', 'dashboard', 'read', 'Read-only Executive Intelligence Dashboard composed from existing module readers')
+on conflict (code) do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'executive:dashboard:read'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'CEO', 'OPS_SUPERVISOR')
+on conflict do nothing;

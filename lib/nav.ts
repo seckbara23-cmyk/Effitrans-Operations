@@ -120,7 +120,10 @@ export const BASE_SECTIONS: NavigationSection[] = [
         label: "Tableau exécutif",
         href: "/dashboard/executive",
         iconKey: "tower",
-        permission: "analytics:read",
+        // Phase 7.7 — narrowed from analytics:read: the executive command center is for the
+        // executive/management tier, while analytics:read remains the wider reporting audience
+        // (Direction, Rapports). Filtering is cosmetic; the page re-checks server-side.
+        permission: "executive:dashboard:read",
       },
     ],
   },
