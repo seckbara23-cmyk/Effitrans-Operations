@@ -15,7 +15,7 @@ import { applyEta, detectEtaChange, defaultEtaConfidence, isCarrierConfirmedEta 
 import { buildShipmentMapProjection } from "@/lib/shipping/intelligence/map-projection";
 import { buildShippingDashboard, type DashboardShipmentRow } from "@/lib/shipping/intelligence/dashboard";
 import { deriveShipmentAlerts } from "@/lib/shipping/intelligence/alerts";
-import { ManualShippingProvider, CarrierStubProvider, AisStubProvider, ShippingEngine, resolveShippingProvider, SHIPPING_PROVIDERS } from "@/lib/shipping/intelligence/provider";
+import { ManualShippingProvider, CarrierStubProvider, AisStubProvider, ShippingEngine, resolveShippingProvider, SHIPPING_PROVIDERS, type ShippingProvider, type VesselPositionProvider } from "@/lib/shipping/intelligence/provider";
 import { mapCarrierStatus, CARRIER_STATUS_MAPS } from "@/lib/shipping/intelligence/status-map";
 import { deriveShippingProviderConfig, deriveAisConfig, CARRIER_READINESS_CHECKLIST } from "@/lib/shipping/intelligence/config";
 import { rowToOceanShipment, rowToContainer } from "@/lib/shipping/intelligence/persistence";
@@ -193,18 +193,18 @@ describe("dashboard + alert contracts", () => {
 // ---------------------------------------------------------------- provider abstraction ----
 describe("provider abstraction + engine (honest stubs)", () => {
   it("manual provider works; lookups unsupported; refresh not_configured", async () => {
-    const m = new ManualShippingProvider();
+    const m: ShippingProvider = new ManualShippingProvider();
     expect(m.configured).toBe(true);
     expect(m.capabilities().milestoneTracking).toBe(true);
     expect(await m.findByBooking("x")).toEqual({ ok: false, error: "unsupported" });
     expect(await m.refreshTracking({ reference: "x", type: "booking" })).toEqual({ ok: false, error: "not_configured" });
   });
   it("carrier + AIS stubs are not configured and advertise nothing", async () => {
-    const c = new CarrierStubProvider("maersk");
+    const c: ShippingProvider = new CarrierStubProvider("maersk");
     expect(c.configured).toBe(false);
     expect(Object.values(c.capabilities()).every((v) => v === false)).toBe(true);
     expect(await c.refreshTracking({ reference: "x", type: "bl" })).toEqual({ ok: false, error: "not_configured" });
-    const ais = new AisStubProvider();
+    const ais: VesselPositionProvider = new AisStubProvider();
     expect(ais.configured).toBe(false);
     expect(await ais.getPositionByImo("9074729")).toEqual({ ok: false, error: "not_configured" });
   });
