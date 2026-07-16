@@ -65,8 +65,11 @@ export default async function LogisticsCommandCenterPage() {
         <PlatformCard card={card("customs")} title="Intelligence douanière" icon={MODE_ICON.customs} href="/customs/intelligence" cta="Ouvrir Customs Intelligence" unauthorized={!cc.customsAuthorized} />
       </div>
 
-      {/* Logistics AI Copilot — read-only, grounded recommendations (Phase 7.6A). Gated. */}
-      {hasPermission(permissions, "logistics:copilot:read") && <LogisticsCopilotPanel />}
+      {/* Logistics AI Copilot — read-only, grounded recommendations (Phase 7.6A/7.6B). Gated;
+          suggested prompts are auth-aware (finance prompt hidden without finance:read). */}
+      {hasPermission(permissions, "logistics:copilot:read") && (
+        <LogisticsCopilotPanel available={{ transport: hasPermission(permissions, "transport:read"), customs: hasPermission(permissions, "customs:read"), finance: hasPermission(permissions, "finance:read"), document: hasPermission(permissions, "document:read") }} />
+      )}
 
       <div className="grid gap-4 lg:grid-cols-2">
         {/* Unified attention queue. */}

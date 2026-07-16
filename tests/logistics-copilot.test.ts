@@ -17,6 +17,7 @@ const code = (p: string) => read(p).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\
 
 const FULL: LogisticsContext = {
   generatedAt: "2026-07-17T10:00:00Z",
+  questionClass: "general",
   modules: ["road", "ocean", "air", "customs", "finance", "documents"],
   unavailable: [],
   authorized: { transport: true, customs: true, finance: true, document: true },
@@ -30,9 +31,14 @@ const FULL: LogisticsContext = {
     { reference: "DEC-001", fileNumber: "EFT-IMP-2099-4", clientName: "Delta", office: "DKR", status: "REJECTED", link: "/files/f4" },
     { reference: "DEC-002", fileNumber: "EFT-IMP-2099-5", clientName: "Eps", office: "DKR", status: "AWAITING_PAYMENT", link: "/files/f5" },
   ],
-  overdueInvoices: [{ invoiceNumber: "INV-01", fileNumber: "EFT-IMP-2099-6", clientName: "Zeta", balance: 1000, currency: "XOF", dueDate: "2026-07-01", link: "/files/f6" }],
+  overdueInvoices: [{ invoiceNumber: "INV-01", fileNumber: "EFT-IMP-2099-6", clientName: "Zeta", balance: 1000, currency: "XOF", dueDate: "2026-07-01", daysOverdue: 16, paymentState: "émise", link: "/files/f6" }],
+  missingDocs: [{ fileNumber: "EFT-IMP-2099-7", fileId: "f7", documentType: "Connaissement", state: "MISSING", due: null, link: "/files/f7" }],
+  docIntelJobs: [],
+  portfolioRisk: [{ fileNumber: "EFT-IMP-2099-2", fileId: "", level: "high", score: 55, contributors: ["Vol en retard"], modes: ["air"], ageDays: null, latestEvent: null, link: "/air/shipments/s2", hasUnknown: true }],
+  notifyOpportunities: [{ mode: "ocean", reference: "EFT-IMP-2099-3", clientName: "Gamma", reason: "Arrivée imminente", alreadyNotified: false, link: "/shipping/shipments/s3" }],
   docReview: { readyForReview: 3, failed: 1 },
-  counts: { attention: 2, upcoming: 1, blockedCustoms: 2, overdueInvoices: 1, cap: 100 },
+  truncated: [],
+  counts: { attention: 2, upcoming: 1, blockedCustoms: 2, overdueInvoices: 1, missingDocs: 1, docIntelJobs: 0, portfolioRisk: 1, cap: 100 },
 };
 
 describe("deterministic recommendation engine — grounded, cited, complete", () => {
@@ -74,6 +80,7 @@ describe("Missing ≠ Negative — unavailable modules never become a false all-
     unavailable: ["customs", "finance", "documents"],
     authorized: { transport: true, customs: false, finance: false, document: false },
     blockedCustoms: [], overdueInvoices: [], docReview: null,
+    missingDocs: [], docIntelJobs: [], portfolioRisk: [], notifyOpportunities: [], truncated: [],
   };
   it("produces NO customs/finance/document cards when those modules were not consulted", () => {
     const kinds = buildRecommendations(partial).map((c) => c.kind);
@@ -89,7 +96,7 @@ describe("Missing ≠ Negative — unavailable modules never become a false all-
     expect(s).toContain("finance");
   });
   it("authorized-but-empty is a legitimate negative (consulted, nothing found)", () => {
-    const empty: LogisticsContext = { ...FULL, attention: [], upcoming: [], blockedCustoms: [], overdueInvoices: [], docReview: { readyForReview: 0, failed: 0 } };
+    const empty: LogisticsContext = { ...FULL, attention: [], upcoming: [], blockedCustoms: [], overdueInvoices: [], missingDocs: [], docIntelJobs: [], portfolioRisk: [], notifyOpportunities: [], docReview: { readyForReview: 0, failed: 0 } };
     const cards = buildRecommendations(empty);
     expect(cards).toHaveLength(0);
     expect(deterministicSummary(empty, cards)).toMatch(/Aucune recommandation/i);
@@ -127,7 +134,7 @@ describe("route: permission-gated, read-only, safe-audited, deterministic fallba
   const src = code("../app/api/logistics/copilot/route.ts");
   it("gates on logistics:copilot:read and reuses the shared engine (never a provider)", () => {
     expect(src).toContain('assertPermission("logistics:copilot:read")');
-    expect(src).toContain("runCopilot(");
+    expect(src).toMatch(/runCopilot(Detailed)?\(/);
     expect(src).not.toMatch(/openai|anthropic|generateAI\(|from "@\/lib\/ai/i);
   });
   it("returns the DETERMINISTIC summary on any provider failure (never fails the UI)", () => {

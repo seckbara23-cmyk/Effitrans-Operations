@@ -15,7 +15,7 @@
 import "server-only";
 import { generateAI } from "@/lib/ai/provider";
 import { aiCopilotEnabled, aiLocalProviderEnabled, resolveAIConfig } from "@/lib/ai/config";
-import { AIError, type AIErrorCode } from "@/lib/ai/types";
+import { AIError, type AIErrorCode, type AIUsage } from "@/lib/ai/types";
 import type { CopilotChatMessage } from "@/lib/copilot/prompt";
 
 export type CopilotErrorCode =
@@ -142,6 +142,23 @@ export async function runCopilot(messages: CopilotChatMessage[]): Promise<string
   try {
     const result = await generateAI({ systemPrompt, userPrompt }, process.env);
     return result.text;
+  } catch (err) {
+    if (err instanceof AIError) throw new CopilotError(toCopilotCode(err.code));
+    throw new CopilotError("upstream_error");
+  }
+}
+
+/** Detailed result — SAFE metadata (provider/model/latency/token usage) for audit + usage
+ *  visibility. ADDITIVE sibling of runCopilot: same read-only path (generateAI, no tools) and
+ *  the same CopilotError mapping — runCopilot itself and lib/ai are unchanged. Never returns a
+ *  prompt or a secret. */
+export type CopilotResult = { text: string; provider: string; model: string; latencyMs: number; usage: AIUsage | null };
+export async function runCopilotDetailed(messages: CopilotChatMessage[]): Promise<CopilotResult> {
+  const systemPrompt = messages.filter((m) => m.role === "system").map((m) => m.content).join("\n");
+  const userPrompt = messages.filter((m) => m.role === "user").map((m) => m.content).join("\n");
+  try {
+    const r = await generateAI({ systemPrompt, userPrompt }, process.env);
+    return { text: r.text, provider: r.provider, model: r.model, latencyMs: r.latencyMs, usage: r.usage ?? null };
   } catch (err) {
     if (err instanceof AIError) throw new CopilotError(toCopilotCode(err.code));
     throw new CopilotError("upstream_error");
