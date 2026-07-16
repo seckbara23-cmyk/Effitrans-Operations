@@ -45,8 +45,8 @@ insert into public.air_airline (id, tenant_id, name) values
   ('00000000-0000-0000-0000-00000000aa1b', '00000000-0000-0000-0000-0000000000d2', 'Airline B')
 on conflict (id) do nothing;
 insert into public.air_uld (id, tenant_id, shipment_id, uld_number) values
-  ('00000000-0000-0000-0000-00000000ud1a', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-00000000ad1a', 'AKE11111AA'),
-  ('00000000-0000-0000-0000-00000000ud1b', '00000000-0000-0000-0000-0000000000d2', '00000000-0000-0000-0000-00000000ad1b', 'AKE22222BB')
+  ('00000000-0000-0000-0000-00000000ed1a', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-00000000ad1a', 'AKE11111AA'),
+  ('00000000-0000-0000-0000-00000000ed1b', '00000000-0000-0000-0000-0000000000d2', '00000000-0000-0000-0000-00000000ad1b', 'AKE22222BB')
 on conflict (id) do nothing;
 
 create temp table _r (check_name text, value int) on commit drop;
@@ -56,15 +56,15 @@ declare a_u int; a_ou int; a_al int; a_oal int; b_u int; b_ou int; n_u int;
 begin
   perform set_config('role', 'authenticated', true);
   perform set_config('request.jwt.claims', json_build_object('sub','00000000-0000-0000-0000-0000000000d1','role','authenticated')::text, true);
-  select count(*) into a_u  from public.air_uld where id='00000000-0000-0000-0000-00000000ud1a';
-  select count(*) into a_ou from public.air_uld where id='00000000-0000-0000-0000-00000000ud1b';
+  select count(*) into a_u  from public.air_uld where id='00000000-0000-0000-0000-00000000ed1a';
+  select count(*) into a_ou from public.air_uld where id='00000000-0000-0000-0000-00000000ed1b';
   select count(*) into a_al  from public.air_airline where id='00000000-0000-0000-0000-00000000aa1a';
   select count(*) into a_oal from public.air_airline where id='00000000-0000-0000-0000-00000000aa1b';
   perform set_config('request.jwt.claims', json_build_object('sub','00000000-0000-0000-0000-0000000000d2','role','authenticated')::text, true);
-  select count(*) into b_u  from public.air_uld where id='00000000-0000-0000-0000-00000000ud1b';
-  select count(*) into b_ou from public.air_uld where id='00000000-0000-0000-0000-00000000ud1a';
+  select count(*) into b_u  from public.air_uld where id='00000000-0000-0000-0000-00000000ed1b';
+  select count(*) into b_ou from public.air_uld where id='00000000-0000-0000-0000-00000000ed1a';
   perform set_config('request.jwt.claims', json_build_object('sub','00000000-0000-0000-0000-0000000000d3','role','authenticated')::text, true);
-  select count(*) into n_u from public.air_uld where id='00000000-0000-0000-0000-00000000ud1a';
+  select count(*) into n_u from public.air_uld where id='00000000-0000-0000-0000-00000000ed1a';
   perform set_config('role', 'postgres', true);
   insert into _r values ('A_ownUld', a_u), ('A_otherUld', a_ou), ('A_ownAirline', a_al), ('A_otherAirline', a_oal), ('B_ownUld', b_u), ('B_otherUld', b_ou), ('noperm_uld', n_u);
   if a_u<>1 or a_ou<>0 or a_al<>1 or a_oal<>0 or b_u<>1 or b_ou<>0 or n_u<>0 then
@@ -78,7 +78,7 @@ begin
   perform set_config('role', 'authenticated', true);
   perform set_config('request.jwt.claims', json_build_object('sub','00000000-0000-0000-0000-0000000000d1','role','authenticated')::text, true);
   begin update public.shipment set air_milestone='CANCELLED', air_tracking_version=air_tracking_version+1 where id='00000000-0000-0000-0000-00000000ad1b'; get diagnostics x_a = row_count; exception when others then x_b := true; end;
-  begin update public.air_uld set status='RETURNED' where id='00000000-0000-0000-0000-00000000ud1a'; get diagnostics s_a = row_count; exception when others then s_b := true; end;
+  begin update public.air_uld set status='RETURNED' where id='00000000-0000-0000-0000-00000000ed1a'; get diagnostics s_a = row_count; exception when others then s_b := true; end;
   perform set_config('role', 'postgres', true);
   insert into _r values ('xtenant_shipment_write_blocked', case when x_b or x_a=0 then 1 else 0 end), ('sametenant_uld_write_blocked', case when s_b or s_a=0 then 1 else 0 end);
   if not (x_b or x_a=0) or not (s_b or s_a=0) then raise exception 'RLS AIR WRITE FAIL: xtenant(b=% a=%) same(b=% a=%)', x_b, x_a, s_b, s_a; end if;
