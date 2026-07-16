@@ -201,6 +201,12 @@ export const AuditActions = {
   BRAND_DOCUMENT_GENERATED: "brand.document.generated",
   BRAND_DOCUMENT_DOWNLOADED: "brand.document.downloaded",
   BRAND_DOCUMENT_TEMPLATE_UPDATED: "brand.document.template_updated", // reserved (no editor in DBC-4)
+  // DBC-5 — presentation + communication platform. Safe metadata only (actor/tenant/type/
+  // kind) — NEVER the generated slides, PPTX, banner, or user content.
+  BRAND_PRESENTATION_PREVIEWED: "brand.presentation.previewed",
+  BRAND_PRESENTATION_GENERATED: "brand.presentation.generated",
+  BRAND_PRESENTATION_DOWNLOADED: "brand.presentation.downloaded",
+  BRAND_COMMUNICATION_GENERATED: "brand.communication.generated",
 
   // Phase 5.0B — official process engine. Payloads carry only step KEYS, state
   // names, actor ids and evidence KEYS. NEVER document contents, file bytes,

@@ -15,9 +15,11 @@ const SECTIONS = [
   { href: "/brand-center/memberships", label: "Réseaux internationaux", desc: "WCA, FIATA, adhésions et affiliations." },
   { href: "/brand-center/people", label: "Identité collaborateurs", desc: "Fonction, coordonnées, variante de signature." },
   { href: "/brand-center/documents", label: "Modèles de documents", desc: "En-tête, devis, facture, proposition (PDF + DOCX)." },
+  { href: "/brand-center/presentations", label: "Présentations", desc: "Deck d'entreprise éditable (PPTX)." },
+  { href: "/brand-center/social", label: "Réseaux sociaux", desc: "Bannières LinkedIn, publications, annonces (SVG)." },
 ];
 
-const SOON = ["Présentations", "Réseaux sociaux", "E-mailing marketing"];
+const SOON = ["E-mailing marketing"];
 
 export default async function BrandCenterPage() {
   const user = await requireUser();
