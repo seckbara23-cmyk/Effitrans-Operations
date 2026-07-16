@@ -51,6 +51,12 @@ export function AppShell({
     return <>{children}</>;
   }
 
+  // Public digital business cards (DBC-3) are a public surface with their own full-page
+  // layout — never the tenant chrome, never a session.
+  if (pathname.startsWith("/card")) {
+    return <>{children}</>;
+  }
+
   // The coursier's deposit-run surface (Phase 5.0E-3). A courier-only user holds no
   // analytics:read and no file:read, so every staff section resolved empty for them —
   // we were rendering a sidebar of nothing. They get a dedicated surface, like a

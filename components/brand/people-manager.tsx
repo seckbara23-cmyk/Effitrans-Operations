@@ -39,6 +39,9 @@ export function PeopleManager({ people }: { people: WorkforceView[] }) {
                 <Link href={`/brand-center/signature/${p.userId}`} className="rounded-md border border-teal-200 bg-teal-50 px-2.5 py-1 text-xs font-medium text-teal-700 hover:bg-teal-100">
                   Signature
                 </Link>
+                <Link href={`/brand-center/card/${p.userId}`} className="rounded-md border border-teal-200 bg-teal-50 px-2.5 py-1 text-xs font-medium text-teal-700 hover:bg-teal-100">
+                  Carte
+                </Link>
                 <button type="button" onClick={() => setOpenId(openId === p.userId ? null : p.userId)} className="rounded-md border border-slate-200 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50">
                   {openId === p.userId ? "Fermer" : "Modifier"}
                 </button>

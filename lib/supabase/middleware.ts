@@ -40,7 +40,8 @@ function isPublicPath(pathname: string): boolean {
     pathname === "/login" ||
     pathname === "/portal/login" ||
     pathname.startsWith("/auth") || // /auth/callback, /auth/update-password
-    pathname.startsWith("/portal/auth") // /portal/auth/callback, /portal/auth/update-password
+    pathname.startsWith("/portal/auth") || // /portal/auth/callback, /portal/auth/update-password
+    pathname.startsWith("/card") // DBC-3 — public digital business cards (token capability)
   );
 }
 
@@ -76,6 +77,12 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
   } = await supabase.auth.getUser();
 
   const pathname = request.nextUrl.pathname;
+
+  // DBC-3 — public business cards are never indexed by default (the RSC page cannot set a
+  // response header; this covers the page + its download routes).
+  if (pathname.startsWith("/card")) {
+    response.headers.set("X-Robots-Tag", "noindex, nofollow");
+  }
 
   // Unauthenticated -> redirect protected routes to the matching login (portal
   // routes to the portal login, everything else to the staff login).

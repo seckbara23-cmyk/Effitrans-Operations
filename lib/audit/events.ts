@@ -187,6 +187,14 @@ export const AuditActions = {
   BRAND_SIGNATURE_GENERATED: "brand.signature.generated",
   BRAND_SIGNATURE_DOWNLOADED: "brand.signature.downloaded",
   BRAND_SIGNATURE_COPIED: "brand.signature.copied",
+  // DBC-3 — public digital business card. Safe metadata only (actor/tenant/employee/format)
+  // — NEVER the token, URL, contact values, QR payload, or vCard content.
+  BRAND_CARD_ENABLED: "brand.card.enabled",
+  BRAND_CARD_DISABLED: "brand.card.disabled",
+  BRAND_CARD_TOKEN_ROTATED: "brand.card.token_rotated",
+  BRAND_CARD_PREVIEWED: "brand.card.previewed",
+  BRAND_CARD_VCARD_DOWNLOADED: "brand.card.vcard_downloaded",
+  BRAND_CARD_QR_DOWNLOADED: "brand.card.qr_downloaded",
 
   // Phase 5.0B — official process engine. Payloads carry only step KEYS, state
   // names, actor ids and evidence KEYS. NEVER document contents, file bytes,
