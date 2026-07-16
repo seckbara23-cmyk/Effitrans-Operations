@@ -124,6 +124,10 @@ export const AuditActions = {
   PORTAL_LOGIN_REJECTED: "portal.login.rejected", // machine: unknown/disabled/mismatch
   PORTAL_PASSWORD_RESET_REQUESTED: "portal.password_reset.requested", // attributed
   PORTAL_PASSWORD_RESET_COMPLETED: "portal.password_reset.completed", // attributed
+  // Phase 7.6C — Customer AI Assistant. Attributed to the PORTAL actor (clientUserId), never a
+  // staff actor. Records SAFE metadata only (provider/model/duration/tokens/outcome) — never the
+  // prompt, the answer, the conversation, or any shipment detail.
+  PORTAL_COPILOT_QUERY: "portal.copilot.query",
   // Phase 1.14 — Communications Hub
   COMMUNICATION_QUEUED: "communication.queued",
   COMMUNICATION_SENT: "communication.sent",

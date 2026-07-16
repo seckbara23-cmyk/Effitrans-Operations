@@ -6,17 +6,15 @@
  * relevant to the question. A prioritized module keeps the full cap; a non-prioritized module is
  * trimmed but NEVER emptied (a requested module always keeps records). Truncation is disclosed,
  * never silent. Also caps the total serialized brief size.
+ *
+ * 7.6C: the neutral caps + serialized-brief cap moved to lib/copilot/budget.ts so every copilot
+ * budgets identically; they are re-exported here so this module's contract is unchanged. Only the
+ * LOGISTICS-SPECIFIC classification (keywords, question classes, module priorities) lives here.
  */
-import type { LogisticsModule, QuestionClass } from "./types";
+import { BUDGET, capsFor, capSerialized } from "@/lib/copilot/budget";
+import { LOGISTICS_MODULES, type LogisticsModule, type QuestionClass } from "./types";
 
-export const BUDGET = {
-  /** Full per-module record cap for prioritized modules. */
-  priorityCap: 25,
-  /** Reduced cap for non-prioritized modules — trimmed, never zeroed. */
-  minorCap: 8,
-  /** Total serialized brief hard cap (chars) — well under the AI layer's 24k prompt cap. */
-  maxSerializedChars: 12_000,
-} as const;
+export { BUDGET, capSerialized };
 
 /** Allowlisted keyword signatures (folded) → question class. Order-independent. */
 const KEYWORDS: Record<Exclude<QuestionClass, "general">, string[]> = {
@@ -59,16 +57,5 @@ export const PRIORITY: Record<QuestionClass, LogisticsModule[]> = {
 /** Per-module record cap for a question class: full cap for prioritized modules, a reduced
  *  (non-zero) cap for the rest — so a requested module is never silently emptied. */
 export function moduleCaps(questionClass: QuestionClass): Record<LogisticsModule, number> {
-  const prioritized = new Set(PRIORITY[questionClass]);
-  const caps = {} as Record<LogisticsModule, number>;
-  for (const m of ["road", "ocean", "air", "customs", "documents", "finance"] as LogisticsModule[]) {
-    caps[m] = prioritized.has(m) ? BUDGET.priorityCap : BUDGET.minorCap;
-  }
-  return caps;
-}
-
-/** Cap the total serialized brief; report whether it was truncated. */
-export function capSerialized(text: string): { text: string; truncated: boolean } {
-  if (text.length <= BUDGET.maxSerializedChars) return { text, truncated: false };
-  return { text: text.slice(0, BUDGET.maxSerializedChars) + "\n… [contexte tronqué]", truncated: true };
+  return capsFor(LOGISTICS_MODULES, PRIORITY[questionClass]);
 }

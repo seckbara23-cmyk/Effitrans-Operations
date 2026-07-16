@@ -15,7 +15,7 @@ import { InvoiceCenter } from "@/components/portal/invoice-center";
 import { DossierTimeline } from "@/components/portal/dossier-timeline";
 import { QuickActions } from "@/components/portal/quick-actions";
 import { ActionsRequired, ContactCard, RequestUpdateButton } from "@/components/portal/self-service";
-import { CopilotSuggestions } from "@/components/portal/copilot-suggestions";
+import { PortalCopilotPanel } from "@/components/portal/portal-copilot-panel";
 import { Satisfaction } from "@/components/portal/satisfaction";
 import { t } from "@/lib/i18n";
 
@@ -74,7 +74,8 @@ export default async function PortalFileDetailPage({ params }: { params: { id: s
           <EtaWidget eta={tracking.eta} />
           <OfficerCard officer={tracking.officer} />
           <QuickActions fileId={tracking.fileId} contactEmail={tracking.officer.businessEmail} />
-          <CopilotSuggestions />
+          {/* Phase 7.6C — dossier-scoped: the assistant only ever sees THIS owned shipment. */}
+          <PortalCopilotPanel fileId={tracking.fileId} />
           {delivered && <Satisfaction />}
         </aside>
       </div>

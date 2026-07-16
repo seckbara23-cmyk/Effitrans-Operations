@@ -11,34 +11,29 @@ import "server-only";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
 import { AuditActions } from "@/lib/audit/events";
+import { checkAuditRateLimit, intEnv, type RateLimitResult } from "@/lib/copilot/rate-limit";
 import type { CopilotUsageSummary } from "./types";
 
 const ACTION = AuditActions.LOGISTICS_COPILOT_QUERY;
 
-function intEnv(v: string | undefined, def: number): number {
-  const n = Number((v ?? "").trim());
-  return Number.isFinite(n) && n > 0 ? Math.floor(n) : def;
-}
 export function copilotRateLimits(env: NodeJS.ProcessEnv = process.env): { perUserPerMin: number; perTenantPerDay: number } {
   return { perUserPerMin: intEnv(env.COPILOT_USER_RATE_PER_MIN, 12), perTenantPerDay: intEnv(env.COPILOT_TENANT_RATE_PER_DAY, 2000) };
 }
 
-export type RateLimitResult = { ok: true } | { ok: false; scope: "user" | "tenant" };
+export type { RateLimitResult };
 
-/** Bounded rate check: counts recent copilot audit rows for the user (1 min) + tenant (24 h). */
+/** Bounded rate check: counts recent copilot audit rows for the STAFF user (1 min) + tenant (24 h).
+ *  Delegates to the shared counter (7.6C) — the portal copilot uses it with the portal actor. */
 export async function checkCopilotRateLimit(user: { id: string; tenantId: string }): Promise<RateLimitResult> {
-  const admin = getAdminSupabaseClient();
   const { perUserPerMin, perTenantPerDay } = copilotRateLimits();
-  const nowMs = Date.now();
-  const minAgo = new Date(nowMs - 60_000).toISOString();
-  const dayAgo = new Date(nowMs - 86_400_000).toISOString();
-  const [userRes, tenantRes] = await Promise.all([
-    admin.from("audit_log").select("id", { count: "exact", head: true }).eq("tenant_id", user.tenantId).eq("actor_id", user.id).eq("action", ACTION).gte("occurred_at", minAgo),
-    admin.from("audit_log").select("id", { count: "exact", head: true }).eq("tenant_id", user.tenantId).eq("action", ACTION).gte("occurred_at", dayAgo),
-  ]);
-  if ((userRes.count ?? 0) >= perUserPerMin) return { ok: false, scope: "user" };
-  if ((tenantRes.count ?? 0) >= perTenantPerDay) return { ok: false, scope: "tenant" };
-  return { ok: true };
+  return checkAuditRateLimit({
+    action: ACTION,
+    tenantId: user.tenantId,
+    actorColumn: "actor_id",
+    actorId: user.id,
+    perActorPerMin: perUserPerMin,
+    perTenantPerDay,
+  });
 }
 
 type AuditAfter = { provider?: string; model?: string; durationMs?: number; outcome?: string; tokens?: { prompt?: number; completion?: number; total?: number } | null };
