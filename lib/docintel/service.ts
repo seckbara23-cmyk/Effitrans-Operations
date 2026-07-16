@@ -24,13 +24,13 @@ function fieldView(r: Record<string, unknown>): CandidateView {
   return { id: r.id as string, jobId: r.job_id as string, documentClass: r.document_class as DocClass, fieldKey: r.field_key as string, displayedValue: (r.displayed_value as string | null) ?? null, normalizedValue: (r.normalized_value as string | null) ?? null, confidence: r.confidence as Confidence, page: (r.page as number | null) ?? null, evidence: (r.evidence as string | null) ?? null, validationStatus: r.validation_status as ValidationStatus, reconciliationStatus: (r.reconciliation_status as string | null) ?? null, reviewDecision: r.review_decision as ReviewDecision, editedValue: (r.edited_value as string | null) ?? null, applicationTarget: (r.application_target as string | null) ?? null, applicationResult: (r.application_result as string | null) ?? null };
 }
 
-export type DocumentIntelligence = { document: { id: string; typeCode: string; title: string | null; fileId: string; fileNumber: string | null; version: number } | null; job: JobView | null; candidates: CandidateView[]; providers: DocIntelProviderConfig[] };
+export type DocumentIntelligence = { document: { id: string; typeCode: string; title: string | null; fileId: string; fileNumber: string | null; version: number; mimeType: string | null } | null; job: JobView | null; candidates: CandidateView[]; providers: DocIntelProviderConfig[] };
 
 /** The latest job + candidates for one document (the review studio's data). */
 export async function getDocumentIntelligence(documentId: string): Promise<DocumentIntelligence | null> {
   const user = await assertPermission("document:read");
   const admin = getAdminSupabaseClient();
-  const { data: doc } = await admin.from("document").select("id, type_code, title, file_id, version, file:file_id(file_number)").eq("id", documentId).eq("tenant_id", user.tenantId).is("deleted_at", null).maybeSingle<{ id: string; type_code: string; title: string | null; file_id: string; version: number; file: { file_number: string } | null }>();
+  const { data: doc } = await admin.from("document").select("id, type_code, title, file_id, version, mime_type, file:file_id(file_number)").eq("id", documentId).eq("tenant_id", user.tenantId).is("deleted_at", null).maybeSingle<{ id: string; type_code: string; title: string | null; file_id: string; version: number; mime_type: string | null; file: { file_number: string } | null }>();
   if (!doc) return null;
   if (!(await isFileVisible(user.id, user.tenantId, doc.file_id))) return null;
 
@@ -41,7 +41,7 @@ export async function getDocumentIntelligence(documentId: string): Promise<Docum
     const { data: fields } = await admin.from("document_candidate_field").select(FIELD_COLS).eq("tenant_id", user.tenantId).eq("job_id", job.id).order("field_key", { ascending: true }).returns<Record<string, unknown>[]>();
     candidates = (fields ?? []).map(fieldView);
   }
-  return { document: { id: doc.id, typeCode: doc.type_code, title: doc.title, fileId: doc.file_id, fileNumber: doc.file?.file_number ?? null, version: doc.version }, job, candidates, providers: docIntelProviders() };
+  return { document: { id: doc.id, typeCode: doc.type_code, title: doc.title, fileId: doc.file_id, fileNumber: doc.file?.file_number ?? null, version: doc.version, mimeType: doc.mime_type }, job, candidates, providers: docIntelProviders() };
 }
 
 /** Bounded review-queue summary for the dossier + Command Center indicator. */

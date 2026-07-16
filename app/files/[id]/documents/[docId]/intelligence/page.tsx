@@ -41,7 +41,7 @@ export default async function DocumentIntelligencePage({ params }: { params: { i
         )}
       </div>
 
-      <ReviewStudio documentId={params.docId} job={data.job} candidates={data.candidates} docClass={docClass} />
+      <ReviewStudio documentId={params.docId} job={data.job} candidates={data.candidates} docClass={docClass} canParsePdf={data.document.mimeType === "application/pdf"} />
     </div>
   );
 }

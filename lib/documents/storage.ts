@@ -62,3 +62,15 @@ export async function removeObject(path: string): Promise<void> {
   const supabase = getAdminSupabaseClient();
   await supabase.storage.from(DOCUMENTS_BUCKET).remove([path]);
 }
+
+/**
+ * Download an object's raw bytes for server-side processing (Phase 7.4B searchable-PDF
+ * extraction). The caller MUST have already permission- and visibility-checked the document.
+ * Returns null if the object is missing/unreadable — the bytes never leave the server.
+ */
+export async function downloadObject(path: string): Promise<Buffer | null> {
+  const supabase = getAdminSupabaseClient();
+  const { data, error } = await supabase.storage.from(DOCUMENTS_BUCKET).download(path);
+  if (error || !data) return null;
+  return Buffer.from(await data.arrayBuffer());
+}

@@ -83,5 +83,20 @@ begin
   if not (x_b or x_a=0) or not (s_b or s_a=0) then raise exception 'RLS DOCINTEL WRITE FAIL: xtenant(b=% a=%) same(b=% a=%)', x_b, x_a, s_b, s_a; end if;
 end $$;
 
+-- Phase 7.4B: the failure_category vocabulary admits OCR_REQUIRED (migration 20260716000008),
+-- the honest terminal outcome for a scanned / image-only PDF (we do not OCR).
+do $$
+declare ok boolean := false;
+begin
+  perform set_config('role', 'postgres', true);
+  begin
+    insert into public.document_intelligence_job (id, tenant_id, document_id, file_id, declared_class, status, failure_category)
+    values ('00000000-0000-0000-0000-00000000e0c1', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-00000000eda1', '00000000-0000-0000-0000-00000000efa1', 'BILL_OF_LADING', 'FAILED', 'OCR_REQUIRED');
+    ok := true;
+  exception when others then ok := false; end;
+  insert into _r values ('ocr_required_failure_category_accepted', case when ok then 1 else 0 end);
+  if not ok then raise exception 'RLS DOCINTEL 7.4B FAIL: failure_category OCR_REQUIRED rejected (migration 20260716000008 missing?)'; end if;
+end $$;
+
 select * from _r order by check_name;
 rollback;

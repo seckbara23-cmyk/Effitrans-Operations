@@ -82,23 +82,38 @@ function keywordsFor(f: FieldSchema): string[] {
  * container/AWB; label-based capture otherwise. Confidence is honest (MEDIUM for a labelled
  * match / token) — never HIGH (no model asserted it). STRICT to the schema.
  */
-export function deterministicExtract(cls: DocClass, rawText: string): CandidateField[] {
+export function deterministicExtract(cls: DocClass, rawText: string, page = 1): CandidateField[] {
   const text = sanitizeText(rawText);
   const lines = text.split(/\r?\n/);
   const out: CandidateField[] = [];
   for (const f of schemaFor(cls)) {
     if (f.kind === "container") {
       const m = text.match(CONTAINER_RE);
-      if (m && m[0]) out.push(buildCandidate(f, m[0], "MEDIUM", m[0], "deterministic"));
+      if (m && m[0]) out.push(buildCandidate(f, m[0], "MEDIUM", m[0], "deterministic", page));
       continue;
     }
     if (f.kind === "awb") {
       const m = text.match(AWB_RE);
-      if (m && m[0]) out.push(buildCandidate(f, m[0], "MEDIUM", m[0], "deterministic"));
+      if (m && m[0]) out.push(buildCandidate(f, m[0], "MEDIUM", m[0], "deterministic", page));
       continue;
     }
     const found = firstAfterLabel(lines, keywordsFor(f));
-    if (found) out.push(buildCandidate(f, found.value, "MEDIUM", found.line, "deterministic"));
+    if (found) out.push(buildCandidate(f, found.value, "MEDIUM", found.line, "deterministic", page));
   }
   return out;
+}
+
+/**
+ * Page-aware deterministic extraction (Phase 7.4B). Runs the extractor per page so each
+ * candidate carries the PAGE it was found on (provenance). The FIRST page a field appears on
+ * wins — later duplicates are ignored, so provenance is stable and single-valued.
+ */
+export function deterministicExtractPages(cls: DocClass, pages: string[]): CandidateField[] {
+  const byKey = new Map<string, CandidateField>();
+  pages.forEach((pageText, i) => {
+    for (const c of deterministicExtract(cls, pageText, i + 1)) {
+      if (!byKey.has(c.fieldKey)) byKey.set(c.fieldKey, c);
+    }
+  });
+  return Array.from(byKey.values());
 }

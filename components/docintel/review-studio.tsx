@@ -8,7 +8,7 @@
  */
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { createIntelligenceJob, runExtraction, reviewField, applyFields } from "@/lib/docintel/actions";
+import { createIntelligenceJob, runExtraction, extractSearchablePdf, reviewField, applyFields } from "@/lib/docintel/actions";
 import { fieldSchema } from "@/lib/docintel/schemas";
 import { isBatchApprovable, confidenceLabel } from "@/lib/docintel/confidence";
 import { jobStatusLabel } from "@/lib/docintel/lifecycle";
@@ -17,9 +17,9 @@ import type { JobView, CandidateView } from "@/lib/docintel/service";
 
 const CONF: Record<string, string> = { HIGH: "bg-teal-50 text-teal-700", MEDIUM: "bg-amber-50 text-amber-700", LOW: "bg-slate-100 text-slate-500", UNKNOWN: "bg-slate-100 text-slate-400" };
 const VAL: Record<string, string> = { VALID: "text-teal-700", CONFLICT: "text-red-600", INVALID_FORMAT: "text-red-600" };
-const ERR: Record<string, string> = { forbidden: "Non autorisé.", not_found: "Introuvable.", not_queued: "Extraction déjà lancée.", document_changed: "Le fichier a changé — un nouveau job est requis.", UNSUPPORTED_FILE: "Aucun texte fourni.", NOT_CONFIGURED: "Fournisseur non configuré.", UNSUPPORTED_DOCUMENT: "Type de document non pris en charge.", invalid_decision: "Décision invalide.", invalid_value: "Valeur invalide.", stale_job: "Le job a changé — rechargez.", generic: "Erreur." };
+const ERR: Record<string, string> = { forbidden: "Non autorisé.", not_found: "Introuvable.", not_queued: "Extraction déjà lancée.", document_changed: "Le fichier a changé — un nouveau job est requis.", UNSUPPORTED_FILE: "Fichier non pris en charge (PDF requis) ou aucun texte.", NOT_CONFIGURED: "Fournisseur non configuré.", UNSUPPORTED_DOCUMENT: "Type de document non pris en charge.", OCR_REQUIRED: "PDF scanné / image — aucune couche texte. L'OCR n'est pas connecté ; utilisez la saisie manuelle.", TOO_LARGE: "Fichier trop volumineux ou trop de pages.", TIMEOUT: "Délai d'extraction dépassé.", PROVIDER_ERROR: "Lecture du PDF impossible.", INVALID_RESPONSE: "Réponse d'extraction invalide.", invalid_decision: "Décision invalide.", invalid_value: "Valeur invalide.", stale_job: "Le job a changé — rechargez.", generic: "Erreur." };
 
-export function ReviewStudio({ documentId, job, candidates, docClass }: { documentId: string; job: JobView | null; candidates: CandidateView[]; docClass: DocClass }) {
+export function ReviewStudio({ documentId, job, candidates, docClass, canParsePdf = false }: { documentId: string; job: JobView | null; candidates: CandidateView[]; docClass: DocClass; canParsePdf?: boolean }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -55,14 +55,28 @@ export function ReviewStudio({ documentId, job, candidates, docClass }: { docume
       </div>
 
       {job.status === "QUEUED" && (
-        <form onSubmit={(e) => { e.preventDefault(); run(() => runExtraction(job.id, text)); }} className="space-y-2">
-          <p className="text-xs text-amber-700">Aucun OCR/IA n&apos;est connecté. Collez le texte du document (saisie manuelle) pour l&apos;extraction déterministe.</p>
-          <textarea value={text} onChange={(e) => setText(e.target.value)} rows={6} placeholder="Texte du document…" className="w-full rounded-md border border-slate-200 px-2 py-1 text-sm" />
-          <button type="submit" disabled={pending || !text.trim()} className="rounded-lg bg-navy-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50">Lancer l&apos;extraction déterministe</button>
-        </form>
+        <div className="space-y-3">
+          {canParsePdf && (
+            <div className="space-y-1 rounded-md border border-teal-100 bg-teal-50/50 p-3">
+              <p className="text-xs text-teal-800">PDF avec couche texte : extraction locale (aucun OCR, aucun envoi externe). Un PDF scanné/image renverra <span className="font-medium">OCR requis</span>.</p>
+              <button onClick={() => run(() => extractSearchablePdf(job.id))} disabled={pending} className="rounded-lg bg-navy-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50">Extraire le texte du PDF</button>
+            </div>
+          )}
+          <form onSubmit={(e) => { e.preventDefault(); run(() => runExtraction(job.id, text)); }} className="space-y-2">
+            <p className="text-xs text-amber-700">Sinon, collez le texte du document (saisie manuelle) pour l&apos;extraction déterministe. Aucun OCR/IA n&apos;est connecté.</p>
+            <textarea value={text} onChange={(e) => setText(e.target.value)} rows={6} placeholder="Texte du document…" className="w-full rounded-md border border-slate-200 px-2 py-1 text-sm" />
+            <button type="submit" disabled={pending || !text.trim()} className="rounded-lg border border-navy-200 px-3 py-2 text-sm font-medium text-navy-800 disabled:opacity-50">Lancer l&apos;extraction déterministe (texte)</button>
+          </form>
+        </div>
       )}
 
-      {job.status === "FAILED" && <p className="text-xs text-red-600">Extraction échouée ({job.failureCategory ?? "erreur"}). Un nouveau job est requis.</p>}
+      {job.status === "FAILED" && (
+        <p className="text-xs text-red-600">{job.failureCategory === "OCR_REQUIRED" ? ERR.OCR_REQUIRED : `Extraction échouée (${job.failureCategory ?? "erreur"}). Un nouveau job est requis.`}</p>
+      )}
+
+      {job.predictedClass && job.declaredClass && job.predictedClass !== job.declaredClass && (
+        <p className="text-xs text-amber-700">Conflit de classification : déclaré <span className="font-medium">{docClassLabel(job.declaredClass)}</span>, détecté <span className="font-medium">{docClassLabel(job.predictedClass)}</span>. La classe déclarée reste retenue — confirmez si besoin.</p>
+      )}
 
       {["READY_FOR_REVIEW", "PARTIALLY_APPROVED", "APPROVED", "APPLIED"].includes(job.status) && (
         <>

@@ -37,6 +37,12 @@ const securityHeaders = [
 
 const nextConfig = {
   reactStrictMode: true,
+  // The searchable-PDF parser (pdf-parse, Phase 7.4B) is a pure-Node library used only from
+  // a server-only adapter. Keep it external so webpack requires it at runtime from node_modules
+  // (it bundles its own pdf.js and must not be traced into a client/edge bundle).
+  experimental: {
+    serverComponentsExternalPackages: ["pdf-parse"],
+  },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

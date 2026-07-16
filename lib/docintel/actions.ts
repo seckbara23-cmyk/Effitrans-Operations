@@ -7,20 +7,27 @@
  * (which re-check the target-domain permission + own the invariant) — never a free-form table
  * write. Tenant + actor from the session. Audit carries safe metadata only (never values/text).
  */
+import { createHash } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
 import { isFileVisible } from "@/lib/authz/visibility";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
+import { downloadObject } from "@/lib/documents/storage";
 import { defaultEngine } from "./provider";
-import { sanitizeText } from "./extract";
+import { sanitizeText, deterministicExtractPages, type CandidateField } from "./extract";
+import { parseSearchablePdf } from "./pdf/parser";
+import { classifyText } from "./classify-text";
+import { classifyDocument } from "./classify";
 import { fieldSchema } from "./schemas";
 import { normalizeField, validateFieldFormat, reconcileWithOperational } from "./validate";
 import { classFromTypeCode, isDocClass, type DocClass } from "./types";
 import { updateBookingBl } from "@/lib/shipping/intelligence/manage-actions";
 import { updateAwb } from "@/lib/air/intelligence/manage-actions";
 import type { Database } from "@/lib/db/types";
+
+const STORED_TEXT_MAX = 40_000;
 
 type Admin = ReturnType<typeof getAdminSupabaseClient>;
 type FieldUpdate = Database["public"]["Tables"]["document_candidate_field"]["Update"];
@@ -30,6 +37,30 @@ export type ApplyResult = { ok: true; results: { fieldId: string; fieldKey: stri
 async function loadDoc(admin: Admin, documentId: string, tenantId: string) {
   const { data } = await admin.from("document").select("id, file_id, type_code, version, storage_path, mime_type, size_bytes").eq("id", documentId).eq("tenant_id", tenantId).is("deleted_at", null).maybeSingle<{ id: string; file_id: string; type_code: string; version: number; storage_path: string; mime_type: string | null; size_bytes: number | null }>();
   return data ?? null;
+}
+
+type JobRef = { id: string; document_id: string; job_version: number };
+/** Move a job to FAILED with a bounded failure_category (never a raw provider error) + CAS. */
+async function failJob(admin: Admin, user: { id: string; tenantId: string }, job: JobRef, code: string): Promise<{ ok: false; error: string }> {
+  await admin.from("document_intelligence_job").update({ status: "FAILED", failure_category: code, job_version: job.job_version + 1 }).eq("id", job.id).eq("tenant_id", user.tenantId).eq("job_version", job.job_version);
+  await writeAudit({ action: AuditActions.DOCUMENT_EXTRACTION_FAILED, actorId: user.id, tenantId: user.tenantId, entity: "document", entityId: job.document_id, after: { jobId: job.id, category: code } });
+  return { ok: false, error: code };
+}
+
+/** Reconcile candidate fields against the current operational shipment/AWB (bounded read) and
+ *  shape them into candidate rows. Reused by manual + PDF extraction. */
+async function buildCandidateRows(admin: Admin, tenantId: string, fileId: string, jobId: string, cls: DocClass, candidates: CandidateField[]) {
+  const { data: ship } = await admin.from("shipment").select("id, master_bl, booking_reference").eq("file_id", fileId).eq("tenant_id", tenantId).maybeSingle<{ id: string; master_bl: string | null; booking_reference: string | null }>();
+  const { data: awb } = ship ? await admin.from("air_awb").select("mawb, hawb").eq("shipment_id", ship.id).eq("tenant_id", tenantId).maybeSingle<{ mawb: string | null; hawb: string | null }>() : { data: null };
+  const opValue = (target: string | null): string | null => {
+    switch (target) { case "shipping.masterBl": return ship?.master_bl ?? null; case "shipping.bookingReference": return ship?.booking_reference ?? null; case "air.mawb": return awb?.mawb ?? null; case "air.hawb": return awb?.hawb ?? null; default: return null; }
+  };
+  return candidates.map((c) => {
+    const fs = fieldSchema(cls, c.fieldKey);
+    const target = fs?.applyTarget ? `${fs.applyTarget.domain}.${fs.applyTarget.field}` : null;
+    const recon = target ? reconcileWithOperational(c.normalizedValue, opValue(target)) : "NONE";
+    return { tenant_id: tenantId, job_id: jobId, file_id: fileId, document_class: cls, field_key: c.fieldKey, displayed_value: c.displayedValue, normalized_value: c.normalizedValue, confidence: c.confidence, page: c.page, evidence: c.evidence, validation_status: c.validationStatus, reconciliation_status: recon, application_target: target };
+  });
 }
 
 /** Create an extraction job for a document's current (immutable) version. Idempotent: an
@@ -77,32 +108,13 @@ export async function runExtraction(jobId: string, providedText: string): Promis
   const cls = (job.declared_class && isDocClass(job.declared_class) ? job.declared_class : "UNKNOWN") as DocClass;
   const engine = defaultEngine();
 
-  const fail = async (code: string) => {
-    await admin.from("document_intelligence_job").update({ status: "FAILED", failure_category: code, job_version: job.job_version + 1 }).eq("id", jobId).eq("tenant_id", user.tenantId).eq("job_version", job.job_version);
-    await writeAudit({ action: AuditActions.DOCUMENT_EXTRACTION_FAILED, actorId: user.id, tenantId: user.tenantId, entity: "document", entityId: job.document_id, after: { jobId, category: code } });
-    return { ok: false as const, error: code };
-  };
-
   const textRes = await engine.extractText({ mimeType: job.mime_type, byteSize: job.byte_size, providedText });
-  if (!textRes.ok) return fail(textRes.code);
+  if (!textRes.ok) return failJob(admin, user, job, textRes.code);
   const text = textRes.data.pages.join("\n");
   const fieldsRes = await engine.extractFields(cls, text);
-  if (!fieldsRes.ok) return fail(fieldsRes.code);
-  const candidates = fieldsRes.data.candidates;
+  if (!fieldsRes.ok) return failJob(admin, user, job, fieldsRes.code);
 
-  // Current operational values for reconciliation (bounded).
-  const { data: ship } = await admin.from("shipment").select("id, master_bl, booking_reference").eq("file_id", job.file_id).eq("tenant_id", user.tenantId).maybeSingle<{ id: string; master_bl: string | null; booking_reference: string | null }>();
-  const { data: awb } = ship ? await admin.from("air_awb").select("mawb, hawb").eq("shipment_id", ship.id).eq("tenant_id", user.tenantId).maybeSingle<{ mawb: string | null; hawb: string | null }>() : { data: null };
-  const opValue = (target: string | null): string | null => {
-    switch (target) { case "shipping.masterBl": return ship?.master_bl ?? null; case "shipping.bookingReference": return ship?.booking_reference ?? null; case "air.mawb": return awb?.mawb ?? null; case "air.hawb": return awb?.hawb ?? null; default: return null; }
-  };
-
-  const rows = candidates.map((c) => {
-    const fs = fieldSchema(cls, c.fieldKey);
-    const target = fs?.applyTarget ? `${fs.applyTarget.domain}.${fs.applyTarget.field}` : null;
-    const recon = target ? reconcileWithOperational(c.normalizedValue, opValue(target)) : "NONE";
-    return { tenant_id: user.tenantId, job_id: jobId, file_id: job.file_id, document_class: cls, field_key: c.fieldKey, displayed_value: c.displayedValue, normalized_value: c.normalizedValue, confidence: c.confidence, page: c.page, evidence: c.evidence, validation_status: c.validationStatus, reconciliation_status: recon, application_target: target };
-  });
+  const rows = await buildCandidateRows(admin, user.tenantId, job.file_id, jobId, cls, fieldsRes.data.candidates);
   if (rows.length > 0) {
     const { error: insErr } = await admin.from("document_candidate_field").upsert(rows, { onConflict: "tenant_id,job_id,field_key" });
     if (insErr) return { ok: false, error: insErr.message };
@@ -113,6 +125,61 @@ export async function runExtraction(jobId: string, providedText: string): Promis
   if (!upd || upd.length === 0) return { ok: false, error: "stale_job" };
 
   await writeAudit({ action: AuditActions.DOCUMENT_EXTRACTION_COMPLETED, actorId: user.id, tenantId: user.tenantId, entity: "document", entityId: job.document_id, after: { jobId, documentClass: cls, fieldCount: rows.length, provider: engine.structuredProvider } });
+  revalidatePath(`/files/${job.file_id}/documents/${job.document_id}`);
+  return { ok: true, id: jobId, count: rows.length };
+}
+
+/**
+ * Extract a SEARCHABLE PDF's embedded text layer ENTIRELY LOCALLY (Phase 7.4B) — no OCR, no
+ * LLM, no external call. Validates file/version, downloads the bytes, checksums them, parses the
+ * text layer (page-preserving), deterministically classifies FR/EN (a suggestion — the declared
+ * class stays authoritative), extracts + reconciles candidate fields, and moves the job to
+ * READY_FOR_REVIEW. A scanned / image-only PDF has no text layer ⇒ the job FAILS with OCR_REQUIRED.
+ */
+export async function extractSearchablePdf(jobId: string): Promise<DocIntelResult> {
+  let user; try { user = await assertPermission("document:update"); } catch { return { ok: false, error: "forbidden" }; }
+  const admin = getAdminSupabaseClient();
+  const { data: job } = await admin.from("document_intelligence_job").select("id, document_id, file_id, document_version, status, declared_class, job_version").eq("id", jobId).eq("tenant_id", user.tenantId).maybeSingle<{ id: string; document_id: string; file_id: string; document_version: number; status: string; declared_class: string | null; job_version: number }>();
+  if (!job) return { ok: false, error: "not_found" };
+  if (!(await isFileVisible(user.id, user.tenantId, job.file_id))) return { ok: false, error: "forbidden" };
+  if (job.status !== "QUEUED") return { ok: false, error: "not_queued" };
+
+  const doc = await loadDoc(admin, job.document_id, user.tenantId);
+  if (!doc || doc.version !== job.document_version) return { ok: false, error: "document_changed" }; // source replaced ⇒ new job
+  if (doc.mime_type !== "application/pdf") return failJob(admin, user, job, "UNSUPPORTED_FILE");
+  if (!doc.storage_path) return failJob(admin, user, job, "UNSUPPORTED_FILE");
+
+  const bytes = await downloadObject(doc.storage_path);
+  if (!bytes) return failJob(admin, user, job, "PROVIDER_ERROR");
+  const checksum = createHash("sha256").update(bytes).digest("hex");
+
+  const parsed = await parseSearchablePdf(bytes, { mimeType: doc.mime_type, byteSize: doc.size_bytes });
+  if (!parsed.ok) return failJob(admin, user, job, parsed.code); // OCR_REQUIRED for scanned/image-only
+
+  // Deterministic FR/EN classification (a SUGGESTION). Declared class stays authoritative.
+  const declared = (job.declared_class && isDocClass(job.declared_class) ? job.declared_class : null) as DocClass | null;
+  const predicted = classifyText(parsed.pages.join("\n"));
+  const classification = classifyDocument({ declaredClass: declared, predictedClass: predicted.predictedClass, predictedConfidence: predicted.confidence });
+  const cls = classification.finalClass;
+
+  const candidates = deterministicExtractPages(cls, parsed.pages);
+  const rows = await buildCandidateRows(admin, user.tenantId, job.file_id, jobId, cls, candidates);
+  if (rows.length > 0) {
+    const { error: insErr } = await admin.from("document_candidate_field").upsert(rows, { onConflict: "tenant_id,job_id,field_key" });
+    if (insErr) return { ok: false, error: insErr.message };
+  }
+
+  const storedText = parsed.pages.map((p) => sanitizeText(p)).join("\f").slice(0, STORED_TEXT_MAX); // \f = page boundary
+  const { data: upd, error: updErr } = await admin.from("document_intelligence_job").update({
+    status: "READY_FOR_REVIEW", provider_code: "local_pdf_text", extraction_method: "pdf_text_layer",
+    predicted_class: predicted.predictedClass, classification_confidence: classification.confidence,
+    extracted_text: storedText, page_count: parsed.pageCount, checksum, job_version: job.job_version + 1,
+  }).eq("id", jobId).eq("tenant_id", user.tenantId).eq("job_version", job.job_version).select("id");
+  if (updErr) return { ok: false, error: updErr.message };
+  if (!upd || upd.length === 0) return { ok: false, error: "stale_job" };
+
+  await writeAudit({ action: AuditActions.DOCUMENT_CLASSIFIED, actorId: user.id, tenantId: user.tenantId, entity: "document", entityId: job.document_id, after: { jobId, predictedClass: predicted.predictedClass, confidence: classification.confidence, language: predicted.language, conflict: classification.conflict } });
+  await writeAudit({ action: AuditActions.DOCUMENT_EXTRACTION_COMPLETED, actorId: user.id, tenantId: user.tenantId, entity: "document", entityId: job.document_id, after: { jobId, documentClass: cls, fieldCount: rows.length, pageCount: parsed.pageCount, provider: "local_pdf_text" } });
   revalidatePath(`/files/${job.file_id}/documents/${job.document_id}`);
   return { ok: true, id: jobId, count: rows.length };
 }

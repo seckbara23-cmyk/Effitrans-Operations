@@ -21,8 +21,8 @@ a vendor SDK. There is no vendor import and no network call anywhere under
 |------|------|--------|--------------|
 | `manual` | text | **configured** | The operator supplies the document text (paste / already-typed). This is the real 7.4A text source. |
 | `deterministic` | structured | **configured** | Schema-bound, rule-based field extraction over the provided text. No AI. Confidence is never `HIGH`. |
-| `declared` | classifier | configured | No model prediction; classification is operator-declared. Reports `NOT_CONFIGURED` for prediction. |
-| `local_pdf_text` | text | **unsupported** | Stub — no PDF-parsing library is installed. |
+| `declared` | classifier | configured | No model prediction; the operator-declared class is authoritative. A deterministic FR/EN keyword classifier (7.4B) may add a *suggested* prediction; it never changes the class. |
+| `local_pdf_text` | text | **configured** (7.4B) | Extracts the embedded text layer of **searchable** PDFs entirely locally (server-only adapter, `pdf-parse`). A scanned / image-only PDF returns `OCR_REQUIRED` — no OCR. See [searchable-pdf.md](./searchable-pdf.md). |
 | `ocr` | text | **unsupported** | Stub — no approved OCR provider. |
 | `llm` | structured | **unsupported** | Stub — no approved LLM provider. |
 

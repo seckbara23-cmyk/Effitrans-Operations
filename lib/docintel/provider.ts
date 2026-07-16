@@ -66,11 +66,17 @@ export class DeclaredOnlyClassifier implements DocumentClassifier {
 }
 
 // ---------------------------------------------------------------- honest stubs ----
+// The real searchable-PDF extraction runs in the SERVER-ONLY adapter lib/docintel/pdf/parser.ts
+// (needs storage IO + the pdf-parse library). This pure placeholder keeps the interface honest
+// for code that only inspects capabilities; it never parses bytes itself.
 export class LocalPdfTextProvider implements TextExtractionProvider {
   readonly code = "local_pdf_text";
-  readonly configured = false; // no PDF-parsing library is installed
-  capabilities(): TextCapabilities { return { ...NO_TEXT_CAPS }; }
-  async extractText(): Promise<ProviderResult<{ pages: string[]; method: string; warnings: string[] }>> { return { ok: false, code: "NOT_CONFIGURED" }; }
+  readonly configured = true; // searchable PDFs via the server-only adapter; scanned ⇒ OCR_REQUIRED
+  capabilities(): TextCapabilities { return { ...NO_TEXT_CAPS, pdfTextLayer: true, multiPage: true, languages: ["FR", "EN"], maxBytes: 26_214_400 }; }
+  async extractText(): Promise<ProviderResult<{ pages: string[]; method: string; warnings: string[] }>> {
+    // Bytes are parsed by the server-only adapter, not here (this module is pure).
+    return { ok: false, code: "UNSUPPORTED_FILE" };
+  }
 }
 export class OcrStubProvider implements TextExtractionProvider {
   readonly code = "ocr";
@@ -103,7 +109,7 @@ export function defaultEngine(): DocIntelEngine {
 
 // ---------------------------------------------------------------- readiness / config ----
 export type ProviderConfigStatus = "configured" | "unsupported";
-export type DocIntelProviderConfig = { code: string; displayName: string; status: ProviderConfigStatus; requiredInputs: string[] };
+export type DocIntelProviderConfig = { code: string; displayName: string; status: ProviderConfigStatus; requiredInputs: string[]; note?: string };
 export const OCR_READINESS_CHECKLIST: string[] = [
   "Official OCR API documentation", "Authentication method", "Supported regions", "Supported file types & size limits",
   "Data-retention policy", "Model-training policy", "Subprocessors", "Encryption & residency", "Request/response schemas",
@@ -118,7 +124,7 @@ export function docIntelProviders(): DocIntelProviderConfig[] {
   return [
     { code: "manual", displayName: "Saisie manuelle", status: "configured", requiredInputs: [] },
     { code: "deterministic", displayName: "Extraction déterministe", status: "configured", requiredInputs: [] },
-    { code: "local_pdf_text", displayName: "Texte PDF local", status: "unsupported", requiredInputs: ["Bibliothèque d'extraction PDF vérifiée"] },
+    { code: "local_pdf_text", displayName: "Texte PDF local (recherche)", status: "configured", requiredInputs: [], note: "PDF avec couche texte uniquement — un PDF scanné/image renvoie OCR_REQUIRED (pas d'OCR)." },
     { code: "ocr", displayName: "OCR", status: "unsupported", requiredInputs: OCR_READINESS_CHECKLIST },
     { code: "llm", displayName: "Extraction LLM", status: "unsupported", requiredInputs: LLM_READINESS_CHECKLIST },
   ];
