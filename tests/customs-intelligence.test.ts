@@ -173,9 +173,12 @@ describe("dashboard aggregate contracts (no dashboard UI)", () => {
 // ---------------------------------------------------------------- reuse / no-duplication ----
 
 describe("reuses everything — no new table, permission, or audit code", () => {
-  it("no migration was added for the intelligence layer (pure logic over existing data)", () => {
-    // The foundation adds no schema; the CI file has no customs-intelligence RLS test.
-    expect(read("../.github/workflows/ci.yml")).not.toContain("customs_intelligence");
+  it("persists additively on customs_record — no separate declaration table (7.1B)", () => {
+    // 7.1B persists the canonical state as ADDITIVE columns on customs_record (reuse),
+    // never a second declaration table, and adds no new RLS step to CI.
+    const mig = read("../supabase/migrations/20260716000003_customs_intelligence_state.sql");
+    expect(mig).toContain("alter table public.customs_record");
+    expect(mig).not.toMatch(/create table/i);
   });
   it("timeline reuses the existing CUSTOMS_STATUS_CHANGED audit action", () => {
     expect(read("../lib/customs/intelligence/timeline.ts")).toContain("AuditActions.CUSTOMS_STATUS_CHANGED");

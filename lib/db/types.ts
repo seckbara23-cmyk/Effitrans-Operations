@@ -928,6 +928,15 @@ export type Database = {
           deleted_at: string | null;
           created_at: string;
           updated_at: string;
+          // Phase 7.1B — canonical Customs Intelligence lifecycle (additive).
+          intel_status: string;
+          provider_code: string;
+          provider_reference: string | null;
+          provider_synced_at: string | null;
+          provider_error: string | null;
+          intel_version: number;
+          submitted_at: string | null;
+          released_at: string | null;
         };
         Insert: {
           id?: string;
@@ -949,6 +958,14 @@ export type Database = {
           deleted_at?: string | null;
           created_at?: string;
           updated_at?: string;
+          intel_status?: string;
+          provider_code?: string;
+          provider_reference?: string | null;
+          provider_synced_at?: string | null;
+          provider_error?: string | null;
+          intel_version?: number;
+          submitted_at?: string | null;
+          released_at?: string | null;
         };
         Update: {
           id?: string;
@@ -970,6 +987,14 @@ export type Database = {
           deleted_at?: string | null;
           created_at?: string;
           updated_at?: string;
+          intel_status?: string;
+          provider_code?: string;
+          provider_reference?: string | null;
+          provider_synced_at?: string | null;
+          provider_error?: string | null;
+          intel_version?: number;
+          submitted_at?: string | null;
+          released_at?: string | null;
         };
         Relationships: [
           {

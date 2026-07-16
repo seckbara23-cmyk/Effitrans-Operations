@@ -51,10 +51,12 @@ insert into public.operational_file (id, tenant_id, file_number, type, client_id
   ('00000000-0000-0000-0000-00000000fc03', '00000000-0000-0000-0000-0000000000b2', 'EFT-IMP-2099-97003', 'IMP', '00000000-0000-0000-0000-00000000c1b0', null)
 on conflict (id) do nothing;
 
-insert into public.customs_record (id, tenant_id, file_id, status) values
-  ('00000000-0000-0000-0000-00000000cc01', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-00000000fc01', 'NOT_STARTED'),
-  ('00000000-0000-0000-0000-00000000cc02', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-00000000fc02', 'NOT_STARTED'),
-  ('00000000-0000-0000-0000-00000000cc03', '00000000-0000-0000-0000-0000000000b2', '00000000-0000-0000-0000-00000000fc03', 'NOT_STARTED')
+-- Phase 7.1B — seed the canonical intelligence columns so isolation is proven to cover
+-- them too (they live on customs_record and inherit customs_record_select).
+insert into public.customs_record (id, tenant_id, file_id, status, intel_status, provider_code) values
+  ('00000000-0000-0000-0000-00000000cc01', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-00000000fc01', 'NOT_STARTED', 'SUBMITTED', 'GAINDE'),
+  ('00000000-0000-0000-0000-00000000cc02', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-00000000fc02', 'NOT_STARTED', 'DRAFT', 'manual'),
+  ('00000000-0000-0000-0000-00000000cc03', '00000000-0000-0000-0000-0000000000b2', '00000000-0000-0000-0000-00000000fc03', 'NOT_STARTED', 'ACCEPTED', 'manual')
 on conflict (id) do nothing;
 
 create temp table _r (check_name text, value int) on commit drop;
@@ -91,6 +93,66 @@ begin
   if mgr_x<>1 or mgr_y<>1 or mgr_z<>0 or coord_x<>1 or coord_y<>0 or none_x<>0 then
     raise exception 'RLS CUSTOMS FAIL: mgr(x=% y=% b=%) coord(x=% y=%) noperm(x=%)',
       mgr_x, mgr_y, mgr_z, coord_x, coord_y, none_x;
+  end if;
+end $$;
+
+-- Phase 7.1B — the canonical intelligence columns are covered by the SAME policy: the
+-- manager reads fileX's intel_status but a tenant-B declaration returns nothing.
+do $$
+declare
+  mgr_intel_x text; mgr_intel_b text;
+begin
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims',
+    json_build_object('sub','00000000-0000-0000-0000-0000000000e1','role','authenticated')::text, true);
+  select intel_status into mgr_intel_x from public.customs_record where id='00000000-0000-0000-0000-00000000cc01';
+  select intel_status into mgr_intel_b from public.customs_record where id='00000000-0000-0000-0000-00000000cc03';
+
+  perform set_config('role', 'postgres', true);
+  insert into _r values
+    ('mgr_intelX_visible', case when mgr_intel_x='SUBMITTED' then 1 else 0 end),
+    ('mgr_intelB_hidden',  case when mgr_intel_b is null then 1 else 0 end);
+
+  if mgr_intel_x is distinct from 'SUBMITTED' or mgr_intel_b is not null then
+    raise exception 'RLS CUSTOMS INTEL READ FAIL: x=% (want SUBMITTED), b=% (want null)', mgr_intel_x, mgr_intel_b;
+  end if;
+end $$;
+
+-- Phase 7.1B — the RLS (authenticated) client can NEVER write a canonical transition:
+-- customs_record grants SELECT only, so any UPDATE raises insufficient_privilege. This
+-- proves a cross-tenant (and same-tenant) transition cannot be forced through the client
+-- — writes go exclusively through the permission-gated service role.
+do $$
+declare
+  x_blocked boolean := false; x_affected int := 0;  -- cross-tenant (tenant B row)
+  s_blocked boolean := false; s_affected int := 0;  -- same-tenant own row
+begin
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims',
+    json_build_object('sub','00000000-0000-0000-0000-0000000000e1','role','authenticated')::text, true);
+
+  begin
+    update public.customs_record set intel_status='CANCELLED', intel_version=intel_version+1
+      where id='00000000-0000-0000-0000-00000000cc03';
+    get diagnostics x_affected = row_count;
+  exception when others then x_blocked := true;
+  end;
+
+  begin
+    update public.customs_record set intel_status='CANCELLED', intel_version=intel_version+1
+      where id='00000000-0000-0000-0000-00000000cc01';
+    get diagnostics s_affected = row_count;
+  exception when others then s_blocked := true;
+  end;
+
+  perform set_config('role', 'postgres', true);
+  insert into _r values
+    ('xtenant_write_blocked', case when x_blocked or x_affected=0 then 1 else 0 end),
+    ('sametenant_write_blocked', case when s_blocked or s_affected=0 then 1 else 0 end);
+
+  if not (x_blocked or x_affected=0) or not (s_blocked or s_affected=0) then
+    raise exception 'RLS CUSTOMS WRITE FAIL: xtenant(blocked=% affected=%) same(blocked=% affected=%)',
+      x_blocked, x_affected, s_blocked, s_affected;
   end if;
 end $$;
 

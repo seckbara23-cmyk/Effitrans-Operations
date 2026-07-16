@@ -106,7 +106,7 @@ export default async function CustomsDepartmentPage() {
         </div>
       )}
       <p className="text-xs text-slate-400">
-        Créer/déclarer/libérer s&apos;effectue dans le dossier (volet Douane) · <Link href="/customs" className="text-teal-700 hover:underline">vue douane complète</Link>.
+        Créer/déclarer/libérer s&apos;effectue dans le dossier (volet Douane) · <Link href="/customs" className="text-teal-700 hover:underline">vue douane complète</Link> · <Link href="/customs/intelligence" className="text-teal-700 hover:underline">Intelligence douanière</Link>.
       </p>
     </div>
   );
