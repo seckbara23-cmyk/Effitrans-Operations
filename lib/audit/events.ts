@@ -195,6 +195,12 @@ export const AuditActions = {
   BRAND_CARD_PREVIEWED: "brand.card.previewed",
   BRAND_CARD_VCARD_DOWNLOADED: "brand.card.vcard_downloaded",
   BRAND_CARD_QR_DOWNLOADED: "brand.card.qr_downloaded",
+  // DBC-4 — corporate document platform. Safe metadata only (actor/tenant/type/format) —
+  // NEVER the document body, customer data, prices, line items, or the generated file.
+  BRAND_DOCUMENT_PREVIEWED: "brand.document.previewed",
+  BRAND_DOCUMENT_GENERATED: "brand.document.generated",
+  BRAND_DOCUMENT_DOWNLOADED: "brand.document.downloaded",
+  BRAND_DOCUMENT_TEMPLATE_UPDATED: "brand.document.template_updated", // reserved (no editor in DBC-4)
 
   // Phase 5.0B — official process engine. Payloads carry only step KEYS, state
   // names, actor ids and evidence KEYS. NEVER document contents, file bytes,

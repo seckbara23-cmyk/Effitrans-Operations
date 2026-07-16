@@ -14,9 +14,10 @@ const SECTIONS = [
   { href: "/brand-center/assets", label: "Ressources visuelles", desc: "Logos et images approuvés (PNG)." },
   { href: "/brand-center/memberships", label: "Réseaux internationaux", desc: "WCA, FIATA, adhésions et affiliations." },
   { href: "/brand-center/people", label: "Identité collaborateurs", desc: "Fonction, coordonnées, variante de signature." },
+  { href: "/brand-center/documents", label: "Modèles de documents", desc: "En-tête, devis, facture, proposition (PDF + DOCX)." },
 ];
 
-const SOON = ["Signatures e-mail", "Cartes numériques (vCard / QR)", "Modèles de documents", "Présentations", "Réseaux sociaux", "E-mailing marketing"];
+const SOON = ["Présentations", "Réseaux sociaux", "E-mailing marketing"];
 
 export default async function BrandCenterPage() {
   const user = await requireUser();
