@@ -41,7 +41,8 @@ function isPublicPath(pathname: string): boolean {
     pathname === "/portal/login" ||
     pathname.startsWith("/auth") || // /auth/callback, /auth/update-password
     pathname.startsWith("/portal/auth") || // /portal/auth/callback, /portal/auth/update-password
-    pathname.startsWith("/card") // DBC-3 — public digital business cards (token capability)
+    pathname.startsWith("/card") || // DBC-3 — public digital business cards (token capability)
+    pathname === "/api/version" // 8.0B gate C1 — secret-free build-info for deploy verification
   );
 }
 

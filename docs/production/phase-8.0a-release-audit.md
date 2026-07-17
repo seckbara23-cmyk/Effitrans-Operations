@@ -119,6 +119,17 @@ Classification: BLOCKER · HIGH · MEDIUM · LOW · INFORMATIONAL · EXTERNAL_DE
 - **Correction (IMPLEMENTED — docs-only):** `.env.example` completed with names + comments (no values).
 - **Pilot-blocking: NO.**
 
+### F-14 — LATENT (8.0B discovery): middleware would redirect unauthenticated machine webhooks
+
+- **Evidence:** `middleware.ts` matches all non-static routes; `updateSession` redirects any
+  unauthenticated request outside `isPublicPath` to a login page. `POST /api/payments/webhook/[provider]`
+  is a cookie-less machine call secured by signature verification (per its own header comment) — it would
+  receive a 307 redirect instead of being processed.
+- **Impact today:** none — payments are DARK (`PAYMENTS_ENABLED` unset); no webhook is registered anywhere.
+- **Recommended correction:** when payments are enabled, exempt the webhook path in `isPublicPath`
+  (same pattern as `/api/version`) — belongs to the payments-enablement phase, with its own tests.
+- **Owner:** engineering (payments phase). **Pilot-blocking: NO.**
+
 ### F-13 — esbuild dev-server advisory (GHSA-g7r4-m6w7-qqqr)
 
 - **Evidence:** `npm audit` moderate — arbitrary file read via the *development server* on Windows. Never runs in production. `npm audit fix` available.
