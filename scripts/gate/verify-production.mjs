@@ -43,7 +43,7 @@ const STAFF_PROTECTED = [
   "/shipping", "/shipping/shipments", "/shipping/containers", "/shipping/vessels",
   "/shipping/voyages", "/shipping/ports", "/shipping/carriers", "/shipping/alerts",
   "/air", "/air/shipments", "/air/airlines", "/air/airports", "/air/flights", "/air/ulds",
-  "/air/alerts", "/brand-center", "/platform", "/files", "/clients",
+  "/air/alerts", "/brand-center", "/platform", "/platform/operations", "/files", "/clients",
 ];
 const PORTAL_PROTECTED = ["/portal", "/portal/documents", "/portal/invoices", "/portal/notifications"];
 
