@@ -1427,15 +1427,35 @@ export const t = {
       status: "Statut",
       actions: "Actions",
     },
-    status: { active: "Actif", inactive: "Désactivé" },
+    // 8.1A — full lifecycle: inactive is a TEMPORARY suspension; archived is the permanent
+    // employee-departure state (access ends, history stays attributable forever).
+    status: { active: "Actif", inactive: "Suspendu", archived: "Archivé" },
     actions: {
       create: "Créer un utilisateur",
-      disable: "Désactiver",
-      enable: "Activer",
+      disable: "Suspendre",
+      enable: "Réactiver",
+      archive: "Archiver",
+      restore: "Restaurer",
       addRole: "Ajouter un rôle",
       assign: "Attribuer",
       revoke: "Retirer",
       resendWelcome: "Renvoyer l'e-mail",
+    },
+    archive: {
+      confirmTitle: "Archiver cet utilisateur ?",
+      confirmBody: [
+        "perdra son accès",
+        "disparaîtra de la page Utilisateurs par défaut",
+        "restera dans les enregistrements historiques",
+        "restera dans le journal d'audit",
+        "ne recevra plus aucune affectation",
+      ],
+      confirmIntro: "L'utilisateur :",
+      confirm: "Archiver l'utilisateur",
+      cancel: "Annuler",
+      showArchived: "Afficher les utilisateurs archivés",
+      restored: "Utilisateur restauré — il peut à nouveau se connecter.",
+      archived: "Utilisateur archivé. Son historique reste intégralement attribué.",
     },
     form: {
       email: "Adresse e-mail",
@@ -1492,6 +1512,8 @@ export const t = {
       profile_failed:
         "Le compte d'authentification a été créé, mais le profil collaborateur n'a pas pu être finalisé. Réessayez.",
       welcome_failed: "L'e-mail de bienvenue n'a pas pu être envoyé. Réessayez.",
+      user_archived:
+        "Cet utilisateur est archivé. Restaurez-le d'abord pour effectuer cette action.",
       generic: "L'action a échoué. Veuillez réessayer.",
     },
     note: "Choisissez comment l'utilisateur obtient son premier accès. Aucun mot de passe n'est jamais transmis par e-mail — seul un lien sécurisé l'est.",

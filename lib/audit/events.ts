@@ -13,6 +13,11 @@ export const AuditActions = {
   USER_CREATED_WITH_TEMP_PASSWORD: "user.created_with_temp_password",
   USER_ACTIVATED: "user.activated",
   USER_DEACTIVATED: "user.deactivated",
+  // Phase 8.1A — permanent-departure lifecycle. Archive PRESERVES every row the user ever
+  // touched (audit, shipments, customs, documents, invoices, AI activity); only access and
+  // future assignability end. Restore is the only exit, back to active.
+  USER_ARCHIVED: "user.archived",
+  USER_RESTORED: "user.restored",
   USER_ROLE_ASSIGNED: "user.role.assigned",
   USER_ROLE_REVOKED: "user.role.revoked",
   // Phase 5.0E-4 — welcome / setup-link lifecycle (safe metadata only; NEVER the link).

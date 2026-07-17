@@ -13,6 +13,8 @@ import { t } from "@/lib/i18n";
 import {
   createUser,
   setUserStatus,
+  archiveUser,
+  restoreUser,
   assignRole,
   revokeRole,
   sendWelcomeEmail,
@@ -141,10 +143,13 @@ export function UsersAdmin({
   users,
   roles,
   canManageRoles,
+  showArchived = false,
 }: {
   users: AdminUser[];
   roles: AssignableRole[];
   canManageRoles: boolean;
+  /** 8.1A — whether the page was queried WITH archived users (?archived=1). */
+  showArchived?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -323,7 +328,19 @@ export function UsersAdmin({
         )}
       </div>
 
-      {/* Directory */}
+      {/* Directory. 8.1A — archived users are hidden by default and EXCLUDED AT QUERY LEVEL;
+          this toggle re-renders the page with ?archived=1 (a new server query), never a client
+          filter over pre-fetched rows. */}
+      <label className="flex items-center gap-2 text-sm text-slate-600">
+        <input
+          type="checkbox"
+          checked={showArchived}
+          disabled={pending}
+          onChange={(e) => router.push(e.target.checked ? "/users?archived=1" : "/users")}
+        />
+        {t.users.archive.showArchived}
+      </label>
+
       <div className="surface overflow-hidden">
         <div className="overflow-x-auto">
         <table className="w-full min-w-[920px] text-left text-sm">
@@ -373,8 +390,12 @@ function UserRow({
   notify: (msg: string) => void;
 }) {
   const [roleToAdd, setRoleToAdd] = useState("");
+  // 8.1A — the archive confirmation is armed per row and rendered inline (existing UI style).
+  const [confirmArchive, setConfirmArchive] = useState(false);
   const assignedIds = new Set(user.roles.map((r) => r.roleId));
   const available = roles.filter((r) => !assignedIds.has(r.id));
+  // An archived row is READ-ONLY except Restore: no role changes, no welcome, no suspend.
+  const canEditRoles = canManageRoles && user.status !== "archived";
 
   return (
     <tr className="align-top hover:bg-slate-50/60">
@@ -388,7 +409,7 @@ function UserRow({
           {user.roles.map((r) => (
             <span key={r.roleId} className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-xs text-navy-800">
               {r.labelFr ?? r.code}
-              {canManageRoles && (
+              {canEditRoles && (
                 <button
                   title={t.users.actions.revoke}
                   onClick={() => run(() => revokeRole(user.id, r.roleId))}
@@ -400,7 +421,7 @@ function UserRow({
             </span>
           ))}
         </div>
-        {canManageRoles && available.length > 0 && (
+        {canEditRoles && available.length > 0 && (
           <div className="mt-2 flex items-center gap-2">
             <select
               value={roleToAdd}
@@ -429,10 +450,12 @@ function UserRow({
           className={
             user.status === "active"
               ? "inline-block rounded-full bg-teal-50 px-2 py-0.5 text-xs font-medium text-teal-700"
-              : "inline-block rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500"
+              : user.status === "archived"
+                ? "inline-block rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600"
+                : "inline-block rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700"
           }
         >
-          {user.status === "active" ? t.users.status.active : t.users.status.inactive}
+          {t.users.status[user.status]}
         </span>
       </td>
       <td className="px-4 py-3">
@@ -457,34 +480,88 @@ function UserRow({
         </div>
       </td>
       <td className="px-4 py-3">
-        <div className="flex flex-wrap gap-2">
+        {/* 8.1A lifecycle actions. Archived: RESTORE only (no suspend, no welcome, no roles).
+            There is deliberately NO delete action anywhere — operational users are never
+            deleted; archive preserves all history. */}
+        {user.status === "archived" ? (
           <button
             disabled={pending}
-            onClick={() =>
-              run(() => setUserStatus(user.id, user.status === "active" ? "inactive" : "active"))
-            }
-            className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-medium text-navy-700 hover:bg-slate-50 disabled:opacity-50"
+            onClick={() => run(() => restoreUser(user.id), () => notify(t.users.archive.restored))}
+            className="rounded-md border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-medium text-teal-700 hover:bg-teal-100 disabled:opacity-50"
           >
-            {user.status === "active" ? t.users.actions.disable : t.users.actions.enable}
+            {t.users.actions.restore}
           </button>
-          <button
-            disabled={pending}
-            onClick={() =>
-              run(
-                () => sendWelcomeEmail(user.id),
-                (res) => {
-                  // link_returned hands back a one-time link; otherwise an honest notice.
-                  if (res.setupLink) notify(`${t.users.welcome.link_returned} ${res.setupLink}`);
-                  else notify(welcomeNotice(res.welcome) ?? t.users.welcome.resent);
-                },
-              )
-            }
-            title={t.users.actions.resendWelcome}
-            className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-medium text-navy-700 hover:bg-slate-50 disabled:opacity-50"
-          >
-            {t.users.actions.resendWelcome}
-          </button>
-        </div>
+        ) : confirmArchive ? (
+          <div className="max-w-xs rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+            <p className="font-semibold">{t.users.archive.confirmTitle}</p>
+            <p className="mt-1">{t.users.archive.confirmIntro}</p>
+            <ul className="mt-1 list-disc pl-4">
+              {t.users.archive.confirmBody.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+            <div className="mt-2 flex gap-2">
+              <button
+                disabled={pending}
+                onClick={() => setConfirmArchive(false)}
+                className="rounded-md border border-slate-200 bg-white px-3 py-1.5 font-medium text-navy-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                {t.users.archive.cancel}
+              </button>
+              <button
+                disabled={pending}
+                onClick={() =>
+                  run(
+                    () => archiveUser(user.id),
+                    () => {
+                      setConfirmArchive(false);
+                      notify(t.users.archive.archived);
+                    },
+                  )
+                }
+                className="rounded-md bg-navy-900 px-3 py-1.5 font-semibold text-white disabled:opacity-50"
+              >
+                {t.users.archive.confirm}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            <button
+              disabled={pending}
+              onClick={() =>
+                run(() => setUserStatus(user.id, user.status === "active" ? "inactive" : "active"))
+              }
+              className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-medium text-navy-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              {user.status === "active" ? t.users.actions.disable : t.users.actions.enable}
+            </button>
+            <button
+              disabled={pending}
+              onClick={() => setConfirmArchive(true)}
+              className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+            >
+              {t.users.actions.archive}
+            </button>
+            <button
+              disabled={pending}
+              onClick={() =>
+                run(
+                  () => sendWelcomeEmail(user.id),
+                  (res) => {
+                    // link_returned hands back a one-time link; otherwise an honest notice.
+                    if (res.setupLink) notify(`${t.users.welcome.link_returned} ${res.setupLink}`);
+                    else notify(welcomeNotice(res.welcome) ?? t.users.welcome.resent);
+                  },
+                )
+              }
+              title={t.users.actions.resendWelcome}
+              className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-medium text-navy-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              {t.users.actions.resendWelcome}
+            </button>
+          </div>
+        )}
       </td>
     </tr>
   );

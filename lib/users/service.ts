@@ -10,6 +10,7 @@ import "server-only";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
 import { classifyPresence } from "./presence";
+import { toStaffStatus } from "./lifecycle";
 import type { AdminUser, AdminUserRole, AssignableRole, PresenceSummary } from "./types";
 
 type UserRow = {
@@ -25,19 +26,25 @@ type UserRow = {
   onboarding_email_sent_at: string | null;
 };
 
-export async function listUsers(): Promise<AdminUser[]> {
+/**
+ * Directory read. ARCHIVED users are excluded AT QUERY LEVEL by default (8.1A) — the page never
+ * fetches rows it will not show; the "show archived" filter re-queries with the flag instead of
+ * filtering in React.
+ */
+export async function listUsers(opts: { includeArchived?: boolean } = {}): Promise<AdminUser[]> {
   const admin = await assertPermission("admin:users:manage");
   const supabase = getAdminSupabaseClient();
   const now = new Date();
 
-  const { data: users, error } = await supabase
+  let query = supabase
     .from("app_user")
     .select(
       "id, email, name, status, is_system_admin, last_login_at, last_seen_at, last_login_method, login_count, onboarding_email_sent_at",
     )
-    .eq("tenant_id", admin.tenantId)
-    .order("email")
-    .returns<UserRow[]>();
+    .eq("tenant_id", admin.tenantId);
+  if (!opts.includeArchived) query = query.neq("status", "archived");
+
+  const { data: users, error } = await query.order("email").returns<UserRow[]>();
   if (error) throw new Error(`[users] directory read failed: ${error.message}`);
 
   const { data: roleRows, error: roleErr } = await supabase
@@ -59,7 +66,7 @@ export async function listUsers(): Promise<AdminUser[]> {
     id: u.id,
     email: u.email,
     name: u.name,
-    status: u.status === "inactive" ? "inactive" : "active",
+    status: toStaffStatus(u.status),
     isSystemAdmin: u.is_system_admin,
     roles: byUser.get(u.id) ?? [],
     presence: classifyPresence(

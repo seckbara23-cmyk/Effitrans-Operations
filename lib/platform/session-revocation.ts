@@ -38,6 +38,24 @@ const CONCURRENCY = 10;
 
 export type RevocationSummary = { targeted: number; revoked: number; failed: number };
 
+/**
+ * Ban / un-ban ONE auth user (Phase 8.1A — extracted so the user-archive lifecycle reuses the
+ * SAME auth-layer lever instead of duplicating it). A banned user can neither log in nor
+ * refresh a session; password-recovery grants are likewise rejected. Returns false on provider
+ * failure — callers report it but never roll back an already-committed lifecycle transition
+ * (the app-layer status gate in getCurrentUser denies access regardless).
+ */
+export async function setUserAuthBan(admin: Admin, userId: string, banned: boolean): Promise<boolean> {
+  try {
+    const { error } = await admin.auth.admin.updateUserById(userId, {
+      ban_duration: banned ? PERMANENT_BAN : UNBAN,
+    });
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
 /** The target tenant's auth user ids — a bounded, tenant-scoped read (never global). */
 async function tenantUserIds(admin: Admin, tenantId: string): Promise<string[]> {
   const ids: string[] = [];
@@ -65,23 +83,13 @@ export async function setTenantAuthBan(
   tenantId: string,
   banned: boolean,
 ): Promise<RevocationSummary> {
-  const banDuration = banned ? PERMANENT_BAN : UNBAN;
   const ids = await tenantUserIds(admin, tenantId);
 
   let revoked = 0;
   let failed = 0;
   for (let i = 0; i < ids.length; i += CONCURRENCY) {
     const chunk = ids.slice(i, i + CONCURRENCY);
-    const results = await Promise.all(
-      chunk.map(async (id) => {
-        try {
-          const { error } = await admin.auth.admin.updateUserById(id, { ban_duration: banDuration });
-          return !error;
-        } catch {
-          return false;
-        }
-      }),
-    );
+    const results = await Promise.all(chunk.map((id) => setUserAuthBan(admin, id, banned)));
     for (const ok of results) ok ? revoked++ : failed++;
   }
 

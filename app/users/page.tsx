@@ -15,7 +15,13 @@ function Notice({ children }: { children: React.ReactNode }) {
   return <div className="surface p-6 text-sm text-slate-600">{children}</div>;
 }
 
-export default async function UsersPage() {
+export default async function UsersPage({
+  searchParams,
+}: {
+  // 8.1A — archived users are hidden by default and EXCLUDED AT QUERY LEVEL; the filter
+  // toggle re-renders the page with ?archived=1 (a new bounded query), never a client filter.
+  searchParams?: { archived?: string };
+}) {
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
     return (
       <div className="animate-fade-in space-y-6">
@@ -37,13 +43,14 @@ export default async function UsersPage() {
     );
   }
 
-  const [users, roles] = await Promise.all([listUsers(), listAssignableRoles()]);
+  const showArchived = searchParams?.archived === "1";
+  const [users, roles] = await Promise.all([listUsers({ includeArchived: showArchived }), listAssignableRoles()]);
   const canManageRoles = hasPermission(permissions, "admin:roles:manage");
 
   return (
     <div className="animate-fade-in space-y-6">
       <PageHeader meta="Administration" title={t.users.title} subtitle={t.users.subtitle} />
-      <UsersAdmin users={users} roles={roles} canManageRoles={canManageRoles} />
+      <UsersAdmin users={users} roles={roles} canManageRoles={canManageRoles} showArchived={showArchived} />
     </div>
   );
 }

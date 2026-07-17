@@ -6,6 +6,7 @@
  * tenant holding 'audit:read:all' get rows. Read-only — no mutation here.
  */
 import { getServerSupabaseClient } from "@/lib/supabase/server";
+import { staffDisplayName } from "@/lib/users/lifecycle";
 
 export type AuditEntry = {
   id: string;
@@ -14,6 +15,7 @@ export type AuditEntry = {
   entityId: string | null;
   overrideReason: string | null;
   occurredAt: string;
+  /** 8.1A — attribution is permanent: an archived actor renders "email (Archivé)", never blank. */
   actorEmail: string | null;
 };
 
@@ -24,7 +26,7 @@ type AuditRow = {
   entity_id: string | null;
   override_reason: string | null;
   occurred_at: string;
-  actor: { email: string | null } | null;
+  actor: { email: string | null; status: string | null } | null;
 };
 
 export const AUDIT_PAGE_SIZE = 50;
@@ -44,7 +46,7 @@ export async function listAuditEntries(page = 0, pageSize = AUDIT_PAGE_SIZE): Pr
   const supabase = getServerSupabaseClient();
   const { data, error } = await supabase
     .from("audit_log")
-    .select("id, action, entity, entity_id, override_reason, occurred_at, actor:actor_id(email)")
+    .select("id, action, entity, entity_id, override_reason, occurred_at, actor:actor_id(email, status)")
     .order("occurred_at", { ascending: false })
     .order("id", { ascending: false })
     .range(from, from + size) // size+1 rows to detect hasMore
@@ -63,7 +65,7 @@ export async function listAuditEntries(page = 0, pageSize = AUDIT_PAGE_SIZE): Pr
     entityId: r.entity_id,
     overrideReason: r.override_reason,
     occurredAt: r.occurred_at,
-    actorEmail: r.actor?.email ?? null,
+    actorEmail: r.actor?.email ? staffDisplayName(r.actor.email, r.actor.status) : null,
   }));
   return { entries, page: Math.max(0, page), pageSize: size, hasMore };
 }

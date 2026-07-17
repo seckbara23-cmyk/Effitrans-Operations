@@ -21,6 +21,8 @@ import { generateTempPassword } from "@/lib/portal/temp-password";
 // The secure welcome / set-password pipeline now lives in ONE shared module (6.0E-3),
 // reused by this tenant action and the platform invitation action alike.
 import { sendStaffWelcome, returnsLink, type WelcomeResult } from "./welcome-send";
+import { canTransition, toStaffStatus } from "./lifecycle";
+import { setUserAuthBan } from "@/lib/platform/session-revocation";
 import type { ActionResult, CredentialMode, CreateUserError } from "./types";
 
 type Admin = ReturnType<typeof getAdminSupabaseClient>;
@@ -216,10 +218,12 @@ export async function sendWelcomeEmail(userId: string): Promise<ActionResult> {
   const supabase = getAdminSupabaseClient();
   const { data: target } = await supabase
     .from("app_user")
-    .select("id, tenant_id, email, name")
+    .select("id, tenant_id, email, name, status")
     .eq("id", userId)
     .maybeSingle();
   if (!target || target.tenant_id !== admin.tenantId) return { ok: false, error: "not_found" };
+  // 8.1A — an ARCHIVED user receives no invitation / setup link (restore first).
+  if (toStaffStatus(target.status) === "archived") return { ok: false, error: "user_archived" };
 
   // A distinct audit trail for the resend request itself (safe metadata only).
   await writeAudit({
@@ -268,6 +272,12 @@ export async function setUserStatus(userId: string, status: "active" | "inactive
     .maybeSingle();
   if (!target || target.tenant_id !== admin.tenantId) return { ok: false, error: "not_found" };
 
+  // 8.1A — suspend/reactivate never touches an ARCHIVED user; leaving archived is
+  // exclusively restoreUser (the single lifecycle module decides what is legal).
+  if (!canTransition(toStaffStatus(target.status), status)) {
+    return { ok: false, error: target.status === "archived" ? "user_archived" : "generic" };
+  }
+
   const { error } = await supabase
     .from("app_user")
     .update({ status })
@@ -286,6 +296,120 @@ export async function setUserStatus(userId: string, status: "active" | "inactive
     entityId: userId,
     before: { status: target.status },
     after: { status },
+  });
+  revalidatePath("/users");
+  return { ok: true };
+}
+
+/**
+ * Archive a staff user — permanent employee departure (Phase 8.1A).
+ * ---------------------------------------------------------------------------
+ * PRESERVES EVERYTHING: no row is deleted or reattributed — audit history, shipment/customs/
+ * document/invoice ownership and AI activity remain attributable to this user forever. What
+ * ends is ACCESS and FUTURE PARTICIPATION, through mechanisms that already exist:
+ *   - app access: getCurrentUser() denies any non-'active' status (existing gate);
+ *   - auth layer: the SAME ban lever as tenant session revocation (setUserAuthBan) rejects
+ *     login, session refresh AND password-recovery grants at GoTrue;
+ *   - invitations: sendWelcomeEmail refuses archived targets;
+ *   - assignments/pickers: every reader already filters status='active', and every
+ *     assignment write already validates the target is active.
+ * Gate: admin:users:manage — held ONLY by SYSTEM_ADMIN (seed + role templates), which is
+ * exactly the "only the System Administrator may archive/restore" rule with zero new
+ * permissions. There is deliberately NO delete action anywhere in this module.
+ */
+export async function archiveUser(userId: string): Promise<ActionResult> {
+  let admin;
+  try {
+    admin = await assertPermission("admin:users:manage");
+  } catch {
+    return { ok: false, error: "forbidden" };
+  }
+  if (userId === admin.id) return { ok: false, error: "cannot_disable_self" };
+
+  const supabase = getAdminSupabaseClient();
+  const { data: target } = await supabase
+    .from("app_user")
+    .select("id, tenant_id, status, email")
+    .eq("id", userId)
+    .maybeSingle();
+  if (!target || target.tenant_id !== admin.tenantId) return { ok: false, error: "not_found" };
+  if (!canTransition(toStaffStatus(target.status), "archived")) {
+    return { ok: false, error: "user_archived" };
+  }
+
+  const { error } = await supabase
+    .from("app_user")
+    .update({ status: "archived" })
+    .eq("id", userId)
+    .eq("tenant_id", admin.tenantId);
+  if (error) {
+    reportError(error, { scope: "action", event: "users.archive" });
+    return { ok: false, error: "generic" };
+  }
+
+  // Auth-layer revocation (reused lever). A provider failure is reported + audited but never
+  // rolls back the committed transition — the app-layer status gate denies access regardless.
+  const banned = await setUserAuthBan(supabase, userId, true);
+  if (!banned) reportError(new Error("auth ban failed"), { scope: "action", event: "users.archive_ban", extra: { userId } });
+
+  await writeAudit({
+    action: AuditActions.USER_ARCHIVED,
+    actorId: admin.id,
+    tenantId: admin.tenantId,
+    entity: "app_user",
+    entityId: userId,
+    before: { status: target.status },
+    after: { status: "archived", authBan: banned ? "ok" : "failed" },
+  });
+  revalidatePath("/users");
+  return { ok: true };
+}
+
+/**
+ * Restore an archived user to ACTIVE (Phase 8.1A) — the only exit from archived, and only a
+ * SYSTEM_ADMIN (admin:users:manage) may perform it. Un-bans the auth user so they can
+ * authenticate again; nothing else changes (roles were never removed by archiving).
+ */
+export async function restoreUser(userId: string): Promise<ActionResult> {
+  let admin;
+  try {
+    admin = await assertPermission("admin:users:manage");
+  } catch {
+    return { ok: false, error: "forbidden" };
+  }
+
+  const supabase = getAdminSupabaseClient();
+  const { data: target } = await supabase
+    .from("app_user")
+    .select("id, tenant_id, status")
+    .eq("id", userId)
+    .maybeSingle();
+  if (!target || target.tenant_id !== admin.tenantId) return { ok: false, error: "not_found" };
+  if (toStaffStatus(target.status) !== "archived" || !canTransition("archived", "active")) {
+    return { ok: false, error: "generic" };
+  }
+
+  const { error } = await supabase
+    .from("app_user")
+    .update({ status: "active" })
+    .eq("id", userId)
+    .eq("tenant_id", admin.tenantId);
+  if (error) {
+    reportError(error, { scope: "action", event: "users.restore" });
+    return { ok: false, error: "generic" };
+  }
+
+  const unbanned = await setUserAuthBan(supabase, userId, false);
+  if (!unbanned) reportError(new Error("auth unban failed"), { scope: "action", event: "users.restore_unban", extra: { userId } });
+
+  await writeAudit({
+    action: AuditActions.USER_RESTORED,
+    actorId: admin.id,
+    tenantId: admin.tenantId,
+    entity: "app_user",
+    entityId: userId,
+    before: { status: "archived" },
+    after: { status: "active", authBan: unbanned ? "lifted" : "lift_failed" },
   });
   revalidatePath("/users");
   return { ok: true };

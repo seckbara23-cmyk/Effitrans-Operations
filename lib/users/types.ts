@@ -8,12 +8,14 @@ export type AdminUserRole = {
 };
 
 import type { Presence } from "./presence";
+import type { StaffStatus } from "./lifecycle";
 
 export type AdminUser = {
   id: string;
   email: string;
   name: string | null;
-  status: "active" | "inactive";
+  /** 8.1A — full lifecycle: active | inactive (suspended) | archived (departed). */
+  status: StaffStatus;
   isSystemAdmin: boolean;
   roles: AdminUserRole[];
   // Phase 2.1A — presence & login metadata (admin visibility).
@@ -77,6 +79,8 @@ export type CreateUserError =
   | "cannot_disable_self"
   | "cannot_revoke_own_admin"
   | "welcome_failed"
+  // 8.1A — the target is archived: suspend/welcome/role changes are refused (restore first).
+  | "user_archived"
   | "generic";
 
 export type ActionResult =

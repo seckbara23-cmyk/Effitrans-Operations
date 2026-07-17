@@ -25,7 +25,10 @@ const currentUser = read("../lib/auth/current-user.ts");
 
 describe("revocation uses the ONLY supported, safe per-user lever", () => {
   it("bans / un-bans via updateUserById(ban_duration) — GoTrue has no delete-sessions-by-id", () => {
-    expect(revocation).toContain("updateUserById(id, { ban_duration: banDuration }");
+    // 8.1A extracted the per-user lever into setUserAuthBan (reused by the user-archive
+    // lifecycle); the tenant path delegates to it. Same lever, one definition.
+    expect(revocation).toMatch(/updateUserById\(userId, \{\s*ban_duration/);
+    expect(revocation).toContain("setUserAuthBan(admin, id, banned)");
     expect(revocation).toContain('const PERMANENT_BAN = "876000h"');
     expect(revocation).toContain('const UNBAN = "none"');
   });

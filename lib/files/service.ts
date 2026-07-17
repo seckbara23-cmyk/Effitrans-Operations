@@ -14,6 +14,7 @@ import { getServerSupabaseClient } from "@/lib/supabase/server";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
 import { resolveFileScope } from "@/lib/authz/visibility";
+import { staffDisplayName } from "@/lib/users/lifecycle";
 import { applyFileFilters, sortFiles, type FileSearchRow } from "./filter";
 import { aggregateFiles, type FileOverview } from "./aggregate";
 import type {
@@ -213,11 +214,13 @@ export async function getFile(id: string): Promise<FileDetail | null> {
     const admin = getAdminSupabaseClient();
     const { data: a } = await admin
       .from("app_user")
-      .select("name, email")
+      .select("name, email, status")
       .eq("id", file.assigned_to_user_id)
       .eq("tenant_id", file.tenant_id)
       .maybeSingle();
-    assigneeName = a?.name ?? null;
+    // 8.1A — historical attribution is permanent: a departed (archived) assignee stays on the
+    // dossier, labeled "(Archivé)" — never "Unknown user", never removed.
+    assigneeName = a?.name ? staffDisplayName(a.name, a.status) : null;
     assigneeEmail = a?.email ?? null;
   }
 
