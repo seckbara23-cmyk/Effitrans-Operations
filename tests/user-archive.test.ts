@@ -116,6 +116,51 @@ describe("archive/restore actions — SYSTEM_ADMIN gate, ban reuse, audit, no de
   });
 });
 
+// ---------------------------------------------------------------- 8.1B acceptance regressions ----
+describe("8.1B edge cases — cross-tenant, restore semantics, audit ordering", () => {
+  const src = code("../lib/users/actions.ts");
+  const archiveBody = src.slice(src.indexOf("export async function archiveUser"), src.indexOf("export async function restoreUser"));
+  const restoreBody = src.slice(src.indexOf("export async function restoreUser"));
+
+  it("archive and restore both refuse a target from ANOTHER tenant (server-resolved, uniform not_found)", () => {
+    expect(archiveBody).toMatch(/target\.tenant_id !== admin\.tenantId\) return \{ ok: false, error: "not_found" \}/);
+    expect(restoreBody).toMatch(/target\.tenant_id !== admin\.tenantId\) return \{ ok: false, error: "not_found" \}/);
+  });
+  it("restore returns the user DIRECTLY to active — 'inactive' never appears as a restore target", () => {
+    expect(restoreBody).toContain('update({ status: "active" })');
+    expect(restoreBody).not.toContain('"inactive"');
+  });
+  it("restoring a non-archived user is refused before any write", () => {
+    expect(restoreBody).toMatch(/toStaffStatus\(target\.status\) !== "archived"[\s\S]{0,80}return \{ ok: false/);
+  });
+  it("the success audit is written ONLY after the status update succeeded (no misleading audit)", () => {
+    for (const body of [archiveBody, restoreBody]) {
+      const update = body.indexOf(".update(");
+      const errReturn = body.indexOf('error: "generic" };', update);
+      const audit = body.indexOf("writeAudit(");
+      expect(update).toBeGreaterThan(-1);
+      expect(errReturn).toBeGreaterThan(update); // DB failure returns before…
+      expect(audit).toBeGreaterThan(errReturn); // …the audit is ever written
+    }
+  });
+  it("audit payloads carry status + ban outcome ONLY — no password/link/token/session/provider error", () => {
+    for (const body of [archiveBody, restoreBody]) {
+      const after = body.slice(body.indexOf("after: {"), body.indexOf("});", body.indexOf("after: {")));
+      expect(after).toMatch(/status/);
+      expect(after).not.toMatch(/password|setupLink|token|session|error\.message/i);
+    }
+  });
+  it("admin lockout is structurally impossible via archive: only admin:users:manage holders can archive, and self-archive is refused", () => {
+    // The permission is held ONLY by SYSTEM_ADMIN (role templates + seed) — so the only actor
+    // able to archive the LAST admin is that admin, and the self-guard refuses it.
+    expect(archiveBody).toMatch(/userId === admin\.id\) return \{ ok: false, error: "cannot_disable_self" \}/);
+    const tmpl = read("../lib/platform/role-templates.ts");
+    const holders = tmpl.split(/key: "/).slice(1).filter((b) => b.includes('"admin:users:manage"'));
+    expect(holders.length).toBe(1);
+    expect(holders[0].startsWith("SYSTEM_ADMIN")).toBe(true);
+  });
+});
+
 // ---------------------------------------------------------------- directory ----
 describe("directory — archived hidden by default, excluded at QUERY level", () => {
   const svc = code("../lib/users/service.ts");
