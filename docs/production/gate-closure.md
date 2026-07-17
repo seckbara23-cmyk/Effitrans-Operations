@@ -49,9 +49,11 @@ sweep script) ships in the 8.0B commit — **deploy it before starting C1**.
 
 | Item | Result | Date/verifier |
 |---|---|---|
-| Sweep output (paste) | | |
-| Served SHA | | |
-| Identity table complete, no crossover | ☐ | |
+| Deployment Protection flipped (production public) | ✅ observed live: production answers from the app, previews still sealed | 2026-07-17 · operator (Vercel) + engineering (probe) |
+| Sweep output | ✅ **ALL CHECKS PASSED** — 36/36: version attestation, 8 brief routes + full shipping/air subtrees (staff→/login, portal→/portal/login), no 404/500/loop, uniform card 404, HSTS/nosniff/XFO live | 2026-07-17 · `scripts/gate/verify-production.mjs` against `https://effitrans-operations.vercel.app` |
+| Served SHA | ✅ `b07c6773b8cf84e83bf014b562ec5bab6f7d8e0b` (= pushed HEAD), `env=production`, attested by `/api/version` | 2026-07-17 |
+| /login renders (product page, French, no error) | ✅ "Plateforme d'opérations Effitrans", email+password+Google, no error output | 2026-07-17 |
+| Identity table complete, no crossover | ☐ **PENDING — supervised session with real credentials (operator)** | |
 
 ---
 
