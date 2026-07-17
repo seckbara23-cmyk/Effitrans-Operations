@@ -51,7 +51,9 @@ export default async function AuditPage({ searchParams }: { searchParams?: { pag
         <Notice>{t.audit.empty}</Notice>
       ) : (
         <div className="surface overflow-hidden">
-          <table className="w-full text-left text-sm">
+          {/* 8.3 — controlled horizontal scroll on small screens (was clipped) */}
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] text-left text-sm">
             <thead className="border-b border-slate-200 bg-sand-50 text-xs uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-4 py-3 font-semibold">{t.audit.columns.when}</th>
@@ -76,6 +78,7 @@ export default async function AuditPage({ searchParams }: { searchParams?: { pag
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 

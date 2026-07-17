@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
+import { useDialogA11y } from "@/lib/ui/use-dialog-a11y";
 import type { NavigationSection, NavIconKey } from "@/lib/navigation/types";
 import {
   IconStar,
@@ -175,7 +177,8 @@ export function DesktopSidebar({ sections, filtered, roleLabel }: SidebarProps) 
   );
 }
 
-/** Mobile drawer — slides in over a scrim. */
+/** Mobile drawer — slides in over a scrim. 8.3: full dialog semantics via the SHARED a11y
+ *  hook (focus trap, Escape, focus restore, body scroll lock) + closes on route change. */
 export function MobileSidebar({
   open,
   onClose,
@@ -184,6 +187,16 @@ export function MobileSidebar({
   roleLabel,
 }: SidebarProps & { open: boolean; onClose: () => void }) {
   const session = useSession();
+  const dialogRef = useDialogA11y(open, onClose);
+  const pathname = usePathname();
+  const lastPath = useRef(pathname);
+  useEffect(() => {
+    if (pathname !== lastPath.current) {
+      lastPath.current = pathname;
+      if (open) onClose();
+    }
+  }, [pathname, open, onClose]);
+
   return (
     <div
       className={cn("fixed inset-0 z-50 lg:hidden", open ? "pointer-events-auto" : "pointer-events-none")}
@@ -197,8 +210,13 @@ export function MobileSidebar({
         onClick={onClose}
       />
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Navigation principale"
+        tabIndex={-1}
         className={cn(
-          "absolute inset-y-0 left-0 w-72 max-w-[85%] shadow-2xl transition-transform duration-300 ease-out",
+          "absolute inset-y-0 left-0 w-72 max-w-[85%] pb-[env(safe-area-inset-bottom)] shadow-2xl transition-transform duration-300 ease-out",
           open ? "translate-x-0" : "-translate-x-full",
         )}
       >

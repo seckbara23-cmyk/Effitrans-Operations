@@ -36,7 +36,7 @@ export function LeafletMap({ points }: { points: MapPoint[] }) {
         bounds={bounds}
         boundsOptions={{ padding: [32, 32] }}
         scrollWheelZoom={false}
-        style={{ height: "300px", width: "100%" }}
+        className="h-[240px] w-full sm:h-[300px]"
         attributionControl
       >
         <TileLayer

@@ -71,7 +71,7 @@ export default function ShipmentMap({ projection }: { projection: ShipmentMapPro
 
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-card">
-      <MapContainer bounds={bounds} boundsOptions={{ padding: [32, 32] }} scrollWheelZoom={false} style={{ height: "340px", width: "100%" }} attributionControl>
+      <MapContainer bounds={bounds} boundsOptions={{ padding: [32, 32] }} scrollWheelZoom={false} className="h-[260px] w-full sm:h-[340px]" attributionControl>
         <TileLayer url={TILE_URL} attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' />
         {/* Planned route: dashed. Actual track: solid. Never confused visually. */}
         {plannedLine.length >= 2 && <Polyline positions={plannedLine} pathOptions={{ color: "#94a3b8", weight: 3, dashArray: "6 8" }} />}

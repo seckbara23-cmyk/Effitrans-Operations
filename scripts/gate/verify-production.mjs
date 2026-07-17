@@ -37,7 +37,7 @@ async function probe(path) {
 }
 
 // Routes and what a healthy, freshly-opened production must answer to an ANONYMOUS client.
-const PUBLIC_200 = ["/login", "/portal/login", "/api/version"];
+const PUBLIC_200 = ["/login", "/portal/login", "/api/version", "/offline", "/manifest.webmanifest"];
 const STAFF_PROTECTED = [
   "/dashboard", "/dashboard/executive", "/departments/transport", "/customs/intelligence",
   "/shipping", "/shipping/shipments", "/shipping/containers", "/shipping/vessels",

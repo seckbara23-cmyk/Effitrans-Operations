@@ -22,6 +22,29 @@
     font-feature-settings: "tnum" 1;
     font-variant-numeric: tabular-nums;
   }
+
+  /* 8.3 — Mobile standards, applied globally so no form needs per-field fixes:
+     form controls render at 16px on small screens (below 640px iOS Safari zooms the page
+     on focus of any control under 16px; at sm+ the design's 14px returns). */
+  @media (max-width: 639px) {
+    input,
+    select,
+    textarea {
+      font-size: 1rem;
+    }
+  }
+
+  /* 8.3 — reduced motion: the app's entrance/slide animations become instant. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
 }
 
 @layer components {

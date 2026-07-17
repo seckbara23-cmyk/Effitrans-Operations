@@ -49,7 +49,8 @@ export default async function PortalInvoiceDetailPage({ params }: { params: { id
           </div>
         </div>
 
-        <table className="w-full text-left text-sm">
+        <div className="overflow-x-auto">
+        <table className="w-full min-w-[480px] text-left text-sm">
           <thead className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="py-2 font-semibold">{i.description}</th>
@@ -69,6 +70,7 @@ export default async function PortalInvoiceDetailPage({ params }: { params: { id
             ))}
           </tbody>
         </table>
+        </div>
 
         <div className="ml-auto w-full max-w-xs space-y-1 text-sm">
           <Row label={i.subtotal} value={fmt(inv.subtotal, c)} />
