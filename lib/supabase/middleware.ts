@@ -72,9 +72,17 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
   });
 
   // Touch the session to trigger token refresh and learn who (if anyone) is signed in.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Phase 8.0A (F-7): a stale/revoked refresh cookie surfaced AuthApiError
+  // ("Invalid Refresh Token: Refresh Token Not Found") as PRODUCTION runtime errors from this
+  // middleware. Any auth failure here simply means "not signed in" — swallow it and let the
+  // existing unauthenticated path redirect to the matching login instead of erroring the request.
+  let user: { id: string } | null = null;
+  try {
+    const { data } = await supabase.auth.getUser();
+    user = data.user;
+  } catch {
+    user = null; // treat as signed out — never a 500 for a stale cookie
+  }
 
   const pathname = request.nextUrl.pathname;
 
