@@ -103,8 +103,9 @@ describe("offline fallback — public, honest, static", () => {
   it("the PWA static surface bypasses the middleware entirely (live 307 found by the sweep)", () => {
     // A session-refresh redirect on manifest/sw/icons breaks installability + registration.
     const mw = read("../middleware.ts");
-    expect(mw).toContain("sw\\.js");
-    expect(mw).toContain("manifest\\.webmanifest");
+    // The raw file carries the escaped regex source (backslash-backslash-dot).
+    expect(mw).toContain("sw\\\\.js");
+    expect(mw).toContain("manifest\\\\.webmanifest");
     expect(mw).toContain("icons/");
   });
 });
