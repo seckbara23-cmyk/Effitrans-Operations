@@ -33,6 +33,19 @@ describe("/api/version — public, read-only, secret-free build attestation", ()
   });
 });
 
+describe("RLS fixture suite is local-only (8.0C finding AC-1 — prod fixture pollution)", () => {
+  it("test:rls routes through the local-database guard", () => {
+    const pkg = read("../package.json");
+    expect(pkg).toContain('"test:rls": "node scripts/guard-local-db.mjs && psql');
+  });
+  it("the guard refuses any non-local DATABASE_URL host", () => {
+    const g = read("../scripts/guard-local-db.mjs");
+    expect(g).toContain("LOCAL_HOSTS");
+    expect(g).toMatch(/process\.exit\(1\)/);
+    expect(g).toMatch(/localhost|127\.0\.0\.1/);
+  });
+});
+
 describe("verify-production script — mechanical C1 sweep, credential-free", () => {
   const src = read("../scripts/gate/verify-production.mjs");
 
