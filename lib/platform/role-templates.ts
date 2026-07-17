@@ -76,7 +76,7 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "org:read:own", "portal:manage", ...BASE, "report:read", "task:create", "task:delete",
       "task:read", "task:read:all", "task:update", "tracking:manage", "tracking:read",
       "tracking:read:all", "tracking:write", "transport:assign", "transport:complete",
-      "transport:create", "transport:delete", "transport:read", "transport:update",
+      "transport:create", "transport:delete", "transport:manage", "transport:read", "transport:update",
       // Phase 5.0B — official process engine (no process:override; see PROCESS_HANDOFF).
       "admin_service:manage", "collections:manage", "courier:assign", "courier:deposit",
       "customs:assign", "customs:register", "customs:validate", "finance:validate",
@@ -139,7 +139,7 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "document:create", "document:read", "document:update", "file:read", "file:update", ...BASE,
       "process:completeness:review", ...PROCESS_HANDOFF, "process:manage", "process:read",
       "task:create", "task:delete", "task:read", "task:update", "tracking:read", "tracking:write",
-      "transport:assign", "transport:create", "transport:read", "transport:update",
+      "transport:assign", "transport:create", "transport:manage", "transport:read", "transport:update",
       "logistics:copilot:read",
     ],
   },
@@ -198,7 +198,7 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "document:create", "document:read", "document:update", "file:read", ...BASE,
       ...PROCESS_HANDOFF, "process:read", "task:read", "task:update", "tracking:read",
       "tracking:write", "transport:assign", "transport:complete", "transport:create",
-      "transport:read", "transport:request", "transport:update", "logistics:copilot:read",
+      "transport:manage", "transport:read", "transport:request", "transport:update", "logistics:copilot:read",
     ],
   },
   {
@@ -245,7 +245,7 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "finance:void", "portal:manage", ...BASE, "report:read", "task:create", "task:delete",
       "task:read", "task:read:all", "task:update", "tracking:manage", "tracking:read",
       "tracking:read:all", "tracking:write", "transport:assign", "transport:complete",
-      "transport:create", "transport:delete", "transport:read", "transport:update",
+      "transport:create", "transport:delete", "transport:manage", "transport:read", "transport:update",
       // Phase 5.0B. A supervisor may act as either maker or checker, but the engine
       // still blocks them from validating their OWN work (identity check).
       "admin_service:manage", "collections:manage", "courier:assign", "customs:assign",

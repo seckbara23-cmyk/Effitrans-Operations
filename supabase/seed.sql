@@ -767,3 +767,43 @@ join public.permission p on p.code = 'executive:dashboard:read'
 where r.tenant_id = '00000000-0000-0000-0000-000000000001'
   and r.code in ('SYSTEM_ADMIN', 'CEO', 'OPS_SUPERVISOR')
 on conflict do nothing;
+
+-- ===========================================================================
+-- Phase 8.4 — canonical location coordinates (DEV/CI seed; production entry is
+-- an OPERATOR step via the port/airport management UI or the runbook SQL —
+-- production is never seeded automatically).
+-- Coordinate sources (public reference data, no fabrication):
+--   ports    — US NGA World Port Index (public domain): Dakar 14.683,-17.417;
+--              Shanghai 31.233,121.483
+--   airports — OurAirports database (public domain): GOBD/DSS 14.670833,-17.072778;
+--              LFPG/CDG 49.009722,2.547778
+-- Idempotent: partial-unique on (tenant_id, unlocode/iata) → conflict do nothing.
+-- ===========================================================================
+insert into public.ocean_port (tenant_id, unlocode, name, country, latitude, longitude, timezone) values
+  ('00000000-0000-0000-0000-000000000001', 'SNDKR', 'Port de Dakar', 'SN', 14.683, -17.417, 'Africa/Dakar'),
+  ('00000000-0000-0000-0000-000000000001', 'CNSHA', 'Port de Shanghai', 'CN', 31.233, 121.483, 'Asia/Shanghai')
+on conflict (tenant_id, unlocode) where unlocode is not null do nothing;
+
+insert into public.air_airport (tenant_id, iata, icao, name, city, country, latitude, longitude, timezone, active) values
+  ('00000000-0000-0000-0000-000000000001', 'DSS', 'GOBD', 'Aéroport international Blaise-Diagne', 'Dakar', 'SN', 14.670833, -17.072778, 'Africa/Dakar', true),
+  ('00000000-0000-0000-0000-000000000001', 'CDG', 'LFPG', 'Paris Charles-de-Gaulle', 'Paris', 'FR', 49.009722, 2.547778, 'Europe/Paris', true)
+on conflict (tenant_id, iata) where iata is not null do nothing;
+
+-- ===========================================================================
+-- Phase 8.4 — `transport:manage`: the reference-data permission the 7.2B/7.3B
+-- management actions ALREADY gate on, but which was never cataloged (root cause
+-- of the unreachable port/airport coordinate entry → unmappable shipments).
+-- Granted to the transport coordination tier. Mirrors migration
+-- 20260721000001_transport_manage.sql and lib/platform/role-templates.ts.
+-- ===========================================================================
+insert into public.permission (code, module, action, data_scope, description) values
+  ('transport:manage', 'transport', 'manage', 'all', 'Manage transport reference data (ports, airports, carriers, vessels, voyages) and tracking providers')
+on conflict (code) do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'transport:manage'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR', 'COORDINATOR', 'TRANSPORT_OFFICER')
+on conflict do nothing;

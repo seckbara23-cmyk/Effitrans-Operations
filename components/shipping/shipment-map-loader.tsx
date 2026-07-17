@@ -12,6 +12,15 @@ const ShipmentMap = dynamic(() => import("./shipment-map"), {
   loading: () => <div className="surface p-4 text-sm text-slate-400">Chargement de la carte…</div>,
 });
 
-export function ShipmentMapLoader({ projection }: { projection: ShipmentMapProjection }) {
-  return <ShipmentMap projection={projection} />;
+export function ShipmentMapLoader({
+  projection,
+  selectedKey,
+  onSelectMarker,
+}: {
+  projection: ShipmentMapProjection;
+  /** 8.4 sync (optional) — forwarded to the map. Existing callers omit both. */
+  selectedKey?: string | null;
+  onSelectMarker?: (key: string) => void;
+}) {
+  return <ShipmentMap projection={projection} selectedKey={selectedKey} onSelectMarker={onSelectMarker} />;
 }

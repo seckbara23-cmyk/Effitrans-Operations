@@ -160,7 +160,10 @@ describe("studio + detail + client bundle safety", () => {
     const p = read("../app/shipping/shipments/[shipmentId]/page.tsx");
     expect(p).toContain("listDocuments(");
     expect(p).toContain("/customs/intelligence");
-    expect(p).toContain("ShipmentMapLoader");
+    // 8.4 — the map is now rendered inside TrackingJourney (map+journal share one selection),
+    // which itself renders ShipmentMapLoader.
+    expect(p).toContain("TrackingJourney");
+    expect(read("../components/shipping/tracking-journey.tsx")).toContain("ShipmentMapLoader");
   });
   it("client components ship no service role / secret", () => {
     for (const f of ["../components/shipping/management-forms.tsx", "../components/shipping/tracking-studio.tsx", "../components/shipping/shipment-ops-panel.tsx", "../components/shipping/shipment-map.tsx"]) {

@@ -63,21 +63,37 @@ const NONE: ResolvedPosition = {
  * and a human explanation so the UI can never render an inferred/stale fix as live.
  */
 export function resolveCurrentPosition(inputs: PositionInputs, nowIso: string): ResolvedPosition {
-  // 1. Road GPS wins when present and valid — the box is on a truck we directly track.
+  // 8.4 (truthfulness): source priority must never present OLDER evidence as "current" when
+  // NEWER evidence exists in a lower-priority source. A 3-day-old road GPS fix must not mask
+  // today's DISCHARGED-at-port milestone. A higher-priority candidate is used only if no other
+  // candidate is strictly newer.
+  const newestOther = (candidateAt: string, others: (string | null | undefined)[]): boolean =>
+    others.some((t) => typeof t === "string" && t > candidateAt);
+
+  // 1. Road GPS wins when present, valid AND not older than the other evidence — the box is
+  //    on a truck we directly track.
   if (inputs.roadFix && isValidCoordinate(inputs.roadFix.latitude, inputs.roadFix.longitude)) {
-    return {
-      available: true, latitude: inputs.roadFix.latitude, longitude: inputs.roadFix.longitude,
-      locationLabel: "Position routière (GPS)", source: "ROAD", confidence: "CONFIRMED",
-      occurredAt: inputs.roadFix.occurredAt, freshness: classifyFreshness("ROAD", inputs.roadFix.occurredAt, nowIso),
-      explanation: "Position GPS routière confirmée.",
-    };
+    const fresherElsewhere = newestOther(inputs.roadFix.occurredAt, [
+      inputs.containerConfirmedOnVessel ? inputs.vesselPosition?.occurredAt : null,
+      inputs.portAnchor?.occurredAt,
+    ]);
+    if (!fresherElsewhere) {
+      return {
+        available: true, latitude: inputs.roadFix.latitude, longitude: inputs.roadFix.longitude,
+        locationLabel: "Position routière (GPS)", source: "ROAD", confidence: "CONFIRMED",
+        occurredAt: inputs.roadFix.occurredAt, freshness: classifyFreshness("ROAD", inputs.roadFix.occurredAt, nowIso),
+        explanation: "Position GPS routière confirmée.",
+      };
+    }
   }
 
   // 2. Vessel AIS — ONLY if the container is confirmed loaded on that vessel. Inferred.
+  //    Same recency rule: a newer port milestone (e.g. DISCHARGED) outranks an older AIS fix.
   if (
     inputs.containerConfirmedOnVessel &&
     inputs.vesselPosition &&
-    isValidCoordinate(inputs.vesselPosition.latitude, inputs.vesselPosition.longitude)
+    isValidCoordinate(inputs.vesselPosition.latitude, inputs.vesselPosition.longitude) &&
+    !newestOther(inputs.vesselPosition.occurredAt, [inputs.portAnchor?.occurredAt])
   ) {
     const vp = inputs.vesselPosition;
     return {

@@ -95,8 +95,10 @@ export async function readFleetMap(): Promise<ExecutiveMap> {
       .eq("tenant_id", tenant)
       .order("recorded_at", { ascending: false }).limit(EVENT_SCAN)
       .returns<{ file_id: string; latitude: number; longitude: number; recorded_at: string; source: string }[]>(),
+    // 8.4 fix: ocean_port has NO `active` column (air_airport does) — the filter made this
+    // query error and silently drop every port marker into the catch.
     admin.from("ocean_port").select("name, unlocode, latitude, longitude")
-      .eq("tenant_id", tenant).eq("active", true).not("latitude", "is", null).not("longitude", "is", null)
+      .eq("tenant_id", tenant).not("latitude", "is", null).not("longitude", "is", null)
       .limit(PLACE_CAP).returns<{ name: string; unlocode: string | null; latitude: number; longitude: number }[]>(),
     admin.from("air_airport").select("name, iata, latitude, longitude")
       .eq("tenant_id", tenant).eq("active", true).not("latitude", "is", null).not("longitude", "is", null)

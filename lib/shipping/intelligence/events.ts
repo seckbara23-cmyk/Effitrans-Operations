@@ -14,6 +14,28 @@ export type TrackingSource = (typeof TRACKING_SOURCES)[number];
 export const TRACKING_CONFIDENCES = ["CONFIRMED", "INFERRED", "MANUAL", "ESTIMATED"] as const;
 export type TrackingConfidence = (typeof TRACKING_CONFIDENCES)[number];
 
+/**
+ * 8.4 (sections M/O) — human labels for source and confidence. ONE definition, French,
+ * safe for BOTH staff and portal surfaces (never a raw enum in the UI, never liveness
+ * language, never an operator identity). « saisie manuelle » satisfies the required
+ * « Source : saisie manuelle » display; nothing here may ever read « Confirmé par le
+ * transporteur » unless the source IS a provider (CARRIER/AIS) — and none is connected.
+ */
+export const SOURCE_LABEL_FR: Record<TrackingSource, string> = {
+  CARRIER: "Transporteur", AIS: "Signal AIS", PORT: "Escale portuaire", TERMINAL: "Terminal",
+  CUSTOMS: "Douane", ROAD: "GPS routier", MANUAL: "Saisie manuelle", SYSTEM: "Système",
+};
+export function sourceLabelFr(s: string): string {
+  return (SOURCE_LABEL_FR as Record<string, string>)[s] ?? s;
+}
+
+export const CONFIDENCE_LABEL_FR: Record<TrackingConfidence, string> = {
+  CONFIRMED: "Confirmée", INFERRED: "Déduite", MANUAL: "Saisie manuelle", ESTIMATED: "Estimée",
+};
+export function confidenceLabelFr(c: string): string {
+  return (CONFIDENCE_LABEL_FR as Record<string, string>)[c] ?? c;
+}
+
 /** Canonical event vocabulary: every milestone, plus non-milestone position/ETA updates. */
 export const CANONICAL_SHIPPING_EVENTS = [...SHIPPING_MILESTONES, "POSITION_UPDATE", "ETA_UPDATE"] as const;
 export type CanonicalShippingEvent = (typeof CANONICAL_SHIPPING_EVENTS)[number];

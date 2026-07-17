@@ -8,8 +8,9 @@ import { getOceanShipmentDetail } from "@/lib/shipping/intelligence/service";
 import { listRouteLegs, listCarrierOptions, listPortOptions, listVesselOptions, listVoyageOptions } from "@/lib/shipping/intelligence/manage-service";
 import { listDocuments } from "@/lib/documents/service";
 import { milestoneLabel, type ShippingMilestone } from "@/lib/shipping/intelligence/milestones";
-import { freshnessLabel } from "@/lib/shipping/intelligence/freshness";
-import { ShipmentMapLoader } from "@/components/shipping/shipment-map-loader";
+import { freshnessLabel, ageLabelFr } from "@/lib/shipping/intelligence/freshness";
+import { sourceLabelFr, confidenceLabelFr, eventIsMilestone } from "@/lib/shipping/intelligence/events";
+import { TrackingJourney, type JourneyEvent } from "@/components/shipping/tracking-journey";
 import { TrackingStudio } from "@/components/shipping/tracking-studio";
 import { ShipmentOpsPanel } from "@/components/shipping/shipment-ops-panel";
 
@@ -81,34 +82,33 @@ export default async function ShipmentDetailPage({ params }: { params: { shipmen
           {position.available ? (
             <>
               <Row label="Lieu" value={position.locationLabel ?? "—"} />
-              <Row label="Source" value={position.source} />
-              <div className="flex justify-between gap-4 py-1"><dt className="text-slate-500">Confiance</dt><dd><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${CONF_STYLE[position.confidence]}`}>{position.confidence}</span></dd></div>
+              {/* 8.4 — French source label + AGE, never a raw enum, never liveness language. */}
+              <Row label="Source" value={`${sourceLabelFr(position.source)}${position.occurredAt ? ` · ${ageLabelFr(position.occurredAt, new Date().toISOString())}` : ""}`} />
+              <div className="flex justify-between gap-4 py-1"><dt className="text-slate-500">Confiance</dt><dd><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${CONF_STYLE[position.confidence]}`}>{confidenceLabelFr(position.confidence)}</span></dd></div>
               <Row label="Fraîcheur" value={freshnessLabel(position.freshness)} />
             </>
           ) : <p className="text-xs text-slate-500">{position.explanation}</p>}
         </div>
       </div>
 
-      {/* Interactive map (Leaflet, lazy). */}
-      <ShipmentMapLoader projection={map} />
-
+      {/* 8.4 — map + immutable journal share ONE selection state (one canonical reader). */}
       <div className="grid gap-4 lg:grid-cols-3">
-        {/* Timeline */}
-        <div className="surface p-4 lg:col-span-2">
-          <h2 className="mb-3 text-sm font-semibold text-navy-900">Journal (immuable)</h2>
-          {timeline.length === 0 ? <p className="text-xs text-slate-500">Aucun évènement.</p> : (
-            <ol className="space-y-2">
-              {[...timeline].reverse().map((e, i) => (
-                <li key={`${e.fingerprint}-${i}`} className="flex items-start gap-3 text-sm">
-                  <span className="tabular mt-0.5 w-28 shrink-0 text-xs text-slate-400">{e.occurredAt.slice(0, 16).replace("T", " ")}</span>
-                  <span className="flex-1">
-                    <span className="font-medium text-navy-800">{milestoneLabel(e.eventType as ShippingMilestone)}</span>
-                    <span className="ml-2 text-xs text-slate-500"><span className={`rounded px-1.5 py-0.5 ${CONF_STYLE[e.confidence]}`}>{e.confidence}</span><span className="ml-1">{e.source}</span>{e.location?.name ? ` · ${e.location.name}` : ""}</span>
-                  </span>
-                </li>
-              ))}
-            </ol>
-          )}
+        <div className="lg:col-span-2">
+          <TrackingJourney
+            projection={map}
+            currentFreshnessLabel={position.available ? freshnessLabel(position.freshness) : null}
+            events={timeline.map((e): JourneyEvent => ({
+              fingerprint: e.fingerprint,
+              label: milestoneLabel(e.eventType as ShippingMilestone),
+              occurredAt: e.occurredAt,
+              source: e.source,
+              confidence: e.confidence,
+              locationName: e.location?.name ?? null,
+              // A row is map-linked when it is a milestone WITH coordinates (matches the
+              // projection's milestone markers exactly).
+              hasCoordinates: eventIsMilestone(e.eventType) && e.location?.latitude != null && e.location?.longitude != null,
+            }))}
+          />
         </div>
 
         <div className="space-y-4">

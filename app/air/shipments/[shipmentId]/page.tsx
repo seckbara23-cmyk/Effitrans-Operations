@@ -8,7 +8,8 @@ import { getAirShipmentDetail } from "@/lib/air/intelligence/service";
 import { listFlightOptions } from "@/lib/air/intelligence/manage-service";
 import { listDocuments } from "@/lib/documents/service";
 import { airMilestoneLabel, type AirMilestone } from "@/lib/air/intelligence/milestones";
-import { freshnessLabel } from "@/lib/shipping/intelligence/freshness";
+import { freshnessLabel, ageLabelFr } from "@/lib/shipping/intelligence/freshness";
+import { sourceLabelFr, confidenceLabelFr } from "@/lib/shipping/intelligence/events";
 import { ShipmentMapLoader } from "@/components/shipping/shipment-map-loader";
 import { AirConsole } from "@/components/air/air-console";
 
@@ -66,8 +67,8 @@ export default async function AirDetailPage({ params }: { params: { shipmentId: 
           <h2 className="mb-2 text-sm font-semibold text-navy-900">Position actuelle</h2>
           {position.available ? (<>
             <Row label="Lieu" value={position.locationLabel ?? "—"} />
-            <Row label="Source" value={position.source} />
-            <div className="flex justify-between gap-4 py-1"><dt className="text-slate-500">Confiance</dt><dd><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${CONF[position.confidence]}`}>{position.confidence}</span></dd></div>
+            <Row label="Source" value={`${sourceLabelFr(position.source)}${position.occurredAt ? ` · ${ageLabelFr(position.occurredAt, new Date().toISOString())}` : ""}`} />
+            <div className="flex justify-between gap-4 py-1"><dt className="text-slate-500">Confiance</dt><dd><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${CONF[position.confidence]}`}>{confidenceLabelFr(position.confidence)}</span></dd></div>
             <Row label="Fraîcheur" value={freshnessLabel(position.freshness)} />
           </>) : <p className="text-xs text-slate-500">{position.explanation}</p>}
         </div>
@@ -82,7 +83,7 @@ export default async function AirDetailPage({ params }: { params: { shipmentId: 
             <ol className="space-y-2">{[...timeline].reverse().map((e, i) => (
               <li key={`${e.fingerprint}-${i}`} className="flex items-start gap-3 text-sm">
                 <span className="tabular mt-0.5 w-28 shrink-0 text-xs text-slate-400">{e.occurredAt.slice(0, 16).replace("T", " ")}</span>
-                <span className="flex-1"><span className="font-medium text-navy-800">{airMilestoneLabel(e.eventType as AirMilestone)}</span><span className="ml-2 text-xs text-slate-500"><span className={`rounded px-1.5 py-0.5 ${CONF[e.confidence]}`}>{e.confidence}</span><span className="ml-1">{e.source}</span>{e.location?.name ? ` · ${e.location.name}` : ""}</span></span>
+                <span className="flex-1"><span className="font-medium text-navy-800">{airMilestoneLabel(e.eventType as AirMilestone)}</span><span className="ml-2 text-xs text-slate-500"><span className={`rounded px-1.5 py-0.5 ${CONF[e.confidence]}`}>{confidenceLabelFr(e.confidence)}</span><span className="ml-1">{sourceLabelFr(e.source)}</span>{e.location?.name ? ` · ${e.location.name}` : ""}</span></span>
               </li>
             ))}</ol>
           )}
