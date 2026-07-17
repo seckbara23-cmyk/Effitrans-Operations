@@ -12,6 +12,9 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Run on all routes except static assets and image optimization.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  // Run on all routes except static assets and image optimization. 8.3: the PWA static
+  // surface (manifest, service worker, icons) must be publicly fetchable — browsers request
+  // them without an app session, and a redirect to /login breaks installability and SW
+  // registration. They are pure static files; session refresh has no business running on them.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|sw\\.js|manifest\\.webmanifest|icons/).*)"],
 };

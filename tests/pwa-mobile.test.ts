@@ -100,6 +100,13 @@ describe("offline fallback — public, honest, static", () => {
     expect(code("../app/offline/page.tsx")).not.toMatch(/supabase|getCurrentUser|require|fetch\(/);
     expect(read("../lib/supabase/middleware.ts")).toContain('pathname === "/offline"');
   });
+  it("the PWA static surface bypasses the middleware entirely (live 307 found by the sweep)", () => {
+    // A session-refresh redirect on manifest/sw/icons breaks installability + registration.
+    const mw = read("../middleware.ts");
+    expect(mw).toContain("sw\\.js");
+    expect(mw).toContain("manifest\\.webmanifest");
+    expect(mw).toContain("icons/");
+  });
 });
 
 // ---------------------------------------------------------------- PWA runtime ----
