@@ -23,6 +23,8 @@ export const platformNav: readonly PlatformNavItem[] = [
   { label: "Plans", href: "/platform/plans", permission: "platform:plans:read" },
   { label: "Déploiement processus", href: "/platform/rollout", permission: "platform:rollout:manage" },
   { label: "Santé système", href: "/platform/health", permission: "platform:companies:read" },
+  // Phase 8.2 — consolidated operations console (deployment, AI, email, storage, activity).
+  { label: "Opérations & Support", href: "/platform/operations", permission: "platform:audit:read" },
   { label: "Journal plateforme", href: "/platform/audit", permission: "platform:audit:read" },
   { label: "Paramètres", href: "/platform/settings", permission: "platform:settings:manage" },
 ];
