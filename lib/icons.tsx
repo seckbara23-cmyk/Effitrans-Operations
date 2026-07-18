@@ -372,3 +372,14 @@ export function IconList(props: IconProps) {
     </Base>
   );
 }
+
+/** Install / download-to-device glyph (Phase 8.5 compact PWA install control). */
+export function IconInstall(props: IconProps) {
+  return (
+    <Base {...props}>
+      <path d="M12 3v11" />
+      <path d="M7.5 10.5 12 15l4.5-4.5" />
+      <path d="M4 16.5V19a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2.5" />
+    </Base>
+  );
+}

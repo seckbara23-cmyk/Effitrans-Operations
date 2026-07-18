@@ -10,6 +10,7 @@ import { getBrowserSupabaseClient } from "@/lib/supabase/client";
 import { recordLogoutAudit } from "@/lib/auth/actions";
 import { NotificationBell } from "@/components/notifications/notification-bell";
 import { WorkspaceSwitcher } from "@/components/workspace/workspace-switcher";
+import { PwaInstallAction } from "@/components/pwa/pwa-install-action";
 
 function currentTitle(pathname: string): string {
   const match = allNavItems.find(
@@ -86,6 +87,12 @@ export function Topbar({
               <span className="hidden sm:inline">{t.topbar.newFile}</span>
             </Link>
           )}
+
+          {/* Phase 8.5 — compact install action. Renders nothing unless installable
+              (flag on, not already installed, browser supports it); the small header
+              action is the fallback placement since this shell has no account/profile
+              dropdown to host it in (audited: identity block below is flat, not a menu). */}
+          <PwaInstallAction />
 
           {session.configured && session.email && (
             <div className="flex items-center gap-2 border-l border-slate-200 pl-2 sm:pl-3">

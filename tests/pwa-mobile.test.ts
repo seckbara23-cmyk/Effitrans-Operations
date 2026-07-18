@@ -125,11 +125,14 @@ describe("PWA runtime — gated registration, safe update, polite install, hones
   it("exposes the build identifier in the update UI via the secret-free version endpoint", () => {
     expect(src).toContain('fetch("/api/version")');
   });
-  it("install prompt: dismissal persisted, hidden when standalone, iOS gets manual instructions", () => {
-    expect(src).toContain("effitrans.pwa.install.dismissed");
-    expect(src).toContain("display-mode: standalone");
-    expect(src).toContain("beforeinstallprompt");
-    expect(src).toContain("Sur l'écran d'accueil");
+  it("compact install banner reads shared state — no competing install logic in this file", () => {
+    expect(src).toContain("usePwaInstall");
+    expect(src).toContain("pwa.showLargePrompt");
+    expect(src).toContain("pwa.dismissLargePrompt");
+    // The old full-width, always-there install bar and its own listeners must be GONE —
+    // beforeinstallprompt/localStorage now live only in pwa-install-context.tsx.
+    expect(src).not.toContain("beforeinstallprompt");
+    expect(src).not.toContain("localStorage");
   });
   it("treats navigator.onLine as a hint — real request errors are never suppressed", () => {
     expect(src).toMatch(/hint/i);

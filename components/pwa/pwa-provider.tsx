@@ -1,43 +1,27 @@
 "use client";
 
 /**
- * PWA runtime (Phase 8.3). CLIENT — mounted once in the root layout, on every surface.
+ * PWA runtime (Phase 8.3, install redesigned 8.5). CLIENT — mounted once in the root layout,
+ * on every surface.
  * ---------------------------------------------------------------------------
- * Three small, independent concerns; none touches business data:
+ * Two independent concerns; neither touches business data:
  *
  * 1. SERVICE-WORKER lifecycle — registers /sw.js ONLY when NEXT_PUBLIC_PWA_ENABLED="true"
  *    (dark by default: Preview first, production after acceptance — Phase 8.3 §S). When a new
  *    worker is WAITING, shows a non-disruptive banner; activation happens only on the user's
  *    click (SKIP_WAITING → single guarded reload — never during form entry on its own, never
  *    a refresh loop).
- * 2. INSTALL prompt — captures beforeinstallprompt (Android/desktop), offers install once,
- *    remembers dismissal in localStorage, hides when already installed (standalone). On iOS
- *    (no prompt API) shows manual instructions once. Secondary to operational work by design.
- * 3. NETWORK status — offline banner + reconnection confirmation. navigator.onLine is treated
+ * 2. NETWORK status — offline banner + reconnection confirmation. navigator.onLine is treated
  *    as a HINT only (it can be true while the backend is unreachable); real requests keep
  *    their real error states — this banner never suppresses or replaces them.
+ *
+ * The INSTALL prompt (Phase 8.5) now lives in components/pwa/pwa-install-context.tsx
+ * (state) — this file only renders the small first-visit banner from that shared state, so
+ * the compact header action (PwaInstallAction) and this banner never disagree about
+ * installability. See docs/pwa-mobile-architecture.md for the full rationale.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-
-const INSTALL_DISMISSED_KEY = "effitrans.pwa.install.dismissed";
-
-type BeforeInstallPromptEvent = Event & {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
-};
-
-function isStandalone(): boolean {
-  if (typeof window === "undefined") return false;
-  return (
-    window.matchMedia?.("(display-mode: standalone)").matches ||
-    (window.navigator as { standalone?: boolean }).standalone === true
-  );
-}
-
-function isIos(): boolean {
-  if (typeof navigator === "undefined") return false;
-  return /iphone|ipad|ipod/i.test(navigator.userAgent);
-}
+import { usePwaInstall } from "./pwa-install-context";
 
 // ---------------------------------------------------------------- service worker ----
 
@@ -98,62 +82,6 @@ function useServiceWorker() {
   return { waiting: Boolean(waiting), version, activate };
 }
 
-// ---------------------------------------------------------------- install prompt ----
-
-function useInstall() {
-  const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(null);
-  const [showIosHelp, setShowIosHelp] = useState(false);
-
-  useEffect(() => {
-    if (isStandalone()) return; // already installed — never show anything
-    let dismissed = false;
-    try {
-      dismissed = localStorage.getItem(INSTALL_DISMISSED_KEY) === "1";
-    } catch {
-      /* storage unavailable — behave as dismissed to avoid nagging */
-      dismissed = true;
-    }
-    if (dismissed) return;
-
-    if (isIos()) {
-      // iOS has no beforeinstallprompt — offer the manual instructions once.
-      setShowIosHelp(true);
-      return;
-    }
-    const onPrompt = (e: Event) => {
-      e.preventDefault();
-      setDeferred(e as BeforeInstallPromptEvent);
-    };
-    const onInstalled = () => setDeferred(null);
-    window.addEventListener("beforeinstallprompt", onPrompt);
-    window.addEventListener("appinstalled", onInstalled);
-    return () => {
-      window.removeEventListener("beforeinstallprompt", onPrompt);
-      window.removeEventListener("appinstalled", onInstalled);
-    };
-  }, []);
-
-  const dismiss = useCallback(() => {
-    try {
-      localStorage.setItem(INSTALL_DISMISSED_KEY, "1");
-    } catch {
-      /* ignore */
-    }
-    setDeferred(null);
-    setShowIosHelp(false);
-  }, []);
-
-  const install = useCallback(async () => {
-    if (!deferred) return;
-    await deferred.prompt();
-    await deferred.userChoice.catch(() => null);
-    // Whatever the choice, do not re-prompt this session; dismissal state persists.
-    dismiss();
-  }, [deferred, dismiss]);
-
-  return { canInstall: Boolean(deferred), showIosHelp, install, dismiss };
-}
-
 // ---------------------------------------------------------------- network status ----
 
 function useNetworkStatus() {
@@ -189,7 +117,7 @@ function useNetworkStatus() {
 
 export function PwaProvider() {
   const sw = useServiceWorker();
-  const inst = useInstall();
+  const pwa = usePwaInstall();
   const net = useNetworkStatus();
 
   return (
@@ -222,24 +150,31 @@ export function PwaProvider() {
         </div>
       )}
 
-      {/* Install — one-time, dismissible, secondary. */}
-      {!sw.waiting && (inst.canInstall || inst.showIosHelp) && (
-        <div role="status" className="fixed inset-x-0 bottom-0 z-[90] flex flex-wrap items-center justify-center gap-3 border-t border-slate-200 bg-white px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 text-sm text-navy-900 shadow-2xl">
-          {inst.canInstall ? (
-            <>
-              <span>Installer Effitrans sur cet appareil ?</span>
-              <button type="button" onClick={inst.install} className="min-h-[44px] rounded-lg bg-navy-900 px-4 py-2 font-semibold text-white">
-                Installer
-              </button>
-            </>
-          ) : (
-            <span>
-              Sur iPhone/iPad : ouvrez le menu Partager <span aria-hidden>⎋</span> puis « Sur l'écran d'accueil » pour installer Effitrans.
-            </span>
-          )}
-          <button type="button" onClick={inst.dismiss} className="min-h-[44px] rounded-lg border border-slate-200 px-4 py-2 font-medium text-slate-600">
-            Plus tard
-          </button>
+      {/* Install — compact, first-visit only, dismissible for ~30 days. Small corner card
+          rather than a full-width bar so it never covers operational content; the
+          equivalent action remains reachable from the header regardless of dismissal. */}
+      {!sw.waiting && pwa.showLargePrompt && (
+        <div
+          role="status"
+          className="fixed bottom-4 right-4 z-[90] max-w-[20rem] rounded-xl border border-slate-200 bg-white p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] text-sm text-navy-900 shadow-xl"
+        >
+          <p className="pr-1">Installer Effitrans sur cet appareil ?</p>
+          <div className="mt-2 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={pwa.dismissLargePrompt}
+              className="min-h-[36px] rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+            >
+              Plus tard
+            </button>
+            <button
+              type="button"
+              onClick={() => void pwa.install()}
+              className="min-h-[36px] rounded-lg bg-navy-900 px-3 py-1.5 text-xs font-semibold text-white"
+            >
+              Installer
+            </button>
+          </div>
         </div>
       )}
     </div>
