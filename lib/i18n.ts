@@ -1508,6 +1508,7 @@ export const t = {
       not_found: "Utilisateur introuvable.",
       invalid_role: "Un ou plusieurs rôles sélectionnés ne sont pas valides pour cette entreprise.",
       email_conflict: "Cette adresse e-mail est déjà utilisée.",
+      email_is_portal: "Cette adresse e-mail appartient déjà à un compte client (portail).",
       auth_failed: "Le compte d'authentification n'a pas pu être créé. Réessayez.",
       profile_failed:
         "Le compte d'authentification a été créé, mais le profil collaborateur n'a pas pu être finalisé. Réessayez.",

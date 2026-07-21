@@ -23,9 +23,14 @@ import { generateTempPassword } from "@/lib/portal/temp-password";
 import { sendStaffWelcome, returnsLink, type WelcomeResult } from "./welcome-send";
 import { canTransition, toStaffStatus } from "./lifecycle";
 import { setUserAuthBan } from "@/lib/platform/session-revocation";
+import { NON_ASSIGNABLE_STAFF_ROLE_CODES } from "./service";
 import type { ActionResult, CredentialMode, CreateUserError } from "./types";
 
 type Admin = ReturnType<typeof getAdminSupabaseClient>;
+
+function isNonAssignableStaffRole(code: string): boolean {
+  return (NON_ASSIGNABLE_STAFF_ROLE_CODES as readonly string[]).includes(code);
+}
 
 /**
  * Find an existing auth user by email, or null. GoTrue's admin API has no get-by-email;
@@ -43,9 +48,12 @@ async function findAuthUserByEmail(supabase: Admin, email: string): Promise<stri
   return null;
 }
 
-async function tenantRoleIds(supabase: ReturnType<typeof getAdminSupabaseClient>, tenantId: string): Promise<Set<string>> {
-  const { data } = await supabase.from("role").select("id").eq("tenant_id", tenantId);
-  return new Set((data ?? []).map((r) => r.id));
+async function tenantRoles(
+  supabase: ReturnType<typeof getAdminSupabaseClient>,
+  tenantId: string,
+): Promise<Map<string, string>> {
+  const { data } = await supabase.from("role").select("id, code").eq("tenant_id", tenantId);
+  return new Map((data ?? []).map((r) => [r.id, r.code] as const));
 }
 
 /**
@@ -95,13 +103,27 @@ export async function createUser(form: {
 
   const supabase = getAdminSupabaseClient();
 
-  // Roles: EVERY submitted role must be a real role of THIS tenant. We reject rather
-  // than silently drop, so the admin learns their selection was rejected.
-  const validRoleIds = await tenantRoleIds(supabase, admin.tenantId);
+  // Roles: EVERY submitted role must be a real role of THIS tenant, AND must not be a
+  // portal-only code (CLIENT_USER) — that one exists in the catalog for labeling a
+  // client_user, never for granting an app_user staff access. Rejected, not silently
+  // dropped, so the admin learns their selection was invalid. (The root cause of the
+  // production defect where a customer rep landed in the internal shell: she was created
+  // here with the CLIENT_USER role instead of via the portal invite flow.)
+  const roleCatalog = await tenantRoles(supabase, admin.tenantId);
   const requestedRoles = form.roleIds ?? [];
-  if (requestedRoles.some((id) => !validRoleIds.has(id))) {
+  if (requestedRoles.some((id) => !roleCatalog.has(id) || isNonAssignableStaffRole(roleCatalog.get(id)!))) {
     return { ok: false, error: "invalid_role" };
   }
+
+  // Dual-identity guard, the reciprocal of lib/portal/admin-actions.ts's "email_is_staff":
+  // an email already provisioned as a portal customer must never also become a staff
+  // app_user — that would create the exact ambiguity classifySession is built to avoid.
+  const { data: existingPortalUser } = await supabase
+    .from("client_user")
+    .select("id")
+    .eq("email", email)
+    .maybeSingle();
+  if (existingPortalUser) return { ok: false, error: "email_is_portal" };
 
   // The credential we hand GoTrue. setup_email: none (they set it via the link).
   const generated = mode === "generate" ? generateTempPassword() : null;
@@ -429,6 +451,7 @@ export async function assignRole(userId: string, roleId: string): Promise<Action
 
   const { data: role } = await supabase.from("role").select("id, code, tenant_id").eq("id", roleId).maybeSingle();
   if (!role || role.tenant_id !== admin.tenantId) return { ok: false, error: "invalid_role" };
+  if (isNonAssignableStaffRole(role.code)) return { ok: false, error: "invalid_role" };
 
   const { error } = await supabase
     .from("user_role")

@@ -113,6 +113,17 @@ export async function getPresenceSummary(): Promise<PresenceSummary> {
   };
 }
 
+/**
+ * Role codes that exist in the tenant `role` catalog for LABELING a portal identity
+ * (e.g. shown next to a client_user's name) but must never be assignable to an
+ * app_user via user_role — that assignment grants no capability (the template carries
+ * only the profile:*:self baseline) and, worse, makes the account resolve as STAFF
+ * (classifySession sees an app_user row) instead of the customer portal, stranding a
+ * customer representative in the internal shell. The one legitimate way to grant portal
+ * access is lib/portal/admin-actions.ts, which inserts into client_user, never app_user.
+ */
+export const NON_ASSIGNABLE_STAFF_ROLE_CODES = ["CLIENT_USER"] as const;
+
 export async function listAssignableRoles(): Promise<AssignableRole[]> {
   const admin = await assertPermission("admin:users:manage");
   const supabase = getAdminSupabaseClient();
@@ -122,5 +133,7 @@ export async function listAssignableRoles(): Promise<AssignableRole[]> {
     .eq("tenant_id", admin.tenantId)
     .order("code");
   if (error) throw new Error(`[users] role list failed: ${error.message}`);
-  return (data ?? []).map((r) => ({ id: r.id, code: r.code, labelFr: r.label_fr }));
+  return (data ?? [])
+    .filter((r) => !(NON_ASSIGNABLE_STAFF_ROLE_CODES as readonly string[]).includes(r.code))
+    .map((r) => ({ id: r.id, code: r.code, labelFr: r.label_fr }));
 }

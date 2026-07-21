@@ -117,8 +117,18 @@ describe("createUser reconciles and compensates — the root-cause fix", () => {
   });
 
   it("REJECTS an invalid role rather than silently dropping it", () => {
-    expect(actionsCode).toContain("requestedRoles.some((id) => !validRoleIds.has(id))");
+    expect(actionsCode).toContain(
+      "requestedRoles.some((id) => !roleCatalog.has(id) || isNonAssignableStaffRole(roleCatalog.get(id)!))",
+    );
     expect(actionsCode).toContain('return { ok: false, error: "invalid_role" }');
+  });
+
+  // Customer-identity routing fix: CLIENT_USER is a portal-only role code that lives in
+  // the staff role catalog for labeling, never for granting app_user access (see
+  // tests/customer-identity-routing.test.ts for the full regression suite).
+  it("REJECTS the CLIENT_USER role code even when it is a real row of the tenant's role table", () => {
+    expect(actionsCode).toContain("NON_ASSIGNABLE_STAFF_ROLE_CODES");
+    expect(actionsCode).toContain("isNonAssignableStaffRole(roleCatalog.get(id)!)");
   });
 });
 

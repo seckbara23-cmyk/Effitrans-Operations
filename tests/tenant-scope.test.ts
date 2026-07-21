@@ -120,6 +120,7 @@ const KNOWN_UNSCOPED_READS: Record<string, string> = {
   //     emails are globally unique; a staff email in ANY tenant blocks portal
   //     creation). Tenant-scoping this would defeat its purpose.
   "lib/portal/admin-actions.ts::app_user": "dual-identity guard: intentional global staff-email lookup",
+  "lib/users/actions.ts::client_user": "dual-identity guard: intentional global portal-email lookup (reciprocal of lib/portal/admin-actions.ts's email_is_staff)",
 
   // --- Platform administration: intentional PLATFORM-WIDE aggregates, gated by a
   //     platform:* permission (a platform admin has no tenant). Reads only

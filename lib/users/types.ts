@@ -73,6 +73,9 @@ export type CreateUserError =
   | "weak_password"
   | "invalid_role"
   | "email_conflict"
+  // customer identity routing fix — the target email is already a portal customer
+  // (client_user); it must never also become a staff app_user.
+  | "email_is_portal"
   | "auth_failed"
   | "profile_failed"
   | "not_found"

@@ -161,8 +161,13 @@ export const getSessionClass = cache(async (): Promise<SessionClass> => {
   } = await supabase.auth.getUser();
   if (!user) return "none";
 
+  // hasAppUser requires status='active', matching getCurrentUser's own rule (line 77
+  // above: a non-active app_user is treated as no session there). Customer-identity
+  // routing fix: a STALE app_user row (suspended/archived — e.g. left over from a
+  // corrected mis-provisioning) must never shadow a real, active client_user and force
+  // "staff" classification. Table EXISTENCE alone is not identity; an active row is.
   const [{ data: appUser }, { data: clientUser }] = await Promise.all([
-    supabase.from("app_user").select("id").eq("id", user.id).maybeSingle(),
+    supabase.from("app_user").select("id").eq("id", user.id).eq("status", "active").maybeSingle(),
     supabase.from("client_user").select("id").eq("id", user.id).maybeSingle(),
   ]);
   return classifySession(Boolean(appUser), Boolean(clientUser));

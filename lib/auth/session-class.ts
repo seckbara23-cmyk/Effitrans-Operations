@@ -14,7 +14,15 @@ import { isDriverOnly } from "./staff-identity";
 
 export type SessionClass = "none" | "staff" | "portal";
 
-/** Staff wins over portal (a dual identity should never happen; staff is safer). */
+/**
+ * Staff wins over portal (a dual identity should never happen; staff is safer).
+ *
+ * Callers MUST pass hasAppUser/hasClientUser from an ACTIVE row of each table (both
+ * DB call sites filter status='active'/exclude non-active on the app_user side — see
+ * lib/auth/current-user.ts getSessionClass and lib/supabase/middleware.ts). A stale or
+ * archived app_user record is not staff identity and must never override a real,
+ * active client_user (portal) membership — table EXISTENCE alone is not authority.
+ */
 export function classifySession(hasAppUser: boolean, hasClientUser: boolean): SessionClass {
   if (hasAppUser) return "staff";
   if (hasClientUser) return "portal";

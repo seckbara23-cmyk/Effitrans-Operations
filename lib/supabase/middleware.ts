@@ -111,10 +111,13 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
       // is NOT bounced back to /dashboard (which would loop, since the dashboard's
       // requireUser resolves them to null again). A blocked staff user stays on /login,
       // where the page shows the reason.
+      // status='active' mirrors getSessionClass (lib/auth/current-user.ts) — a stale/
+      // archived app_user row must not shadow a real client_user and force "staff".
       supabase
         .from("app_user")
         .select("id, organization:tenant_id(lifecycle_status, trial_ends_at)")
         .eq("id", user.id)
+        .eq("status", "active")
         .maybeSingle(),
       supabase.from("client_user").select("id").eq("id", user.id).maybeSingle(),
       supabase.from("platform_admin").select("id").eq("id", user.id).maybeSingle(),
