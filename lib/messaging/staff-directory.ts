@@ -19,8 +19,8 @@ import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { roleLabel, ROLE_DISPLAY_PRIORITY } from "@/lib/navigation/roles";
-import { CONTACT_DEPARTMENT_LABELS } from "@/lib/portal/self-service";
-import { searchStaffDirectory, roleDepartmentCode, type StaffRecipient } from "./access";
+import { departmentDisplayLabelFr } from "@/lib/organization/departments";
+import { searchStaffDirectory, type StaffRecipient } from "./access";
 
 /**
  * Defensive ceiling on how many ACTIVE tenant staff rows this reader will ever pull
@@ -81,13 +81,15 @@ export async function searchStaffRecipients(query: string): Promise<StaffRecipie
     // Same priority order the staff Topbar uses (primaryRoleLabel) — one displayed
     // role, chosen the same way everywhere else in the app, not a new ordering.
     const primaryCode = ROLE_DISPLAY_PRIORITY.find((code) => heldCodes.has(code)) ?? null;
-    const deptCode = primaryCode ? roleDepartmentCode(primaryCode) : null;
     return {
       id: c.id,
       name: c.name?.trim() || c.email,
       email: c.email,
       roleLabel: primaryCode ? roleLabel(primaryCode) : null,
-      departmentLabel: deptCode ? (CONTACT_DEPARTMENT_LABELS[deptCode] ?? null) : null,
+      // Phase 9.0A — the CANONICAL org department (Opérations/Transit/Finance),
+      // derived from the primary role via lib/organization/departments; a Déclarant
+      // now correctly reads « Transit », not the service-menu label « Douane ».
+      departmentLabel: departmentDisplayLabelFr(primaryCode),
     };
   });
 

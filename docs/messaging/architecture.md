@@ -117,15 +117,15 @@ business's realistic staff count, 200 is effectively "the whole active roster" �
 so this reader can never become an unbounded table scan if that assumption ever changes, not
 because 200 is expected to bind in practice.
 
-**Department label derivation reuses, rather than duplicates, an existing association.** A role's
-department (e.g. `CUSTOMS_DECLARANT` → "Douane") is NOT a new registry — it mirrors the EXACT
-role↔department pairing already granted in `supabase/seed.sql`'s `messaging:read:<dept>`
-`role_permission` inserts (Phase 8.7). `lib/messaging/access.ts:roleDepartmentCode()` is
-deliberately a *partial* map: a role that holds several department permissions at once
-(`SYSTEM_ADMIN`, `OPS_SUPERVISOR`, `COORDINATOR`, `CHIEF_OF_TRANSIT`, `ACCOUNT_MANAGER`) or none
-(`QUOTATION_MANAGER`, `COMPLIANCE_HSSE`) resolves to `null` rather than an arbitrary or fabricated
-label — `tests/messaging-recipient-picker.test.ts` asserts every *mapped* role's single department
-against the actual seed.sql grant, so the two can't silently drift apart.
+**Department label derivation (updated in Phase 9.0A).** Search results now display the
+CANONICAL organization department (`lib/organization/departments.ts` — Opérations / Transit /
+Finance / Ressources humaines), derived from the user's primary role: a Déclarant reads
+« Transit » (the real department), not « Douane » (a customer service-menu category). The
+original Phase 8.6A helper `lib/messaging/access.ts:roleDepartmentCode()` (role → messaging
+service category, seed-grant parity-tested) is retained for messaging-routing alignment, but the
+staff-directory DISPLAY no longer uses it. Both maps are deliberately *partial*: a
+governance/cross-cutting role (`SYSTEM_ADMIN`, `CEO`, `COMPLIANCE_HSSE`) shows no department
+rather than a fabricated one.
 
 **Direct-conversation reuse.** Before Phase 8.6A, every "start a conversation" call created a
 brand-new `direct_staff` conversation, even between the same two colleagues. `createDirectConversation`
