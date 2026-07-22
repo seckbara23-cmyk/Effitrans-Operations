@@ -46,6 +46,21 @@ function section(key: string, label: string, items: NavigationItem[]): Navigatio
 }
 
 /**
+ * "Messagerie" (Phase 8.7) is injected into the files section's item list, never
+ * baked into BASE_SECTIONS — gated behind the TENANT rollout flag (not the process
+ * engine, which it has no dependency on), so a tenant with messaging disabled sees
+ * no trace of it, exactly like a disabled process-workspaces tenant sees no
+ * "Mon Travail".
+ */
+function withMessagingItem(base: NavigationSection, ctx: NavigationContext): NavigationItem[] {
+  if (base.key !== "files" || !ctx.messagingEnabled) return base.items;
+  return [
+    ...base.items,
+    { key: "messages", label: "Messagerie", href: "/messages", iconKey: "message", permission: "messaging:read" },
+  ];
+}
+
+/**
  * Build the whole sidebar for one user. Deterministic: same context in, same
  * sections out. No I/O, no clock, no env — the caller resolves all of that.
  */
@@ -71,7 +86,7 @@ export function buildNavigation(ctx: NavigationContext): Navigation {
   // ---------------------------------------------------------------------------
   if (!process) {
     const base = BASE_SECTIONS.map((s) =>
-      section(s.key, s.label, grant(perms, s.items)),
+      section(s.key, s.label, grant(perms, withMessagingItem(s, ctx))),
     ).filter((s): s is NavigationSection => s !== null);
     return { sections: base, primaryRoleLabel: label, myWorkHref: null, filtered: true };
   }
@@ -99,7 +114,7 @@ export function buildNavigation(ctx: NavigationContext): Navigation {
 
   const sections: (NavigationSection | null)[] = BASE_SECTIONS.map((base) => {
     if (base.key !== "pilotage") {
-      return section(base.key, base.label, grant(perms, base.items));
+      return section(base.key, base.label, grant(perms, withMessagingItem(base, ctx)));
     }
 
     // PILOTAGE is the only section the engine changes.

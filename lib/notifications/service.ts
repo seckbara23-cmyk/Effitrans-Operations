@@ -18,6 +18,7 @@ type Row = {
   body: string | null;
   file_id: string | null;
   task_id: string | null;
+  conversation_id: string | null;
   read_at: string | null;
   created_at: string;
 };
@@ -30,6 +31,7 @@ function toItem(r: Row): NotificationItem {
     body: r.body,
     fileId: r.file_id,
     taskId: r.task_id,
+    conversationId: r.conversation_id,
     readAt: r.read_at,
     createdAt: r.created_at,
   };
@@ -45,7 +47,7 @@ export async function getMyNotifications(limit = 12): Promise<NotificationFeed> 
   const [list, count] = await Promise.all([
     supabase
       .from("notification")
-      .select("id, type, title, body, file_id, task_id, read_at, created_at")
+      .select("id, type, title, body, file_id, task_id, conversation_id, read_at, created_at")
       .order("created_at", { ascending: false })
       .limit(limit)
       .returns<Row[]>(),

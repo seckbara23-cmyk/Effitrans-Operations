@@ -34,6 +34,7 @@ import {
   requestUpdateCooldownMs,
   PAYMENT_PROOF_TYPE,
 } from "./self-service";
+import { createSupportConversation } from "./messaging-actions";
 import type { ActionResult } from "./types";
 
 type Admin = ReturnType<typeof getAdminSupabaseClient>;
@@ -289,6 +290,13 @@ export async function requestPortalUpdate(fileId: string): Promise<ActionResult>
 }
 
 // ----------------------------------------------------------------- F5 contact
+/**
+ * "Contacter Effitrans" (Phase 3.3B) — UPGRADED in Phase 8.7 to create a real,
+ * two-way, threaded customer_support Messaging Center conversation instead of a
+ * one-way, unthreaded task with no reply channel. The exported signature is
+ * unchanged (fileId + FormData) so the existing ContactCard form keeps working;
+ * the id returned is now a conversation id, visible at /portal/messages.
+ */
 export async function contactEffitrans(fileId: string, formData: FormData): Promise<ActionResult> {
   const owner = await assertOwnedFile(fileId);
   if (!owner.ok) return { ok: false, error: owner.error };
@@ -298,40 +306,8 @@ export async function contactEffitrans(fileId: string, formData: FormData): Prom
   if (!isValidContactDepartment(department)) return { ok: false, error: "invalid_department" };
   const invalid = validateContactMessage(message);
   if (invalid) return { ok: false, error: invalid };
-  const clean = message.trim().slice(0, 2000);
 
-  const DEPT_LABEL: Record<string, string> = {
-    documentation: "Documentation",
-    customs: "Douane",
-    transport: "Transport",
-    finance: "Finance",
-    general: "Général",
-  };
-
-  const admin = getAdminSupabaseClient();
-  const { data: task, error } = await admin
-    .from("task")
-    .insert({
-      tenant_id: owner.owned.tenantId,
-      file_id: fileId,
-      title: `Message client — ${DEPT_LABEL[department]}`,
-      description: clean,
-      priority: "NORMAL",
-      status: "TODO",
-      assigned_to: owner.owned.ownerId,
-      created_by: null,
-    })
-    .select("id")
-    .single();
-  if (error || !task) return { ok: false, error: error?.message ?? "message_failed" };
-
-  await writeAudit({
-    action: AuditActions.PORTAL_MESSAGE_SENT,
-    clientUserId: owner.owned.clientUserId,
-    tenantId: owner.owned.tenantId,
-    entity: "operational_file",
-    entityId: fileId,
-    after: { task_id: task.id, department },
-  });
-  return { ok: true, id: task.id };
+  const result = await createSupportConversation({ department, message, fileId });
+  if (!result.ok) return { ok: false, error: result.error };
+  return { ok: true, id: result.id };
 }

@@ -44,6 +44,19 @@ export const CONTACT_DEPARTMENTS: readonly string[] = [
 ];
 
 /**
+ * French display label per department — the single source both the legacy
+ * contactEffitrans task title and the Messaging Center's conversation title/routing
+ * UI use (Phase 8.7), so the two never drift apart.
+ */
+export const CONTACT_DEPARTMENT_LABELS: Record<string, string> = {
+  documentation: "Documentation",
+  customs: "Douane",
+  transport: "Transport",
+  finance: "Finance",
+  general: "Général",
+};
+
+/**
  * May a customer upload this document type? ACTIVE + (allow-listed OR required
  * for this file type). `requiredForFile` is the type's required_for including
  * the dossier's file type.

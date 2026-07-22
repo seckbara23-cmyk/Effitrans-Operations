@@ -975,6 +975,7 @@ export type Database = {
           type: string;
           task_id: string | null;
           file_id: string | null;
+          conversation_id: string | null;
           title: string;
           body: string | null;
           read_at: string | null;
@@ -987,6 +988,7 @@ export type Database = {
           type: string;
           task_id?: string | null;
           file_id?: string | null;
+          conversation_id?: string | null;
           title: string;
           body?: string | null;
           read_at?: string | null;
@@ -999,6 +1001,7 @@ export type Database = {
           type?: string;
           task_id?: string | null;
           file_id?: string | null;
+          conversation_id?: string | null;
           title?: string;
           body?: string | null;
           read_at?: string | null;
@@ -2632,6 +2635,7 @@ export type Database = {
           body: string;
           file_id: string | null;
           invoice_id: string | null;
+          conversation_id: string | null;
           dedup_key: string;
           read_at: string | null;
           archived_at: string | null;
@@ -2648,6 +2652,7 @@ export type Database = {
           body: string;
           file_id?: string | null;
           invoice_id?: string | null;
+          conversation_id?: string | null;
           dedup_key: string;
           read_at?: string | null;
           archived_at?: string | null;
@@ -2664,10 +2669,225 @@ export type Database = {
           body?: string;
           file_id?: string | null;
           invoice_id?: string | null;
+          conversation_id?: string | null;
           dedup_key?: string;
           read_at?: string | null;
           archived_at?: string | null;
           created_at?: string;
+        };
+        Relationships: [];
+      };
+      // Phase 8.7 — Effitrans Messaging Center (supabase/migrations/20260722000001_messaging_center.sql).
+      conversation: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          type: string;
+          title: string | null;
+          client_id: string | null;
+          file_id: string | null;
+          department_code: string | null;
+          status: string;
+          priority: string;
+          assigned_to: string | null;
+          created_by: string | null;
+          created_by_client_user_id: string | null;
+          created_at: string;
+          updated_at: string;
+          closed_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          type: string;
+          title?: string | null;
+          client_id?: string | null;
+          file_id?: string | null;
+          department_code?: string | null;
+          status?: string;
+          priority?: string;
+          assigned_to?: string | null;
+          created_by?: string | null;
+          created_by_client_user_id?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          closed_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string;
+          type?: string;
+          title?: string | null;
+          client_id?: string | null;
+          file_id?: string | null;
+          department_code?: string | null;
+          status?: string;
+          priority?: string;
+          assigned_to?: string | null;
+          created_by?: string | null;
+          created_by_client_user_id?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          closed_at?: string | null;
+        };
+        Relationships: [];
+      };
+      conversation_participant: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          conversation_id: string;
+          participant_type: string;
+          user_id: string | null;
+          client_user_id: string | null;
+          department_code: string | null;
+          joined_at: string;
+          last_read_at: string | null;
+          muted_at: string | null;
+          removed_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          conversation_id: string;
+          participant_type: string;
+          user_id?: string | null;
+          client_user_id?: string | null;
+          department_code?: string | null;
+          joined_at?: string;
+          last_read_at?: string | null;
+          muted_at?: string | null;
+          removed_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string;
+          conversation_id?: string;
+          participant_type?: string;
+          user_id?: string | null;
+          client_user_id?: string | null;
+          department_code?: string | null;
+          joined_at?: string;
+          last_read_at?: string | null;
+          muted_at?: string | null;
+          removed_at?: string | null;
+        };
+        Relationships: [];
+      };
+      message: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          conversation_id: string;
+          sender_type: string;
+          sender_user_id: string | null;
+          sender_client_user_id: string | null;
+          body: string;
+          message_type: string;
+          visibility: string;
+          reply_to_message_id: string | null;
+          created_at: string;
+          redacted_at: string | null;
+          redacted_by: string | null;
+          redaction_reason: string | null;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          conversation_id: string;
+          sender_type: string;
+          sender_user_id?: string | null;
+          sender_client_user_id?: string | null;
+          body: string;
+          message_type?: string;
+          visibility?: string;
+          reply_to_message_id?: string | null;
+          created_at?: string;
+          redacted_at?: string | null;
+          redacted_by?: string | null;
+          redaction_reason?: string | null;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string;
+          conversation_id?: string;
+          sender_type?: string;
+          sender_user_id?: string | null;
+          sender_client_user_id?: string | null;
+          body?: string;
+          message_type?: string;
+          visibility?: string;
+          reply_to_message_id?: string | null;
+          created_at?: string;
+          redacted_at?: string | null;
+          redacted_by?: string | null;
+          redaction_reason?: string | null;
+        };
+        Relationships: [];
+      };
+      message_attachment: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          message_id: string;
+          storage_path: string;
+          original_filename: string;
+          mime_type: string;
+          size_bytes: number;
+          uploaded_by_user_id: string | null;
+          uploaded_by_client_user_id: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          message_id: string;
+          storage_path: string;
+          original_filename: string;
+          mime_type: string;
+          size_bytes: number;
+          uploaded_by_user_id?: string | null;
+          uploaded_by_client_user_id?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string;
+          message_id?: string;
+          storage_path?: string;
+          original_filename?: string;
+          mime_type?: string;
+          size_bytes?: number;
+          uploaded_by_user_id?: string | null;
+          uploaded_by_client_user_id?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      tenant_messaging_rollout: {
+        Row: {
+          tenant_id: string;
+          enabled: boolean;
+          note: string | null;
+          first_enabled_at: string | null;
+          updated_at: string;
+          updated_by: string | null;
+        };
+        Insert: {
+          tenant_id: string;
+          enabled?: boolean;
+          note?: string | null;
+          first_enabled_at?: string | null;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Update: {
+          tenant_id?: string;
+          enabled?: boolean;
+          note?: string | null;
+          first_enabled_at?: string | null;
+          updated_at?: string;
+          updated_by?: string | null;
         };
         Relationships: [];
       };

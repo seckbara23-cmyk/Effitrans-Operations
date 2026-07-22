@@ -18,6 +18,7 @@ import "server-only";
 import { getCurrentUser, getSessionClass } from "@/lib/auth/current-user";
 import { getEffectivePermissions } from "@/lib/rbac/permissions";
 import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-server";
+import { messagingGlobalKillSwitch, getTenantMessagingEnabled } from "@/lib/messaging/rollout";
 import { buildNavigation, legacyNavigation } from "./build";
 import { resolveLandingRoute } from "./landing";
 import { narrowStaffIdentity } from "@/lib/auth/staff-identity";
@@ -69,6 +70,9 @@ export async function getNavigationContext(): Promise<NavigationContext | null> 
     // makes navigation and the route guards agree: both resolve through the same
     // function, so a tenant can never see a link to a route that would 404 them.
     featureFlags: await getTenantProcessFlags(user.tenantId),
+    // Phase 8.7 — independent of featureFlags; only queried when the messaging
+    // kill switch is even on (see getNavigation's short-circuit below).
+    messagingEnabled: messagingGlobalKillSwitch() ? await getTenantMessagingEnabled(user.tenantId) : false,
   };
 }
 
@@ -82,12 +86,14 @@ export async function getNavigationContext(): Promise<NavigationContext | null> 
  * reads cookies forces every route under it to render dynamically).
  */
 export async function getNavigation(): Promise<Navigation> {
-  // The GLOBAL kill switch, checked before any session is resolved. This is not an
+  // The GLOBAL kill switches, checked before any session is resolved. This is not an
   // optimization: a root layout that reads cookies forces every route beneath it to
   // render dynamically, which broke the static prerender of /login and /_not-found in
   // 5.0E-1. The per-TENANT gate is applied afterwards, inside buildNavigation, from
-  // the flags on the context.
-  if (!globalKillSwitch().workspaces) return legacyNavigation();
+  // the flags on the context. Messaging (Phase 8.7) is a SECOND, independent kill
+  // switch checked the same cheap way — only when an operator turns it on globally
+  // does a request pay for session resolution to learn the per-tenant answer.
+  if (!globalKillSwitch().workspaces && !messagingGlobalKillSwitch()) return legacyNavigation();
 
   const ctx = await getNavigationContext();
   if (!ctx) return ANONYMOUS;

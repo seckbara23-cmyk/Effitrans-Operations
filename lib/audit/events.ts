@@ -347,6 +347,20 @@ export const AuditActions = {
   DOCUMENT_REVIEW_COMPLETED: "document.review.completed",
   DOCUMENT_FIELD_APPLIED: "document.field.applied",
   DOCUMENT_FIELD_APPLICATION_FAILED: "document.field.application_failed",
+
+  // Phase 8.7 — Effitrans Messaging Center. The message table itself is the immutable
+  // record of what was said, so ordinary sends are audited by ID + safe metadata only
+  // (conversation, sender, message type, department) — NEVER the message body.
+  MESSAGING_CONVERSATION_CREATED: "messaging.conversation.created",
+  MESSAGING_CONVERSATION_ASSIGNED: "messaging.conversation.assigned",
+  MESSAGING_CONVERSATION_STATUS_CHANGED: "messaging.conversation.status_changed",
+  MESSAGING_CONVERSATION_CLOSED: "messaging.conversation.closed",
+  MESSAGING_CONVERSATION_REOPENED: "messaging.conversation.reopened",
+  MESSAGING_MESSAGE_SENT: "messaging.message.sent",
+  MESSAGING_ATTACHMENT_UPLOADED: "messaging.attachment.uploaded",
+  MESSAGING_MESSAGE_REDACTED: "messaging.message.redacted",
+  MESSAGING_PARTICIPANT_ADDED: "messaging.participant.added",
+  MESSAGING_PARTICIPANT_REMOVED: "messaging.participant.removed",
 } as const;
 
 export type AuditActionCode = (typeof AuditActions)[keyof typeof AuditActions];

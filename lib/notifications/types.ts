@@ -1,7 +1,14 @@
 /**
  * Notification shared types (Phase 1.6). Client + server safe.
  */
-export type NotificationType = "TASK_ASSIGNED" | "TASK_DUE_SOON" | "TASK_OVERDUE" | "FILE_ASSIGNED";
+export type NotificationType =
+  | "TASK_ASSIGNED"
+  | "TASK_DUE_SOON"
+  | "TASK_OVERDUE"
+  | "FILE_ASSIGNED"
+  // Phase 8.7 — Effitrans Messaging Center.
+  | "MESSAGE_RECEIVED"
+  | "CONVERSATION_ASSIGNED";
 
 export type NotificationItem = {
   id: string;
@@ -10,6 +17,7 @@ export type NotificationItem = {
   body: string | null;
   fileId: string | null;
   taskId: string | null;
+  conversationId: string | null;
   readAt: string | null;
   createdAt: string;
 };

@@ -13,13 +13,13 @@
  */
 
 /** The latest migration shipped in this build (pinned to the directory by test). */
-export const LATEST_MIGRATION = "20260721000001_transport_manage";
+export const LATEST_MIGRATION = "20260722000001_messaging_center";
 
 /** Total migrations shipped in this build (pinned by test). */
-export const MIGRATION_COUNT = 52;
+export const MIGRATION_COUNT = 53;
 
 /** Newest DATA-probeable migration marker: this permission row proves migrations ≥ this point. */
 export const MIGRATION_PROBE = {
-  migration: "20260719000001_executive_dashboard",
-  permissionCode: "executive:dashboard:read",
+  migration: "20260722000001_messaging_center",
+  permissionCode: "messaging:read",
 } as const;

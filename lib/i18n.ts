@@ -1077,6 +1077,7 @@ export const t = {
       documents: "Documents",
       invoices: "Factures",
       notifications: "Notifications",
+      messages: "Messages",
       signOut: "Se déconnecter",
     },
     notify: {

@@ -72,6 +72,11 @@ export const BASE_SECTIONS: NavigationSection[] = [
         iconKey: "bell",
         permission: "communication:read",
       },
+      // "Messagerie" (Phase 8.7) is NOT listed here — unlike everything else in this
+      // BASE list, it is gated behind the tenant messaging rollout flag (a disabled
+      // tenant must see NO trace of an incomplete feature), so it is injected
+      // conditionally by lib/navigation/build.ts, exactly like "Mon Travail" is for
+      // the process-workspaces flag.
     ],
   },
   {

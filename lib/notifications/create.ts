@@ -17,6 +17,7 @@ export type CreateNotificationInput = {
   type: NotificationType;
   taskId?: string | null;
   fileId?: string | null;
+  conversationId?: string | null;
   title: string;
   body?: string | null;
 };
@@ -31,6 +32,7 @@ export async function createNotification(input: CreateNotificationInput): Promis
       type: input.type,
       task_id: input.taskId ?? null,
       file_id: input.fileId ?? null,
+      conversation_id: input.conversationId ?? null,
       title: input.title,
       body: input.body ?? null,
     })

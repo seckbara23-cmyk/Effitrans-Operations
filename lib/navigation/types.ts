@@ -34,6 +34,13 @@ export type NavigationContext = {
   permissions: string[];
   identityType: IdentityType;
   featureFlags: ProcessFlags;
+  /**
+   * Phase 8.7 — Effitrans Messaging Center rollout flag for THIS tenant. Independent
+   * of featureFlags (the process engine) by design. Optional/defaults to false so
+   * existing fixtures/tests that predate this flag are unaffected (messaging simply
+   * stays hidden for them, exactly as an unresolved rollout fails closed elsewhere).
+   */
+  messagingEnabled?: boolean;
 };
 
 /** Icon key — a component cannot cross the server→client boundary. */
@@ -48,7 +55,8 @@ export type NavIconKey =
   | "users"
   | "container"
   | "bell"
-  | "report";
+  | "report"
+  | "message";
 
 export type NavigationItem = {
   key: string;

@@ -17,6 +17,7 @@ import {
   IconContainer,
   IconBell,
   IconReport,
+  IconMessage,
   IconClose,
 } from "@/lib/icons";
 import { cn } from "@/lib/cn";
@@ -37,6 +38,7 @@ const ICONS: Record<NavIconKey, typeof IconTower> = {
   container: IconContainer,
   bell: IconBell,
   report: IconReport,
+  message: IconMessage,
 };
 
 /**

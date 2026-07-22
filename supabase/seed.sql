@@ -807,3 +807,91 @@ join public.permission p on p.code = 'transport:manage'
 where r.tenant_id = '00000000-0000-0000-0000-000000000001'
   and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR', 'COORDINATOR', 'TRANSPORT_OFFICER')
 on conflict do nothing;
+
+-- ===========================================================================
+-- Phase 8.7 — Effitrans Messaging Center. Mirrors migration
+-- 20260722000001_messaging_center.sql and lib/platform/role-templates.ts (parity
+-- enforced by tests/role-templates.test.ts). NEVER to CLIENT_USER / PARTNER_AGENT /
+-- DRIVER / COURIER — the same external/narrow-identity exclusion used throughout.
+-- ===========================================================================
+insert into public.permission (code, module, action, data_scope, description) values
+  ('messaging:read', 'messaging', 'read', 'own', 'Read conversations you directly participate in (staff-to-staff, dossier threads)'),
+  ('messaging:send', 'messaging', 'send', 'own', 'Send messages in conversations you can read'),
+  ('messaging:read:documentation', 'messaging', 'read', 'documentation', 'Read/reply to Documentation department conversations'),
+  ('messaging:read:customs', 'messaging', 'read', 'customs', 'Read/reply to Customs department conversations'),
+  ('messaging:read:transport', 'messaging', 'read', 'transport', 'Read/reply to Transport department conversations'),
+  ('messaging:read:finance', 'messaging', 'read', 'finance', 'Read/reply to Finance department conversations'),
+  ('messaging:read:general', 'messaging', 'read', 'general', 'Read/reply to general customer-service conversations'),
+  ('messaging:manage', 'messaging', 'manage', 'all', 'Assign, reassign, close and reopen conversations; add or remove participants'),
+  ('messaging:moderate', 'messaging', 'moderate', 'all', 'Redact a message body for governance reasons')
+on conflict (code) do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code in ('messaging:read', 'messaging:send')
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in (
+    'SYSTEM_ADMIN', 'CEO', 'OPS_SUPERVISOR', 'COORDINATOR', 'ACCOUNT_MANAGER', 'QUOTATION_MANAGER',
+    'CHIEF_OF_TRANSIT', 'CUSTOMS_DECLARANT', 'CUSTOMS_FINANCE_OFFICER', 'CUSTOMS_FIELD_AGENT',
+    'TRANSPORT_OFFICER', 'PICKUP_AGENT', 'BILLING_OFFICER', 'FINANCE_OFFICER',
+    'ADMINISTRATIVE_OFFICER', 'COLLECTIONS_OFFICER', 'DOCUMENTATION_OFFICER',
+    'WAREHOUSE_COORDINATOR', 'COMPLIANCE_HSSE'
+  )
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'messaging:read:documentation'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR', 'COORDINATOR', 'DOCUMENTATION_OFFICER', 'ACCOUNT_MANAGER')
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'messaging:read:customs'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR', 'COORDINATOR', 'CHIEF_OF_TRANSIT', 'CUSTOMS_DECLARANT', 'CUSTOMS_FINANCE_OFFICER', 'CUSTOMS_FIELD_AGENT')
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'messaging:read:transport'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR', 'COORDINATOR', 'CHIEF_OF_TRANSIT', 'TRANSPORT_OFFICER', 'PICKUP_AGENT', 'WAREHOUSE_COORDINATOR')
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'messaging:read:finance'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR', 'COORDINATOR', 'FINANCE_OFFICER', 'BILLING_OFFICER', 'COLLECTIONS_OFFICER')
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'messaging:read:general'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR', 'COORDINATOR', 'CEO', 'ACCOUNT_MANAGER', 'ADMINISTRATIVE_OFFICER')
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'messaging:manage'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR', 'COORDINATOR', 'ACCOUNT_MANAGER')
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'messaging:moderate'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR', 'COMPLIANCE_HSSE')
+on conflict do nothing;

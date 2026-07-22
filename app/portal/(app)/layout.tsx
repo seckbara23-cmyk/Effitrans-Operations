@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { requirePortalUser } from "@/lib/portal/auth";
 import { resolveTenantBranding } from "@/lib/branding/service";
+import { getTenantMessagingEnabled, messagingGlobalKillSwitch } from "@/lib/messaging/rollout";
 import { PortalShell } from "@/components/portal/portal-shell";
 
 // Portal reads per-request identity (auth) — never prerender.
@@ -14,9 +15,12 @@ export default async function PortalAppLayout({ children }: { children: React.Re
   if (user.mustChangePassword) redirect("/portal/auth/change-password");
   // Phase 4.0B-5 — the portal header uses the tenant's resolved brand (own tenant
   // only; safe fallback to the default label).
-  const branding = await resolveTenantBranding(user.tenantId);
+  const [branding, messagingEnabled] = await Promise.all([
+    resolveTenantBranding(user.tenantId),
+    messagingGlobalKillSwitch() ? getTenantMessagingEnabled(user.tenantId) : Promise.resolve(false),
+  ]);
   return (
-    <PortalShell clientName={user.clientName} brandName={branding.displayName}>
+    <PortalShell clientName={user.clientName} brandName={branding.displayName} messagingEnabled={messagingEnabled}>
       {children}
     </PortalShell>
   );

@@ -13,6 +13,8 @@ import type { Metadata } from "next";
 import { assertPlatformPermission } from "@/lib/platform/auth";
 import { getRolloutOverview } from "@/lib/platform/rollout-read";
 import { RolloutControls } from "@/components/platform/rollout-controls";
+import { getMessagingRolloutOverview } from "@/lib/platform/messaging-rollout-read";
+import { MessagingRolloutControls } from "@/components/platform/messaging-rollout-controls";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Déploiement processus" };
@@ -33,6 +35,7 @@ export default async function PlatformRollout() {
   await assertPlatformPermission("platform:rollout:manage");
 
   const { killSwitch, rows, enabledCount } = await getRolloutOverview();
+  const messaging = await getMessagingRolloutOverview();
 
   return (
     <div className="space-y-6">
@@ -90,6 +93,40 @@ export default async function PlatformRollout() {
             Aucune entreprise.
           </p>
         )}
+      </div>
+
+      {/* Phase 8.7 — Effitrans Messaging Center. Independent of the process engine
+          above: no dependency, own kill switch, own tenant table. */}
+      <div className="border-t border-white/10 pt-6">
+        <h2 className="text-lg font-bold text-white">Messagerie Effitrans</h2>
+        <p className="mt-1 text-sm text-slate-400">
+          Messagerie interne + support client, tenant par tenant. Indépendante du moteur de
+          processus ci-dessus.
+        </p>
+        <div
+          className={`mt-4 rounded-xl border p-4 ${
+            messaging.killSwitchOn ? "border-emerald-500/30 bg-emerald-500/5" : "border-amber-500/30 bg-amber-500/5"
+          }`}
+        >
+          <p className="text-sm font-bold text-white">
+            Interrupteur global {messaging.killSwitchOn ? "ACTIF" : "COUPÉ"}
+          </p>
+          <p className="mt-1 text-xs text-slate-400">
+            {messaging.killSwitchOn
+              ? "La messagerie est compilée et active au niveau du déploiement. Seuls les tenants activés ci-dessous l'utilisent réellement."
+              : "La messagerie est éteinte pour TOUS les tenants. Variable d'environnement EFFITRANS_MESSAGING_CENTER_ENABLED."}
+          </p>
+        </div>
+        <p className="mt-3 text-sm text-slate-400">
+          {messaging.enabledCount === 0
+            ? "Aucun tenant n'utilise la messagerie."
+            : `${messaging.enabledCount} tenant(s) utilisent la messagerie.`}
+        </p>
+        <div className="mt-3 space-y-2">
+          {messaging.rows.map((row) => (
+            <MessagingRolloutControls key={row.tenantId} row={row} killSwitchOn={messaging.killSwitchOn} />
+          ))}
+        </div>
       </div>
     </div>
   );

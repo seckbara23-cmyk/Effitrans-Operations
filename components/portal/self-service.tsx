@@ -11,6 +11,7 @@
  */
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   uploadPortalDocument,
   replacePortalDocument,
@@ -328,15 +329,20 @@ export function ContactCard({ fileId }: { fileId: string }) {
   const formRef = useRef<HTMLFormElement>(null);
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  // Phase 8.7 — contactEffitrans now returns a Messaging Center conversation id
+  // (it used to be a bare task id with no reply channel); link straight to it.
+  const [conversationId, setConversationId] = useState<string | null>(null);
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
     const form = formRef.current!;
     setMsg(null);
+    setConversationId(null);
     start(async () => {
       const res: Result = await contactEffitrans(fileId, new FormData(form));
       if (res.ok) {
         setMsg({ ok: true, text: s.success });
+        setConversationId(res.id ?? null);
         form.reset();
       } else setMsg({ ok: false, text: (s.errors as Record<string, string>)[res.error] ?? s.errors.generic });
     });
@@ -372,6 +378,11 @@ export function ContactCard({ fileId }: { fileId: string }) {
         </button>
         {msg && <span className={`text-xs ${msg.ok ? "text-emerald-700" : "text-rose-600"}`}>{msg.text}</span>}
       </div>
+      {conversationId && (
+        <Link href={`/portal/messages/${conversationId}`} className="mt-2 inline-block text-xs font-medium text-teal-700 underline">
+          Voir la conversation →
+        </Link>
+      )}
     </form>
   );
 }

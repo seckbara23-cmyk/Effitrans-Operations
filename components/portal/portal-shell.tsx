@@ -10,11 +10,14 @@ import { t } from "@/lib/i18n";
 export function PortalShell({
   clientName,
   brandName,
+  messagingEnabled = false,
   children,
 }: {
   clientName: string | null;
   /** tenant-resolved portal brand; falls back to the default portal label */
   brandName?: string;
+  /** Phase 8.7 — tenant messaging rollout flag; hides the link entirely when off. */
+  messagingEnabled?: boolean;
   children: React.ReactNode;
 }) {
   async function signOut() {
@@ -35,6 +38,9 @@ export function PortalShell({
             <Link href="/portal/files" className="flex min-h-[44px] items-center px-2.5 hover:text-teal-700">{t.portal.nav.files}</Link>
             <Link href="/portal/documents" className="flex min-h-[44px] items-center px-2.5 hover:text-teal-700">{t.portal.nav.documents}</Link>
             <Link href="/portal/invoices" className="flex min-h-[44px] items-center px-2.5 hover:text-teal-700">{t.portal.nav.invoices}</Link>
+            {messagingEnabled && (
+              <Link href="/portal/messages" className="flex min-h-[44px] items-center px-2.5 hover:text-teal-700">{t.portal.nav.messages}</Link>
+            )}
             <Link href="/portal/notifications" className="flex min-h-[44px] items-center px-2.5 hover:text-teal-700">{t.portal.nav.notifications}</Link>
           </nav>
           {clientName && <span className="ml-auto hidden text-sm font-medium text-navy-900 sm:inline">{clientName}</span>}

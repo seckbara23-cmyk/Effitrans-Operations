@@ -6,6 +6,9 @@ import { getFileOverview, getRecentFiles } from "@/lib/files/service";
 import { getPresenceSummary } from "@/lib/users/service";
 import { AdminPresenceCard } from "@/components/dashboard/admin-presence-card";
 import type { PresenceSummary } from "@/lib/users/types";
+import { getMessagingDashboardSummary } from "@/lib/messaging/dashboard";
+import { MessagingSummaryCard } from "@/components/dashboard/messaging-summary-card";
+import type { MessagingDashboardSummary } from "@/lib/messaging/dashboard";
 import { getDepartmentCards } from "@/lib/departments/dashboard";
 import type { DepartmentCardData } from "@/lib/departments/dashboard-map";
 import { DepartmentCards } from "@/components/dashboard/department-cards";
@@ -52,6 +55,7 @@ export default async function DashboardPage() {
   let recent: Awaited<ReturnType<typeof getRecentFiles>> = [];
   let dashTasks = null;
   let presence: PresenceSummary | null = null;
+  let messagingSummary: MessagingDashboardSummary | null = null;
   let deptCards: DepartmentCardData[] = [];
   let activity: ActivityItem[] = [];
   let canSeeActivity = false;
@@ -77,7 +81,7 @@ export default async function DashboardPage() {
     // dashboard's wall time was the SUM of control tower + department cards +
     // activity + presence. Each stays permission-gated exactly as before and
     // still degrades to its default on failure.
-    [controlTower, deptCards, activity, presence, processTower] = await Promise.all([
+    [controlTower, deptCards, activity, presence, processTower, messagingSummary] = await Promise.all([
       // Phase 2.2 — operations control tower (management view).
       hasPermission(permissions, "analytics:read")
         ? getControlTower(permissions).catch(() => null)
@@ -95,6 +99,9 @@ export default async function DashboardPage() {
       // Phase 5.0C — official-process tower. Returns null unless the workspaces
       // flag is on, so /dashboard is unchanged with the flags off.
       getProcessTower(user.tenantId, permissions).catch(() => null),
+      // Phase 8.7 — Messaging Center customer-request summary. Null (and zero
+      // extra render) unless the viewer holds messaging:manage.
+      getMessagingDashboardSummary(user.id, user.tenantId).catch(() => null),
     ]);
   }
   const taskKpis = dashTasks
@@ -172,6 +179,9 @@ export default async function DashboardPage() {
 
       {/* Presence summary (Phase 2.1A) — SYSTEM_ADMIN / admin:users:manage only */}
       {presence && <AdminPresenceCard summary={presence} />}
+
+      {/* Messaging Center customer-request summary (Phase 8.7) — messaging:manage only */}
+      {messagingSummary && <MessagingSummaryCard summary={messagingSummary} />}
 
       {/* Finance KPIs (Phase 1.11) — only for finance-role users */}
       <DashboardFinanceKpis />

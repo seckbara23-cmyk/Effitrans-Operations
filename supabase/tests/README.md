@@ -1,5 +1,19 @@
 # Supabase Tests
 
+## RLS Effitrans Messaging Center (Phase 8.7)
+[`rls_messaging_test.sql`](rls_messaging_test.sql) proves `conversation` /
+`conversation_participant` / `message` / `message_attachment` RLS: a staff user
+holding a department permission (`messaging:read:customs`) sees only that
+department's conversations — not another department's, not a staff-only thread
+they don't participate in; `messaging:manage` (SYSTEM_ADMIN) sees every tenant
+conversation; a staff user with no messaging permission sees none; no staff
+identity sees another tenant's conversation. A portal customer sees only their
+own client's conversations (never another customer's, never a staff-only
+thread), a DISABLED portal user sees nothing, and — the key internal-note
+guarantee — a portal customer sees a SHARED message but never an INTERNAL staff
+note, while department staff see both; `message_attachment` visibility follows
+its parent message's visibility rule. Runs in the `rls-tests` CI job.
+
 ## RLS driver, tracking, assignment & portal temp-password (Phase 3.2–3.4)
 The following SQL RLS tests are wired into the `rls-tests` CI job (Phase 4.0A):
 - [`rls_file_assignment_test.sql`](rls_file_assignment_test.sql) — file assignment scoping (Phase 3.2A).

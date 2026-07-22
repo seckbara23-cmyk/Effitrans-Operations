@@ -83,6 +83,10 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "process:close", "process:completeness:review", ...PROCESS_HANDOFF, "process:manage",
       "process:read", "quotation:approve", "quotation:create", "quotation:send",
       "transport:request", "logistics:copilot:read",
+      // Phase 8.7 — Messaging Center. SYSTEM_ADMIN reaches every department + manage/moderate.
+      "messaging:read", "messaging:send", "messaging:read:documentation", "messaging:read:customs",
+      "messaging:read:transport", "messaging:read:finance", "messaging:read:general",
+      "messaging:manage", "messaging:moderate",
     ],
   },
   {
@@ -98,6 +102,8 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "org:read:own", ...BASE,
       "process:read", "report:read", "task:read", "task:read:all", "tracking:read",
       "tracking:read:all", "transport:read", "logistics:copilot:read",
+      // Phase 8.7 — Messaging Center. Governance visibility: general customer-service thread only.
+      "messaging:read", "messaging:send", "messaging:read:general",
     ],
   },
   {
@@ -108,7 +114,11 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     description:
       "Pricing/quotation lead — owns official step 1 (Cotation). Phase 5.0B grants the quotation:* permissions; the quotation MODULE itself (quotation table, approval evidence, contract-client bypass) is Phase 5.0D, so these are inert until then.",
     requiredForEveryTenant: false,
-    permissions: [...BASE, "quotation:approve", "quotation:create", "quotation:send"],
+    permissions: [
+      ...BASE, "quotation:approve", "quotation:create", "quotation:send",
+      // Phase 8.7 — Messaging Center. Direct/dossier threads only (no department inbox).
+      "messaging:read", "messaging:send",
+    ],
   },
   {
     key: "ACCOUNT_MANAGER",
@@ -125,6 +135,9 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "process:completeness:review", ...PROCESS_HANDOFF, "process:manage", "process:read",
       "report:read", "task:create", "task:delete", "task:read", "task:read:all", "task:update",
       "tracking:read", "transport:read", "transport:request", "logistics:copilot:read",
+      // Phase 8.7 — Messaging Center. Owns dossiers/clients end to end: general + documentation + manage.
+      "messaging:read", "messaging:send", "messaging:read:documentation", "messaging:read:general",
+      "messaging:manage",
     ],
   },
   {
@@ -141,6 +154,10 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "task:create", "task:delete", "task:read", "task:update", "tracking:read", "tracking:write",
       "transport:assign", "transport:create", "transport:manage", "transport:read", "transport:update",
       "logistics:copilot:read",
+      // Phase 8.7 — Messaging Center. Control tower: every department inbox + manage.
+      "messaging:read", "messaging:send", "messaging:read:documentation", "messaging:read:customs",
+      "messaging:read:transport", "messaging:read:finance", "messaging:read:general",
+      "messaging:manage",
     ],
   },
   {
@@ -158,6 +175,8 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "customs:validate", "document:approve", "document:create", "document:read",
       "document:update", "file:read", ...BASE, ...PROCESS_HANDOFF, "process:read", "task:read",
       "task:update", "logistics:copilot:read",
+      // Phase 8.7 — Messaging Center. Customs + transport department inboxes.
+      "messaging:read", "messaging:send", "messaging:read:customs", "messaging:read:transport",
     ],
   },
   {
@@ -172,6 +191,8 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "customs:create", "customs:read", "customs:update", "document:create", "document:read",
       "document:update", "file:read", ...BASE, ...PROCESS_HANDOFF, "process:read", "task:read",
       "task:update", "logistics:copilot:read",
+      // Phase 8.7 — Messaging Center. Customs department inbox.
+      "messaging:read", "messaging:send", "messaging:read:customs",
     ],
   },
   {
@@ -184,6 +205,8 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     permissions: [
       "customs:read", "document:create", "document:read", "document:update", "file:read", ...BASE,
       "task:read", "task:update", "tracking:read", "transport:read",
+      // Phase 8.7 — Messaging Center. Documentation department inbox.
+      "messaging:read", "messaging:send", "messaging:read:documentation",
     ],
   },
   {
@@ -199,6 +222,8 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       ...PROCESS_HANDOFF, "process:read", "task:read", "task:update", "tracking:read",
       "tracking:write", "transport:assign", "transport:complete", "transport:create",
       "transport:manage", "transport:read", "transport:request", "transport:update", "logistics:copilot:read",
+      // Phase 8.7 — Messaging Center. Transport department inbox.
+      "messaging:read", "messaging:send", "messaging:read:transport",
     ],
   },
   {
@@ -212,6 +237,8 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     permissions: [
       "document:create", "document:read", "document:update", "file:read", ...BASE, "task:read",
       "task:update", "tracking:read", "transport:read",
+      // Phase 8.7 — Messaging Center. Transport department inbox.
+      "messaging:read", "messaging:send", "messaging:read:transport",
     ],
   },
   {
@@ -227,6 +254,8 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "file:read", "file:read:all", "finance:create", "finance:issue", "finance:payment",
       "finance:read", "finance:update", "finance:validate", "finance:void", ...BASE,
       "process:read", "report:read", "logistics:copilot:read",
+      // Phase 8.7 — Messaging Center. Finance department inbox.
+      "messaging:read", "messaging:send", "messaging:read:finance",
     ],
   },
   {
@@ -253,6 +282,10 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "process:completeness:review", ...PROCESS_HANDOFF, "process:manage", "process:read",
       "quotation:approve", "quotation:create", "quotation:send", "transport:request",
       "logistics:copilot:read",
+      // Phase 8.7 — Messaging Center. Full supervisory reach: every department + manage/moderate.
+      "messaging:read", "messaging:send", "messaging:read:documentation", "messaging:read:customs",
+      "messaging:read:transport", "messaging:read:finance", "messaging:read:general",
+      "messaging:manage", "messaging:moderate",
     ],
   },
   {
@@ -266,6 +299,8 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "audit:read:all", "customs:read", "document:approve", "document:read", "file:read",
       "file:read:all", ...BASE, "process:read", "task:read", "task:read:all", "tracking:read",
       "transport:read", "logistics:copilot:read",
+      // Phase 8.7 — Messaging Center. Governance: read + redact, no department inbox.
+      "messaging:read", "messaging:send", "messaging:moderate",
     ],
   },
   {
@@ -315,6 +350,8 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "client:read", "communication:read", "communication:send", "file:read", "file:read:all",
       "finance:create", "finance:issue", "finance:read", "finance:update", ...BASE,
       ...PROCESS_HANDOFF, "process:read", "logistics:copilot:read",
+      // Phase 8.7 — Messaging Center. Finance department inbox.
+      "messaging:read", "messaging:send", "messaging:read:finance",
     ],
   },
   {
@@ -329,6 +366,8 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     permissions: [
       "customs:read", "customs:register", "file:read", "finance:read", ...BASE,
       ...PROCESS_HANDOFF, "process:read", "logistics:copilot:read",
+      // Phase 8.7 — Messaging Center. Customs department inbox.
+      "messaging:read", "messaging:send", "messaging:read:customs",
     ],
   },
   {
@@ -343,6 +382,8 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     permissions: [
       "customs:read", "customs:release", "customs:update", "document:create", "document:read",
       "file:read", ...BASE, ...PROCESS_HANDOFF, "process:read", "logistics:copilot:read",
+      // Phase 8.7 — Messaging Center. Customs department inbox.
+      "messaging:read", "messaging:send", "messaging:read:customs",
     ],
   },
   {
@@ -356,6 +397,8 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     permissions: [
       "document:create", "document:read", "file:read", ...BASE, ...PROCESS_HANDOFF, "process:read",
       "tracking:read", "transport:read", "transport:update", "logistics:copilot:read",
+      // Phase 8.7 — Messaging Center. Transport department inbox.
+      "messaging:read", "messaging:send", "messaging:read:transport",
     ],
   },
   {
@@ -370,6 +413,8 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "admin_service:manage", "courier:assign", "document:create", "document:read", "file:read",
       "file:read:all", "finance:read", ...BASE, ...PROCESS_HANDOFF, "process:read",
       "logistics:copilot:read",
+      // Phase 8.7 — Messaging Center. General customer-service inbox.
+      "messaging:read", "messaging:send", "messaging:read:general",
     ],
   },
   {
@@ -397,6 +442,8 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "collections:manage", "communication:read", "communication:send", "file:read",
       "file:read:all", "finance:payment", "finance:read", ...BASE, "process:read", "report:read",
       "logistics:copilot:read",
+      // Phase 8.7 — Messaging Center. Finance department inbox.
+      "messaging:read", "messaging:send", "messaging:read:finance",
     ],
   },
 ];
