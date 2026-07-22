@@ -29,9 +29,13 @@ Prerequisites: two Effitrans staff accounts with different department permission
 second active customer portal account for a **different** client company (Client B), one dossier
 belonging to Client A.
 
-1. **Staff direct conversation.** Staff 1 opens `/messages` → "+ Nouvelle conversation" → enters
-   Staff 2's user id + a message → Create. Confirm Staff 2 sees it (and its unread badge) on their
-   own `/messages`.
+1. **Staff direct conversation.** Staff 1 opens `/messages` → "+ Nouvelle conversation" → types
+   part of Staff 2's first name, last name, email, role, or department into "Rechercher un
+   collègue…" → confirms Staff 2 appears with their name/role/department/email (no raw id
+   anywhere) → selects them → enters a message → Create. Confirm Staff 2 sees it (and its unread
+   badge) on their own `/messages`. Repeat "+ Nouvelle conversation" with the SAME colleague and a
+   second message; confirm it lands in the SAME thread (not a second, duplicate conversation).
+   Search for **yourself** (Staff 1's own name) and confirm you never appear in your own results.
 2. **Dossier-linked context.** From the Client A dossier, staff (or the customer, via "Contacter
    Effitrans" on that dossier page) starts a conversation; confirm the dossier reference
    (`Dossier <number>`) appears in both the conversation list and the thread header.
@@ -66,8 +70,10 @@ belonging to Client A.
 
 - **No true Realtime channel** — the UI polls every 8 seconds; see
   `docs/messaging/architecture.md`'s Realtime section for why.
-- **No staff directory picker** for starting a new direct conversation — the "Nouvelle
-  conversation" form asks for the colleague's raw user id. A proper picker is a natural follow-up.
+- **The staff recipient picker (Phase 8.6A) only starts staff-to-staff conversations.** Department
+  and dossier-linked recipient selection are not exposed through it yet — those conversation types
+  are still created via `createDossierConversation`/`createDepartmentConversation` directly
+  (reachable programmatically today; no dedicated picker UI for them yet).
 - **No per-message read receipts** — only `participant.last_read_at`-derived unread counts, as
   the brief allowed.
 - **No AI auto-reply** — the schema reserves `sender_type = 'ai'` and an `internal` visibility an

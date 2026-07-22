@@ -93,6 +93,49 @@ messaging has no dedicated `/api/*` route to accidentally cache (all reads/write
 Actions). `tests/messaging.test.ts` pins the allowlist to its original three patterns as a
 regression guard.
 
+## Staff recipient picker (Phase 8.6A)
+
+The "start a direct conversation" form originally asked for the colleague's raw `app_user.id`
+(a UUID) — functional, but not production UX, and it leaked an internal identifier into a form
+field. `lib/messaging/staff-directory.ts:searchStaffRecipients(query)` replaces it with a
+searchable combobox (`components/messaging/staff-recipient-picker.tsx`).
+
+**Not a new employee directory.** The existing admin-scoped reader
+(`lib/users/service.ts:listUsers`, gated on `admin:users:manage`) was deliberately **not** reused
+— it's for the `/users` admin screen and returns admin-only fields (presence, login metadata,
+onboarding state) to admins only. This reader needed a narrower gate (`messaging:send` — any
+staff member who can message someone, not just admins) and a narrower field set (id, name, email,
+role label, department label — nothing else), so it's its own small, purpose-built reader rather
+than a widened admin one.
+
+**Bounded, not a directory dump.** The reader pulls at most `CANDIDATE_CEILING = 200` active,
+same-tenant `app_user` rows (excluding the caller), joins `user_role`/`role` for each (also
+tenant-filtered), computes a display role/department label per user, then calls the PURE function
+`searchStaffDirectory()` (`lib/messaging/access.ts`) to filter by substring match across
+name/email/role-label/department-label and cap the RETURNED set at `RESULT_LIMIT = 8`. For this
+business's realistic staff count, 200 is effectively "the whole active roster" — the ceiling exists
+so this reader can never become an unbounded table scan if that assumption ever changes, not
+because 200 is expected to bind in practice.
+
+**Department label derivation reuses, rather than duplicates, an existing association.** A role's
+department (e.g. `CUSTOMS_DECLARANT` → "Douane") is NOT a new registry — it mirrors the EXACT
+role↔department pairing already granted in `supabase/seed.sql`'s `messaging:read:<dept>`
+`role_permission` inserts (Phase 8.7). `lib/messaging/access.ts:roleDepartmentCode()` is
+deliberately a *partial* map: a role that holds several department permissions at once
+(`SYSTEM_ADMIN`, `OPS_SUPERVISOR`, `COORDINATOR`, `CHIEF_OF_TRANSIT`, `ACCOUNT_MANAGER`) or none
+(`QUOTATION_MANAGER`, `COMPLIANCE_HSSE`) resolves to `null` rather than an arbitrary or fabricated
+label — `tests/messaging-recipient-picker.test.ts` asserts every *mapped* role's single department
+against the actual seed.sql grant, so the two can't silently drift apart.
+
+**Direct-conversation reuse.** Before Phase 8.6A, every "start a conversation" call created a
+brand-new `direct_staff` conversation, even between the same two colleagues. `createDirectConversation`
+now looks for an existing **OPEN** `direct_staff` conversation where both users are still current
+(non-removed) participants (`findOpenDirectConversation` in `lib/messaging/actions.ts`) and, if
+found, adds the new message there instead of spawning a duplicate thread. A **closed** prior thread
+does not count — a fresh conversation begins, consistent with "closed conversations don't silently
+reopen" everywhere else in this feature. This only touches `direct_staff`; `dossier`, `department`,
+and `customer_support` conversations are unaffected.
+
 ## Rollout
 
 `tenant_messaging_rollout` (one row per tenant) + `EFFITRANS_MESSAGING_CENTER_ENABLED` env kill

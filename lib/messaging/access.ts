@@ -131,3 +131,69 @@ export function countUnreadPerConversation(
   }
   return out;
 }
+
+// ==================================================== staff recipient picker (8.6A) ====
+
+/**
+ * A colleague as shown in the "start a conversation" search picker. Deliberately
+ * minimal — never a phone number, address, payroll, auth, or audit field (see
+ * lib/messaging/staff-directory.ts's own header for the full I/O-side guarantee).
+ */
+export type StaffRecipient = {
+  id: string;
+  name: string;
+  email: string;
+  roleLabel: string | null;
+  departmentLabel: string | null;
+};
+
+/**
+ * Role code -> messaging department code, for DISPLAY only. Reuses the EXACT
+ * role/department pairing already granted in supabase/seed.sql's
+ * `messaging:read:<dept>` role_permission inserts (Phase 8.7) — this is not a new
+ * registry, it is those same associations expressed as a lookup so a search result
+ * can show a label without an extra permissions query per row. Parity with seed.sql
+ * is asserted by tests/messaging.test.ts.
+ *
+ * Deliberately NOT total: roles holding SEVERAL department permissions at once
+ * (SYSTEM_ADMIN, OPS_SUPERVISOR, COORDINATOR — every department; CHIEF_OF_TRANSIT —
+ * customs AND transport; ACCOUNT_MANAGER — documentation AND general) or NONE
+ * (QUOTATION_MANAGER, COMPLIANCE_HSSE) have no single honest department to show, so
+ * they resolve to `null` rather than a fabricated or arbitrarily-picked label.
+ */
+const ROLE_DEPARTMENT_CODE: Record<string, MessagingDepartment> = {
+  DOCUMENTATION_OFFICER: "documentation",
+  CUSTOMS_DECLARANT: "customs",
+  CUSTOMS_FINANCE_OFFICER: "customs",
+  CUSTOMS_FIELD_AGENT: "customs",
+  TRANSPORT_OFFICER: "transport",
+  PICKUP_AGENT: "transport",
+  WAREHOUSE_COORDINATOR: "transport",
+  FINANCE_OFFICER: "finance",
+  BILLING_OFFICER: "finance",
+  COLLECTIONS_OFFICER: "finance",
+  ADMINISTRATIVE_OFFICER: "general",
+  CEO: "general",
+};
+
+export function roleDepartmentCode(roleCode: string): MessagingDepartment | null {
+  return ROLE_DEPARTMENT_CODE[roleCode] ?? null;
+}
+
+/**
+ * Case-insensitive substring match across every displayed field (name, email, role
+ * label, department label) — a query like "Douane" or "Administrateur" matches on
+ * role/department text, not just name/email. PURE — no I/O — so this is the one
+ * piece of "search" logic that's directly unit-tested without a database; the
+ * server reader (lib/messaging/staff-directory.ts) only fetches a bounded
+ * candidate set and calls this to filter + cap it.
+ */
+export function searchStaffDirectory(candidates: StaffRecipient[], query: string, limit: number): StaffRecipient[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  const matches = candidates.filter((c) => {
+    const haystack = [c.name, c.email, c.roleLabel, c.departmentLabel].filter(Boolean).join(" ").toLowerCase();
+    return haystack.includes(q);
+  });
+  return matches.slice(0, Math.max(0, limit));
+}

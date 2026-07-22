@@ -25,7 +25,9 @@ import {
   getStaffAttachmentDownloadUrl,
 } from "@/lib/messaging/actions";
 import { CONTACT_DEPARTMENT_LABELS } from "@/lib/portal/self-service";
+import { StaffRecipientPicker } from "./staff-recipient-picker";
 import type { ConversationDetail, ConversationStatus, ConversationSummary } from "@/lib/messaging/types";
+import type { StaffRecipient } from "@/lib/messaging/access";
 
 const POLL_MS = 8000;
 
@@ -391,54 +393,65 @@ export function MessagingCenter({
 }
 
 /**
- * Minimal staff-to-staff conversation starter. Asks for the colleague's user id
- * directly (no directory picker yet — a documented limitation, see the Phase 8.7
- * final report) rather than shipping a half-built search UI.
+ * Staff-to-staff conversation starter (Phase 8.6A) — searches colleagues by name/
+ * email/role/department via StaffRecipientPicker instead of asking for a raw user
+ * id. The internal id only ever lives in component state after a real selection;
+ * it is re-validated server-side by createDirectConversation regardless.
  */
 function NewConversationForm({ onCreated, onCancel }: { onCreated: (id: string) => void; onCancel: () => void }) {
-  const [participantUserId, setParticipantUserId] = useState("");
+  const [recipient, setRecipient] = useState<StaffRecipient | null>(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (!recipient || !message.trim()) return;
     setError(null);
     startTransition(async () => {
-      const res = await createDirectConversation({ participantUserId: participantUserId.trim(), firstMessage: message });
-      if (!res.ok) setError(res.error);
+      const res = await createDirectConversation({ participantUserId: recipient.id, firstMessage: message });
+      if (!res.ok) setError(res.error === "not_found" ? "Ce collègue n'est plus disponible. Choisissez-en un autre." : res.error);
       else onCreated(res.id);
     });
   }
 
   return (
-    <form onSubmit={submit} className="space-y-2 border-b border-slate-200 bg-slate-50 p-3">
-      <label htmlFor="new-conv-user" className="block text-xs font-medium text-slate-600">
-        Identifiant du collègue (user id)
-      </label>
-      <input
-        id="new-conv-user"
-        value={participantUserId}
-        onChange={(e) => setParticipantUserId(e.target.value)}
-        required
-        className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+    <form onSubmit={submit} className="space-y-3 border-b border-slate-200 bg-slate-50 p-3">
+      <p className="text-sm font-semibold text-navy-900">Nouvelle conversation</p>
+
+      <StaffRecipientPicker
+        selected={recipient}
+        onSelect={(r) => {
+          setRecipient(r);
+          setError(null);
+        }}
+        onClear={() => setRecipient(null)}
+        disabled={pending}
       />
-      <label htmlFor="new-conv-message" className="block text-xs font-medium text-slate-600">
-        Premier message
-      </label>
-      <textarea
-        id="new-conv-message"
-        value={message}
-        onChange={(e) => setMessage(e.target.value)}
-        required
-        rows={2}
-        className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
-      />
+
+      <div>
+        <label htmlFor="new-conv-message" className="mb-1 block text-xs font-medium text-slate-600">
+          Premier message
+        </label>
+        <textarea
+          id="new-conv-message"
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          required
+          rows={2}
+          className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+        />
+      </div>
+
       <div className="flex justify-end gap-2">
-        <button type="button" onClick={onCancel} className="min-h-[32px] rounded-lg px-3 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100">
+        <button type="button" onClick={onCancel} disabled={pending} className="min-h-[44px] rounded-lg px-3 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 disabled:opacity-50">
           Annuler
         </button>
-        <button type="submit" disabled={pending} className="min-h-[32px] rounded-lg bg-teal-700 px-3 py-1 text-xs font-medium text-white disabled:opacity-50">
+        <button
+          type="submit"
+          disabled={pending || !recipient || !message.trim()}
+          className="min-h-[44px] rounded-lg bg-teal-700 px-3 py-1 text-xs font-medium text-white disabled:opacity-50"
+        >
           Créer
         </button>
       </div>

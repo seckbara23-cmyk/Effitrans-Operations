@@ -27,9 +27,11 @@ import {
   canMessageConversation,
   nextStatusOnStaffReply,
   type MessagingDepartment,
+  type StaffRecipient,
 } from "./access";
 import { notifyStaffOfMessage, notifyPortalOfMessage } from "./notify";
 import { listStaffConversations, getStaffConversationDetail } from "./service";
+import { searchStaffRecipients } from "./staff-directory";
 import {
   attachmentExtension,
   buildAttachmentStoragePath,
@@ -55,6 +57,16 @@ export async function fetchStaffConversations(status?: ConversationStatus): Prom
 
 export async function fetchStaffConversationDetail(conversationId: string): Promise<ConversationDetail | null> {
   return getStaffConversationDetail(conversationId);
+}
+
+/**
+ * Phase 8.6A — "start a conversation" colleague search. Thin wrapper over
+ * lib/messaging/staff-directory.ts, which itself resolves tenant/identity/
+ * permission from the session — this function accepts nothing the caller could
+ * use to widen the search beyond their own tenant.
+ */
+export async function searchMessagingRecipients(query: string): Promise<StaffRecipient[]> {
+  return searchStaffRecipients(query);
 }
 
 type ConversationAccessRow = {
@@ -122,6 +134,43 @@ async function touchStaffParticipant(admin: Admin, conversationId: string, tenan
 
 // ------------------------------------------------------------ conversation create ----
 
+/**
+ * Phase 8.6A — an OPEN direct_staff conversation where BOTH users are still
+ * current (non-removed) participants, newest first. A repeated "start a
+ * conversation with the same colleague" reuses this thread instead of spawning a
+ * new one every time; a CLOSED prior thread does not count (a fresh one begins).
+ */
+async function findOpenDirectConversation(admin: Admin, tenantId: string, userAId: string, userBId: string): Promise<string | null> {
+  const { data: mine } = await admin
+    .from("conversation_participant")
+    .select("conversation_id")
+    .eq("tenant_id", tenantId)
+    .eq("user_id", userAId)
+    .is("removed_at", null);
+  const mineIds = (mine ?? []).map((r) => r.conversation_id);
+  if (mineIds.length === 0) return null;
+
+  const { data: theirs } = await admin
+    .from("conversation_participant")
+    .select("conversation_id")
+    .eq("tenant_id", tenantId)
+    .eq("user_id", userBId)
+    .is("removed_at", null)
+    .in("conversation_id", mineIds);
+  const sharedIds = (theirs ?? []).map((r) => r.conversation_id);
+  if (sharedIds.length === 0) return null;
+
+  const { data: convs } = await admin
+    .from("conversation")
+    .select("id, updated_at")
+    .in("id", sharedIds)
+    .eq("type", "direct_staff")
+    .neq("status", "closed")
+    .order("updated_at", { ascending: false })
+    .limit(1);
+  return convs?.[0]?.id ?? null;
+}
+
 export async function createDirectConversation(input: {
   participantUserId: string;
   firstMessage: string;
@@ -144,47 +193,59 @@ export async function createDirectConversation(input: {
     .maybeSingle();
   if (!other || other.tenant_id !== user.tenantId || other.status !== "active") return { ok: false, error: "not_found" };
 
-  const { data: conv, error } = await admin
-    .from("conversation")
-    .insert({ tenant_id: user.tenantId, type: "direct_staff", created_by: user.id, status: "open" })
-    .select("id")
-    .single();
-  if (error || !conv) return { ok: false, error: "create_failed" };
+  const existingConvId = await findOpenDirectConversation(admin, user.tenantId, user.id, other.id);
 
-  await admin.from("conversation_participant").insert([
-    { tenant_id: user.tenantId, conversation_id: conv.id, participant_type: "staff", user_id: user.id, last_read_at: new Date().toISOString() },
-    { tenant_id: user.tenantId, conversation_id: conv.id, participant_type: "staff", user_id: other.id },
-  ]);
+  let convId: string;
+  if (existingConvId) {
+    convId = existingConvId;
+  } else {
+    const { data: conv, error } = await admin
+      .from("conversation")
+      .insert({ tenant_id: user.tenantId, type: "direct_staff", created_by: user.id, status: "open" })
+      .select("id")
+      .single();
+    if (error || !conv) return { ok: false, error: "create_failed" };
+    convId = conv.id;
+
+    await admin.from("conversation_participant").insert([
+      { tenant_id: user.tenantId, conversation_id: convId, participant_type: "staff", user_id: user.id, last_read_at: new Date().toISOString() },
+      { tenant_id: user.tenantId, conversation_id: convId, participant_type: "staff", user_id: other.id },
+    ]);
+
+    await writeAudit({
+      action: AuditActions.MESSAGING_CONVERSATION_CREATED,
+      actorId: user.id,
+      tenantId: user.tenantId,
+      entity: "conversation",
+      entityId: convId,
+      after: { type: "direct_staff", participant: other.id },
+    });
+  }
 
   const clean = input.firstMessage.trim().slice(0, 4000);
   const { data: msg, error: msgErr } = await admin
     .from("message")
-    .insert({ tenant_id: user.tenantId, conversation_id: conv.id, sender_type: "staff", sender_user_id: user.id, body: clean, message_type: "text", visibility: "shared" })
+    .insert({ tenant_id: user.tenantId, conversation_id: convId, sender_type: "staff", sender_user_id: user.id, body: clean, message_type: "text", visibility: "shared" })
     .select("id")
     .single();
   if (msgErr || !msg) return { ok: false, error: "create_failed" };
 
-  await writeAudit({
-    action: AuditActions.MESSAGING_CONVERSATION_CREATED,
-    actorId: user.id,
-    tenantId: user.tenantId,
-    entity: "conversation",
-    entityId: conv.id,
-    after: { type: "direct_staff", participant: other.id },
-  });
+  await touchStaffParticipant(admin, convId, user.tenantId, user.id);
+  await admin.from("conversation").update({ updated_at: new Date().toISOString() }).eq("id", convId);
+
   await writeAudit({
     action: AuditActions.MESSAGING_MESSAGE_SENT,
     actorId: user.id,
     tenantId: user.tenantId,
     entity: "message",
     entityId: msg.id,
-    after: { conversation_id: conv.id, message_type: "text" },
+    after: { conversation_id: convId, message_type: "text" },
   });
 
   await notifyStaffOfMessage({
     admin,
     tenantId: user.tenantId,
-    conversationId: conv.id,
+    conversationId: convId,
     excludeUserId: user.id,
     recipientUserIds: [other.id],
     title: "Nouveau message",
@@ -192,7 +253,7 @@ export async function createDirectConversation(input: {
   });
 
   revalidatePath("/messages");
-  return { ok: true, id: conv.id };
+  return { ok: true, id: convId };
 }
 
 export async function createDossierConversation(input: {

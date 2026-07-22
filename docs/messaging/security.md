@@ -80,6 +80,31 @@ for both audiences before an insert is attempted.
 - **15 MB size limit**, enforced both by the bucket's `file_size_limit` and by
   `validateAttachmentUpload()` before the upload is even attempted.
 
+## Staff recipient picker (Phase 8.6A)
+
+The search reader (`lib/messaging/staff-directory.ts`) returns the minimum field set a picker
+needs — `id`, `name`, `email`, a display `roleLabel`, a display `departmentLabel` — and nothing
+else. It never returns a phone number, address, payroll data, auth metadata (password/MFA state),
+audit history, or any other workforce field. Tenant and identity are always resolved from
+`getCurrentUser()` (the authenticated session) — the exported function's signature is `(query:
+string)`, so there is no tenant id or caller id parameter a client could override. It excludes: the
+caller themselves (`.neq("id", user.id)`), inactive/archived staff (`.eq("status", "active")`),
+every non-`app_user` identity (portal customers and platform admins live in entirely separate
+tables that this reader never queries), and any other tenant (`.eq("tenant_id", user.tenantId)` on
+both the `app_user` and `user_role` queries — the second was specifically re-checked against
+`tests/tenant-scope.test.ts`'s static leak guard, which fails CI if a service-role read of a
+tenant-scoped table is ever missing its tenant filter).
+
+It cannot be used as a cross-tenant directory-enumeration API: it is gated on `messaging:send`
+(the same permission sending a message requires — no new, separately-attackable permission was
+introduced), it is tenant-scoped server-side with no client-controllable override, and it returns
+at most 8 rows regardless of how broad the query is.
+
+The selected recipient's id is re-validated by `createDirectConversation` on submission —
+tenant match and `status = 'active'` are re-checked against a **freshly loaded** row, exactly like
+every other messaging write action; the picker's result is a UX convenience, never a trusted
+authorization input by itself.
+
 ## Revoked / inactive identities
 
 - A `DISABLED` portal user: `getCurrentPortalUser()` still resolves the row, but every portal
