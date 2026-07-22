@@ -30,10 +30,22 @@ export default async function MessageThreadPage({ params }: { params: { id: stri
     );
   }
 
-  const [conversations, detail] = await Promise.all([
-    listStaffConversations(),
-    getStaffConversationDetail(params.id),
-  ]);
+  // Best-effort — see app/messages/page.tsx's comment on operator-applied migrations.
+  let conversations: Awaited<ReturnType<typeof listStaffConversations>>;
+  let detail: Awaited<ReturnType<typeof getStaffConversationDetail>>;
+  try {
+    [conversations, detail] = await Promise.all([
+      listStaffConversations(),
+      getStaffConversationDetail(params.id),
+    ]);
+  } catch {
+    return (
+      <div className="animate-fade-in space-y-6">
+        {header}
+        <Notice>La messagerie est temporairement indisponible. Réessayez dans un instant.</Notice>
+      </div>
+    );
+  }
   const canManage = hasPermission(permissions, "messaging:manage");
 
   return (

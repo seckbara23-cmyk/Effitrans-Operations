@@ -11,7 +11,20 @@ export const dynamic = "force-dynamic";
 // for why (an always-on "Contacter Effitrans" reply must always be reachable).
 export default async function PortalMessagesPage() {
   await requirePortalUser();
-  const conversations = await listPortalConversations();
+  // Best-effort — see app/messages/page.tsx's comment on operator-applied migrations.
+  let conversations: Awaited<ReturnType<typeof listPortalConversations>>;
+  try {
+    conversations = await listPortalConversations();
+  } catch {
+    return (
+      <div className="animate-fade-in space-y-4">
+        <div>
+          <h1 className="text-lg font-bold text-navy-900">Support Effitrans</h1>
+        </div>
+        <div className="surface p-6 text-sm text-slate-600">Le support est temporairement indisponible. Réessayez dans un instant.</div>
+      </div>
+    );
+  }
   return (
     <div className="animate-fade-in space-y-4">
       <div>

@@ -38,7 +38,21 @@ export default async function MessagesPage() {
     );
   }
 
-  const conversations = await listStaffConversations();
+  // Best-effort: the migration that creates conversation/message may not be applied
+  // to every environment the instant this code deploys (this repo's migrations are
+  // operator-applied, not auto-run — see docs/messaging/acceptance.md). Degrade to a
+  // friendly notice instead of a hard 500 if the tables aren't there yet.
+  let conversations: Awaited<ReturnType<typeof listStaffConversations>>;
+  try {
+    conversations = await listStaffConversations();
+  } catch {
+    return (
+      <div className="animate-fade-in space-y-6">
+        {header}
+        <Notice>La messagerie est temporairement indisponible. Réessayez dans un instant.</Notice>
+      </div>
+    );
+  }
   const canManage = hasPermission(permissions, "messaging:manage");
 
   return (
