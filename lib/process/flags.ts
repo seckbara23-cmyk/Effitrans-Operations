@@ -45,6 +45,13 @@ export type ProcessFlagEnv = {
    */
   EFFITRANS_OPERATIONS_INTAKE_ENABLED?: string;
   /**
+   * Phase 9.0D — the TRANSIT EXECUTION slice (reception, declarant/team
+   * assignment, the T1–T10 customs chain, finance payment-gate decision, BAE
+   * capture and AIBD/Maritime dispatch). Requires the master flag AND
+   * structures AND intake (it continues the workflow intake opens).
+   */
+  EFFITRANS_TRANSIT_EXECUTION_ENABLED?: string;
+  /**
    * Phase 5.0D — the physical invoice deposit chain (Administration -> Courier ->
    * proof -> Collections handoff). Separate from collections so a tenant that
    * only emails invoices never sees a courier workflow.
@@ -71,6 +78,8 @@ export type ProcessFlags = {
   structures: boolean;
   /** Phase 9.0C Operations intake slice (requires master AND structures). */
   intake: boolean;
+  /** Phase 9.0D Transit execution slice (requires master AND structures AND intake). */
+  transitExecution: boolean;
 };
 
 const on = (v: string | undefined): boolean => v === "true";
@@ -78,6 +87,8 @@ const on = (v: string | undefined): boolean => v === "true";
 export function resolveProcessFlags(env: ProcessFlagEnv): ProcessFlags {
   const enabled = on(env.EFFITRANS_PROCESS_ENGINE_ENABLED);
   const structures = enabled && on(env.EFFITRANS_PROCESS_STRUCTURES_ENABLED);
+  // Intake requires the structures it writes (owner, blockers) — a double gate.
+  const intake = structures && on(env.EFFITRANS_OPERATIONS_INTAKE_ENABLED);
   return {
     enabled,
     // A sub-capability is only live when the master flag is also on.
@@ -87,7 +98,9 @@ export function resolveProcessFlags(env: ProcessFlagEnv): ProcessFlags {
     physicalDeposit: enabled && on(env.EFFITRANS_PHYSICAL_INVOICE_DEPOSIT_ENABLED),
     collections: enabled && on(env.EFFITRANS_COLLECTIONS_ENABLED),
     structures,
-    // Intake requires the structures it writes (owner, blockers) — a double gate.
-    intake: structures && on(env.EFFITRANS_OPERATIONS_INTAKE_ENABLED),
+    intake,
+    // Transit execution continues the workflow intake opens — it requires intake
+    // (hence structures, hence the master): a triple gate.
+    transitExecution: intake && on(env.EFFITRANS_TRANSIT_EXECUTION_ENABLED),
   };
 }

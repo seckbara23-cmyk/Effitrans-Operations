@@ -103,6 +103,9 @@ export function resolveEffectiveFlags(
     // Phase 9.0C intake: environment-only sub-flag over structures; the TENANT
     // gate is the same process_engine enablement every engine action requires.
     intake: enabled && env.structures && env.intake,
+    // Phase 9.0D transit execution: environment-only sub-flag over intake; the
+    // TENANT gate is the same process_engine enablement (a triple env gate).
+    transitExecution: enabled && env.structures && env.intake && env.transitExecution,
   };
 }
 
@@ -116,4 +119,5 @@ export const FLAGS_ALL_OFF: ProcessFlags = {
   overrideAllowed: false,
   structures: false,
   intake: false,
+  transitExecution: false,
 };

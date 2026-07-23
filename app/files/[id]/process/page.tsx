@@ -15,6 +15,8 @@ import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-s
 import { getProcessState } from "@/lib/process/engine/service";
 import { getIntakeState, listEligibleOperationsOwners, type EligibleOwner, type IntakeState } from "@/lib/process/engine/intake-actions";
 import { IntakePanel } from "@/components/process/intake-panel";
+import { getTransitState, listEligibleTransitAssignees, type TransitAssignee, type TransitState } from "@/lib/process/engine/transit-actions";
+import { TransitPanel } from "@/components/process/transit-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -98,6 +100,33 @@ export default async function ProcessInspectorPage({ params }: { params: { id: s
     />
   ) : null;
 
+  // Phase 9.0D — the Transit execution panel. Same discipline as intake:
+  // getTransitState degrades to null (panel hidden) when the 9.0B structures /
+  // the process instance are absent, so nothing here can break the inspector.
+  let transit: TransitState | null = null;
+  let eligibleDeclarants: TransitAssignee[] = [];
+  const canAssignTransit = hasPermission(permissions, "customs:assign");
+  if (tenantFlags.transitExecution) {
+    transit = await getTransitState(params.id);
+    if (transit && canAssignTransit && !transit.declarant) {
+      eligibleDeclarants = await listEligibleTransitAssignees("CUSTOMS_DECLARANT");
+    }
+  }
+  const transitPanel = transit ? (
+    <TransitPanel
+      fileId={params.id}
+      state={transit}
+      eligibleDeclarants={eligibleDeclarants}
+      canReceive={hasPermission(permissions, "process:handoff:receive")}
+      canAssign={canAssignTransit}
+      canRequestDecision={hasPermission(permissions, "process:decision:create")}
+      canApproveDecision={hasPermission(permissions, "process:decision:approve")}
+      canRecordBae={hasPermission(permissions, "customs:release")}
+      canDispatch={hasPermission(permissions, "process:team:manage")}
+      canManageBlockers={hasPermission(permissions, "process:blocker:manage")}
+    />
+  ) : null;
+
   // LEGACY DOSSIER (Deliverable 13). No process instance exists. We do NOT create
   // one as a side effect of rendering — initialization is an explicit, authorized
   // act, and no prior step is ever marked completed.
@@ -151,6 +180,7 @@ export default async function ProcessInspectorPage({ params }: { params: { id: s
       </header>
 
       {intakePanel}
+      {transitPanel}
 
       {state.unverifiedSteps.length > 0 && (
         <div className="rounded-lg border border-orange-200 bg-orange-50 p-3 text-sm text-orange-800">

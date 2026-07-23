@@ -364,6 +364,10 @@ export const AuditActions = {
   PROCESS_TEAM_ASSIGNED: "process.team.assigned",
   PROCESS_STEP_SKIPPED: "process.step.skipped",
   PROCESS_STEP_SKIP_REOPENED: "process.step.skip_reopened",
+  // Phase 9.0D — a Transit step assigned to a specific eligible user (declarant,
+  // chef). Safe metadata only: step key + assignee id, never a UUID in any label.
+  PROCESS_STEP_ASSIGNED: "process.step.assigned",
+  PROCESS_TRANSIT_RECEIVED: "process.transit.received",
 
   // Phase 8.7 — Effitrans Messaging Center. The message table itself is the immutable
   // record of what was said, so ordinary sends are audited by ID + safe metadata only
