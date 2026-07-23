@@ -52,6 +52,13 @@ export type ProcessFlagEnv = {
    */
   EFFITRANS_TRANSIT_EXECUTION_ENABLED?: string;
   /**
+   * Phase 9.0E — the FINANCE EXECUTION slice (finance requests, review,
+   * disbursement, evidence verification, financial clearance). Requires the
+   * master flag AND structures AND intake AND transit execution (it executes
+   * the financial seam the Transit payment gate opens).
+   */
+  EFFITRANS_FINANCE_EXECUTION_ENABLED?: string;
+  /**
    * Phase 5.0D — the physical invoice deposit chain (Administration -> Courier ->
    * proof -> Collections handoff). Separate from collections so a tenant that
    * only emails invoices never sees a courier workflow.
@@ -80,6 +87,8 @@ export type ProcessFlags = {
   intake: boolean;
   /** Phase 9.0D Transit execution slice (requires master AND structures AND intake). */
   transitExecution: boolean;
+  /** Phase 9.0E Finance execution slice (requires the full 9.0B→9.0D chain). */
+  financeExecution: boolean;
 };
 
 const on = (v: string | undefined): boolean => v === "true";
@@ -89,6 +98,7 @@ export function resolveProcessFlags(env: ProcessFlagEnv): ProcessFlags {
   const structures = enabled && on(env.EFFITRANS_PROCESS_STRUCTURES_ENABLED);
   // Intake requires the structures it writes (owner, blockers) — a double gate.
   const intake = structures && on(env.EFFITRANS_OPERATIONS_INTAKE_ENABLED);
+  const transitExecution = intake && on(env.EFFITRANS_TRANSIT_EXECUTION_ENABLED);
   return {
     enabled,
     // A sub-capability is only live when the master flag is also on.
@@ -101,6 +111,9 @@ export function resolveProcessFlags(env: ProcessFlagEnv): ProcessFlags {
     intake,
     // Transit execution continues the workflow intake opens — it requires intake
     // (hence structures, hence the master): a triple gate.
-    transitExecution: intake && on(env.EFFITRANS_TRANSIT_EXECUTION_ENABLED),
+    transitExecution: transitExecution,
+    // Finance execution executes the seam Transit's payment gate opens — it
+    // requires the whole chain: a quadruple gate over the master.
+    financeExecution: transitExecution && on(env.EFFITRANS_FINANCE_EXECUTION_ENABLED),
   };
 }

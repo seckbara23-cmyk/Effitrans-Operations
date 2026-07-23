@@ -369,6 +369,18 @@ export const AuditActions = {
   PROCESS_STEP_ASSIGNED: "process.step.assigned",
   PROCESS_TRANSIT_RECEIVED: "process.transit.received",
 
+  // Phase 9.0E — Finance execution. Safe metadata only: category, status,
+  // amount/currency, references — never free-text notes or beneficiary banking
+  // details, and NEVER a claim the data does not support (an approval is not a
+  // payment; evidence submission is not verification).
+  FINANCE_REQUEST_CREATED: "finance.request.created",
+  FINANCE_REQUEST_REVIEWED: "finance.request.reviewed",
+  FINANCE_REQUEST_DISBURSED: "finance.request.disbursed",
+  FINANCE_EVIDENCE_SUBMITTED: "finance.request.evidence_submitted",
+  FINANCE_EVIDENCE_VERIFIED: "finance.request.evidence_verified",
+  FINANCE_REQUEST_BILLED: "finance.request.billed",
+  FINANCE_CLEARED: "finance.cleared",
+
   // Phase 8.7 — Effitrans Messaging Center. The message table itself is the immutable
   // record of what was said, so ordinary sends are audited by ID + safe metadata only
   // (conversation, sender, message type, department) — NEVER the message body.

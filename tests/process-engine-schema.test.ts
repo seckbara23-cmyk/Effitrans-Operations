@@ -132,6 +132,7 @@ describe("Phase 5.0B-1 — feature flag is dark by default", () => {
       structures: false,
       intake: false,
       transitExecution: false,
+      financeExecution: false,
     });
   });
 
@@ -159,6 +160,7 @@ describe("Phase 5.0B-1 — feature flag is dark by default", () => {
       structures: false,
       intake: false,
       transitExecution: false,
+      financeExecution: false,
     });
   });
 

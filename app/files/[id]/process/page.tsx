@@ -17,6 +17,8 @@ import { getIntakeState, listEligibleOperationsOwners, type EligibleOwner, type 
 import { IntakePanel } from "@/components/process/intake-panel";
 import { getTransitState, listEligibleTransitAssignees, type TransitAssignee, type TransitState } from "@/lib/process/engine/transit-actions";
 import { TransitPanel } from "@/components/process/transit-panel";
+import { getFinanceState, type FinanceState } from "@/lib/finance/request-actions";
+import { FinancePanel } from "@/components/process/finance-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -127,6 +129,27 @@ export default async function ProcessInspectorPage({ params }: { params: { id: s
     />
   ) : null;
 
+  // Phase 9.0E — the Finance execution panel. Same discipline: getFinanceState
+  // degrades to null (panel hidden) when the finance_request migration is
+  // absent, so nothing here can break the inspector.
+  let finance: FinanceState | null = null;
+  if (tenantFlags.financeExecution) {
+    finance = await getFinanceState(params.id);
+  }
+  const financePanel = finance ? (
+    <FinancePanel
+      fileId={params.id}
+      state={finance}
+      canRequest={hasPermission(permissions, "process:decision:create")}
+      canReview={hasPermission(permissions, "finance:validate")}
+      canDisburse={hasPermission(permissions, "finance:payment")}
+      canAttach={hasPermission(permissions, "finance:update")}
+      canVerify={hasPermission(permissions, "finance:void")}
+      canBill={hasPermission(permissions, "finance:create")}
+      canClear={hasPermission(permissions, "finance:validate")}
+    />
+  ) : null;
+
   // LEGACY DOSSIER (Deliverable 13). No process instance exists. We do NOT create
   // one as a side effect of rendering — initialization is an explicit, authorized
   // act, and no prior step is ever marked completed.
@@ -181,6 +204,7 @@ export default async function ProcessInspectorPage({ params }: { params: { id: s
 
       {intakePanel}
       {transitPanel}
+      {financePanel}
 
       {state.unverifiedSteps.length > 0 && (
         <div className="rounded-lg border border-orange-200 bg-orange-50 p-3 text-sm text-orange-800">

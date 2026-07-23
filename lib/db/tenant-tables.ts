@@ -52,6 +52,7 @@ export const TENANT_SCOPED_TABLES = new Set<string>([
   "payment",
   "invoice_counter",
   "payment_intent",
+  "finance_request",
   // communications
   "communication_message",
   "client_notification",
