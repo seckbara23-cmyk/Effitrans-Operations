@@ -348,6 +348,23 @@ export const AuditActions = {
   DOCUMENT_FIELD_APPLIED: "document.field.applied",
   DOCUMENT_FIELD_APPLICATION_FAILED: "document.field.application_failed",
 
+  // Phase 9.0B — workflow structural extensions. Payloads carry ids, states, step
+  // KEYS, categories, team codes and outcome codes — NEVER a blocker's internal
+  // description body, a decision's full narrative, or any financial detail.
+  PROCESS_OWNER_ASSIGNED: "process.owner.assigned",
+  PROCESS_OWNER_CHANGED: "process.owner.changed",
+  PROCESS_DECISION_REQUESTED: "process.decision.requested",
+  PROCESS_DECISION_FINALIZED: "process.decision.finalized",
+  PROCESS_BLOCKER_OPENED: "process.blocker.opened",
+  PROCESS_BLOCKER_ACKNOWLEDGED: "process.blocker.acknowledged",
+  PROCESS_BLOCKER_RESOLVED: "process.blocker.resolved",
+  PROCESS_BLOCKER_CANCELLED: "process.blocker.cancelled",
+  PROCESS_TEAM_MEMBER_ADDED: "process.team.member_added",
+  PROCESS_TEAM_MEMBER_REMOVED: "process.team.member_removed",
+  PROCESS_TEAM_ASSIGNED: "process.team.assigned",
+  PROCESS_STEP_SKIPPED: "process.step.skipped",
+  PROCESS_STEP_SKIP_REOPENED: "process.step.skip_reopened",
+
   // Phase 8.7 — Effitrans Messaging Center. The message table itself is the immutable
   // record of what was said, so ordinary sends are audited by ID + safe metadata only
   // (conversation, sender, message type, department) — NEVER the message body.

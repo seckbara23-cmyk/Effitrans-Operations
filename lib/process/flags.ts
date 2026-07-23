@@ -32,6 +32,13 @@ export type ProcessFlagEnv = {
    */
   EFFITRANS_PROCESS_OVERRIDE_ENABLED?: string;
   /**
+   * Phase 9.0B — the dossier workflow STRUCTURAL extensions (canonical owner,
+   * recorded decisions, formal blockers, Transit team dispatch, explicit skips).
+   * Requires the master flag. Off => every structures action refuses; the new
+   * tables exist but nothing writes them.
+   */
+  EFFITRANS_PROCESS_STRUCTURES_ENABLED?: string;
+  /**
    * Phase 5.0D — the physical invoice deposit chain (Administration -> Courier ->
    * proof -> Collections handoff). Separate from collections so a tenant that
    * only emails invoices never sees a courier workflow.
@@ -54,6 +61,8 @@ export type ProcessFlags = {
   physicalDeposit: boolean;
   /** Phase 5.0D collections workspace (requires master). */
   collections: boolean;
+  /** Phase 9.0B workflow structural extensions (requires master). */
+  structures: boolean;
 };
 
 const on = (v: string | undefined): boolean => v === "true";
@@ -68,5 +77,6 @@ export function resolveProcessFlags(env: ProcessFlagEnv): ProcessFlags {
     workspaces: enabled && on(env.EFFITRANS_PROCESS_WORKSPACES_ENABLED),
     physicalDeposit: enabled && on(env.EFFITRANS_PHYSICAL_INVOICE_DEPOSIT_ENABLED),
     collections: enabled && on(env.EFFITRANS_COLLECTIONS_ENABLED),
+    structures: enabled && on(env.EFFITRANS_PROCESS_STRUCTURES_ENABLED),
   };
 }

@@ -87,6 +87,9 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "messaging:read", "messaging:send", "messaging:read:documentation", "messaging:read:customs",
       "messaging:read:transport", "messaging:read:finance", "messaging:read:general",
       "messaging:manage", "messaging:moderate",
+      // Phase 9.0B — workflow structural extensions.
+      "process:owner:assign", "process:decision:create", "process:decision:approve",
+      "process:blocker:manage", "process:team:manage", "process:step:skip",
     ],
   },
   {
@@ -158,6 +161,10 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "messaging:read", "messaging:send", "messaging:read:documentation", "messaging:read:customs",
       "messaging:read:transport", "messaging:read:finance", "messaging:read:general",
       "messaging:manage",
+      // Phase 9.0B — the Coordinateur owns dossiers, requests decisions, manages
+      // blockers and skips non-applicable steps; deliberately NOT decision:approve
+      // (manager-approval policy unresolved) and NOT team:manage (Transit's call).
+      "process:owner:assign", "process:decision:create", "process:blocker:manage", "process:step:skip",
     ],
   },
   {
@@ -177,6 +184,9 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "task:update", "logistics:copilot:read",
       // Phase 8.7 — Messaging Center. Customs + transport department inboxes.
       "messaging:read", "messaging:send", "messaging:read:customs", "messaging:read:transport",
+      // Phase 9.0B — Transit requests continue-before-payment decisions, manages
+      // its blockers and its AIBD/Maritime team rosters.
+      "process:decision:create", "process:blocker:manage", "process:team:manage",
     ],
   },
   {
@@ -286,6 +296,9 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "messaging:read", "messaging:send", "messaging:read:documentation", "messaging:read:customs",
       "messaging:read:transport", "messaging:read:finance", "messaging:read:general",
       "messaging:manage", "messaging:moderate",
+      // Phase 9.0B — workflow structural extensions.
+      "process:owner:assign", "process:decision:create", "process:decision:approve",
+      "process:blocker:manage", "process:team:manage", "process:step:skip",
     ],
   },
   {

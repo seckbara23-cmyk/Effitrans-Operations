@@ -41,6 +41,12 @@ export function isKnownStep(key: string): boolean {
  * REJECTED is TERMINAL for an attempt: a correction is a NEW execution row
  * (correction_of_id), never a mutation of the rejected one. That is what makes
  * "no overwrite of prior review" structural rather than a convention.
+ *
+ * SKIPPED (Phase 9.0B) may be REOPENED back to PENDING — but only through the
+ * audited reopenSkippedStep action (process:step:skip), never as a side effect.
+ * Skipped ≠ completed and skipped ≠ cancelled: it is "deliberately not
+ * applicable", with recorded reason/actor/source, and it may be undone when the
+ * dossier's circumstances change (e.g. a customs leg is added after all).
  */
 const ALLOWED_STEP_TRANSITIONS: Record<StepState, StepState[]> = {
   PENDING: ["AVAILABLE", "SKIPPED", "CANCELLED", "UNVERIFIED_HISTORICAL"],
@@ -51,7 +57,7 @@ const ALLOWED_STEP_TRANSITIONS: Record<StepState, StepState[]> = {
   APPROVED: ["COMPLETED"],
   REJECTED: [],
   COMPLETED: [],
-  SKIPPED: [],
+  SKIPPED: ["PENDING"],
   CANCELLED: [],
   UNVERIFIED_HISTORICAL: [],
 };

@@ -96,6 +96,10 @@ export function resolveEffectiveFlags(
     // Environment-only. Deliberately not delegable to a tenant toggle.
     compatibility: enabled && env.compatibility,
     overrideAllowed: enabled && env.overrideAllowed,
+    // Phase 9.0B structures: environment-only in 9.0B (the structures are engine
+    // plumbing, not a tenant feature — per-tenant activation arrives with the
+    // 9.0C+ phases that put user-facing behavior on top of them).
+    structures: enabled && env.structures,
   };
 }
 
@@ -107,4 +111,5 @@ export const FLAGS_ALL_OFF: ProcessFlags = {
   collections: false,
   compatibility: false,
   overrideAllowed: false,
+  structures: false,
 };

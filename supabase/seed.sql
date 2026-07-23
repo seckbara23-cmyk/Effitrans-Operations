@@ -895,3 +895,67 @@ join public.permission p on p.code = 'messaging:moderate'
 where r.tenant_id = '00000000-0000-0000-0000-000000000001'
   and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR', 'COMPLIANCE_HSSE')
 on conflict do nothing;
+
+-- ===========================================================================
+-- Phase 9.0B — workflow structural extensions. Mirrors migration
+-- 20260723000001_workflow_structures.sql and lib/platform/role-templates.ts
+-- (parity enforced by tests/role-templates.test.ts). Grants are deliberately
+-- NARROW; the decision-approval grant stays minimal because manager-approval
+-- policy is an unresolved business decision (see lib/process/decision-policy.ts).
+-- ===========================================================================
+insert into public.permission (code, module, action, data_scope, description) values
+  ('process:owner:assign',    'process', 'owner_assign',    'assigned', 'Assign or change the canonical operational owner of a dossier process'),
+  ('process:decision:create', 'process', 'decision_create', 'assigned', 'Request a recorded workflow decision (e.g. continue before payment)'),
+  ('process:decision:approve','process', 'decision_approve','assigned', 'Finalize a recorded workflow decision'),
+  ('process:blocker:manage',  'process', 'blocker_manage',  'assigned', 'Open, acknowledge, resolve or cancel a formal dossier blocker'),
+  ('process:team:manage',     'process', 'team_manage',     'all',      'Manage Transit team membership (AIBD / Maritime) and step team targeting'),
+  ('process:step:skip',       'process', 'step_skip',       'assigned', 'Explicitly skip a non-applicable process step, or reopen a skipped one')
+on conflict (code) do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'process:owner:assign'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR', 'COORDINATOR')
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'process:decision:create'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR', 'COORDINATOR', 'CHIEF_OF_TRANSIT')
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'process:decision:approve'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR')
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'process:blocker:manage'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR', 'COORDINATOR', 'CHIEF_OF_TRANSIT')
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'process:team:manage'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR', 'CHIEF_OF_TRANSIT')
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'process:step:skip'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR', 'COORDINATOR')
+on conflict do nothing;

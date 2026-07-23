@@ -129,6 +129,7 @@ describe("Phase 5.0B-1 — feature flag is dark by default", () => {
       workspaces: false,
       physicalDeposit: false,
       collections: false,
+      structures: false,
     });
   });
 
@@ -143,6 +144,8 @@ describe("Phase 5.0B-1 — feature flag is dark by default", () => {
       EFFITRANS_PROCESS_OVERRIDE_ENABLED: "true",
       // Phase 5.0C — the workspaces flag is inert without the master flag too.
       EFFITRANS_PROCESS_WORKSPACES_ENABLED: "true",
+      // Phase 9.0B — the structures flag is inert without the master flag too.
+      EFFITRANS_PROCESS_STRUCTURES_ENABLED: "true",
     });
     expect(f).toEqual({
       enabled: false,
@@ -151,6 +154,7 @@ describe("Phase 5.0B-1 — feature flag is dark by default", () => {
       workspaces: false,
       physicalDeposit: false,
       collections: false,
+      structures: false,
     });
   });
 
