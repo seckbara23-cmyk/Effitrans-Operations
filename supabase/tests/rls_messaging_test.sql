@@ -4,7 +4,8 @@
 --   * a department-permission staff user (CUSTOMS_DECLARANT: messaging:read:customs)
 --     sees ONLY the customs department conversation, not finance, not a staff-only
 --     direct conversation they don't participate in                              -> 1 / 0 / 0
---   * messaging:manage (SYSTEM_ADMIN) sees every tenant-A conversation            -> 2 / 0
+--   * messaging:manage (SYSTEM_ADMIN) sees every tenant-A conversation, including
+--     the direct_staff thread they created and participate in                     -> 3 / 0
 --   * a staff user with NO messaging permission (DRIVER) sees nothing             -> 0
 --   * NOT another tenant's conversation, for any staff identity                   -> 0
 --   * a portal customer sees ONLY their own client's conversations                -> 1 / 1
@@ -165,7 +166,7 @@ begin
     ('p1_sees_shared_attachment', p1_att_shared), ('p1_sees_internal_attachment', p1_att_internal),
     ('staff_dept_sees_both_messages', staff_both_msg);
 
-  if s1_all<>2 or s1_tenantb<>0
+  if s1_all<>3 or s1_tenantb<>0
      or s2_customs<>1 or s2_finance<>0 or s2_direct<>0
      or s3_any<>0
      or p1_customs<>1 or p1_finance<>1 or p1_direct<>0
