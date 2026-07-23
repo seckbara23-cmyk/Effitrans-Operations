@@ -147,10 +147,11 @@ describe("navigation placement — workspace not department", () => {
     expect(baseNav).toContain('href: "/departments/management"');
   });
 
-  it("18 — the Finance department page links to /finance/caisse, gated on caisse:manage", () => {
-    expect(financeDept).toContain('hasPermission(permissions, "caisse:manage")');
-    expect(financeDept).toContain('href="/finance/caisse"');
-    expect(financeDept).toContain("Ouvrir la Caisse");
+  it("18 — the Finance department page links to /finance/caisse in a permission-gated workspace list", () => {
+    expect(financeDept).toContain('href: "/finance/caisse"');
+    expect(financeDept).toContain('"caisse:manage"');
+    // Each finance workspace link is filtered by its own permission.
+    expect(financeDept).toContain("hasPermission(permissions, l.permission)");
   });
 
   it("19 — Mon Travail surfaces Caisse gated on the caisse:manage PERMISSION (not role ===)", () => {

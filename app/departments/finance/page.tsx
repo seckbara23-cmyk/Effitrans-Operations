@@ -52,25 +52,31 @@ export default async function FinanceDepartmentPage() {
   const cards = financeCards(queue, recon.counts.pending, revenueMonth);
   const currency = queue[0]?.currency ?? recon.currency ?? "XOF";
 
+  // Finance workspaces (module links, not sidebar sections) — each shown only to
+  // holders of its permission, over EXISTING routes. "Finance Requests" is the
+  // per-dossier finance panel (no standalone route), so it is intentionally omitted
+  // rather than fabricated. Caisse preserves the Phase 9.3A integration.
+  const financeLinks = [
+    { label: "Facturation", href: "/finance", permission: "finance:read", desc: "Factures, encours et statuts de règlement." },
+    { label: "Recouvrement", href: "/collections", permission: "collections:manage", desc: "Balance âgée, relances et promesses." },
+    { label: "Caisse", href: "/finance/caisse", permission: "caisse:manage", desc: "Opérations de caisse et de trésorerie (espèces, chèques, Mobile Money, banques)." },
+    { label: "Rapprochement", href: "/finance/reconciliation", permission: "finance:read", desc: "Vérification des paiements reçus." },
+    { label: "Rapports", href: "/reports", permission: "report:read", desc: "Indicateurs financiers et exports." },
+  ].filter((l) => hasPermission(permissions, l.permission));
+
   return (
     <div className="animate-fade-in space-y-6">
       {header}
-      {/* Phase 9.3A — Caisse workspace link (Finance module page, not a sidebar
-          section). Shown only to caisse:manage holders. */}
-      {hasPermission(permissions, "caisse:manage") && (
-        <div className="surface flex flex-wrap items-center justify-between gap-3 p-4">
-          <div>
-            <p className="text-sm font-medium text-navy-900">Caisse</p>
-            <p className="text-xs text-slate-500">
-              Opérations de caisse et de trésorerie — espèces, chèques, Mobile Money, comptes bancaires.
-            </p>
-          </div>
-          <Link
-            href="/finance/caisse"
-            className="rounded-lg bg-teal-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-800"
-          >
-            Ouvrir la Caisse →
-          </Link>
+      {/* Finance workspaces — normalized module links (incl. Caisse from Phase 9.3A),
+          each permission-gated, over existing routes. Not a sidebar section. */}
+      {financeLinks.length > 0 && (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {financeLinks.map((l) => (
+            <Link key={l.href} href={l.href} className="surface block p-4 transition-colors hover:border-teal-300">
+              <p className="text-sm font-semibold text-navy-900">{l.label}</p>
+              <p className="mt-1 text-xs text-slate-500">{l.desc}</p>
+            </Link>
+          ))}
         </div>
       )}
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-6">
