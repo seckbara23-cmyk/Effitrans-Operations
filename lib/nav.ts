@@ -82,26 +82,32 @@ export const BASE_SECTIONS: NavigationSection[] = [
   {
     key: "departments",
     label: "Départements",
+    // The sidebar Départements now mirror the CANONICAL operational departments
+    // (lib/organization/departments.ts): Opérations, Transit, Finance. HR is a
+    // support department and stays out of the operational sidebar.
+    //
+    // Documentation (an Operations capability) and Douane + Transport (Transit
+    // execution) are no longer top-level entries — they are WORKSPACES reached
+    // from their department hub page. Their ROUTES are unchanged
+    // (/departments/documentation, /departments/customs, /departments/transport),
+    // so no URL breaks and no redirect is needed; only the sidebar entry-points move.
     items: [
       {
-        key: "documentation",
-        label: "Documentation",
-        href: "/departments/documentation",
-        iconKey: "document",
-        permission: "document:read",
+        key: "operations",
+        label: "Opérations",
+        href: "/departments/operations",
+        iconKey: "container",
+        // Owns dossiers, clients and documentation — visible to any of their readers.
+        permissionsAnyOf: ["file:read", "client:read", "document:read"],
       },
-      // "Douane" — the business domain. NOT "Dédouanement" (an activity) and never a
-      // job title.
-      { key: "customs", label: "Douane", href: "/departments/customs", iconKey: "stamp", permission: "customs:read" },
       {
-        // Phase 7.3C — the department page is now the unified Logistics Command Center
-        // (road + ocean + air + customs overview). Label broadened; route/permission/key
-        // unchanged. Asserted verbatim in tests/journeys.test.ts.
-        key: "transport",
-        label: "Transport & Logistique",
-        href: "/departments/transport",
+        key: "transit",
+        label: "Transit",
+        href: "/departments/transit",
         iconKey: "truck",
-        permission: "transport:read",
+        // Owns customs + transport execution — either reader sees the hub. "Transit"
+        // is a business function, never a job title; "Douane"/"Transport" live inside.
+        permissionsAnyOf: ["customs:read", "transport:read"],
       },
       { key: "finance", label: "Finance", href: "/departments/finance", iconKey: "finance", permission: "finance:read" },
     ],

@@ -228,7 +228,11 @@ describe("the sidebar is role-driven, not a static list of every role", () => {
 
   it("keeps the department modules reachable (secondary, not deleted)", () => {
     const h = hrefs(ctx({ roleCodes: ["OPS_SUPERVISOR"] }));
-    for (const d of ["documentation", "customs", "transport", "finance", "management"]) {
+    // Top-level department entries are the three canonical operational departments
+    // (+ Direction under Management). Documentation/Douane/Transport moved to be
+    // workspaces inside the Opérations/Transit hubs — their routes are unchanged
+    // (asserted in tests/departments-nav.test.ts), just not top-level nav entries.
+    for (const d of ["operations", "transit", "finance", "management"]) {
       expect(h).toContain(`/departments/${d}`);
     }
   });

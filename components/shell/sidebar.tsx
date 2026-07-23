@@ -23,7 +23,7 @@ import {
 import { cn } from "@/lib/cn";
 import { LogoWordmark } from "@/components/brand/logo";
 import { t } from "@/lib/i18n";
-import { useSession, canSeeNav } from "@/lib/auth/use-session";
+import { useSession, canSeeNavItem } from "@/lib/auth/use-session";
 
 /** Icon KEYS cross the server→client boundary; components cannot. */
 const ICONS: Record<NavIconKey, typeof IconTower> = {
@@ -68,7 +68,7 @@ function NavLinks({
   const visible = filtered
     ? sections
     : sections
-        .map((s) => ({ ...s, items: s.items.filter((i) => canSeeNav(i.permission, session)) }))
+        .map((s) => ({ ...s, items: s.items.filter((i) => canSeeNavItem(i, session)) }))
         .filter((s) => s.items.length > 0);
 
   return (

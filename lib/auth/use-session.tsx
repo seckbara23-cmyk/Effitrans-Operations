@@ -22,7 +22,7 @@ import { mergeBranding } from "@/lib/branding/resolve";
 
 // Pure cosmetic-visibility rule lives in its own module so it is unit-testable
 // without importing this client component. Re-exported for existing callers.
-export { canSeeNav } from "./nav-visibility";
+export { canSeeNav, canSeeNavItem } from "./nav-visibility";
 
 export type SessionState = {
   email: string | null;

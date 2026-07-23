@@ -85,7 +85,10 @@ describe("the sidebar is exactly the five agreed sections", () => {
     );
     expect(byKey.pilotage).toEqual(["Mon Travail", "Centre d'opérations", "Parcours des dossiers"]);
     expect(byKey.files).toEqual(["Dossiers", "Clients", "Communications"]);
-    expect(byKey.departments).toEqual(["Documentation", "Douane", "Transport & Logistique", "Finance"]);
+    // Sidebar Départements now mirror the canonical operational departments.
+    // Documentation (Operations) and Douane/Transport (Transit) are workspaces
+    // inside their hubs, not top-level entries.
+    expect(byKey.departments).toEqual(["Opérations", "Transit", "Finance"]);
     expect(byKey.management).toEqual(["Direction", "Rapports", "Tableau exécutif"]);
     expect(byKey.administration).toEqual(["Utilisateurs", "Centre de marque", "Journal d'audit", "Paramètres"]);
   });
@@ -99,9 +102,8 @@ describe("the sidebar is exactly the five agreed sections", () => {
       "/files": "../app/files/page.tsx",
       "/clients": "../app/clients/page.tsx",
       "/communications": "../app/communications/page.tsx",
-      "/departments/documentation": "../app/departments/documentation/page.tsx",
-      "/departments/customs": "../app/departments/customs/page.tsx",
-      "/departments/transport": "../app/departments/transport/page.tsx",
+      "/departments/operations": "../app/departments/operations/page.tsx",
+      "/departments/transit": "../app/departments/transit/page.tsx",
       "/departments/finance": "../app/departments/finance/page.tsx",
       "/departments/management": "../app/departments/management/page.tsx",
       "/reports": "../app/reports/page.tsx",
@@ -135,13 +137,18 @@ describe("the sidebar is exactly the five agreed sections", () => {
     expect(byLabel["Direction"]).not.toBe(byLabel["Tableau exécutif"]);
   });
 
-  it("says Douane — never Dédouanement, never a role name, never a registry key", () => {
+  it("names business FUNCTIONS — never activities, job titles or registry keys", () => {
     const labels = full.sections.flatMap((s) => s.items.map((i) => i.label));
-    expect(labels).toContain("Douane");
+    // The Départements section is the three operational departments (functions),
+    // not activities ("Dédouanement") or job titles ("Caissière", "Déclarant").
+    const depts = full.sections.find((s) => s.key === "departments")!;
+    expect(depts.items.map((i) => i.label)).toEqual(["Opérations", "Transit", "Finance"]);
     for (const banned of [
       "Dédouanement",
       "Déclarant",
       "Chef de Transit",
+      "Caissier / Caissière",
+      "Caissière",
       "Coursier",
       "Account Manager",
       "Finance douane",
@@ -295,19 +302,20 @@ describe("role examples (Deliverable 15)", () => {
     collections: ["process:read", "finance:read", "collections:manage"],
   };
 
-  it("Déclarant: Mon Travail + Douane; no Finance, no Administration", () => {
+  it("Déclarant: Mon Travail + Transit (via customs:read); no Finance, no Administration", () => {
     const h = hrefs({ roleCodes: ["CUSTOMS_DECLARANT"], permissions: P.declarant });
     expect(h).toContain("/my-work");
-    expect(h).toContain("/departments/customs");
+    // Douane is now a workspace inside the Transit hub — the top-level entry is Transit.
+    expect(h).toContain("/departments/transit");
     expect(h).not.toContain("/departments/finance");
     expect(h).not.toContain("/users");
     expect(h).not.toContain("/settings");
   });
 
-  it("Chef Transit: Mon Travail + Douane; no management without permission", () => {
+  it("Chef Transit: Mon Travail + Transit; no management without permission", () => {
     const h = hrefs({ roleCodes: ["CHIEF_OF_TRANSIT"], permissions: P.chiefTransit });
     expect(h).toContain("/my-work");
-    expect(h).toContain("/departments/customs");
+    expect(h).toContain("/departments/transit");
     expect(h).not.toContain("/departments/management");
     expect(h).not.toContain("/dashboard/executive");
   });

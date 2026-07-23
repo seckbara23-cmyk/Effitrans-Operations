@@ -34,11 +34,17 @@ import type {
 
 const OVERSIGHT = ["OPS_SUPERVISOR", "SYSTEM_ADMIN"];
 
-/** Drop items the user cannot see. A permission-less item is always visible. */
+/**
+ * Drop items the user cannot see. A permission-less item is always visible; an
+ * item with `permissionsAnyOf` is visible when the user holds ANY of them
+ * (aggregated hubs like Transit over customs+transport); otherwise `permission`.
+ */
 function grant(permissions: string[], items: (NavigationItem | null)[]): NavigationItem[] {
-  return items.filter(
-    (i): i is NavigationItem => i !== null && (!i.permission || permissions.includes(i.permission)),
-  );
+  return items.filter((i): i is NavigationItem => {
+    if (i === null) return false;
+    if (i.permissionsAnyOf) return i.permissionsAnyOf.some((p) => permissions.includes(p));
+    return !i.permission || permissions.includes(i.permission);
+  });
 }
 
 function section(key: string, label: string, items: NavigationItem[]): NavigationSection | null {

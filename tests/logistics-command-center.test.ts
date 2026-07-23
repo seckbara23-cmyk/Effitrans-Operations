@@ -120,11 +120,16 @@ describe("the Command Center page + sidebar", () => {
     const page = read("../app/departments/transport/page.tsx");
     expect(page).toContain("customsAuthorized");
   });
-  it("the sidebar label is broadened but the route/permission are unchanged", () => {
-    const nav = read("../lib/nav.ts");
-    expect(nav).toContain('label: "Transport & Logistique"');
-    expect(nav).toContain('href: "/departments/transport"');
-    expect(nav).toContain('permission: "transport:read"');
+  it("Transport & Logistique is now a Transit workspace — route/permission unchanged, no URL break", () => {
+    // Department realignment: it left the top-level sidebar and became a WORKSPACE
+    // under the Transit hub. The ROUTE (/departments/transport) and its
+    // transport:read gate are unchanged — only the entry point moved.
+    const transitHub = read("../app/departments/transit/page.tsx");
+    expect(transitHub).toContain('label: "Transport & Logistique"');
+    expect(transitHub).toContain('href: "/departments/transport"');
+    expect(transitHub).toContain('permission: "transport:read"');
+    // The Command Center route itself still exists (this test file already asserts its content above).
+    expect(() => read("../app/departments/transport/page.tsx")).not.toThrow();
   });
   it("no new logistics migration/permission was introduced", () => {
     // Composition-only phase: no schema, no permission.

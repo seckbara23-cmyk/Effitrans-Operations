@@ -23,3 +23,19 @@ export function canSeeNav(
   if (!session.configured || session.loading) return true;
   return session.permissions.includes(required);
 }
+
+/**
+ * Item-level visibility supporting the ANY-OF gate. Mirrors the server filter
+ * (build.ts `grant`): `permissionsAnyOf` wins when set (visible if the user
+ * holds ANY of them); otherwise falls back to the single `permission`. Still
+ * cosmetic — the route re-checks server-side. This is the ONLY filter on the
+ * flag-off navigation path, so it must honor `permissionsAnyOf` too.
+ */
+export function canSeeNavItem(
+  item: { permission?: string; permissionsAnyOf?: readonly string[] },
+  session: NavSessionLike,
+): boolean {
+  if (!session.configured || session.loading) return true;
+  if (item.permissionsAnyOf) return item.permissionsAnyOf.some((p) => session.permissions.includes(p));
+  return canSeeNav(item.permission, session);
+}

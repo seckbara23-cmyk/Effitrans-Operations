@@ -68,6 +68,14 @@ export type NavigationItem = {
    * an item without a round trip, never as the authorization itself.
    */
   permission?: string;
+  /**
+   * Cosmetic ANY-OF gate — visible when the user holds ANY of these permissions.
+   * For nav entries that aggregate several domains (e.g. the Transit hub over
+   * customs + transport). Honored by both the server filter (build.ts `grant`)
+   * and the client filter (`canSeeNavItem`). When set it takes precedence over
+   * `permission`. Still cosmetic — every route re-checks server-side.
+   */
+  permissionsAnyOf?: readonly string[];
   /** Actionable count. Only ever set when it can be derived cheaply. */
   badge?: number;
   /** A short description shown on hover / in the mobile drawer. */
