@@ -244,6 +244,21 @@ export function workspacesFor(ctx: NavigationContext): WorkspaceLink[] {
     });
   }
 
+  // Phase 9.3A — Caisse & Trésorerie. Gated on the EFFECTIVE caisse:manage
+  // permission (never on role === "CASHIER"), so any authorized user sees it and
+  // a finance:read-only user does not. No feature flag: Caisse is a Finance
+  // workspace, not a process-engine sub-feature. The label is the WORKSPACE name
+  // ("Caisse"), never the employee title.
+  if (can("caisse:manage")) {
+    out.push({
+      key: "caisse",
+      label: "Caisse",
+      href: "/finance/caisse",
+      hint: "Opérations de caisse et de trésorerie — espèces, chèques, Mobile Money, banques",
+      kind: "panel",
+    });
+  }
+
   // The official queues this user's roles actually staff. Never all fifteen.
   for (const q of visibleQueues(ctx.roleCodes, perms)) {
     out.push({

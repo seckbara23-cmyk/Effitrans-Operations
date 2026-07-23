@@ -90,6 +90,8 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       // Phase 9.0B — workflow structural extensions.
       "process:owner:assign", "process:decision:create", "process:decision:approve",
       "process:blocker:manage", "process:team:manage", "process:step:skip",
+      // Phase 9.3A — Caisse & Trésorerie supervisory oversight (full-admin convention).
+      "caisse:manage",
     ],
   },
   {
@@ -299,6 +301,8 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       // Phase 9.0B — workflow structural extensions.
       "process:owner:assign", "process:decision:create", "process:decision:approve",
       "process:blocker:manage", "process:team:manage", "process:step:skip",
+      // Phase 9.3A — Caisse & Trésorerie supervisory oversight (operations/finance supervisor).
+      "caisse:manage",
     ],
   },
   {
@@ -457,6 +461,28 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "logistics:copilot:read",
       // Phase 8.7 — Messaging Center. Finance department inbox.
       "messaging:read", "messaging:send", "messaging:read:finance",
+    ],
+  },
+
+  // =========================================================================
+  // Phase 9.3A — Caisse & Trésorerie foundation. The 24th tenant role. Caisse is
+  // a FINANCE workspace (not a department); the employee title lives here on the
+  // ROLE, never on navigation. LEAST PRIVILEGE: treasury operations
+  // (caisse:manage) + finance read-only + process:read (Mon Travail visibility).
+  // Deliberately holds NO finance authorization (validate/issue/void/delete/
+  // payment) or collections:manage — segregation of duties for the future
+  // treasury engine. Mirrored in supabase/seed.sql + the additive migration.
+  // =========================================================================
+  {
+    key: "CASHIER",
+    labelFr: "Caissier / Caissière",
+    labelEn: "Cashier",
+    genericName: "CASHIER",
+    description:
+      "Finance Caisse & Trésorerie — records and handles multi-channel treasury operations (cash, checks, Mobile Money, bank movements). Executes/records approved transactions without authority to approve the underlying finance request (segregation of duties).",
+    requiredForEveryTenant: false,
+    permissions: [
+      ...BASE, "caisse:manage", "finance:read", "process:read",
     ],
   },
 ];

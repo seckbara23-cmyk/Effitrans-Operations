@@ -83,7 +83,7 @@ export const TRANSIT_TEAMS: readonly { code: TransitTeamCode; labelFr: string; d
  * governance, not one of the four departments; COMPLIANCE_HSSE), cross-cutting
  * IT (SYSTEM_ADMIN), and external identities (CLIENT_USER, PARTNER_AGENT).
  *
- * TOTAL over the 23 seeded role codes — parity with lib/platform/role-templates
+ * TOTAL over the 24 seeded role codes — parity with lib/platform/role-templates
  * is test-enforced (tests/organization.test.ts), so a new role cannot be added
  * without deciding its department here.
  *
@@ -116,6 +116,7 @@ export const ROLE_CANONICAL_DEPARTMENT: Readonly<Record<string, CanonicalDepartm
   CUSTOMS_FINANCE_OFFICER: "FINANCE", // Guide étape 5 « Enregistrement — Finance »
   ADMINISTRATIVE_OFFICER: "FINANCE", // PROVISIONAL — invoice-deposit preparation (steps 23/25)
   COURIER: "FINANCE", // PROVISIONAL — physical invoice deposit (step 24)
+  CASHIER: "FINANCE", // Phase 9.3A — Caisse & Trésorerie (workspace under Finance, not a department)
 
   // ---- No single department --------------------------------------------------
   SYSTEM_ADMIN: null, // cross-cutting IT/config administration

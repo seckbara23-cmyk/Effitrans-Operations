@@ -70,7 +70,8 @@ describe("Phase 5.0B-1 — the seven missing roles now exist", () => {
     for (const m of missingRoles()) {
       expect(TENANT_ROLE_KEYS, `${m.officialRole} still missing`).toContain(m.officialRole);
     }
-    expect(TENANT_ROLE_KEYS).toHaveLength(23);
+    // 23 through Phase 5.0B + CASHIER (Phase 9.3A Caisse & Trésorerie) = 24.
+    expect(TENANT_ROLE_KEYS).toHaveLength(24);
   });
 
   it("keeps every previously-mapped role unchanged in name (no rename)", () => {

@@ -55,6 +55,24 @@ export default async function FinanceDepartmentPage() {
   return (
     <div className="animate-fade-in space-y-6">
       {header}
+      {/* Phase 9.3A — Caisse workspace link (Finance module page, not a sidebar
+          section). Shown only to caisse:manage holders. */}
+      {hasPermission(permissions, "caisse:manage") && (
+        <div className="surface flex flex-wrap items-center justify-between gap-3 p-4">
+          <div>
+            <p className="text-sm font-medium text-navy-900">Caisse</p>
+            <p className="text-xs text-slate-500">
+              Opérations de caisse et de trésorerie — espèces, chèques, Mobile Money, comptes bancaires.
+            </p>
+          </div>
+          <Link
+            href="/finance/caisse"
+            className="rounded-lg bg-teal-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-800"
+          >
+            Ouvrir la Caisse →
+          </Link>
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-6">
         <StatCard label={t.handoffs.cards.readyForBilling} value={readyForBilling} tone="navy" />
         <StatCard label="Factures en cours" value={cards.invoicesPending} tone="navy" />

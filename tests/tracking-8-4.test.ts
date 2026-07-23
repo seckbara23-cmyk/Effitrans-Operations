@@ -171,6 +171,6 @@ describe("build-info stays pinned to the new migration", () => {
   it("LATEST_MIGRATION matches the newest file on disk", () => {
     const dir = fileURLToPath(new URL("../supabase/migrations", import.meta.url));
     const migs = readdirSync(dir).filter((f) => f.endsWith(".sql")).sort();
-    expect(migs[migs.length - 1]).toBe("20260723000002_finance_requests.sql");
+    expect(migs[migs.length - 1]).toBe("20260724000001_caisse_foundation.sql");
   });
 });

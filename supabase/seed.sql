@@ -959,3 +959,41 @@ join public.permission p on p.code = 'process:step:skip'
 where r.tenant_id = '00000000-0000-0000-0000-000000000001'
   and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR', 'COORDINATOR')
 on conflict do nothing;
+
+-- ===========================================================================
+-- Phase 9.3A — Caisse & Trésorerie foundation. Mirrors
+-- supabase/migrations/20260724000001_caisse_foundation.sql (parity enforced by
+-- tests/role-templates.test.ts). Caisse is a FINANCE workspace, not a department;
+-- Caissier/Caissière is a role label only. caisse:manage (treasury handling) is
+-- kept distinct from finance authorization for segregation of duties.
+-- ===========================================================================
+insert into public.permission (code, module, action, data_scope, description) values
+  ('caisse:manage', 'caisse', 'manage', 'own', 'Gérer les opérations de caisse et de trésorerie')
+on conflict (code) do nothing;
+
+insert into public.role (tenant_id, code, label_fr, label_en, is_provisional) values
+  ('00000000-0000-0000-0000-000000000001', 'CASHIER', 'Caissier / Caissière', 'Cashier', true)
+on conflict (tenant_id, code) do nothing;
+
+-- CASHIER — least privilege (own profile, finance read-only, caisse ops,
+-- process:read for Mon Travail visibility). NOT finance:validate/issue/void/
+-- delete/payment, collections:manage, admin_service:manage.
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p
+  on p.code in ('profile:read:self', 'profile:update:self', 'finance:read', 'caisse:manage', 'process:read')
+where r.tenant_id = '00000000-0000-0000-0000-000000000001' and r.code = 'CASHIER'
+on conflict do nothing;
+
+-- Supervisory oversight: SYSTEM_ADMIN (full-admin convention) + OPS_SUPERVISOR
+-- (operations/finance supervisor; no separate Finance Manager role). NOT
+-- FINANCE_OFFICER / BILLING_OFFICER / COLLECTIONS_OFFICER / CUSTOMS_FINANCE_OFFICER
+-- / ADMINISTRATIVE_OFFICER / COURIER.
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'caisse:manage'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR')
+on conflict do nothing;
