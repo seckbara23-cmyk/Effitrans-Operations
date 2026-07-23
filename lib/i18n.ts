@@ -1082,6 +1082,7 @@ export const t = {
     },
     notify: {
       events: {
+        file_opened: { title: "Dossier reçu", message: "Votre dossier a été ouvert par nos équipes et est en cours de préparation." },
         documents_received: { title: "Documents reçus", message: "Nous avons bien reçu vos documents et le dossier est en cours de traitement." },
         documents_verified: { title: "Dossier complet", message: "Votre dossier est complet et prêt pour les formalités douanières." },
         customs_cleared: { title: "Marchandise dédouanée", message: "Votre marchandise a été dédouanée avec succès." },

@@ -13,6 +13,8 @@ import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-server";
 import { getProcessState } from "@/lib/process/engine/service";
+import { getIntakeState, listEligibleOperationsOwners, type EligibleOwner, type IntakeState } from "@/lib/process/engine/intake-actions";
+import { IntakePanel } from "@/components/process/intake-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -68,11 +70,33 @@ export default async function ProcessInspectorPage({ params }: { params: { id: s
   if (!globalKillSwitch().enabled) notFound();
 
   const user = await requireUser();
-  if (!(await getTenantProcessFlags(user.tenantId)).enabled) notFound();
+  const tenantFlags = await getTenantProcessFlags(user.tenantId);
+  if (!tenantFlags.enabled) notFound();
   const permissions = await getEffectivePermissions(user.id);
   if (!hasPermission(permissions, "process:read")) notFound();
 
   const state = await getProcessState(params.id);
+
+  // Phase 9.0C — the Operations intake panel. Only when the intake flag is on;
+  // getIntakeState degrades to null (panel hidden) if the 9.0B structures are
+  // absent from the database, so nothing here can break the inspector.
+  let intake: IntakeState | null = null;
+  let eligibleOwners: EligibleOwner[] = [];
+  const canOpen = hasPermission(permissions, "process:manage") && hasPermission(permissions, "process:owner:assign");
+  if (tenantFlags.intake) {
+    intake = await getIntakeState(params.id);
+    if (intake && canOpen && !intake.owner) eligibleOwners = await listEligibleOperationsOwners();
+  }
+  const intakePanel = intake ? (
+    <IntakePanel
+      fileId={params.id}
+      state={intake}
+      eligibleOwners={eligibleOwners}
+      canOpen={canOpen}
+      canHandoff={hasPermission(permissions, "process:handoff:send")}
+      canManageBlockers={hasPermission(permissions, "process:blocker:manage")}
+    />
+  ) : null;
 
   // LEGACY DOSSIER (Deliverable 13). No process instance exists. We do NOT create
   // one as a side effect of rendering — initialization is an explicit, authorized
@@ -85,6 +109,9 @@ export default async function ProcessInspectorPage({ params }: { params: { id: s
           ← Retour au dossier
         </Link>
         <h1 className="mt-2 text-lg font-semibold text-slate-900">Processus officiel Effitrans</h1>
+
+        {/* Phase 9.0C — a dossier without an instance is exactly where opening starts. */}
+        {intakePanel && <div className="mt-4">{intakePanel}</div>}
 
         <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
           <p className="text-sm font-medium text-slate-900">Processus officiel non initialisé</p>
@@ -122,6 +149,8 @@ export default async function ProcessInspectorPage({ params }: { params: { id: s
           <strong>{state.compatibilitySource}</strong> ({state.compatibilityConfidence})
         </p>
       </header>
+
+      {intakePanel}
 
       {state.unverifiedSteps.length > 0 && (
         <div className="rounded-lg border border-orange-200 bg-orange-50 p-3 text-sm text-orange-800">

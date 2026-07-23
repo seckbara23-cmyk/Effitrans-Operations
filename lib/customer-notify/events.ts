@@ -9,6 +9,7 @@
 import type { TemplateKey } from "@/lib/comms/templates";
 
 export type CustomerEvent =
+  | "file_opened"
   | "documents_received"
   | "documents_verified"
   | "customs_cleared"
@@ -24,6 +25,9 @@ export type NotifyChannel = "email" | "portal";
 export type CustomerEventDef = { category: NotifyCategory; template: TemplateKey };
 
 export const CUSTOMER_EVENTS: Record<CustomerEvent, CustomerEventDef> = {
+  // Phase 9.0C — the canonical « Dossier reçu » initial milestone, published by
+  // the intake action ONLY after the dossier and its process instance persisted.
+  file_opened: { category: "shipment", template: "shipment_progress" },
   documents_received: { category: "shipment", template: "shipment_progress" },
   documents_verified: { category: "shipment", template: "shipment_progress" },
   customs_cleared: { category: "shipment", template: "shipment_progress" },

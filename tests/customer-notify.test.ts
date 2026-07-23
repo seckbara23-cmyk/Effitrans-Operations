@@ -3,8 +3,10 @@ import { CUSTOMER_EVENTS, CUSTOMER_EVENT_KEYS, isCustomerEvent, dedupKey, emailA
 import { t } from "@/lib/i18n";
 
 describe("customer notification events (Phase 2.5)", () => {
-  it("maps the seven milestones to category + Hub template", () => {
-    expect(CUSTOMER_EVENT_KEYS).toHaveLength(7);
+  it("maps the eight milestones to category + Hub template", () => {
+    // Phase 9.0C added file_opened (« Dossier reçu ») to the original seven.
+    expect(CUSTOMER_EVENT_KEYS).toHaveLength(8);
+    expect(CUSTOMER_EVENTS.file_opened).toEqual({ category: "shipment", template: "shipment_progress" });
     expect(CUSTOMER_EVENTS.documents_received).toEqual({ category: "shipment", template: "shipment_progress" });
     expect(CUSTOMER_EVENTS.customs_cleared).toEqual({ category: "shipment", template: "shipment_progress" });
     expect(CUSTOMER_EVENTS.delivered.template).toBe("shipment_delivered");

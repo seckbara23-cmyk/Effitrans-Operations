@@ -39,6 +39,12 @@ export type ProcessFlagEnv = {
    */
   EFFITRANS_PROCESS_STRUCTURES_ENABLED?: string;
   /**
+   * Phase 9.0C — the Operations INTAKE slice (open dossier + owner + initial
+   * steps + Transit handoff + « Dossier reçu » milestone). Requires the master
+   * flag AND the structures flag (intake writes owners and blockers).
+   */
+  EFFITRANS_OPERATIONS_INTAKE_ENABLED?: string;
+  /**
    * Phase 5.0D — the physical invoice deposit chain (Administration -> Courier ->
    * proof -> Collections handoff). Separate from collections so a tenant that
    * only emails invoices never sees a courier workflow.
@@ -63,12 +69,15 @@ export type ProcessFlags = {
   collections: boolean;
   /** Phase 9.0B workflow structural extensions (requires master). */
   structures: boolean;
+  /** Phase 9.0C Operations intake slice (requires master AND structures). */
+  intake: boolean;
 };
 
 const on = (v: string | undefined): boolean => v === "true";
 
 export function resolveProcessFlags(env: ProcessFlagEnv): ProcessFlags {
   const enabled = on(env.EFFITRANS_PROCESS_ENGINE_ENABLED);
+  const structures = enabled && on(env.EFFITRANS_PROCESS_STRUCTURES_ENABLED);
   return {
     enabled,
     // A sub-capability is only live when the master flag is also on.
@@ -77,6 +86,8 @@ export function resolveProcessFlags(env: ProcessFlagEnv): ProcessFlags {
     workspaces: enabled && on(env.EFFITRANS_PROCESS_WORKSPACES_ENABLED),
     physicalDeposit: enabled && on(env.EFFITRANS_PHYSICAL_INVOICE_DEPOSIT_ENABLED),
     collections: enabled && on(env.EFFITRANS_COLLECTIONS_ENABLED),
-    structures: enabled && on(env.EFFITRANS_PROCESS_STRUCTURES_ENABLED),
+    structures,
+    // Intake requires the structures it writes (owner, blockers) — a double gate.
+    intake: structures && on(env.EFFITRANS_OPERATIONS_INTAKE_ENABLED),
   };
 }

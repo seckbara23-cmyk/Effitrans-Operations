@@ -130,6 +130,7 @@ describe("Phase 5.0B-1 — feature flag is dark by default", () => {
       physicalDeposit: false,
       collections: false,
       structures: false,
+      intake: false,
     });
   });
 
@@ -155,6 +156,7 @@ describe("Phase 5.0B-1 — feature flag is dark by default", () => {
       physicalDeposit: false,
       collections: false,
       structures: false,
+      intake: false,
     });
   });
 

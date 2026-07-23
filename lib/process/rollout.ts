@@ -100,6 +100,9 @@ export function resolveEffectiveFlags(
     // plumbing, not a tenant feature — per-tenant activation arrives with the
     // 9.0C+ phases that put user-facing behavior on top of them).
     structures: enabled && env.structures,
+    // Phase 9.0C intake: environment-only sub-flag over structures; the TENANT
+    // gate is the same process_engine enablement every engine action requires.
+    intake: enabled && env.structures && env.intake,
   };
 }
 
@@ -112,4 +115,5 @@ export const FLAGS_ALL_OFF: ProcessFlags = {
   compatibility: false,
   overrideAllowed: false,
   structures: false,
+  intake: false,
 };
