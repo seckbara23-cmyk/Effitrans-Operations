@@ -2,6 +2,17 @@
 
 **Date:** 2026-07-23 · **Deployed SHA:** `3c62d901788ceefd0f26b4d7b37e3db1ee3b3357` · **Status of this document:** AUDIT-COMPLETE / OPERATOR-READY
 
+> **⚠ CORRECTION (2026-07-23) — the "migrations pending" premise below is superseded.**
+> Subsequent read-only SQL against production proved that **production schema was
+> already current. The missing component was the Supabase migration-history
+> ledger, which was reconciled using metadata-only `migration repair`.** No
+> migration was replayed and no schema/app/data/rollout change was made. The
+> per-migration "pending / prod at 52 / must apply" framing in the *Activation
+> audit findings* section is retained only as the historical analysis that led to
+> the reconciliation; treat **`MIGRATED`** as **RECONCILED (ledger, 55/55)**.
+> Full record: [`docs/operations/migration-ledger-reconciliation.md`](../operations/migration-ledger-reconciliation.md).
+> Flag activation (Vercel env + `tenant_process_rollout`) remains the operator step.
+
 > **Read this first.** Phase 9.0F is an **operator activation phase**. Applying
 > production migrations, toggling per-tenant flags, and running authenticated
 > live acceptance all require production credentials — a Supabase access token
@@ -21,7 +32,7 @@
 |---|---|---|
 | **AUDIT-COMPLETE** | migrations analyzed, risks known, runbook written | ✅ yes |
 | **PREFLIGHT-VERIFIED** | deployed SHA + production gate confirmed | ✅ yes |
-| **MIGRATED** | the 3 pending migrations applied, count = 55 | ⛔ operator |
+| **~~MIGRATED~~ → RECONCILED** | schema already current; **ledger reconciled 55/55 via `migration repair`** | ✅ done (2026-07-23) |
 | **ACTIVATED** | flags enabled in dependency order for Effitrans | ⛔ operator |
 | **ACCEPTANCE-PASSED** | 9.0B–9.0E checklists + E2E pass live | ⛔ operator |
 | **OBSERVED** | observation period clean | ⛔ operator |
@@ -41,7 +52,12 @@
 
 ## Activation audit findings
 
-### Pending migration inventory (exactly 3; disk total 55, prod currently 52)
+### Migration inventory (historical analysis — see CORRECTION banner above)
+
+> These three were the focus of the original audit. It was later proven their
+> **objects already existed in production**; only the ledger was missing. They
+> were not replayed — the ledger was reconciled. Retained for the object-level
+> detail, which the equivalence verification confirmed matches production.
 
 | # | File | Adds | Class |
 |---|---|---|---|
