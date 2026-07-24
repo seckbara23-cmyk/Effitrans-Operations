@@ -70,10 +70,12 @@ describe("operations + customs + transport KPIs", () => {
     { status: "OPENED", priority: "high", created_at: "2026-06-02", client_id: "c1" },
     { status: "CLOSED", priority: "low", created_at: "2026-01-02", client_id: "c1" },
     { status: "DELIVERED", priority: "critical", created_at: "2026-06-09", client_id: "c2" },
+    // DEC-B43 — CANCELLED is terminal: not active, not high-priority work.
+    { status: "CANCELLED", priority: "critical", created_at: "2026-06-10", client_id: "c2" },
   ];
-  it("operations counts + status distribution", () => {
+  it("operations counts + status distribution (DEC-B43: CANCELLED excluded from active)", () => {
     const ops = computeOperations(files, 1, NOW);
-    expect(ops).toEqual({ active: 2, newThisMonth: 2, delivered: 1, closed: 1, highPriority: 2, blocked: 1 });
+    expect(ops).toEqual({ active: 2, newThisMonth: 3, delivered: 1, closed: 1, highPriority: 2, blocked: 1 });
     expect(statusDistribution(files)).toEqual([
       { label: "DRAFT", value: 0 },
       { label: "OPENED", value: 1 },

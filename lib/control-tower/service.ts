@@ -14,6 +14,7 @@ import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
 import { hasPermission } from "@/lib/rbac/check";
 import { getDossierLifecycle } from "@/lib/files/lifecycle";
+import { isActiveFileStatus, isFileStatus } from "@/lib/files/status";
 import { invoiceTotals, paidAmount, balanceDue, isOverdue } from "@/lib/finance/calc";
 import { getAnalytics } from "@/lib/analytics/service";
 import { stageDuration } from "@/lib/sla/stage-duration";
@@ -243,58 +244,69 @@ export const getControlTower = cache(async (
       lifecycle,
     });
 
-    // Phase 2.3 — derived stage duration + SLA status (no stored values).
-    const sd = stageDuration({
-      now,
-      currentDepartment: lifecycle.currentDepartment,
-      currentStage: lifecycle.currentStep,
-      fileCreatedAt: f.created_at,
-      fileOpenedAt: f.opened_at,
-      fileUpdatedAt: f.updated_at,
-      customsUpdatedAt: cust?.updated_at ?? null,
-      transportUpdatedAt: tr?.updated_at ?? null,
-      invoiceUpdatedAt: invoiceUpdatedByFile.get(f.id) ?? null,
-    });
-    const slaStatus = classifySla(lifecycle.currentDepartment, sd.ageHours);
-    slaRows.push({
-      fileId: f.id,
-      fileNumber: f.file_number,
-      clientName: f.client?.name ?? null,
-      department: toSlaDept(lifecycle.currentDepartment),
-      stage: lifecycle.currentStep,
-      sla: slaStatus,
-      ageHours: sd.ageHours,
-      daysWaiting: ageDays(f.created_at, now),
-      nextAction: lifecycle.nextAction?.action ?? "",
-      priority: f.priority,
-      fileStatus: f.status,
-    });
+    // DEC-B43 (10.0D-1) — SLA and risk describe ACTIVE work only. Terminal dossiers
+    // (CLOSED was already neutralized via the archive department mapping; CANCELLED
+    // previously leaked in as live work) never enter the SLA/risk/attention rows.
+    // Funnel/flow rows above and the export rows below deliberately see every status;
+    // a terminal dossier exports with no live risk (score 0) and no applicable SLA.
+    let exportRisk: { level: string; score: number } = { level: "low", score: 0 };
+    let exportSlaStatus = "informational";
+    if (!isFileStatus(f.status) || isActiveFileStatus(f.status)) {
+      // Phase 2.3 — derived stage duration + SLA status (no stored values).
+      const sd = stageDuration({
+        now,
+        currentDepartment: lifecycle.currentDepartment,
+        currentStage: lifecycle.currentStep,
+        fileCreatedAt: f.created_at,
+        fileOpenedAt: f.opened_at,
+        fileUpdatedAt: f.updated_at,
+        customsUpdatedAt: cust?.updated_at ?? null,
+        transportUpdatedAt: tr?.updated_at ?? null,
+        invoiceUpdatedAt: invoiceUpdatedByFile.get(f.id) ?? null,
+      });
+      const slaStatus = classifySla(lifecycle.currentDepartment, sd.ageHours);
+      slaRows.push({
+        fileId: f.id,
+        fileNumber: f.file_number,
+        clientName: f.client?.name ?? null,
+        department: toSlaDept(lifecycle.currentDepartment),
+        stage: lifecycle.currentStep,
+        sla: slaStatus,
+        ageHours: sd.ageHours,
+        daysWaiting: ageDays(f.created_at, now),
+        nextAction: lifecycle.nextAction?.action ?? "",
+        priority: f.priority,
+        fileStatus: f.status,
+      });
 
-    // Phase 3.1B — derived per-dossier risk (reuses this same lifecycle/SLA pass).
-    const inspecting = lifecycle.currentStep === "customs_inspection";
-    const awaitingPod = lifecycle.currentStep === "invoiced" && lifecycle.nextAction?.reasonCode === "await_pod";
-    const riskInput: RiskInput = {
-      lifecycle: { currentDepartment: lifecycle.currentDepartment, nextAction: lifecycle.nextAction?.action ?? null },
-      sla: { status: slaStatus },
-      documents: { missingRequiredCount: missingRequired.length },
-      customs: cust ? { underInspection: inspecting, inspectionDays: inspecting ? Math.floor(sd.ageHours / 24) : null } : null,
-      transport: tr
-        ? { awaitingPod, transitExceedsSla: lifecycle.currentStep === "in_transit" && (slaStatus === "warning" || slaStatus === "critical") }
-        : null,
-      finance: canFinance
-        ? { overdueCount: overdueByFile.get(f.id) ? 1 : 0, maxOverdueDays: overdueDaysByFile.get(f.id) ?? null }
-        : null,
-    };
-    const assessment = assessRisk(riskInput);
-    riskRows.push({
-      fileId: f.id,
-      fileNumber: f.file_number,
-      clientName: f.client?.name ?? null,
-      department: lifecycle.currentDepartment,
-      priority: f.priority,
-      ageDays: ageDays(f.created_at, now),
-      assessment,
-    });
+      // Phase 3.1B — derived per-dossier risk (reuses this same lifecycle/SLA pass).
+      const inspecting = lifecycle.currentStep === "customs_inspection";
+      const awaitingPod = lifecycle.currentStep === "invoiced" && lifecycle.nextAction?.reasonCode === "await_pod";
+      const riskInput: RiskInput = {
+        lifecycle: { currentDepartment: lifecycle.currentDepartment, nextAction: lifecycle.nextAction?.action ?? null },
+        sla: { status: slaStatus },
+        documents: { missingRequiredCount: missingRequired.length },
+        customs: cust ? { underInspection: inspecting, inspectionDays: inspecting ? Math.floor(sd.ageHours / 24) : null } : null,
+        transport: tr
+          ? { awaitingPod, transitExceedsSla: lifecycle.currentStep === "in_transit" && (slaStatus === "warning" || slaStatus === "critical") }
+          : null,
+        finance: canFinance
+          ? { overdueCount: overdueByFile.get(f.id) ? 1 : 0, maxOverdueDays: overdueDaysByFile.get(f.id) ?? null }
+          : null,
+      };
+      const assessment = assessRisk(riskInput);
+      riskRows.push({
+        fileId: f.id,
+        fileNumber: f.file_number,
+        clientName: f.client?.name ?? null,
+        department: lifecycle.currentDepartment,
+        priority: f.priority,
+        ageDays: ageDays(f.created_at, now),
+        assessment,
+      });
+      exportRisk = { level: assessment.level, score: assessment.score };
+      exportSlaStatus = slaStatus;
+    }
 
     // Phase 3.0B — normalized per-dossier export row (same pass, opt-in only).
     if (opts.includeDossiers) {
@@ -317,9 +329,9 @@ export const getControlTower = cache(async (
         fileStatus: f.status,
         currentDepartment: lifecycle.currentDepartment,
         lifecycleStage: lifecycle.currentStep,
-        riskLevel: assessment.level,
-        riskScore: assessment.score,
-        slaStatus,
+        riskLevel: exportRisk.level,
+        riskScore: exportRisk.score,
+        slaStatus: exportSlaStatus,
         daysOpen: ageDays(f.created_at, now),
         customsStatus: cust?.status ?? null,
         transportStatus: tr?.status ?? null,
@@ -339,7 +351,11 @@ export const getControlTower = cache(async (
   const timeToPayment = canFinance ? averageDays(paymentPairs) : null;
 
   const kpis: ExecutiveKpis = {
-    activeDossiers: analytics?.operations.active ?? rows.filter((r) => r.fileStatus !== "CLOSED" && r.fileStatus !== "DRAFT").length,
+    // DEC-B43 — analytics is the primary source; the fallback uses THE same canonical
+    // predicate (DRAFT is active; CLOSED/CANCELLED are not) so both paths agree.
+    activeDossiers:
+      analytics?.operations.active ??
+      rows.filter((r) => !isFileStatus(r.fileStatus) || isActiveFileStatus(r.fileStatus)).length,
     deliveredThisMonth: tt.deliveredThisMonth,
     revenueThisMonth: analytics?.financial?.revenueThisMonth ?? null,
     outstanding: analytics?.financial?.outstanding ?? null,

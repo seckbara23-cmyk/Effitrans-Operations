@@ -7,6 +7,7 @@
  * unit-tested. `now` is injected.
  */
 import type { DossierLifecycle, Department } from "@/lib/files/lifecycle";
+import { isActiveFileStatus, isFileStatus } from "@/lib/files/status";
 
 export type FunnelStage =
   | "draft"
@@ -90,7 +91,8 @@ export type AgingBuckets = { b0_2: number; b3_5: number; b6_10: number; b10p: nu
 export function agingBuckets(rows: DossierLifecycleRow[], now: Date): AgingBuckets {
   const out: AgingBuckets = { b0_2: 0, b3_5: 0, b6_10: 0, b10p: 0 };
   for (const r of rows) {
-    if (r.fileStatus === "CLOSED") continue; // active dossiers only
+    // DEC-B43 — active dossiers only (terminal CLOSED/CANCELLED excluded).
+    if (isFileStatus(r.fileStatus) && !isActiveFileStatus(r.fileStatus)) continue;
     const d = ageDays(r.createdAt, now);
     if (d <= 2) out.b0_2 += 1;
     else if (d <= 5) out.b3_5 += 1;
@@ -171,7 +173,8 @@ const PRIORITY_RANK: Record<string, number> = { critical: 3, high: 2, normal: 1,
 
 export function needsAttention(rows: DossierLifecycleRow[], now: Date, limit = 10): AttentionItem[] {
   const candidates = rows.filter((r) => {
-    if (r.fileStatus === "CLOSED" || !r.lifecycle.currentStep) return false;
+    // DEC-B43 — a terminal dossier (CLOSED/CANCELLED) never needs attention.
+    if ((isFileStatus(r.fileStatus) && !isActiveFileStatus(r.fileStatus)) || !r.lifecycle.currentStep) return false;
     const blocked = r.lifecycle.blockers.length > 0;
     const waiting = r.lifecycle.nextAction != null && WAITING_REASONS.has(r.lifecycle.nextAction.reasonCode);
     const urgent = r.priority === "high" || r.priority === "critical";

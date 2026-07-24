@@ -8,6 +8,8 @@
  * completed / current / pending (never blocked). Labels are resolved in the UI
  * via i18n (this returns stable keys), so no internal copy leaks.
  */
+import { isActiveFileStatus, isFileStatus } from "@/lib/files/status";
+
 export type PortalStageStatus = "completed" | "current" | "pending";
 export type PortalStageKey =
   | "created"
@@ -105,7 +107,8 @@ export function portalShipmentCards(
   invoices: { status: string; balance: number }[],
 ): PortalShipmentCards {
   return {
-    active: files.filter((f) => f.status !== "CLOSED").length,
+    // DEC-B43 — the ONE active-dossier predicate (terminal CLOSED/CANCELLED excluded).
+    active: files.filter((f) => !isFileStatus(f.status) || isActiveFileStatus(f.status)).length,
     inTransit: files.filter((f) => f.transportStatus === "PICKED_UP" || f.transportStatus === "IN_TRANSIT").length,
     delivered: files.filter(
       (f) => f.status === "DELIVERED" || f.transportStatus === "DELIVERED" || f.transportStatus === "POD_RECEIVED",

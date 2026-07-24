@@ -6,6 +6,7 @@
  * isolation; the service fetches tenant-scoped rows and calls aggregateFiles.
  */
 import type { FileStatus, TransportMode } from "./types";
+import { FILE_STATUSES, isActiveFileStatus, isFileStatus } from "./status";
 
 /** Minimal projection needed for the overview (status + priority + shipment). */
 export type AggregateRow = {
@@ -16,38 +17,41 @@ export type AggregateRow = {
 };
 
 export type FileOverview = {
-  active: number; // not closed
+  active: number; // DEC-B43: not in a terminal state (CLOSED / CANCELLED)
   opened: number;
   inProgress: number;
   delivered: number;
   closed: number;
   highPriority: number; // high or critical
-  overdueShipments: number; // eta passed, not delivered/closed
+  overdueShipments: number; // eta passed, not delivered and not terminal
   byStatus: Record<FileStatus, number>;
   byMode: Record<TransportMode | "none", number>;
 };
 
-const STATUSES: FileStatus[] = ["DRAFT", "OPENED", "IN_PROGRESS", "DELIVERED", "CLOSED"];
 const MODES: TransportMode[] = ["SEA", "AIR", "ROAD", "MULTIMODAL"];
 
 function shipmentOverdue(row: AggregateRow, now: Date): boolean {
   if (!row.eta) return false;
-  if (row.status === "DELIVERED" || row.status === "CLOSED") return false;
+  // DELIVERED and terminal (CLOSED/CANCELLED) dossiers are never "overdue" work.
+  if (row.status === "DELIVERED" || (isFileStatus(row.status) && !isActiveFileStatus(row.status))) return false;
   return new Date(row.eta).getTime() < now.getTime();
 }
 
 export function aggregateFiles(rows: AggregateRow[], now: Date): FileOverview {
-  const byStatus = Object.fromEntries(STATUSES.map((s) => [s, 0])) as Record<FileStatus, number>;
+  const byStatus = Object.fromEntries(FILE_STATUSES.map((s) => [s, 0])) as Record<FileStatus, number>;
   const byMode = { SEA: 0, AIR: 0, ROAD: 0, MULTIMODAL: 0, none: 0 } as Record<
     TransportMode | "none",
     number
   >;
 
+  let active = 0;
   let highPriority = 0;
   let overdueShipments = 0;
 
   for (const r of rows) {
     if (r.status in byStatus) byStatus[r.status as FileStatus] += 1;
+    // DEC-B43 — the ONE active-dossier predicate (unknown legacy statuses count as active).
+    if (!isFileStatus(r.status) || isActiveFileStatus(r.status)) active += 1;
     const mode = r.transportMode && MODES.includes(r.transportMode as TransportMode)
       ? (r.transportMode as TransportMode)
       : "none";
@@ -57,7 +61,7 @@ export function aggregateFiles(rows: AggregateRow[], now: Date): FileOverview {
   }
 
   return {
-    active: rows.length - byStatus.CLOSED,
+    active,
     opened: byStatus.OPENED,
     inProgress: byStatus.IN_PROGRESS,
     delivered: byStatus.DELIVERED,

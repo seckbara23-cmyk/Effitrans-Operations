@@ -6,6 +6,7 @@
  * injected). Money is plain numbers (XOF default). Where a metric lacks reliable
  * source timestamps it returns null → the UI shows "Not enough data available".
  */
+import { isActiveFileStatus, isFileStatus } from "@/lib/files/status";
 
 const DAY = 86_400_000;
 const round1 = (n: number) => Math.round(n * 10) / 10;
@@ -103,7 +104,12 @@ export function clientIntelligence(
 }
 
 export function activeClientCount(clients: BiClient[], files: BiFile[]): number {
-  const withOpen = new Set(files.filter((f) => f.status !== "CLOSED" && f.clientId).map((f) => f.clientId as string));
+  // DEC-B43 — "has an active dossier" uses THE canonical active predicate.
+  const withOpen = new Set(
+    files
+      .filter((f) => f.clientId && (!isFileStatus(f.status) || isActiveFileStatus(f.status)))
+      .map((f) => f.clientId as string),
+  );
   return clients.filter((c) => withOpen.has(c.id)).length;
 }
 

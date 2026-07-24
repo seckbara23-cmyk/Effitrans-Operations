@@ -7,6 +7,7 @@
  * case-insensitive substring (ILIKE-style); no full-text search this phase.
  */
 import type { FileSortKey, FileFilterCriteria } from "./types";
+import { isActiveFileStatus, isFileStatus } from "./status";
 
 /** Flat, searchable projection of an operational_file (+ client + shipment). */
 export type FileSearchRow = {
@@ -41,15 +42,15 @@ export function matchesSearch(row: FileSearchRow, rawTerm: string | undefined): 
   ].some((v) => (v ?? "").toLowerCase().includes(term));
 }
 
-/** Active = anything not yet closed (used by KPIs + the "active" sense). */
+/** Active = not in a terminal state (DEC-B43 — delegates to THE canonical predicate). */
 export function isActiveFile(status: string): boolean {
-  return status !== "CLOSED";
+  return !isFileStatus(status) || isActiveFileStatus(status);
 }
 
-/** A file is "overdue" when its ETA has passed but it isn't delivered/closed. */
+/** A file is "overdue" when its ETA has passed but it isn't delivered or terminal. */
 export function isOverdue(row: FileSearchRow, now: Date): boolean {
   if (!row.eta) return false;
-  if (row.status === "DELIVERED" || row.status === "CLOSED") return false;
+  if (row.status === "DELIVERED" || !isActiveFile(row.status)) return false;
   return new Date(row.eta).getTime() < now.getTime();
 }
 

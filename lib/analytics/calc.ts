@@ -16,6 +16,7 @@ import type {
   TransportKpis,
   TrendPoint,
 } from "./types";
+import { isActiveFileStatus, isFileStatus } from "@/lib/files/status";
 
 export type FileRow = { status: string; priority: string; created_at: string; client_id: string | null };
 export type CustomsRow = { file_id: string; status: string; declaration_date: string | null; release_date: string | null };
@@ -119,11 +120,12 @@ export function computeOperations(files: FileRow[], blockedCount: number, now: D
   const month = ym(now);
   let active = 0, newThisMonth = 0, delivered = 0, closed = 0, highPriority = 0;
   for (const f of files) {
-    const isClosed = f.status === "CLOSED";
-    if (!isClosed) active += 1;
+    // DEC-B43 — active = not terminal (CLOSED/CANCELLED), via THE canonical predicate.
+    const isActive = !isFileStatus(f.status) || isActiveFileStatus(f.status);
+    if (isActive) active += 1;
     if (f.status === "DELIVERED") delivered += 1;
-    if (isClosed) closed += 1;
-    if (!isClosed && (f.priority === "high" || f.priority === "critical")) highPriority += 1;
+    if (f.status === "CLOSED") closed += 1;
+    if (isActive && (f.priority === "high" || f.priority === "critical")) highPriority += 1;
     if (f.created_at.slice(0, 7) === month) newThisMonth += 1;
   }
   return { active, newThisMonth, delivered, closed, highPriority, blocked: blockedCount };
