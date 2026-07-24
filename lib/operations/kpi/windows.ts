@@ -70,3 +70,52 @@ export function monthToDateWindow(timezone: string, now: Date = new Date()): Kpi
   const today = tenantToday(timezone, now);
   return { key: "month_to_date", start: monthStart(today), end: addDays(today, 1), timezone };
 }
+
+// ---------------------------------------------------------------- instant bounds ----
+// timestamptz columns compare against UTC INSTANTS, so a tenant-day boundary must be
+// converted exactly once, HERE — no other module may hold timezone arithmetic
+// (structural-test-enforced; prevents a second, drifting window implementation).
+
+/** Wall-clock offset of `timeZone` at `instant`, in minutes (e.g. UTC+14 → 840). */
+function tzOffsetMinutes(timeZone: string, instant: Date): number {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(instant);
+  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? 0);
+  const wall = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"), get("second"));
+  return Math.round((wall - instant.getTime()) / 60_000);
+}
+
+/**
+ * The UTC instant at which `dateIso` begins (00:00) in `timeZone`. Two-pass
+ * offset resolution handles DST transitions; Dakar (GMT+0, no DST) is the
+ * trivial case but the engine must be correct for any tenant zone (DEC-B39).
+ */
+export function startOfTenantDayUtc(dateIso: string, timeZone: string): string {
+  const wallMidnight = new Date(`${dateIso}T00:00:00Z`);
+  const first = tzOffsetMinutes(timeZone, wallMidnight);
+  let instant = new Date(wallMidnight.getTime() - first * 60_000);
+  const second = tzOffsetMinutes(timeZone, instant);
+  if (second !== first) instant = new Date(wallMidnight.getTime() - second * 60_000);
+  return instant.toISOString();
+}
+
+/**
+ * A bounded window's [start, end) as UTC instants for timestamptz comparisons.
+ * Null for snapshot windows ("current") — a flow count over an unbounded window
+ * is meaningless and must not silently become an all-time scan.
+ */
+export function windowInstantBounds(w: KpiWindow): { startUtc: string; endUtc: string } | null {
+  if (!w.start || !w.end) return null;
+  return {
+    startUtc: startOfTenantDayUtc(w.start, w.timezone),
+    endUtc: startOfTenantDayUtc(w.end, w.timezone),
+  };
+}

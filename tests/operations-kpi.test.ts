@@ -15,6 +15,7 @@ import {
 import {
   DEFAULT_TIMEZONE, resolveTimezone, tenantToday, addDays, monthStart,
   previousMonthBounds, currentWindow, todayWindow, monthToDateWindow,
+  startOfTenantDayUtc, windowInstantBounds,
 } from "@/lib/operations/kpi/windows";
 import { groupAmountsByCurrency, flowComparison, countKpi, amountKpi } from "@/lib/operations/kpi/compose";
 import { KPI_WINDOW_KEYS } from "@/lib/operations/kpi/types";
@@ -27,7 +28,8 @@ const READER = code("../lib/operations/kpi/reader.ts");
 const COMPOSE = code("../lib/operations/kpi/compose.ts");
 const WINDOWS = code("../lib/operations/kpi/windows.ts");
 const TYPES = code("../lib/operations/kpi/types.ts");
-const KPI_FILES = [READER, COMPOSE, WINDOWS, TYPES];
+const WINDOWED = code("../lib/operations/kpi/windowed-readers.ts");
+const KPI_FILES = [READER, COMPOSE, WINDOWS, TYPES, WINDOWED];
 
 // ================================================================ DEC-B43: ONE active definition ====
 describe("DEC-B43 — THE single active-dossier definition", () => {
@@ -116,6 +118,33 @@ describe("tenant-timezone windows (DEC-B39 — never UTC business logic)", () =>
   it("snapshots carry no date bounds and only ratified window keys exist (DEC-B38)", () => {
     expect(currentWindow("Africa/Dakar")).toEqual({ key: "current", start: null, end: null, timezone: "Africa/Dakar" });
     expect([...KPI_WINDOW_KEYS]).toEqual(["current", "today", "month_to_date"]);
+  });
+});
+
+// ================================================================ instant bounds (10.0D-2) ====
+describe("tenant-day → UTC instant conversion (the ONE timezone arithmetic site)", () => {
+  it("Dakar (GMT+0, no DST) — midnight is the UTC midnight", () => {
+    expect(startOfTenantDayUtc("2026-07-31", "Africa/Dakar")).toBe("2026-07-31T00:00:00.000Z");
+  });
+  it("a UTC+14 zone — the tenant day starts 14h BEFORE the UTC date", () => {
+    expect(startOfTenantDayUtc("2026-08-01", "Pacific/Kiritimati")).toBe("2026-07-31T10:00:00.000Z");
+  });
+  it("a DST zone resolves the correct seasonal offset (New York: EDT −4 vs EST −5)", () => {
+    expect(startOfTenantDayUtc("2026-07-15", "America/New_York")).toBe("2026-07-15T04:00:00.000Z");
+    expect(startOfTenantDayUtc("2026-01-15", "America/New_York")).toBe("2026-01-15T05:00:00.000Z");
+  });
+  it("windowInstantBounds maps a bounded window and REFUSES a snapshot (no all-time scans)", () => {
+    const NOW = new Date("2026-07-31T12:00:00Z");
+    expect(windowInstantBounds(todayWindow("Africa/Dakar", NOW))).toEqual({
+      startUtc: "2026-07-31T00:00:00.000Z",
+      endUtc: "2026-08-01T00:00:00.000Z",
+    });
+    // MTD flows through the same single conversion path.
+    expect(windowInstantBounds(monthToDateWindow("Pacific/Kiritimati", NOW))).toEqual({
+      startUtc: "2026-07-31T10:00:00.000Z", // Aug 1 (Kiritimati) begins Jul 31 10:00 UTC
+      endUtc: "2026-08-01T10:00:00.000Z",
+    });
+    expect(windowInstantBounds(currentWindow("Africa/Dakar"))).toBeNull();
   });
 });
 
@@ -213,8 +242,9 @@ describe("KPI reader — consume-never-own, one authoritative engine (DEC-B35)",
     for (const dep of ["getAnalytics", "getControlTower", "getIntelligenceDashboard", "getFinanceRequestQueue"]) {
       expect(READER).toContain(dep);
     }
-    // No invoice/payment/customs/file table math in the engine.
-    for (const banned of ["invoiceTotals", "balanceDue", "invoice_line", "file_state_transition"]) {
+    // No invoice/payment table math in the engine (event tables are queried ONLY via
+    // ./windowed-readers; the reader's `.from()` sweep above pins organization-only).
+    for (const banned of ["invoiceTotals", "balanceDue", "invoice_line"]) {
       expect(READER).not.toContain(banned);
     }
   });
@@ -241,5 +271,64 @@ describe("KPI reader — consume-never-own, one authoritative engine (DEC-B35)",
       expect(src).not.toContain("server-only");
       expect(src).not.toMatch(/\bfetch\(/);
     }
+  });
+});
+
+// ================================================================ structural: windowed readers (10.0D-2) ====
+describe("windowed readers — one authoritative timestamp each, window logic in ONE place", () => {
+  it("is server-only, read-only, head-count based", () => {
+    expect(read("../lib/operations/kpi/windowed-readers.ts")).toContain('import "server-only"');
+    expect(WINDOWED).toContain('{ count: "exact", head: true }');
+    expect(WINDOWED).not.toMatch(/\.insert\(|\.update\(|\.upsert\(|\.delete\(/);
+  });
+  it("uses EXACTLY the §7-ratified event timestamps — never updated_at", () => {
+    for (const pin of [
+      '"operational_file", column: "created_at"',
+      '"file_state_transition", column: "occurred_at"',
+      '"customs_record",\n    column: "release_date"',
+      '"finance_request", column: "requested_at"',
+      '"finance_request",\n    column: "reviewed_at"',
+      '"finance_request", column: "disbursed_at"',
+      '"conversation", column: "created_at"',
+    ]) {
+      expect(WINDOWED.replace(/\s+/g, " ")).toContain(pin.replace(/\s+/g, " "));
+    }
+    expect(WINDOWED).not.toContain("updated_at");
+  });
+  it("closure counting is transition-based with to_status=CLOSED (operational_file has no closed_at)", () => {
+    expect(WINDOWED).toContain('q.eq("to_status", "CLOSED")');
+  });
+  it("approvals refine on APPROVED/DISBURSED (reviewed_at is shared with rejections)", () => {
+    expect(WINDOWED).toContain('q.in("status", ["APPROVED", "DISBURSED"])');
+  });
+  it("every count is explicitly tenant-filtered (conversation is not yet in the scope registry)", () => {
+    expect(WINDOWED).toContain('.eq("tenant_id", opts.tenantId)');
+  });
+  it("holds NO timezone/window arithmetic of its own — bounds come from ./windows only", () => {
+    expect(WINDOWED).toContain('from "./windows"');
+    expect(WINDOWED).not.toContain("Intl.DateTimeFormat");
+    expect(WINDOWED).not.toContain("getUTC");
+    expect(WINDOWED).not.toContain("toISOString");
+    // The reader too — the engine consumes windows, it never re-derives them.
+    expect(READER).not.toContain("Intl.DateTimeFormat");
+  });
+  it("bounds are start-inclusive / end-exclusive (gte + lt) and a snapshot window is refused", () => {
+    expect(WINDOWED).toContain(".gte(opts.column, start)");
+    expect(WINDOWED).toContain(".lt(opts.column, end)");
+    expect(WINDOWED).toContain("if (!bounds) return null");
+  });
+  it("the engine emits the 10.0D-2 windowed KPIs through the same contract", () => {
+    for (const key of [
+      "dossiers_crees_jour", "dossiers_clotures_jour", "mainlevees_jour",
+      "demandes_finance_jour", "approbations_finance_jour", "decaissements_finance_jour",
+      "conversations_jour",
+    ]) {
+      expect(READER).toContain(`"${key}"`);
+    }
+    expect(READER).toContain("todayWindow(timezone)");
+  });
+  it("finance-dark honesty: windowed finance counts render unavailable when execution is dark", () => {
+    expect(READER).toContain("financeExecutionLive = requests != null");
+    expect(READER).toContain("financeExecutionLive ? settled(freqTodayR) : null");
   });
 });

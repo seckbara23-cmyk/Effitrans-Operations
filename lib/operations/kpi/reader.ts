@@ -12,12 +12,13 @@
  * whole set is null (the strip is absent, never empty-zeroes). Monetary /
  * finance KPIs additionally require finance:read and are OMITTED without it.
  *
- * 10.0D-1 ships the KPIs computable from EXISTING readers (no new data
- * queries): dossiers_actifs, dossiers_intervention, douane_en_cours,
- * demandes_finance. The windowed today/MTD KPIs (ouverts/livraisons/
- * mainlevées) arrive in 10.0D-2 and the per-currency monetary KPIs
- * (facturé/encaissé/créances, DEC-B44) in 10.0D-3, all through this same
- * contract — none are fabricated ahead of their authoritative reader.
+ * 10.0D-1 shipped the snapshot KPIs from EXISTING readers (dossiers_actifs,
+ * dossiers_intervention, douane_en_cours, demandes_finance). 10.0D-2 adds the
+ * WINDOWED event KPIs over ./windowed-readers — head-only counts on the §7
+ * authoritative timestamps, bounded by the tenant-timezone windows (./windows).
+ * The per-currency monetary KPIs (facturé/encaissé/créances, DEC-B44) arrive
+ * in 10.0D-3 through this same contract — never fabricated ahead of their
+ * authoritative reader.
  *
  * « Dossiers nécessitant une intervention » (ratified 10.0D-1 addition) is the
  * CEO's morning attention indicator: dossiers whose risk level is high or
@@ -38,7 +39,12 @@ import { getControlTower } from "@/lib/control-tower/service";
 import { getIntelligenceDashboard } from "@/lib/customs/intelligence/service";
 import { getFinanceRequestQueue } from "../finance-requests";
 import { countKpi } from "./compose";
-import { currentWindow, resolveTimezone } from "./windows";
+import { currentWindow, resolveTimezone, todayWindow } from "./windows";
+import {
+  conversationsStartedInWindow, customsReleasesInWindow, dossiersClosedInWindow,
+  dossiersCreatedInWindow, financeApprovalsInWindow, financeDisbursementsInWindow,
+  financeRequestsInWindow,
+} from "./windowed-readers";
 import type { OperationsKpiSet } from "./types";
 
 const settled = <T,>(r: PromiseSettledResult<T>): T | null => (r.status === "fulfilled" ? r.value : null);
@@ -54,23 +60,46 @@ export const getOperationsKpis = cache(async (): Promise<OperationsKpiSet | null
   const canCustoms = hasPermission(perms, "customs:read");
 
   const admin = getAdminSupabaseClient();
-  const [tzR, ctR, anR, customsR, requestsR] = await Promise.allSettled([
-    // Window metadata only — the one direct read (organization.timezone, DEC-B39).
-    admin.from("organization").select("timezone").eq("id", user.tenantId).maybeSingle(),
-    getControlTower(perms), // request-cache()d — shared with every other consumer this render
-    getAnalytics(canFinance), // idem (also deduped inside getControlTower)
-    canCustoms ? getIntelligenceDashboard() : none,
-    canFinance ? getFinanceRequestQueue() : none,
-  ]);
-
+  // Timezone FIRST — every window below derives from it (DEC-B39). The one
+  // direct business-free read of this engine (organization.timezone).
   const timezone = resolveTimezone(
-    (settled(tzR)?.data as { timezone?: string } | null | undefined)?.timezone,
+    await admin
+      .from("organization")
+      .select("timezone")
+      .eq("id", user.tenantId)
+      .maybeSingle()
+      .then((r) => (r.data as { timezone?: string } | null)?.timezone, () => undefined),
   );
+  const current = currentWindow(timezone);
+  const today = todayWindow(timezone);
+
+  const [ctR, anR, customsR, requestsR, createdR, closedR, releasesR, freqTodayR, apprTodayR, disbTodayR, convR] =
+    await Promise.allSettled([
+      getControlTower(perms), // request-cache()d — shared with every other consumer this render
+      getAnalytics(canFinance), // idem (also deduped inside getControlTower)
+      canCustoms ? getIntelligenceDashboard() : none,
+      canFinance ? getFinanceRequestQueue() : none,
+      // 10.0D-2 — windowed event counts (head-only, §7 timestamps, tenant-day bounds).
+      dossiersCreatedInWindow(user.tenantId, today),
+      dossiersClosedInWindow(user.tenantId, today),
+      canCustoms ? customsReleasesInWindow(user.tenantId, today) : none,
+      canFinance ? financeRequestsInWindow(user.tenantId, today) : none,
+      canFinance ? financeApprovalsInWindow(user.tenantId, today) : none,
+      canFinance ? financeDisbursementsInWindow(user.tenantId, today) : none,
+      conversationsStartedInWindow(user.tenantId, today),
+    ]);
+
   const ct = settled(ctR);
   const an = settled(anR);
   const customs = settled(customsR);
   const requests = settled(requestsR);
-  const current = currentWindow(timezone);
+  // Finance execution dark / migration absent ⇒ the whole finance-request family is
+  // honestly UNAVAILABLE — a count of historical rows must never render while the
+  // feature is off (0 would be a confident lie, N a ghost).
+  const financeExecutionLive = requests != null;
+  const freqToday = financeExecutionLive ? settled(freqTodayR) : null;
+  const apprToday = financeExecutionLive ? settled(apprTodayR) : null;
+  const disbToday = financeExecutionLive ? settled(disbTodayR) : null;
 
   const kpis = [
     // DEC-B43 — THE ratified active definition, via the analytics reader (single source;
@@ -93,6 +122,31 @@ export const getOperationsKpis = cache(async (): Promise<OperationsKpiSet | null
       // No credible filtered destination exists yet (§16) — the attention queue renders
       // on the cockpit itself; a href is added when a real filtered route exists.
     }),
+    // 10.0D-2 — windowed operational flows (today, tenant-day).
+    countKpi({
+      key: "dossiers_crees_jour",
+      label: "Dossiers créés aujourd'hui",
+      value: settled(createdR),
+      window: today,
+      source: "operational_file.created_at",
+      href: "/files",
+    }),
+    countKpi({
+      key: "dossiers_clotures_jour",
+      label: "Dossiers clôturés aujourd'hui",
+      value: settled(closedR),
+      window: today,
+      source: "file_state_transition",
+      href: "/files?status=CLOSED",
+    }),
+    countKpi({
+      key: "conversations_jour",
+      label: "Conversations ouvertes aujourd'hui",
+      value: settled(convR),
+      window: today,
+      source: "conversation.created_at",
+      href: "/messages",
+    }),
     // Customs slice — OMITTED (not "unavailable") without customs:read: absent ≠ zero.
     ...(canCustoms
       ? [
@@ -104,10 +158,19 @@ export const getOperationsKpis = cache(async (): Promise<OperationsKpiSet | null
             source: "customs-intelligence",
             href: "/customs/intelligence",
           }),
+          countKpi({
+            key: "mainlevees_jour",
+            label: "Mainlevées aujourd'hui",
+            value: settled(releasesR),
+            window: today,
+            source: "customs_record.release_date",
+            href: "/customs/intelligence",
+          }),
         ]
       : []),
-    // Finance-request pipeline — OMITTED without finance:read; null reader (engine dark /
-    // migration absent) renders an honest "unavailable", never zero (DEC-B46).
+    // Finance-request family — OMITTED without finance:read; when the execution
+    // feature is dark / migration absent, every member renders an honest
+    // "unavailable", never zero (DEC-B46).
     ...(canFinance
       ? [
           countKpi({
@@ -116,6 +179,30 @@ export const getOperationsKpis = cache(async (): Promise<OperationsKpiSet | null
             value: requests ? requests.pendingReview + requests.approvedNotDisbursed : null,
             window: current,
             source: "finance-requests",
+            href: "/finance",
+          }),
+          countKpi({
+            key: "demandes_finance_jour",
+            label: "Demandes finance déposées aujourd'hui",
+            value: freqToday,
+            window: today,
+            source: "finance_request.requested_at",
+            href: "/finance",
+          }),
+          countKpi({
+            key: "approbations_finance_jour",
+            label: "Demandes finance approuvées aujourd'hui",
+            value: apprToday,
+            window: today,
+            source: "finance_request.reviewed_at",
+            href: "/finance",
+          }),
+          countKpi({
+            key: "decaissements_finance_jour",
+            label: "Décaissements aujourd'hui",
+            value: disbToday,
+            window: today,
+            source: "finance_request.disbursed_at",
             href: "/finance",
           }),
         ]
