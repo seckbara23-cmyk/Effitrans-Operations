@@ -1,5 +1,6 @@
 import { getOperationsCockpit } from "@/lib/operations/reader";
 import { getOperationsKpis } from "@/lib/operations/kpi/reader";
+import { getOperationalAlerts } from "@/lib/operations/alerts/reader";
 import { CockpitSummaryCards } from "./cockpit-summary";
 import { ExecutiveKpiStrip } from "./executive-kpi-strip";
 import { CockpitAttentionPanel } from "./cockpit-attention-panel";
@@ -22,9 +23,16 @@ import { DashboardBreakdown } from "@/components/dashboard/dashboard-breakdown";
  * coordination → supporting breakdowns. This component does NO data aggregation.
  */
 export async function CockpitSections() {
-  // Two authoritative readers, both cache()d and permission-shaped; their shared
-  // underlying reads (control tower, analytics, …) are deduped this render.
-  const [c, kpiSet] = await Promise.all([getOperationsCockpit(), getOperationsKpis()]);
+  // Three authoritative readers, all cache()d and permission-shaped; their shared
+  // underlying reads (control tower, command center, analytics, …) are deduped this
+  // render. The unified alert reader is FAILURE-ISOLATED (10.0E-3): a rejection
+  // yields null so the rest of /dashboard still renders and the panel shows a
+  // truthful unavailable state — never an internal error.
+  const [c, kpiSet, alertSet] = await Promise.all([
+    getOperationsCockpit(),
+    getOperationsKpis(),
+    getOperationalAlerts().catch(() => null),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -32,7 +40,9 @@ export async function CockpitSections() {
           strip for analytics:read holders (10.0D-4), otherwise the operational summary.
           The older Control Tower KPI band is suppressed (see DashboardSupporting). */}
       {kpiSet ? <ExecutiveKpiStrip kpis={kpiSet} /> : <CockpitSummaryCards indicators={c.summary} />}
-      {c.alerts && <CockpitAttentionPanel alerts={c.alerts} />}
+      {/* THE single operational alert list — the unified, permission-shaped set (10.0E-3).
+          The panel self-manages empty / partial / unavailable / permission-shaped states. */}
+      <CockpitAttentionPanel set={alertSet} />
 
       {/* Today's operational state */}
       {c.operations && <OperationsQueueCard operations={c.operations} />}
