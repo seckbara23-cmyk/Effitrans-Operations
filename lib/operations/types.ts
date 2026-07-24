@@ -47,12 +47,28 @@ export type CockpitOperations = {
 
 // ---------------------------------------------------------------- transit ----
 
+/**
+ * Customs summary sourced INDEPENDENTLY from getIntelligenceDashboard (customs:read),
+ * so a customs-only user sees authorized customs figures WITHOUT gaining transport
+ * visibility (and a transport-only user's customs card stays permission-gated).
+ */
+export type CockpitTransitCustoms = {
+  total: number;
+  pending: number;
+  released: number;
+  inspection: number;
+  avgClearanceDays: number | null;
+};
+
 export type CockpitTransit = {
-  /** Command Center cross-modal headline (movements, arrivals ≤7 j, overdue, customs…). */
-  headline: HeadlineKpis;
-  /** The four mode cards (road / ocean / air / customs) exactly as the Command Center built them. */
+  /** Command Center cross-modal headline (movements, arrivals ≤7 j, overdue…). Null without transport:read. */
+  headline: HeadlineKpis | null;
+  /** The mode cards (road / ocean / air / customs) exactly as the Command Center built them (transport:read). */
   cards: PlatformCard[];
   upcomingCount: number;
+  transportAuthorized: boolean;
+  /** Independent customs slice (customs:read). Null without it — never a false zero. */
+  customs: CockpitTransitCustoms | null;
   customsAuthorized: boolean;
 };
 
@@ -146,12 +162,32 @@ export type CockpitWorkload = {
   byUser: UserWorkloadEntry[] | null;
 };
 
+// ---------------------------------------------------------------- summary ----
+
+export type CockpitSummaryTone = "navy" | "teal" | "amber" | "red" | "slate";
+
+/**
+ * One curated headline indicator for the top "operational summary" band. Values
+ * are COUNTS only (never a cross-currency sum) and every indicator is derived
+ * from an already-composed section — the UI does no aggregation (Scope B).
+ */
+export type CockpitSummaryIndicator = {
+  key: string;
+  label: string;
+  value: number;
+  tone: CockpitSummaryTone;
+  href: string;
+  urgent: boolean;
+};
+
 // ---------------------------------------------------------------- root ----
 
 export type OperationsCockpit = {
   generatedAt: string;
   sections: CockpitSection[];
   unavailable: CockpitSection[];
+  /** Curated headline band, permission-shaped (empty for a viewer who can read nothing). */
+  summary: CockpitSummaryIndicator[];
   operations: CockpitOperations | null;
   transit: CockpitTransit | null;
   finance: CockpitFinance | null;

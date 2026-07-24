@@ -24,7 +24,8 @@ import {
 } from "@/lib/organization/departments";
 import { QUEUES } from "@/lib/process/queues/registry";
 import type {
-  CockpitTaskKpis, DepartmentWorkloadEntry, FinanceRequestQueue, UserWorkloadEntry, WorkloadEntry,
+  CockpitAlerts, CockpitFinance, CockpitKpis, CockpitMessaging, CockpitOperations, CockpitSummaryIndicator,
+  CockpitTaskKpis, CockpitTransit, DepartmentWorkloadEntry, FinanceRequestQueue, UserWorkloadEntry, WorkloadEntry,
 } from "./types";
 
 // ---------------------------------------------------------------- generic counting ----
@@ -197,4 +198,63 @@ export function reconciliationIndicators(
     missingReference: recon.counts.missingReference,
     failedIntents: recon.onlineIntents.filter((i) => i.status === "FAILED" || i.status === "EXPIRED").length,
   };
+}
+
+// ---------------------------------------------------------------- summary band ----
+
+/**
+ * Curate the top headline band from the already-composed sections. PERMISSION-SHAPED
+ * by construction: an indicator is emitted only when its source section is present,
+ * so a viewer who cannot read a domain never sees its headline (nor a false zero).
+ * Every value is a COUNT — no amount, no cross-currency sum (Scope B + F). The React
+ * layer renders this list verbatim; all selection/aggregation lives here.
+ */
+export function buildCockpitSummary(input: {
+  operations: CockpitOperations | null;
+  transit: CockpitTransit | null;
+  finance: CockpitFinance | null;
+  messaging: CockpitMessaging | null;
+  alerts: CockpitAlerts | null;
+  kpis: CockpitKpis | null;
+}): CockpitSummaryIndicator[] {
+  const out: CockpitSummaryIndicator[] = [];
+  const push = (
+    key: string, label: string, value: number,
+    tone: CockpitSummaryIndicator["tone"], href: string, urgent = false,
+  ) => out.push({ key, label, value, tone, href, urgent });
+
+  // Operations — active dossiers (prefer the control-tower figure when the viewer holds analytics:read).
+  const files = input.operations?.files ?? null;
+  const activeDossiers = input.kpis?.executive?.activeDossiers ?? files?.active ?? null;
+  if (activeDossiers != null) push("activeFiles", "Dossiers actifs", activeDossiers, "navy", "/files");
+  if (files && files.overdueShipments > 0)
+    push("overdueShipments", "Livraisons en retard (ETA)", files.overdueShipments, "red", "/files?overdue=1", true);
+
+  // Tasks to action.
+  const tasks = input.operations?.tasks ?? null;
+  if (tasks) {
+    if (tasks.overdue > 0) push("tasksOverdue", "Tâches en retard", tasks.overdue, "red", "/tasks?filter=overdue", true);
+    push("tasksToday", "À traiter aujourd'hui", tasks.dueToday, "amber", "/tasks");
+  }
+
+  // Transit — awaiting customs (customs:read slice preferred, else the transport headline).
+  const awaitingCustoms = input.transit?.customs?.pending ?? input.transit?.headline?.awaitingCustoms ?? null;
+  if (awaitingCustoms != null) push("awaitingCustoms", "En attente de douane", awaitingCustoms, "amber", "/departments/customs");
+  const overdueOps = input.transit?.headline?.overdueOps ?? null;
+  if (overdueOps != null && overdueOps > 0)
+    push("overdueOps", "Opérations en retard", overdueOps, "red", "/departments/transport", true);
+
+  // Alerts — critical count.
+  if (input.alerts && input.alerts.counts.critical > 0)
+    push("criticalAlerts", "Alertes critiques", input.alerts.counts.critical, "red", "/departments/transport", true);
+
+  // Finance — actionable requests (pending review + approved-not-disbursed).
+  const req = input.finance?.requests ?? null;
+  if (req) push("financeRequests", "Demandes finance à traiter", req.pendingReview + req.approvedNotDisbursed, "navy", "/finance");
+
+  // Messaging — unread for this viewer.
+  if (input.messaging)
+    push("unread", "Messages non lus", input.messaging.unread, input.messaging.unread > 0 ? "teal" : "slate", "/messages");
+
+  return out;
 }

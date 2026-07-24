@@ -40,6 +40,7 @@ import { getDashboardTasks } from "@/lib/tasks/service";
 import { getProcessTower } from "@/lib/process/queues/control-tower";
 import { getQueueCounts } from "@/lib/process/queues/service";
 import { getCommandCenter } from "@/lib/logistics/reader";
+import { getIntelligenceDashboard } from "@/lib/customs/intelligence/service";
 import { getControlTower } from "@/lib/control-tower/service";
 import { getFinanceKpis, getReconciliation } from "@/lib/finance/service";
 import { getFinanceMonthRevenue } from "@/lib/departments/service";
@@ -50,8 +51,10 @@ import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-s
 import { mergeExecutiveAlerts, countAlertsByLevel } from "@/lib/executive/compose";
 import { getFinanceRequestQueue } from "./finance-requests";
 import { getWorkloadByTeam, getWorkloadByUser } from "./workload";
-import { projectAttentionAlerts, reconciliationIndicators, rollupQueueDepths, taskKpis } from "./compose";
-import type { CockpitSection, OperationsCockpit } from "./types";
+import {
+  buildCockpitSummary, projectAttentionAlerts, reconciliationIndicators, rollupQueueDepths, taskKpis,
+} from "./compose";
+import type { CockpitSection, CockpitTransit, OperationsCockpit } from "./types";
 
 const settled = <T,>(r: PromiseSettledResult<T>): T | null => (r.status === "fulfilled" ? r.value : null);
 const none = Promise.resolve(null);
@@ -61,6 +64,7 @@ export const getOperationsCockpit = cache(async (): Promise<OperationsCockpit> =
   const perms = await getEffectivePermissions(user.id);
   const canFinance = hasPermission(perms, "finance:read");
   const canTransit = hasPermission(perms, "transport:read");
+  const canCustoms = hasPermission(perms, "customs:read");
   const canAnalytics = hasPermission(perms, "analytics:read");
   const canProcess = hasPermission(perms, "process:read");
   const canCollections = hasPermission(perms, "collections:manage");
@@ -75,7 +79,7 @@ export const getOperationsCockpit = cache(async (): Promise<OperationsCockpit> =
   const unavailable: CockpitSection[] = [];
 
   const [
-    filesR, tasksR, towerR, countsR, ccR, ctR,
+    filesR, tasksR, towerR, countsR, ccR, customsR, ctR,
     finKpisR, revenueR, reconR, requestsR, collR,
     msgSummaryR, unreadR, teamR, userR,
   ] = await Promise.allSettled([
@@ -84,6 +88,7 @@ export const getOperationsCockpit = cache(async (): Promise<OperationsCockpit> =
     canProcess ? getProcessTower(user.tenantId, perms) : none,
     engineLive ? getQueueCounts(user.tenantId, perms) : Promise.resolve<Record<string, number>>({}),
     canTransit ? getCommandCenter() : none,
+    canCustoms ? getIntelligenceDashboard() : none,
     canAnalytics ? getControlTower(perms) : none,
     canFinance ? getFinanceKpis() : none,
     canFinance ? getFinanceMonthRevenue() : Promise.resolve<number | null>(null),
@@ -106,15 +111,30 @@ export const getOperationsCockpit = cache(async (): Promise<OperationsCockpit> =
   (operations ? sections : unavailable).push("operations");
 
   // ---------------------------------------------------------------- transit ----
+  // Two independently-gated inputs: the transport Command Center (transport:read) and
+  // the customs slice (customs:read). Present when EITHER is authorized — a customs-only
+  // user gets customs figures with no transport visibility, and vice-versa (Scope E).
   const cc = settled(ccR);
-  const transit = cc
-    ? {
-        headline: cc.headline,
-        cards: cc.cards,
-        upcomingCount: cc.upcoming.length,
-        customsAuthorized: cc.customsAuthorized,
-      }
-    : null;
+  const customsDash = settled(customsR);
+  const transit: CockpitTransit | null =
+    cc || customsDash
+      ? {
+          headline: cc?.headline ?? null,
+          cards: cc?.cards ?? [],
+          upcomingCount: cc?.upcoming.length ?? 0,
+          transportAuthorized: !!cc,
+          customs: customsDash
+            ? {
+                total: customsDash.dashboard.total,
+                pending: customsDash.dashboard.pending,
+                released: customsDash.dashboard.released,
+                inspection: customsDash.dashboard.inspectionQueueSize,
+                avgClearanceDays: customsDash.dashboard.averageClearanceDays,
+              }
+            : null,
+          customsAuthorized: !!customsDash,
+        }
+      : null;
   (transit ? sections : unavailable).push("transit");
 
   // ---------------------------------------------------------------- finance ----
@@ -169,10 +189,15 @@ export const getOperationsCockpit = cache(async (): Promise<OperationsCockpit> =
   const workload = engineLive || byUser ? { byDepartment, byQueue, byTeam, byUser } : null;
   (workload ? sections : unavailable).push("workload");
 
+  // ---------------------------------------------------------------- summary band ----
+  // Curated from the sections just composed — pure, permission-shaped, counts only.
+  const summary = buildCockpitSummary({ operations, transit, finance, messaging, alerts, kpis });
+
   return {
     generatedAt,
     sections,
     unavailable,
+    summary,
     operations,
     transit,
     finance,

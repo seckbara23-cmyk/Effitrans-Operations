@@ -250,10 +250,15 @@ describe("Coordinator Control Tower (Deliverable 4)", () => {
   const dashboard = read("../app/dashboard/page.tsx");
 
   it("UPGRADES the existing Control Tower rather than creating a second one", () => {
-    // The process tower is rendered as a section of /dashboard, alongside the
-    // existing ControlTower — not on a competing route.
-    expect(dashboard).toContain("ProcessTowerSection");
-    expect(dashboard).toContain("<ControlTower data={controlTower} />");
+    // Phase 10.0C — /dashboard was re-rendered over the composition layer. The
+    // process tower and the management ControlTower remain SECTIONS of /dashboard
+    // (now inside its cockpit section components), never on a competing route.
+    const cockpitSections = read("../components/operations/cockpit-sections.tsx");
+    const supporting = read("../components/operations/dashboard-supporting.tsx");
+    expect(dashboard).toContain("CockpitSections");
+    expect(dashboard).toContain("DashboardSupporting");
+    expect(cockpitSections).toContain("ProcessTowerSection");
+    expect(supporting).toContain("<ControlTower data={controlTower} />");
   });
 
   it("returns nothing when the workspaces flag is off FOR THAT TENANT", () => {

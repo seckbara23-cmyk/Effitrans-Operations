@@ -8,6 +8,7 @@
  * RLS SELECT policy + grant remain as the defense-in-depth boundary (CI-tested).
  */
 import "server-only";
+import { cache } from "react";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
 import { resolveFileScope, type FileScope } from "@/lib/authz/visibility";
@@ -130,7 +131,9 @@ export async function listAssignees(): Promise<Assignee[]> {
   return (data ?? []).map((u) => ({ id: u.id, label: u.name || u.email }));
 }
 
-export async function getDashboardTasks(): Promise<DashboardTasks> {
+// Phase 10.0C — request-level cache(): the cockpit composition reads the task KPIs
+// while the preserved dashboard section reads the full lists; both share ONE read.
+export const getDashboardTasks = cache(async (): Promise<DashboardTasks> => {
   const user = await assertPermission("task:read");
   const scope = await resolveFileScope(user.id, user.tenantId, "task:read:all");
   const supabase = getAdminSupabaseClient();
@@ -172,4 +175,4 @@ export async function getDashboardTasks(): Promise<DashboardTasks> {
     overdue: (overdue.data ?? []).map(toListItem),
     mine: (mine.data ?? []).map(toListItem),
   };
-}
+});
