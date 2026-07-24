@@ -118,6 +118,9 @@ export const ROLE_CANONICAL_DEPARTMENT: Readonly<Record<string, CanonicalDepartm
   COURIER: "FINANCE", // PROVISIONAL — physical invoice deposit (step 24)
   CASHIER: "FINANCE", // Phase 9.3A — Caisse & Trésorerie (workspace under Finance, not a department)
 
+  // ---- Human Resources — corporate support, outside the dossier flow ---------
+  HR_OFFICER: "HUMAN_RESOURCES", // HR-1 — first role mapped to HUMAN_RESOURCES (Employee Registry)
+
   // ---- No single department --------------------------------------------------
   SYSTEM_ADMIN: null, // cross-cutting IT/config administration
   CEO: null, // Direction = governance, not a department

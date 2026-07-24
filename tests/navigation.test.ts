@@ -54,6 +54,8 @@ const ALL_PERMS = [
   // Phase 7.7 — the executive dashboard is gated on its own narrower permission, no longer on
   // analytics:read (which remains the wider Direction/Rapports audience).
   "executive:dashboard:read",
+  // Phase HR-1 — « Ressources humaines » (MANAGEMENT) is gated on hr:read.
+  "hr:read",
 ];
 
 const ctx = (over: Partial<NavigationContext> = {}): NavigationContext => ({

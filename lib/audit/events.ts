@@ -394,6 +394,18 @@ export const AuditActions = {
   MESSAGING_MESSAGE_REDACTED: "messaging.message.redacted",
   MESSAGING_PARTICIPANT_ADDED: "messaging.participant.added",
   MESSAGING_PARTICIPANT_REMOVED: "messaging.participant.removed",
+
+  // Phase HR-1 — Employee Registry. HR holds the platform's most sensitive data,
+  // so audit payloads carry SAFE METADATA ONLY: entity ids, status before/after,
+  // the NAMES of changed fields, department, and dates — NEVER contact values
+  // (phone/email), NEVER emergency-contact values, and the excluded-forever
+  // fields (salary/national-ID/medical) do not exist to log. Account
+  // linking/unlinking is audited without asserting any grant (it grants nothing).
+  HR_EMPLOYEE_CREATED: "hr.employee.created",
+  HR_EMPLOYEE_UPDATED: "hr.employee.updated",
+  HR_EMPLOYEE_STATUS_CHANGED: "hr.employee.status_changed",
+  HR_EMPLOYEE_ACCOUNT_LINKED: "hr.employee.account_linked",
+  HR_EMPLOYEE_ACCOUNT_UNLINKED: "hr.employee.account_unlinked",
 } as const;
 
 export type AuditActionCode = (typeof AuditActions)[keyof typeof AuditActions];

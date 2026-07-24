@@ -3142,6 +3142,94 @@ export type Database = {
         };
         Relationships: [];
       };
+      employee: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          employee_number: string;
+          linked_app_user_id: string | null;
+          first_name: string;
+          last_name: string;
+          preferred_name: string | null;
+          professional_email: string | null;
+          personal_email: string | null;
+          professional_phone: string | null;
+          personal_phone: string | null;
+          emergency_contact_name: string | null;
+          emergency_contact_phone: string | null;
+          department: string;
+          job_title: string | null;
+          manager_employee_id: string | null;
+          work_location: string | null;
+          employment_type: string | null;
+          hire_date: string | null;
+          probation_end_date: string | null;
+          termination_date: string | null;
+          termination_reason: string | null;
+          status: string;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          employee_number: string;
+          linked_app_user_id?: string | null;
+          first_name: string;
+          last_name: string;
+          preferred_name?: string | null;
+          professional_email?: string | null;
+          personal_email?: string | null;
+          professional_phone?: string | null;
+          personal_phone?: string | null;
+          emergency_contact_name?: string | null;
+          emergency_contact_phone?: string | null;
+          department: string;
+          job_title?: string | null;
+          manager_employee_id?: string | null;
+          work_location?: string | null;
+          employment_type?: string | null;
+          hire_date?: string | null;
+          probation_end_date?: string | null;
+          termination_date?: string | null;
+          termination_reason?: string | null;
+          status?: string;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          linked_app_user_id?: string | null;
+          first_name?: string;
+          last_name?: string;
+          preferred_name?: string | null;
+          professional_email?: string | null;
+          personal_email?: string | null;
+          professional_phone?: string | null;
+          personal_phone?: string | null;
+          emergency_contact_name?: string | null;
+          emergency_contact_phone?: string | null;
+          department?: string;
+          job_title?: string | null;
+          manager_employee_id?: string | null;
+          work_location?: string | null;
+          employment_type?: string | null;
+          hire_date?: string | null;
+          probation_end_date?: string | null;
+          termination_date?: string | null;
+          termination_reason?: string | null;
+          status?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      employee_counter: {
+        Row: { tenant_id: string; year: number; next_seq: number };
+        Insert: { tenant_id: string; year: number; next_seq?: number };
+        Update: { next_seq?: number };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
@@ -3158,6 +3246,10 @@ export type Database = {
         Returns: Json;
       };
       next_invoice_number: {
+        Args: { p_tenant: string };
+        Returns: string;
+      };
+      next_employee_number: {
         Args: { p_tenant: string };
         Returns: string;
       };

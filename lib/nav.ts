@@ -125,6 +125,16 @@ export const BASE_SECTIONS: NavigationSection[] = [
         iconKey: "building",
         permission: "analytics:read",
       },
+      // Phase HR-1 — HR is a corporate SUPPORT/management function, not an
+      // operational department, so its workspace lives under MANAGEMENT (never
+      // in DÉPARTEMENTS). Gated on hr:read; the /departments/hr route re-checks.
+      {
+        key: "hr",
+        label: "Ressources humaines",
+        href: "/departments/hr",
+        iconKey: "users",
+        permission: "hr:read",
+      },
       { key: "reports", label: "Rapports", href: "/reports", iconKey: "report", permission: "analytics:read" },
       {
         key: "executive",

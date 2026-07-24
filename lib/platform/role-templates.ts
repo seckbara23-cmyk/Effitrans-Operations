@@ -485,6 +485,26 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       ...BASE, "caisse:manage", "finance:read", "process:read",
     ],
   },
+  // =========================================================================
+  // HR_OFFICER (25th) — Phase HR-1 Employee Registry. Corporate support role
+  // mapped to the HUMAN_RESOURCES canonical department (metadata only). Holds
+  // the HR module (hr:read + hr:manage) + staff messaging; deliberately NO
+  // admin:*, finance:*, process:*, or delete authority, and — per DEC-B25 —
+  // hr:* is NEVER granted to SYSTEM_ADMIN. Mirrored in supabase/seed.sql + the
+  // additive migration 20260724000002_hr_employee_registry.sql.
+  // =========================================================================
+  {
+    key: "HR_OFFICER",
+    labelFr: "Chargé RH",
+    labelEn: "HR Officer",
+    genericName: "HR_OFFICER",
+    description:
+      "Human Resources — maintains the employee registry (identity, department, job title, employment status, contacts) and the optional link between an employee and a platform account. Employment records are separate from platform accounts; linking grants no access, and termination never silently revokes access.",
+    requiredForEveryTenant: false,
+    permissions: [
+      ...BASE, "hr:read", "hr:manage", "messaging:read", "messaging:send",
+    ],
+  },
 ];
 
 export const TENANT_ROLE_KEYS = TENANT_ROLE_TEMPLATES.map((t) => t.key);

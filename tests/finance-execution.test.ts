@@ -384,9 +384,9 @@ describe("Phase 9.0E permission reuse and scope", () => {
   it("51 — the migration is the new latest, and build-info is bumped in lockstep", () => {
     const dir = fileURLToPath(new URL("../supabase/migrations/", import.meta.url));
     const files = readdirSync(dir).filter((f) => f.endsWith(".sql")).sort();
-    expect(files[files.length - 1]).toBe("20260724000001_caisse_foundation.sql");
+    expect(files[files.length - 1]).toBe("20260724000002_hr_employee_registry.sql");
     const buildInfo = read("../lib/platform/ops/build-info.ts");
-    expect(buildInfo).toContain('LATEST_MIGRATION = "20260724000001_caisse_foundation"');
+    expect(buildInfo).toContain('LATEST_MIGRATION = "20260724000002_hr_employee_registry"');
     expect(buildInfo).toContain(`MIGRATION_COUNT = ${files.length}`);
   });
 

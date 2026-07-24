@@ -997,3 +997,35 @@ join public.permission p on p.code = 'caisse:manage'
 where r.tenant_id = '00000000-0000-0000-0000-000000000001'
   and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR')
 on conflict do nothing;
+
+-- ===========================================================================
+-- Phase HR-1 — Employee Registry. Mirrors
+-- supabase/migrations/20260724000002_hr_employee_registry.sql (parity enforced
+-- by tests/role-templates.test.ts). HR is a MANAGEMENT surface (/departments/hr),
+-- not an operational department; HUMAN_RESOURCES stays canonical metadata.
+-- SYSTEM_ADMIN receives NO hr:* (DEC-B25) — see the deliberate omission below.
+-- ===========================================================================
+insert into public.permission (code, module, action, data_scope, description) values
+  ('hr:read',   'hr', 'read',   'all', 'Consulter le registre du personnel (annuaire et données d''emploi)'),
+  ('hr:manage', 'hr', 'manage', 'all', 'Gérer le personnel : création, modification, cycle de vie, liaison de compte')
+on conflict (code) do nothing;
+
+insert into public.role (tenant_id, code, label_fr, label_en, is_provisional) values
+  ('00000000-0000-0000-0000-000000000001', 'HR_OFFICER', 'Chargé RH', 'HR Officer', true)
+on conflict (tenant_id, code) do nothing;
+
+-- HR_OFFICER — least privilege: own profile, the HR module (hr:read + hr:manage),
+-- and staff messaging (messaging:read + messaging:send). Grant hr:read/hr:manage
+-- by explicit p.code (module-based expansion would over-grant). NOT admin:*,
+-- finance:*, process:*, or any :delete authority.
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p
+  on p.code in ('profile:read:self', 'profile:update:self', 'hr:read', 'hr:manage',
+                'messaging:read', 'messaging:send')
+where r.tenant_id = '00000000-0000-0000-0000-000000000001' and r.code = 'HR_OFFICER'
+on conflict do nothing;
+
+-- NO hr:* grant to SYSTEM_ADMIN or any other role (DEC-B25): HR data is the
+-- strongest case for narrowness; SYSTEM_ADMIN administers accounts, not people.

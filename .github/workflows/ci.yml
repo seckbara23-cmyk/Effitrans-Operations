@@ -295,6 +295,11 @@ jobs:
           PGPASSWORD: postgres
         run: psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/rls_finance_requests_test.sql
 
+      - name: Run HR employee registry isolation test (Phase HR-1)
+        env:
+          PGPASSWORD: postgres
+        run: psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/rls_hr_employee_test.sql
+
       - name: Stop local Supabase
         if: always()
         run: supabase stop

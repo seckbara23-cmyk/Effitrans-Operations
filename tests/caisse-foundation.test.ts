@@ -42,8 +42,8 @@ const FORBIDDEN_FOR_CASHIER = [
 describe("CASHIER role", () => {
   const cashier = () => getTenantRoleTemplate("CASHIER")!;
 
-  it("1 — is the 24th tenant role", () => {
-    expect(TENANT_ROLE_KEYS).toHaveLength(24);
+  it("1 — is a tenant role (25 total after HR-1 added HR_OFFICER)", () => {
+    expect(TENANT_ROLE_KEYS).toHaveLength(25);
     expect(TENANT_ROLE_KEYS).toContain("CASHIER");
   });
 

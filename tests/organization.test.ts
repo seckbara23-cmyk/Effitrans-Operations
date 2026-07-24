@@ -109,11 +109,14 @@ describe("5-9 — role-to-department mapping follows the confirmed business deci
     }
   });
 
-  it("9 — HR does not process dossiers, and no existing role maps into HUMAN_RESOURCES yet", () => {
+  it("9 — HR does not process dossiers; HR_OFFICER is the (only) role mapped to HUMAN_RESOURCES", () => {
     expect(getCanonicalDepartment("HUMAN_RESOURCES")!.processesDossiers).toBe(false);
-    for (const [role, dept] of Object.entries(ROLE_CANONICAL_DEPARTMENT)) {
-      expect(dept, role).not.toBe("HUMAN_RESOURCES");
-    }
+    // Phase HR-1 gave HUMAN_RESOURCES its first mapped role. It must be exactly HR_OFFICER —
+    // no operational role silently rolls up into HR.
+    const hrRoles = Object.entries(ROLE_CANONICAL_DEPARTMENT)
+      .filter(([, dept]) => dept === "HUMAN_RESOURCES")
+      .map(([role]) => role);
+    expect(hrRoles).toEqual(["HR_OFFICER"]);
   });
 
   it("governance and external identities map to NO department, never a fabricated one", () => {

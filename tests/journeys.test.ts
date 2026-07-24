@@ -38,6 +38,8 @@ const ALL_PERMS = [
   // Phase 7.7 — the executive dashboard is gated on its own narrower permission, no longer on
   // analytics:read (which remains the wider Direction/Rapports audience).
   "executive:dashboard:read",
+  // Phase HR-1 — the HR registry item under MANAGEMENT is gated on hr:read.
+  "hr:read",
 ];
 
 const ctx = (over: Partial<NavigationContext> = {}): NavigationContext => ({
@@ -89,7 +91,7 @@ describe("the sidebar is exactly the five agreed sections", () => {
     // Documentation (Operations) and Douane/Transport (Transit) are workspaces
     // inside their hubs, not top-level entries.
     expect(byKey.departments).toEqual(["Opérations", "Transit", "Finance"]);
-    expect(byKey.management).toEqual(["Direction", "Rapports", "Tableau exécutif"]);
+    expect(byKey.management).toEqual(["Direction", "Ressources humaines", "Rapports", "Tableau exécutif"]);
     expect(byKey.administration).toEqual(["Utilisateurs", "Centre de marque", "Journal d'audit", "Paramètres"]);
   });
 
@@ -106,6 +108,7 @@ describe("the sidebar is exactly the five agreed sections", () => {
       "/departments/transit": "../app/departments/transit/page.tsx",
       "/departments/finance": "../app/departments/finance/page.tsx",
       "/departments/management": "../app/departments/management/page.tsx",
+      "/departments/hr": "../app/departments/hr/page.tsx",
       "/reports": "../app/reports/page.tsx",
       "/dashboard/executive": "../app/dashboard/executive/page.tsx",
       "/users": "../app/users/page.tsx",

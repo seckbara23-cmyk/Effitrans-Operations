@@ -94,6 +94,9 @@ export const TENANT_SCOPED_TABLES = new Set<string>([
   // document intelligence (Phase 7.4A)
   "document_intelligence_job",
   "document_candidate_field",
+  // human resources (Phase HR-1)
+  "employee",
+  "employee_counter",
 ]);
 
 /**

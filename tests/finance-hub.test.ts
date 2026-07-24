@@ -41,24 +41,48 @@ describe("Finance hub workspace links (Scope E)", () => {
   });
 });
 
-describe("HR under Management — documented BLOCKER, not fabricated (Scope F)", () => {
+// Phase HR-1 flipped the former 9.3C HR blocker: HR now has a real route
+// (/departments/hr), permissions (hr:read/hr:manage) and role (HR_OFFICER), so
+// « Ressources humaines » is a legitimate MANAGEMENT item — never a fabrication.
+describe("HR under Management — now real (Phase HR-1)", () => {
   const seed = read("../supabase/seed.sql");
   const depts = read("../lib/organization/departments.ts");
 
-  it("MANAGEMENT has NO Ressources humaines item — no HR route/permission exists to back one", () => {
+  it("MANAGEMENT contains « Ressources humaines », gated on hr:read, at /departments/hr", () => {
     const mgmt = navSections.find((s) => s.label === "Management")!;
-    expect(mgmt.items.map((i) => i.label)).toEqual(["Direction", "Rapports", "Tableau exécutif"]);
-    expect(mgmt.items.some((i) => /Ressources humaines/i.test(i.label))).toBe(false);
+    expect(mgmt.items.map((i) => i.label)).toEqual([
+      "Direction",
+      "Ressources humaines",
+      "Rapports",
+      "Tableau exécutif",
+    ]);
+    const hr = mgmt.items.find((i) => i.label === "Ressources humaines")!;
+    expect(hr.href).toBe("/departments/hr");
+    expect(hr.permission).toBe("hr:read");
   });
 
-  it("no HR/workforce permission exists in the catalog (so no honest gate could be applied)", () => {
-    expect(seed).not.toMatch(/'hr:[a-z]/i);
-    expect(seed).not.toMatch(/'workforce:[a-z]/i);
-    expect(seed).not.toMatch(/'rh:[a-z]/i);
+  it("HR is NOT a DÉPARTEMENTS entry (it is a management support function)", () => {
+    const dep = navSections.find((s) => s.label === "Départements")!;
+    expect(dep.items.some((i) => /Ressources humaines/i.test(i.label) || i.href === "/departments/hr")).toBe(false);
+    expect(dep.items.map((i) => i.label)).toEqual(["Opérations", "Transit", "Finance"]);
   });
 
-  it("HUMAN_RESOURCES stays in the canonical registry, unchanged (metadata only)", () => {
+  it("the HR permissions exist in the catalog and are held only by HR_OFFICER", () => {
+    expect(seed).toMatch(/'hr:read'/);
+    expect(seed).toMatch(/'hr:manage'/);
+    // SYSTEM_ADMIN is deliberately NOT granted hr:* (DEC-B25). Assert no seed
+    // grant block that targets SYSTEM_ADMIN also mentions an hr:* code.
+    const blocks = seed.match(/insert into public\.role_permission[\s\S]*?on conflict do nothing;/g) ?? [];
+    for (const b of blocks) {
+      if (/hr:(read|manage)/.test(b)) {
+        expect(/SYSTEM_ADMIN/.test(b), "hr:* must not be granted to SYSTEM_ADMIN").toBe(false);
+      }
+    }
+  });
+
+  it("HUMAN_RESOURCES stays in the canonical registry (now with its first mapped role)", () => {
     expect(depts).toContain('code: "HUMAN_RESOURCES"');
     expect(depts).toContain('labelFr: "Ressources humaines"');
+    expect(depts).toMatch(/HR_OFFICER:\s*"HUMAN_RESOURCES"/);
   });
 });
