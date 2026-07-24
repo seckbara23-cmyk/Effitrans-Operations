@@ -10,19 +10,20 @@
  * adapter self-gates via `available` (omitted) and degrades via allSettled
  * (unavailable). Request-`cache()`d so page + future copilot share one pass.
  *
- * ADAPTERS IS EMPTY in 10.0E-1 — the layer is proven and injectable; the seven
- * ratified source adapters (DEC-B53) plug in here in Phase 10.0E-2 with ZERO
- * change to this reader beyond the array.
+ * The seven ratified source adapters (DEC-B53) are registered in
+ * ./adapters — this reader's architecture is unchanged from 10.0E-1; it only
+ * iterates whatever the registry contains.
  */
 import "server-only";
 import { cache } from "react";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions } from "@/lib/rbac/permissions";
 import { composeAlertSet, emptyAlertSet } from "./compose";
-import type { AlertAdapterContext, AlertSource, OperationalAlert, OperationalAlertAdapter, OperationalAlertSet } from "./types";
+import { ALERT_ADAPTERS } from "./adapters";
+import type { AlertAdapterContext, AlertSource, OperationalAlert, OperationalAlertSet } from "./types";
 
-/** The registered source adapters. EMPTY in 10.0E-1 (composition layer only). */
-const ADAPTERS: readonly OperationalAlertAdapter[] = [];
+/** The registered source adapters (Phase 10.0E-2 — the seven ratified sources). */
+const ADAPTERS = ALERT_ADAPTERS;
 
 export const getOperationalAlerts = cache(async (): Promise<OperationalAlertSet> => {
   const generatedAt = new Date().toISOString();

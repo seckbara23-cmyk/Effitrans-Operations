@@ -62,6 +62,23 @@ async function query(filters: { status?: string; fileId?: string; clientId?: str
 export function listCommunications(opts?: { status?: string }): Promise<CommunicationMessage[]> {
   return query({ status: opts?.status });
 }
+
+/**
+ * Bounded head-count of communications in a status (Phase 10.0E-2). Reads NO row
+ * content — count only — so no recipient / last_error / payload can ever leak.
+ * Tenant-scoped, gated communication:read; the alert center's failed-comms source.
+ */
+export async function countCommunications(status: string): Promise<number> {
+  const user = await assertPermission("communication:read");
+  const supabase = getAdminSupabaseClient();
+  const { count, error } = await supabase
+    .from("communication_message")
+    .select("id", { count: "exact", head: true })
+    .eq("tenant_id", user.tenantId)
+    .eq("status", status);
+  if (error) throw new Error(`[comms] count failed: ${error.message}`);
+  return count ?? 0;
+}
 export function listCommunicationsForFile(fileId: string): Promise<CommunicationMessage[]> {
   return query({ fileId });
 }

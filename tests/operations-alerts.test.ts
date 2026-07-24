@@ -191,9 +191,9 @@ describe("reader — consume-never-own, cache()+allSettled, ZERO adapters (10.0E
     expect(READER).toContain("Promise.allSettled");
     expect(READER).toContain("getEffectivePermissions");
   });
-  it("registers ZERO adapters in this phase but supports injection", () => {
-    expect(READER).toMatch(/ADAPTERS[^=]*=\s*\[\]/); // empty array literal
-    expect(READER).toContain("OperationalAlertAdapter");
+  it("consumes the ALERT_ADAPTERS registry via injection (architecture unchanged; E-2 populated it)", () => {
+    expect(READER).toContain("const ADAPTERS = ALERT_ADAPTERS");
+    expect(READER).toContain('from "./adapters"');
   });
   it("has NO business query of its own (no supabase client, no .from()) and no top-level gate", () => {
     expect(READER).not.toContain("getAdminSupabaseClient");
