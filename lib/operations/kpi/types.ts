@@ -33,9 +33,6 @@ export type KpiWindow = {
   timezone: string;
 };
 
-/** One per-currency monetary value. NEVER summed across currencies (DEC-B40). */
-export type KpiMoney = { currency: string; amount: number };
-
 export type KpiComparison = {
   /** Honest basis naming, e.g. « vs juin (mois complet) » — mandatory. */
   label: string;
@@ -44,6 +41,15 @@ export type KpiComparison = {
   /** Null when the prior value is 0 or null (DEC-B41) — never ∞ or a fabricated 100 %. */
   changePercent: number | null;
 };
+
+/**
+ * One per-currency monetary value. NEVER summed across currencies (DEC-B40).
+ * `comparison` (10.0D-3, backward-compatible optional) carries the PER-CURRENCY
+ * prior-period comparison for amount-kind flow KPIs — a currency's growth is
+ * NEVER compressed with another's into a single percentage. Snapshot amounts
+ * (e.g. overdue receivables) carry no comparison (DEC-B42).
+ */
+export type KpiMoney = { currency: string; amount: number; comparison?: KpiComparison };
 
 export type KpiStatus = "ready" | "partial" | "unavailable";
 

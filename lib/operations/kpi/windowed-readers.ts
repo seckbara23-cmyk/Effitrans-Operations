@@ -166,6 +166,24 @@ export function financeDisbursementsInWindow(tenantId: string, window: KpiWindow
   return countEvents({ tenantId, table: "finance_request", column: "disbursed_at", grain: "date", window });
 }
 
+// ---------------------------------------------------------------- transport ----
+
+/**
+ * Livraisons terminées dans la fenêtre — transport_record.delivery_actual, the
+ * real completion INSTANT (§7). NOT transport status (a status-only "DELIVERED"
+ * has no time and would double-count re-openings). Soft-delete aware.
+ */
+export function deliveriesCompletedInWindow(tenantId: string, window: KpiWindow): Promise<number | null> {
+  return countEvents({
+    tenantId,
+    table: "transport_record",
+    column: "delivery_actual",
+    grain: "instant",
+    window,
+    refine: (q) => q.is("deleted_at", null),
+  });
+}
+
 // ---------------------------------------------------------------- messaging ----
 
 /** Conversations ouvertes dans la fenêtre — conversation.created_at (counts only, no content). */

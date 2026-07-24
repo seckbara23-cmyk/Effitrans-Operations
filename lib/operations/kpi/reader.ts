@@ -37,14 +37,19 @@ import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { getAnalytics } from "@/lib/analytics/service";
 import { getControlTower } from "@/lib/control-tower/service";
 import { getIntelligenceDashboard } from "@/lib/customs/intelligence/service";
+import { getFinanceQueue } from "@/lib/finance/service";
 import { getFinanceRequestQueue } from "../finance-requests";
-import { countKpi } from "./compose";
-import { currentWindow, resolveTimezone, todayWindow } from "./windows";
+import { countKpi, moneyFlowKpi, moneySnapshotKpi, overdueRowsAtTenantDay } from "./compose";
 import {
-  conversationsStartedInWindow, customsReleasesInWindow, dossiersClosedInWindow,
-  dossiersCreatedInWindow, financeApprovalsInWindow, financeDisbursementsInWindow,
-  financeRequestsInWindow,
+  currentWindow, frenchMonthName, monthToDateWindow, previousMonthBounds, resolveTimezone,
+  tenantToday, todayWindow,
+} from "./windows";
+import {
+  conversationsStartedInWindow, customsReleasesInWindow, deliveriesCompletedInWindow,
+  dossiersClosedInWindow, dossiersCreatedInWindow, financeApprovalsInWindow,
+  financeDisbursementsInWindow, financeRequestsInWindow,
 } from "./windowed-readers";
+import { readCollectedByWindow, readInvoicedByWindow } from "./finance-readers";
 import type { OperationsKpiSet } from "./types";
 
 const settled = <T,>(r: PromiseSettledResult<T>): T | null => (r.status === "fulfilled" ? r.value : null);
@@ -72,22 +77,34 @@ export const getOperationsKpis = cache(async (): Promise<OperationsKpiSet | null
   );
   const current = currentWindow(timezone);
   const today = todayWindow(timezone);
+  const mtd = monthToDateWindow(timezone);
+  const prevMonth = previousMonthBounds(timezone);
+  const financeBounds = { mtdStart: mtd.start!, mtdEnd: mtd.end!, prevStart: prevMonth.start };
+  const compareLabel = `vs ${frenchMonthName(prevMonth.start)} (mois complet)`;
 
-  const [ctR, anR, customsR, requestsR, createdR, closedR, releasesR, freqTodayR, apprTodayR, disbTodayR, convR] =
-    await Promise.allSettled([
-      getControlTower(perms), // request-cache()d — shared with every other consumer this render
-      getAnalytics(canFinance), // idem (also deduped inside getControlTower)
-      canCustoms ? getIntelligenceDashboard() : none,
-      canFinance ? getFinanceRequestQueue() : none,
-      // 10.0D-2 — windowed event counts (head-only, §7 timestamps, tenant-day bounds).
-      dossiersCreatedInWindow(user.tenantId, today),
-      dossiersClosedInWindow(user.tenantId, today),
-      canCustoms ? customsReleasesInWindow(user.tenantId, today) : none,
-      canFinance ? financeRequestsInWindow(user.tenantId, today) : none,
-      canFinance ? financeApprovalsInWindow(user.tenantId, today) : none,
-      canFinance ? financeDisbursementsInWindow(user.tenantId, today) : none,
-      conversationsStartedInWindow(user.tenantId, today),
-    ]);
+  const [
+    ctR, anR, customsR, requestsR, queueR, invoicedR, collectedR,
+    createdR, closedR, deliveriesR, releasesR, freqTodayR, apprTodayR, disbTodayR, convR,
+  ] = await Promise.allSettled([
+    getControlTower(perms), // request-cache()d — shared with every other consumer this render
+    getAnalytics(canFinance), // idem (also deduped inside getControlTower)
+    canCustoms ? getIntelligenceDashboard() : none,
+    canFinance ? getFinanceRequestQueue() : none,
+    // 10.0D-3 — finance money (per-currency; invoices/payments always exist, so
+    // NOT gated on the financeExecution flag — only on finance:read).
+    canFinance ? getFinanceQueue() : none, // authoritative invoices for Créances (reused, cache()d)
+    canFinance ? readInvoicedByWindow(user.tenantId, financeBounds) : none, // Facturé MTD + prev
+    canFinance ? readCollectedByWindow(user.tenantId, financeBounds) : none, // Encaissé MTD + prev
+    // 10.0D-2 — windowed event counts (head-only, §7 timestamps, tenant-day bounds).
+    dossiersCreatedInWindow(user.tenantId, today),
+    dossiersClosedInWindow(user.tenantId, today),
+    deliveriesCompletedInWindow(user.tenantId, today), // 10.0D-3 ratified operational addition
+    canCustoms ? customsReleasesInWindow(user.tenantId, today) : none,
+    canFinance ? financeRequestsInWindow(user.tenantId, today) : none,
+    canFinance ? financeApprovalsInWindow(user.tenantId, today) : none,
+    canFinance ? financeDisbursementsInWindow(user.tenantId, today) : none,
+    conversationsStartedInWindow(user.tenantId, today),
+  ]);
 
   const ct = settled(ctR);
   const an = settled(anR);
@@ -100,6 +117,20 @@ export const getOperationsKpis = cache(async (): Promise<OperationsKpiSet | null
   const freqToday = financeExecutionLive ? settled(freqTodayR) : null;
   const apprToday = financeExecutionLive ? settled(apprTodayR) : null;
   const disbToday = financeExecutionLive ? settled(disbTodayR) : null;
+
+  // 10.0D-3 finance money — invoices/payments always exist, so these do NOT
+  // depend on financeExecution; only finance:read (already gating the branch).
+  const queue = settled(queueR); // authoritative invoices (getFinanceQueue)
+  const invoiced = settled(invoicedR);
+  const collected = settled(collectedR);
+  // Créances: re-evaluate overdue at the TENANT-DAY boundary over the authoritative
+  // queue (reuses isOverdue; queue null ⇒ null ⇒ the KPI renders unavailable).
+  const overdueRows = queue
+    ? overdueRowsAtTenantDay(
+        queue.map((i) => ({ status: i.status, dueDate: i.dueDate, balance: i.balance, currency: i.currency })),
+        tenantToday(timezone),
+      )
+    : null;
 
   const kpis = [
     // DEC-B43 — THE ratified active definition, via the analytics reader (single source;
@@ -147,6 +178,15 @@ export const getOperationsKpis = cache(async (): Promise<OperationsKpiSet | null
       source: "conversation.created_at",
       href: "/messages",
     }),
+    // 10.0D-3 ratified operational addition — deliveries completed today.
+    countKpi({
+      key: "livraisons_jour",
+      label: "Livraisons terminées aujourd'hui",
+      value: settled(deliveriesR),
+      window: today,
+      source: "transport_record.delivery_actual",
+      href: "/transport",
+    }),
     // Customs slice — OMITTED (not "unavailable") without customs:read: absent ≠ zero.
     ...(canCustoms
       ? [
@@ -165,6 +205,48 @@ export const getOperationsKpis = cache(async (): Promise<OperationsKpiSet | null
             window: today,
             source: "customs_record.release_date",
             href: "/customs/intelligence",
+          }),
+        ]
+      : []),
+    // Finance money family (10.0D-3, DEC-B44) — per-currency, OMITTED entirely
+    // without finance:read (analytics:read alone gets NO monetary KPI). These
+    // read invoices/payments (always present) — independent of financeExecution.
+    ...(canFinance
+      ? [
+          // Facturé (mois) — Σ authoritative invoice totals (issued set), per currency,
+          // MTD vs the full previous tenant month (per-currency comparison).
+          moneyFlowKpi({
+            key: "facture_mtd",
+            label: "Facturé (mois)",
+            current: invoiced?.current ?? null,
+            previous: invoiced?.previous ?? [],
+            window: mtd,
+            source: "invoice.issue_date",
+            href: "/finance?status=ISSUED",
+            comparisonLabel: compareLabel,
+          }),
+          // Encaissé (mois) — Σ non-reversed payments by linked-invoice currency,
+          // MTD vs the full previous tenant month (per-currency comparison).
+          moneyFlowKpi({
+            key: "encaisse_mtd",
+            label: "Encaissé (mois)",
+            current: collected?.current ?? null,
+            previous: collected?.previous ?? [],
+            window: mtd,
+            source: "payment.paid_at",
+            href: "/finance/reconciliation",
+            comparisonLabel: compareLabel,
+          }),
+          // Créances en retard — SNAPSHOT (no comparison, DEC-B42), per currency,
+          // overdue at the tenant-day boundary.
+          moneySnapshotKpi({
+            key: "creances_retard",
+            label: "Créances en retard",
+            rows: overdueRows,
+            window: current,
+            source: "invoice.balance",
+            href: "/collections",
+            note: "included = nombre de factures en retard",
           }),
         ]
       : []),

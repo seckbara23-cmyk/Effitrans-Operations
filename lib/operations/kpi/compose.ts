@@ -5,6 +5,8 @@
  * Contains NO business formula: values arrive from the authoritative readers;
  * this file only groups, compares, and shapes them into the typed contract.
  */
+import { isOverdue } from "@/lib/finance/calc";
+import type { InvoiceStatus } from "@/lib/finance/types";
 import type { KpiComparison, KpiMoney, KpiWindow, OperationsKpi } from "./types";
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
@@ -90,10 +92,10 @@ export function countKpi(input: {
 }
 
 /**
- * Amount-kind KPI (used from 10.0D-3): per-currency values only; `value` stays
- * null by contract — a cross-currency scalar cannot be expressed (DEC-B40).
- * An empty amounts list with a live source is a REAL zero-money state and
- * renders ready; a null amounts input means the source was unavailable.
+ * Amount-kind KPI (10.0D-3): per-currency values only; `value` stays null by
+ * contract — a cross-currency scalar cannot be expressed (DEC-B40). An empty
+ * amounts list with a live source is a REAL zero-money state and renders ready;
+ * a null amounts input means the source was unavailable.
  */
 export function amountKpi(input: {
   key: string;
@@ -120,4 +122,79 @@ export function amountKpi(input: {
     ...(input.basis ? { basis: input.basis } : {}),
     ...(input.href ? { href: input.href } : {}),
   };
+}
+
+// ---------------------------------------------------------------- money KPI builders (DEC-B44) ----
+
+type MoneyRow = { currency: string | null | undefined; amount: number | null | undefined };
+
+/**
+ * A per-currency FLOW money KPI with prior-full-month comparison (Facturé /
+ * Encaissé). Each currency's amount carries its OWN comparison (DEC-B40/B41 —
+ * never compressed across currencies; prior 0/null ⇒ unknown). A currency
+ * present only in the prior period is not fabricated into the current list.
+ * `current == null` ⇒ unavailable; excluded rows ⇒ partial with basis (DEC-B46).
+ */
+export function moneyFlowKpi(input: {
+  key: string;
+  label: string;
+  current: MoneyRow[] | null;
+  previous: MoneyRow[];
+  window: KpiWindow;
+  source: string;
+  href?: string;
+  comparisonLabel: string;
+}): OperationsKpi {
+  if (input.current == null) {
+    return amountKpi({ key: input.key, label: input.label, amounts: null, window: input.window, source: input.source, href: input.href });
+  }
+  const cur = groupAmountsByCurrency(input.current);
+  const prevMap = new Map(groupAmountsByCurrency(input.previous).amounts.map((a) => [a.currency, a.amount]));
+  const amounts: KpiMoney[] = cur.amounts.map((a) => ({
+    currency: a.currency,
+    amount: a.amount,
+    comparison: flowComparison(a.amount, prevMap.get(a.currency) ?? null, input.comparisonLabel),
+  }));
+  const basis = { included: input.current.length - cur.excluded, excluded: cur.excluded };
+  return amountKpi({ key: input.key, label: input.label, amounts, window: input.window, source: input.source, href: input.href, basis });
+}
+
+/**
+ * A per-currency SNAPSHOT money KPI (Créances en retard) — NO comparison
+ * (DEC-B42: no snapshot history). `basis.included` is the count of contributing
+ * (overdue, valid-currency) invoices — the mission's overdue-invoice count.
+ */
+export function moneySnapshotKpi(input: {
+  key: string;
+  label: string;
+  rows: MoneyRow[] | null;
+  window: KpiWindow;
+  source: string;
+  href?: string;
+  note?: string;
+}): OperationsKpi {
+  if (input.rows == null) {
+    return amountKpi({ key: input.key, label: input.label, amounts: null, window: input.window, source: input.source, href: input.href });
+  }
+  const g = groupAmountsByCurrency(input.rows);
+  const basis = { included: input.rows.length - g.excluded, excluded: g.excluded, ...(input.note ? { note: input.note } : {}) };
+  return amountKpi({ key: input.key, label: input.label, amounts: g.amounts, window: input.window, source: input.source, href: input.href, basis });
+}
+
+/**
+ * Overdue receivable balances at the TENANT-DAY boundary, grouped-ready. REUSES
+ * the authoritative `isOverdue` predicate (lib/finance/calc) — never a second
+ * overdue rule. The boundary is the tenant's current calendar date rendered as
+ * UTC midnight, so `isOverdue`'s internal UTC-midnight floor is a no-op and the
+ * comparison is a pure tenant-calendar-date one (DEC-B39). Balances come
+ * straight from getFinanceQueue (authoritative balanceDue) — no arithmetic here.
+ */
+export function overdueRowsAtTenantDay(
+  items: { status: InvoiceStatus; dueDate: string | null; balance: number; currency: string }[],
+  tenantTodayIso: string,
+): { currency: string; amount: number }[] {
+  const boundary = new Date(`${tenantTodayIso}T00:00:00Z`);
+  return items
+    .filter((i) => isOverdue(i.status, i.dueDate, i.balance, boundary))
+    .map((i) => ({ currency: i.currency, amount: i.balance }));
 }

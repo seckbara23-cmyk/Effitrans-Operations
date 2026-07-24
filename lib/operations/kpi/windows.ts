@@ -52,6 +52,17 @@ export function previousMonthBounds(timezone: string, now: Date = new Date()): {
   return { start: prevStart, end: thisMonthStart };
 }
 
+const FRENCH_MONTHS = [
+  "janvier", "février", "mars", "avril", "mai", "juin",
+  "juillet", "août", "septembre", "octobre", "novembre", "décembre",
+] as const;
+
+/** French month name of a yyyy-mm-dd date — for honest comparison labels (DEC-B44). */
+export function frenchMonthName(dateIso: string): string {
+  const m = Number(dateIso.slice(5, 7));
+  return FRENCH_MONTHS[m - 1] ?? dateIso.slice(0, 7);
+}
+
 // ---------------------------------------------------------------- window constructors ----
 
 /** Snapshot window — state at the moment of the request; no date bounds. */

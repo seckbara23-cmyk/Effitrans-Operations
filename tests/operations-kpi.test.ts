@@ -15,11 +15,16 @@ import {
 import {
   DEFAULT_TIMEZONE, resolveTimezone, tenantToday, addDays, monthStart,
   previousMonthBounds, currentWindow, todayWindow, monthToDateWindow,
-  startOfTenantDayUtc, windowInstantBounds,
+  startOfTenantDayUtc, windowInstantBounds, frenchMonthName,
 } from "@/lib/operations/kpi/windows";
-import { groupAmountsByCurrency, flowComparison, countKpi, amountKpi } from "@/lib/operations/kpi/compose";
+import {
+  groupAmountsByCurrency, flowComparison, countKpi, amountKpi,
+  moneyFlowKpi, moneySnapshotKpi, overdueRowsAtTenantDay,
+} from "@/lib/operations/kpi/compose";
 import { KPI_WINDOW_KEYS } from "@/lib/operations/kpi/types";
 import { todayInTimezone } from "@/lib/collections/aging";
+import { isOverdue } from "@/lib/finance/calc";
+import type { InvoiceStatus } from "@/lib/finance/types";
 
 const read = (p: string) => readFileSync(fileURLToPath(new URL(p, import.meta.url)), "utf8");
 const code = (p: string) => read(p).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
@@ -29,7 +34,10 @@ const COMPOSE = code("../lib/operations/kpi/compose.ts");
 const WINDOWS = code("../lib/operations/kpi/windows.ts");
 const TYPES = code("../lib/operations/kpi/types.ts");
 const WINDOWED = code("../lib/operations/kpi/windowed-readers.ts");
-const KPI_FILES = [READER, COMPOSE, WINDOWS, TYPES, WINDOWED];
+const FINANCE = code("../lib/operations/kpi/finance-readers.ts");
+const KPI_FILES = [READER, COMPOSE, WINDOWS, TYPES, WINDOWED, FINANCE];
+
+const w = currentWindow("Africa/Dakar");
 
 // ================================================================ DEC-B43: ONE active definition ====
 describe("DEC-B43 — THE single active-dossier definition", () => {
@@ -330,5 +338,234 @@ describe("windowed readers — one authoritative timestamp each, window logic in
   it("finance-dark honesty: windowed finance counts render unavailable when execution is dark", () => {
     expect(READER).toContain("financeExecutionLive = requests != null");
     expect(READER).toContain("financeExecutionLive ? settled(freqTodayR) : null");
+  });
+});
+
+// ================================================================ Finance money KPIs (10.0D-3) ====
+const money = (currency: string | null, amount: number) => ({ currency, amount });
+
+describe("moneyFlowKpi — Facturé / Encaissé: per-currency, per-currency comparison (DEC-B40/B44)", () => {
+  it("groups current per currency and NEVER merges across currencies", () => {
+    const k = moneyFlowKpi({
+      key: "facture_mtd", label: "Facturé (mois)",
+      current: [money("XOF", 100), money("EUR", 20), money("XOF", 50)],
+      previous: [],
+      window: monthToDateWindow("Africa/Dakar"), source: "invoice.issue_date", comparisonLabel: "vs juin (mois complet)",
+    });
+    expect(k.kind).toBe("amount");
+    expect(k.value).toBeNull(); // no cross-currency scalar EVER
+    expect(k.amounts?.map((a) => [a.currency, a.amount])).toEqual([["EUR", 20], ["XOF", 150]]);
+  });
+  it("attaches a per-currency comparison vs the prior full month — never one blended percentage", () => {
+    const k = moneyFlowKpi({
+      key: "facture_mtd", label: "Facturé (mois)",
+      current: [money("XOF", 120), money("EUR", 50)],
+      previous: [money("XOF", 100), money("EUR", 40)],
+      window: monthToDateWindow("Africa/Dakar"), source: "s", comparisonLabel: "vs juin (mois complet)",
+    });
+    const xof = k.amounts?.find((a) => a.currency === "XOF");
+    const eur = k.amounts?.find((a) => a.currency === "EUR");
+    expect(xof?.comparison).toEqual({ label: "vs juin (mois complet)", value: 100, direction: "up", changePercent: 20 });
+    expect(eur?.comparison).toEqual({ label: "vs juin (mois complet)", value: 40, direction: "up", changePercent: 25 });
+  });
+  it("a current currency with no prior value ⇒ unknown / null percent (DEC-B41, per currency)", () => {
+    const k = moneyFlowKpi({
+      key: "facture_mtd", label: "F",
+      current: [money("USD", 10)], previous: [money("XOF", 100)],
+      window: monthToDateWindow("Africa/Dakar"), source: "s", comparisonLabel: "vs juin (mois complet)",
+    });
+    expect(k.amounts).toHaveLength(1); // a prior-only currency is NOT fabricated into current
+    expect(k.amounts?.[0].comparison).toMatchObject({ direction: "unknown", changePercent: null, value: null });
+  });
+  it("a prior value of ZERO ⇒ unknown, never fabricated 100 % growth (DEC-B41)", () => {
+    const k = moneyFlowKpi({
+      key: "f", label: "F", current: [money("XOF", 50)], previous: [money("XOF", 0)],
+      window: monthToDateWindow("Africa/Dakar"), source: "s", comparisonLabel: "x",
+    });
+    expect(k.amounts?.[0].comparison).toMatchObject({ direction: "unknown", changePercent: null });
+  });
+  it("unknown/blank currency rows are excluded and counted → partial (DEC-B46)", () => {
+    const k = moneyFlowKpi({
+      key: "f", label: "F",
+      current: [money("XOF", 100), money(null, 999), money("  ", 5)], previous: [],
+      window: monthToDateWindow("Africa/Dakar"), source: "s", comparisonLabel: "x",
+    });
+    expect(k.amounts).toEqual([{ currency: "XOF", amount: 100, comparison: expect.anything() }]);
+    expect(k.basis).toEqual({ included: 1, excluded: 2 });
+    expect(k.status).toBe("partial");
+  });
+  it("no rows ⇒ ready with an empty per-currency result; null source ⇒ unavailable", () => {
+    const empty = moneyFlowKpi({ key: "f", label: "F", current: [], previous: [], window: monthToDateWindow("Africa/Dakar"), source: "s", comparisonLabel: "x" });
+    expect(empty.status).toBe("ready");
+    expect(empty.amounts).toEqual([]);
+    const dark = moneyFlowKpi({ key: "f", label: "F", current: null, previous: [], window: monthToDateWindow("Africa/Dakar"), source: "s", comparisonLabel: "x" });
+    expect(dark.status).toBe("unavailable");
+    expect(dark.value).toBeNull();
+  });
+});
+
+describe("moneySnapshotKpi — Créances en retard: per-currency, NO comparison (DEC-B42)", () => {
+  it("groups per currency, exposes overdue count in basis.included, and has NO comparison", () => {
+    const k = moneySnapshotKpi({
+      key: "creances_retard", label: "Créances en retard",
+      rows: [money("XOF", 300), money("EUR", 40), money("XOF", 200)],
+      window: w, source: "invoice.balance", note: "included = nombre de factures en retard",
+    });
+    expect(k.amounts?.map((a) => [a.currency, a.amount])).toEqual([["EUR", 40], ["XOF", 500]]);
+    expect(k.amounts?.every((a) => a.comparison === undefined)).toBe(true); // snapshot: never a trend
+    expect(k.basis).toEqual({ included: 3, excluded: 0, note: "included = nombre de factures en retard" });
+    expect(k.window.key).toBe("current");
+  });
+  it("unknown-currency overdue invoice excluded + counted → partial; null rows ⇒ unavailable", () => {
+    const partial = moneySnapshotKpi({ key: "c", label: "C", rows: [money("XOF", 1), money(null, 9)], window: w, source: "s" });
+    expect(partial.basis).toMatchObject({ included: 1, excluded: 1 });
+    expect(partial.status).toBe("partial");
+    expect(moneySnapshotKpi({ key: "c", label: "C", rows: null, window: w, source: "s" }).status).toBe("unavailable");
+  });
+});
+
+describe("overdueRowsAtTenantDay — REUSES isOverdue at the tenant-day boundary (DEC-B39)", () => {
+  const inv = (over: Partial<{ status: InvoiceStatus; dueDate: string | null; balance: number; currency: string }> = {}) =>
+    ({ status: "ISSUED", dueDate: "2026-07-10", balance: 100, currency: "XOF", ...over }) as {
+      status: InvoiceStatus; dueDate: string | null; balance: number; currency: string;
+    };
+  it("a due date strictly before the tenant's today is overdue; today itself is NOT", () => {
+    const rows = overdueRowsAtTenantDay(
+      [inv({ dueDate: "2026-07-30" }), inv({ dueDate: "2026-07-31" }), inv({ dueDate: "2026-08-01" })],
+      "2026-07-31",
+    );
+    expect(rows).toEqual([{ currency: "XOF", amount: 100 }]); // only 07-30 is past 07-31
+  });
+  it("excludes DRAFT/PAID/VOID, null due dates, and non-positive balances (existing doctrine)", () => {
+    const rows = overdueRowsAtTenantDay(
+      [
+        inv({ status: "DRAFT", dueDate: "2026-01-01" }),
+        inv({ status: "PAID", dueDate: "2026-01-01" }),
+        inv({ dueDate: null }),
+        inv({ balance: 0, dueDate: "2026-01-01" }),
+        inv({ status: "PARTIALLY_PAID", dueDate: "2026-01-01", balance: 25, currency: "EUR" }),
+      ],
+      "2026-07-31",
+    );
+    expect(rows).toEqual([{ currency: "EUR", amount: 25 }]);
+  });
+  it("matches isOverdue exactly at a UTC+14 tenant boundary (never a UTC business day)", () => {
+    // Tenant is on Aug 1 (Kiritimati) while UTC is still Jul 31: a 07-31 due date IS overdue.
+    const boundary = new Date("2026-08-01T00:00:00Z");
+    expect(isOverdue("ISSUED", "2026-07-31", 100, boundary)).toBe(true);
+    expect(overdueRowsAtTenantDay([inv({ dueDate: "2026-07-31" })], "2026-08-01")).toEqual([{ currency: "XOF", amount: 100 }]);
+  });
+});
+
+describe("comparison labels are honest (DEC-B44) — MTD vs the FULL previous month", () => {
+  it("frenchMonthName + the reader build « vs <mois> (mois complet) »", () => {
+    expect(frenchMonthName("2026-06-01")).toBe("juin");
+    expect(frenchMonthName("2026-12-15")).toBe("décembre");
+    expect(READER).toContain("(mois complet)");
+    // Never an equal-period / same-window claim.
+    expect(READER).not.toContain("période équivalente");
+  });
+});
+
+// ================================================================ structural: finance readers (10.0D-3) ====
+describe("finance readers — reuse authoritative helpers, never reimplement (Scope F)", () => {
+  it("Facturé sums via invoiceTotals — NO local line arithmetic", () => {
+    expect(FINANCE).toContain("invoiceTotals(");
+    expect(FINANCE).not.toMatch(/quantity\s*\*\s*unit/); // no qty×unit math here
+    expect(FINANCE).not.toContain("tax_rate / 100");
+  });
+  it("Facturé uses ONLY the ratified issued set — draft/void excluded", () => {
+    expect(FINANCE).toContain('["ISSUED", "PARTIALLY_PAID", "PAID"]');
+    expect(FINANCE).not.toMatch(/"DRAFT"|"VOID"/);
+  });
+  it("Encaissé applies the reversal rule as a filter (reversed_at IS NULL) — not a second rule", () => {
+    expect(FINANCE).toContain('.is("reversed_at", null)');
+  });
+  it("Encaissé resolves currency from the LINKED INVOICE and NEVER defaults it", () => {
+    expect(FINANCE).toContain("invoice:invoice_id(currency)");
+    expect(FINANCE).toContain("r.invoice?.currency ?? null");
+    expect(FINANCE).not.toContain('?? "XOF"'); // no silent default currency
+  });
+  it("uses the §7 authoritative date fields (issue_date / paid_at) — never updated_at", () => {
+    expect(FINANCE).toContain('.gte("issue_date"');
+    expect(FINANCE).toContain('.gte("paid_at"');
+    expect(FINANCE).not.toContain("updated_at");
+  });
+  it("both windows come from ONE span fetch, split start-inclusive/end-exclusive", () => {
+    expect(FINANCE).toContain('.gte("issue_date", bounds.prevStart)');
+    expect(FINANCE).toContain('.lt("issue_date", bounds.mtdEnd)');
+    expect(FINANCE).toContain("d >= mtdStart ? current : previous");
+  });
+  it("is server-only, read-only, tenant-filtered, and holds NO timezone arithmetic", () => {
+    expect(read("../lib/operations/kpi/finance-readers.ts")).toContain('import "server-only"');
+    expect(FINANCE).toMatch(/\.eq\("tenant_id", tenantId\)/);
+    expect(FINANCE).not.toMatch(/\.insert\(|\.update\(|\.upsert\(|\.delete\(/);
+    expect(FINANCE).not.toContain("Intl.DateTimeFormat");
+  });
+  it("returns only currency + amount — no invoice/payment/client identifiers leak into KPI data", () => {
+    expect(FINANCE).not.toContain("clientName");
+    expect(FINANCE).not.toContain("invoice_number");
+    expect(FINANCE).not.toContain("fileId");
+  });
+});
+
+// ================================================================ structural: engine wiring (10.0D-3) ====
+describe("engine wiring — the finance money family (DEC-B44), deliveries, label correction", () => {
+  it("emits Facturé / Encaissé / Créances through the money builders", () => {
+    for (const key of ["facture_mtd", "encaisse_mtd", "creances_retard"]) expect(READER).toContain(`"${key}"`);
+    for (const b of ["moneyFlowKpi", "moneySnapshotKpi", "overdueRowsAtTenantDay"]) expect(READER).toContain(b);
+    expect(READER).toContain('"Facturé (mois)"');
+    expect(READER).toContain('"Encaissé (mois)"');
+    expect(READER).toContain('"Créances en retard"');
+  });
+  it("the retired label « Revenu du mois » never reappears (DEC-B44)", () => {
+    for (const src of KPI_FILES) expect(src).not.toContain("Revenu du mois");
+  });
+  it("Créances is a SNAPSHOT (current window, no comparisonLabel) and reuses getFinanceQueue", () => {
+    expect(READER).toContain("getFinanceQueue()");
+    expect(READER).toMatch(/key: "creances_retard"[\s\S]{0,220}window: current/);
+  });
+  it("finance MONEY is independent of the financeExecution flag (only the REQUEST family gates on it)", () => {
+    // The money KPIs read invoices/payments (always present); they must not be nulled by financeExecutionLive.
+    expect(READER).not.toMatch(/financeExecutionLive[\s\S]{0,80}invoiced/);
+    expect(READER).not.toMatch(/financeExecutionLive[\s\S]{0,80}overdueRows/);
+  });
+  it("Scope G — dossiers créés keeps the truthful label, never « ouverts »", () => {
+    expect(READER).toContain('"Dossiers créés aujourd\'hui"');
+    expect(READER).not.toContain("Dossiers ouverts aujourd'hui");
+  });
+  it("Scope H — livraisons_jour counts delivery_actual (not status, not updated_at)", () => {
+    expect(READER).toContain('"livraisons_jour"');
+    expect(READER).toContain('"Livraisons terminées aujourd\'hui"');
+    expect(WINDOWED).toContain('column: "delivery_actual"');
+    expect(WINDOWED).toMatch(/deliveriesCompletedInWindow[\s\S]{0,260}deleted_at/);
+  });
+});
+
+// ================================================================ structural: money doctrine (10.0D-3) ====
+describe("money doctrine — no exchange rate, no currency-blind scalar, no legacy analytics", () => {
+  it("no exchange-rate / conversion logic anywhere in the KPI engine", () => {
+    for (const src of KPI_FILES) {
+      const lc = src.toLowerCase();
+      expect(lc).not.toContain("exchange");
+      expect(lc).not.toContain("exchangerate");
+      expect(lc).not.toMatch(/exchange[_ ]?rate|fx[_ ]?rate|conversion[_ ]?rate/);
+      expect(lc).not.toMatch(/convert.*currency|currency.*convert/);
+    }
+  });
+  it("no currency-blind money sum — amounts never reduced across currencies", () => {
+    // The ONLY reduce/sum over money is inside groupAmountsByCurrency (keyed by currency).
+    expect(COMPOSE).toContain("byCurrency.set(currency");
+    for (const src of [READER, FINANCE]) {
+      expect(src).not.toMatch(/\.reduce\([^)]*amount/);
+    }
+  });
+  it("no legacy analytics, no mutations, no Realtime/polling in the finance path", () => {
+    for (const src of [FINANCE]) {
+      expect(src).not.toContain("getExecutiveAnalytics");
+      expect(src).not.toMatch(/\.channel\(|\.subscribe\(|setInterval/);
+      expect(src).not.toContain('"use server"');
+      expect(src).not.toContain("revalidatePath");
+    }
   });
 });
