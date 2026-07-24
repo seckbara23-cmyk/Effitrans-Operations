@@ -7,6 +7,7 @@
  * page never crashes. Tenant + actor are resolved server-side; admin reads are tenant-filtered.
  */
 import "server-only";
+import { cache } from "react";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
@@ -128,7 +129,9 @@ function settled<T>(r: PromiseSettledResult<T>): T | null {
   return r.status === "fulfilled" ? r.value : null;
 }
 
-export async function getCommandCenter(): Promise<CommandCenter> {
+// Phase 10.0B — request-level cache(): the Command Center page, the executive reader and the
+// cockpit composition share ONE multi-modal read per render (zero-arg ⇒ perfect memoization).
+export const getCommandCenter = cache(async (): Promise<CommandCenter> => {
   const user = await assertPermission("transport:read"); // baseline (this IS the transport dept)
   const perms = await getEffectivePermissions(user.id);
   const canCustoms = hasPermission(perms, "customs:read");
@@ -158,4 +161,4 @@ export async function getCommandCenter(): Promise<CommandCenter> {
   ];
 
   return { headline, cards, attention, upcoming, journey: settled(journeyR) ?? [], roadRows: road?.queue ?? [], roadAvailable: !!road, customsAuthorized: canCustoms, docIntel };
-}
+});

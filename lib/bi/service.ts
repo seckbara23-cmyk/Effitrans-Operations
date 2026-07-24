@@ -9,6 +9,7 @@
  * date) for the reporting center.
  */
 import "server-only";
+import { cache } from "react";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
 import { hasPermission } from "@/lib/rbac/check";
@@ -43,7 +44,9 @@ export type BusinessIntelligence = {
 
 const inRange = inDateRange;
 
-export async function getBusinessIntelligence(permissions: string[], range: DateRange = {}): Promise<BusinessIntelligence> {
+// Phase 10.0B — request-level cache(): /reports, the executive reader and the cockpit
+// composition share ONE read per render (a fresh `range` object opts out naturally).
+export const getBusinessIntelligence = cache(async (permissions: string[], range: DateRange = {}): Promise<BusinessIntelligence> => {
   const user = await assertPermission("analytics:read");
   const canFinance = hasPermission(permissions, "finance:read");
   const supabase = getAdminSupabaseClient();
@@ -124,4 +127,4 @@ export async function getBusinessIntelligence(permissions: string[], range: Date
       payments,
     }),
   };
-}
+});

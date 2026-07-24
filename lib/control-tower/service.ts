@@ -9,6 +9,7 @@
  * only when the viewer holds finance:read.
  */
 import "server-only";
+import { cache } from "react";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
 import { hasPermission } from "@/lib/rbac/check";
@@ -113,10 +114,13 @@ export type DossierExportRow = {
   outstanding: number | null;
 };
 
-export async function getControlTower(
+// Phase 10.0B — request-level cache(): /dashboard, /reports and the cockpit composition
+// share ONE lifecycle pass per render (same memoization as getAnalytics; the permissions
+// array is the cache()'d getEffectivePermissions reference, so keys are stable per request).
+export const getControlTower = cache(async (
   permissions: string[],
   opts: { includeDossiers?: boolean } = {},
-): Promise<ControlTowerData> {
+): Promise<ControlTowerData> => {
   const user = await assertPermission("analytics:read");
   const canFinance = hasPermission(permissions, "finance:read");
   const supabase = getAdminSupabaseClient();
@@ -373,4 +377,4 @@ export async function getControlTower(
     riskKpis: computeRiskKpis(riskRows, slaBreaches, overdueFinance),
     ...(opts.includeDossiers ? { dossiers: dossierRows } : {}),
   };
-}
+});
