@@ -33,7 +33,18 @@ function KpiCell({ label, value }: { label: string; value: string | number }) {
   );
 }
 
-export function ControlTower({ data }: { data: ControlTowerData }) {
+export function ControlTower({
+  data,
+  showExecutiveKpis = true,
+}: {
+  data: ControlTowerData;
+  /**
+   * Phase 10.0D-4 — the older six-KPI executive band. Suppressed on /dashboard
+   * (the authoritative ExecutiveKpiStrip is the one visible executive band there;
+   * no reader/formula change). Defaults true so every other consumer is unchanged.
+   */
+  showExecutiveKpis?: boolean;
+}) {
   const C = t.controlTower;
   const k = data.kpis;
   const deptLabel = (d: string) => (t.lifecycle.departments as Record<string, string>)[d] ?? d;
@@ -41,18 +52,20 @@ export function ControlTower({ data }: { data: ControlTowerData }) {
 
   return (
     <div className="space-y-6">
-      {/* Executive KPIs */}
-      <section className="surface p-5">
-        <h2 className="mb-3 text-sm font-semibold text-navy-900">{C.kpis.title}</h2>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-          <KpiCell label={C.kpis.active} value={k.activeDossiers} />
-          <KpiCell label={C.kpis.delivered} value={k.deliveredThisMonth} />
-          <KpiCell label={C.kpis.revenue} value={k.revenueThisMonth != null ? fmtMoney(k.revenueThisMonth, k.currency) : dash} />
-          <KpiCell label={C.kpis.outstanding} value={k.outstanding != null ? fmtMoney(k.outstanding, k.currency) : dash} />
-          <KpiCell label={C.kpis.avgCustoms} value={k.avgCustomsDays != null ? `${k.avgCustomsDays} ${C.kpis.days}` : dash} />
-          <KpiCell label={C.kpis.avgDelivery} value={k.avgDeliveryDays != null ? `${k.avgDeliveryDays} ${C.kpis.days}` : dash} />
-        </div>
-      </section>
+      {/* Executive KPIs — suppressed on /dashboard to avoid two competing KPI bands. */}
+      {showExecutiveKpis && (
+        <section className="surface p-5">
+          <h2 className="mb-3 text-sm font-semibold text-navy-900">{C.kpis.title}</h2>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            <KpiCell label={C.kpis.active} value={k.activeDossiers} />
+            <KpiCell label={C.kpis.delivered} value={k.deliveredThisMonth} />
+            <KpiCell label={C.kpis.revenue} value={k.revenueThisMonth != null ? fmtMoney(k.revenueThisMonth, k.currency) : dash} />
+            <KpiCell label={C.kpis.outstanding} value={k.outstanding != null ? fmtMoney(k.outstanding, k.currency) : dash} />
+            <KpiCell label={C.kpis.avgCustoms} value={k.avgCustomsDays != null ? `${k.avgCustomsDays} ${C.kpis.days}` : dash} />
+            <KpiCell label={C.kpis.avgDelivery} value={k.avgDeliveryDays != null ? `${k.avgDeliveryDays} ${C.kpis.days}` : dash} />
+          </div>
+        </section>
+      )}
 
       {/* Risk KPIs (Phase 3.1B) — derived, no stored values */}
       <section className="surface p-5">

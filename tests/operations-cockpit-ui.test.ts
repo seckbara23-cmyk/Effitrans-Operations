@@ -131,7 +131,7 @@ describe("preserved sections are NOT silently removed (disposition table)", () =
   });
   it("the management ControlTower is preserved through its existing reader", () => {
     expect(SUPPORTING).toContain("getControlTower");
-    expect(SUPPORTING).toContain("<ControlTower data={controlTower} />");
+    expect(SUPPORTING).toContain("<ControlTower data={controlTower}"); // prop-agnostic (10.0D-4 added showExecutiveKpis)
   });
 });
 

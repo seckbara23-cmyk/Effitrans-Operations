@@ -185,7 +185,7 @@ export const getOperationsKpis = cache(async (): Promise<OperationsKpiSet | null
       value: settled(deliveriesR),
       window: today,
       source: "transport_record.delivery_actual",
-      href: "/transport",
+      href: "/transport?status=DELIVERED", // /transport parses ?status (D-0 drill-down audit)
     }),
     // Customs slice — OMITTED (not "unavailable") without customs:read: absent ≠ zero.
     ...(canCustoms

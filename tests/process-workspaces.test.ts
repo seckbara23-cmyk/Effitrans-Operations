@@ -258,7 +258,10 @@ describe("Coordinator Control Tower (Deliverable 4)", () => {
     expect(dashboard).toContain("CockpitSections");
     expect(dashboard).toContain("DashboardSupporting");
     expect(cockpitSections).toContain("ProcessTowerSection");
-    expect(supporting).toContain("<ControlTower data={controlTower} />");
+    // 10.0D-4 — ControlTower still rendered here; its KPI band is suppressed (prop) so
+    // the authoritative ExecutiveKpiStrip is the one executive band on /dashboard.
+    expect(supporting).toContain("<ControlTower data={controlTower}");
+    expect(supporting).toContain("showExecutiveKpis={false}");
   });
 
   it("returns nothing when the workspaces flag is off FOR THAT TENANT", () => {

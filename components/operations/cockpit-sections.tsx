@@ -1,5 +1,7 @@
 import { getOperationsCockpit } from "@/lib/operations/reader";
+import { getOperationsKpis } from "@/lib/operations/kpi/reader";
 import { CockpitSummaryCards } from "./cockpit-summary";
+import { ExecutiveKpiStrip } from "./executive-kpi-strip";
 import { CockpitAttentionPanel } from "./cockpit-attention-panel";
 import { OperationsQueueCard } from "./operations-queue-card";
 import { TransitOverviewCard } from "./transit-overview-card";
@@ -20,12 +22,16 @@ import { DashboardBreakdown } from "@/components/dashboard/dashboard-breakdown";
  * coordination → supporting breakdowns. This component does NO data aggregation.
  */
 export async function CockpitSections() {
-  const c = await getOperationsCockpit();
+  // Two authoritative readers, both cache()d and permission-shaped; their shared
+  // underlying reads (control tower, analytics, …) are deduped this render.
+  const [c, kpiSet] = await Promise.all([getOperationsCockpit(), getOperationsKpis()]);
 
   return (
     <div className="space-y-6">
-      {/* Immediate attention */}
-      <CockpitSummaryCards indicators={c.summary} />
+      {/* Immediate attention — ONE executive band per viewer: the authoritative KPI
+          strip for analytics:read holders (10.0D-4), otherwise the operational summary.
+          The older Control Tower KPI band is suppressed (see DashboardSupporting). */}
+      {kpiSet ? <ExecutiveKpiStrip kpis={kpiSet} /> : <CockpitSummaryCards indicators={c.summary} />}
       {c.alerts && <CockpitAttentionPanel alerts={c.alerts} />}
 
       {/* Today's operational state */}

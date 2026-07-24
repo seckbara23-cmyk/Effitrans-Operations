@@ -67,9 +67,10 @@ export function FinancePipelineCard({ finance }: { finance: CockpitFinance }) {
               <StatCard label="Brouillons" value={inv.draftCount} tone="slate" href="/finance?status=DRAFT" />
             </>
           )}
-          {finance.revenueThisMonth != null && (
-            <StatCard label="Revenu du mois" value={money(finance.revenueThisMonth, finance.currency)} tone="teal" href="/finance" />
-          )}
+          {/* « Revenu du mois » RETIRED (DEC-B44, 10.0D-4): it summed payments under a
+              revenue label — the misleading D-0 trap. Monthly money is now the executive
+              strip's authoritative, per-currency « Facturé (mois) » / « Encaissé (mois) ».
+              (finance.revenueThisMonth stays in the view model, no longer rendered.) */}
           {finance.collectionsOpen != null && (
             <StatCard label="Recouvrements ouverts" value={finance.collectionsOpen} tone="amber" href="/collections" />
           )}

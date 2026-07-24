@@ -41,7 +41,10 @@ export async function DashboardSupporting({ permissions }: { permissions: string
       {controlTower && (
         <div className="space-y-3">
           <h2 className="text-sm font-semibold text-navy-900">Analyse de direction</h2>
-          <ControlTower data={controlTower} />
+          {/* 10.0D-4 — suppress the older KPI band; the authoritative ExecutiveKpiStrip
+              above is the one visible executive band. SLA / risk / funnel / flow /
+              aging / delayed / avg-durations all remain. */}
+          <ControlTower data={controlTower} showExecutiveKpis={false} />
         </div>
       )}
       <DepartmentCards cards={deptCards} />
