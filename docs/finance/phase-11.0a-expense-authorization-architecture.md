@@ -2,6 +2,7 @@
 
 **Date:** 2026-07-25 · **Type:** architecture & repository audit only — **no migration/table/permission/role/RLS/route/form/PDF/signature/workflow-state/payment/treasury change; no legal requirement fabricated**
 **Repo state audited:** commit `46f82aa` (post-10.0F-2, CI green)
+**UPDATED 2026-07-25 — business clarifications ratified** (recorded in `docs/decision-register.md`, Phase-11.0 C-series): N° compte = flexible text · Type = flexible text (tenant catalog later, no enum in 11.0B) · Poids = optional decimal kg · **VISA_AGENT = the Finance Agent, NEVER the Cashier** · **Autorisation↔Bon = mandatory ONE-TO-ONE** (no splits, no consolidation) — see DEC-C06 (Approved), DEC-C07 (Approved as modified), DEC-C11 (partially approved), DEC-C25 (Approved). **VISA_RECEPTION and VISA_OPERATIONS remain explicitly unresolved business blockers (BLK-FIN-1 / BLK-FIN-2).**
 **Mission:** map the two real paper Finance documents onto the existing Finance-request, Caisse, workflow, audit, PDF, role and approval infrastructure — structured record as the authority, generated PDF as the artifact, visa records as authenticated approvals, versions immutable.
 
 > **Template asset status:** the authoritative paper-template PDF is **NOT present in the repository** (verified: the only PDFs are the three `docs/business-processes/*` guides, none containing the forms — text-scanned for « Autorisation de Dépense », « Bon de Dépense », « Visa DAF/DGA », « Trésorière », « Visa Réception/Comptable » : zero hits). This audit uses the mission's field/visa transcription as the field authority. **Committing the original PDF (or a lossless scan) into the repo as the visual master is the first 11.0B prerequisite** — §9's fidelity plan and §29's pixel-comparison acceptance are defined against that asset.
@@ -46,12 +47,12 @@ Actor reality check: of the ~10 distinct visa actors, only **Chef de Transit, Co
 | **Autorisation** — Visa Demandeur | any staff (requester identity, not a role) | field, not a signatory role |
 | Chef de Transit | `CHIEF_OF_TRANSIT` (no finance permission today) | ✅ exists |
 | Coordonnateur | `COORDINATOR` (no finance permission) | ✅ exists |
-| Opération | `OPS_SUPERVISOR` « Superviseur opérations » | ✅ closest match — **confirm with business** |
+| Opération | — | ⛔ **UNRESOLVED (BLK-FIN-2)** — the earlier OPS_SUPERVISOR suggestion is retracted; business must name the signer; no guess, no placeholder grant |
 | Trésorière | — (CASHIER is a cash *handler*, zero authorization) | ❌ **absent as authorizer** |
 | DAF | — | ❌ **absent entirely** |
 | DG | `CEO` (labelFr « Direction générale ») | ✅ exists as CEO |
-| **Bon** — Visa Agent | `FINANCE_OFFICER` « Agent financier »? `ADMINISTRATIVE_OFFICER`? the Cashier? | ⚠️ ambiguous — **business must name the actor** (DEC-C11) |
-| Visa Réception | — (reception exists only as a workflow-handoff concept) | ❌ absent |
+| **Bon** — Visa Agent | **`FINANCE_OFFICER` (the Finance Agent authorization boundary)** | ✅ **RATIFIED 2026-07-25** — never mapped to `CASHIER` (the Cashier stays payment-execution-only) |
+| Visa Réception | — (reception exists only as a workflow-handoff concept) | ⛔ **UNRESOLVED (BLK-FIN-1)** — business must name the signer; no guess, no placeholder grant |
 | Visa Comptable | — | ❌ absent entirely |
 | Visa DAF / Visa DGA | — | ❌ absent entirely |
 | Visa DG (CEO signs) | `CEO` | ✅ |
@@ -75,7 +76,15 @@ Audited: the platform stores **no signature images** (`workforce_profile` has ph
 
 ## 8. Relationship between the two documents (DEC-C06/C07)
 
-Authoritative lifecycle: **Autorisation approved → Bon created (fields copied) → six visas → READY_FOR_PAYMENT → execution (11.0E) → evidence → reconciliation (11.0F) → closed.** Recommendations: every Bon **must** reference an APPROVED Autorisation (exceptions = a business decision; if allowed, an « urgence » flag + post-hoc Autorisation, audited); **separate number sequences** (N° Autorisation ≠ N° Bon; the Bon carries `N° Demande` = the Autorisation number as a copied reference); copied fields (amount, amount-in-words, beneficiary, account, dossier, registration, reason) are **snapshot-copied and then owned by the Bon** — a divergence beyond tolerance (esp. amount > authorized remainder) is blocked; **one Autorisation MAY generate multiple Bons** (partial payments) with Σ bons ≤ authorized amount — recommended ON (real cash operations pay in tranches) but surfaced for ratification; one Bon settles exactly ONE Autorisation (many-to-one across authorizations rejected — it would break the visa semantics of « this payment was authorized by that document »).
+Authoritative lifecycle: **Autorisation approved → Bon created (fields copied) → six visas → READY_FOR_PAYMENT → execution (11.0E) → evidence → reconciliation (11.0F) → closed.**
+
+**RATIFIED 2026-07-25 (DEC-C06 Approved · DEC-C07 Approved AS MODIFIED):** the relationship is a **mandatory ONE-TO-ONE** —
+- `expense_authorization` has **zero or one** `expense_voucher`;
+- `expense_voucher` belongs to **exactly one APPROVED** `expense_authorization` (creation CAS-gated on the authorization's APPROVED status);
+- **no split vouchers, no consolidated vouchers** *(the audit's multi-Bon partial-payment recommendation is overridden)*;
+- enforced in the 11.0B schema by **`expense_voucher.authorization_id UNIQUE NOT NULL`** (+ tenant-match trigger).
+
+Unchanged recommendations: **separate number sequences** (N° Autorisation ≠ N° Bon; the Bon carries `N° Demande` = the Autorisation number as a copied reference); copied fields (amount, amount-in-words, beneficiary, account number, dossier, registration, reason) are **snapshot-copied with provenance** — each copied field records the source authorization **version** it was copied from (`source_authorization_version`), and any post-copy divergence is a material edit under §7 (amount may never exceed the authorized amount).
 
 ## 9. PDF strategy & template fidelity (DEC-C16)
 
@@ -91,7 +100,7 @@ Engine capability table (verified): A4 ✅ · absolute x/y text ✅ · rects/lin
 
 **Field catalogs** (classification: U=user-entered, C=copied, S=system, D=derived, G=signature-generated):
 
-*Autorisation:* N° autorisation **S** (counter, at submission) · N° compte **U** (ambiguous — accounting vs treasury account: **business confirmation required**) · N° dossier **C** (from `operational_file.file_number`, optional per §13) · N° immatriculation **U/C** (ambiguous — vehicle plate (`transport_record.vehicle_plate` free text) vs registry number: **confirm**) · Montant **U** · Montant en lettres **D** (French number-to-words util — new, pure, tested) · Bénéficiaire **U** · Type **U** (map to/extend `FINANCE_CATEGORIES` or free text: **confirm**) · Poids **U/C** (shipment weight? **confirm**) · Motif **U** · Nom de l'agent **U/C** (requester display name) · Demandé par **S** (authenticated requester) · 7 visa areas **G**.
+*Autorisation:* N° autorisation **S** (counter, at submission) · **N° compte U — RATIFIED (DEC-C25): flexible free-text account field** (no bank-account / general-ledger / generated-sequence assumption; `account_number text`, rendered exactly as entered on both templates) · N° dossier **C** (from `operational_file.file_number`, optional per §13) · N° immatriculation **U** (stored as flexible text `registration_number` — storage-safe regardless of meaning; semantic confirmation (vehicle plate vs registry number) still pending, **non-blocking**) · Montant **U** · Montant en lettres **D** (French number-to-words util — new, pure, tested) · Bénéficiaire **U** · **Type U — RATIFIED (DEC-C25): flexible text classification** (`expense_type text` — NO hardcoded enum or catalog in 11.0B; the validation boundary is a single pure function so a controlled tenant catalog can be introduced later **without replacing historical values**) · **Poids U — RATIFIED (DEC-C25): optional decimal kilograms** (`weight_kg numeric` NULL, check ≥ 0; unit implicit; the PDF renders « KG »; absent for expenses unrelated to weighted cargo) · Motif **U** · Nom de l'agent **U/C** (requester display name) · Demandé par **S** (authenticated requester) · 7 visa areas **G**.
 
 *Bon:* N° bon **S** · N° demande **C** (Autorisation number) · N° compte/dossier/immatriculation/montant/montant-en-lettres/bénéficiaire-destination/motif **C** (snapshot-copied, version-owned) · Mode de paiement **U-before-signatures** (§22) · Saisi par **S** · 6 visas **G**.
 
@@ -121,7 +130,7 @@ Engine capability table (verified): A4 ✅ · absolute x/y text ✅ · rects/lin
 
 **Delegation (DEC-C20):** none exists; DAF/DGA/DG are single seats, so absence coverage is a real operational need. Recommendation: **defer to 11.0G** with an explicit, time-bounded, role-bound, audited `signer_delegation` record (grantor, grantee, step scope, from/to, reason) — never « any admin may sign »; v1 relies on the role having ≥1 active holder.
 
-**Payment gate (DEC-C21):** `Bon.status = READY_FOR_PAYMENT` ⟺ current version + all six visas APPROVED on that version + not rejected/cancelled/superseded. The Cashier's `/finance/caisse` queue lists **only** eligible Bons (read + execute; `caisse:manage`); the Cashier holds **no visa** unless the business explicitly maps Visa Agent to the Cashier (DEC-C11 — do not infer; the CASHIER's zero-authorization design argues Agent is a Finance actor, not the Cashier).
+**Payment gate (DEC-C21):** `Bon.status = READY_FOR_PAYMENT` ⟺ current version + all six visas APPROVED on that version + not rejected/cancelled/superseded. The Cashier's `/finance/caisse` queue lists **only** eligible Bons (read + execute; `caisse:manage`). **RATIFIED 2026-07-25: the Cashier holds NO visa — VISA_AGENT is the Finance Agent (`FINANCE_OFFICER` boundary), never `CASHIER`; the Cashier remains payment-execution-only.**
 
 **Payment methods (DEC-C10):** platform supports CASH/BANK_TRANSFER/CHEQUE/WAVE/ORANGE_MONEY/OTHER (payment + `finance_request.disbursement_method` checks); **Free Money is absent** → add to the method enum in 11.0B (additive check widening). Recommended: the approved method is **part of the signed Bon** (selected before signatures); execution records the **actual** method; a mismatch requires a controlled amendment (new version + re-approval from the first affected visa) — never a silent divergence.
 
@@ -150,12 +159,12 @@ Cross-tenant leakage (tenant triggers + RLS + scoped storage paths) · finance d
 | # | Decision | Recommendation |
 |---|---|---|
 | C05 | Two separate entities? | **Yes** — `expense_authorization` + `expense_voucher`, own tables/machines; optional `finance_request` link |
-| C06 | Every Bon from an approved Autorisation? | **Yes**; exceptions only via an explicit audited « urgence » flow if business demands |
-| C07 | One Autorisation → multiple Bons? | **Yes** (partial payments, Σ ≤ authorized); one Bon settles one Autorisation |
+| C06 | Every Bon from an approved Autorisation? | ✅ **RATIFIED 2026-07-25** — mandatory; Bon creation gated on APPROVED; copied fields keep provenance + version history |
+| C07 | One Autorisation → multiple Bons? | ✅ **RATIFIED AS MODIFIED 2026-07-25** — **strict ONE-TO-ONE** (zero-or-one voucher per authorization; no splits, no consolidation; `authorization_id UNIQUE NOT NULL`) — the audit's multi-Bon recommendation is overridden |
 | C08 | Autorisation chain strictly sequential? | **Yes by default** — parallelism only on explicit business statement (not inferable from the form) |
 | C09 | Bon six-visa chain strictly sequential? | **Yes** — payment gated on all six on the same version |
 | C10 | Payment-method change after approval? | Method is part of the signed document; change ⇒ amendment + re-approval from affected step |
-| C11 | Visa→role mapping | Chef de Transit→CHIEF_OF_TRANSIT, Coordonnateur→COORDINATOR, Opération→OPS_SUPERVISOR (confirm), DG→CEO; **create TREASURER, DAF, DGA, ACCOUNTANT roles (11.0B)**; **business must name Visa Agent + Réception** (Agent is likely NOT the Cashier) |
+| C11 | Visa→role mapping | ✅ **PARTIALLY RATIFIED 2026-07-25** — Chef de Transit→CHIEF_OF_TRANSIT, Coordonnateur→COORDINATOR, DG→CEO; **VISA_AGENT→FINANCE_OFFICER (the Finance Agent), NEVER CASHIER (Cashier = execution-only)**; create TREASURER, DAF, DGA, ACCOUNTANT roles (11.0B); ⛔ **VISA_RECEPTION (BLK-FIN-1) + VISA_OPERATIONS (BLK-FIN-2) remain unmapped business blockers — no guessing, no placeholder grants** |
 | C12 | Signature standard | **Authenticated electronic approval** (visa ledger row + version + sha256 + audit); NOT claimed as qualified e-signature pending legal review |
 | C13 | Edit invalidation | Material edit ⇒ new version ⇒ visas from first affected step invalidated; signed PDFs immutable |
 | C14 | Number assignment | At **submission**, counter-RPC pattern, `EFT-AUT-…`/`EFT-BON-…`, yearly reset, never reused |
@@ -172,8 +181,29 @@ Cross-tenant leakage (tenant triggers + RLS + scoped storage paths) · finance d
 
 ## 31. Exact implementation files for 11.0B · acceptance · roadmap
 
-**11.0B (foundation):** migration `expense_documents` (expense_authorization, expense_voucher, expense_visa append-only, expense_document_version, expense_attachment, counters + RPCs, RLS, tenant/append-only triggers, +FREE_MONEY method) · `lib/finance/expense/{types,transitions,visa,actions,service,numbering}.ts` (pure tables + CAS actions + readers, request-actions idiom) · role-templates + seed: TREASURER/DAF/DGA/ACCOUNTANT + `finance:expense:*` permissions (parity-tested) · template assets: committed master PDF + page rasters + coordinate maps under `lib/finance/expense/templates/` · `lib/reports/pdf.ts` additive JPEG XObject primitive + fixed-coordinate form helper · amount-in-words pure util · tests (transitions, visa ordering, CAS, RLS suite additions, counter, pdf primitive, template checksum). **Explicitly not in 11.0B:** routes/forms (11.0C/D), payment execution (11.0E), treasury (11.0F), QR/delegation (11.0G).
+**11.0B — FINAL implementation plan (updated 2026-07-25 with the ratified clarifications):**
+
+*Migration `expense_documents`:*
+- `expense_authorization` — id, tenant_id, **file_id NULLABLE** (DEC-C15), finance_request_id?, `authorization_number` (null until submission), `account_number text` (flexible, DEC-C25), `registration_number text` (flexible; semantics pending, non-blocking), `expense_type text` (flexible, DEC-C25 — no enum/catalog), amount>0 + currency, amount_in_words (derived, stored on the version snapshot), beneficiary, `weight_kg numeric NULL CHECK (weight_kg >= 0)` (DEC-C25), purpose/motif, agent_name, requested_by/at, status (DRAFT/SUBMITTED/IN_APPROVAL/RETURNED/REJECTED/APPROVED/CANCELLED/SUPERSEDED), current_version int.
+- `expense_voucher` — id, tenant_id, **`authorization_id UNIQUE NOT NULL → expense_authorization`** (the ratified 1:1, DEC-C07; creation CAS-gated on the authorization's APPROVED status, DEC-C06), voucher_number (null until submission), snapshot-copied fields **with provenance** (`source_authorization_version int NOT NULL`), payment_method (incl. FREE_MONEY — additive enum widening), entered_by/at, status (DRAFT/IN_SIGNATURE/RETURNED/REJECTED/FULLY_SIGNED/READY_FOR_PAYMENT/PAID/RECONCILED/CLOSED/CANCELLED/SUPERSEDED), current_version int.
+- `expense_visa` — **append-only** (prevent_mutation) — document_type/id/version, step_ordinal + step_code (VISA_DEMANDEUR…VISA_DG), signer_user_id, signer_role_code_at_signing, display name, decision, decided_at, comment?, document_sha256; CAS on (document, version, step_ordinal).
+- `expense_document_version` — immutable version snapshots (field snapshot JSON + sha256 + stored-PDF path when generated).
+- `expense_attachment` — dedicated finance-classified table + private storage path (DEC-C22).
+- Counters + RPCs `next_expense_authorization_number` / `next_expense_voucher_number` (EFT-AUT/EFT-BON, minted at submission — DEC-C14) · RLS (tenant + `finance:expense:read`; dossier visibility only when file-linked) · tenant-match + append-only triggers.
+
+*Roles & permissions (parity-tested):* new roles **TREASURER, DAF, DGA, ACCOUNTANT**; permissions `finance:expense:read/create/submit/sign/export/execute` (`execute` → CASHIER only — DEC-C21). **Signer map shipped with the template registry:** VISA_DEMANDEUR→requester identity, VISA_CHEF_TRANSIT→CHIEF_OF_TRANSIT, VISA_COORDONNATEUR→COORDINATOR, VISA_TRESORIERE→TREASURER, VISA_DAF→DAF, VISA_DGA→DGA, VISA_COMPTABLE→ACCOUNTANT, VISA_DG→CEO, **VISA_AGENT→FINANCE_OFFICER (ratified — never CASHIER)**; **VISA_RECEPTION and VISA_OPERATIONS ship UNBOUND** (see blockers).
+
+*Engine & assets:* `lib/finance/expense/{types,transitions,visa,actions,service,numbering}.ts` (pure tables + CAS actions + readers — the request-actions idiom) · `lib/reports/pdf.ts` additive **JPEG Image XObject** primitive + fixed-coordinate form helper · amount-in-words pure util · template assets under `lib/finance/expense/templates/` (**requires the committed master PDF — still outstanding**) · tests (transitions, 1:1 constraint, visa ordering + unbound-step blocking, CAS, RLS additions, counters, pdf primitive, template checksum).
+
+**Business blockers (explicitly tracked — no guessing, no placeholder grants):**
+- **BLK-FIN-1 — VISA_RECEPTION signer unmapped.** The Bon's second visa has no confirmed actor; the step ships with `role_code = NULL` in the signer map and **cannot be signed** until the business names the signer.
+- **BLK-FIN-2 — VISA_OPERATIONS signer unmapped.** The Autorisation's « Opération » visa likewise ships unbound (the earlier OPS_SUPERVISOR suggestion is retracted).
+- *(Prerequisite, not a blocker to schema work: the master template PDF must be committed before the PDF/template-asset slice.)*
+
+**Can the foundation proceed while BLK-FIN-1/2 are unresolved? YES.** The visa→role binding is **data in the template signer map, not schema**: tables, counters, versions, state machines, RLS, roles (TREASURER/DAF/DGA/ACCOUNTANT), permissions and the PDF primitive have zero dependency on which role signs Réception/Opération. The only runtime consequence is that a document reaching an unbound step **halts honestly at that step** (clearly surfaced as « signataire non configuré », never silently skipped, never signable by an unauthorized actor) — and end-to-end approval of real documents therefore needs both mappings before 11.0C/11.0D go live. **Explicitly not in 11.0B:** routes/forms (11.0C/D), payment execution (11.0E), treasury (11.0F), QR/delegation (11.0G).
 
 **Audit acceptance (this phase):** all mission sections covered with file:line evidence ✅ · template-fidelity plan defined against the to-be-committed master ✅ · 20 decisions surfaced ✅ · documentation-only ✅ · gates green ✅.
 
-**Roadmap confirmed as proposed:** 11.0A audit → **11.0B foundation** → 11.0C Autorisation (form/workflow/PDF) → 11.0D Bon (six visas/PDF) → 11.0E payment gate & Caisse execution → 11.0F Treasury foundation → 11.0G verification & governance (QR, hashes-verify route, delegation, retention after legal review). **Precondition for 11.0B: commit the original template PDF as the visual master and confirm the ambiguous fields (§10-12) + the Visa Agent / Réception / Opération actor identities with the business.**
+**Roadmap confirmed as proposed:** 11.0A audit → **11.0B foundation** → 11.0C Autorisation (form/workflow/PDF) → 11.0D Bon (six visas/PDF) → 11.0E payment gate & Caisse execution → 11.0F Treasury foundation → 11.0G verification & governance (QR, hashes-verify route, delegation, retention after legal review).
+
+**Preconditions status (2026-07-25):** field semantics (N° compte, Type, Poids) ✅ ratified (DEC-C25) · VISA_AGENT ✅ ratified (Finance Agent, never Cashier) · Autorisation↔Bon ✅ ratified strict 1:1 (DEC-C06/C07) · **still outstanding:** the committed master template PDF (needed for the PDF/template slice), N° immatriculation semantics (stored safely as text meanwhile), and the **BLK-FIN-1/BLK-FIN-2 signer mappings** (block end-to-end signing, NOT the 11.0B foundation — see above).
