@@ -13,13 +13,13 @@
  */
 
 /** The latest migration shipped in this build (pinned to the directory by test). */
-export const LATEST_MIGRATION = "20260724000002_hr_employee_registry";
+export const LATEST_MIGRATION = "20260725000001_expense_documents";
 
 /** Total migrations shipped in this build (pinned by test). */
-export const MIGRATION_COUNT = 57;
+export const MIGRATION_COUNT = 58;
 
 /** Newest DATA-probeable migration marker: this permission row proves migrations ≥ this point. */
 export const MIGRATION_PROBE = {
-  migration: "20260724000002_hr_employee_registry",
-  permissionCode: "hr:read",
+  migration: "20260725000001_expense_documents",
+  permissionCode: "finance:expense:read",
 } as const;

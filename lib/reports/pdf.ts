@@ -79,11 +79,17 @@ export type TextOpts = { size?: number; bold?: boolean; color?: RGB; align?: "le
  * class converts to PDF's bottom-left space internally. Build pages, draw, then
  * call toBytes().
  */
+/** An embedded JPEG image (DCTDecode XObject). */
+type EmbeddedImage = { data: string; pw: number; ph: number; gray: boolean };
+
+export type JpegImage = { data: Uint8Array; width: number; height: number; colorSpace?: "rgb" | "gray" };
+
 export class PdfDoc {
   readonly width: number;
   readonly height: number;
   private pages: string[] = [""];
   private scratch: string | null = null;
+  private images: EmbeddedImage[] = [];
 
   constructor(opts: { size?: PageSize; orientation?: Orientation } = {}) {
     const [w, h] = SIZES[opts.size ?? "A4"];
@@ -169,13 +175,75 @@ export class PdfDoc {
     );
   }
 
+  /**
+   * Embed a JPEG as an Image XObject and place it in the box (x, y, w, h) —
+   * top-left origin. The JPEG's compressed bytes pass through unchanged
+   * (/Filter /DCTDecode), so this stays dependency-free and deterministic. This
+   * is the foundation primitive (Phase 11.0B / DEC-C16) for later exact-template
+   * reproduction (original-page raster background + coordinate overlays); no
+   * overlay layout is done here. Only baseline JPEG with 1 (grayscale) or 3
+   * (RGB) components is supported — use PdfDoc.jpegInfo() to read the dimensions.
+   */
+  drawJpeg(x: number, y: number, w: number, h: number, jpeg: JpegImage): void {
+    // Binary-safe string: one char per byte (final serialization masks & 0xFF,
+    // so char length == byte length and the xref offsets stay exact).
+    let bin = "";
+    for (let i = 0; i < jpeg.data.length; i++) bin += String.fromCharCode(jpeg.data[i] & 0xff);
+    const index = this.images.length;
+    this.images.push({ data: bin, pw: jpeg.width, ph: jpeg.height, gray: jpeg.colorSpace === "gray" });
+    // Place: image space is a unit square mapped by the CTM (w 0 0 h x yBottom).
+    this.write(`q ${F(w)} 0 0 ${F(h)} ${F(x)} ${F(this.height - y - h)} cm /Im${index} Do Q\n`);
+  }
+
+  /**
+   * Read a baseline JPEG's pixel dimensions + colour space from its SOF marker,
+   * without decoding. Returns null if the bytes are not a parseable JFIF/JPEG.
+   */
+  static jpegInfo(bytes: Uint8Array): { width: number; height: number; colorSpace: "rgb" | "gray" } | null {
+    if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return null; // SOI
+    let i = 2;
+    while (i + 9 < bytes.length) {
+      if (bytes[i] !== 0xff) {
+        i++;
+        continue;
+      }
+      let marker = bytes[i + 1];
+      while (marker === 0xff && i + 2 < bytes.length) {
+        i++;
+        marker = bytes[i + 1];
+      }
+      // Standalone markers (no length payload): SOI, EOI, RSTn, TEM.
+      if (marker === 0xd8 || marker === 0xd9 || (marker >= 0xd0 && marker <= 0xd7) || marker === 0x01) {
+        i += 2;
+        continue;
+      }
+      const len = (bytes[i + 2] << 8) | bytes[i + 3];
+      // SOF markers C0–CF, except C4 (DHT), C8 (JPG-ext), CC (DAC).
+      if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+        const height = (bytes[i + 5] << 8) | bytes[i + 6];
+        const width = (bytes[i + 7] << 8) | bytes[i + 8];
+        const components = bytes[i + 9];
+        return { width, height, colorSpace: components === 1 ? "gray" : "rgb" };
+      }
+      i += 2 + len;
+    }
+    return null;
+  }
+
   /** Serialize to PDF bytes. */
   toBytes(): Uint8Array {
     const objects: string[] = [];
-    // Reserve: 1=Catalog, 2=Pages, then per page: content + page objects, then 2 fonts.
+    // Reserve: 1=Catalog, 2=Pages, then per page: content + page objects, then 2
+    // fonts, then any image XObjects. Image object numbers come AFTER the fonts,
+    // so a document with NO images serializes byte-identically to before.
     const pageCount = this.pages.length;
     const fontRegular = 3 + pageCount * 2;
     const fontBold = fontRegular + 1;
+    const imageBase = fontBold + 1; // first image object number
+    const xobjectDict =
+      this.images.length > 0
+        ? ` /XObject << ${this.images.map((_, i) => `/Im${i} ${imageBase + i} 0 R`).join(" ")} >>`
+        : "";
 
     // 1 Catalog
     objects.push(`<< /Type /Catalog /Pages 2 0 R >>`);
@@ -184,21 +252,31 @@ export class PdfDoc {
     objects.push(`<< /Type /Pages /Kids [ ${kids} ] /Count ${pageCount} >>`);
 
     // Per page: content stream object then page object. Every character in the
-    // document is ≤ 0xFF (WinAnsi text + ASCII operators), so it is emitted as
-    // Latin-1 (1 byte/char) — string length IS the byte length, which keeps the
-    // xref offsets and stream /Length exact.
+    // document is ≤ 0xFF (WinAnsi text + ASCII operators + Latin-1 image bytes),
+    // so it is emitted as Latin-1 (1 byte/char) — string length IS the byte
+    // length, which keeps the xref offsets and stream /Length exact.
     this.pages.forEach((content) => {
       objects.push(`<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
       const contentObjNum = objects.length; // this content object's number
       objects.push(
         `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${F(this.width)} ${F(this.height)}] ` +
-          `/Resources << /Font << /F1 ${fontRegular} 0 R /F2 ${fontBold} 0 R >> >> ` +
+          `/Resources << /Font << /F1 ${fontRegular} 0 R /F2 ${fontBold} 0 R >>${xobjectDict} >> ` +
           `/Contents ${contentObjNum} 0 R >>`,
       );
     });
 
     objects.push(`<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>`);
     objects.push(`<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>`);
+
+    // Image XObjects (DCTDecode passthrough). Placed after the fonts so their
+    // object numbers equal imageBase + index (matched by the page Resources).
+    for (const img of this.images) {
+      objects.push(
+        `<< /Type /XObject /Subtype /Image /Width ${img.pw} /Height ${img.ph} ` +
+          `/ColorSpace /${img.gray ? "DeviceGray" : "DeviceRGB"} /BitsPerComponent 8 ` +
+          `/Filter /DCTDecode /Length ${img.data.length} >>\nstream\n${img.data}\nendstream`,
+      );
+    }
 
     // Assemble with a byte-accurate xref table (offsets = char count = byte count).
     let body = "%PDF-1.4\n%\xE2\xE3\xCF\xD3\n";

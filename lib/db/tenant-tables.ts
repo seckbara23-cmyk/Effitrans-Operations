@@ -97,6 +97,15 @@ export const TENANT_SCOPED_TABLES = new Set<string>([
   // human resources (Phase HR-1)
   "employee",
   "employee_counter",
+  // finance expense documents (Phase 11.0B)
+  "expense_authorization",
+  "expense_authorization_version",
+  "expense_voucher",
+  "expense_voucher_version",
+  "expense_approval_attempt",
+  "expense_visa",
+  "expense_authorization_counter",
+  "expense_voucher_counter",
 ]);
 
 /**
@@ -118,6 +127,10 @@ export const GLOBAL_TABLES = new Set<string>([
   "role_permission",
   "provider_webhook_event",
   "platform_admin",
+  // Phase 11.0B — global versioned template-metadata catalog (same across
+  // tenants for v1; a per-tenant registry only when tenants need divergent
+  // templates — DEC-C16 / 11.0A §10).
+  "expense_template",
 ]);
 
 export function isTenantScopedTable(table: string): boolean {

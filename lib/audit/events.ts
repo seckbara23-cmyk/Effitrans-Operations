@@ -410,6 +410,18 @@ export const AuditActions = {
   HR_EMPLOYEE_STATUS_CHANGED: "hr.employee.status_changed",
   HR_EMPLOYEE_ACCOUNT_LINKED: "hr.employee.account_linked",
   HR_EMPLOYEE_ACCOUNT_UNLINKED: "hr.employee.account_unlinked",
+
+  // Phase 11.0B — Finance Expense Documents (Autorisation / Bon de Dépenses).
+  // Safe metadata only: ids, document type, status, version number, number
+  // prefix — NEVER amounts, beneficiary, account/registration values, or PDF
+  // content. Approval/signature/payment events are added in 11.0C..11.0E.
+  EXPENSE_AUTHORIZATION_CREATED: "finance.expense.authorization.created",
+  EXPENSE_AUTHORIZATION_SUBMITTED: "finance.expense.authorization.submitted",
+  EXPENSE_AUTHORIZATION_VERSION_CREATED: "finance.expense.authorization.version_created",
+  EXPENSE_VOUCHER_CREATED: "finance.expense.voucher.created",
+  EXPENSE_VOUCHER_SUBMITTED: "finance.expense.voucher.submitted",
+  EXPENSE_VOUCHER_VERSION_CREATED: "finance.expense.voucher.version_created",
+  EXPENSE_APPROVAL_ATTEMPT_OPENED: "finance.expense.approval_attempt.opened",
 } as const;
 
 export type AuditActionCode = (typeof AuditActions)[keyof typeof AuditActions];

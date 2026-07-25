@@ -156,8 +156,8 @@ describe("migration — employee registry structure", () => {
 describe("HR authorization — HR_OFFICER only, SYSTEM_ADMIN excluded (DEC-B25)", () => {
   const grantBlocks = (stripSql(seed).match(/insert into public\.role_permission[\s\S]*?on conflict do nothing;/g) ?? []);
 
-  it("23 — HR_OFFICER is the 25th tenant role, mapped to HUMAN_RESOURCES", () => {
-    expect(TENANT_ROLE_KEYS).toHaveLength(25);
+  it("23 — HR_OFFICER is a tenant role mapped to HUMAN_RESOURCES (29 total after 11.0B)", () => {
+    expect(TENANT_ROLE_KEYS).toHaveLength(29);
     expect(TENANT_ROLE_KEYS).toContain("HR_OFFICER");
     expect(roleCanonicalDepartment("HR_OFFICER")).toBe("HUMAN_RESOURCES");
   });
@@ -275,9 +275,12 @@ describe("pages and pins", () => {
   it("41 — « Nouvel employé » affordance requires hr:manage", () => {
     expect(registryPage).toMatch(/hasPermission\(permissions, "hr:manage"\)/);
   });
-  it("42 — build-info pins the HR migration as newest + data-probeable via hr:read", () => {
-    expect(LATEST_MIGRATION).toBe("20260724000002_hr_employee_registry");
-    expect(MIGRATION_PROBE.permissionCode).toBe("hr:read");
+  it("42 — the HR migration still ships (build-info newest pin moved on in 11.0B)", () => {
+    // 11.0B (20260725000001_expense_documents) is now the newest migration, so
+    // build-info's pins point there; the HR migration + its permission remain.
+    expect(LATEST_MIGRATION).toBe("20260725000001_expense_documents");
+    expect(MIGRATION_PROBE.permissionCode).toBe("finance:expense:read");
+    expect(migrationRaw).toContain("'hr:read'");
   });
   it("43 — the RLS suite proves SYSTEM_ADMIN sees ZERO employee rows", () => {
     expect(rls).toMatch(/h2_system_admin_sees/);

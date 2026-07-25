@@ -92,6 +92,9 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "process:blocker:manage", "process:team:manage", "process:step:skip",
       // Phase 9.3A — Caisse & Trésorerie supervisory oversight (full-admin convention).
       "caisse:manage",
+      // Phase 11.0B — Finance Expense Documents (full-admin convention; sign deferred to 11.0C/D).
+      "finance:expense:read", "finance:expense:create", "finance:expense:submit",
+      "finance:expense:export", "finance:expense:execute",
     ],
   },
   {
@@ -268,6 +271,11 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "process:read", "report:read", "logistics:copilot:read",
       // Phase 8.7 — Messaging Center. Finance department inbox.
       "messaging:read", "messaging:send", "messaging:read:finance",
+      // Phase 11.0B — Finance Expense Documents. The finance agent originates the
+      // document (create/submit) + reads/exports; VISA_AGENT sign authority is
+      // wired in 11.0C/D. No execute (payment execution is the Cashier's).
+      "finance:expense:read", "finance:expense:create", "finance:expense:submit",
+      "finance:expense:export",
     ],
   },
   {
@@ -303,6 +311,9 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "process:blocker:manage", "process:team:manage", "process:step:skip",
       // Phase 9.3A — Caisse & Trésorerie supervisory oversight (operations/finance supervisor).
       "caisse:manage",
+      // Phase 11.0B — Finance Expense Documents supervisory oversight (read/export +
+      // execute, mirroring caisse:manage). No create/submit/sign.
+      "finance:expense:read", "finance:expense:export", "finance:expense:execute",
     ],
   },
   {
@@ -483,6 +494,10 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     requiredForEveryTenant: false,
     permissions: [
       ...BASE, "caisse:manage", "finance:read", "process:read",
+      // Phase 11.0B — Finance Expense Documents. EXECUTION-ONLY: the Cashier reads
+      // the eligible-voucher queue and executes payment; it holds NO authorization
+      // (no create/submit/sign) — VISA_AGENT is FINANCE_OFFICER, never the Cashier.
+      "finance:expense:read", "finance:expense:execute",
     ],
   },
   // =========================================================================
@@ -503,6 +518,64 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     requiredForEveryTenant: false,
     permissions: [
       ...BASE, "hr:read", "hr:manage", "messaging:read", "messaging:send",
+    ],
+  },
+  // =========================================================================
+  // Phase 11.0B — Finance Expense Documents. Four ratified authorizer seats
+  // (DEC-C11) for the two paper forms' visa chains, mapped to the FINANCE
+  // canonical department (metadata only, lib/organization/departments.ts).
+  // FOUNDATION grant = own profile + finance read + expense read/export. Their
+  // AUTHORIZATION capability (finance:expense:sign) is deliberately WITHHELD
+  // until 11.0C/D wires the visa signer-map — VISA_RECEPTION / VISA_OPERATIONS
+  // remain unmapped business blockers (BLK-FIN-1 / BLK-FIN-2). Mirrored in
+  // supabase/seed.sql + migration 20260725000001_expense_documents.sql.
+  // =========================================================================
+  {
+    key: "ACCOUNTANT",
+    labelFr: "Comptable",
+    labelEn: "Accountant",
+    genericName: "ACCOUNTANT",
+    description:
+      "Finance — comptabilité. Authorizer seat for the « Visa Comptable » on the Bon de Dépenses. Foundation grant is read + export of expense documents; signing authority is wired in 11.0C/D.",
+    requiredForEveryTenant: false,
+    permissions: [
+      ...BASE, "finance:read", "finance:expense:read", "finance:expense:export",
+    ],
+  },
+  {
+    key: "TREASURER",
+    labelFr: "Trésorier / Trésorière",
+    labelEn: "Treasurer",
+    genericName: "TREASURER",
+    description:
+      "Finance — trésorerie (authorization, distinct from the Cashier's execution role). Authorizer seat for the « Visa Trésorière » on the Autorisation de Dépenses. Foundation grant is read + export; signing authority is wired in 11.0C/D.",
+    requiredForEveryTenant: false,
+    permissions: [
+      ...BASE, "finance:read", "finance:expense:read", "finance:expense:export",
+    ],
+  },
+  {
+    key: "DAF",
+    labelFr: "Directeur administratif et financier",
+    labelEn: "Administrative & Financial Director",
+    genericName: "DAF",
+    description:
+      "Direction administrative et financière. Authorizer seat for the « Visa DAF » on both documents. Foundation grant is read + export; signing authority is wired in 11.0C/D.",
+    requiredForEveryTenant: false,
+    permissions: [
+      ...BASE, "finance:read", "finance:expense:read", "finance:expense:export",
+    ],
+  },
+  {
+    key: "DGA",
+    labelFr: "Directeur général adjoint",
+    labelEn: "Deputy General Manager",
+    genericName: "DGA",
+    description:
+      "Direction générale adjointe. Authorizer seat for the « Visa DGA » on the Bon de Dépenses. Foundation grant is read + export; signing authority is wired in 11.0C/D.",
+    requiredForEveryTenant: false,
+    permissions: [
+      ...BASE, "finance:read", "finance:expense:read", "finance:expense:export",
     ],
   },
 ];

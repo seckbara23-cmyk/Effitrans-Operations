@@ -42,8 +42,8 @@ const FORBIDDEN_FOR_CASHIER = [
 describe("CASHIER role", () => {
   const cashier = () => getTenantRoleTemplate("CASHIER")!;
 
-  it("1 — is a tenant role (25 total after HR-1 added HR_OFFICER)", () => {
-    expect(TENANT_ROLE_KEYS).toHaveLength(25);
+  it("1 — is a tenant role (29 total after 11.0B added ACCOUNTANT/TREASURER/DAF/DGA)", () => {
+    expect(TENANT_ROLE_KEYS).toHaveLength(29);
     expect(TENANT_ROLE_KEYS).toContain("CASHIER");
   });
 
@@ -71,9 +71,15 @@ describe("CASHIER role", () => {
     }
   });
 
-  it("7 — grants nothing beyond profile + finance:read + caisse:manage + process:read", () => {
+  it("7 — grants profile + finance:read + caisse:manage + process:read + expense read/execute (execution-only)", () => {
+    // Phase 11.0B added finance:expense:read + finance:expense:execute — the
+    // Cashier reads the eligible-voucher queue and executes payment, but holds
+    // NO expense authorization (no create/submit/sign).
     expect([...cashier().permissions].sort()).toEqual(
-      ["caisse:manage", "finance:read", "process:read", "profile:read:self", "profile:update:self"],
+      [
+        "caisse:manage", "finance:expense:execute", "finance:expense:read", "finance:read",
+        "process:read", "profile:read:self", "profile:update:self",
+      ],
     );
   });
 

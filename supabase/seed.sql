@@ -1029,3 +1029,74 @@ on conflict do nothing;
 
 -- NO hr:* grant to SYSTEM_ADMIN or any other role (DEC-B25): HR data is the
 -- strongest case for narrowness; SYSTEM_ADMIN administers accounts, not people.
+
+-- ===========================================================================
+-- Phase 11.0B — Finance Expense Documents foundation. Mirrors
+-- supabase/migrations/20260725000001_expense_documents.sql (parity enforced by
+-- tests/role-templates.test.ts). The finance:expense:* family uses module
+-- 'finance_expense' so the module='finance' auto-grant above does NOT sweep it
+-- in — every grant is explicit (segregation of duties). finance:expense:sign is
+-- granted to NO role in 11.0B (the visa signer-map is 11.0C/D; VISA_RECEPTION /
+-- VISA_OPERATIONS remain unmapped blockers). Four ratified authorizer roles —
+-- ACCOUNTANT, TREASURER, DAF, DGA (FINANCE canonical department, metadata only).
+-- CASHIER stays EXECUTION-ONLY (execute, no authorization).
+-- ===========================================================================
+insert into public.permission (code, module, action, data_scope, description) values
+  ('finance:expense:read',    'finance_expense', 'read',    'all', 'Consulter les autorisations et bons de dépenses'),
+  ('finance:expense:create',  'finance_expense', 'create',  'all', 'Créer un brouillon d''autorisation ou de bon de dépenses'),
+  ('finance:expense:submit',  'finance_expense', 'submit',  'all', 'Soumettre une autorisation ou un bon de dépenses au circuit d''approbation'),
+  ('finance:expense:sign',    'finance_expense', 'sign',    'all', 'Apposer un visa (approbation électronique authentifiée) sur un document de dépenses'),
+  ('finance:expense:export',  'finance_expense', 'export',  'all', 'Générer / exporter / imprimer le PDF d''un document de dépenses'),
+  ('finance:expense:execute', 'finance_expense', 'execute', 'all', 'Exécuter le paiement d''un bon de dépenses éligible (caisse)')
+on conflict (code) do nothing;
+
+insert into public.role (tenant_id, code, label_fr, label_en, is_provisional) values
+  ('00000000-0000-0000-0000-000000000001', 'ACCOUNTANT', 'Comptable',                            'Accountant',                          true),
+  ('00000000-0000-0000-0000-000000000001', 'TREASURER',  'Trésorier / Trésorière',               'Treasurer',                           true),
+  ('00000000-0000-0000-0000-000000000001', 'DAF',        'Directeur administratif et financier', 'Administrative & Financial Director', true),
+  ('00000000-0000-0000-0000-000000000001', 'DGA',        'Directeur général adjoint',            'Deputy General Manager',              true)
+on conflict (tenant_id, code) do nothing;
+
+-- read: all expense actors see the documents.
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id from public.role r
+join public.permission p on p.code = 'finance:expense:read'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR', 'FINANCE_OFFICER',
+                 'ACCOUNTANT', 'TREASURER', 'DAF', 'DGA', 'CASHIER')
+on conflict do nothing;
+
+-- export: authoring + authorizer seats + supervisory (not CASHIER, not CEO).
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id from public.role r
+join public.permission p on p.code = 'finance:expense:export'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR', 'FINANCE_OFFICER',
+                 'ACCOUNTANT', 'TREASURER', 'DAF', 'DGA')
+on conflict do nothing;
+
+-- create + submit: the finance agent originates the document; SYSTEM_ADMIN convention.
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id from public.role r
+join public.permission p on p.code in ('finance:expense:create', 'finance:expense:submit')
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'FINANCE_OFFICER')
+on conflict do nothing;
+
+-- execute: CASHIER (execution-only) + supervisory oversight (mirrors caisse:manage).
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id from public.role r
+join public.permission p on p.code = 'finance:expense:execute'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR', 'CASHIER')
+on conflict do nothing;
+
+-- Baseline for the four new roles: own profile + finance module read visibility.
+-- Their authorization capability (finance:expense:sign) is withheld until 11.0C/D.
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id from public.role r
+join public.permission p
+  on p.code in ('profile:read:self', 'profile:update:self', 'finance:read')
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('ACCOUNTANT', 'TREASURER', 'DAF', 'DGA')
+on conflict do nothing;

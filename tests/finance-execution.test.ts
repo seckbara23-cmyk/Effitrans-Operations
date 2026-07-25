@@ -381,12 +381,13 @@ describe("Phase 9.0E permission reuse and scope", () => {
     expect(creates).toEqual(["finance_request"]);
   });
 
-  it("51 — the migration is the new latest, and build-info is bumped in lockstep", () => {
+  it("51 — build-info tracks the latest migration + count in lockstep", () => {
     const dir = fileURLToPath(new URL("../supabase/migrations/", import.meta.url));
     const files = readdirSync(dir).filter((f) => f.endsWith(".sql")).sort();
-    expect(files[files.length - 1]).toBe("20260724000002_hr_employee_registry.sql");
+    // 11.0B (expense documents) is the current newest; build-info is pinned to it.
+    expect(files[files.length - 1]).toBe("20260725000001_expense_documents.sql");
     const buildInfo = read("../lib/platform/ops/build-info.ts");
-    expect(buildInfo).toContain('LATEST_MIGRATION = "20260724000002_hr_employee_registry"');
+    expect(buildInfo).toContain('LATEST_MIGRATION = "20260725000001_expense_documents"');
     expect(buildInfo).toContain(`MIGRATION_COUNT = ${files.length}`);
   });
 

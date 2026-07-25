@@ -117,6 +117,10 @@ export const ROLE_CANONICAL_DEPARTMENT: Readonly<Record<string, CanonicalDepartm
   ADMINISTRATIVE_OFFICER: "FINANCE", // PROVISIONAL — invoice-deposit preparation (steps 23/25)
   COURIER: "FINANCE", // PROVISIONAL — physical invoice deposit (step 24)
   CASHIER: "FINANCE", // Phase 9.3A — Caisse & Trésorerie (workspace under Finance, not a department)
+  ACCOUNTANT: "FINANCE", // Phase 11.0B — Comptable (Bon de Dépenses « Visa Comptable » authorizer)
+  TREASURER: "FINANCE", // Phase 11.0B — Trésorière authorizer (distinct from the Cashier's execution role)
+  DAF: "FINANCE", // Phase 11.0B — Directeur administratif et financier (« Visa DAF »)
+  DGA: "FINANCE", // Phase 11.0B — Directeur général adjoint (« Visa DGA »)
 
   // ---- Human Resources — corporate support, outside the dossier flow ---------
   HR_OFFICER: "HUMAN_RESOURCES", // HR-1 — first role mapped to HUMAN_RESOURCES (Employee Registry)
