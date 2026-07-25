@@ -446,7 +446,27 @@ end; $$;
 create trigger trg_expense_voucher_tenant before insert or update on public.expense_voucher
   for each row execute function public.enforce_expense_voucher_tenant();
 
--- Version + attempt + visa: the parent document and every actor must share tenant.
+-- Version tables carry exactly ONE parent FK — dedicated functions (a shared
+-- one referencing new.voucher_id would fail on a table without that column).
+create or replace function public.enforce_expense_auth_child_tenant()
+returns trigger language plpgsql as $$
+declare t uuid;
+begin
+  select tenant_id into t from public.expense_authorization where id = new.authorization_id;
+  if t is distinct from new.tenant_id then raise exception 'expense authorization child belongs to another tenant'; end if;
+  return new;
+end; $$;
+create or replace function public.enforce_expense_voucher_child_tenant()
+returns trigger language plpgsql as $$
+declare t uuid;
+begin
+  select tenant_id into t from public.expense_voucher where id = new.voucher_id;
+  if t is distinct from new.tenant_id then raise exception 'expense voucher child belongs to another tenant'; end if;
+  return new;
+end; $$;
+
+-- Attempt + visa carry BOTH nullable parent FKs (one-parent CHECK) — a shared
+-- function that checks whichever is set.
 create or replace function public.enforce_expense_child_tenant()
 returns trigger language plpgsql as $$
 declare t uuid;
@@ -462,9 +482,9 @@ begin
   return new;
 end; $$;
 create trigger trg_expense_auth_version_tenant before insert on public.expense_authorization_version
-  for each row execute function public.enforce_expense_child_tenant();
+  for each row execute function public.enforce_expense_auth_child_tenant();
 create trigger trg_expense_voucher_version_tenant before insert on public.expense_voucher_version
-  for each row execute function public.enforce_expense_child_tenant();
+  for each row execute function public.enforce_expense_voucher_child_tenant();
 create trigger trg_expense_attempt_tenant before insert or update on public.expense_approval_attempt
   for each row execute function public.enforce_expense_child_tenant();
 create trigger trg_expense_visa_tenant before insert on public.expense_visa
