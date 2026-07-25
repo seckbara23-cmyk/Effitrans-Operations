@@ -1,9 +1,12 @@
+import { requireUser } from "@/lib/auth/require-user";
+import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { getOperationsCockpit } from "@/lib/operations/reader";
 import { getOperationsKpis } from "@/lib/operations/kpi/reader";
 import { getOperationalAlerts } from "@/lib/operations/alerts/reader";
 import { CockpitSummaryCards } from "./cockpit-summary";
 import { ExecutiveKpiStrip } from "./executive-kpi-strip";
 import { CockpitAttentionPanel } from "./cockpit-attention-panel";
+import { OperationsCopilotPanel } from "./operations-copilot-panel";
 import { OperationsQueueCard } from "./operations-queue-card";
 import { TransitOverviewCard } from "./transit-overview-card";
 import { FinancePipelineCard } from "./finance-pipeline-card";
@@ -28,11 +31,17 @@ export async function CockpitSections() {
   // render. The unified alert reader is FAILURE-ISOLATED (10.0E-3): a rejection
   // yields null so the rest of /dashboard still renders and the panel shows a
   // truthful unavailable state — never an internal error.
-  const [c, kpiSet, alertSet] = await Promise.all([
+  const user = await requireUser();
+  const [perms, c, kpiSet, alertSet] = await Promise.all([
+    getEffectivePermissions(user.id),
     getOperationsCockpit(),
     getOperationsKpis(),
     getOperationalAlerts().catch(() => null),
   ]);
+  // The Copilot panel appears only for holders of the EXISTING operational-AI gate
+  // (the API is the final authority regardless). Rendered as a client island — it
+  // loads interactively and never blocks the server-rendered command center.
+  const canCopilot = hasPermission(perms, "logistics:copilot:read");
 
   return (
     <div className="space-y-6">
@@ -43,6 +52,9 @@ export async function CockpitSections() {
       {/* THE single operational alert list — the unified, permission-shaped set (10.0E-3).
           The panel self-manages empty / partial / unavailable / permission-shaped states. */}
       <CockpitAttentionPanel set={alertSet} />
+
+      {/* Operations Copilot (10.0F-2) — below the KPI strip + alert summary, above supporting analysis. */}
+      {canCopilot && <OperationsCopilotPanel />}
 
       {/* Today's operational state */}
       {c.operations && <OperationsQueueCard operations={c.operations} />}

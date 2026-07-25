@@ -188,6 +188,10 @@ export const AuditActions = {
   EXECUTIVE_DASHBOARD_VIEWED: "executive.dashboard.viewed",
   EXECUTIVE_DASHBOARD_EXPORTED: "executive.dashboard.exported",
   EXECUTIVE_COPILOT_QUERY: "executive.copilot.query",
+  // Phase 10.0F-2 — Operations Copilot. Records SAFE metadata only (actor, tenant, provider,
+  // model, question focus class, fallback flag, duration, outcome) — NEVER the question body,
+  // the answer, the operational context, KPI amounts, alert contents, or any secret.
+  OPERATIONS_COPILOT_QUERY: "operations.copilot.query",
 
   // DBC-1 — Digital Brand Center. Payloads carry only changed field NAMES, asset kinds/ids,
   // membership ids, status transitions, and safe file metadata (size/MIME). NEVER raw files,

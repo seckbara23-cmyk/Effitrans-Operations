@@ -226,13 +226,15 @@ describe("cockpit doctrine — no Realtime, polling, Copilot, legacy analytics o
     // The refresh control re-runs the existing server request; it is not a poll.
     expect(read(OPS_DIR + "cockpit-refresh.tsx")).toContain("router.refresh()");
   });
-  it("no Copilot surface and no getExecutiveAnalytics adoption (DEC-B32 / DEC-B33)", () => {
+  it("no getExecutiveAnalytics (DEC-B33); Copilot surface uses the EXISTING permission, never a new one (10.0F-2)", () => {
     for (const f of ALL_OPS_FILES) {
       const src = read(OPS_DIR + f);
-      expect(src, f).not.toContain("copilot");
       expect(src, f).not.toContain("getExecutiveAnalytics");
-      expect(src, f).not.toContain("operations:copilot:read");
+      expect(src, f).not.toContain("operations:copilot:read"); // no NEW copilot permission was introduced
     }
+    // The Operations Copilot panel (10.0F-2) is wired into the cockpit, gated on the existing gate.
+    const sections = read(OPS_DIR + "cockpit-sections.tsx");
+    expect(sections).toContain('hasPermission(perms, "logistics:copilot:read")');
   });
   it("presentational cards perform NO data read — no supabase client, no domain reader import", () => {
     for (const f of CARD_FILES) {
