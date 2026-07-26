@@ -28,7 +28,7 @@ import type { PolicyVersionView } from "@/lib/workflow/policy/readers";
 const ERRORS: Record<string, string> = {
   forbidden: "Vous n'avez pas l'autorisation de gérer la politique de workflow.",
   not_found: "Version introuvable.",
-  invalid_state: "Cette versionن'est pas dans un état permettant cette action.",
+  invalid_state: "Cette version n'est pas dans un état permettant cette action.",
   invalid_input: "Enregistrement impossible.",
   validation_failed: "La validation a échoué — corrigez les erreurs listées.",
   duplicate_content: "Une version identique existe déjà : aucun changement à publier.",
