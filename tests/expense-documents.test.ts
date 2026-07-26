@@ -338,9 +338,22 @@ describe("template registry (code-managed, DEC-C16)", () => {
     expect(templateCodeForDocument("EXPENSE_VOUCHER")).toBe("EXPENSE_VOUCHER");
   });
 
-  it("44 — ships EMPTY (master template PDF is an 11.0C prerequisite)", () => {
-    expect(EXPENSE_TEMPLATES).toHaveLength(0);
-    expect(activeTemplateVersion("EXPENSE_AUTHORIZATION")).toBeNull();
+  it("44 — 11.0C registers the Autorisation v1; the Bon stays unregistered until 11.0D", () => {
+    expect(EXPENSE_TEMPLATES).toHaveLength(1);
+    const auth = activeTemplateVersion("EXPENSE_AUTHORIZATION");
+    expect(auth).not.toBeNull();
+    expect(auth!.version).toBe(1);
+    expect(auth!.pageCount).toBe(1);
+    expect(activeTemplateVersion("EXPENSE_VOUCHER")).toBeNull();
+  });
+
+  it("44b — the master raster is STILL absent, and that is stated, not faked", () => {
+    // The original-page asset was never committed (11.0A §8 prerequisite). The
+    // registry says so honestly: no background, no invented checksum. The
+    // renderer draws the chrome layer instead — see the phase-11.0C conflict record.
+    const auth = activeTemplateVersion("EXPENSE_AUTHORIZATION")!;
+    expect(auth.background).toBeNull();
+    expect(auth.checksum).toBeNull();
   });
 
   it("45 — the global expense_template catalog table exists with the two-code CHECK", () => {

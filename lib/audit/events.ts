@@ -422,6 +422,14 @@ export const AuditActions = {
   EXPENSE_VOUCHER_SUBMITTED: "finance.expense.voucher.submitted",
   EXPENSE_VOUCHER_VERSION_CREATED: "finance.expense.voucher.version_created",
   EXPENSE_APPROVAL_ATTEMPT_OPENED: "finance.expense.approval_attempt.opened",
+
+  // Phase 11.0C — draft editing, supporting documents and PDF rendering. Same
+  // redaction rule: file NAMES and ids only (never attachment CONTENT, never a
+  // signed URL), and the PDF event records the template version, never the bytes.
+  EXPENSE_AUTHORIZATION_UPDATED: "finance.expense.authorization.updated",
+  EXPENSE_ATTACHMENT_ADDED: "finance.expense.attachment.added",
+  EXPENSE_ATTACHMENT_RETIRED: "finance.expense.attachment.retired",
+  EXPENSE_AUTHORIZATION_PDF_GENERATED: "finance.expense.authorization.pdf_generated",
 } as const;
 
 export type AuditActionCode = (typeof AuditActions)[keyof typeof AuditActions];

@@ -59,6 +59,7 @@ export default async function FinanceDepartmentPage() {
   const financeLinks = [
     { label: "Facturation", href: "/finance", permission: "finance:read", desc: "Factures, encours et statuts de règlement." },
     { label: "Recouvrement", href: "/collections", permission: "collections:manage", desc: "Balance âgée, relances et promesses." },
+    { label: "Autorisations de dépenses", href: "/finance/autorisations-depenses", permission: "finance:expense:read", desc: "Établir, soumettre et imprimer les autorisations de dépenses." },
     { label: "Caisse", href: "/finance/caisse", permission: "caisse:manage", desc: "Opérations de caisse et de trésorerie (espèces, chèques, Mobile Money, banques)." },
     { label: "Rapprochement", href: "/finance/reconciliation", permission: "finance:read", desc: "Vérification des paiements reçus." },
     { label: "Rapports", href: "/reports", permission: "report:read", desc: "Indicateurs financiers et exports." },

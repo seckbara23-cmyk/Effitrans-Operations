@@ -265,6 +265,20 @@ export function workspacesFor(ctx: NavigationContext): WorkspaceLink[] {
     });
   }
 
+  // Phase 11.0C — Autorisations de Dépenses. Gated on the EFFECTIVE
+  // finance:expense:read permission (never on a role code), exactly like Caisse:
+  // any authorized seat sees it, a finance:read-only user does not. Reuses the
+  // 11.0B permission family — no new permission was introduced.
+  if (can("finance:expense:read")) {
+    out.push({
+      key: "expense_authorizations",
+      label: "Autorisations de dépenses",
+      href: "/finance/autorisations-depenses",
+      hint: "Établir, soumettre et imprimer les autorisations de dépenses",
+      kind: "panel",
+    });
+  }
+
   // The official queues this user's roles actually staff. Never all fifteen.
   for (const q of visibleQueues(ctx.roleCodes, perms)) {
     out.push({

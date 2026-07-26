@@ -106,6 +106,8 @@ export const TENANT_SCOPED_TABLES = new Set<string>([
   "expense_visa",
   "expense_authorization_counter",
   "expense_voucher_counter",
+  // expense supporting documents (Phase 11.0C, DEC-C22)
+  "expense_attachment",
 ]);
 
 /**

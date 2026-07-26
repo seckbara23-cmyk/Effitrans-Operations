@@ -275,10 +275,10 @@ describe("pages and pins", () => {
   it("41 — « Nouvel employé » affordance requires hr:manage", () => {
     expect(registryPage).toMatch(/hasPermission\(permissions, "hr:manage"\)/);
   });
-  it("42 — the HR migration still ships (build-info newest pin moved on in 11.0B)", () => {
-    // 11.0B (20260725000001_expense_documents) is now the newest migration, so
+  it("42 — the HR migration still ships (build-info newest pin moved on in 11.0C)", () => {
+    // 11.0C (20260726000001_expense_attachments) is now the newest migration, so
     // build-info's pins point there; the HR migration + its permission remain.
-    expect(LATEST_MIGRATION).toBe("20260725000001_expense_documents");
+    expect(LATEST_MIGRATION).toBe("20260726000001_expense_attachments");
     expect(MIGRATION_PROBE.permissionCode).toBe("finance:expense:read");
     expect(migrationRaw).toContain("'hr:read'");
   });

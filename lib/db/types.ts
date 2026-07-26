@@ -3507,6 +3507,48 @@ export type Database = {
         Update: never;
         Relationships: [];
       };
+      // Phase 11.0C — finance-classified supporting documents (DEC-C22).
+      expense_attachment: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          document_type: string;
+          authorization_id: string | null;
+          voucher_id: string | null;
+          kind: string | null;
+          file_name: string;
+          mime_type: string | null;
+          byte_size: number | null;
+          storage_path: string;
+          checksum: string | null;
+          retired_at: string | null;
+          retired_by: string | null;
+          uploaded_by: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          document_type: string;
+          authorization_id?: string | null;
+          voucher_id?: string | null;
+          kind?: string | null;
+          file_name: string;
+          mime_type?: string | null;
+          byte_size?: number | null;
+          storage_path: string;
+          checksum?: string | null;
+          uploaded_by: string;
+        };
+        Update: {
+          storage_path?: string;
+          checksum?: string | null;
+          kind?: string | null;
+          retired_at?: string | null;
+          retired_by?: string | null;
+        };
+        Relationships: [];
+      };
       expense_template: {
         Row: {
           id: string;

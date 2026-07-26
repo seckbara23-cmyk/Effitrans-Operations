@@ -13,6 +13,7 @@
  */
 
 import { EXPENSE_DOCUMENT_TYPES, type ExpenseDocumentType } from "./types";
+import { AUTHORIZATION_GEOMETRY } from "./template-map";
 
 export const EXPENSE_TEMPLATE_CODES = ["EXPENSE_AUTHORIZATION", "EXPENSE_VOUCHER"] as const;
 export type ExpenseTemplateCode = (typeof EXPENSE_TEMPLATE_CODES)[number];
@@ -30,9 +31,26 @@ export const EXPENSE_TEMPLATE_STATUSES = ["DRAFT", "ACTIVE", "RETIRED"] as const
 export type ExpenseTemplateStatus = (typeof EXPENSE_TEMPLATE_STATUSES)[number];
 
 /**
- * Immutable versioned template metadata. `checksum` and `pageCount` are filled
- * when the source asset is committed (11.0C). Coordinate maps (field + visa box
- * positions) are added by 11.0C alongside the raster — deliberately absent here.
+ * The DEC-C16 raster background: the scanned master page(s) of the original
+ * paper form, drawn full-bleed under the value overlays. `null` while the master
+ * asset is not in the repository — see the conflict record in
+ * docs/finance/phase-11.0c-expense-authorization.md.
+ *
+ * Registering one is the ONLY change needed to switch a template from the
+ * drawn-chrome stand-in to the true original: the coordinate map is unchanged,
+ * so no value moves (lib/finance/expense/template-map.ts).
+ */
+export type ExpenseTemplateBackground = {
+  /** Repo-relative path of each page raster, page 1 first (baseline JPEG). */
+  pages: readonly string[];
+  /** sha256 of the master source asset the rasters were produced from. */
+  checksum: string;
+};
+
+/**
+ * Immutable versioned template metadata. `checksum`/`background` are filled when
+ * the source asset is committed; `geometry` is the 11.0C coordinate map (field +
+ * visa-box positions) the renderer draws against.
  */
 export type ExpenseTemplateVersion = {
   code: ExpenseTemplateCode;
@@ -43,14 +61,38 @@ export type ExpenseTemplateVersion = {
   status: ExpenseTemplateStatus;
   activeFrom: string | null;
   retiredAt: string | null;
+  /** DEC-C16 layer 1. null ⇒ the renderer draws the form chrome instead. */
+  background: ExpenseTemplateBackground | null;
 };
 
 /**
- * The code-managed registry. EMPTY in 11.0B — versions are registered when the
- * master template PDF is committed (11.0C). Never mutate a published entry: a
- * new template revision is a NEW version row (immutable, DEC-C13/C24).
+ * The code-managed registry (11.0A §10 — the platform's registry idiom: process
+ * steps, queues and codes are all code constants).
+ *
+ * EXPENSE_AUTHORIZATION v1 is registered in 11.0C with its coordinate geometry
+ * and a NULL background — the master raster is still outstanding. EXPENSE_VOUCHER
+ * stays unregistered until 11.0D.
+ *
+ * Never mutate a published entry: a new template revision is a NEW version entry
+ * (immutable, DEC-C13/C24), so previously rendered documents stay reproducible.
  */
-export const EXPENSE_TEMPLATES: readonly ExpenseTemplateVersion[] = [];
+export const EXPENSE_TEMPLATES: readonly ExpenseTemplateVersion[] = [
+  {
+    code: "EXPENSE_AUTHORIZATION",
+    version: 1,
+    checksum: null,
+    pageCount: 1,
+    status: "ACTIVE",
+    activeFrom: "2026-07-26",
+    retiredAt: null,
+    background: null,
+  },
+];
+
+/** The coordinate geometry a template version renders against. */
+export function templateGeometry(code: ExpenseTemplateCode): typeof AUTHORIZATION_GEOMETRY | null {
+  return code === "EXPENSE_AUTHORIZATION" ? AUTHORIZATION_GEOMETRY : null;
+}
 
 /** The current ACTIVE version for a template code, or null if none is registered. */
 export function activeTemplateVersion(code: ExpenseTemplateCode): ExpenseTemplateVersion | null {

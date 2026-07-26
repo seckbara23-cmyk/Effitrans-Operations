@@ -20,6 +20,8 @@ describe("Finance hub workspace links (Scope E)", () => {
       ["Caisse", "/finance/caisse", "caisse:manage"],
       ["Rapprochement", "/finance/reconciliation", "finance:read"],
       ["Rapports", "/reports", "report:read"],
+      // Phase 11.0C — over the 11.0B permission family, no new permission.
+      ["Autorisations de dépenses", "/finance/autorisations-depenses", "finance:expense:read"],
     ] as const) {
       expect(financeDept, label).toContain(`label: "${label}"`);
       expect(financeDept, href).toContain(`href: "${href}"`);
@@ -34,10 +36,19 @@ describe("Finance hub workspace links (Scope E)", () => {
     expect(financeDept).not.toContain('label: "Finance Requests"');
   });
 
-  it("preserves the Caisse route and does not alter Finance permissions", () => {
+  it("preserves the Caisse route and invents no finance permission", () => {
     expect(financeDept).toContain('href: "/finance/caisse"');
-    // No new finance permission introduced on this page.
-    expect(financeDept).not.toMatch(/"finance:[a-z]+:[a-z]+"/); // no invented scoped finance perms
+    // The guard's INTENT is « no invented scoped finance permission », not « none
+    // at all »: 11.0B ratified the finance:expense:* family, so 11.0C's link may
+    // use it. Every scoped finance permission on this page must be one that
+    // actually exists in the permission catalog.
+    const scoped = [...financeDept.matchAll(/"(finance:[a-z]+:[a-z]+)"/g)].map((m) => m[1]);
+    const catalog = readFileSync(
+      fileURLToPath(new URL("../supabase/migrations/20260725000001_expense_documents.sql", import.meta.url)),
+      "utf8",
+    );
+    for (const code of scoped) expect(catalog, code).toContain(`'${code}'`);
+    expect(scoped).toEqual(["finance:expense:read"]);
   });
 });
 

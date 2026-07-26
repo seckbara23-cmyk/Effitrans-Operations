@@ -20,6 +20,8 @@ import { assertPermission } from "@/lib/auth/require-permission";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
 import { expenseContentSha256 } from "./hash";
+import { amountInWordsFr } from "./amount-in-words";
+import { activeTemplateVersion } from "./templates";
 import {
   canTransitionAuthorization,
   canTransitionVoucher,
@@ -39,7 +41,9 @@ export type ExpenseActionError =
   | "invalid_input"
   | "invalid_state"
   | "already_exists"
-  | "not_approved";
+  | "not_approved"
+  /** A « N° dossier » was typed that no dossier in this tenant carries. */
+  | "unknown_file";
 
 export type ExpenseActionResult<T = { id: string }> = ({ ok: true } & T) | { ok: false; error: ExpenseActionError };
 
@@ -58,8 +62,39 @@ async function guard(permission: string): Promise<Ctx | ExpenseActionError> {
 const nonEmpty = (v: unknown): v is string => typeof v === "string" && v.trim().length > 0;
 const positive = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v > 0;
 
+/**
+ * Resolve the typed « N° dossier » into a tenant-scoped file_id, returning the
+ * input with `fileId` set. Undefined `fileNumber` leaves the link untouched; ""
+ * clears it (DEC-C15 general administrative expense); an unknown number fails
+ * loudly so an operator is never told a dossier was linked when it was not.
+ */
+async function resolveFileLink<T extends Partial<AuthorizationDraftInput>>(
+  admin: Admin,
+  tenantId: string,
+  input: T,
+): Promise<T | "unknown_file"> {
+  if (input.fileNumber === undefined) return input;
+  const wanted = input.fileNumber.trim();
+  if (wanted === "") return { ...input, fileId: null };
+
+  const { data } = await admin
+    .from("operational_file")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .eq("file_number", wanted)
+    .maybeSingle();
+  if (!data) return "unknown_file";
+  return { ...input, fileId: data.id };
+}
+
 // ===================================================== authorization: create ==
 
+/**
+ * The user-entered fields of the Autorisation. `amountInWords` is deliberately
+ * ABSENT: « Montant en lettres » is a DERIVED field (11.0A §11, classification
+ * D) — the platform spells it from (amount, currency) via ./amount-in-words, so
+ * the printed words can never disagree with the printed figures.
+ */
 export type AuthorizationDraftInput = {
   amount: number;
   currency?: string;
@@ -69,8 +104,15 @@ export type AuthorizationDraftInput = {
   registrationNumber?: string;
   expenseType?: string;
   weightKg?: number | null;
-  amountInWords?: string;
-  fileId?: string;
+  /** Resolved dossier link. `null` clears it (a general administrative expense). */
+  fileId?: string | null;
+  /**
+   * The HUMAN dossier key the form collects — « N° dossier », exactly as it is
+   * written on paper. Resolved to `fileId` server-side against this tenant's
+   * dossiers; "" clears the link, and an unknown number is rejected rather than
+   * silently dropped.
+   */
+  fileNumber?: string;
   financeRequestId?: string;
 };
 
@@ -85,19 +127,23 @@ export async function createExpenseAuthorizationDraft(
   if (input.weightKg != null && (!Number.isFinite(input.weightKg) || input.weightKg < 0)) return fail("invalid_input");
 
   const admin = getAdminSupabaseClient();
+  const linked = await resolveFileLink(admin, ctx.tenantId, input);
+  if (linked === "unknown_file") return fail("unknown_file");
+
+  const currency = input.currency?.trim() || "XOF";
   const { data, error } = await admin
     .from("expense_authorization")
     .insert({
       tenant_id: ctx.tenantId,
-      file_id: input.fileId ?? null,
+      file_id: linked.fileId ?? null,
       finance_request_id: input.financeRequestId ?? null,
       account_number: input.accountNumber?.trim() || null,
       registration_number: input.registrationNumber?.trim() || null,
       expense_type: input.expenseType?.trim() || null,
       weight_kg: input.weightKg ?? null,
       amount: input.amount,
-      currency: input.currency?.trim() || "XOF",
-      amount_in_words: input.amountInWords?.trim() || null,
+      currency,
+      amount_in_words: amountInWordsFr(input.amount, currency) || null,
       beneficiary: input.beneficiary.trim(),
       reason: input.reason.trim(),
       status: "DRAFT",
@@ -114,9 +160,93 @@ export async function createExpenseAuthorizationDraft(
     tenantId: ctx.tenantId,
     entity: "expense_authorization",
     entityId: data.id,
-    after: { status: "DRAFT", has_file: Boolean(input.fileId) },
+    after: { status: "DRAFT", has_file: Boolean(linked.fileId) },
   });
   return { ok: true, id: data.id };
+}
+
+export type SaveAuthorizationResult = { id: string; versioned: boolean; versionNumber: number | null };
+
+/**
+ * Save an edit to an editable authorization (Phase 11.0C) — the ONE entry point
+ * the draft form calls, so the versioning rule lives here and not in the UI:
+ *
+ *   * BEFORE the first submission (no frozen version yet) the working head is
+ *     updated IN PLACE. A draft carries no number and no version — the invoice
+ *     precedent this bounded context follows (DEC-C14): nothing is frozen until
+ *     the document is issued, so an author's typing does not mint history.
+ *   * ONCE a version exists (i.e. after submission — the RETURNED correction
+ *     path) every material edit is routed to createExpenseAuthorizationVersion,
+ *     which freezes a NEW immutable version and supersedes any open approval
+ *     attempt (DEC-C13). History is never bypassed and never overwritten.
+ *
+ * Delegating rather than duplicating keeps a single freeze implementation.
+ */
+export async function saveExpenseAuthorization(
+  id: string,
+  input: Partial<AuthorizationDraftInput>,
+): Promise<ExpenseActionResult<SaveAuthorizationResult>> {
+  const ctx = await guard("finance:expense:create");
+  if (isErr(ctx)) return fail(ctx) as ExpenseActionResult<SaveAuthorizationResult>;
+  const admin = getAdminSupabaseClient();
+
+  const row = await loadAuthorization(admin, ctx.tenantId, id);
+  if (!row) return fail("not_found") as ExpenseActionResult<SaveAuthorizationResult>;
+  if (!AUTHORIZATION_EDITABLE_STATUSES.includes(row.status as AuthorizationStatus)) {
+    return fail("invalid_state") as ExpenseActionResult<SaveAuthorizationResult>;
+  }
+
+  // A frozen version exists ⇒ this is a correction, which must version.
+  if (row.current_version_id) {
+    const versioned = await createExpenseAuthorizationVersion(id, input);
+    if (!versioned.ok) return versioned as ExpenseActionResult<SaveAuthorizationResult>;
+    return { ok: true, id, versioned: true, versionNumber: versioned.versionNumber };
+  }
+
+  const linked = await resolveFileLink(admin, ctx.tenantId, input);
+  if (linked === "unknown_file") return fail("unknown_file") as ExpenseActionResult<SaveAuthorizationResult>;
+
+  const patched = applyAuthorizationPatch(row, linked);
+  if (!positive(patched.amount) || !nonEmpty(patched.beneficiary) || !nonEmpty(patched.reason)) {
+    return fail("invalid_input") as ExpenseActionResult<SaveAuthorizationResult>;
+  }
+  if (patched.weight_kg != null && (!Number.isFinite(patched.weight_kg) || patched.weight_kg < 0)) {
+    return fail("invalid_input") as ExpenseActionResult<SaveAuthorizationResult>;
+  }
+
+  const { data: updated, error } = await admin
+    .from("expense_authorization")
+    .update({
+      account_number: patched.account_number,
+      registration_number: patched.registration_number,
+      expense_type: patched.expense_type,
+      weight_kg: patched.weight_kg,
+      amount: patched.amount,
+      currency: patched.currency,
+      amount_in_words: patched.amount_in_words,
+      beneficiary: patched.beneficiary,
+      reason: patched.reason,
+      file_id: patched.file_id,
+      finance_request_id: patched.finance_request_id,
+    })
+    .eq("id", id)
+    .eq("tenant_id", ctx.tenantId)
+    .eq("status", row.status) // CAS — a concurrent submit matches zero rows
+    .select("id");
+  if (error || !updated || updated.length === 0) {
+    return fail("invalid_state") as ExpenseActionResult<SaveAuthorizationResult>;
+  }
+
+  await writeAudit({
+    action: AuditActions.EXPENSE_AUTHORIZATION_UPDATED,
+    actorId: ctx.userId,
+    tenantId: ctx.tenantId,
+    entity: "expense_authorization",
+    entityId: id,
+    before: { status: row.status },
+    after: { status: row.status, versioned: false },
+  });
+  return { ok: true, id, versioned: false, versionNumber: null };
 }
 
 /**
@@ -193,8 +323,13 @@ export async function createExpenseAuthorizationVersion(
     return fail("invalid_state") as ExpenseActionResult<{ id: string; versionId: string; versionNumber: number }>;
   }
 
+  const linked = await resolveFileLink(admin, ctx.tenantId, input);
+  if (linked === "unknown_file") {
+    return fail("unknown_file") as ExpenseActionResult<{ id: string; versionId: string; versionNumber: number }>;
+  }
+
   // Apply the edit to the working head first.
-  const patched = applyAuthorizationPatch(row, input);
+  const patched = applyAuthorizationPatch(row, linked);
   if (!positive(patched.amount) || !nonEmpty(patched.beneficiary) || !nonEmpty(patched.reason)) {
     return fail("invalid_input") as ExpenseActionResult<{ id: string; versionId: string; versionNumber: number }>;
   }
@@ -526,18 +661,23 @@ function applyAuthorizationPatch(
   row: AuthorizationFields,
   input: Partial<AuthorizationDraftInput>,
 ): AuthorizationFields {
+  const amount = input.amount ?? row.amount;
+  const currency = input.currency?.trim() || row.currency;
   return {
     id: row.id,
     account_number: input.accountNumber?.trim() ?? row.account_number,
     registration_number: input.registrationNumber?.trim() ?? row.registration_number,
     expense_type: input.expenseType?.trim() ?? row.expense_type,
     weight_kg: input.weightKg ?? row.weight_kg,
-    amount: input.amount ?? row.amount,
-    currency: input.currency?.trim() || row.currency,
-    amount_in_words: input.amountInWords?.trim() ?? row.amount_in_words,
+    amount,
+    currency,
+    // Always re-derived — a changed amount can never leave stale words behind.
+    amount_in_words: amountInWordsFr(amount, currency) || null,
     beneficiary: input.beneficiary?.trim() || row.beneficiary,
     reason: input.reason?.trim() || row.reason,
-    file_id: input.fileId ?? row.file_id,
+    // `undefined` leaves the link alone; an explicit `null` CLEARS it (a general
+    // administrative expense, DEC-C15) — `??` alone could never un-link.
+    file_id: input.fileId !== undefined ? input.fileId : row.file_id,
     finance_request_id: input.financeRequestId ?? row.finance_request_id,
   };
 }
@@ -582,12 +722,18 @@ async function freezeAuthorizationVersion(
     reason: fields.reason,
   };
   const content_sha256 = expenseContentSha256({ docType: "EXPENSE_AUTHORIZATION", version: versionNumber, snapshot });
+  // Template provenance (DEC-C16): record WHICH template version this snapshot
+  // was frozen against, so a later re-render is reproducible even after the
+  // template is revised. The columns exist since 11.0B.
+  const template = activeTemplateVersion("EXPENSE_AUTHORIZATION");
   const { data, error } = await admin
     .from("expense_authorization_version")
     .insert({
       tenant_id: ctx.tenantId,
       authorization_id: fields.id,
       version_number: versionNumber,
+      template_code: template ? "EXPENSE_AUTHORIZATION" : null,
+      template_version: template?.version ?? null,
       account_number: snapshot.account_number,
       registration_number: snapshot.registration_number,
       expense_type: snapshot.expense_type,
