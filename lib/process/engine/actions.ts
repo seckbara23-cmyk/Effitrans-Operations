@@ -34,6 +34,7 @@ import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
 import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-server";
 import { PROCESS_VERSION, buildInitialExecutions } from "./init";
+import { resolvePolicyVersionIdForPinning } from "@/lib/workflow/policy/resolver";
 import { loadProcessSnapshot, toViews } from "./snapshot";
 import {
   canTransitionStep,
@@ -103,6 +104,13 @@ export async function initializeProcessForFile(fileId: string): Promise<EngineRe
   if (!existing) return fail("not_found");
   if (existing.instance) return { ok: true, id: existing.instance.id }; // idempotent
 
+  // WES-7C — PIN the policy version governing this dossier at creation. A later
+  // activation must never silently change the rules an in-flight dossier is
+  // judged by. When no stored version is active the instance is honestly marked
+  // LEGACY_DEFAULT rather than pinned to a version that does not exist — the
+  // platform does not fabricate policy provenance.
+  const policyVersionId = await resolvePolicyVersionIdForPinning(ctx.tenantId);
+
   const { data: created, error } = await admin
     .from("process_instance")
     .insert({
@@ -110,6 +118,8 @@ export async function initializeProcessForFile(fileId: string): Promise<EngineRe
       file_id: fileId,
       process_version: PROCESS_VERSION,
       compatibility_source: "NATIVE",
+      policy_version_id: policyVersionId,
+      policy_provenance: policyVersionId ? "PINNED" : "LEGACY_DEFAULT",
       created_by: ctx.userId,
     })
     .select("id")
@@ -131,7 +141,13 @@ export async function initializeProcessForFile(fileId: string): Promise<EngineRe
     tenantId: ctx.tenantId,
     entity: "process_instance",
     entityId: instanceId,
-    after: { file_id: fileId, process_version: PROCESS_VERSION, source: "NATIVE" },
+    after: {
+      file_id: fileId,
+      process_version: PROCESS_VERSION,
+      source: "NATIVE",
+      policy_version_id: policyVersionId,
+      policy_provenance: policyVersionId ? "PINNED" : "LEGACY_DEFAULT",
+    },
   });
 
   revalidate(fileId);

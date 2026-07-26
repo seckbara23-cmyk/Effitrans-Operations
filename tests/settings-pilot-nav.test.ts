@@ -145,7 +145,10 @@ describe("nothing about the rollout itself changed", () => {
   });
 
   it("no route file was added or removed", () => {
+    // WES-7 added /settings/workflow-policy (the versioned policy registry's
+    // administration surface). The pin exists to catch UNINTENDED route churn,
+    // so it moves deliberately with each ratified addition.
     const settings = readdirSync(fileURLToPath(new URL("../app/settings", import.meta.url)));
-    expect(settings.sort()).toEqual(["ai", "audit", "page.tsx", "pilot"]);
+    expect(settings.sort()).toEqual(["ai", "audit", "page.tsx", "pilot", "workflow-policy"]);
   });
 });

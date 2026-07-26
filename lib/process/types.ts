@@ -26,6 +26,17 @@ export type ProcessPhase =
   | "collections";
 
 /**
+ * The same 15 codes as runtime values. WES-7's policy validator must check a
+ * configured department against the real vocabulary, and a type alone cannot be
+ * checked at runtime. Kept adjacent so the two can never drift.
+ */
+export const PROCESS_DEPARTMENTS: readonly ProcessDepartment[] = [
+  "cotation", "operations", "account_management", "coordination", "transit",
+  "customs_declaration", "finance_customs", "customs_field", "transport", "pickup",
+  "billing", "finance", "administration", "courier", "collections",
+] as const;
+
+/**
  * Responsible department — one per official queue (Deliverable 5).
  * NOTE: no `department` table exists in the schema; departments are a routing
  * concept. The five legacy UI department keys (documentation/customs/transport/

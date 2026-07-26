@@ -1555,6 +1555,8 @@ export type Database = {
           owner_assigned_at: string | null;
           owner_assigned_by: string | null;
           owner_assignment_reason: string | null;
+          policy_version_id: string | null;
+          policy_provenance: string;
           created_at: string;
           updated_at: string;
         };
@@ -1574,11 +1576,15 @@ export type Database = {
           owner_assigned_at?: string | null;
           owner_assigned_by?: string | null;
           owner_assignment_reason?: string | null;
+          policy_version_id?: string | null;
+          policy_provenance?: string;
           created_at?: string;
           updated_at?: string;
         };
         Update: {
           status?: string;
+          policy_version_id?: string | null;
+          policy_provenance?: string;
           compatibility_source?: string;
           compatibility_version?: string | null;
           completed_at?: string | null;
@@ -3507,6 +3513,58 @@ export type Database = {
         Update: never;
         Relationships: [];
       };
+      // Phase WES-7 — versioned workflow policy registry (ADR-WES-012).
+      workflow_policy_version: {
+        Row: {
+          id: string;
+          tenant_id: string | null;
+          version: number;
+          policy_schema_version: number;
+          status: string;
+          document: unknown;
+          content_sha256: string;
+          validation_status: string;
+          validation_errors: unknown | null;
+          validated_at: string | null;
+          validated_by: string | null;
+          effective_from: string | null;
+          activated_at: string | null;
+          activated_by: string | null;
+          activation_reason: string | null;
+          retired_at: string | null;
+          parent_version_id: string | null;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id?: string | null;
+          version: number;
+          policy_schema_version: number;
+          status?: string;
+          document: unknown;
+          content_sha256: string;
+          validation_status?: string;
+          validation_errors?: unknown | null;
+          validated_at?: string | null;
+          validated_by?: string | null;
+          effective_from?: string | null;
+          parent_version_id?: string | null;
+          created_by?: string | null;
+        };
+        Update: {
+          document?: unknown;
+          content_sha256?: string;
+          status?: string;
+          validation_status?: string;
+          validation_errors?: unknown | null;
+          validated_at?: string | null;
+          validated_by?: string | null;
+          effective_from?: string | null;
+        };
+        Relationships: [];
+      };
       // Phase 11.0C — finance-classified supporting documents (DEC-C22).
       expense_attachment: {
         Row: {
@@ -3606,6 +3664,11 @@ export type Database = {
       };
       provision_tenant: {
         Args: { p_admin_auth_id: string; p_platform_actor_id: string; p_input: Json };
+        Returns: Json;
+      };
+      // Phase WES-7 — atomic policy activation (retire previous + promote new).
+      activate_workflow_policy: {
+        Args: { p_version_id: string; p_actor: string | null; p_reason: string; p_schema_version: number };
         Returns: Json;
       };
       next_invoice_number: {

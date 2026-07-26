@@ -275,10 +275,10 @@ describe("pages and pins", () => {
   it("41 — « Nouvel employé » affordance requires hr:manage", () => {
     expect(registryPage).toMatch(/hasPermission\(permissions, "hr:manage"\)/);
   });
-  it("42 — the HR migration still ships (build-info newest pin moved on in 11.0D)", () => {
-    // 11.0D (20260726000002_expense_approval_chain) is now the newest migration, so
+  it("42 — the HR migration still ships (build-info newest pin moved on in WES-7)", () => {
+    // WES-7 (20260726000003_workflow_policy_registry) is now the newest migration, so
     // build-info's pins point there; the HR migration + its permission remain.
-    expect(LATEST_MIGRATION).toBe("20260726000002_expense_approval_chain");
+    expect(LATEST_MIGRATION).toBe("20260726000003_workflow_policy_registry");
     expect(MIGRATION_PROBE.permissionCode).toBe("finance:expense:read");
     expect(migrationRaw).toContain("'hr:read'");
   });

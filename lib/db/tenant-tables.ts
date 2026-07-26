@@ -108,6 +108,11 @@ export const TENANT_SCOPED_TABLES = new Set<string>([
   "expense_voucher_counter",
   // expense supporting documents (Phase 11.0C, DEC-C22)
   "expense_attachment",
+  // versioned workflow policy (Phase WES-7). tenant_id is NULLABLE: a NULL row is
+  // the PLATFORM DEFAULT. Tenant rows are strictly tenant-scoped and RLS enforces
+  // it; the handful of deliberate platform-scope reads are enumerated in the leak
+  // guard's KNOWN_UNSCOPED_READS with their reason.
+  "workflow_policy_version",
 ]);
 
 /**

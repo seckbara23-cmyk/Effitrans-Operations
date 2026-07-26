@@ -435,6 +435,15 @@ export const AuditActions = {
   // decision, attempt, version and resulting status ONLY: never the amount, the
   // beneficiary, the signer's comment text, or the document's field values.
   EXPENSE_VISA_RECORDED: "finance.expense.visa.recorded",
+
+  // Phase WES-7 — versioned workflow policy registry (ADR-WES-012). Safe
+  // metadata only: version numbers, scope, hashes and error COUNTS — never the
+  // policy document, never validation error text containing identifiers.
+  WORKFLOW_POLICY_DRAFT_CREATED: "workflow.policy.draft.created",
+  WORKFLOW_POLICY_VALIDATION_PASSED: "workflow.policy.validation.passed",
+  WORKFLOW_POLICY_VALIDATION_FAILED: "workflow.policy.validation.failed",
+  WORKFLOW_POLICY_ACTIVATED: "workflow.policy.activated",
+  WORKFLOW_POLICY_DOSSIER_MIGRATED: "workflow.policy.dossier.migrated",
 } as const;
 
 export type AuditActionCode = (typeof AuditActions)[keyof typeof AuditActions];

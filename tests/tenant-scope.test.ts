@@ -128,6 +128,16 @@ const KNOWN_UNSCOPED_READS: Record<string, string> = {
   "lib/platform/companies.ts::app_user": "platform-wide user aggregate (platform:companies:read gated; cross-tenant by design)",
   "lib/platform/companies.ts::operational_file": "platform-wide active-dossier aggregate (platform:companies:read gated; cross-tenant by design)",
   "lib/platform/audit-read.ts::audit_log": "platform.* audit slice (platform:audit:read gated; cross-tenant by design)",
+
+  // --- WES-7 versioned workflow policy. tenant_id is NULLABLE and a NULL row IS
+  //     the PLATFORM DEFAULT, so the platform-scope reads filter with
+  //     `.is("tenant_id", null)` rather than `.eq(...)`. That is a tenant filter,
+  //     not the absence of one: it selects exactly the shared default every
+  //     tenant runs on, and can never return another tenant's configuration.
+  //     The tenant-scope reads in the same files use .eq("tenant_id", …).
+  "lib/workflow/policy/resolver.ts::workflow_policy_version": "platform-default lookup filters .is(tenant_id, null); the tenant lookup beside it is .eq-scoped",
+  "lib/workflow/policy/readers.ts::workflow_policy_version": "platform-default + by-unique-id reads; tenant rows are .eq-scoped and by-id reads re-verify the tenant before returning",
+  "lib/workflow/policy/actions.ts::workflow_policy_version": "scope is chosen explicitly per call (.is(tenant_id,null) for platform, .eq for tenant); by-id reads re-verify the tenant before mutating",
 };
 
 const LIB_DIR = fileURLToPath(new URL("../lib", import.meta.url));

@@ -12,9 +12,9 @@ Execution order is dependency-driven, not numeric (WES-0A §6):
 |---|---|---|
 | WES-0 / WES-0A | architecture ratification (docs) | ✅ done — `026ca30` |
 | **WES-1** | **integrity hotfixes** | ✅ done |
-| **WES-2** | **canonical projection, ratchet, one progress formula** | ✅ **done** |
-| WES-7 | policy registry (ADR-WES-012) | ⬜ next |
-| WES-9 | business event ledger (ADR-WES-014) | ⬜ |
+| **WES-2** | **canonical projection, ratchet, one progress formula** | ✅ done |
+| **WES-7** | **policy registry (ADR-WES-012)** | ✅ **done** |
+| WES-9 | business event ledger (ADR-WES-014) | ⬜ next |
 | WES-3 | ownership, assignment, visibility | ⬜ |
 | WES-4 | BAE governance + document doctrine | ⬜ |
 | WES-5 | engine/module reconciliation | ⬜ |
@@ -195,3 +195,29 @@ the projection takes no task input and contains no SLA, routing, ownership or do
 - **No persisted high-water column.** The ratchet is derived from already-monotonic evidence, which
   needs no schema and cannot itself drift. If a future phase needs an explicit reversal action
   (ADR-WES-010), that is where persistence would be introduced.
+
+
+---
+
+## WES-7 — Versioned Policy Registry
+
+**Scope:** separate engine invariants (code) from business policy (versioned configuration), so
+WES-3/4/5/8 write bindings as configuration instead of hardcoding and migrating later.
+Full detail: [`wes-7-policy-registry.md`](wes-7-policy-registry.md).
+
+**Shipped:** seven typed policy domains · immutable versions with `DRAFT→VALIDATED→ACTIVE→RETIRED` ·
+exactly one ACTIVE per scope · content hashing with duplicate detection · fail-closed validation
+against the live catalogs · one server-only resolver (pinned → tenant → platform → built-in → fail) ·
+dossier pinning at process-instance creation with honest `LEGACY_DEFAULT` provenance · atomic
+activation RPC · RLS + minimal admin surface. Migration `20260726000003` (61st), additive.
+
+**Reused, not rebuilt:** the `expense_template` lifecycle vocabulary, the `tenant_process_rollout`
+fail-closed resolution pattern, the `provision_tenant` atomic-RPC precedent, the 11.0B canonicalization
+for hashing, and the existing `admin:config:manage` permission — **no new privileged permission**.
+
+**Gates:** typecheck clean · 3516 tests / 163 files (+59) · production build compiled · clean replay
+green · seed unchanged · RLS suite wired into CI.
+
+**Deliberately not consumed yet.** WES-7G requires the registry to reproduce current behaviour exactly;
+`resolvePolicy` is the typed seam WES-3/4/5/8 will consume, and no workflow action reads it today, so
+behaviour is byte-for-byte unchanged.
