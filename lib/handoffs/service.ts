@@ -19,10 +19,50 @@ import { AuditActions } from "@/lib/audit/events";
 import { createNotification } from "@/lib/notifications/create";
 import { reportError } from "@/lib/observability/report";
 import { t } from "@/lib/i18n";
-import { HANDOFFS, isHandoffType, type HandoffType } from "./rules";
+import {
+  HANDOFFS,
+  HANDOFF_ORDER,
+  handoffSurpassed,
+  isHandoffType,
+  type DossierProgress,
+  type HandoffType,
+} from "./rules";
 
 type Admin = ReturnType<typeof getAdminSupabaseClient>;
-export type HandoffResult = "created" | "exists" | "skipped";
+export type HandoffResult = "created" | "exists" | "surpassed" | "skipped";
+
+/**
+ * WES-1D — what the dossier has actually reached, from the AUTHORITATIVE module
+ * records. Bounded: four small reads, never per-row. Any read failure propagates
+ * to the caller's try/catch, which fails CLOSED (no handoff created) rather than
+ * creating one on incomplete information.
+ */
+async function readDossierProgress(
+  supabase: Admin,
+  tenantId: string,
+  fileId: string,
+): Promise<DossierProgress> {
+  const [customs, transport, invoices, file, done] = await Promise.all([
+    supabase.from("customs_record").select("status").eq("tenant_id", tenantId).eq("file_id", fileId).is("deleted_at", null).maybeSingle(),
+    supabase.from("transport_record").select("status").eq("tenant_id", tenantId).eq("file_id", fileId).is("deleted_at", null).maybeSingle(),
+    supabase.from("invoice").select("status").eq("tenant_id", tenantId).eq("file_id", fileId).returns<{ status: string }[]>(),
+    supabase.from("operational_file").select("status").eq("tenant_id", tenantId).eq("id", fileId).maybeSingle(),
+    supabase.from("task").select("handoff_type").eq("tenant_id", tenantId).eq("file_id", fileId).not("handoff_type", "is", null).eq("status", "DONE").returns<{ handoff_type: string }[]>(),
+  ]);
+
+  const satisfied = new Set<HandoffType>();
+  for (const row of done.data ?? []) {
+    if (isHandoffType(row.handoff_type)) satisfied.add(row.handoff_type);
+  }
+
+  return {
+    customsStatus: (customs.data as { status: string } | null)?.status ?? null,
+    transportStatus: (transport.data as { status: string } | null)?.status ?? null,
+    hasIssuedInvoice: (invoices.data ?? []).some((i) => i.status !== "DRAFT" && i.status !== "VOID"),
+    fileClosed: ((file.data as { status: string } | null)?.status ?? "") === "CLOSED",
+    satisfiedTypes: HANDOFF_ORDER.filter((t) => satisfied.has(t)),
+  };
+}
 
 export async function createHandoffTask(
   supabase: Admin,
@@ -44,6 +84,14 @@ export async function createHandoffTask(
       .limit(1)
       .maybeSingle();
     if (existing) return "exists";
+
+    // WES-1D — the open-task check above cannot see a handoff that was already
+    // SATISFIED and closed, which is how a late document approval recreated a
+    // customs handoff on a dossier already in transport. Refuse any handoff
+    // whose target department the dossier has already reached or surpassed.
+    if (handoffSurpassed(type, await readDossierProgress(supabase, ctx.tenantId, fileId))) {
+      return "surpassed";
+    }
 
     const title = t.handoffs.titles[type];
     const { data, error } = await supabase

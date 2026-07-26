@@ -12,7 +12,11 @@ export type TransportStatus =
   | "BLOCKED"
   | "CANCELLED";
 
-/** Editable metadata (manual fields — drivers/vehicles are free-text for MVP). */
+/**
+ * Editable planning metadata. PARTIAL PATCH since WES-1A: an omitted or empty
+ * field is PRESERVED. Erasing a value requires naming it in `clearFields` —
+ * an empty browser form is never consent to erase (lib/transport/patch.ts).
+ */
 export type TransportInput = {
   pickupLocation?: string | null;
   deliveryLocation?: string | null;
@@ -22,13 +26,21 @@ export type TransportInput = {
   deliveryReference?: string | null;
   notes?: string | null;
   customsOverride?: boolean;
+  /** Planning fields to explicitly clear. The only way to write null. */
+  clearFields?: readonly string[];
 };
 
+/**
+ * Driver/vehicle DISPLAY fields. Same partial-patch contract. The authoritative
+ * chauffeur link is `driverUserId` (assignDriverUser), never `driverName`.
+ */
 export type TransportAssignment = {
   driverName?: string | null;
   driverPhone?: string | null;
   vehiclePlate?: string | null;
   trailerOrContainer?: string | null;
+  /** Assignment fields to explicitly clear. The only way to write null. */
+  clearFields?: readonly string[];
 };
 
 export type TransportRecord = {
@@ -51,6 +63,11 @@ export type TransportRecord = {
   notes: string | null;
   /** Assigned DRIVER app_user (Phase 3.4C) — the driver-mobile / tracking link. */
   driverUserId: string | null;
+  /**
+   * Optimistic-concurrency token (WES-1B). Passed back VERBATIM as
+   * `expectedUpdatedAt`; never re-format it or the comparison stops matching.
+   */
+  updatedAt: string;
 };
 
 export type TransportQueueItem = {

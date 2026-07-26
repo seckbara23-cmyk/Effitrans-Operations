@@ -1,0 +1,111 @@
+# WES — Implementation Status
+
+Tracks execution of the stabilization programme ratified in
+[`wes-0-canonical-workflow-architecture.md`](wes-0-canonical-workflow-architecture.md) and
+[`wes-0a-ratification-addendum.md`](wes-0a-ratification-addendum.md).
+
+Execution order is dependency-driven, not numeric (WES-0A §6):
+
+> WES-1 → WES-2 → **WES-7** → **WES-9** → WES-3 → WES-4 → WES-5 → WES-8 → WES-6
+
+| Phase | Scope | Status |
+|---|---|---|
+| WES-0 / WES-0A | architecture ratification (docs) | ✅ done — `026ca30` |
+| **WES-1** | **integrity hotfixes** | ✅ **done** |
+| WES-2 | canonical projection, ratchet, one progress formula | ⬜ next |
+| WES-7 | policy registry (ADR-WES-012) | ⬜ |
+| WES-9 | business event ledger (ADR-WES-014) | ⬜ |
+| WES-3 | ownership, assignment, visibility | ⬜ |
+| WES-4 | BAE governance + document doctrine | ⬜ |
+| WES-5 | engine/module reconciliation | ⬜ |
+| WES-8 | SLA engine (ADR-WES-013) | ⬜ |
+| WES-6 | missions + chauffeur portal (reuse analysis first) | ⬜ |
+
+---
+
+## WES-1 — Workflow Integrity Hotfixes
+
+**Scope:** stop data loss, duplicate handoffs and the chauffeur-linkage break found in UAT.
+**No schema migration.** All five fixes ride existing structures.
+
+### UAT defect traceability
+
+| UAT observation | Audit finding | Root cause in code | Fix |
+|---|---|---|---|
+| Transport planning data disappeared after assignment | §6, §9.6 | `updateTransport`/`assignTransport` wrote every owned field as `input.x?.trim() \|\| null`, so an omitted field was written **null** — a full overwrite wearing the shape of a patch | WES-1A — `lib/transport/patch.ts` |
+| Two tabs silently overwrote each other | §6 | no optimistic concurrency; last write won | WES-1B — CAS on `updated_at` |
+| Completed department read as "never started" | §2 (K), §9.1(b) | soft-delete allowed at any status, and revival wrote `status: "NOT_STARTED"`, discarding BAE / delivery evidence from every projection | WES-1C |
+| « Dossier prêt pour déclaration douanière » reappeared on a dossier already in transport | §4, §9.2 | `createHandoffTask` checked only for an **open** task; a satisfied+closed handoff was eligible again, and `onDocumentApproved` re-fired on a late POD approval | WES-1D |
+| Chauffeur received no mission after assignment | §5 (H), §9.4 | the always-visible form wrote free-text `driver_name`; the authoritative `driver_user_id` assignment was rendered only when `TRACKING_ENABLED` — GPS configuration silently controlled identity | WES-1E |
+
+### Contracts introduced
+
+**Partial-patch (WES-1A)** — `lib/transport/patch.ts`
+
+| Caller supplies | Result |
+|---|---|
+| field omitted (`undefined`) | preserved |
+| field `null` | preserved |
+| field `""` / whitespace | preserved |
+| field with text | set (trimmed) |
+| field named in `clearFields` | **cleared** — the only way to write null |
+
+An empty browser form is never consent to erase. A UI that wants blanking-to-clear computes
+`clearFields` itself, from a real comparison against the record it loaded
+(`components/transport/transport-panel.tsx#clearedFields`). `clearFields` is validated against the
+fields the called action owns, so `assignTransport` can never clear a planning field.
+
+**Optimistic concurrency (WES-1B)** — reuses the existing `updated_at` column (maintained by
+`trg_transport_updated_at`) and the engine's compare-and-set shape: constrain the UPDATE on the
+token the caller loaded, then check the affected row count. `expectedUpdatedAt` is **required** on
+both material mutations. A stale write returns `stale_write`, writes **no** success audit, and never
+retries or merges. The token is passed back verbatim — reformatting it would break the microsecond
+comparison.
+
+**Deletion / revival (WES-1C)** — `customs_record` at `RELEASED` and `transport_record` at
+`DELIVERED`/`POD_RECEIVED` are non-deletable through the ordinary path. Revival now writes **only**
+`deleted_at: null`: a soft delete never cleared the status, BAE reference, release date or
+delivery/POD timestamps, so restoring the row restores the history intact. **No override system was
+built** (WES-1 introduces none); these records are simply protected.
+
+**Handoff idempotency (WES-1D)** — `handoffSurpassed()` in `lib/handoffs/rules.ts` (pure) refuses a
+handoff when an equivalent one already reached `DONE`, **or** when the dossier has already reached
+the target department or a later one. Department progress is read from the authoritative module
+records — never from the tasks being guarded — and reuses the `CUSTOMS_RANK` / `TRANSPORT_RANK`
+tables already used by the lifecycle projection (now exported; not duplicated). A `NOT_STARTED`
+record does not count as reached, so the first legitimate handoff still fires. The guard sits in the
+single funnel `createHandoffTask`, so all four producers inherit it, and it returns before both the
+task insert and the notification fan-out.
+
+**Chauffeur identity (WES-1E)** — driver-user assignment is gated on `transport:assign` alone.
+`TRACKING_ENABLED` keeps its real job (GPS sessions, positions, live map) and no longer gates
+identity, mission visibility or the assignment notification. The driver portal already keyed on
+`driver_user_id` and its guard consults no flag, so missions now arrive with GPS off. When a
+free-text name exists without an authenticated link, the panel says so explicitly rather than
+letting the form look like it worked.
+
+### Verification
+
+| Gate | Result |
+|---|---|
+| Typecheck | clean |
+| Tests | 3419 passed / 161 files (+60 new) |
+| Production build | compiled |
+| Lint | **not applicable** — ESLint is not configured in this repository (`next lint` offers interactive setup; configuring it would add unrelated files) |
+| SQL/RLS suites | not run — **no schema, policy or SQL changed** |
+
+### Known limitations carried forward
+
+1. **Legacy free-text chauffeurs.** Existing rows may hold `driver_name` with no `driver_user_id`.
+   WES-1 does **not** infer a link from a name — the panel surfaces the gap honestly instead.
+   Repair is an operator action (re-assign through the driver selector).
+2. **Rows already damaged by prior null-overwrites** are not reconstructed; WES-1 stops the bleeding,
+   it does not invent history.
+3. **A satisfied handoff can no longer be recreated at all.** Under the monotonic doctrine
+   (ADR-WES-010) that is correct — corrections do not re-handoff. Should a genuine re-handoff need
+   arise, it belongs to the engine's explicit `process_handoff` with reception (ADR-WES-009), which
+   WES-5 makes the only handoff of record.
+4. **Concurrency covers the transport module only.** `assignDriverUser` keeps its existing no-op
+   guard; extending CAS across other modules is not WES-1 scope.
+5. The four unratified SLA thresholds, the policy registry, the event ledger and the mission entity
+   remain untouched — WES-7/8/9/6.

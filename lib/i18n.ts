@@ -498,6 +498,8 @@ export const t = {
       invalid_transition: "Transition non autorisée.",
       customs_docs_missing: "Documents requis manquants pour déclarer.",
       bae_required: "Une référence BAE est requise pour libérer.",
+      protected_released:
+        "Ce dédouanement est libéré (BAE) : il ne peut plus être supprimé.",
       use_release: "Utilisez l'action « Libérer ».",
       generic: "L'action a échoué. Veuillez réessayer.",
     },
@@ -561,6 +563,11 @@ export const t = {
       invalid_transition: "Transition non autorisée.",
       customs_not_released: "Enlèvement bloqué : dédouanement non libéré (BAE).",
       pod_required: "Un bon de livraison approuvé est requis pour le POD.",
+      stale_write:
+        "Le transport a été modifié par un autre utilisateur. Actualisez la page avant de réessayer.",
+      protected_completed:
+        "Ce transport est livré : il ne peut plus être supprimé (preuve de livraison conservée).",
+      invalid_clear_field: "Champ à effacer invalide.",
       generic: "L'action a échoué. Veuillez réessayer.",
     },
     tracking: {
@@ -616,6 +623,8 @@ export const t = {
       unassign: "Retirer",
       noDrivers: "Aucun chauffeur disponible dans ce tenant.",
       hint: "Le chauffeur assigné pourra exécuter cette mission depuis l'application mobile.",
+      unauthenticated:
+        "« {name} » est saisi comme nom libre : aucun chauffeur authentifié n'est rattaché, et aucune mission ne lui parviendra. Sélectionnez un chauffeur ci-dessus.",
       errors: {
         invalid_driver: "Chauffeur invalide (doit être un chauffeur actif du tenant).",
         forbidden: "Action non autorisée.",

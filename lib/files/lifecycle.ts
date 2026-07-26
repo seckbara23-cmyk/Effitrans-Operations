@@ -76,7 +76,12 @@ const ANCHOR: Record<Department, string> = {
   archive: "",
 };
 
-const CUSTOMS_RANK: Record<string, number> = {
+/**
+ * Customs progression rank. EXPORTED since WES-1D so the handoff guard measures
+ * "has this department already started?" against the SAME table the lifecycle
+ * projection uses — one rank table, not two.
+ */
+export const CUSTOMS_RANK: Record<string, number> = {
   NOT_STARTED: 0,
   DOCUMENTS_PENDING: 1,
   DECLARATION_PREPARED: 2,
@@ -89,7 +94,8 @@ const CUSTOMS_RANK: Record<string, number> = {
   CANCELLED: 0,
 };
 
-const TRANSPORT_RANK: Record<string, number> = {
+/** Transport progression rank. Exported alongside CUSTOMS_RANK (WES-1D). */
+export const TRANSPORT_RANK: Record<string, number> = {
   NOT_STARTED: 0,
   PLANNED: 1,
   DRIVER_ASSIGNED: 2,

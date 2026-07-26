@@ -89,9 +89,14 @@ export async function createCustoms(fileId: string): Promise<ActionResult> {
     .maybeSingle();
   if (existing) {
     if (!existing.deleted_at) return { ok: false, error: "already_exists" };
+    // WES-1C — revival RESTORES the record; it never rewrites history. A soft
+    // delete never cleared the status, bae_reference, declaration or release
+    // date, so clearing deleted_at is the whole operation. Resetting to
+    // NOT_STARTED here silently discarded a released dossier's BAE evidence as
+    // far as every lifecycle projection was concerned.
     const { error } = await supabase
       .from("customs_record")
-      .update({ deleted_at: null, status: "NOT_STARTED", required })
+      .update({ deleted_at: null })
       .eq("id", existing.id);
     if (error) return { ok: false, error: error.message };
     await writeAudit({
@@ -274,6 +279,10 @@ export async function deleteCustoms(id: string): Promise<ActionResult> {
   const rec = await loadCustoms(supabase, id, user.tenantId);
   if (!rec) return { ok: false, error: "not_found" };
   if (!(await isFileVisible(user.id, user.tenantId, rec.file_id))) return { ok: false, error: "forbidden" };
+  // WES-1C — a RELEASED record carries the BAE: the authoritative evidence that
+  // the goods may move. Deleting it would make every projection read customs as
+  // never started. No ordinary path may do so; WES-1 builds no override system.
+  if (rec.status === "RELEASED") return { ok: false, error: "protected_released" };
 
   const { error } = await supabase
     .from("customs_record")

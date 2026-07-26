@@ -110,9 +110,14 @@ export default async function FileDetailPage({ params }: { params: { id: string 
   const trackingOn = trackingEnabled();
   const canReadTracking = hasPermission(permissions, "tracking:read");
   const trackingEvents = trackingOn && canReadTracking ? await getTrackingTimeline(file.id) : [];
-  // Phase 3.4C — dispatcher driver assignment (assign a DRIVER user for the mobile app).
+  // Phase 3.4C — dispatcher driver assignment (assign a DRIVER user).
+  // WES-1E: chauffeur IDENTITY assignment is NOT a tracking feature. Gating it
+  // behind TRACKING_ENABLED meant a planner could fill in a driver's name, see no
+  // error, and leave the chauffeur with no mission — GPS configuration silently
+  // controlled who was authenticated. Identity is gated on transport:assign only;
+  // TRACKING_ENABLED still gates GPS sessions, positions and the live map.
   const canAssignDriver = hasPermission(permissions, "transport:assign");
-  const assignableDrivers = trackingOn && canAssignDriver && transportRecord ? await listAssignableDrivers() : [];
+  const assignableDrivers = canAssignDriver && transportRecord ? await listAssignableDrivers() : [];
 
   // Embedded finance (finance-role based — NOT inherited from file visibility).
   const canReadFinance = hasPermission(permissions, "finance:read");
@@ -236,10 +241,11 @@ export default async function FileDetailPage({ params }: { params: { id: string 
           />
         </div>
       )}
-      {trackingOn && canReadTransport && transportRecord && (
+      {canReadTransport && transportRecord && (
         <DriverAssign
           transportId={transportRecord.id}
           currentDriverUserId={transportRecord.driverUserId}
+          displayDriverName={transportRecord.driverName}
           drivers={assignableDrivers}
           canAssign={canAssignDriver}
         />

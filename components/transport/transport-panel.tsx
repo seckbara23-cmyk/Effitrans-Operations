@@ -92,33 +92,71 @@ export function TransportPanel({
 
   const targets = nextStatuses(record.status);
 
+  /**
+   * WES-1A — the server preserves omitted and empty fields, so blanking an input
+   * only clears when the UI SAYS SO. "Said so" means: this field held a value
+   * when the form was rendered and the user emptied it. That is a real user
+   * intent, computed here against the loaded record — never inferred by the
+   * server from an empty string.
+   */
+  function clearedFields(fd: FormData, fields: readonly [string, string | null][]): string[] {
+    return fields
+      .filter(([name, loaded]) => (loaded ?? "") !== "" && String(fd.get(name) ?? "").trim() === "")
+      .map(([name]) => name);
+  }
+
   function onMeta(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
+    const r = record!;
     run(() =>
-      updateTransport(record!.id, {
-        pickupLocation: String(fd.get("pickupLocation") ?? ""),
-        deliveryLocation: String(fd.get("deliveryLocation") ?? ""),
-        pickupPlanned: String(fd.get("pickupPlanned") ?? "") || null,
-        deliveryPlanned: String(fd.get("deliveryPlanned") ?? "") || null,
-        transportCompany: String(fd.get("transportCompany") ?? ""),
-        deliveryReference: String(fd.get("deliveryReference") ?? ""),
-        notes: String(fd.get("notes") ?? ""),
-        customsOverride: fd.get("customsOverride") === "on",
-      }),
+      updateTransport(
+        r.id,
+        {
+          pickupLocation: String(fd.get("pickupLocation") ?? ""),
+          deliveryLocation: String(fd.get("deliveryLocation") ?? ""),
+          pickupPlanned: String(fd.get("pickupPlanned") ?? ""),
+          deliveryPlanned: String(fd.get("deliveryPlanned") ?? ""),
+          transportCompany: String(fd.get("transportCompany") ?? ""),
+          deliveryReference: String(fd.get("deliveryReference") ?? ""),
+          notes: String(fd.get("notes") ?? ""),
+          customsOverride: fd.get("customsOverride") === "on",
+          clearFields: clearedFields(fd, [
+            ["pickupLocation", r.pickupLocation],
+            ["deliveryLocation", r.deliveryLocation],
+            ["pickupPlanned", r.pickupPlanned],
+            ["deliveryPlanned", r.deliveryPlanned],
+            ["transportCompany", r.transportCompany],
+            ["deliveryReference", r.deliveryReference],
+            ["notes", r.notes],
+          ]),
+        },
+        r.updatedAt,
+      ),
     );
   }
 
   function onAssign(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
+    const r = record!;
     run(() =>
-      assignTransport(record!.id, {
-        driverName: String(fd.get("driverName") ?? ""),
-        driverPhone: String(fd.get("driverPhone") ?? ""),
-        vehiclePlate: String(fd.get("vehiclePlate") ?? ""),
-        trailerOrContainer: String(fd.get("trailerOrContainer") ?? ""),
-      }),
+      assignTransport(
+        r.id,
+        {
+          driverName: String(fd.get("driverName") ?? ""),
+          driverPhone: String(fd.get("driverPhone") ?? ""),
+          vehiclePlate: String(fd.get("vehiclePlate") ?? ""),
+          trailerOrContainer: String(fd.get("trailerOrContainer") ?? ""),
+          clearFields: clearedFields(fd, [
+            ["driverName", r.driverName],
+            ["driverPhone", r.driverPhone],
+            ["vehiclePlate", r.vehiclePlate],
+            ["trailerOrContainer", r.trailerOrContainer],
+          ]),
+        },
+        r.updatedAt,
+      ),
     );
   }
 

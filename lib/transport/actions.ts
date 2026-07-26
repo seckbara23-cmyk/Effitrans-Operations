@@ -9,6 +9,7 @@
  * gate. Soft-delete via deleted_at; CANCELLED is the normal workflow abort.
  */
 import { revalidatePath } from "next/cache";
+import type { Database } from "@/lib/db/types";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
 import { isFileVisible } from "@/lib/authz/visibility";
@@ -18,19 +19,65 @@ import { onPodReceived } from "@/lib/handoffs/triggers";
 import { custTransportStarted, custDelivered } from "@/lib/customer-notify/triggers";
 import { canPickup, canReceivePod } from "./gates";
 import { canTransition, isTransportStatus } from "./status";
+import {
+  TRANSPORT_ASSIGNMENT_FIELDS,
+  TRANSPORT_PLANNING_FIELDS,
+  buildTransportPatch,
+  clearFieldsAreValid,
+  isEmptyPatch,
+} from "./patch";
 import type { ActionResult, TransportAssignment, TransportInput, TransportStatus } from "./types";
 
 type Admin = ReturnType<typeof getAdminSupabaseClient>;
 
+/**
+ * WES-1C — transport states whose evidence must never be lost to an ordinary
+ * delete. Delivery and POD are completion facts: once recorded, removing the
+ * record would make the lifecycle projection read the department as never
+ * started. No override path exists in this phase (WES-1 builds no new override
+ * system): these records are simply non-deletable.
+ */
+const DELETE_PROTECTED_STATUSES: readonly TransportStatus[] = ["DELIVERED", "POD_RECEIVED"];
+
 async function loadTransport(supabase: Admin, id: string, tenantId: string) {
   const { data } = await supabase
     .from("transport_record")
-    .select("id, file_id, status, customs_override")
+    .select("id, file_id, status, customs_override, updated_at")
     .eq("id", id)
     .eq("tenant_id", tenantId)
     .is("deleted_at", null)
     .maybeSingle();
   return data;
+}
+
+/**
+ * WES-1B — optimistic concurrency over the EXISTING `updated_at` column
+ * (maintained by trg_transport_updated_at). Reuses the engine's compare-and-set
+ * shape exactly: constrain the UPDATE on the value the caller loaded, then check
+ * the affected row count. A second writer who loaded an older row matches zero
+ * rows and is refused — no silent last-write-wins, no merge, no retry.
+ *
+ * The token is passed back VERBATIM as read from the database; it must never be
+ * re-formatted, or the microsecond precision stops matching.
+ */
+type TransportPatch = Database["public"]["Tables"]["transport_record"]["Update"];
+
+async function casUpdate(
+  supabase: Admin,
+  id: string,
+  tenantId: string,
+  expectedUpdatedAt: string,
+  patch: TransportPatch,
+): Promise<"ok" | "stale"> {
+  const { data, error } = await supabase
+    .from("transport_record")
+    .update(patch)
+    .eq("id", id)
+    .eq("tenant_id", tenantId)
+    .eq("updated_at", expectedUpdatedAt)
+    .select("id");
+  if (error) return "stale";
+  return (data?.length ?? 0) === 1 ? "ok" : "stale";
 }
 
 function revalidate(fileId: string) {
@@ -90,9 +137,14 @@ export async function createTransport(fileId: string): Promise<ActionResult> {
     .maybeSingle();
   if (existing) {
     if (!existing.deleted_at) return { ok: false, error: "already_exists" };
+    // WES-1C — revival RESTORES the record; it never rewrites history. The row's
+    // status, pickup/delivery timestamps and POD reference are all still present
+    // (a soft delete never cleared them), so clearing deleted_at is the whole
+    // operation. Resetting to NOT_STARTED here is what made a delivered dossier
+    // read as never started in every lifecycle projection.
     const { error } = await supabase
       .from("transport_record")
-      .update({ deleted_at: null, status: "NOT_STARTED" })
+      .update({ deleted_at: null })
       .eq("id", existing.id);
     if (error) return { ok: false, error: error.message };
     await writeAudit({
@@ -126,33 +178,40 @@ export async function createTransport(fileId: string): Promise<ActionResult> {
   return { ok: true, id: data.id };
 }
 
-export async function updateTransport(id: string, input: TransportInput): Promise<ActionResult> {
+/**
+ * Update the planning fields. PARTIAL PATCH (WES-1A): an omitted or empty field
+ * is preserved, and only a field named in `clearFields` is ever written null.
+ * Compare-and-set on `expectedUpdatedAt` (WES-1B).
+ */
+export async function updateTransport(
+  id: string,
+  input: TransportInput,
+  expectedUpdatedAt: string,
+): Promise<ActionResult> {
   let user;
   try {
     user = await assertPermission("transport:update");
   } catch {
     return { ok: false, error: "forbidden" };
   }
+  if (!expectedUpdatedAt) return { ok: false, error: "stale_write" };
+  if (!clearFieldsAreValid(input.clearFields, TRANSPORT_PLANNING_FIELDS)) {
+    return { ok: false, error: "invalid_clear_field" };
+  }
+
   const supabase = getAdminSupabaseClient();
   const rec = await loadTransport(supabase, id, user.tenantId);
   if (!rec) return { ok: false, error: "not_found" };
   if (!(await isFileVisible(user.id, user.tenantId, rec.file_id))) return { ok: false, error: "forbidden" };
 
-  const { error } = await supabase
-    .from("transport_record")
-    .update({
-      pickup_location: input.pickupLocation?.trim() || null,
-      delivery_location: input.deliveryLocation?.trim() || null,
-      pickup_planned: input.pickupPlanned || null,
-      delivery_planned: input.deliveryPlanned || null,
-      transport_company: input.transportCompany?.trim() || null,
-      delivery_reference: input.deliveryReference?.trim() || null,
-      notes: input.notes?.trim() || null,
-      ...(input.customsOverride === undefined ? {} : { customs_override: input.customsOverride }),
-    })
-    .eq("id", id)
-    .eq("tenant_id", user.tenantId);
-  if (error) return { ok: false, error: error.message };
+  const patch = buildTransportPatch(input, TRANSPORT_PLANNING_FIELDS, input.clearFields) as TransportPatch;
+  if (input.customsOverride !== undefined) patch.customs_override = input.customsOverride;
+  // Nothing to write — succeed without touching the row or the audit log.
+  if (isEmptyPatch(patch)) return { ok: true, id };
+
+  if ((await casUpdate(supabase, id, user.tenantId, expectedUpdatedAt, patch)) === "stale") {
+    return { ok: false, error: "stale_write" }; // rejected -> no success audit
+  }
 
   await writeAudit({
     action: AuditActions.TRANSPORT_UPDATED,
@@ -160,35 +219,48 @@ export async function updateTransport(id: string, input: TransportInput): Promis
     tenantId: user.tenantId,
     entity: "transport_record",
     entityId: id,
+    after: { fields: Object.keys(patch) },
   });
   revalidate(rec.file_id);
   return { ok: true, id };
 }
 
-export async function assignTransport(id: string, a: TransportAssignment): Promise<ActionResult> {
+/**
+ * Assign driver/vehicle DISPLAY fields. PARTIAL PATCH + compare-and-set, same
+ * contract as updateTransport.
+ *
+ * NOTE (WES-1E): these are display fields. The AUTHORITATIVE chauffeur link is
+ * `driver_user_id`, written by assignDriverUser — a free-text name never makes a
+ * chauffeur reachable by the driver portal.
+ */
+export async function assignTransport(
+  id: string,
+  a: TransportAssignment,
+  expectedUpdatedAt: string,
+): Promise<ActionResult> {
   let user;
   try {
     user = await assertPermission("transport:assign");
   } catch {
     return { ok: false, error: "forbidden" };
   }
+  if (!expectedUpdatedAt) return { ok: false, error: "stale_write" };
+  if (!clearFieldsAreValid(a.clearFields, TRANSPORT_ASSIGNMENT_FIELDS)) {
+    return { ok: false, error: "invalid_clear_field" };
+  }
+
   const supabase = getAdminSupabaseClient();
   const rec = await loadTransport(supabase, id, user.tenantId);
   if (!rec) return { ok: false, error: "not_found" };
   if (!(await isFileVisible(user.id, user.tenantId, rec.file_id))) return { ok: false, error: "forbidden" };
 
-  const { error } = await supabase
-    .from("transport_record")
-    .update({
-      driver_name: a.driverName?.trim() || null,
-      driver_phone: a.driverPhone?.trim() || null,
-      vehicle_plate: a.vehiclePlate?.trim() || null,
-      trailer_or_container: a.trailerOrContainer?.trim() || null,
-      assigned_by: user.id,
-    })
-    .eq("id", id)
-    .eq("tenant_id", user.tenantId);
-  if (error) return { ok: false, error: error.message };
+  const patch = buildTransportPatch(a, TRANSPORT_ASSIGNMENT_FIELDS, a.clearFields) as TransportPatch;
+  if (isEmptyPatch(patch)) return { ok: true, id };
+  patch.assigned_by = user.id;
+
+  if ((await casUpdate(supabase, id, user.tenantId, expectedUpdatedAt, patch)) === "stale") {
+    return { ok: false, error: "stale_write" }; // rejected -> no success audit
+  }
 
   await writeAudit({
     action: AuditActions.TRANSPORT_ASSIGNED,
@@ -196,7 +268,7 @@ export async function assignTransport(id: string, a: TransportAssignment): Promi
     tenantId: user.tenantId,
     entity: "transport_record",
     entityId: id,
-    after: { driver_name: a.driverName ?? null, vehicle_plate: a.vehiclePlate ?? null },
+    after: { fields: Object.keys(patch).filter((k) => k !== "assigned_by") },
   });
   revalidate(rec.file_id);
   return { ok: true, id };
@@ -290,6 +362,11 @@ export async function deleteTransport(id: string): Promise<ActionResult> {
   const rec = await loadTransport(supabase, id, user.tenantId);
   if (!rec) return { ok: false, error: "not_found" };
   if (!(await isFileVisible(user.id, user.tenantId, rec.file_id))) return { ok: false, error: "forbidden" };
+  // WES-1C — a completed transport carries delivery/POD evidence. Deleting it
+  // would erase that from every projection; there is no ordinary path to do so.
+  if (DELETE_PROTECTED_STATUSES.includes(rec.status as TransportStatus)) {
+    return { ok: false, error: "protected_completed" };
+  }
 
   const { error } = await supabase
     .from("transport_record")

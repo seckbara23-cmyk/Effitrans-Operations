@@ -1,12 +1,16 @@
 "use client";
 
 /**
- * Dispatcher driver assignment (Phase 3.4C). Client component on the dossier.
+ * Dispatcher driver assignment (Phase 3.4C; ungated in WES-1E). Client component.
  * ---------------------------------------------------------------------------
  * Assign / change / unassign the DRIVER app_user for a transport (sets
- * driver_user_id — the driver-mobile + tracking link). Only ACTIVE same-tenant
- * DRIVER users are selectable (server re-validates). Rendered behind
- * TRACKING_ENABLED + transport:assign.
+ * driver_user_id — the link the chauffeur portal and tracking RLS key on). Only
+ * ACTIVE same-tenant DRIVER users are selectable; the server re-validates.
+ *
+ * WES-1E: rendered on `transport:assign` ALONE. It used to sit behind
+ * TRACKING_ENABLED, so with GPS off a planner could type a driver's name into
+ * the transport form, see no error, and leave the chauffeur with no mission.
+ * Identity assignment is not a tracking feature; GPS remains flag-gated.
  */
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -18,11 +22,14 @@ import type { ActionResult } from "@/lib/transport/types";
 export function DriverAssign({
   transportId,
   currentDriverUserId,
+  displayDriverName,
   drivers,
   canAssign,
 }: {
   transportId: string;
   currentDriverUserId: string | null;
+  /** Free-text name from the transport form — display only, never the link. */
+  displayDriverName?: string | null;
   drivers: AssignableDriver[];
   canAssign: boolean;
 }) {
@@ -54,6 +61,14 @@ export function DriverAssign({
         <p className="text-xs text-slate-500">
           {da.current} : <span className="font-medium text-navy-800">{current ? current.email : da.none}</span>
         </p>
+
+        {/* WES-1E — a free-text name is NOT an authenticated assignment. Say so
+            plainly rather than letting the transport form look like it worked. */}
+        {!currentDriverUserId && (displayDriverName ?? "").trim() !== "" && (
+          <p className="rounded-lg border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-800">
+            {da.unauthenticated.replace("{name}", displayDriverName!.trim())}
+          </p>
+        )}
 
         {canAssign && (
           <>
