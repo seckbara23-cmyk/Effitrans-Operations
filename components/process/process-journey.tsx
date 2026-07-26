@@ -21,7 +21,6 @@ export async function ProcessJourneyPanel({ fileId }: { fileId: string }) {
   if (!model) return null;
 
   const j = summarizeJourney(model);
-  const pct = j.total > 0 ? Math.round((j.completed / j.total) * 100) : 0;
 
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-4">
@@ -38,24 +37,15 @@ export async function ProcessJourneyPanel({ fileId }: { fileId: string }) {
         </Link>
       </div>
 
-      {/* Progress — stated as a count, not a confident percentage bar, when the
-          history was inferred rather than observed. */}
+      {/* WES-2 — a COUNT of official steps, never a percentage. Dossier progress
+          has exactly one number and the lifecycle tracker on this page renders
+          it; a second bar here would be a second answer. */}
       <div className="mb-3">
         <div className="mb-1 flex items-baseline justify-between text-xs">
           <span className="font-medium text-slate-700">
-            {j.completed}/{j.total} étapes
+            {j.completed}/{j.total} étapes officielles
           </span>
-          {j.inferred ? (
-            <span className="text-amber-700">Historique reconstitué, non vérifié</span>
-          ) : (
-            <span className="text-slate-400">{pct}%</span>
-          )}
-        </div>
-        <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
-          <div
-            className={j.inferred ? "h-full bg-amber-300" : "h-full bg-teal-500"}
-            style={{ width: `${pct}%` }}
-          />
+          {j.inferred && <span className="text-amber-700">Historique reconstitué, non vérifié</span>}
         </div>
         {j.unverifiedCount > 0 && (
           <p className="mt-1 text-[11px] text-amber-700">

@@ -15,6 +15,7 @@ import { getServerSupabaseClient } from "@/lib/supabase/server";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { getCurrentPortalUser } from "./auth";
 import { getDossierLifecycle } from "@/lib/files/lifecycle";
+import { buildCanonicalProjection } from "@/lib/workflow/projection";
 import { invoiceTotals, paidAmount, balanceDue } from "@/lib/finance/calc";
 import { assessRisk, overdueDays, type RiskInput } from "@/lib/copilot/risk-engine";
 import { toPortalTimeline, type PortalTimeline, type PortalStageKey } from "./progress-map";
@@ -168,7 +169,7 @@ export async function getPortalTracking(fileId: string): Promise<PortalTracking 
   }
 
   // Reuse the lifecycle engine → customer timeline (single source of truth).
-  const lifecycle = getDossierLifecycle({
+  const lifecycleInput = {
     fileId,
     file: { status: own.status, type: own.type },
     documents: docs.map((d) => ({ status: d.status })),
@@ -177,7 +178,9 @@ export async function getPortalTracking(fileId: string): Promise<PortalTracking 
     transport: tr ? { status: tr.status } : null,
     invoices,
     podApproved,
-  });
+  };
+  const lifecycle = getDossierLifecycle(lifecycleInput);
+  const projection = buildCanonicalProjection(lifecycleInput);
   const timeline = toPortalTimeline(lifecycle.steps);
 
   // Reuse the Risk Engine → customer-safe delay (4 levels + plain explanation).
@@ -222,7 +225,7 @@ export async function getPortalTracking(fileId: string): Promise<PortalTracking 
       .filter((n) => n.fileId === fileId)
       .map((n) => ({ id: n.id, title: n.title, category: n.category, createdAt: n.createdAt })),
   });
-  const mapPoints = buildMapPoints({ origin: route.origin || ship?.origin || null, destination: route.destination || ship?.destination || null, progressPercent: timeline.percent });
+  const mapPoints = buildMapPoints({ origin: route.origin || ship?.origin || null, destination: route.destination || ship?.destination || null, progressPercent: projection.progressPercent });
   const requirements = documentRequirements({ requiredCodes, bestStatusByCode, labelByCode });
 
   // Self-service actions (Phase 3.3B) — derived from the SAME owned rows: which
@@ -268,7 +271,7 @@ export async function getPortalTracking(fileId: string): Promise<PortalTracking 
     route,
     currentStageKey: timeline.currentKey,
     timeline,
-    progressPercent: timeline.percent,
+    progressPercent: projection.progressPercent,
     currentLocation: MAP_PHASE_LABEL[stageToMapPhase(timeline.currentKey)] ?? "En cours",
     currentDepartment: departmentLabel(lifecycle.currentDepartment),
     nextStep,

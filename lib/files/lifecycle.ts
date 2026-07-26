@@ -8,6 +8,11 @@
  *
  * Each step carries a stable `key` + `reasonCode` (the test contract) plus a
  * French `label`/`description`/`blocker` resolved from i18n (the UI contract).
+ *
+ * WES-2: this is now a FACT DERIVER, not a projection. It no longer computes a
+ * percentage — progress, the current stage and the ratchet belong to the ONE
+ * canonical projection (lib/workflow/projection.ts), which consumes this. Two
+ * percentages over the same dossier is exactly what WES-2 exists to end.
  */
 import { t } from "@/lib/i18n";
 
@@ -42,7 +47,6 @@ export type DossierLifecycle = {
   nextDepartment: Department | null;
   nextAction: LifecycleNextAction | null;
   blockers: { key: string; label: string; reason: string }[];
-  completedPercent: number;
 };
 
 export type LifecycleInput = {
@@ -288,10 +292,6 @@ export function getDossierLifecycle(input: LifecycleInput): DossierLifecycle {
     };
   });
 
-  const applicable = steps.filter((s) => s.status !== "skipped");
-  const completed = applicable.filter((s) => s.status === "completed").length;
-  const completedPercent = applicable.length === 0 ? 0 : Math.round((completed / applicable.length) * 100);
-
   const frontier = steps.find((s) => s.status === "current" || s.status === "blocked") ?? null;
   const currentStep = frontier ? frontier.key : null;
   const currentDepartment = frontier ? frontier.department : null;
@@ -324,5 +324,5 @@ export function getDossierLifecycle(input: LifecycleInput): DossierLifecycle {
       }
     : null;
 
-  return { steps, currentStep, currentDepartment, nextDepartment, nextAction, blockers, completedPercent };
+  return { steps, currentStep, currentDepartment, nextDepartment, nextAction, blockers };
 }

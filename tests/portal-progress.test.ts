@@ -76,7 +76,9 @@ describe("portal timeline mapping (internal lifecycle → customer stages)", () 
     expect(status(tl, "invoiced")).toBe("completed");
     expect(tl.currentKey).toBe("paid");
     expect(tl.nextKey).toBeNull();
-    expect(tl.percent).toBeGreaterThanOrEqual(90);
+    // WES-2 — the timeline maps stages only; the ONE percentage comes from the
+    // canonical projection, so a customer and an operator cannot see two numbers.
+    expect(tl).not.toHaveProperty("percent");
   });
 
   it("non-customs shipments flow past the customs stages (skipped → completed)", () => {

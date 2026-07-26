@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { buildCanonicalProjection } from "@/lib/workflow/projection";
 import { getDossierLifecycle, type LifecycleInput } from "@/lib/files/lifecycle";
 import {
   funnelStage,
@@ -38,6 +39,7 @@ function mkRow(o: Partial<LifecycleInput> & {
     priority: o.priority ?? "normal",
     fileStatus: input.file.status,
     createdAt: o.createdAt ?? daysAgo(1),
+    projection: buildCanonicalProjection(input),
     overdueInvoice: o.overdueInvoice ?? false,
     lifecycle: getDossierLifecycle(input),
   };

@@ -30,6 +30,7 @@ import { CommunicationsTimeline } from "@/components/communications/communicatio
 import { listCommunicationsForFile } from "@/lib/comms/service";
 import { LifecycleTracker } from "@/components/files/lifecycle-tracker";
 import { getDossierLifecycle } from "@/lib/files/lifecycle";
+import { buildCanonicalProjection } from "@/lib/workflow/projection";
 import { getOpenHandoffForFile } from "@/lib/handoffs/service";
 import { getDossierStage } from "@/lib/sla/service";
 import { SlaPanel } from "@/components/files/sla-panel";
@@ -129,7 +130,7 @@ export default async function FileDetailPage({ params }: { params: { id: string 
   const communications = canReadComms ? await listCommunicationsForFile(file.id) : [];
 
   // Read-only derived lifecycle tracker (Phase 2.0 addendum) — no mutation.
-  const lifecycle = getDossierLifecycle({
+  const lifecycleInput = {
     fileId: file.id,
     file: { status: file.status, type: file.type },
     documents: documents.map((d) => ({ status: d.status })),
@@ -138,7 +139,11 @@ export default async function FileDetailPage({ params }: { params: { id: string 
     transport: transportRecord ? { status: transportRecord.status } : null,
     invoices: (finance?.invoices ?? []).map((i) => ({ status: i.status, balance: i.balance })),
     podApproved,
-  });
+  };
+  const lifecycle = getDossierLifecycle(lifecycleInput);
+  // WES-2 — the ONE canonical projection. Progress, stage and next action come
+  // from here; no component on this page computes any of them.
+  const projection = buildCanonicalProjection(lifecycleInput);
   const openHandoff = await getOpenHandoffForFile(file.id);
   const sla = await getDossierStage(file.id, lifecycle.currentDepartment, lifecycle.currentStep).catch(() => null);
 
@@ -186,7 +191,7 @@ export default async function FileDetailPage({ params }: { params: { id: string 
         staff={assignableStaff}
         canAssign={canAssign}
       />
-      <LifecycleTracker lifecycle={lifecycle} openHandoff={openHandoff ? { title: openHandoff.title } : null} />
+      <LifecycleTracker lifecycle={lifecycle} projection={projection} openHandoff={openHandoff ? { title: openHandoff.title } : null} />
       <RiskPanel risk={risk} />
       {sla && <SlaPanel sla={sla} department={lifecycle.currentDepartment} />}
       <FileForm mode="edit" fileId={file.id} initial={file} clients={clients} canUpdate={canUpdate} />

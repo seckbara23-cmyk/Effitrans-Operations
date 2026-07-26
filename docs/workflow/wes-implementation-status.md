@@ -11,9 +11,9 @@ Execution order is dependency-driven, not numeric (WES-0A §6):
 | Phase | Scope | Status |
 |---|---|---|
 | WES-0 / WES-0A | architecture ratification (docs) | ✅ done — `026ca30` |
-| **WES-1** | **integrity hotfixes** | ✅ **done** |
-| WES-2 | canonical projection, ratchet, one progress formula | ⬜ next |
-| WES-7 | policy registry (ADR-WES-012) | ⬜ |
+| **WES-1** | **integrity hotfixes** | ✅ done |
+| **WES-2** | **canonical projection, ratchet, one progress formula** | ✅ **done** |
+| WES-7 | policy registry (ADR-WES-012) | ⬜ next |
 | WES-9 | business event ledger (ADR-WES-014) | ⬜ |
 | WES-3 | ownership, assignment, visibility | ⬜ |
 | WES-4 | BAE governance + document doctrine | ⬜ |
@@ -109,3 +109,89 @@ letting the form look like it worked.
    guard; extending CAS across other modules is not WES-1 scope.
 5. The four unratified SLA thresholds, the policy registry, the event ledger and the mission entity
    remain untouched — WES-7/8/9/6.
+
+
+---
+
+## WES-2 — Canonical Projection, Lifecycle Ratchet & Single Progress Formula
+
+**Scope:** one projection every surface reads. **No schema migration, no new business rules.**
+
+### Architecture discovered — SEVEN competing computations
+
+| # | Location | What it computed |
+|---|---|---|
+| 1 | `lib/files/lifecycle.ts` | `completedPercent` over 15 derived steps |
+| 2 | `lib/navigation/journey.ts` | `completed`/`total` over 26 engine steps |
+| 3 | `components/process/process-journey.tsx` | a percentage **in the UI** — not in the audit's list of five |
+| 4 | `lib/portal/progress-map.ts` | `percent` over 10 customer stages |
+| 5 | `lib/driver/service.ts` | hardcoded 0 / 50 / 100 |
+| 6 | `lib/process/journeys/milestones.ts` | milestone roll-up (a competing stage view) |
+| 7 | `lib/control-tower/aggregate.ts` | flow-board bucketing off the **raw frontier** |
+
+Call graph: `module records → getDossierLifecycle → {dossier page, control tower, copilot, portal×2}`
+and, separately, `process engine → summarizeJourney → journey panel`. Nothing reconciled them.
+
+### The canonical projection
+
+`lib/workflow/stages.ts` — the ladder:
+`draft → open → documentation → douane → transport → finance → archivage`, reusing the existing
+`Department` vocabulary.
+
+`lib/workflow/projection.ts` — `buildCanonicalProjection(input)`. PURE, no I/O, **no task input**.
+Owns: current stage · current + responsible department · next action · progress · completed stages ·
+pending stages · blockers · ratchet transparency.
+
+**Ratchet.** The stage is `max(evidence floor, raw frontier)` and never decreases. The floor reads
+only facts that cannot legitimately go backwards, and a `BLOCKED` record counts as *reached* — you
+cannot be blocked in a department you never entered. When the frontier falls behind, the stage
+**holds** and the earlier work surfaces as a blocker overlay:
+
+```
+Stage: Transport · Statut: Bloqué · Responsable: Documentation
+```
+
+**Completed stages are immutable:** anything before the ratcheted stage is `completed` and stays so.
+
+**One formula:** `completed applicable stages ÷ applicable stages`. Skipped stages leave the
+denominator; **blocked never subtracts**.
+
+### Consumers removed / migrated
+
+| Consumer | Action |
+|---|---|
+| `lifecycle.completedPercent` | **removed** — the tracker is now a fact deriver |
+| `PortalTimeline.percent` | **removed** — the map returns stages only |
+| journey panel percentage + bar | **removed** — renders an official-step *count*, no percentage |
+| dossier page, control tower, copilot, portal shipments, portal tracking | **migrated** to `buildCanonicalProjection` |
+| control-tower flow board | **migrated** to the ratcheted department |
+| driver `progressPercent` | **renamed** `executionPercent` — mission execution, not dossier progress |
+
+### Verification
+
+| Gate | Result |
+|---|---|
+| Typecheck | clean |
+| Tests | 3457 passed / 162 files (+38 new) |
+| Production build | compiled |
+| Schema | **no migration** |
+
+Proofs in `tests/wes-2-canonical-projection.test.ts`: the UAT regression is reproduced and held;
+stage and progress are monotone across a full forward walk; completed stages are immutable under
+regression; `* 100` appears in exactly one workflow module; no consumer computes its own percentage;
+the projection takes no task input and contains no SLA, routing, ownership or document policy.
+
+### Deferred (documented, not implemented)
+
+- **`summarizeJourney` still reports x/26 official steps.** That is a *count of process steps*, a
+  detail of the 26-step inspector, not a second dossier-progress claim — the percentage and bar were
+  removed. Folding the engine's step model into the canonical projection is **WES-5** (engine/module
+  reconciliation).
+- **SLA and risk still key on the raw frontier** (`lifecycle.currentDepartment`) in the control
+  tower. That is semantically "who we are waiting on", and SLA is **WES-8**; ADR-WES-012 forbids the
+  projection from carrying SLA at all.
+- **`milestones.ts`** remains the engine-side milestone view for `/journeys`; it produces no
+  percentage. Reconciliation is WES-5.
+- **No persisted high-water column.** The ratchet is derived from already-monotonic evidence, which
+  needs no schema and cannot itself drift. If a future phase needs an explicit reversal action
+  (ADR-WES-010), that is where persistence would be introduced.

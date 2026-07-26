@@ -7,6 +7,7 @@
  * unit-tested. `now` is injected.
  */
 import type { DossierLifecycle, Department } from "@/lib/files/lifecycle";
+import type { CanonicalProjection } from "@/lib/workflow/projection";
 import { isActiveFileStatus, isFileStatus } from "@/lib/files/status";
 
 export type FunnelStage =
@@ -20,6 +21,8 @@ export type FunnelStage =
   | "archived";
 
 export type DossierLifecycleRow = {
+  /** WES-2 — the ONE canonical projection. Stage/progress come from here. */
+  projection: CanonicalProjection;
   fileId: string;
   fileNumber: string | null;
   clientName: string | null;
@@ -77,7 +80,10 @@ export function flowCounts(rows: DossierLifecycleRow[]): Record<FlowNode, number
       out.archive += 1;
       continue;
     }
-    const dept = r.lifecycle.currentDepartment as Department | null;
+    // WES-2 — WHERE THE DOSSIER IS (ratcheted), not where the raw frontier fell
+    // back to. A late document requirement must not move a dossier that is already
+    // in transport back onto the documentation column of the flow board.
+    const dept = r.projection.currentDepartment as Department | null;
     if (dept === "documentation" || dept === "customs" || dept === "transport" || dept === "finance" || dept === "archive") {
       out[dept] += 1;
     }

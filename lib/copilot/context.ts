@@ -24,6 +24,7 @@ import { capItems, isCriticalEventType, COMPRESS_LIMITS } from "@/lib/copilot/co
 import { deriveRealtimeEta } from "@/lib/tracking/eta";
 import { classifyFreshness, DEFAULT_FRESHNESS_THRESHOLDS } from "@/lib/tracking/position";
 import type { DossierLifecycle } from "@/lib/files/lifecycle";
+import { buildCanonicalProjection, type CanonicalProjection } from "@/lib/workflow/projection";
 import type { FileDetail } from "@/lib/files/types";
 import type { DocumentItem, MissingDocument } from "@/lib/documents/types";
 import type { CustomsRecord, MissingCustomsDoc } from "@/lib/customs/types";
@@ -199,6 +200,8 @@ export type AssembleInput = {
   /** Reference time for derived risk (overdue-days). Injected for determinism. */
   now: Date;
   lifecycle: DossierLifecycle;
+  /** WES-2 — the ONE canonical projection. The copilot never re-derives progress. */
+  projection: CanonicalProjection;
   openHandoff: { title: string } | null;
   documents: DocumentItem[];
   missingDocuments: MissingDocument[];
@@ -292,7 +295,7 @@ function assembleTracking(input: AssembleInput): Section<CopilotTracking> {
  * (`included: false`) rather than fabricated.
  */
 export function assembleCopilotContext(input: AssembleInput): CopilotContext {
-  const { file, access, lifecycle } = input;
+  const { file, access, lifecycle, projection } = input;
   const s = file.shipment;
 
   const dossier: CopilotDossier = {
@@ -315,7 +318,7 @@ export function assembleCopilotContext(input: AssembleInput): CopilotContext {
   };
 
   const lc: CopilotLifecycle = {
-    completedPercent: lifecycle.completedPercent,
+    completedPercent: projection.progressPercent,
     currentStep: lifecycle.currentStep,
     currentDepartment: lifecycle.currentDepartment,
     nextDepartment: lifecycle.nextDepartment,
@@ -528,8 +531,9 @@ export async function buildCopilotContext(
     (d) => d.typeCode === "DELIVERY_NOTE" && d.status === "APPROVED",
   );
 
-  // Same lifecycle derivation as app/files/[id]/page.tsx — single source of truth.
-  const lifecycle = getDossierLifecycle({
+  // WES-2 — ONE canonical projection. The copilot reports the same stage and the
+  // same percentage the dossier page shows; it derives nothing of its own.
+  const lifecycleInput = {
     fileId: file.id,
     file: { status: file.status, type: file.type },
     documents: documents.map((d) => ({ status: d.status })),
@@ -538,7 +542,9 @@ export async function buildCopilotContext(
     transport: transport ? { status: transport.status } : null,
     invoices: (finance?.invoices ?? []).map((i) => ({ status: i.status, balance: i.balance })),
     podApproved,
-  });
+  };
+  const lifecycle = getDossierLifecycle(lifecycleInput);
+  const projection = buildCanonicalProjection(lifecycleInput);
 
   const [openHandoff, sla] = await Promise.all([
     getOpenHandoffForFile(file.id),
@@ -550,6 +556,7 @@ export async function buildCopilotContext(
     access,
     now: new Date(),
     lifecycle,
+    projection,
     openHandoff: openHandoff ? { title: openHandoff.title } : null,
     documents,
     missingDocuments,

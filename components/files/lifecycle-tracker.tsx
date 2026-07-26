@@ -2,6 +2,7 @@ import Link from "next/link";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import type { DossierLifecycle, Department, StepStatus } from "@/lib/files/lifecycle";
+import type { CanonicalProjection } from "@/lib/workflow/projection";
 
 const DEPARTMENTS: Department[] = ["opening", "documentation", "customs", "transport", "finance", "archive"];
 
@@ -24,13 +25,19 @@ const TEXT: Record<StepStatus, string> = {
 /**
  * Read-only dossier lifecycle tracker (Phase 2.0 addendum). Server component.
  * Desktop: department-grouped timeline (wraps horizontally). Mobile: vertical.
- * All state is DERIVED (lib/files/lifecycle) — no mutation here.
+ * All state is DERIVED — no mutation here.
+ *
+ * WES-2: the percentage and the stage come from the CANONICAL PROJECTION. This
+ * component computes nothing; `lifecycle` supplies only the 15-step detail it
+ * renders.
  */
 export function LifecycleTracker({
   lifecycle,
+  projection,
   openHandoff,
 }: {
   lifecycle: DossierLifecycle;
+  projection: CanonicalProjection;
   openHandoff?: { title: string } | null;
 }) {
   const L = t.lifecycle;
@@ -42,7 +49,7 @@ export function LifecycleTracker({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-sm font-semibold text-navy-900">{L.title}</h2>
         <span className="text-xs font-medium text-slate-500">
-          {lifecycle.completedPercent}% {L.percent}
+          {projection.progressPercent}% {L.percent}
         </span>
       </div>
 
@@ -70,7 +77,7 @@ export function LifecycleTracker({
 
       {/* progress bar */}
       <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
-        <div className="h-full rounded-full bg-teal-600 transition-all" style={{ width: `${lifecycle.completedPercent}%` }} />
+        <div className="h-full rounded-full bg-teal-600 transition-all" style={{ width: `${projection.progressPercent}%` }} />
       </div>
 
       {/* next action card */}

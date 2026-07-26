@@ -7,6 +7,10 @@
  * departments, blockers, SLA and inspection detail: stages are only
  * completed / current / pending (never blocked). Labels are resolved in the UI
  * via i18n (this returns stable keys), so no internal copy leaks.
+ *
+ * WES-2: this maps stages only. It no longer computes a percentage — the portal
+ * renders the ONE canonical progress (lib/workflow/projection.ts), so a customer
+ * and an operator can never be shown two different numbers for one shipment.
  */
 import { isActiveFileStatus, isFileStatus } from "@/lib/files/status";
 
@@ -29,7 +33,6 @@ export type PortalTimeline = {
   stages: PortalStage[];
   currentKey: PortalStageKey | null;
   nextKey: PortalStageKey | null;
-  percent: number;
 };
 
 // Customer stage -> the INTERNAL lifecycle step whose completion marks it done.
@@ -67,7 +70,6 @@ export function toPortalTimeline(steps: { key: string; status: string }[]): Port
     return { key: d.key, status };
   });
 
-  const completed = stages.filter((s) => s.status === "completed").length;
   const current = stages.find((s) => s.status === "current") ?? null;
   const currentIdx = current ? stages.findIndex((s) => s.key === current.key) : -1;
   const next = currentIdx >= 0 && currentIdx + 1 < stages.length ? stages[currentIdx + 1] : null;
@@ -76,7 +78,6 @@ export function toPortalTimeline(steps: { key: string; status: string }[]): Port
     stages,
     currentKey: current ? current.key : null,
     nextKey: next ? next.key : null,
-    percent: Math.round((completed / stages.length) * 100),
   };
 }
 

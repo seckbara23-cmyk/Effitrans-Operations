@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { buildCanonicalProjection } from "@/lib/workflow/projection";
 import { getDossierLifecycle, type LifecycleInput, type StepStatus } from "@/lib/files/lifecycle";
 
 function mk(overrides: Partial<LifecycleInput>): LifecycleInput {
@@ -24,7 +25,8 @@ describe("getDossierLifecycle (Phase 2.0 addendum)", () => {
     expect(statusOf(lc, "quote_approved")).toBe("pending");
     expect(lc.currentStep).toBe("draft");
     expect(lc.nextAction?.reasonCode).toBe("approve_quote");
-    expect(lc.completedPercent).toBe(0);
+    // WES-2 — progress lives in the canonical projection, not here.
+    expect(buildCanonicalProjection(mk({ file: { status: "DRAFT", type: "IMP" }, missingRequired: [{ label: "Facture commerciale" }] })).progressPercent).toBe(0);
   });
 
   it("2. missing documents — collection is blocked with the missing list", () => {
@@ -136,7 +138,6 @@ describe("getDossierLifecycle (Phase 2.0 addendum)", () => {
     expect(lc.steps.every((s) => s.status === "completed")).toBe(true);
     expect(lc.currentStep).toBeNull();
     expect(lc.nextAction).toBeNull();
-    expect(lc.completedPercent).toBe(100);
   });
 
   it("exposes current and next department for handoff display", () => {

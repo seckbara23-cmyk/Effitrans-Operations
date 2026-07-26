@@ -14,6 +14,7 @@ import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
 import { hasPermission } from "@/lib/rbac/check";
 import { getDossierLifecycle } from "@/lib/files/lifecycle";
+import { buildCanonicalProjection } from "@/lib/workflow/projection";
 import { isActiveFileStatus, isFileStatus } from "@/lib/files/status";
 import { invoiceTotals, paidAmount, balanceDue, isOverdue } from "@/lib/finance/calc";
 import { getAnalytics } from "@/lib/analytics/service";
@@ -222,7 +223,7 @@ export const getControlTower = cache(async (
     const missingRequired = requiredFor(f.type).filter((code) => !approved.has(code)).map((code) => ({ label: code }));
     const cust = customsByFile.get(f.id);
     const tr = transportByFile.get(f.id);
-    const lifecycle = getDossierLifecycle({
+    const lifecycleInput = {
       fileId: f.id,
       file: { status: f.status, type: f.type },
       documents: fileDocs.map((d) => ({ status: d.status })),
@@ -231,7 +232,9 @@ export const getControlTower = cache(async (
       transport: tr ? { status: tr.status } : null,
       invoices: invoicesByFile.get(f.id) ?? [],
       podApproved: podByFile.has(f.id),
-    });
+    };
+    const lifecycle = getDossierLifecycle(lifecycleInput);
+    const projection = buildCanonicalProjection(lifecycleInput);
 
     rows.push({
       fileId: f.id,
@@ -242,6 +245,7 @@ export const getControlTower = cache(async (
       createdAt: f.created_at,
       overdueInvoice: overdueByFile.get(f.id) ?? false,
       lifecycle,
+      projection,
     });
 
     // DEC-B43 (10.0D-1) — SLA and risk describe ACTIVE work only. Terminal dossiers

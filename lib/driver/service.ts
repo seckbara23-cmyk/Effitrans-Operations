@@ -169,11 +169,14 @@ export async function getDriverMission(transportId: string): Promise<MissionDeta
   const now = new Date();
   const mission = toMission(transport, pickSession(sessions ?? [], transportId), now);
   const latestPosition = pos ? { latitude: pos.latitude, longitude: pos.longitude, recordedAt: pos.recorded_at } : null;
-  const progressPercent = mission.status === "DELIVERED" || mission.status === "POD_RECEIVED" ? 100 : mission.status === "NOT_STARTED" || mission.status === "PLANNED" ? 0 : 50;
+  // WES-0 §8 / WES-2 — MISSION EXECUTION state for the map, NOT dossier
+  // progress. Dossier progress has one source (the canonical projection) and
+  // a chauffeur never sees it.
+  const executionPercent = mission.status === "DELIVERED" || mission.status === "POD_RECEIVED" ? 100 : mission.status === "NOT_STARTED" || mission.status === "PLANNED" ? 0 : 50;
   const { points, hasGeo } = buildMapPoints({
     origin: mission.pickupLocation,
     destination: mission.deliveryLocation,
-    progressPercent,
+    progressPercent: executionPercent,
     livePosition: latestPosition ? { latitude: latestPosition.latitude, longitude: latestPosition.longitude, recordedAt: latestPosition.recordedAt, source: "driver_mobile" } : null,
   });
 

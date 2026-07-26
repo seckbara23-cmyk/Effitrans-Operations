@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { assembleCopilotContext, type AssembleInput, type CopilotAccess } from "@/lib/copilot/context";
+import { buildCanonicalProjection } from "@/lib/workflow/projection";
 import { getDossierLifecycle } from "@/lib/files/lifecycle";
 import type { FileDetail } from "@/lib/files/types";
 import type { DocumentItem } from "@/lib/documents/types";
@@ -44,17 +45,21 @@ const DOCS: DocumentItem[] = [
   { typeCode: "PACKING", typeLabel: "Liste de colisage", status: "PENDING_REVIEW", expiryDate: null, sharedWithClient: false } as DocumentItem,
 ];
 
-function lifecycleFor(file: FileDetail): ReturnType<typeof getDossierLifecycle> {
-  return getDossierLifecycle({
+function lifecycleInputFor(file: FileDetail) {
+  return {
     fileId: file.id,
     file: { status: file.status, type: file.type },
     documents: DOCS.map((d) => ({ status: d.status })),
     missingRequired: [{ label: "Connaissement" }],
     customs: { status: "DECLARED", required: true },
     transport: { status: "PLANNED" },
-    invoices: [],
+    invoices: [] as { status: string; balance: number }[],
     podApproved: false,
-  });
+  };
+}
+
+function lifecycleFor(file: FileDetail): ReturnType<typeof getDossierLifecycle> {
+  return getDossierLifecycle(lifecycleInputFor(file));
 }
 
 const FULL_ACCESS: CopilotAccess = {
@@ -72,6 +77,7 @@ function baseInput(overrides: Partial<AssembleInput> = {}): AssembleInput {
     access: FULL_ACCESS,
     now: new Date("2026-06-21T00:00:00.000Z"),
     lifecycle: lifecycleFor(FILE),
+    projection: buildCanonicalProjection(lifecycleInputFor(FILE)),
     openHandoff: null,
     documents: DOCS,
     missingDocuments: [{ code: "BL", label: "Connaissement" }],

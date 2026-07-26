@@ -14,6 +14,7 @@ import { getServerSupabaseClient } from "@/lib/supabase/server";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { getCurrentPortalUser } from "./auth";
 import { getDossierLifecycle } from "@/lib/files/lifecycle";
+import { buildCanonicalProjection } from "@/lib/workflow/projection";
 import { assessRisk, type RiskInput } from "@/lib/copilot/risk-engine";
 import { toPortalTimeline } from "./progress-map";
 import { derivePortalEta } from "./eta";
@@ -100,7 +101,7 @@ export async function getPortalShipments(): Promise<PortalShipmentCard[]> {
     const invoices = invByFile.get(f.id) ?? [];
     const podApproved = fileDocs.some((d) => d.type_code === "DELIVERY_NOTE" && d.status === "APPROVED");
 
-    const lifecycle = getDossierLifecycle({
+    const lifecycleInput = {
       fileId: f.id,
       file: { status: f.status, type: f.type },
       documents: fileDocs.map((d) => ({ status: d.status })),
@@ -109,7 +110,9 @@ export async function getPortalShipments(): Promise<PortalShipmentCard[]> {
       transport: tr ? { status: tr.status } : null,
       invoices: invoices.map((i) => ({ status: i.status, balance: 0 })),
       podApproved,
-    });
+    };
+    const lifecycle = getDossierLifecycle(lifecycleInput);
+    const projection = buildCanonicalProjection(lifecycleInput);
     const timeline = toPortalTimeline(lifecycle.steps);
 
     const awaitingPod = tr?.status === "DELIVERED" && !podApproved;
@@ -164,7 +167,7 @@ export async function getPortalShipments(): Promise<PortalShipmentCard[]> {
       transportMode: s?.transport_mode ?? null,
       status: f.status,
       currentStageKey: timeline.currentKey,
-      percent: timeline.percent,
+      percent: projection.progressPercent,
       officerName,
       eta: eta.estimatedDate,
       lastActivity,
