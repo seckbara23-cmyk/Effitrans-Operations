@@ -70,9 +70,11 @@ on conflict (id) do nothing;
 
 -- A DOSSIER-LINKED authorization: the hardest case for the visibility class —
 -- the dossier is readable by ops staff, the expense evidence must NOT be.
-insert into public.operational_file (id, tenant_id, file_number, client_id, status) values
+-- `type` is NOT NULL (IMP/EXP/TRP/HND) and `status` is CHECK-constrained
+-- (DRAFT/OPENED/IN_PROGRESS/DELIVERED/CLOSED) — see 20260614000002.
+insert into public.operational_file (id, tenant_id, file_number, type, client_id, status) values
   ('00000000-0000-0000-0000-00000000fa01', '00000000-0000-0000-0000-000000000001',
-   'ATT-TEST-0001', '00000000-0000-0000-0000-0000000000c5', 'OPEN')
+   'ATT-TEST-0001', 'IMP', '00000000-0000-0000-0000-0000000000c5', 'OPENED')
 on conflict (id) do nothing;
 
 insert into public.expense_authorization
@@ -113,8 +115,10 @@ begin
   perform set_config('request.jwt.claims', json_build_object('sub','00000000-0000-0000-0000-0000000000b1','role','authenticated')::text, true);
   select count(*) into y1_sees from public.expense_attachment where id = '00000000-0000-0000-0000-00000000fa03';
 
-  -- Y2: OPS_AGENT tenant A — CAN read the dossier, must NOT read its expense
-  -- evidence. This is the whole reason for a separate visibility class (§14).
+  -- Y2: DOCUMENTATION_OFFICER tenant A — a dossier reader (file:read), with NO
+  -- finance:expense:read. Must NOT read the expense evidence hanging off a
+  -- dossier it can otherwise read: the whole reason for a separate visibility
+  -- class (11.0A §14 / DEC-C22).
   perform set_config('request.jwt.claims', json_build_object('sub','00000000-0000-0000-0000-0000000000b2','role','authenticated')::text, true);
   select count(*) into y2_sees from public.expense_attachment where id = '00000000-0000-0000-0000-00000000fa03';
   select count(*) into y2_file_sees from public.operational_file where id = '00000000-0000-0000-0000-00000000fa01';
