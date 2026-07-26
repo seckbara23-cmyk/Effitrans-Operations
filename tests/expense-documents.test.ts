@@ -471,10 +471,12 @@ describe("server actions — foundation discipline", () => {
     expect(fn).toContain('if (auth.status !== "APPROVED") return fail("not_approved")');
   });
 
-  it("62 — submit transitions are compare-and-set on the current status", () => {
+  it("62 — submit + approval transitions are compare-and-set on the current status", () => {
     expect(ACTIONS).toMatch(/\.eq\("status", row\.status\)/);
-    // openApprovalAttempt is CAS on SUBMITTED specifically.
-    expect(ACTIONS).toMatch(/\.eq\("status", "SUBMITTED"\)/);
+    // 11.0D: opening the attempt CASes on the OBSERVED status rather than the
+    // literal "SUBMITTED", so the ratified RETURNED → IN_APPROVAL edge works too.
+    // Still a CAS — a concurrent transition matches zero rows either way.
+    expect(ACTIONS).toMatch(/\.eq\("status", "IN_APPROVAL"\)/);
   });
 
   it("63 — numbers are minted at SUBMISSION via the RPCs, not at draft creation", () => {
@@ -487,8 +489,12 @@ describe("server actions — foundation discipline", () => {
     expect(ACTIONS).toContain('.rpc("next_expense_voucher_number"');
   });
 
-  it("64 — NO visa row is ever written in 11.0B (approvals/signatures are later)", () => {
-    expect(ACTIONS).not.toMatch(/\.from\("expense_visa"\)/);
+  it("64 — the visa ledger is only ever APPENDED to (11.0D writes it; nothing rewrites it)", () => {
+    // 11.0B wrote no visa at all. 11.0D records them — but the foundation's real
+    // guarantee is stronger and still holds: the ledger is insert-only, so no
+    // approval can ever be edited or erased after the fact.
+    expect(ACTIONS).toMatch(/\.from\("expense_visa"\)\s*\n?\s*\.insert\(/);
+    expect(ACTIONS).not.toMatch(/from\("expense_visa"\)[\s\S]{0,200}\.(update|delete|upsert)\(/);
   });
 
   it("65 — every write is tenant-scoped on the admin client", () => {
@@ -619,10 +625,21 @@ describe("role + permission parity (11.0B specifics)", () => {
     expect(MIGRATION).toContain("'finance_expense'");
   });
 
-  it("81 — finance:expense:sign is granted to NO role in 11.0B (deferred to 11.0C/D)", () => {
-    for (const t of TENANT_ROLE_TEMPLATES) {
-      expect(t.permissions, `${t.key} must not yet hold finance:expense:sign`).not.toContain("finance:expense:sign");
-    }
+  it("81 — finance:expense:sign goes ONLY to seats that sign a wired chain", () => {
+    // 11.0B granted it to nobody; 11.0D wired the AUTORISATION chain and granted
+    // it to exactly its six signers. The segregation rules 11.0B established are
+    // what must still hold — and they are the reason this pin exists at all.
+    const holders = TENANT_ROLE_TEMPLATES.filter((t) => t.permissions.includes("finance:expense:sign")).map((t) => t.key);
+    expect(holders.sort()).toEqual(
+      ["CEO", "CHIEF_OF_TRANSIT", "COORDINATOR", "DAF", "FINANCE_OFFICER", "TREASURER"].sort(),
+    );
+    // The Cashier stays execution-only, and an administrator can never
+    // manufacture an approval (DEC-C21 + the finance full-admin convention).
+    expect(holders).not.toContain("CASHIER");
+    expect(holders).not.toContain("SYSTEM_ADMIN");
+    // ACCOUNTANT/DGA sign the BON's chain, which is not wired yet.
+    expect(holders).not.toContain("ACCOUNTANT");
+    expect(holders).not.toContain("DGA");
   });
 
   it("82 — the four new authorizer roles map to the FINANCE canonical department", () => {

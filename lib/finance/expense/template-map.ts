@@ -26,6 +26,9 @@
  * rows and columns always tile the frame exactly, with no cumulative drift.
  */
 
+import { AUTHORIZATION_VISA_STEPS } from "./types";
+import { visaLabelFr } from "./visa";
+
 // ========================================================== page + frame ==
 
 /** A4 portrait, in points (1/72"). Matches PdfDoc's A4. */
@@ -182,15 +185,13 @@ export const AUTHORIZATION_FIELDS: readonly TemplateField[] = [
  * The boxes render EMPTY in 11.0C — no visa is written until 11.0D, and the form
  * is signed by hand in the meantime, exactly as the paper one is today.
  */
-const VISA_LABELS: { code: string; label: string }[] = [
-  { code: "VISA_DEMANDEUR", label: "Visa Demandeur" },
-  { code: "VISA_CHEF_TRANSIT", label: "Chef de Transit" },
-  { code: "VISA_COORDONNATEUR", label: "Coordonnateur" },
-  { code: "VISA_OPERATIONS", label: "Opération" },
-  { code: "VISA_TRESORIERE", label: "Trésorière" },
-  { code: "VISA_DAF", label: "DAF" },
-  { code: "VISA_DG", label: "DG" },
-];
+// The captions come from the visa vocabulary (Phase 11.0D), not a second list:
+// the box printed on the form and the step evaluated by the chain must always be
+// the same thing. The ORDER is the ratified chain's order (DEC-C08).
+const VISA_LABELS: { code: string; label: string }[] = AUTHORIZATION_VISA_STEPS.map((s) => ({
+  code: s.code,
+  label: visaLabelFr(s.code),
+}));
 
 const VISA_ROW_1 = 4; // cells in the first visa row
 const visaTop = cursor;

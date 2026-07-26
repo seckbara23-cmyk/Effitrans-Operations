@@ -279,6 +279,18 @@ export function workspacesFor(ctx: NavigationContext): WorkspaceLink[] {
     });
   }
 
+  // Phase 11.0D — the signer's own queue. Shown only to holders of the SIGNING
+  // capability (a reader has nothing to do here), over the same 11.0B family.
+  if (can("finance:expense:sign")) {
+    out.push({
+      key: "expense_visas",
+      label: "Visas à apposer",
+      href: "/finance/autorisations-depenses/approbations",
+      hint: "Autorisations de dépenses dont vous êtes le signataire attendu",
+      kind: "queue",
+    });
+  }
+
   // The official queues this user's roles actually staff. Never all fifteen.
   for (const q of visibleQueues(ctx.roleCodes, perms)) {
     out.push({

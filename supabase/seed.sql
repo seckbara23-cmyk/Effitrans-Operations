@@ -1092,11 +1092,34 @@ where r.tenant_id = '00000000-0000-0000-0000-000000000001'
 on conflict do nothing;
 
 -- Baseline for the four new roles: own profile + finance module read visibility.
--- Their authorization capability (finance:expense:sign) is withheld until 11.0C/D.
 insert into public.role_permission (role_id, permission_id)
 select r.id, p.id from public.role r
 join public.permission p
   on p.code in ('profile:read:self', 'profile:update:self', 'finance:read')
 where r.tenant_id = '00000000-0000-0000-0000-000000000001'
   and r.code in ('ACCOUNTANT', 'TREASURER', 'DAF', 'DGA')
+on conflict do nothing;
+
+-- ===========================================================================
+-- Phase 11.0D — the Autorisation visa chain (DEC-C08/C11). Mirrors migration
+-- 20260726000002. finance:expense:sign goes ONLY to the six seats that sign this
+-- chain; VISA_OPERATIONS stays unmapped (BLK-FIN-2), CASHIER stays execution-
+-- only, SYSTEM_ADMIN keeps the finance convention of full admin EXCEPT signing,
+-- and ACCOUNTANT/DGA sign the BON's chain (11.0E), not this one.
+-- CEO gaining a write-class finance capability is the governance change flagged
+-- in 11.0A §4.
+-- ===========================================================================
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id from public.role r
+join public.permission p on p.code = 'finance:expense:sign'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('FINANCE_OFFICER', 'CHIEF_OF_TRANSIT', 'COORDINATOR', 'TREASURER', 'DAF', 'CEO')
+on conflict do nothing;
+
+-- The three signing seats that would otherwise be unable to READ what they sign.
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id from public.role r
+join public.permission p on p.code = 'finance:expense:read'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('CHIEF_OF_TRANSIT', 'COORDINATOR', 'CEO')
 on conflict do nothing;

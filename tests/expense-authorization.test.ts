@@ -567,16 +567,20 @@ describe("routes, permissions and navigation", () => {
     expect(NAV).toContain('href: "/finance/autorisations-depenses"');
   });
 
-  it("60 — the detail page shows the signature section as DISPLAY-ONLY", () => {
-    expect(DETAIL_PAGE).toContain("Visas et approbations");
-    expect(DETAIL_PAGE).toContain("11.0D");
-    // No signing action exists in this phase.
-    expect(DETAIL_PAGE).not.toMatch(/signExpense|recordVisa|finance:expense:sign/);
+  it("60 — the detail page shows the signature section (LIVE chain since 11.0D)", () => {
+    // 11.0C rendered a static seven-box list; 11.0D replaced it with the real
+    // chain. What must remain true is that the section exists and is driven by
+    // the shared evaluator rather than by page-local logic.
+    expect(DETAIL_PAGE).toContain("getExpenseAuthorizationChain");
+    expect(DETAIL_PAGE).toContain("<ApprovalTimeline");
+    expect(DETAIL_PAGE).not.toMatch(/AUTHORIZATION_VISA_STEPS\.map|\.filter\(\(v\) =>/);
   });
 
-  it("61 — the unbound signers are surfaced honestly, never hidden (BLK-FIN-1/2)", () => {
-    expect(DETAIL_PAGE).toContain("isUnboundVisaStep");
-    expect(DETAIL_PAGE).toContain("Signataire non configuré");
+  it("61 — the unbound signer is surfaced honestly, never hidden (BLK-FIN-2)", () => {
+    const timeline = read("../components/finance/expense/approval-timeline.tsx");
+    expect(timeline).toContain("BLOCKED");
+    expect(timeline).toContain("Signataire non configuré");
+    expect(timeline).toMatch(/n'a pas encore désigné le signataire/);
   });
 
   it("62 — « Créer le Bon de Dépenses » appears only on APPROVED and stays disabled", () => {

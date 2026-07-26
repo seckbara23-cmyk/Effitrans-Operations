@@ -22,7 +22,10 @@ import { AuditActions } from "@/lib/audit/events";
 import { expenseContentSha256 } from "./hash";
 import { amountInWordsFr } from "./amount-in-words";
 import { activeTemplateVersion } from "./templates";
+import { evaluateSign, isChainComplete, signerRoleFor, REQUESTER_STEP } from "./visa";
 import {
+  VISA_DECISIONS,
+  type VisaDecision,
   canTransitionAuthorization,
   canTransitionVoucher,
   AUTHORIZATION_EDITABLE_STATUSES,
@@ -33,7 +36,8 @@ import {
 } from "./types";
 
 type Admin = ReturnType<typeof getAdminSupabaseClient>;
-type Ctx = { userId: string; tenantId: string };
+/** `roleCodes` is needed by the 11.0D visa signer check; the rest is 11.0B's. */
+type Ctx = { userId: string; tenantId: string; roleCodes: readonly string[]; email: string };
 
 export type ExpenseActionError =
   | "forbidden"
@@ -43,7 +47,13 @@ export type ExpenseActionError =
   | "already_exists"
   | "not_approved"
   /** A « N° dossier » was typed that no dossier in this tenant carries. */
-  | "unknown_file";
+  | "unknown_file"
+  // ---- Phase 11.0D visa refusals (mirror ./visa's SignRefusal vocabulary) ----
+  | "chain_complete"
+  | "signer_not_configured"
+  | "wrong_signer"
+  | "already_signed"
+  | "out_of_sequence";
 
 export type ExpenseActionResult<T = { id: string }> = ({ ok: true } & T) | { ok: false; error: ExpenseActionError };
 
@@ -53,7 +63,7 @@ const isErr = (v: Ctx | ExpenseActionError): v is ExpenseActionError => typeof v
 async function guard(permission: string): Promise<Ctx | ExpenseActionError> {
   try {
     const user = await assertPermission(permission);
-    return { userId: user.id, tenantId: user.tenantId };
+    return { userId: user.id, tenantId: user.tenantId, roleCodes: user.roles, email: user.email };
   } catch {
     return "forbidden";
   }
@@ -384,39 +394,247 @@ export async function openExpenseApprovalAttempt(id: string): Promise<ExpenseAct
 
   const row = await loadAuthorization(admin, ctx.tenantId, id);
   if (!row) return fail("not_found");
-  if (!canTransitionAuthorization(row.status as AuthorizationStatus, "IN_APPROVAL")) return fail("invalid_state");
-  const versionId = row.current_version_id as string | null;
-  if (!versionId) return fail("invalid_state");
+  const opened = await openAttempt(admin, ctx, row);
+  return opened ? { ok: true, id } : fail("invalid_state");
+}
+
+/**
+ * SUBMITTED → IN_APPROVAL + a fresh attempt bound to the current version.
+ * Extracted in 11.0D so the public action AND the first visa of a submitted
+ * document share ONE implementation: a signer must not need a second permission
+ * (finance:expense:submit) just to put the document into its own circuit.
+ * Permission is asserted by the CALLER; this helper only owns the transition.
+ */
+async function openAttempt(
+  admin: Admin,
+  ctx: Ctx,
+  row: { id: string; status: string; current_version_id: string | null },
+): Promise<string | null> {
+  if (!canTransitionAuthorization(row.status as AuthorizationStatus, "IN_APPROVAL")) return null;
+  const versionId = row.current_version_id;
+  if (!versionId) return null;
 
   const { data: updated, error } = await admin
     .from("expense_authorization")
     .update({ status: "IN_APPROVAL" })
-    .eq("id", id)
+    .eq("id", row.id)
     .eq("tenant_id", ctx.tenantId)
-    .eq("status", "SUBMITTED") // CAS
+    .eq("status", row.status) // CAS on the OBSERVED status (SUBMITTED or RETURNED)
     .select("id");
-  if (error || !updated || updated.length === 0) return fail("invalid_state");
+  if (error || !updated || updated.length === 0) return null;
 
-  const attemptNumber = await nextVersionNumber(admin, "expense_approval_attempt", "authorization_id", id, ctx.tenantId, "attempt_number");
-  await admin.from("expense_approval_attempt").insert({
-    tenant_id: ctx.tenantId,
-    document_type: "EXPENSE_AUTHORIZATION",
-    authorization_id: id,
-    version_id: versionId,
-    attempt_number: attemptNumber,
-    status: "IN_PROGRESS",
-    opened_by: ctx.userId,
-  });
+  // A material edit already opened an attempt on this version (DEC-C13) — reuse
+  // it rather than stacking a second open attempt on the same round.
+  const { data: alreadyOpen } = await admin
+    .from("expense_approval_attempt")
+    .select("id")
+    .eq("authorization_id", row.id)
+    .eq("tenant_id", ctx.tenantId)
+    .eq("status", "IN_PROGRESS")
+    .eq("version_id", versionId)
+    .maybeSingle();
+  if (alreadyOpen) return alreadyOpen.id;
+
+  const attemptNumber = await nextVersionNumber(admin, "expense_approval_attempt", "authorization_id", row.id, ctx.tenantId, "attempt_number");
+  const { data: attempt } = await admin
+    .from("expense_approval_attempt")
+    .insert({
+      tenant_id: ctx.tenantId,
+      document_type: "EXPENSE_AUTHORIZATION",
+      authorization_id: row.id,
+      version_id: versionId,
+      attempt_number: attemptNumber,
+      status: "IN_PROGRESS",
+      opened_by: ctx.userId,
+    })
+    .select("id")
+    .single();
 
   await writeAudit({
     action: AuditActions.EXPENSE_APPROVAL_ATTEMPT_OPENED,
     actorId: ctx.userId,
     tenantId: ctx.tenantId,
     entity: "expense_authorization",
-    entityId: id,
+    entityId: row.id,
     after: { attempt_number: attemptNumber, document_type: "EXPENSE_AUTHORIZATION" },
   });
-  return { ok: true, id };
+  return attempt?.id ?? null;
+}
+
+// ================================================ authorization: visa (11.0D) ==
+
+export type RecordVisaResult = {
+  id: string;
+  visaId: string;
+  status: AuthorizationStatus;
+  /** True when this visa completed the seventh and last step. */
+  chainComplete: boolean;
+};
+
+/**
+ * Record ONE visa on the current version of an authorization — the whole of the
+ * 11.0D write path (Phase 11.0D, DEC-C08/C12).
+ *
+ * Every eligibility DECISION is delegated to ./visa's pure `evaluateSign`: order,
+ * signer identity/role, the one-visa-per-signer rule and the unbound-signer halt
+ * are decided there and merely executed here, so the UI can show the identical
+ * verdict without a second implementation.
+ *
+ * Concurrency: the visa insert is the compare-and-set. A partial UNIQUE index on
+ * (authorization_id, version_id, step_ordinal) makes a double-signed step
+ * structurally impossible, so two simultaneous signers cannot both land on the
+ * append-only ledger — where a duplicate could never be deleted.
+ *
+ * Nothing is ever overwritten: an approval appends, a rejection appends and
+ * CLOSES the attempt. Prior attempts, prior versions and prior visas stay exactly
+ * as they were.
+ */
+export async function recordExpenseVisa(
+  authorizationId: string,
+  decision: VisaDecision,
+  comment?: string,
+): Promise<ExpenseActionResult<RecordVisaResult>> {
+  const ctx = await guard("finance:expense:sign");
+  if (isErr(ctx)) return fail(ctx) as ExpenseActionResult<RecordVisaResult>;
+  if (!VISA_DECISIONS.includes(decision)) return fail("invalid_input") as ExpenseActionResult<RecordVisaResult>;
+  // A refusal must always carry its reason (the audit fail-closed rule).
+  if (decision !== "APPROVED" && !nonEmpty(comment)) {
+    return fail("invalid_input") as ExpenseActionResult<RecordVisaResult>;
+  }
+
+  const admin = getAdminSupabaseClient();
+  const row = await loadAuthorization(admin, ctx.tenantId, authorizationId);
+  if (!row) return fail("not_found") as ExpenseActionResult<RecordVisaResult>;
+
+  // A submitted document enters its circuit on the first visa — one action for
+  // the signer, not two. Already-IN_APPROVAL documents skip straight through.
+  // RETURNED is the correction path: once the document is back in front of a
+  // signer it re-enters the circuit on the same edge the transition table already
+  // allows (RETURNED → IN_APPROVAL), reusing the attempt the edit opened.
+  let status = row.status as AuthorizationStatus;
+  if (status === "SUBMITTED" || status === "RETURNED") {
+    const opened = await openAttempt(admin, ctx, row);
+    if (!opened) return fail("invalid_state") as ExpenseActionResult<RecordVisaResult>;
+    status = "IN_APPROVAL";
+  }
+  if (status !== "IN_APPROVAL") return fail("invalid_state") as ExpenseActionResult<RecordVisaResult>;
+
+  const versionId = row.current_version_id as string | null;
+  if (!versionId) return fail("invalid_state") as ExpenseActionResult<RecordVisaResult>;
+
+  // The OPEN attempt must be bound to the CURRENT version. A stale attempt means
+  // the document was edited underneath the signer — refuse rather than sign an
+  // older version (a superseded version can never be approved).
+  const { data: attempt } = await admin
+    .from("expense_approval_attempt")
+    .select("id, version_id")
+    .eq("authorization_id", authorizationId)
+    .eq("tenant_id", ctx.tenantId)
+    .eq("status", "IN_PROGRESS")
+    .maybeSingle();
+  if (!attempt) return fail("invalid_state") as ExpenseActionResult<RecordVisaResult>;
+  if (attempt.version_id !== versionId) return fail("invalid_state") as ExpenseActionResult<RecordVisaResult>;
+
+  const version = await loadAuthorizationVersion(admin, ctx.tenantId, versionId);
+  if (!version) return fail("invalid_state") as ExpenseActionResult<RecordVisaResult>;
+
+  // Visas already on THIS version + THIS attempt — the evaluator's whole input.
+  const { data: existing } = await admin
+    .from("expense_visa")
+    .select("step_ordinal, decision, signer_user_id")
+    .eq("authorization_id", authorizationId)
+    .eq("tenant_id", ctx.tenantId)
+    .eq("version_id", versionId)
+    .eq("attempt_id", attempt.id);
+
+  const recorded = (existing ?? []).map((v) => ({
+    stepOrdinal: v.step_ordinal as number,
+    decision: v.decision as VisaDecision,
+    signerUserId: v.signer_user_id as string,
+  }));
+
+  const verdict = evaluateSign({
+    visas: recorded,
+    actorUserId: ctx.userId,
+    actorRoleCodes: ctx.roleCodes,
+    requesterUserId: row.requested_by as string,
+  });
+  if (!verdict.ok) return fail(verdict.reason) as ExpenseActionResult<RecordVisaResult>;
+
+  const signerRoleCode = verdict.step.code === REQUESTER_STEP ? "REQUESTER" : (signerRoleFor(verdict.step.code) ?? "");
+  const { data: person } = await admin
+    .from("app_user")
+    .select("name, email")
+    .eq("id", ctx.userId)
+    .eq("tenant_id", ctx.tenantId)
+    .maybeSingle();
+
+  const { data: visa, error: visaError } = await admin
+    .from("expense_visa")
+    .insert({
+      tenant_id: ctx.tenantId,
+      document_type: "EXPENSE_AUTHORIZATION",
+      authorization_id: authorizationId,
+      version_id: versionId,
+      attempt_id: attempt.id,
+      step_code: verdict.step.code,
+      step_ordinal: verdict.step.ordinal,
+      signer_user_id: ctx.userId,
+      signer_role_code: signerRoleCode,
+      signer_display_name: person?.name ?? person?.email ?? ctx.email,
+      decision,
+      comment: comment?.trim() || null,
+      content_sha256: version.content_sha256 as string,
+    })
+    .select("id")
+    .single();
+  // A UNIQUE violation means a concurrent signer took this exact step first.
+  if (visaError || !visa) return fail("out_of_sequence") as ExpenseActionResult<RecordVisaResult>;
+
+  const chainComplete = decision === "APPROVED" && isChainComplete([...recorded, { stepOrdinal: verdict.step.ordinal, decision, signerUserId: ctx.userId }]);
+  let nextStatus: AuthorizationStatus = "IN_APPROVAL";
+  if (decision === "REJECTED") nextStatus = "REJECTED";
+  else if (decision === "RETURNED") nextStatus = "RETURNED";
+  else if (chainComplete) nextStatus = "APPROVED";
+
+  if (nextStatus !== "IN_APPROVAL") {
+    if (!canTransitionAuthorization("IN_APPROVAL", nextStatus)) {
+      return fail("invalid_state") as ExpenseActionResult<RecordVisaResult>;
+    }
+    await admin
+      .from("expense_authorization")
+      .update({ status: nextStatus })
+      .eq("id", authorizationId)
+      .eq("tenant_id", ctx.tenantId)
+      .eq("status", "IN_APPROVAL"); // CAS
+    // Close the attempt with the SAME outcome. Never deleted, never rewritten.
+    await admin
+      .from("expense_approval_attempt")
+      .update({ status: decision === "APPROVED" ? "APPROVED" : decision, closed_at: new Date().toISOString() })
+      .eq("id", attempt.id)
+      .eq("tenant_id", ctx.tenantId)
+      .eq("status", "IN_PROGRESS");
+  }
+
+  await writeAudit({
+    action: AuditActions.EXPENSE_VISA_RECORDED,
+    actorId: ctx.userId,
+    tenantId: ctx.tenantId,
+    entity: "expense_authorization",
+    entityId: authorizationId,
+    before: { status: "IN_APPROVAL" },
+    after: {
+      step_code: verdict.step.code,
+      step_ordinal: verdict.step.ordinal,
+      decision,
+      attempt_id: attempt.id,
+      version_id: versionId,
+      status: nextStatus,
+      chain_complete: chainComplete,
+    },
+  });
+
+  return { ok: true, id: authorizationId, visaId: visa.id, status: nextStatus, chainComplete };
 }
 
 // =========================================================== voucher: create ==

@@ -10,10 +10,11 @@
  * its own permission AND the document's state — and each underlying action
  * re-asserts both, because a rendered button is never authorization.
  *
- * The signature section is DISPLAY-ONLY in this phase: no visa can be recorded
- * until 11.0D, so the boxes state plainly that the printed form is signed by
- * hand — and the two steps whose signer the business has not yet named are shown
- * as unconfigured rather than silently omitted (BLK-FIN-1 / BLK-FIN-2).
+ * Phase 11.0D replaced the display-only visa list with the LIVE chain: the
+ * timeline renders the pure evaluator's projection, and the sign/reject/return
+ * controls appear only for the awaited signer — with the step whose signer the
+ * business has not yet named shown as halted rather than silently omitted
+ * (BLK-FIN-2).
  */
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -22,6 +23,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import {
+  getExpenseAuthorizationChain,
   getExpenseAuthorizationDetail,
   getExpenseAuthorizationVersions,
   listExpenseAttachments,
@@ -29,13 +31,13 @@ import {
 import {
   AUTHORIZATION_EDITABLE_STATUSES,
   AUTHORIZATION_STATUS_LABELS_FR,
-  isUnboundVisaStep,
   type AuthorizationStatus,
 } from "@/lib/finance/expense/types";
-import { AUTHORIZATION_VISA_BOXES } from "@/lib/finance/expense/template-map";
 import { AuthorizationForm } from "@/components/finance/expense/authorization-form";
 import { AuthorizationActions } from "@/components/finance/expense/authorization-actions";
 import { AttachmentManager } from "@/components/finance/expense/attachment-manager";
+import { ApprovalTimeline } from "@/components/finance/expense/approval-timeline";
+import { VisaActions } from "@/components/finance/expense/visa-actions";
 import { fmtNumber } from "@/lib/reports/templates";
 
 export const metadata: Metadata = { title: "Autorisation de dépenses" };
@@ -60,9 +62,10 @@ export default async function ExpenseAuthorizationDetailPage({ params }: { param
   const doc = await getExpenseAuthorizationDetail(params.id);
   if (!doc) notFound();
 
-  const [versions, attachments] = await Promise.all([
+  const [versions, attachments, chain] = await Promise.all([
     getExpenseAuthorizationVersions(doc.id),
     listExpenseAttachments(doc.id),
+    getExpenseAuthorizationChain(doc.id),
   ]);
 
   const editable = AUTHORIZATION_EDITABLE_STATUSES.includes(doc.status as AuthorizationStatus);
@@ -147,26 +150,20 @@ export default async function ExpenseAuthorizationDetailPage({ params }: { param
         editable={editable && canCreate}
       />
 
-      {/* Signature section — display only in 11.0C (no visa can be recorded yet). */}
-      <section className="surface space-y-3 p-4">
-        <h2 className="text-sm font-semibold text-navy-900">Visas et approbations</h2>
-        <p className="text-xs text-slate-500">
-          Les visas électroniques seront activés en phase 11.0D. Le document imprimé porte les sept cases de
-          visa dans l'ordre du formulaire et se signe à la main, comme aujourd'hui.
-        </p>
-        <ol className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-          {AUTHORIZATION_VISA_BOXES.map((v) => (
-            <li key={v.code} className="rounded-lg border border-slate-200 p-3">
-              <p className="text-xs font-semibold text-navy-900">
-                {v.ordinal}. {v.label}
-              </p>
-              <p className="mt-1 text-[11px] text-slate-400">
-                {isUnboundVisaStep(v.code) ? "Signataire non configuré" : "En attente"}
-              </p>
-            </li>
-          ))}
-        </ol>
-      </section>
+      {/* Phase 11.0D — the live visa chain, decided by the pure evaluator. */}
+      {chain && (
+        <>
+          {chain.callerCanSign || chain.callerRefusal ? (
+            <VisaActions
+              id={doc.id}
+              stepLabelFr={chain.currentStep?.labelFr ?? null}
+              canSign={chain.callerCanSign}
+              refusal={chain.callerRefusal}
+            />
+          ) : null}
+          <ApprovalTimeline steps={chain.steps} attemptNumber={chain.attemptNumber} history={chain.history} />
+        </>
+      )}
 
       <section className="surface space-y-3 p-4">
         <h2 className="text-sm font-semibold text-navy-900">Versions</h2>

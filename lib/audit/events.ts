@@ -430,6 +430,11 @@ export const AuditActions = {
   EXPENSE_ATTACHMENT_ADDED: "finance.expense.attachment.added",
   EXPENSE_ATTACHMENT_RETIRED: "finance.expense.attachment.retired",
   EXPENSE_AUTHORIZATION_PDF_GENERATED: "finance.expense.authorization.pdf_generated",
+
+  // Phase 11.0D — the approval chain. Payload carries step code/ordinal,
+  // decision, attempt, version and resulting status ONLY: never the amount, the
+  // beneficiary, the signer's comment text, or the document's field values.
+  EXPENSE_VISA_RECORDED: "finance.expense.visa.recorded",
 } as const;
 
 export type AuditActionCode = (typeof AuditActions)[keyof typeof AuditActions];

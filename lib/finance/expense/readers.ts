@@ -10,16 +10,40 @@
 import "server-only";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
-import type { AuthorizationStatus, VoucherStatus } from "./types";
+import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
+import {
+  chainStateView,
+  evaluateSign,
+  isBlockedStep,
+  nextRequiredStep,
+  signerRoleFor,
+  visaLabelFr,
+  type ChainStepView,
+  type ChainVisa,
+  type SignRefusal,
+} from "./visa";
+import type { AuthorizationStatus, VisaDecision, VoucherStatus } from "./types";
 
 type Admin = ReturnType<typeof getAdminSupabaseClient>;
-type Ctx = { userId: string; tenantId: string };
+type Ctx = {
+  userId: string;
+  tenantId: string;
+  /** 11.0D: the signer check needs the caller's roles + signing capability. */
+  roleCodes: readonly string[];
+  canSign: boolean;
+};
 
 /** Resolve the caller + assert finance:expense:read. Returns null when unauthorized. */
 async function readGuard(): Promise<Ctx | null> {
   try {
     const user = await assertPermission("finance:expense:read");
-    return { userId: user.id, tenantId: user.tenantId };
+    const permissions = await getEffectivePermissions(user.id);
+    return {
+      userId: user.id,
+      tenantId: user.tenantId,
+      roleCodes: user.roles,
+      canSign: hasPermission(permissions, "finance:expense:sign"),
+    };
   } catch {
     return null;
   }
@@ -409,6 +433,203 @@ export async function getExpenseVisaHistory(
       signerRoleCode: v.signer_role_code,
       decidedAt: v.decided_at,
     }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The live visa chain of one authorization (Phase 11.0D) — the projection every
+ * approval surface renders. The chain STATE is computed by the pure evaluator
+ * (./visa), never re-derived here, so the timeline, the queue and the sign
+ * button can never disagree about where the document actually is.
+ *
+ * Only the CURRENT version's + CURRENT attempt's visas drive the state; earlier
+ * attempts are returned separately as immutable history.
+ */
+export type AuthorizationChainView = {
+  steps: ChainStepView[];
+  /** The step awaiting signature, or null when the chain is complete. */
+  currentStep: { code: string; ordinal: number; labelFr: string; roleCode: string | null; blocked: boolean } | null;
+  /** True when the caller may sign the current step right now. */
+  callerCanSign: boolean;
+  /** Why the caller cannot sign — null when they can (or when nothing is pending). */
+  callerRefusal: SignRefusal | null;
+  attemptNumber: number | null;
+  /** Every visa ever recorded on this document, across versions and attempts. */
+  history: ExpenseVisaView[];
+};
+
+export async function getExpenseAuthorizationChain(authorizationId: string): Promise<AuthorizationChainView | null> {
+  const ctx = await readGuard();
+  if (!ctx) return null;
+  const admin = getAdminSupabaseClient();
+
+  try {
+    const { data: doc } = await admin
+      .from("expense_authorization")
+      .select("id, status, current_version_id, requested_by")
+      .eq("id", authorizationId)
+      .eq("tenant_id", ctx.tenantId)
+      .maybeSingle();
+    if (!doc) return null;
+
+    const [{ data: attempt }, history] = await Promise.all([
+      admin
+        .from("expense_approval_attempt")
+        .select("id, attempt_number, version_id")
+        .eq("authorization_id", authorizationId)
+        .eq("tenant_id", ctx.tenantId)
+        .eq("status", "IN_PROGRESS")
+        .maybeSingle(),
+      getExpenseVisaHistory("EXPENSE_AUTHORIZATION", authorizationId),
+    ]);
+
+    // Visas that COUNT are those on the current version + the open attempt.
+    let live: ChainVisa[] = [];
+    if (attempt && doc.current_version_id && attempt.version_id === doc.current_version_id) {
+      const { data: rows } = await admin
+        .from("expense_visa")
+        .select("step_code, step_ordinal, decision, signer_user_id, signer_display_name, decided_at, comment")
+        .eq("authorization_id", authorizationId)
+        .eq("tenant_id", ctx.tenantId)
+        .eq("version_id", doc.current_version_id)
+        .eq("attempt_id", attempt.id)
+        .order("step_ordinal", { ascending: true });
+      live = (rows ?? []).map((v) => ({
+        stepCode: v.step_code,
+        stepOrdinal: v.step_ordinal,
+        decision: v.decision as VisaDecision,
+        signerUserId: v.signer_user_id,
+        signerDisplayName: v.signer_display_name,
+        decidedAt: v.decided_at,
+        comment: v.comment,
+      }));
+    }
+
+    const steps = chainStateView(live);
+    const next = nextRequiredStep(live);
+
+    // The caller's own eligibility, from the SAME evaluator the action uses.
+    const signable = ["SUBMITTED", "IN_APPROVAL", "RETURNED"].includes(doc.status as string);
+    const verdict = evaluateSign({
+      visas: live,
+      actorUserId: ctx.userId,
+      actorRoleCodes: ctx.roleCodes,
+      requesterUserId: doc.requested_by as string,
+    });
+
+    return {
+      steps,
+      currentStep: next
+        ? {
+            code: next.code,
+            ordinal: next.ordinal,
+            labelFr: visaLabelFr(next.code),
+            roleCode: signerRoleFor(next.code),
+            blocked: isBlockedStep(next.code),
+          }
+        : null,
+      callerCanSign: signable && verdict.ok && ctx.canSign,
+      callerRefusal: verdict.ok ? null : verdict.reason,
+      attemptNumber: attempt?.attempt_number ?? null,
+      history,
+    };
+  } catch {
+    return null; // migration absent
+  }
+}
+
+export type ApprovalQueueItem = {
+  id: string;
+  authorizationNumber: string | null;
+  beneficiary: string;
+  amount: number;
+  currency: string;
+  status: AuthorizationStatus;
+  stepCode: string;
+  stepLabelFr: string;
+  stepOrdinal: number;
+  createdAt: string;
+};
+
+/**
+ * Documents waiting for THIS caller's signature (Phase 11.0D). The queue is
+ * derived, never stored: each candidate's chain is evaluated with the same pure
+ * function the sign action uses, so a document appears here if and only if the
+ * caller could actually sign it.
+ *
+ * Deliberately EXCLUDES documents halted on an unbound signer — they are not
+ * anyone's work until the business names the signer (BLK-FIN-2).
+ */
+export async function getExpenseApprovalQueue(): Promise<ApprovalQueueItem[]> {
+  const ctx = await readGuard();
+  if (!ctx || !ctx.canSign) return [];
+  const admin = getAdminSupabaseClient();
+
+  try {
+    const { data: docs } = await admin
+      .from("expense_authorization")
+      .select("id, authorization_number, beneficiary, amount, currency, status, current_version_id, requested_by, created_at")
+      .eq("tenant_id", ctx.tenantId)
+      .in("status", ["SUBMITTED", "IN_APPROVAL", "RETURNED"])
+      .order("created_at", { ascending: true });
+    if (!docs || docs.length === 0) return [];
+
+    const ids = docs.map((d) => d.id);
+    const [{ data: attempts }, { data: visas }] = await Promise.all([
+      admin
+        .from("expense_approval_attempt")
+        .select("id, authorization_id, version_id")
+        .in("authorization_id", ids)
+        .eq("tenant_id", ctx.tenantId)
+        .eq("status", "IN_PROGRESS"),
+      admin
+        .from("expense_visa")
+        .select("authorization_id, attempt_id, step_ordinal, decision, signer_user_id")
+        .in("authorization_id", ids)
+        .eq("tenant_id", ctx.tenantId),
+    ]);
+
+    const attemptByDoc = new Map((attempts ?? []).map((a) => [a.authorization_id as string, a]));
+    const out: ApprovalQueueItem[] = [];
+
+    for (const doc of docs) {
+      const attempt = attemptByDoc.get(doc.id);
+      // A document with no attempt yet (freshly SUBMITTED) starts at step 1.
+      const live =
+        attempt && attempt.version_id === doc.current_version_id
+          ? (visas ?? [])
+              .filter((v) => v.authorization_id === doc.id && v.attempt_id === attempt.id)
+              .map((v) => ({
+                stepOrdinal: v.step_ordinal as number,
+                decision: v.decision as VisaDecision,
+                signerUserId: v.signer_user_id as string,
+              }))
+          : [];
+
+      const verdict = evaluateSign({
+        visas: live,
+        actorUserId: ctx.userId,
+        actorRoleCodes: ctx.roleCodes,
+        requesterUserId: doc.requested_by as string,
+      });
+      if (!verdict.ok) continue;
+
+      out.push({
+        id: doc.id,
+        authorizationNumber: doc.authorization_number,
+        beneficiary: doc.beneficiary,
+        amount: Number(doc.amount ?? 0),
+        currency: doc.currency,
+        status: doc.status as AuthorizationStatus,
+        stepCode: verdict.step.code,
+        stepLabelFr: visaLabelFr(verdict.step.code),
+        stepOrdinal: verdict.step.ordinal,
+        createdAt: doc.created_at,
+      });
+    }
+    return out;
   } catch {
     return [];
   }

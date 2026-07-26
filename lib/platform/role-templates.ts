@@ -112,6 +112,11 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "tracking:read:all", "transport:read", "logistics:copilot:read",
       // Phase 8.7 — Messaging Center. Governance visibility: general customer-service thread only.
       "messaging:read", "messaging:send", "messaging:read:general",
+      // Phase 11.0D — the DG visa (last step of the Autorisation chain, DEC-C08).
+      // This is the CEO's first write-class finance capability — the deliberate
+      // governance change flagged in 11.0A §4, not a silent widening. Read is
+      // required to see the document being signed.
+      "finance:expense:read", "finance:expense:sign",
     ],
   },
   {
@@ -170,6 +175,8 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       // blockers and skips non-applicable steps; deliberately NOT decision:approve
       // (manager-approval policy unresolved) and NOT team:manage (Transit's call).
       "process:owner:assign", "process:decision:create", "process:blocker:manage", "process:step:skip",
+      // Phase 11.0D — VISA_COORDONNATEUR, step 3 of the Autorisation chain (DEC-C08/C11).
+      "finance:expense:read", "finance:expense:sign",
     ],
   },
   {
@@ -192,6 +199,8 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       // Phase 9.0B — Transit requests continue-before-payment decisions, manages
       // its blockers and its AIBD/Maritime team rosters.
       "process:decision:create", "process:blocker:manage", "process:team:manage",
+      // Phase 11.0D — VISA_CHEF_TRANSIT, step 2 of the Autorisation chain (DEC-C08/C11).
+      "finance:expense:read", "finance:expense:sign",
     ],
   },
   {
@@ -276,6 +285,10 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       // wired in 11.0C/D. No execute (payment execution is the Cashier's).
       "finance:expense:read", "finance:expense:create", "finance:expense:submit",
       "finance:expense:export",
+      // Phase 11.0D — VISA_DEMANDEUR is identity-bound (the document's own
+      // requester signs it), and requesters are finance agents, so the seat needs
+      // the sign capability. VISA_AGENT on the BON remains 11.0E.
+      "finance:expense:sign",
     ],
   },
   {
@@ -524,11 +537,15 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
   // Phase 11.0B — Finance Expense Documents. Four ratified authorizer seats
   // (DEC-C11) for the two paper forms' visa chains, mapped to the FINANCE
   // canonical department (metadata only, lib/organization/departments.ts).
-  // FOUNDATION grant = own profile + finance read + expense read/export. Their
-  // AUTHORIZATION capability (finance:expense:sign) is deliberately WITHHELD
-  // until 11.0C/D wires the visa signer-map — VISA_RECEPTION / VISA_OPERATIONS
-  // remain unmapped business blockers (BLK-FIN-1 / BLK-FIN-2). Mirrored in
-  // supabase/seed.sql + migration 20260725000001_expense_documents.sql.
+  // FOUNDATION grant = own profile + finance read + expense read/export.
+  //
+  // Phase 11.0D wired the AUTORISATION chain only (DEC-C08): TREASURER and DAF
+  // sign it and gain finance:expense:sign. ACCOUNTANT (« Visa Comptable ») and
+  // DGA (« Visa DGA ») sign the BON's chain — their signing capability stays
+  // WITHHELD until that workflow ships, so no seat holds authority it cannot yet
+  // legitimately exercise. VISA_RECEPTION / VISA_OPERATIONS remain unmapped
+  // business blockers (BLK-FIN-1 / BLK-FIN-2) and are granted to nobody.
+  // Mirrored in supabase/seed.sql + migration 20260726000002_expense_approval_chain.sql.
   // =========================================================================
   {
     key: "ACCOUNTANT",
@@ -552,6 +569,8 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     requiredForEveryTenant: false,
     permissions: [
       ...BASE, "finance:read", "finance:expense:read", "finance:expense:export",
+      // Phase 11.0D — a signing seat of the Autorisation chain (DEC-C08/C11).
+      "finance:expense:sign",
     ],
   },
   {
@@ -564,6 +583,8 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     requiredForEveryTenant: false,
     permissions: [
       ...BASE, "finance:read", "finance:expense:read", "finance:expense:export",
+      // Phase 11.0D — a signing seat of the Autorisation chain (DEC-C08/C11).
+      "finance:expense:sign",
     ],
   },
   {
