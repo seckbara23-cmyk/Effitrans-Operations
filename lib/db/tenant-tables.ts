@@ -113,6 +113,10 @@ export const TENANT_SCOPED_TABLES = new Set<string>([
   // it; the handful of deliberate platform-scope reads are enumerated in the leak
   // guard's KNOWN_UNSCOPED_READS with their reason.
   "workflow_policy_version",
+  // immutable business event ledger (Phase WES-9). Append-only; the internal
+  // reader runs on the RLS-enforced client, and the portal projection uses the
+  // admin client tenant-scoped explicitly.
+  "business_event",
 ]);
 
 /**

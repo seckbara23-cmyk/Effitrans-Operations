@@ -3565,6 +3565,36 @@ export type Database = {
         };
         Relationships: [];
       };
+      // Phase WES-9 — immutable business event ledger (ADR-WES-014).
+      // No Update type: the table is append-only and a trigger blocks UPDATE
+      // and DELETE for every role. There is no Insert type either — rows are
+      // created ONLY by emit_business_event() from DB triggers and RPCs, never
+      // by the application, and omitting Insert makes that unrepresentable in
+      // TypeScript rather than merely discouraged.
+      business_event: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          event_type: string;
+          event_domain: string;
+          event_version: number;
+          source: string;
+          dossier_id: string | null;
+          subject_type: string;
+          subject_id: string | null;
+          actor_user_id: string | null;
+          correlation_id: string | null;
+          causation_id: string | null;
+          metadata: Record<string, string | number | boolean> | null;
+          policy_version_id: string | null;
+          policy_provenance: string | null;
+          occurred_at: string;
+          created_at: string;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
       // Phase 11.0C — finance-classified supporting documents (DEC-C22).
       expense_attachment: {
         Row: {

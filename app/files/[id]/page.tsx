@@ -37,6 +37,7 @@ import { SlaPanel } from "@/components/files/sla-panel";
 import { CopilotPanel } from "@/components/copilot/copilot-panel";
 import { RiskPanel } from "@/components/copilot/risk-panel";
 import { assessRisk, overdueDays, type RiskInput } from "@/lib/copilot/risk-engine";
+import { EventTimeline } from "@/components/files/event-timeline";
 import { t } from "@/lib/i18n";
 
 export const metadata: Metadata = { title: t.files.title };
@@ -280,6 +281,10 @@ export default async function FileDetailPage({ params }: { params: { id: string 
         </div>
       )}
       {canReadComms && <CommunicationsTimeline messages={communications} />}
+      {/* WES-9: canonical operational history. No permission gate here — the
+          RLS policy on business_event is the boundary, and it defers to the
+          dossier's own visibility rule rather than inventing a second one. */}
+      <EventTimeline fileId={file.id} />
       <FileDangerZone
         fileId={file.id}
         canManage={canManageLifecycle}
