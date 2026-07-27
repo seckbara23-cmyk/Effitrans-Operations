@@ -16,6 +16,8 @@ import { createNotification } from "@/lib/notifications/create";
 import { t } from "@/lib/i18n";
 import { validateTask } from "./validate";
 import { canTransition, isTaskStatus, ACTIVE_STATUSES } from "./status";
+import { getDossierAccess } from "@/lib/workflow/access/service";
+import { mayCompleteWork } from "@/lib/workflow/access/resolver";
 import type { ActionResult, TaskInput, TaskStatus } from "./types";
 
 type Admin = ReturnType<typeof getAdminSupabaseClient>;
@@ -230,7 +232,15 @@ export async function changeTaskStatus(id: string, toStatus: string): Promise<Ac
   return { ok: true, id };
 }
 
-export async function completeTask(id: string): Promise<ActionResult> {
+export async function completeTask(
+  id: string,
+  /**
+   * WES-3B: completing work that is not yours is an INTERVENTION, and an
+   * intervention must be declared and explained. Omitting it is not a way to
+   * complete someone else's task quietly — it is refused.
+   */
+  intervention?: { reason: string },
+): Promise<ActionResult> {
   let user;
   try {
     user = await assertPermission("task:update");
@@ -242,6 +252,45 @@ export async function completeTask(id: string): Promise<ActionResult> {
   const task = await loadTask(supabase, id, user.tenantId);
   if (!task) return { ok: false, error: "not_found" };
   if (!canTransition(task.status as TaskStatus, "DONE")) return { ok: false, error: "invalid_transition" };
+
+  // COMPLETION AUTHORITY (WES-3B). Before WES-3 this action had NO assignee
+  // check at all: `task:update` let anyone in the tenant complete anyone's work,
+  // which is precisely the "people own tasks" guarantee the doctrine requires.
+  //
+  // The rule, from the pure resolver so pages, actions and tests share it:
+  //   * the assignee completes their own task;
+  //   * anyone else is intervening, which requires the authority AND a reason.
+  const assignee = task.assigned_to as string | null;
+  const isAssignee = !!assignee && assignee === user.id;
+
+  if (!isAssignee) {
+    const access = await getDossierAccess(task.file_id);
+    const verdict = mayCompleteWork(
+      access ?? {
+        canViewSummary: false, canViewCurrentDepartmentDetail: false,
+        canViewHistoricalDepartmentDetail: false, canViewDocuments: false,
+        canActOnCurrentStep: false, canCompleteAssignedTask: false,
+        canReassignWithinDepartment: false, canIntervene: false,
+        visibilityReason: "none", reasons: [],
+      },
+      { intervening: true, reason: intervention?.reason ?? null },
+    );
+    if (!verdict.ok) return { ok: false, error: verdict.error };
+
+    // An intervention is recorded as such — never as ordinary completion.
+    await writeAudit({
+      action: AuditActions.TASK_COMPLETED,
+      actorId: user.id,
+      tenantId: user.tenantId,
+      entity: "task",
+      entityId: id,
+      after: {
+        intervention: true,
+        reason: intervention?.reason ?? "",
+        previous_assignee: assignee,
+      },
+    });
+  }
 
   const { error } = await supabase
     .from("task")

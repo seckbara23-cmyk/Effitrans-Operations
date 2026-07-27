@@ -3565,6 +3565,30 @@ export type Database = {
         };
         Relationships: [];
       };
+      // Phase WES-3A — append-only assignment history. No Insert/Update types:
+      // rows are written ONLY by the assign_* RPCs, in the same transaction as
+      // the assignment itself, and a trigger blocks UPDATE and DELETE.
+      assignment_event: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          file_id: string | null;
+          subject_type: string;
+          subject_id: string;
+          previous_user_id: string | null;
+          new_user_id: string | null;
+          actor_user_id: string | null;
+          reason: string | null;
+          reason_code: string | null;
+          workflow_step_key: string | null;
+          policy_version_id: string | null;
+          provenance: string;
+          created_at: string;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
       // Phase WES-9 — immutable business event ledger (ADR-WES-014).
       // No Update type: the table is append-only and a trigger blocks UPDATE
       // and DELETE for every role. There is no Insert type either — rows are
@@ -3699,6 +3723,43 @@ export type Database = {
       // Phase WES-7 — atomic policy activation (retire previous + promote new).
       activate_workflow_policy: {
         Args: { p_version_id: string; p_actor: string | null; p_reason: string; p_schema_version: number };
+        Returns: Json;
+      };
+      // Phase WES-3A — assignment + append-only history + business event, all
+      // in ONE transaction. The application never writes these assignee columns
+      // directly; that would be the dual write WES-9A prohibited.
+      assign_task: {
+        Args: {
+          p_task_id: string;
+          p_new_user_id: string | null;
+          p_actor: string | null;
+          p_reason_code: string;
+          p_reason?: string | null;
+          p_step_key?: string | null;
+          p_policy_id?: string | null;
+        };
+        Returns: Json;
+      };
+      assign_process_step: {
+        Args: {
+          p_execution_id: string;
+          p_new_user_id: string | null;
+          p_actor: string | null;
+          p_reason_code: string;
+          p_reason?: string | null;
+          p_policy_id?: string | null;
+        };
+        Returns: Json;
+      };
+      assign_operational_owner: {
+        Args: {
+          p_instance_id: string;
+          p_new_user_id: string;
+          p_actor: string | null;
+          p_reason_code: string;
+          p_reason?: string | null;
+          p_policy_id?: string | null;
+        };
         Returns: Json;
       };
       next_invoice_number: {

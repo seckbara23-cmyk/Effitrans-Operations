@@ -38,6 +38,8 @@ import { CopilotPanel } from "@/components/copilot/copilot-panel";
 import { RiskPanel } from "@/components/copilot/risk-panel";
 import { assessRisk, overdueDays, type RiskInput } from "@/lib/copilot/risk-engine";
 import { EventTimeline } from "@/components/files/event-timeline";
+import { OwnershipPanel } from "@/components/files/ownership-panel";
+import { getDossierAccess } from "@/lib/workflow/access/service";
 import { t } from "@/lib/i18n";
 
 export const metadata: Metadata = { title: t.files.title };
@@ -141,6 +143,11 @@ export default async function FileDetailPage({ params }: { params: { id: string 
     invoices: (finance?.invoices ?? []).map((i) => ({ status: i.status, balance: i.balance })),
     podApproved,
   };
+  // WES-3D — the ONE access contract. Everything the ownership panel shows, and
+  // the reason it is visible at all, comes from here.
+  const dossierAccess = await getDossierAccess(file.id);
+  const currentTask = tasks.find((t) => t.status === "TODO" || t.status === "IN_PROGRESS") ?? null;
+
   const lifecycle = getDossierLifecycle(lifecycleInput);
   // WES-2 — the ONE canonical projection. Progress, stage and next action come
   // from here; no component on this page computes any of them.
@@ -193,6 +200,17 @@ export default async function FileDetailPage({ params }: { params: { id: string 
         canAssign={canAssign}
       />
       <LifecycleTracker lifecycle={lifecycle} projection={projection} openHandoff={openHandoff ? { title: openHandoff.title } : null} />
+      {/* WES-3K — the four ownership concepts, shown SEPARATELY. Replaces the
+          ambiguous single « responsable » the 9.0A audit flagged. */}
+      {dossierAccess && (
+        <OwnershipPanel
+          fileId={file.id}
+          access={dossierAccess}
+          responsibleDepartment={projection.responsibleDepartment}
+          currentTaskTitle={currentTask?.title ?? null}
+          currentTaskAssigneeLabel={currentTask?.assignedToEmail ?? null}
+        />
+      )}
       <RiskPanel risk={risk} />
       {sla && <SlaPanel sla={sla} department={lifecycle.currentDepartment} />}
       <FileForm mode="edit" fileId={file.id} initial={file} clients={clients} canUpdate={canUpdate} />

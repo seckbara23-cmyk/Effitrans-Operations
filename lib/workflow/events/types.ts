@@ -58,6 +58,13 @@ export type EventTypeDef = {
 /** Keys shared by the status-transition events. */
 const TRANSITION = ["previous_status", "new_status"] as const;
 
+/**
+ * Keys shared by the WES-3 assignment events. Note what is ABSENT: `reason`.
+ * The structured code travels; the explanation stays in `assignment_event`,
+ * reachable through `assignment_event_id`.
+ */
+const ASSIGNMENT_KEYS = ["reason_code", "assignment_event_id", "workflow_step_key"] as const;
+
 export const EVENT_TYPES: readonly EventTypeDef[] = [
   // ------------------------------------------------------------------ dossier
   { type: "DOSSIER_OPENED", domain: "dossier", version: 1, emission: "trigger", metadataKeys: ["file_number", "file_type"], clientSafe: true, labelFr: "Dossier ouvert" },
@@ -100,6 +107,22 @@ export const EVENT_TYPES: readonly EventTypeDef[] = [
   // WES-3 (assignment history) is where that actor becomes knowable.
   { type: "TASK_COMPLETED", domain: "task", version: 1, emission: "trigger", metadataKeys: [...TRANSITION], clientSafe: false, labelFr: "Tâche terminée" },
   { type: "TASK_CANCELLED", domain: "task", version: 1, emission: "trigger", metadataKeys: [...TRANSITION], clientSafe: false, labelFr: "Tâche annulée" },
+
+  // --------------------------------------------------------- assignment WES-3
+  // Emitted by the assign_* RPCs, which perform the assignment write, the
+  // assignment_event append and this event in ONE transaction.
+  //
+  // `reason` is NEVER carried here. WES-9A / DEC-B75 ratified that unrestricted
+  // free text must not reach the immutable ledger: the event carries the
+  // STRUCTURED `reason_code` plus `assignment_event_id`, a safe reference into
+  // the protected assignment ledger where the explanation actually lives.
+  { type: "TASK_ASSIGNED", domain: "task", version: 1, emission: "rpc", metadataKeys: ASSIGNMENT_KEYS, clientSafe: false, labelFr: "Tâche affectée" },
+  { type: "TASK_REASSIGNED", domain: "task", version: 1, emission: "rpc", metadataKeys: ASSIGNMENT_KEYS, clientSafe: false, labelFr: "Tâche réaffectée" },
+  { type: "TASK_UNASSIGNED", domain: "task", version: 1, emission: "rpc", metadataKeys: ASSIGNMENT_KEYS, clientSafe: false, labelFr: "Affectation retirée" },
+  { type: "STEP_ASSIGNED", domain: "task", version: 1, emission: "rpc", metadataKeys: ASSIGNMENT_KEYS, clientSafe: false, labelFr: "Étape affectée" },
+  { type: "STEP_REASSIGNED", domain: "task", version: 1, emission: "rpc", metadataKeys: ASSIGNMENT_KEYS, clientSafe: false, labelFr: "Étape réaffectée" },
+  { type: "OPERATIONAL_OWNER_ASSIGNED", domain: "dossier", version: 1, emission: "rpc", metadataKeys: ASSIGNMENT_KEYS, clientSafe: false, labelFr: "Responsable opérationnel désigné" },
+  { type: "OPERATIONAL_OWNER_REASSIGNED", domain: "dossier", version: 1, emission: "rpc", metadataKeys: ASSIGNMENT_KEYS, clientSafe: false, labelFr: "Responsable opérationnel changé" },
 
   // ------------------------------------------------------------------ handoff
   { type: "HANDOFF_SENT", domain: "handoff", version: 1, emission: "reserved", metadataKeys: ["from_step", "to_step"], clientSafe: false, labelFr: "Transfert envoyé" },
@@ -159,6 +182,9 @@ export const EVENT_SOURCES = [
   "db_trigger",
   "policy_rpc",
   "app_action",
+  // WES-3: the assign_* RPCs, which write the assignment, its history row and
+  // this event in one transaction.
+  "assignment_rpc",
 ] as const;
 export type EventSource = (typeof EVENT_SOURCES)[number];
 

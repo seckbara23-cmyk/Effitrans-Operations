@@ -117,6 +117,9 @@ export const TENANT_SCOPED_TABLES = new Set<string>([
   // reader runs on the RLS-enforced client, and the portal projection uses the
   // admin client tenant-scoped explicitly.
   "business_event",
+  // append-only assignment history (Phase WES-3A). Written only by the assign_*
+  // RPCs; read through the RLS-enforced client or explicitly tenant-scoped.
+  "assignment_event",
 ]);
 
 /**

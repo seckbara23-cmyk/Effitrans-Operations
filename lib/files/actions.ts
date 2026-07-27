@@ -281,6 +281,35 @@ export async function deleteFile(id: string, reason?: string): Promise<ActionRes
  * new assignee, and best-effort notifies the NEW assignee (no self/unassign/
  * no-op spam). Gate: file:assign.
  */
+/**
+ * @deprecated WES-3F — the legacy single-slot dossier assignment.
+ *
+ * `operational_file.assigned_to_user_id` behaved as a dossier-owner shortcut and
+ * was, before WES-3, one of only two non-owner routes into
+ * `user_readable_file_ids`. That is why reassigning a dossier could make it
+ * disappear for the person who had been working it.
+ *
+ * WES-3 RETIRES THE SEMANTIC, not the column:
+ *   * it no longer grants visibility — removed from `user_readable_file_ids`
+ *     in migration `20260727000002`;
+ *   * it is no longer a source of operational ownership — that is
+ *     `process_instance.owner_user_id`, resolved through
+ *     `resolveEffectiveProcessOwner`;
+ *   * it no longer represents "the current worker" — people are assigned TASKS
+ *     (`assignTaskToUser`) and STEPS (`assignStepToUser`).
+ *
+ * The column and this action survive a compatibility window so existing rows
+ * keep displaying. Its value is NOT copied into any canonical field: the audit
+ * found no evidence of what it was ever intended to mean per row, and
+ * fabricating an ownership history from it would be worse than leaving it as
+ * legacy metadata.
+ *
+ * REMOVAL CRITERIA: once no read path references `assignedToUserId` and the
+ * dossier page shows the canonical four (commercial owner, operational owner,
+ * responsible department, current assignee), the column is dropped.
+ *
+ * Use `assignTaskToUser` / `assignStepToUser` / `assignOperationalOwner`.
+ */
 export async function assignFile(id: string, assigneeUserId: string | null): Promise<ActionResult> {
   let admin;
   try {

@@ -42,6 +42,7 @@ const sqlCode = (p: string) => read(p).replace(/^\s*--.*$/gm, "");
 
 const MIGRATION = "supabase/migrations/20260726000004_business_event_ledger.sql";
 const ATOMICITY = "supabase/migrations/20260727000001_business_event_atomicity.sql";
+const ASSIGNMENT = "supabase/migrations/20260727000002_assignment_history.sql";
 const migration = () => sqlCode(MIGRATION);
 /** WES-9A: the emission functions as they stand today (62 replaced by 63). */
 const atomicity = () => sqlCode(ATOMICITY);
@@ -640,9 +641,12 @@ describe("event sources", () => {
   });
 
   it("emits every non-reserved type the registry declares", () => {
-    const sql = migration();
+    // Across every migration that emits: WES-9 ships the domain events, WES-3
+    // the assignment ones. A type declared emitted with nothing emitting it
+    // would be a lie about coverage, which is what this guards.
+    const all = migration() + atomicity() + sqlCode(ASSIGNMENT);
     for (const def of emittedEventTypes()) {
-      expect(sql).toContain(`'${def.type}'`);
+      expect(all).toContain(`'${def.type}'`);
     }
   });
 
