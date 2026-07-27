@@ -21,7 +21,7 @@ Execution order is dependency-driven, not numeric (WES-0A §6):
 | **WES-3B** | **rollout consistency repair (Recouvrement)** | ✅ **done** — console now shows what is LIVE; ⚠ operator must set EFFITRANS_COLLECTIONS_ENABLED |
 | **WES-4** | **BAE governance + document doctrine** | ✅ **done** |
 | **WES-4G/4H** | **generated artifacts, upload hashing, sharing enforcement, operator UI** | ✅ **done** — WES-4 fully complete |
-| **WES-5** | **engine/module reconciliation** | ✅ **done (core)** — POD defect fixed; conflicts returned not persisted; see §10 |
+| **WES-5** | **engine/module reconciliation** | ✅ **done (core), CI-verified + deployed** — `3c85e87`, run 30305934500 (54/54 suites, 0 skipped); prod /api/version matches; POD defect fixed; conflicts returned not persisted; see §10. ⚠ Authenticated new-dossier smoke = operator step, folded into UAT-1 |
 | WES-8 | SLA engine (ADR-WES-013) | ⬜ |
 | WES-6 | missions + chauffeur portal (reuse analysis first) | ⬜ |
 
