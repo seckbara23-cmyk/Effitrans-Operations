@@ -53,7 +53,7 @@ insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-00000000a004', 'w3-a4@test.local'),
   ('00000000-0000-0000-0000-00000000a005', 'w3-a5@test.local'),
   ('00000000-0000-0000-0000-00000000b001', 'w3-b1@test.local'),
-  ('00000000-0000-0000-0000-00000000p001', 'w3-p1@test.local')
+  ('00000000-0000-0000-0000-00000000cc01', 'w3-p1@test.local')
 on conflict (id) do nothing;
 
 insert into public.app_user (id, tenant_id, email, status) values
@@ -88,7 +88,7 @@ insert into public.client (id, tenant_id, name) values
   ('00000000-0000-0000-0000-0000000000ca', '00000000-0000-0000-0000-000000000001', 'W3 Client')
 on conflict (id) do nothing;
 insert into public.client_user (id, tenant_id, client_id, email, status, role) values
-  ('00000000-0000-0000-0000-00000000p001', '00000000-0000-0000-0000-000000000001',
+  ('00000000-0000-0000-0000-00000000cc01', '00000000-0000-0000-0000-000000000001',
    '00000000-0000-0000-0000-0000000000ca', 'w3-p1@test.local', 'ACTIVE', 'CLIENT_USER')
 on conflict (id) do nothing;
 
@@ -300,7 +300,7 @@ begin
   select count(*) into b1_sees from public.assignment_event where file_id = v_file;
 
   -- P1: portal user — no policy on assignment_event at all.
-  perform set_config('request.jwt.claims', json_build_object('sub','00000000-0000-0000-0000-00000000p001','role','authenticated')::text, true);
+  perform set_config('request.jwt.claims', json_build_object('sub','00000000-0000-0000-0000-00000000cc01','role','authenticated')::text, true);
   select count(*) into p1_sees_history from public.assignment_event;
 
   perform set_config('role', 'postgres', true);

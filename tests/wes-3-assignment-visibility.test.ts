@@ -7,7 +7,7 @@
  * test about its own code (the mistake WES-9A had to correct).
  */
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import {
@@ -558,6 +558,38 @@ describe("WES-3J policy consumption", () => {
     expect(sql()).toContain("policy_version_id");
     const src = code("lib/workflow/access/actions.ts");
     expect(src).toContain("p_policy_id: policyVersionId");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Repository invariant — UUID literals in SQL fixtures
+//
+// Lives here because WES-3 is where it bit for the second time. A fixture id
+// like '…-00000000p001' looks right, typechecks nowhere, and fails only when
+// Postgres parses it — which in this repository means a CI round-trip, since
+// there is no local Docker or psql. Worse, the abort SKIPS every later suite,
+// so one bad character hides an entire test job. WES-7 lost a round-trip to
+// exactly this ('g1', 'wp01', 'w1'); this test makes it impossible to repeat.
+// ---------------------------------------------------------------------------
+describe("SQL fixtures use valid UUID literals", () => {
+  const UUID_SHAPED = /'([0-9a-zA-Z]{8}-[0-9a-zA-Z]{4}-[0-9a-zA-Z]{4}-[0-9a-zA-Z]{4}-[0-9a-zA-Z]{12})'/g;
+  const HEX = /^[0-9a-fA-F-]+$/;
+
+  it("has no non-hex character in any UUID-shaped literal", () => {
+    const dirs = ["supabase/tests", "supabase/migrations"];
+    const bad: string[] = [];
+
+    for (const dir of dirs) {
+      for (const file of readdirSync(join(root, dir))) {
+        if (!file.endsWith(".sql")) continue;
+        const text = read(join(dir, file));
+        for (const m of text.matchAll(UUID_SHAPED)) {
+          if (!HEX.test(m[1])) bad.push(`${dir}/${file}: ${m[1]}`);
+        }
+      }
+    }
+
+    expect(bad, `invalid UUID literals:\n${bad.join("\n")}`).toEqual([]);
   });
 });
 
