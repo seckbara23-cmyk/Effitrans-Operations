@@ -135,6 +135,21 @@ export default async function MyWorkPage({
             · {queues.length} file(s) selon vos rôles
           </span>
         </p>
+        {/* WES-3H — the entry point to DEPARTMENT work.
+            A link, deliberately, not a merge: this page is your own actionable
+            work, and unassigned work belongs to nobody, so it cannot live in
+            anyone's personal list. Without a way in, though, unassigned work
+            stays invisible — which is the gap WES-3H exists to close.
+            The sidebar is a ratified frozen structure and is left untouched. */}
+        <p className="mt-1 text-xs">
+          <Link href="/departments/queue" className="font-medium text-teal-700 hover:underline">
+            Voir la file de mon département →
+          </Link>
+          <span className="text-slate-400">
+            {" "}
+            (travail non assigné, bloqué ou en attente de réception)
+          </span>
+        </p>
       </header>
 
       {workspaces.length > 0 && (

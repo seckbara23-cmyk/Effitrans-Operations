@@ -12,7 +12,8 @@ import { FileWorkflow } from "@/components/files/file-workflow";
 import { FileAssignment } from "@/components/files/file-assignment";
 import { FileDangerZone } from "@/components/files/file-danger-zone";
 import { TaskPanel } from "@/components/tasks/task-panel";
-import { listTasks, listAssignees } from "@/lib/tasks/service";
+import { listTasks } from "@/lib/tasks/service";
+import { listEligibleAssigneesForFile } from "@/lib/workflow/access/assignees";
 import { DocumentsPanel } from "@/components/documents/documents-panel";
 import { listDocuments, listDocumentTypes, getMissingRequiredDocuments } from "@/lib/documents/service";
 import { CustomsPanel } from "@/components/customs/customs-panel";
@@ -86,7 +87,13 @@ export default async function FileDetailPage({ params }: { params: { id: string 
   const canReadTasks = hasPermission(permissions, "task:read");
   const canUpdateTasks = hasPermission(permissions, "task:update");
   const tasks = canReadTasks ? await listTasks({ fileId: file.id }) : [];
-  const taskAssignees = canUpdateTasks ? await listAssignees() : [];
+  // WES-3A.1 — only people the PINNED policy permits for this dossier's
+  // current step. `listAssignees()` returned every staff member, and the
+  // server had no eligibility check, so any name in the list "worked".
+  const eligible = canUpdateTasks
+    ? await listEligibleAssigneesForFile(file.id)
+    : { assignees: [], resolved: true };
+  const taskAssignees = eligible.assignees;
 
   // Embedded documents (only if the user can read documents).
   const canReadDocs = hasPermission(permissions, "document:read");
@@ -219,6 +226,7 @@ export default async function FileDetailPage({ params }: { params: { id: string 
           fileId={file.id}
           tasks={tasks}
           assignees={taskAssignees}
+          policyResolved={eligible.resolved}
           canCreate={hasPermission(permissions, "task:create")}
           canUpdate={canUpdateTasks}
           canDelete={hasPermission(permissions, "task:delete")}

@@ -61,6 +61,7 @@ function toListItem(r: TaskRow): TaskListItem {
     priority: r.priority as TaskPriority,
     dueAt: r.due_at,
     assignedToEmail: r.assignee?.email ?? null,
+    assignedToId: r.assigned_to,
   };
 }
 

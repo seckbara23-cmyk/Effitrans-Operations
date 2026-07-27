@@ -10,13 +10,15 @@ import type { Assignee, TaskListItem } from "@/lib/tasks/types";
 
 export function TasksTable({
   tasks,
-  assignees,
+  eligibilityByFile,
   canUpdate,
   canDelete,
   filter,
 }: {
   tasks: TaskListItem[];
-  assignees: Assignee[];
+  /** Eligible assignees per DOSSIER — each dossier has its own pinned policy,
+   *  so one global list cannot be correct on a cross-dossier view. */
+  eligibilityByFile: Map<string, { assignees: Assignee[]; resolved: boolean }>;
   canUpdate: boolean;
   canDelete: boolean;
   filter: "all" | "mine" | "overdue";
@@ -47,7 +49,15 @@ export function TasksTable({
       ) : (
         <div className="space-y-2">
           {tasks.map((task) => (
-            <TaskRow key={task.id} task={task} assignees={assignees} canUpdate={canUpdate} canDelete={canDelete} showFile />
+            <TaskRow
+              key={task.id}
+              task={task}
+              assignees={eligibilityByFile.get(task.fileId)?.assignees ?? []}
+              policyResolved={eligibilityByFile.get(task.fileId)?.resolved ?? false}
+              canUpdate={canUpdate}
+              canDelete={canDelete}
+              showFile
+            />
           ))}
         </div>
       )}

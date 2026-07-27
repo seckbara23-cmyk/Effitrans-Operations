@@ -10,12 +10,8 @@ import { useRouter } from "next/navigation";
 import { t } from "@/lib/i18n";
 import { activeTargets } from "@/lib/tasks/status";
 import { classifyDue } from "@/lib/notifications/classify";
-import {
-  assignTask,
-  cancelTask,
-  changeTaskStatus,
-  completeTask,
-} from "@/lib/tasks/actions";
+import { cancelTask, changeTaskStatus, completeTask } from "@/lib/tasks/actions";
+import { TaskAssignment } from "./task-assignment";
 import type { ActionResult, Assignee, TaskListItem } from "@/lib/tasks/types";
 
 const STATUS_STYLE: Record<string, string> = {
@@ -35,12 +31,15 @@ const PRIORITY_STYLE: Record<string, string> = {
 export function TaskRow({
   task,
   assignees,
+  policyResolved = true,
   canUpdate,
   canDelete,
   showFile = false,
 }: {
   task: TaskListItem;
   assignees: Assignee[];
+  /** False when the pinned policy could not be resolved (WES-3J fail-closed). */
+  policyResolved?: boolean;
   canUpdate: boolean;
   canDelete: boolean;
   showFile?: boolean;
@@ -98,25 +97,21 @@ export function TaskRow({
       </div>
 
       <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-        <span>{task.assignedToEmail ?? t.tasks.actions.unassigned}</span>
+        {/* WES-3A.1 — the canonical, policy-aware, atomic assignment path.
+            The legacy inline <select> called assignTask, which bypassed pinned
+            policy, active-user validation, the assignment ledger, the business
+            event and the reason requirement. */}
+        <TaskAssignment
+          taskId={task.id}
+          currentAssigneeId={task.assignedToId ?? null}
+          currentAssigneeLabel={task.assignedToEmail}
+          options={assignees}
+          policyResolved={policyResolved}
+          canAssign={canUpdate}
+        />
 
         {canUpdate && (
           <span className="ml-auto flex flex-wrap items-center gap-2">
-            {/* Assign */}
-            <select
-              value={""}
-              disabled={pending}
-              onChange={(e) => e.target.value && run(() => assignTask(task.id, e.target.value === "__none__" ? null : e.target.value))}
-              className="rounded-md border border-slate-200 px-2 py-1 text-xs"
-            >
-              <option value="">{t.tasks.actions.assignTo}</option>
-              <option value="__none__">{t.tasks.actions.unassigned}</option>
-              {assignees.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.label}
-                </option>
-              ))}
-            </select>
 
             {/* Status change (active targets) */}
             <select

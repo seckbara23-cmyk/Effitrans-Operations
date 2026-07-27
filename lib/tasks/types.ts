@@ -23,6 +23,8 @@ export type TaskListItem = {
   priority: TaskPriority;
   dueAt: string | null;
   assignedToEmail: string | null;
+  /** WES-3A.1 — the assignment control needs the identity, not just a label. */
+  assignedToId: string | null;
 };
 
 export type TaskDetail = TaskListItem & {

@@ -17,6 +17,7 @@ import { t } from "@/lib/i18n";
 import { validateTask } from "./validate";
 import { canTransition, isTaskStatus, ACTIVE_STATUSES } from "./status";
 import { getDossierAccess } from "@/lib/workflow/access/service";
+import { assignTaskToUser } from "@/lib/workflow/access/actions";
 import { mayCompleteWork } from "@/lib/workflow/access/resolver";
 import type { ActionResult, TaskInput, TaskStatus } from "./types";
 
@@ -128,70 +129,32 @@ export async function updateTask(id: string, input: TaskInput): Promise<ActionRe
   return { ok: true, id };
 }
 
+/**
+ * @deprecated WES-3A.1 — kept ONLY as a delegating compatibility wrapper.
+ *
+ * This action used to be the production assignment path, and it bypassed
+ * every guarantee WES-3 introduced: pinned-policy eligibility, active-user
+ * validation, the append-only assignment ledger, the atomic business event,
+ * and the reason requirement for supervisor reassignment. It wrote
+ * `task.assigned_to` directly and then audited separately — the dual write
+ * WES-9A prohibits.
+ *
+ * It is not deleted, because deleting it would silently drop any caller that
+ * has not been migrated. It DELEGATES instead, so there is exactly one
+ * authoritative assignment path and no way to reach the old behaviour.
+ *
+ * New code calls `assignTaskToUser` directly, which also accepts a reason.
+ */
 export async function assignTask(id: string, userId: string | null): Promise<ActionResult> {
-  let user;
-  try {
-    user = await assertPermission("task:update");
-  } catch {
-    return { ok: false, error: "forbidden" };
-  }
-
-  const supabase = getAdminSupabaseClient();
-  const task = await loadTask(supabase, id, user.tenantId);
-  if (!task) return { ok: false, error: "not_found" };
-
-  if (userId) {
-    const { data: target } = await supabase
-      .from("app_user")
-      .select("id, tenant_id")
-      .eq("id", userId)
-      .maybeSingle();
-    if (!target || target.tenant_id !== user.tenantId) return { ok: false, error: "invalid_assignee" };
-  }
-
-  const previousAssignee = task.assigned_to as string | null;
-
-  const { error } = await supabase
-    .from("task")
-    .update({ assigned_to: userId })
-    .eq("id", id)
-    .eq("tenant_id", user.tenantId);
-  if (error) return { ok: false, error: error.message };
-
-  await writeAudit({
-    action: AuditActions.TASK_ASSIGNED,
-    actorId: user.id,
-    tenantId: user.tenantId,
-    entity: "task",
-    entityId: id,
-    after: { assigned_to: userId },
+  const result = await assignTaskToUser({
+    taskId: id,
+    userId,
+    // The legacy signature carries no reason, so the only codes it can honestly
+    // claim are the ones that require none. Supervisor and governance
+    // reassignment are unreachable through this path by design.
+    reasonCode: userId ? "REASSIGNMENT" : "UNASSIGNMENT",
   });
-
-  // Notify the new assignee on a real change (not self-assignment). Best-effort:
-  // createNotification never throws, so a notification failure can't fail assign.
-  if (userId && userId !== previousAssignee && userId !== user.id) {
-    const { data: meta } = await supabase
-      .from("task")
-      .select("title, file:file_id(file_number)")
-      .eq("id", id)
-      .maybeSingle<{ title: string; file: { file_number: string } | null }>();
-    const taskTitle = meta?.title ?? "";
-    await createNotification({
-      tenantId: user.tenantId,
-      userId,
-      type: "TASK_ASSIGNED",
-      taskId: id,
-      fileId: task.file_id,
-      title: fill(t.notifications.assigned.title, { task: taskTitle }),
-      body: fill(t.notifications.assigned.body, {
-        actor: user.email,
-        file: meta?.file?.file_number ?? "",
-      }),
-    });
-  }
-
-  revalidate(task.file_id);
-  return { ok: true, id };
+  return result.ok ? { ok: true, id } : { ok: false, error: result.error };
 }
 
 export async function changeTaskStatus(id: string, toStatus: string): Promise<ActionResult> {

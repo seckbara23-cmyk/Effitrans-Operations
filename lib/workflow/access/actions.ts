@@ -25,31 +25,16 @@ import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
 import { revalidatePath } from "next/cache";
 import { resolveSeatEligibility, isEligibleForSeat } from "./eligibility";
+import { isAssignmentReasonCode, reasonRequired } from "./vocabulary";
+import { createNotification } from "@/lib/notifications/create";
+import { t } from "@/lib/i18n";
+
+const fill = (tpl: string, vars: Record<string, string>) =>
+  tpl.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? "");
 
 export type AssignmentResult =
   | { ok: true; assignmentEventId: string }
   | { ok: false; error: string };
-
-/** Reason codes the ledger accepts. Mirrors the SQL CHECK. */
-export const ASSIGNMENT_REASON_CODES = [
-  "INITIAL",
-  "REASSIGNMENT",
-  "SUPERVISOR_INTERVENTION",
-  "WORKLOAD_BALANCING",
-  "ABSENCE",
-  "ESCALATION",
-  "CORRECTION",
-  "UNASSIGNMENT",
-  "GOVERNANCE",
-] as const;
-export type AssignmentReasonCode = (typeof ASSIGNMENT_REASON_CODES)[number];
-
-/** Codes that oblige the actor to explain themselves. Enforced again in SQL. */
-const REASON_REQUIRED: readonly string[] = ["SUPERVISOR_INTERVENTION", "GOVERNANCE"];
-
-function isReasonCode(v: string): v is AssignmentReasonCode {
-  return (ASSIGNMENT_REASON_CODES as readonly string[]).includes(v);
-}
 
 /**
  * Assign or reassign a TASK.
@@ -71,8 +56,8 @@ export async function assignTaskToUser(input: {
     return { ok: false, error: "forbidden" };
   }
 
-  if (!isReasonCode(input.reasonCode)) return { ok: false, error: "invalid_reason_code" };
-  if (REASON_REQUIRED.includes(input.reasonCode) && !input.reason?.trim()) {
+  if (!isAssignmentReasonCode(input.reasonCode)) return { ok: false, error: "invalid_reason_code" };
+  if (reasonRequired(input.reasonCode) && !input.reason?.trim()) {
     return { ok: false, error: "reason_required" };
   }
 
@@ -138,6 +123,34 @@ export async function assignTaskToUser(input: {
     after: { assigned_to: input.userId, reason_code: input.reasonCode },
   });
 
+  // Tell the new assignee. Lives HERE, on the canonical path, so every
+  // assignment notifies — the legacy action carried this and delegating to a
+  // path without it would have silently dropped notifications.
+  //
+  // Best-effort ON PURPOSE, and the one place that is correct: a notification
+  // is not a business fact. `createNotification` never throws, and the
+  // assignment has already committed atomically with its ledger row and event.
+  if (input.userId && input.userId !== actor.id) {
+    const { data: meta } = await supabase
+      .from("task")
+      .select("title, file:file_id(file_number)")
+      .eq("id", input.taskId)
+      .eq("tenant_id", actor.tenantId)
+      .maybeSingle<{ title: string; file: { file_number: string } | null }>();
+    await createNotification({
+      tenantId: actor.tenantId,
+      userId: input.userId,
+      type: "TASK_ASSIGNED",
+      taskId: input.taskId,
+      fileId: task.file_id,
+      title: fill(t.notifications.assigned.title, { task: meta?.title ?? "" }),
+      body: fill(t.notifications.assigned.body, {
+        actor: actor.email,
+        file: meta?.file?.file_number ?? "",
+      }),
+    });
+  }
+
   revalidatePath(`/files/${task.file_id}`);
   revalidatePath("/tasks");
   return { ok: true, assignmentEventId: result?.assignment_event_id ?? "" };
@@ -157,8 +170,8 @@ export async function assignStepToUser(input: {
     return { ok: false, error: "forbidden" };
   }
 
-  if (!isReasonCode(input.reasonCode)) return { ok: false, error: "invalid_reason_code" };
-  if (REASON_REQUIRED.includes(input.reasonCode) && !input.reason?.trim()) {
+  if (!isAssignmentReasonCode(input.reasonCode)) return { ok: false, error: "invalid_reason_code" };
+  if (reasonRequired(input.reasonCode) && !input.reason?.trim()) {
     return { ok: false, error: "reason_required" };
   }
 
@@ -226,8 +239,8 @@ export async function assignOperationalOwner(input: {
     return { ok: false, error: "forbidden" };
   }
 
-  if (!isReasonCode(input.reasonCode)) return { ok: false, error: "invalid_reason_code" };
-  if (REASON_REQUIRED.includes(input.reasonCode) && !input.reason?.trim()) {
+  if (!isAssignmentReasonCode(input.reasonCode)) return { ok: false, error: "invalid_reason_code" };
+  if (reasonRequired(input.reasonCode) && !input.reason?.trim()) {
     return { ok: false, error: "reason_required" };
   }
 

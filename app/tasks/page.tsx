@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { PageHeader } from "@/components/ui/page-header";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
-import { listTasks, listAssignees } from "@/lib/tasks/service";
+import { listTasks } from "@/lib/tasks/service";
+import { listEligibleAssigneesForFile } from "@/lib/workflow/access/assignees";
 import { TasksTable } from "@/components/tasks/tasks-table";
 import { t } from "@/lib/i18n";
 
@@ -35,14 +36,22 @@ export default async function TasksPage({
     filter === "mine" ? { mine: true } : filter === "overdue" ? { overdue: true } : {},
   );
   const canUpdate = hasPermission(permissions, "task:update");
-  const assignees = canUpdate ? await listAssignees() : [];
+  // The global list spans dossiers, each with its own pinned policy, so a
+  // single eligible set cannot be correct here. Resolve per DISTINCT dossier
+  // (bounded by the page) and let each row carry its own options.
+  const fileIds = Array.from(new Set(tasks.map((t) => t.fileId)));
+  const byFile = new Map<string, { assignees: { id: string; label: string }[]; resolved: boolean }>();
+  if (canUpdate) {
+    const listings = await Promise.all(fileIds.map((id) => listEligibleAssigneesForFile(id)));
+    fileIds.forEach((id, i) => byFile.set(id, listings[i]));
+  }
 
   return (
     <div className="animate-fade-in space-y-6">
       {header}
       <TasksTable
         tasks={tasks}
-        assignees={assignees}
+        eligibilityByFile={byFile}
         canUpdate={canUpdate}
         canDelete={hasPermission(permissions, "task:delete")}
         filter={filter}

@@ -135,7 +135,7 @@ Department-responsibility visibility is applied in the **server resolver**, whic
 | Gate | Result |
 |---|---|
 | Typecheck | clean |
-| Tests | **3653 passed / 165 files** (67 new in `tests/wes-3-assignment-visibility.test.ts`) |
+| Tests | **3701 passed / 166 files** (67 in `wes-3-assignment-visibility`, 49 in `wes-3a-assignment-queue`) |
 | Production build | compiled |
 | SQL/RLS suites | **51** wired in CI (was 50) |
 | Seed idempotency | **unchanged** |
@@ -163,10 +163,92 @@ test job.
 
 ---
 
-## 11. Known limitations
+## 11. WES-3A — closing the two gaps (2026-07-27)
 
-1. **Department queues (WES-3H) are not built.** `Mon Travail` and the existing 15 department queues are unchanged. The access resolver and history exist to support them, but the queue UI — unassigned / mine / colleagues' / blocked / awaiting reception / recently completed — is not implemented. **This is the largest unbuilt piece of the mandate.**
-2. **Task assignment UI is unchanged.** `assignTaskToUser` exists and is atomic, but the existing `TaskPanel` still calls the older `assignTask`, which writes `task.assigned_to` directly with no history and no eligibility check. Migrating the caller is a small, separate change and was not made here.
+WES-3 shipped with two documented gaps. Both are now closed; this section records
+what was done rather than deleting the admission.
+
+### 11.1 Every production assignment uses the atomic path
+
+**Caller map** (the whole of it — the audit found one production caller):
+
+| Caller | Kind | Before |
+|---|---|---|
+| `components/tasks/task-row.tsx` | production UI | called `assignTask` — bypassed pinned-policy eligibility, active-user validation, the assignment ledger, the business event and the reason requirement |
+| `lib/tasks/actions.ts::assignTask` | server action | wrote `task.assigned_to` directly, then audited separately (the dual write WES-9A prohibits) |
+| `lib/workflow/access/actions.ts::assignTaskToUser` | server action | canonical, atomic — **no production caller** |
+| `lib/messaging/actions.ts` | server action | `conversation.assigned_to` — a different table, out of scope |
+
+`assignTask` is now a **delegating compatibility wrapper**. It is not deleted, because
+deleting it would silently drop any unmigrated caller; it delegates, so there is exactly
+one authoritative path and the old behaviour is unreachable. A test walks `app/`,
+`components/` and `lib/` and fails if any caller remains, or if any production code
+updates `task.assigned_to` outside the RPC.
+
+The assignee **notification moved onto the canonical path** — leaving it in the wrapper
+would have meant it never fired again. It is the one deliberately best-effort write here,
+and correctly so: a notification is not a business fact, and the assignment has already
+committed atomically with its ledger row and event.
+
+**The UI** (`components/tasks/task-assignment.tsx`) distinguishes assign / reassign /
+unassign, because the ledger distinguishes them. The reason field appears only for codes
+that require one and the button stays disabled until it is filled — enforced again in the
+server action and a third time by a database trigger. Errors are French and safe; raw
+server codes are never rendered. It distinguishes *"nobody is eligible"* from *"policy
+could not be resolved"*, because an empty picker and a broken picker look identical and
+only one is safe to retry.
+
+**Eligible assignees** come from the pinned policy (`listEligibleAssigneesForFile`),
+filtered to ACTIVE members of the caller's tenant. The old picker listed every staff
+member and the server had no eligibility check, so any name in it "worked". On the
+cross-dossier `/tasks` list the set is resolved **per dossier**, since each pins its own
+policy.
+
+### 11.2 Department queue (WES-3H)
+
+`/departments/queue`, six categories: **Non assigné · Assigné à moi · Assigné à un
+collègue · Bloqué · En attente de réception · Terminé récemment**.
+
+**Source of truth** — department ownership comes from the WES-2 projection's
+`responsibleDepartment`, bridged to the organization's departments. Never from
+`assigned_to_user_id` (retired), never from the presence of a task, never from a document
+upload or a free-text role label. Tasks are work items, not workflow authority.
+
+Every row passes through `resolveDossierAccess`: a dossier the user cannot see at summary
+level is omitted, and detail fields (work title, assignee) are withheld when the matrix
+withholds current detail. **The queue never widens raw dossier access.**
+
+It is **not** `lib/process/queues/service.ts`: that queue is step-execution centric and
+keyed on the 15 `ProcessDepartment` codes. This one is dossier-centric and keyed on the
+user's canonical department. Different axis, different question; no new vocabulary.
+
+Bounded (300 active dossiers), deterministically ordered, closed dossiers excluded, and
+**no SLA value is invented** — the page says so.
+
+**Entry point.** `Mon Travail` links to it and is otherwise unchanged: it remains the
+user's own actionable work. Merging them would put a colleague's task in a personal list.
+The **ratified five-section sidebar is untouched** — this phase's mandate says not to
+redesign navigation, and that structure has its own pinned tests.
+
+### 11.3 Remaining limitations
+
+1. **Bounded historical contribution is coarse.** A user with any ledger entry on a
+   dossier is credited with every *completed* stage of their department rather than the
+   precise stage they worked. Precision needs the step key on every history row, which
+   only newly-written rows carry.
+2. **`resolveSupervisorRoles` depends on policy content.** With no published policy the
+   built-in default supplies the bindings; if it names no `supervisor` seat for a
+   department, nobody supervises it and intervention falls back to the operational owner.
+3. **No `COMMERCIAL_OWNER` assignment action.** The subject type exists in the ledger for
+   completeness; changing the account manager still goes through the ordinary file update
+   and writes no history row.
+4. **`assignFile` still writes the legacy column.** Marked `@deprecated` with removal
+   criteria; the semantic is retired (no visibility, no ownership) but the write path
+   survives the compatibility window.
+5. **Step assignment has no UI.** `assignStepToUser` is atomic and tested, but no surface
+   calls it — step assignment still happens through the existing process-engine actions.
+6. **The queue computes projections per render.** Bounded and bulk-loaded, but it is not
+   cached across requests; a tenant near the 300-dossier bound will feel it.
 3. **`assignFile` still writes the legacy column.** It is marked `@deprecated` with removal criteria; the semantic is retired (no visibility, no ownership) but the write path survives the compatibility window.
 4. **Bounded historical contribution is coarse.** A user with any ledger entry on a dossier is credited with every *completed* stage of their department, rather than the precise stage they worked. Precision needs the step key on every history row, which only newly-written rows carry.
 5. **`resolveSupervisorRoles` depends on policy content.** With no published policy the built-in default supplies the bindings; if it names no `supervisor` seat for a department, nobody supervises it and intervention falls back to the operational owner only.
