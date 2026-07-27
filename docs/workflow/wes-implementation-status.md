@@ -14,8 +14,9 @@ Execution order is dependency-driven, not numeric (WES-0A §6):
 | **WES-1** | **integrity hotfixes** | ✅ done |
 | **WES-2** | **canonical projection, ratchet, one progress formula** | ✅ done |
 | **WES-7** | **policy registry (ADR-WES-012)** | ✅ **done** |
-| WES-9 | business event ledger (ADR-WES-014) | ⬜ next |
-| WES-3 | ownership, assignment, visibility | ⬜ |
+| **WES-9** | **business event ledger (ADR-WES-014)** | ✅ **done** — `398d6b8` |
+| **WES-9A** | **mandatory-event atomicity correction (Model A)** | ✅ **done** |
+| WES-3 | ownership, assignment, visibility | ⬜ **next** |
 | WES-4 | BAE governance + document doctrine | ⬜ |
 | WES-5 | engine/module reconciliation | ⬜ |
 | WES-8 | SLA engine (ADR-WES-013) | ⬜ |

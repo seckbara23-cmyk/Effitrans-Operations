@@ -362,6 +362,40 @@ No silent divergence between what happened and what was recorded.
 Final physical design is deferred to the implementing phase; this doctrine and the prohibition are
 binding on it.
 
+#### Implementation notes (WES-9, 2026-07-26 · WES-9A correction, 2026-07-27)
+
+**Mechanism chosen.** Trigger-based emission (mechanism 2) for the seven integrated domain tables,
+RPC emission (mechanism 1) for policy activation inside `activate_workflow_policy`. Trigger emission
+qualifies because every envelope field is derivable from row data — actor included, read from the
+row's own `created_by` / `uploaded_by` / `reviewed_by` / `assigned_by` / `recorded_by` / `issued_by`.
+PostgREST's per-request transactions mean an app-set GUC cannot reach a trigger, so row columns are
+the only honest actor source.
+
+**A ratified rule was violated and has been corrected.** Migration `20260726000004` wrapped every
+emission in `exception when others then raise warning …; return null`, so a failed append became a
+log line and the domain write committed anyway. That is precisely the "post-commit call wrapped in a
+swallowed catch" this ADR forbids by name. Migration `20260727000001` replaces all seven functions:
+every handler now logs the cause and **re-raises**, aborting the domain mutation. Model A was already
+the ratified position; nothing about the doctrine changed, only the implementation that had drifted
+from it. Proven by rollback tests against persisted rows (DEC-B75).
+
+**Every event in this ledger is mandatory.** There is no observational or telemetry class. If a
+signal is not worth aborting the business action for, it does not belong in this ledger — page views,
+downloads, notification delivery and UI interaction stay outside it entirely.
+
+**Envelope deviations from the ratified minimum**, all deliberate and each recorded:
+`actor_role_at_time`, `responsible_department`, `process_instance_id`, `step_execution_id`,
+`override_marker` and `override_reason` are **not implemented**. They belong to WES-3 (assignment and
+role history) and WES-4/WES-5 (override governance); writing them now would mean freezing values no
+subsystem yet computes. `policy_version` is implemented as `policy_version_id` + `policy_provenance`.
+
+**One unresolved contradiction with this ADR.** The privacy section above states *"Override and
+rejection reasons are included — governance requires them."* WES-9 does **not** copy
+`document.review_note` or any reason text into the ledger (DEC-B73), on the ground that an immutable
+table can never redact staff-authored free text about a person's work. Both positions are defensible
+and they conflict. **This is flagged, not silently resolved:** the ledger currently omits reasons, and
+a ratification decision is required before WES-4 relies on them being present.
+
 #### Privacy and security
 
 **Prohibited payloads — never written to the ledger:** document contents or bytes · extracted OCR

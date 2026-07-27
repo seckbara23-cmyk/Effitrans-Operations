@@ -17,7 +17,17 @@
 --   * a config-scope event is invisible without admin:config:manage              -> 0
 --   * a config-scope event IS visible with admin:config:manage                   -> 1
 --   * an event SURVIVES the hard-delete of the row it points at (no cascade)     -> 1
---   * emission failure NEVER rolls back the business write                       -> 1
+--
+--   WES-9A mandatory-event atomicity (Model A, ADR-WES-014). Migration 62
+--   swallowed emission failures; migration 63 makes the event mandatory. Each
+--   check below inspects PERSISTED ROWS after the failure, not return values:
+--   * an INSERT whose event fails leaves NO domain row                           -> 0
+--   * an UPDATE whose event fails leaves the row UNCHANGED                       -> 1
+--   * the failure surfaces the stable code EF001, not raw internals              -> 1
+--   * neither aborted action leaves a partial event behind                       -> 0
+--   * a DOMAIN failure (bad status) writes NO event                              -> 0
+--   * a RETRY of the same status appends NO duplicate event                      -> equal
+--   * a cross-tenant event failure rolls the domain mutation back                -> 0
 --
 -- Requires all migrations + seed applied. Run like the other RLS tests.
 
@@ -83,7 +93,11 @@ declare
   actor_recorded int := 0; task_actor int; payment_money int; driver_pii int;
   b1_sees int; b3_sees int; b4_sees int;
   b2_sees_config int; b1_sees_config int;
-  survives_cascade int; write_survived int := 0; emission_lost int := 0;
+  survives_cascade int;
+  insert_rolled_back int; update_rolled_back int; safe_error_code int;
+  orphan_events int; domain_failure_events int; cross_tenant_rolled_back int;
+  retry_before int; retry_after int;
+  insert_error_code text := ''; v_status_before text;
   v_file uuid := '00000000-0000-0000-0000-00000000be10';
   v_task uuid := '00000000-0000-0000-0000-00000000be20';
   v_invoice uuid := '00000000-0000-0000-0000-00000000be30';
@@ -189,9 +203,11 @@ begin
     'workflow_policy_version', null, null, '00000000-0000-0000-0000-0000000000b1',
     jsonb_build_object('scope', 'tenant', 'version', 1));
 
-  -- ------------------------------------- emission never breaks the business
-  -- Break emission for real, then perform a legitimate domain write. The write
-  -- MUST commit: the fact may exist without the event, never the reverse.
+  -- ================== WES-9A: MANDATORY-EVENT ATOMICITY (Model A) ===========
+  -- Migration 62 swallowed emission failures and let the domain write commit.
+  -- Migration 63 makes the event MANDATORY: if the append fails, the business
+  -- mutation MUST roll back. Break emission for real and prove it against
+  -- PERSISTED ROWS, not return values.
   -- Safe to do destructively — the whole suite is inside BEGIN/ROLLBACK.
   execute $fn$
     create or replace function public.emit_business_event(
@@ -203,20 +219,112 @@ begin
     as $body$ begin raise exception 'ledger unavailable'; end; $body$;
   $fn$;
 
+  -- (1) INSERT path — the task must NOT exist afterwards.
   begin
     insert into public.task (id, tenant_id, file_id, title, status, created_by)
     values ('00000000-0000-0000-0000-00000000be21',
-            '00000000-0000-0000-0000-000000000001', v_file, 'BE resilience', 'TODO',
+            '00000000-0000-0000-0000-000000000001', v_file, 'BE rollback', 'TODO',
+            '00000000-0000-0000-0000-0000000000b1');
+  exception when others then
+    insert_error_code := sqlstate;
+  end;
+  select count(*) into insert_rolled_back from public.task
+   where id = '00000000-0000-0000-0000-00000000be21';
+
+  -- (2) UPDATE path — the dossier status must be UNCHANGED afterwards.
+  select status into v_status_before from public.operational_file where id = v_file;
+  begin
+    update public.operational_file set status = 'DELIVERED' where id = v_file;
+  exception when others then null;
+  end;
+  select count(*) into update_rolled_back from public.operational_file
+   where id = v_file and status = v_status_before;
+
+  -- (3) The caller sees a SAFE, stable application code, not raw internals.
+  select case when insert_error_code = 'EF001' then 1 else 0 end into safe_error_code;
+
+  -- (4) Neither aborted action left a partial event behind.
+  select count(*) into orphan_events from public.business_event
+   where subject_id = '00000000-0000-0000-0000-00000000be21'
+      or (dossier_id = v_file and metadata->>'new_status' = 'DELIVERED');
+
+  -- Restore real emission for the remaining checks.
+  execute $fn$
+    create or replace function public.emit_business_event(
+      p_tenant_id uuid, p_event_type text, p_event_domain text, p_source text,
+      p_subject_type text, p_subject_id uuid default null, p_dossier_id uuid default null,
+      p_actor_user_id uuid default null, p_metadata jsonb default '{}'::jsonb,
+      p_causation_id uuid default null, p_event_version int default 1)
+    returns uuid language plpgsql security definer set search_path = public
+    as $body$
+    declare v_id uuid;
+    begin
+      insert into public.business_event (
+        tenant_id, event_type, event_domain, event_version, source,
+        dossier_id, subject_type, subject_id, actor_user_id,
+        correlation_id, causation_id, metadata)
+      values (
+        p_tenant_id, p_event_type, p_event_domain, coalesce(p_event_version, 1), p_source,
+        p_dossier_id, p_subject_type, p_subject_id, p_actor_user_id,
+        p_dossier_id, p_causation_id, coalesce(p_metadata, '{}'::jsonb))
+      returning id into v_id;
+      return v_id;
+    end; $body$;
+  $fn$;
+
+  -- (5) A DOMAIN failure must leave NO event. Violate the status CHECK.
+  begin
+    update public.operational_file set status = 'NOT_A_REAL_STATUS' where id = v_file;
+  exception when others then null;
+  end;
+  select count(*) into domain_failure_events from public.business_event
+   where dossier_id = v_file and metadata->>'new_status' = 'NOT_A_REAL_STATUS';
+
+  -- (6) RETRY is idempotent at the event level: re-applying the SAME status is
+  --     not a transition, so the retry appends nothing. Measure AFTER the real
+  --     transition, so only the repeat is under test.
+  update public.operational_file set status = 'IN_PROGRESS' where id = v_file;
+  select count(*) into retry_before from public.business_event
+   where dossier_id = v_file and event_type = 'DOSSIER_STATUS_CHANGED';
+  update public.operational_file set status = 'IN_PROGRESS' where id = v_file;
+  select count(*) into retry_after from public.business_event
+   where dossier_id = v_file and event_type = 'DOSSIER_STATUS_CHANGED';
+
+  -- (7) CROSS-TENANT: an event referencing a tenant the dossier does not belong
+  --     to cannot commit, and the domain mutation must roll back with it.
+  execute $fn$
+    create or replace function public.emit_business_event(
+      p_tenant_id uuid, p_event_type text, p_event_domain text, p_source text,
+      p_subject_type text, p_subject_id uuid default null, p_dossier_id uuid default null,
+      p_actor_user_id uuid default null, p_metadata jsonb default '{}'::jsonb,
+      p_causation_id uuid default null, p_event_version int default 1)
+    returns uuid language plpgsql security definer set search_path = public
+    as $body$
+    declare v_id uuid;
+    begin
+      insert into public.business_event (
+        tenant_id, event_type, event_domain, event_version, source,
+        dossier_id, subject_type, subject_id, actor_user_id, metadata)
+      values (
+        '00000000-0000-0000-0000-00000000dead',   -- non-existent tenant: FK fails
+        p_event_type, p_event_domain, coalesce(p_event_version, 1), p_source,
+        p_dossier_id, p_subject_type, p_subject_id, p_actor_user_id,
+        coalesce(p_metadata, '{}'::jsonb))
+      returning id into v_id;
+      return v_id;
+    end; $body$;
+  $fn$;
+
+  begin
+    insert into public.operational_file (id, tenant_id, file_number, type, client_id, status, created_by)
+    values ('00000000-0000-0000-0000-00000000be50',
+            '00000000-0000-0000-0000-000000000001', 'BE-XT-0001', 'IMP',
+            '00000000-0000-0000-0000-0000000000c9', 'DRAFT',
             '00000000-0000-0000-0000-0000000000b1');
   exception when others then null;
   end;
-
-  select count(*) into write_survived from public.task
-   where id = '00000000-0000-0000-0000-00000000be21';
-
-  -- No event was written for it, which is the acceptable half of the trade.
-  select count(*) into emission_lost from public.business_event
-   where subject_id = '00000000-0000-0000-0000-00000000be21';
+  select count(*) into cross_tenant_rolled_back from public.operational_file
+   where id = '00000000-0000-0000-0000-00000000be50';
 
   -- ------------------------------------------------------------------- RLS
   perform set_config('role', 'authenticated', true);
@@ -253,8 +361,13 @@ begin
     ('payment_amount_never_copied', payment_money),
     ('driver_pii_never_copied', driver_pii),
     ('event_survives_cascade_delete', survives_cascade),
-    ('business_write_survives_emission_failure', write_survived),
-    ('failed_emission_writes_no_event', emission_lost),
+    ('insert_rolls_back_when_event_fails', insert_rolled_back),
+    ('update_rolls_back_when_event_fails', update_rolled_back),
+    ('failure_uses_safe_error_code', safe_error_code),
+    ('no_orphan_event_after_rollback', orphan_events),
+    ('domain_failure_writes_no_event', domain_failure_events),
+    ('retry_appends_no_duplicate', retry_after - retry_before),
+    ('cross_tenant_event_rolls_back_domain', cross_tenant_rolled_back),
     ('b1_sees_own_dossier_events', b1_sees),
     ('b3_cross_tenant_sees', b3_sees),
     ('b4_portal_sees', b4_sees),
@@ -265,13 +378,18 @@ begin
      or noise <> 0
      or update_rejected <> 1 or delete_rejected <> 1
      or task_actor <> 0 or payment_money <> 0 or driver_pii <> 0
-     or survives_cascade <> 1 or write_survived <> 1 or emission_lost <> 0
+     or survives_cascade <> 1
+     or insert_rolled_back <> 0 or update_rolled_back <> 1 or safe_error_code <> 1
+     or orphan_events <> 0 or domain_failure_events <> 0
+     or retry_after <> retry_before or cross_tenant_rolled_back <> 0
      or b1_sees < 1 or b3_sees <> 0 or b4_sees <> 0
      or b2_sees_config <> 0 or b1_sees_config <> 1
   then
-    raise exception 'RLS BUSINESS EVENT FAIL: opened=% actor=% status=% closed=% noise=% upd=% del=% taskactor=% money=% pii=% cascade=% write=% lost=% b1=% b3=% b4=% b2cfg=% b1cfg=%',
+    raise exception 'RLS BUSINESS EVENT FAIL: opened=% actor=% status=% closed=% noise=% upd=% del=% taskactor=% money=% pii=% cascade=% ins_rb=% upd_rb=% code=% orphan=% domfail=% retry=%/% xt=% b1=% b3=% b4=% b2cfg=% b1cfg=%',
       opened, actor_recorded, status_changed, closed, noise, update_rejected, delete_rejected,
-      task_actor, payment_money, driver_pii, survives_cascade, write_survived, emission_lost,
+      task_actor, payment_money, driver_pii, survives_cascade,
+      insert_rolled_back, update_rolled_back, safe_error_code, orphan_events,
+      domain_failure_events, retry_before, retry_after, cross_tenant_rolled_back,
       b1_sees, b3_sees, b4_sees, b2_sees_config, b1_sees_config;
   end if;
 end $$;

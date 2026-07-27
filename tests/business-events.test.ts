@@ -31,8 +31,20 @@ const root = join(__dirname, "..");
 const read = (p: string) => readFileSync(join(root, p), "utf8");
 const code = (p: string) => read(p).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 
+/**
+ * SQL comments use `--`, which `code()` (written for TypeScript) does not
+ * strip. Asserting against raw SQL therefore lets a migration's own header
+ * satisfy a test about its code — including a header that QUOTES the very
+ * anti-pattern under test, which is exactly how the first version of these
+ * assertions passed. Strip `--` lines for every structural SQL check.
+ */
+const sqlCode = (p: string) => read(p).replace(/^\s*--.*$/gm, "");
+
 const MIGRATION = "supabase/migrations/20260726000004_business_event_ledger.sql";
-const migration = () => code(MIGRATION);
+const ATOMICITY = "supabase/migrations/20260727000001_business_event_atomicity.sql";
+const migration = () => sqlCode(MIGRATION);
+/** WES-9A: the emission functions as they stand today (62 replaced by 63). */
+const atomicity = () => sqlCode(ATOMICITY);
 
 // ---------------------------------------------------------------------------
 // 9A — taxonomy
@@ -171,18 +183,20 @@ describe("WES-9C metadata contract", () => {
     // The payment row stays the authority on money; an immutable copy could
     // drift from it and could never be corrected.
     expect(getEventType("PAYMENT_RECORDED")?.metadataKeys).not.toContain("amount");
-    expect(migration()).not.toMatch(/'amount',\s*new\.amount/);
+    for (const sql of [migration(), atomicity()]) expect(sql).not.toMatch(/'amount',\s*new\.amount/);
   });
 
   it("never copies a document rejection note into the ledger", () => {
     expect(getEventType("DOCUMENT_REJECTED")?.metadataKeys).not.toContain("reason");
-    expect(migration()).not.toContain("new.review_note");
+    for (const sql of [migration(), atomicity()]) expect(sql).not.toContain("new.review_note");
   });
 
   it("never copies driver personal data into the ledger", () => {
     expect(getEventType("DRIVER_ASSIGNED")?.metadataKeys).toEqual([]);
-    expect(migration()).not.toMatch(/'driver_name',\s*new\.driver_name/);
-    expect(migration()).not.toContain("new.driver_phone");
+    for (const sql of [migration(), atomicity()]) {
+      expect(sql).not.toMatch(/'driver_name',\s*new\.driver_name/);
+      expect(sql).not.toContain("new.driver_phone");
+    }
   });
 });
 
@@ -359,13 +373,6 @@ describe("WES-9D transactional emission", () => {
     }
   });
 
-  it("cannot roll back a legitimate business write when emission fails", () => {
-    const sql = migration();
-    const handlers = sql.match(/exception when others then/g) ?? [];
-    // one per emission trigger function
-    expect(handlers.length).toBeGreaterThanOrEqual(6);
-  });
-
   it("emits only on ENUMERATED transitions, never on any column change", () => {
     const sql = migration();
     // Every UPDATE-path emission is guarded by a status (or explicit field)
@@ -410,6 +417,111 @@ describe("WES-9D transactional emission", () => {
 });
 
 // ---------------------------------------------------------------------------
+// 9A — MANDATORY-EVENT ATOMICITY (Model A)
+//
+// Migration 62 shipped `exception when others then raise warning; return null`,
+// which downgraded a failed ledger append to a log line and let the domain write
+// commit. That is Model B and it contradicts ADR-WES-014. Migration 63 replaces
+// every emission function. These tests exist so the swallow cannot come back.
+// ---------------------------------------------------------------------------
+describe("WES-9A mandatory-event atomicity", () => {
+  it("replaces every emission function shipped by migration 62", () => {
+    const sql = atomicity();
+    for (const fn of [
+      "emit_dossier_events",
+      "emit_document_events",
+      "emit_customs_events",
+      "emit_transport_events",
+      "emit_task_events",
+      "emit_finance_events",
+      "emit_business_event",
+    ]) {
+      expect(sql).toContain(`create or replace function public.${fn}`);
+    }
+  });
+
+  it("NEVER swallows: no handler returns instead of raising", () => {
+    const sql = atomicity();
+    // The exact shape migration 62 shipped, and the reason this phase exists.
+    expect(sql).not.toMatch(/exception\s+when others then\s+raise warning[^;]*;\s*return null;/);
+    // No exception branch may end by returning — that is a swallow by any name.
+    expect(sql).not.toMatch(/exception[\s\S]*?when others then[\s\S]{0,400}?return null;\s*end;/);
+  });
+
+  it("re-raises from every single handler", () => {
+    const sql = atomicity();
+    const branches = sql.match(/when others then/g) ?? [];
+    const raises = sql.match(/raise exception\s*\n?\s*'Enregistrement impossible/g) ?? [];
+    // six trigger functions, each with exactly one `when others` that raises
+    expect(branches.length).toBe(6);
+    expect(raises.length).toBeGreaterThanOrEqual(6);
+  });
+
+  it("preserves the original error when the ledger already failed cleanly", () => {
+    // A bare `raise` keeps emit_business_event's own message and code rather
+    // than re-wrapping it into a vaguer one.
+    const sql = atomicity();
+    const bare = sql.match(/when sqlstate 'EF001' then\s*\n\s*raise;/g) ?? [];
+    expect(bare.length).toBe(6);
+  });
+
+  it("still logs the underlying cause so operators are not left blind", () => {
+    const sql = atomicity();
+    const warnings = sql.match(/raise warning 'business_event emission failed/g) ?? [];
+    expect(warnings.length).toBe(6);
+    // …but the warning is followed by a raise, never used as the outcome.
+    expect(sql).not.toMatch(/raise warning[^;]*;\s*return/);
+  });
+
+  it("returns a safe user-facing message, not database internals", () => {
+    const sql = atomicity();
+    expect(sql).toContain("Enregistrement impossible");
+    expect(sql).toContain("Aucune modification n''a été enregistrée");
+    // sqlerrm goes to the server log only, never into the raised message.
+    expect(sql).not.toMatch(/raise exception[^;]*sqlerrm/);
+  });
+
+  it("uses a stable application error code the app layer can recognise", () => {
+    const sql = atomicity();
+    const codes = sql.match(/using errcode = 'EF001'/g) ?? [];
+    expect(codes.length).toBeGreaterThanOrEqual(7);
+  });
+
+  it("fails closed on a structurally invalid envelope", () => {
+    const sql = atomicity();
+    const fn = sql.slice(sql.indexOf("create or replace function public.emit_business_event"));
+    expect(fn).toMatch(/p_event_domain is null or p_subject_type is null/);
+    expect(fn).toContain("using errcode = 'EF001'");
+  });
+
+  it("classifies every emitted type as mandatory — the ledger holds no telemetry", () => {
+    // Model A only coheres if nothing in the ledger is optional. Observational
+    // signals (page views, downloads, notification delivery) have no type here.
+    for (const telemetry of [
+      "PAGE_VIEWED",
+      "REPORT_DOWNLOADED",
+      "NOTIFICATION_DELIVERED",
+      "UI_INTERACTION",
+      "TELEMETRY",
+    ]) {
+      expect(isKnownEventType(telemetry)).toBe(false);
+    }
+    for (const def of emittedEventTypes()) {
+      expect(def.emission === "trigger" || def.emission === "rpc").toBe(true);
+    }
+  });
+
+  it("withdraws migration 62's inaccurate claim about type enforcement", () => {
+    // 62 said an unknown type was "unwritable — enforced by
+    // emit_business_event()". The function never checked. 63 says so plainly
+    // and points at the build-time test that IS the enforcement.
+    const sql = read(ATOMICITY);
+    expect(sql).toContain("The claim is withdrawn");
+    expect(sql).toContain("tests/business-events.test.ts");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 9F / 9G — correlation and policy provenance
 // ---------------------------------------------------------------------------
 describe("WES-9F/9G correlation and provenance", () => {
@@ -444,16 +556,18 @@ describe("WES-9F/9G correlation and provenance", () => {
 // ---------------------------------------------------------------------------
 describe("WES-9E/9M boundaries", () => {
   it("does not touch audit_log", () => {
-    const sql = migration();
-    expect(sql).not.toMatch(/insert into public\.audit_log/i);
-    expect(sql).not.toMatch(/alter table public\.audit_log/i);
+    for (const sql of [migration(), atomicity()]) {
+      expect(sql).not.toMatch(/insert into public\.audit_log/i);
+      expect(sql).not.toMatch(/alter table public\.audit_log/i);
+    }
   });
 
   it("ships NO retention or purge job", () => {
-    const sql = migration();
-    expect(sql).not.toMatch(/pg_cron|cron\.schedule/i);
-    expect(sql).not.toMatch(/delete from/i);
-    expect(sql).not.toMatch(/create .*(policy|function).*(purge|retention|prune)/i);
+    for (const sql of [migration(), atomicity()]) {
+      expect(sql).not.toMatch(/pg_cron|cron\.schedule/i);
+      expect(sql).not.toMatch(/delete from/i);
+      expect(sql).not.toMatch(/create .*(policy|function).*(purge|retention|prune)/i);
+    }
   });
 
   it("authorizes nothing — no workflow module reads the ledger to decide", () => {

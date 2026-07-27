@@ -53,13 +53,64 @@ risk. A timeline consumers are told to trust must not inherit it.
 trustworthy events beat broad unreliable coverage. When those write paths become transactional, emission
 is added — not a new vocabulary.
 
+### 2.1 Event classification
+
+Every integrated event is **mandatory**; the ledger holds no observational class. "Atomicity proven"
+names the check in `supabase/tests/rls_business_events_test.sql` or `tests/business-events.test.ts`.
+
+| Event type | Source domain | Class | Emission | Failure behaviour | Atomicity proven |
+|---|---|---|---|---|---|
+| `DOSSIER_OPENED` | `operational_file` insert | mandatory | trigger | rolls back the dossier insert | `insert_rolls_back_when_event_fails` |
+| `DOSSIER_STATUS_CHANGED` | `operational_file` status | mandatory | trigger | rolls back the status change | `update_rolls_back_when_event_fails` |
+| `DOSSIER_CLOSED` | status → `CLOSED` | mandatory | trigger | rolls back the closure | `update_rolls_back_when_event_fails` |
+| `DOCUMENT_UPLOADED` | `document` insert | mandatory | trigger | rolls back the upload row | shared handler, `re-raises from every single handler` |
+| `DOCUMENT_VERIFIED` | status → `APPROVED` | mandatory | trigger | rolls back the verification | shared handler |
+| `DOCUMENT_REJECTED` | status → `REJECTED` | mandatory | trigger | rolls back the rejection | shared handler |
+| `CUSTOMS_RECORD_CREATED` | `customs_record` insert | mandatory | trigger | rolls back the record | shared handler |
+| `CUSTOMS_STATUS_CHANGED` | `customs_record` status | mandatory | trigger | rolls back the transition | shared handler |
+| `CUSTOMS_DECLARED` | status → `DECLARED` | mandatory | trigger | rolls back the declaration | shared handler |
+| `BAE_RECORDED` | `bae_reference` null → set | mandatory | trigger | rolls back the BAE write | shared handler |
+| `CUSTOMS_RELEASE_COMPLETED` | status → `RELEASED` | mandatory | trigger | rolls back the release | shared handler |
+| `TRANSPORT_PLANNING_CREATED` | `transport_record` insert | mandatory | trigger | rolls back the record | shared handler |
+| `TRANSPORT_STATUS_CHANGED` | `transport_record` status | mandatory | trigger | rolls back the transition | shared handler |
+| `TRANSPORT_PLANNED` / `PICKUP_CONFIRMED` / `TRANSPORT_STARTED` / `DELIVERY_COMPLETED` / `POD_RECEIVED` | status milestones | mandatory | trigger | rolls back the milestone | shared handler |
+| `DRIVER_ASSIGNED` / `DRIVER_UNASSIGNED` | `driver_name` null ⇄ set | mandatory | trigger | rolls back the assignment | shared handler |
+| `TASK_CREATED` | `task` insert | mandatory | trigger | rolls back the task | `insert_rolls_back_when_event_fails` |
+| `TASK_COMPLETED` | status → `DONE` | mandatory | trigger | rolls back the completion | shared handler |
+| `TASK_CANCELLED` | status → `CANCELLED` | mandatory | trigger | rolls back the cancellation | shared handler |
+| `INVOICE_ISSUED` | status → `ISSUED` | mandatory | trigger | rolls back the issuance | shared handler |
+| `PAYMENT_RECORDED` | `payment` insert | mandatory | trigger | rolls back the payment | shared handler |
+| `POLICY_ACTIVATED` / `POLICY_RETIRED` | `activate_workflow_policy` | mandatory | RPC | RPC raises; activation rolls back | `emits policy activation inside the existing atomic RPC` |
+| **`DOSSIER_POLICY_PINNED`** | — | — | — | **NOT EMITTED — atomic path unavailable** | no instance-creation path pins yet |
+| **`HANDOFF_SENT` / `HANDOFF_RECEIVED`** | — | — | — | **NOT EMITTED — atomic path unavailable** | app-layer multi-write |
+| **`EXPENSE_AUTHORIZED`** | — | — | — | **NOT EMITTED — atomic path unavailable** | app-layer multi-write |
+| **`DOCUMENT_SHARED_WITH_CLIENT`** | — | — | — | **NOT EMITTED — atomic path unavailable** | app-layer portal flag |
+| **`ADMIN_OVERRIDE_EXECUTED` / `WORKFLOW_REVERSED`** | — | — | — | **NOT EMITTED — atomic path unavailable** | no single domain transition |
+
+Additional guarantees proven in SQL against persisted rows: a **domain** failure writes no event
+(`domain_failure_writes_no_event`); a **retry** of the same status appends no duplicate
+(`retry_appends_no_duplicate`); a **cross-tenant** event failure rolls the domain mutation back
+(`cross_tenant_event_rolls_back_domain`); an aborted action leaves no partial event
+(`no_orphan_event_after_rollback`); the caller receives `EF001`, not internals
+(`failure_uses_safe_error_code`).
+
 Types for features that **do not exist yet** (internal document generation → WES-4, transport order
 generation and missions → WES-6, assignment history → WES-3) are **absent entirely**. Naming them now
 would be vocabulary for behaviour nobody has written.
 
 ---
 
-## 3. Why triggers are safe here
+## 3. Mandatory-event atomicity (Model A)
+
+> **Mandatory business events are part of the domain transaction. Failure to append the event aborts the
+> domain change.**
+>
+> **Observational telemetry is outside this authoritative ledger** and may use separate best-effort
+> mechanisms. Nothing observational is permitted in `business_event`.
+
+**Every event in this ledger is mandatory.** There is no second class. The test is simple: if a signal is
+not worth aborting the business action for, it does not belong here. Page views, report downloads,
+notification delivery and UI interaction have no type in the registry and never will.
 
 The WES-9D caution against "a trigger on every table" is respected precisely:
 
@@ -67,10 +118,24 @@ The WES-9D caution against "a trigger on every table" is respected precisely:
   the RLS suite proves it by editing `priority` and asserting zero new events.
 - A status moving to an unlisted value emits only the generic `*_STATUS_CHANGED` fact, never an invented
   milestone.
-- Every emission function wraps its call in `exception when others`, so **a ledger failure can never roll
-  back a legitimate business write**. That relaxes the guarantee in the one safe direction: the fact may
-  exist without the event, never the event without the fact. The RLS suite proves this by replacing
-  `emit_business_event` with a raising stub and asserting the domain write still commits.
+- An emission failure **aborts the domain mutation**. An AFTER trigger that raises aborts its statement
+  and transaction, so the domain row and its event commit together or not at all.
+
+Each handler logs the underlying cause for operators and then **re-raises**, carrying SQLSTATE `EF001`
+and a message safe to show a user — a raw constraint error would otherwise reach the client through
+PostgREST. The handler exists only to sanitise and preserve the diagnostic; removing it entirely would
+also roll back correctly. It can never permit the write.
+
+> ### Correction, 2026-07-27 (WES-9A)
+>
+> Migration `20260726000004` as first shipped wrapped every emission in
+> `exception when others then raise warning …; return null`. A failed append became a log line and the
+> domain write **committed anyway** — Model B, and a direct violation of ADR-WES-014, which forbids
+> best-effort event writes by name. The tests shipped alongside it *asserted* the swallowing, which
+> locked the defect in. Migration `20260727000001` replaces all seven functions and the tests now prove
+> rollback against persisted rows. Migration 62 is left in place as the historical record; it is not
+> edited, because this repository has a known ledger/schema history gap (Phase 9.0F) and no
+> environment's applied state can be asserted remotely.
 
 **Actor resolution.** PostgREST's per-request transactions mean an app-set `set_config` GUC cannot reach
 the trigger, and the service role's `auth.uid()` is NULL. Actor comes from the row's **own actor columns**
@@ -181,9 +246,9 @@ They answer different questions and neither replaces the other.
 | Gate | Result |
 |---|---|
 | Typecheck | clean |
-| Tests | **3577 passed / 164 files** (+61 new in `tests/business-events.test.ts`) |
+| Tests | **3586 passed / 164 files** (70 in `tests/business-events.test.ts`) |
 | Production build | compiled |
-| SQL/RLS suites | **50** wired in CI (was 49) — `rls_business_events_test.sql` added |
+| SQL/RLS suites | **50** wired in CI (was 49) — `rls_business_events_test.sql`; WES-9A strengthens it in place |
 | Seed idempotency | **unchanged** — `supabase/seed.sql` not modified |
 | Migration clean replay | CI gate (no Docker locally — Phase 8.0A) |
 
@@ -211,6 +276,10 @@ migration contains no cron schedule, no `delete from`, and no purge function.
 
 ## 10. Known limitations
 
+0. **The structural SQL tests strip `--` comments.** The first version of these assertions read raw
+   SQL, so a migration header that *quoted* the anti-pattern under test satisfied the test about the
+   code. `sqlCode()` now strips SQL line comments for every structural check — the same self-matching
+   class this project has hit before.
 1. **Coverage is partial and the UI says so.** Handoffs, expense visas and document sharing are real
    features that emit nothing, because their write paths cannot yet guarantee the event. The timeline
    footnote states this rather than letting an operator read an incomplete list as the whole story.
@@ -222,7 +291,16 @@ migration contains no cron schedule, no `delete from`, and no purge function.
    `workflow_policy_version`, which is already immutable.
 5. **No external broker, no subscriptions, no event sourcing.** The ledger is a table other code may read.
    Nothing publishes, nothing replays state from it, and no aggregate is rebuilt from events.
-6. **A trigger emits with the row's actor, which is the row's *last* actor.** For a status change the
+6. **Rejection reasons are omitted, and this contradicts ADR-WES-014.** The ADR's privacy section
+   states override and rejection reasons *are* included because governance requires them; WES-9 omits
+   them (DEC-B73) because an immutable table can never redact staff-authored free text. Both positions
+   are defensible and they conflict. **Flagged, not silently resolved** — a ratification decision is
+   required before WES-4 depends on reasons being present.
+7. **Several ratified envelope fields are not implemented** — `actor_role_at_time`,
+   `responsible_department`, `process_instance_id`, `step_execution_id`, `override_marker`,
+   `override_reason`. They belong to WES-3/4/5; writing them now would freeze values no subsystem
+   computes.
+8. **A trigger emits with the row's actor, which is the row's *last* actor.** For a status change the
    emitting actor is inferred from the column the domain updated in the same write (`reviewed_by`,
    `assigned_by`). Where the domain does not update an actor column alongside the status, the value is
    whatever was last written — an accepted imprecision, and the reason `source` is recorded on every row.
