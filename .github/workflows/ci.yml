@@ -366,12 +366,11 @@ jobs:
           PGPASSWORD: postgres
         run: |
           set +e
-          out=$(psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1                 -f supabase/tests/rls_generated_artifacts_test.sql 2>&1)
+          out=$(psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/rls_generated_artifacts_test.sql 2>&1)
           code=$?
           echo "$out"
           if [ $code -ne 0 ]; then
-            echo "::error::WES-4G RLS suite failed (psql exit $code): $(echo "$out" | tail -c 900 | tr '
-' ' | ')"
+            echo "::error::WES-4G RLS suite failed (psql exit $code): $(echo "$out" | tail -c 900 | tr '\n' ' | ')"
           fi
           exit $code
 

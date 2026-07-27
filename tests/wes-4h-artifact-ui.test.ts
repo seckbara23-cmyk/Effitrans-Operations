@@ -150,6 +150,49 @@ describe("WES-4H version access stays tenant-safe", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// CI workflow integrity
+//
+// Lives here because WES-4G broke it. A Python heredoc wrote a LITERAL newline
+// inside `tr '\n' ...`, which split the YAML mid-string. GitHub then failed the
+// run with ZERO jobs and no annotation — the workflow never parsed, so nothing
+// could report why. Two whole runs were lost to a fault no local gate could
+// see, because typecheck, tests and build never read this file.
+// ---------------------------------------------------------------------------
+describe("CI workflow file stays parseable", () => {
+  const ci = () => read(".github/workflows/ci.yml");
+
+  it("has no line beginning with a bare quote — the corruption signature", () => {
+    // A YAML block-scalar line never legitimately starts at column 0 with a
+    // quote; that is what a newline broken into a shell string looks like.
+    const offenders = ci()
+      .split("\n")
+      .map((l, i) => ({ n: i + 1, l }))
+      .filter(({ l }) => /^["']/.test(l));
+    expect(offenders, `broken lines:\n${offenders.map((o) => `${o.n}: ${o.l}`).join("\n")}`)
+      .toEqual([]);
+  });
+
+  it("keeps every step a properly indented list item", () => {
+    const steps = ci().match(/^ {6}- name:/gm) ?? [];
+    expect(steps.length).toBeGreaterThan(50);
+    // Any `- name:` at a different indent means the list structure broke.
+    const stray = (ci().match(/^[ 	]*- name:/gm) ?? []).filter((l) => !/^ {6}- name:/.test(l));
+    expect(stray).toEqual([]);
+  });
+
+  it("wires every SQL suite on disk into CI, and nothing that is absent", () => {
+    const wired = Array.from(ci().matchAll(/-f supabase\/tests\/([\w.]+\.sql)/g)).map((m) => m[1]);
+    const onDisk = readdirSync(join(root, "supabase/tests")).filter((f) => f.endsWith(".sql"));
+    expect([...wired].sort()).toEqual([...onDisk].sort());
+  });
+
+  it("keeps each annotation step's tr invocation on one line", () => {
+    // The exact fault: `tr '` followed by a real newline.
+    expect(ci()).not.toMatch(/tr '\r?\n/);
+  });
+});
+
 describe("WES-4H scope discipline", () => {
   it("adds generation for NO further artifact", () => {
     expect(generatableArtifacts().map((a) => a.code).sort()).toEqual([
