@@ -65,6 +65,25 @@ insert into public.app_user (id, tenant_id, email, status) values
   ('00000000-0000-0000-0000-00000000b001', '00000000-0000-0000-0000-0000000000f1', 'w3-b1@test.local', 'active')
 on conflict (id) do nothing;
 
+-- Every tenant-A probe holds DOCUMENTATION_OFFICER: plain `file:read`, NOT
+-- `file:read:all`. The operational_file policy is
+-- `file:read AND can_read_file(id)`, so without a role every count below would
+-- be 0 for the wrong reason — and A3's 0 in particular has to prove the LEGACY
+-- COLUMN grants nothing, not that A3 lacks permission.
+insert into public.user_role (user_id, role_id, tenant_id)
+select u.id, r.id, r.tenant_id
+from (values
+  ('00000000-0000-0000-0000-00000000a001'::uuid),
+  ('00000000-0000-0000-0000-00000000a002'::uuid),
+  ('00000000-0000-0000-0000-00000000a003'::uuid),
+  ('00000000-0000-0000-0000-00000000a004'::uuid),
+  ('00000000-0000-0000-0000-00000000a005'::uuid)
+) as u(id)
+join public.role r
+  on r.code = 'DOCUMENTATION_OFFICER'
+ and r.tenant_id = '00000000-0000-0000-0000-000000000001'
+on conflict do nothing;
+
 insert into public.client (id, tenant_id, name) values
   ('00000000-0000-0000-0000-0000000000ca', '00000000-0000-0000-0000-000000000001', 'W3 Client')
 on conflict (id) do nothing;
@@ -117,7 +136,7 @@ begin
    where subject_type = 'TASK' and subject_id = v_task;
 
   select id into v_first from public.assignment_event
-   where subject_id = v_task order by created_at asc limit 1;
+   where subject_id = v_task and previous_user_id is null;
 
   perform public.assign_task(v_task, '00000000-0000-0000-0000-00000000a005',
                              '00000000-0000-0000-0000-00000000a001', 'REASSIGNMENT');
