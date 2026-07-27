@@ -135,13 +135,31 @@ Department-responsibility visibility is applied in the **server resolver**, whic
 | Gate | Result |
 |---|---|
 | Typecheck | clean |
-| Tests | **3652 passed / 165 files** (66 new in `tests/wes-3-assignment-visibility.test.ts`) |
+| Tests | **3653 passed / 165 files** (67 new in `tests/wes-3-assignment-visibility.test.ts`) |
 | Production build | compiled |
 | SQL/RLS suites | **51** wired in CI (was 50) |
 | Seed idempotency | **unchanged** |
-| Migration clean replay | CI gate (no Docker locally — Phase 8.0A) |
+| Migration clean replay | ✅ green — CI `92dfffa` |
+| CI, per job | `build` success (10 steps) · `rls-tests` success (59 steps, **51 `Run` steps, 0 skipped**) |
 
 The tenant-scope leak guard caught one genuine unscoped read during implementation (`process_step_execution` in `currentStepKey`); it was **fixed, not exempted**.
+
+### What the CI round-trips cost, and what was done about it
+
+Four runs were needed. The record matters more than the outcome:
+
+| Run | Result | Cause |
+|---|---|---|
+| `6a73b25` | ❌ | `rls_file_assignment_test.sql` (Phase 3.2A) asserted the very semantic WES-3F retires. **Legitimate failure** — the implementation audit grepped TypeScript callers of `assigned_to_user_id` but not the SQL suites. **29 later suites were skipped behind it.** |
+| `d80c23c` | ❌ | 3.2A realigned, zero skipped, reached WES-3's own suite → `psql exit 3` with no readable message. |
+| `7ec2fbc` | ❌ | **No fix — bought observability.** Workflow logs need repository *admin* rights through the API (403); annotations do not. The step now re-emits psql's output as a GitHub error annotation, and the suite prints every check value as a `NOTICE` before asserting — on failure `select * from _r` never runs, because `ON_ERROR_STOP` aborts the transaction. |
+| `92dfffa` | ✅ | The annotation named the fault immediately: `invalid input syntax for type uuid: "…-00000000p001"`. `p` is not a hex digit. |
+
+Two durable fixes came out of it: the WES-3 CI step keeps the annotation pattern, and a test now scans
+every `.sql` under `supabase/tests` and `supabase/migrations` for UUID-shaped literals containing
+non-hex characters. This repository had already made that mistake once, in WES-7 (`g1`, `wp01`, `w1`);
+it is invisible to typecheck, unreachable without local Docker or psql, and its abort hides an entire
+test job.
 
 ---
 
