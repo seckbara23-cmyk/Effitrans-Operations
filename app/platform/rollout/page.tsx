@@ -86,7 +86,8 @@ export default async function PlatformRollout() {
 
       <div className="space-y-3">
         {rows.map((row) => (
-          <RolloutControls key={row.tenantId} row={row} killSwitchOn={killSwitch.enabled} />
+          <RolloutControls key={row.tenantId} row={row} killSwitchOn={killSwitch.enabled}
+              killSwitch={killSwitch} />
         ))}
         {rows.length === 0 && (
           <p className="rounded-xl border border-white/10 bg-white/5 p-6 text-center text-sm text-slate-400">

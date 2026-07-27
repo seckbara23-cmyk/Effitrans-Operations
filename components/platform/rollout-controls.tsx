@@ -27,9 +27,20 @@ const FEATURES: { key: RolloutFeature; label: string; hint: string }[] = [
 export function RolloutControls({
   row,
   killSwitchOn,
+  killSwitch,
 }: {
   row: TenantRolloutRow;
   killSwitchOn: boolean;
+  /**
+   * WES-3B — the PER-FEATURE deployment flags, not just the master.
+   *
+   * Without this the control could show a ticked box for a capability the
+   * deployment makes impossible: `EFFITRANS_COLLECTIONS_ENABLED` unset means
+   * `resolveEffectiveFlags` returns collections=false for every tenant, however
+   * the row reads. The operator saw "Recouvrement ON" and the tenant saw
+   * "module non activé", and both were telling the truth about different things.
+   */
+  killSwitch: { workspaces: boolean; physicalDeposit: boolean; collections: boolean };
 }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -70,6 +81,19 @@ export function RolloutControls({
   }
 
   const live = killSwitchOn && state.process_engine;
+
+  /**
+   * Is this capability switched on AT THE DEPLOYMENT level? A tenant toggle is
+   * inert without it — `resolveEffectiveFlags` ANDs the two, so the row alone
+   * can never turn a feature on.
+   */
+  function deploymentAllows(key: RolloutFeature): boolean {
+    if (key === "process_engine") return killSwitchOn;
+    if (key === "process_workspaces") return killSwitch.workspaces;
+    if (key === "physical_invoice_deposit") return killSwitch.physicalDeposit;
+    if (key === "collections") return killSwitch.collections;
+    return true;
+  }
 
   return (
     <div className="rounded-xl border border-white/10 bg-white/5 p-5">
@@ -132,6 +156,14 @@ export function RolloutControls({
               <span className="min-w-0">
                 <span className="block text-sm font-semibold text-white">{f.label}</span>
                 <span className="block text-xs text-slate-500">{f.hint}</span>
+                {/* WES-3B — ticked, persisted, and still not live. The console
+                    must show what IS, not what someone once ticked. */}
+                {state[f.key] && !deploymentAllows(f.key) && (
+                  <span className="mt-1 block text-[11px] font-medium text-amber-400">
+                    Activé pour ce tenant, mais INACTIF : le commutateur de déploiement de
+                    cette fonctionnalité est coupé. Les utilisateurs ne la verront pas.
+                  </span>
+                )}
               </span>
             </label>
           );

@@ -350,7 +350,7 @@ async function RolloutTab({ tenantId }: { tenantId: string }) {
           {overview.killSwitch.enabled ? "actif" : "coupé"}
         </strong>.
       </p>
-      <RolloutControls row={row} killSwitchOn={overview.killSwitch.enabled} />
+      <RolloutControls row={row} killSwitchOn={overview.killSwitch.enabled} killSwitch={overview.killSwitch} />
     </div>
   );
 }
