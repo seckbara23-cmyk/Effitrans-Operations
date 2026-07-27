@@ -7,6 +7,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
+import { parse as parseYaml } from "yaml";
 import { join } from "node:path";
 
 import { generatableArtifacts } from "@/lib/documents/artifacts/feasibility";
@@ -162,6 +163,60 @@ describe("WES-4H version access stays tenant-safe", () => {
 describe("CI workflow file stays parseable", () => {
   const ci = () => read(".github/workflows/ci.yml");
 
+  /**
+   * THE test that would actually have caught it. The text guards below are
+   * useful signatures, but only a parser proves the file is loadable — and
+   * "loadable" is precisely what GitHub failed at, silently, with zero jobs.
+   */
+  it("PARSES as YAML, and has the shape Actions requires", () => {
+    const doc = parseYaml(ci()) as {
+      jobs?: Record<string, { steps?: { name?: string; run?: string; uses?: string }[] }>;
+    };
+    expect(doc).toBeTruthy();
+    expect(doc.jobs).toBeTruthy();
+
+    const jobs = Object.keys(doc.jobs ?? {});
+    expect(jobs).toContain("build");
+    expect(jobs).toContain("rls-tests");
+
+    // Every step must be a real step: a name plus either `run` or `uses`.
+    for (const [jobName, job] of Object.entries(doc.jobs ?? {})) {
+      expect(job.steps, `${jobName} has no steps`).toBeTruthy();
+      for (const step of job.steps ?? []) {
+        expect(
+          Boolean(step.run) || Boolean(step.uses),
+          `${jobName}: step "${step.name ?? "(unnamed)"}" has neither run nor uses`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it("wires every SQL suite exactly ONCE, from the parsed steps", () => {
+    // Parsed, not regexed over raw text: a suite hidden inside a broken block
+    // scalar would still match a text search while never executing.
+    const doc = parseYaml(ci()) as {
+      jobs?: Record<string, { steps?: { run?: string }[] }>;
+    };
+    const runs = Object.values(doc.jobs ?? {})
+      .flatMap((j) => j.steps ?? [])
+      .map((s) => s.run ?? "")
+      .join("\n");
+
+    const wired = Array.from(runs.matchAll(/-f supabase\/tests\/([\w.]+\.sql)/g)).map((m) => m[1]);
+    const onDisk = readdirSync(join(root, "supabase/tests")).filter((f) => f.endsWith(".sql"));
+
+    const duplicates = wired.filter((f, i) => wired.indexOf(f) !== i);
+    expect(duplicates, `suites wired more than once:\n${duplicates.join("\n")}`).toEqual([]);
+
+    const missing = onDisk.filter((f) => !wired.includes(f));
+    expect(missing, `suites on disk but NOT in CI:\n${missing.join("\n")}`).toEqual([]);
+
+    const phantom = wired.filter((f) => !onDisk.includes(f));
+    expect(phantom, `CI references suites that do not exist:\n${phantom.join("\n")}`).toEqual([]);
+
+    expect(wired.length).toBe(onDisk.length);
+  });
+
   it("has no line beginning with a bare quote — the corruption signature", () => {
     // A YAML block-scalar line never legitimately starts at column 0 with a
     // quote; that is what a newline broken into a shell string looks like.
@@ -179,12 +234,6 @@ describe("CI workflow file stays parseable", () => {
     // Any `- name:` at a different indent means the list structure broke.
     const stray = (ci().match(/^[ 	]*- name:/gm) ?? []).filter((l) => !/^ {6}- name:/.test(l));
     expect(stray).toEqual([]);
-  });
-
-  it("wires every SQL suite on disk into CI, and nothing that is absent", () => {
-    const wired = Array.from(ci().matchAll(/-f supabase\/tests\/([\w.]+\.sql)/g)).map((m) => m[1]);
-    const onDisk = readdirSync(join(root, "supabase/tests")).filter((f) => f.endsWith(".sql"));
-    expect([...wired].sort()).toEqual([...onDisk].sort());
   });
 
   it("keeps each annotation step's tr invocation on one line", () => {
