@@ -6,7 +6,7 @@
  * right thing can never satisfy a test about code that does the wrong thing.
  */
 import { describe, expect, it } from "vitest";
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import {
@@ -381,6 +381,107 @@ describe("WES-3A.5 business events unchanged", () => {
     for (const file of ["lib/workflow/access/queue.ts", "lib/workflow/access/assignees.ts"]) {
       expect(code(file)).not.toContain("business_event");
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// WES-3A.6 — Finance « Recouvrement » route repair
+//
+// Observed: Finance → Recouvrement returned 404.
+// Root cause: a ROLLOUT/FEATURE-FLAG MISMATCH, not a missing page.
+// `/collections` exists and IS Recouvrement (its metadata title says so), but
+// it calls notFound() on three conditions — the global kill switch, the TENANT
+// `collections` rollout flag, and `collections:manage`. The Finance tile gated
+// on the PERMISSION ALONE, and the flags fail closed, so a user with the
+// permission in a tenant without the flag saw a link to a 404.
+//
+// The sidebar already gated on flag AND permission. Two gating implementations,
+// drifted — the exact failure the navigation builder's own header warns about.
+// ---------------------------------------------------------------------------
+describe("WES-3A.6 Finance Recouvrement", () => {
+  const finance = () => code("app/departments/finance/page.tsx");
+
+  it("keeps ONE canonical Recouvrement route — no duplicate collections page", () => {
+    // /collections is the established equivalent; creating /finance/recouvrement
+    // would be a second competing surface, which the mandate forbids.
+    expect(existsSync(join(root, "app/collections/page.tsx"))).toBe(true);
+    expect(existsSync(join(root, "app/finance/recouvrement"))).toBe(false);
+    expect(finance()).toContain('href: "/collections"');
+  });
+
+  it("gates the tile on EXACTLY what the route requires", () => {
+    const f = finance();
+    expect(f).toContain("globalKillSwitch");
+    expect(f).toContain("getTenantProcessFlags");
+    expect(f).toContain("collectionsAvailable");
+    expect(f).toMatch(/available: collectionsAvailable/);
+    expect(f).toMatch(/l\.available !== false/);
+  });
+
+  it("matches the sidebar's gate, which was already correct", () => {
+    // Both must require the flag AND the permission.
+    const nav = code("lib/navigation/build.ts");
+    expect(nav).toMatch(/collections && can\("collections:manage"\)/);
+    const route = code("app/collections/page.tsx");
+    expect(route).toContain("if (!flags.collections) notFound();");
+    expect(route).toContain('hasPermission(permissions, "collections:manage")');
+  });
+
+  it("explains an unavailable module instead of vanishing or 404-ing", () => {
+    const raw = read("app/departments/finance/page.tsx");
+    expect(raw).toMatch(/Ce module n&apos;est pas activé pour votre organisation/);
+    // Shown only to someone who WOULD be allowed in — not to everyone.
+    expect(finance()).toMatch(
+      /!collectionsAvailable && hasPermission\(permissions, "collections:manage"\)/,
+    );
+  });
+
+  it("adds no new Finance permission", () => {
+    // collections:manage already existed; the repair is gating, not authority.
+    const f = finance();
+    expect(f).not.toMatch(/recouvrement:|collections:read\b/);
+  });
+
+  it("leaves the collections route's own authorization untouched", () => {
+    const route = code("app/collections/page.tsx");
+    // Still fails closed on all three, in order.
+    expect(route).toMatch(
+      /globalKillSwitch\(\)\.enabled\) notFound\(\)[\s\S]*flags\.collections\) notFound\(\)[\s\S]*collections:manage"\)\) notFound\(\)/,
+    );
+  });
+
+  it("EVERY Finance tile points at a route that exists", () => {
+    // The general form of the reported defect: a tile whose target is absent.
+    const f = finance();
+    const hrefs = Array.from(f.matchAll(/href: "(\/[^"]*)"/g)).map((m) => m[1]);
+    expect(hrefs.length).toBeGreaterThanOrEqual(5);
+    for (const href of hrefs) {
+      const seg = href.replace(/^\//, "");
+      const exists =
+        existsSync(join(root, "app", seg, "page.tsx")) ||
+        existsSync(join(root, "app", `${seg}.tsx`));
+      expect(exists, `${href} has no page`).toBe(true);
+    }
+  });
+
+  it("has no Finance tile whose target gates on a flag the tile ignores", () => {
+    // Generalises the fix: any tile target that calls notFound() on a rollout
+    // flag must have a corresponding availability gate at the link site.
+    const f = finance();
+    const hrefs = Array.from(f.matchAll(/href: "(\/[^"]*)"/g)).map((m) => m[1]);
+    const unguarded: string[] = [];
+    for (const href of hrefs) {
+      const page = join("app", href.replace(/^\//, ""), "page.tsx");
+      if (!existsSync(join(root, page))) continue;
+      const target = code(page);
+      const flagGated =
+        /getTenantProcessFlags|globalKillSwitch/.test(target) && /notFound\(\)/.test(target);
+      if (!flagGated) continue;
+      // The tile for a flag-gated route must carry an `available` guard.
+      const tile = f.slice(f.indexOf(`href: "${href}"`) - 200, f.indexOf(`href: "${href}"`) + 200);
+      if (!/available:/.test(tile)) unguarded.push(href);
+    }
+    expect(unguarded, `flag-gated targets linked without a guard:\n${unguarded.join("\n")}`).toEqual([]);
   });
 });
 

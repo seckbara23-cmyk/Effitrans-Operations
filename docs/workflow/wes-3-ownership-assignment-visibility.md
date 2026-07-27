@@ -135,7 +135,7 @@ Department-responsibility visibility is applied in the **server resolver**, whic
 | Gate | Result |
 |---|---|
 | Typecheck | clean |
-| Tests | **3701 passed / 166 files** (67 in `wes-3-assignment-visibility`, 49 in `wes-3a-assignment-queue`) |
+| Tests | **3709 passed / 166 files** (67 in `wes-3-assignment-visibility`, 49 in `wes-3a-assignment-queue`) |
 | Production build | compiled |
 | SQL/RLS suites | **51** wired in CI (was 50) |
 | Seed idempotency | **unchanged** |
@@ -230,7 +230,46 @@ user's own actionable work. Merging them would put a colleague's task in a perso
 The **ratified five-section sidebar is untouched** — this phase's mandate says not to
 redesign navigation, and that structure has its own pinned tests.
 
-### 11.3 Remaining limitations
+### 11.3 Finance « Recouvrement » route repair (WES-3A.6)
+
+**Observed:** Finance → Recouvrement returned *404 — Page introuvable*.
+
+**Root cause: a rollout/feature-flag mismatch, not a missing page.** `/collections`
+exists and IS Recouvrement — its `metadata.title` says so. It calls `notFound()` on three
+conditions: the global kill switch, the **tenant `collections` rollout flag**, and
+`collections:manage`. The Finance workspace tile gated on the **permission alone**, and
+the rollout flags **fail closed** (a tenant with no rollout row, or with `process_engine`
+off, resolves `collections: false`). A user holding the permission in such a tenant was
+therefore shown a link to a 404.
+
+The **sidebar had it right** all along — `lib/navigation/build.ts` gates on
+`collections && can("collections:manage")`. Two gating implementations existed and they
+drifted, which is precisely the failure mode the navigation builder's own header warns
+about.
+
+**Repair — gating only, no new capability:**
+
+- the tile now computes `collectionsAvailable` from the same kill switch and tenant flag
+  the route checks, so tile and route agree by construction;
+- when the module is unavailable **and the user would otherwise be allowed in**, the page
+  says so plainly rather than letting the entry vanish — a tile that silently disappears
+  leaves the same question unanswered as one that 404s. Enabling the rollout flag is an
+  **operator action**, never a code change, so the notice points there;
+- **no duplicate route.** `/collections` stays canonical; `/finance/recouvrement` was
+  deliberately NOT created, because a second competing surface is what the mandate
+  forbids;
+- **no new permission.** `collections:manage` already existed; this was never an
+  authority problem.
+
+A general guard now covers the class: one test asserts every Finance tile target exists,
+and another asserts that any tile whose target gates on a rollout flag carries a matching
+availability guard at the link site.
+
+**Limitation:** the repair makes the broken path honest; it does not enable Recouvrement.
+A tenant that wants the module still needs `tenant_process_rollout.collections` (and
+`process_engine`) switched on by an operator.
+
+### 11.4 Remaining limitations
 
 1. **Bounded historical contribution is coarse.** A user with any ledger entry on a
    dossier is credited with every *completed* stage of their department rather than the

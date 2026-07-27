@@ -8,6 +8,7 @@ import { getFinanceQueue, getReconciliation } from "@/lib/finance/service";
 import { getFinanceMonthRevenue } from "@/lib/departments/service";
 import { readyForBillingCount } from "@/lib/handoffs/service";
 import { getDepartmentSlaSummary } from "@/lib/sla/service";
+import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-server";
 import { DeptSlaCard } from "@/components/departments/dept-sla-card";
 import { DeptAttentionCard } from "@/components/departments/dept-attention-card";
 import { financeCards, financeNextAction } from "@/lib/departments/classify";
@@ -42,6 +43,11 @@ export default async function FinanceDepartmentPage() {
     return <div className="animate-fade-in space-y-6">{header}<Notice>{t.finance.forbidden}</Notice></div>;
   }
 
+  // WES-3A.6 — the Recouvrement tile must be gated on EXACTLY what /collections
+  // requires, or it becomes a link to a 404. See the comment on financeLinks.
+  const collectionsAvailable =
+    globalKillSwitch().enabled && (await getTenantProcessFlags(user.tenantId)).collections;
+
   const [queue, recon, revenueMonth, readyForBilling, slaCounts] = await Promise.all([
     getFinanceQueue(),
     getReconciliation(),
@@ -56,14 +62,25 @@ export default async function FinanceDepartmentPage() {
   // holders of its permission, over EXISTING routes. "Finance Requests" is the
   // per-dossier finance panel (no standalone route), so it is intentionally omitted
   // rather than fabricated. Caisse preserves the Phase 9.3A integration.
+  //
+  // WES-3A.6 — `available` exists because a permission gate alone is NOT the
+  // same as the target route's gate. /collections additionally requires the
+  // global kill switch and the TENANT `collections` rollout flag, and those
+  // flags fail closed (a tenant with no rollout row, or with process_engine
+  // off, gets collections=false). Gating this tile on `collections:manage`
+  // alone therefore rendered a link that 404s — the reported defect.
+  //
+  // The sidebar (lib/navigation/build.ts) already gated on the flag AND the
+  // permission; this list did not. Two gating implementations, drifted — the
+  // exact failure mode the navigation builder's own header warns about.
   const financeLinks = [
     { label: "Facturation", href: "/finance", permission: "finance:read", desc: "Factures, encours et statuts de règlement." },
-    { label: "Recouvrement", href: "/collections", permission: "collections:manage", desc: "Balance âgée, relances et promesses." },
+    { label: "Recouvrement", href: "/collections", permission: "collections:manage", available: collectionsAvailable, desc: "Balance âgée, relances et promesses." },
     { label: "Autorisations de dépenses", href: "/finance/autorisations-depenses", permission: "finance:expense:read", desc: "Établir, soumettre et imprimer les autorisations de dépenses." },
     { label: "Caisse", href: "/finance/caisse", permission: "caisse:manage", desc: "Opérations de caisse et de trésorerie (espèces, chèques, Mobile Money, banques)." },
     { label: "Rapprochement", href: "/finance/reconciliation", permission: "finance:read", desc: "Vérification des paiements reçus." },
     { label: "Rapports", href: "/reports", permission: "report:read", desc: "Indicateurs financiers et exports." },
-  ].filter((l) => hasPermission(permissions, l.permission));
+  ].filter((l) => hasPermission(permissions, l.permission) && l.available !== false);
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -80,6 +97,23 @@ export default async function FinanceDepartmentPage() {
           ))}
         </div>
       )}
+
+      {/* WES-3A.6 — the capability exists and this user may use it, but it is
+          not enabled for their organization. Saying so beats silently removing
+          the entry: the previous behaviour was a link to a 404, and a tile that
+          simply vanishes leaves the same question unanswered. Enabling the
+          rollout flag is an OPERATOR action, never a code change, so this
+          points at that rather than pretending to offer a way in. */}
+      {!collectionsAvailable && hasPermission(permissions, "collections:manage") && (
+        <div className="surface border-amber-200 bg-amber-50 p-4">
+          <p className="text-sm font-semibold text-navy-900">Recouvrement</p>
+          <p className="mt-1 text-xs text-amber-800">
+            Ce module n&apos;est pas activé pour votre organisation. Contactez votre
+            administrateur pour l&apos;activer.
+          </p>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-6">
         <StatCard label={t.handoffs.cards.readyForBilling} value={readyForBilling} tone="navy" />
         <StatCard label="Factures en cours" value={cards.invoicesPending} tone="navy" />
