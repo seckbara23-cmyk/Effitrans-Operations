@@ -137,6 +137,9 @@ begin
 
   select id into v_first from public.assignment_event
    where subject_id = v_task and previous_user_id is null;
+  if v_first is null then
+    raise exception 'RLS WES-3 SETUP: the initial TASK assignment row was not written';
+  end if;
 
   perform public.assign_task(v_task, '00000000-0000-0000-0000-00000000a005',
                              '00000000-0000-0000-0000-00000000a001', 'REASSIGNMENT');
@@ -181,7 +184,7 @@ begin
   end;
 
   -- ------------------------------------------------------------ unassignment
-  perform public.assign_task(v_task, null,
+  perform public.assign_task(v_task, null::uuid,
                              '00000000-0000-0000-0000-00000000a001', 'UNASSIGNMENT');
   select count(*) into hist_unassign from public.assignment_event
    where subject_id = v_task and new_user_id is null;
@@ -190,7 +193,7 @@ begin
   perform public.assign_operational_owner(v_inst, '00000000-0000-0000-0000-00000000a001',
                                           '00000000-0000-0000-0000-00000000a001', 'INITIAL');
   begin
-    perform public.assign_operational_owner(v_inst, null,
+    perform public.assign_operational_owner(v_inst, null::uuid,
                                             '00000000-0000-0000-0000-00000000a001', 'UNASSIGNMENT');
   exception when others then owner_unassign_rejected := 1;
   end;
@@ -324,6 +327,16 @@ begin
     ('reassigned_away_still_sees_dossier', previous_holder_sees),
     ('cross_tenant_sees_history', b1_sees),
     ('portal_sees_history', p1_sees_history);
+
+  raise notice 'WES-3 CHECKS: h1=% h2=% imm=% unassign=% upd=% del=% xt=% reason=% noop=% ownerun=%',
+    hist_initial, hist_after_reassign, first_row_unchanged, hist_unassign,
+    update_rejected, delete_rejected, cross_tenant_rejected, reason_required_rejected,
+    noop_rejected, owner_unassign_rejected;
+  raise notice 'WES-3 CHECKS: atomic(task=% hist=% event=%) rollback(assignee=% hist=%) retry=%/%',
+    atomic_task, atomic_hist, atomic_event, rollback_assignee, rollback_hist,
+    retry_before, retry_after;
+  raise notice 'WES-3 CHECKS: owner=% step=% legacy=% prev=% b1=% p1=%',
+    owner_sees, step_sees, legacy_only_sees, previous_holder_sees, b1_sees, p1_sees_history;
 
   if hist_initial <> 1 or hist_after_reassign <> 2 or first_row_unchanged <> 1
      or hist_unassign <> 1

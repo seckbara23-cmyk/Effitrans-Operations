@@ -325,10 +325,24 @@ jobs:
           PGPASSWORD: postgres
         run: psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/rls_business_events_test.sql
 
+      # This step surfaces psql's own message as a GitHub error annotation.
+      # Workflow LOGS need repository admin rights to read through the API, so a
+      # bare `exit 3` is undiagnosable to anyone without them; annotations are
+      # readable by everyone who can see the run. The suite prints every check
+      # value before asserting, so the annotation carries the actual numbers.
       - name: Run assignment history and visibility isolation test (Phase WES-3)
         env:
           PGPASSWORD: postgres
-        run: psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/rls_assignment_history_test.sql
+        run: |
+          set +e
+          out=$(psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 \
+                -f supabase/tests/rls_assignment_history_test.sql 2>&1)
+          code=$?
+          echo "$out"
+          if [ $code -ne 0 ]; then
+            echo "::error::WES-3 RLS suite failed (psql exit $code): $(echo "$out" | tail -c 900 | tr '\n' ' | ')"
+          fi
+          exit $code
 
       - name: Stop local Supabase
         if: always()
