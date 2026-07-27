@@ -44,6 +44,8 @@ export const PROHIBITED_METADATA_KEYS = [
   "note",
   "comment",
   "comments",
+  // Stays banned. WES-4 carries reason_code / has_reason / reason_reference_id;
+  // the bare key would be the free text itself.
   "reason",
   "description",
   "message",

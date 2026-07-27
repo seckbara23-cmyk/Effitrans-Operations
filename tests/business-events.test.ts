@@ -43,6 +43,8 @@ const sqlCode = (p: string) => read(p).replace(/^\s*--.*$/gm, "");
 const MIGRATION = "supabase/migrations/20260726000004_business_event_ledger.sql";
 const ATOMICITY = "supabase/migrations/20260727000001_business_event_atomicity.sql";
 const ASSIGNMENT = "supabase/migrations/20260727000002_assignment_history.sql";
+const DOC_GOV = "supabase/migrations/20260727000003_document_governance.sql";
+const ARTIFACTS = "supabase/migrations/20260727000004_generated_artifacts.sql";
 const migration = () => sqlCode(MIGRATION);
 /** WES-9A: the emission functions as they stand today (62 replaced by 63). */
 const atomicity = () => sqlCode(ATOMICITY);
@@ -79,14 +81,17 @@ describe("WES-9A event taxonomy", () => {
   it("declares no type for a feature that does not exist yet", () => {
     // WES-4/WES-6 build these. Naming them now would be vocabulary for
     // behaviour nobody has written.
+    // INTERNAL_DOCUMENT_GENERATED was here until WES-4G built the generator.
+    // It now exists BECAUSE the behaviour does — which is the rule this test
+    // enforces, not a list that must never change.
     for (const absent of [
-      "INTERNAL_DOCUMENT_GENERATED",
       "TRANSPORT_ORDER_GENERATED",
       "MISSION_STARTED",
       "ASSIGNMENT_CHANGED",
     ]) {
       expect(isKnownEventType(absent)).toBe(false);
     }
+    expect(getEventType("INTERNAL_DOCUMENT_GENERATED")?.emission).toBe("rpc");
   });
 
   it("emits only trigger- or RPC-backed types", () => {
@@ -644,7 +649,7 @@ describe("event sources", () => {
     // Across every migration that emits: WES-9 ships the domain events, WES-3
     // the assignment ones. A type declared emitted with nothing emitting it
     // would be a lie about coverage, which is what this guards.
-    const all = migration() + atomicity() + sqlCode(ASSIGNMENT);
+    const all = migration() + atomicity() + sqlCode(ASSIGNMENT) + sqlCode(DOC_GOV) + sqlCode(ARTIFACTS);
     for (const def of emittedEventTypes()) {
       expect(all).toContain(`'${def.type}'`);
     }

@@ -1192,6 +1192,19 @@ export type Database = {
           deleted_at: string | null;
           created_at: string;
           updated_at: string;
+          // Phase WES-4 / WES-4G. Nullable: legacy rows were never hashed and
+          // no value is fabricated for them.
+          content_sha256: string | null;
+          source_sha256: string | null;
+          renderer_version: string | null;
+          generated_by: string | null;
+          generated_at: string | null;
+          policy_version_id: string | null;
+          superseded_by_id: string | null;
+          provenance: string;
+          artifact_code: string | null;
+          source_snapshot: Json | null;
+          artifact_provenance: string | null;
         };
         Insert: {
           id?: string;
@@ -1213,6 +1226,18 @@ export type Database = {
           deleted_at?: string | null;
           created_at?: string;
           updated_at?: string;
+          // Phase WES-4 / WES-4G.
+          content_sha256?: string | null;
+          source_sha256?: string | null;
+          renderer_version?: string | null;
+          generated_by?: string | null;
+          generated_at?: string | null;
+          policy_version_id?: string | null;
+          superseded_by_id?: string | null;
+          provenance?: string;
+          artifact_code?: string | null;
+          source_snapshot?: Json | null;
+          artifact_provenance?: string | null;
         };
         Update: {
           id?: string;
@@ -3787,6 +3812,26 @@ export type Database = {
       };
       // Phase WES-4 — document status + protected review record + business
       // event in ONE transaction (WES-9A Model A).
+      // Phase WES-4G — artifact row + supersession + event in ONE transaction.
+      finalize_generated_artifact: {
+        Args: {
+          p_document_id: string;
+          p_tenant_id: string;
+          p_file_id: string;
+          p_artifact_code: string;
+          p_type_code: string;
+          p_storage_path: string;
+          p_content_sha256: string;
+          p_source_sha256: string;
+          p_source_snapshot: Json;
+          p_renderer_version: string;
+          p_provenance: string;
+          p_actor: string | null;
+          p_size_bytes?: number | null;
+          p_policy_id?: string | null;
+        };
+        Returns: Json;
+      };
       review_document: {
         Args: {
           p_document_id: string;

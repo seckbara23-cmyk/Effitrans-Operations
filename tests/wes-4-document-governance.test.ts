@@ -524,9 +524,11 @@ describe("WES-4 scope discipline", () => {
     expect(all).not.toMatch(/reconcil/i);
   });
 
-  it("ships exactly one new migration", () => {
-    const files = readdirSync(join(root, "supabase/migrations")).filter((f) => f.endsWith(".sql")).sort();
-    expect(files[files.length - 1]).toBe("20260727000003_document_governance.sql");
+  it("ships exactly one migration of its own", () => {
+    // Pinned by CONTENT: WES-4G legitimately adds a later migration, and
+    // asserting "newest" would make every future phase edit this test.
+    const files = readdirSync(join(root, "supabase/migrations")).filter((f) => f.endsWith(".sql"));
+    expect(files.filter((f) => /document_governance/.test(f))).toHaveLength(1);
   });
 
   it("leaves the canonical projection and progress formula untouched", () => {
@@ -539,6 +541,8 @@ describe("WES-4 scope discipline", () => {
     const s = sql();
     // The columns exist so the artifact metadata has a home; nothing generates.
     expect(s).toContain("source_sha256");
+    // WES-4 itself generated nothing; WES-4G added the generator in its own
+    // migration, which is where that event now lives.
     expect(s).not.toMatch(/INTERNAL_DOCUMENT_GENERATED/);
   });
 });

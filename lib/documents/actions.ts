@@ -15,6 +15,8 @@ import { isFileVisible } from "@/lib/authz/visibility";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
 import { validateReason } from "./reason-codes";
+import { isClientSafeDocument, isShareable, isVerified } from "./doctrine";
+import { isGeneratableArtifact } from "./artifacts/feasibility";
 import { mayVerifyDocument } from "./governance";
 import { onDocumentApproved } from "@/lib/handoffs/triggers";
 import { custDocumentsReceived, custDocumentsVerified } from "@/lib/customer-notify/triggers";
@@ -26,6 +28,7 @@ import {
   fileExtension,
   removeObject,
   uploadObject,
+  sha256Hex,
 } from "./storage";
 import type { ActionResult, DocumentStatus } from "./types";
 
@@ -34,7 +37,7 @@ type Admin = ReturnType<typeof getAdminSupabaseClient>;
 async function loadDocument(supabase: Admin, id: string, tenantId: string) {
   const { data } = await supabase
     .from("document")
-    .select("id, file_id, type_code, status, storage_path, uploaded_by")
+    .select("id, file_id, type_code, status, storage_path, uploaded_by, superseded_by_id")
     .eq("id", id)
     .eq("tenant_id", tenantId)
     .is("deleted_at", null)
@@ -65,6 +68,15 @@ export async function uploadDocument(fileId: string, formData: FormData): Promis
     .maybeSingle();
   if (!type || !type.active) return { ok: false, error: "invalid_type" };
 
+  // WES-4G.7 — an artifact the platform GENERATES may not be uploaded by hand.
+  // Corrections happen on the structured record, then by regeneration; an
+  // uploaded replacement would be a document nobody can reproduce or explain,
+  // sitting where an authoritative one belongs. Refused server-side, so the
+  // rule does not depend on the form hiding the option.
+  if (isGeneratableArtifact(typeCode)) {
+    return { ok: false, error: "generated_artifact_no_upload" };
+  }
+
   const invalid = validateDocumentInput({
     typeHasValidity: type.has_validity,
     expiryDate,
@@ -83,7 +95,24 @@ export async function uploadDocument(fileId: string, formData: FormData): Promis
   const id = crypto.randomUUID();
   const path = buildStoragePath(user.tenantId, fileId, id, fileExtension(file.name, file.type));
 
-  const up = await uploadObject(path, file, file.type);
+  // WES-4G.5 — read the stream ONCE, hash it, store the same buffer.
+  //
+  // The hash must describe the stored bytes, never the filename, the metadata
+  // or anything the browser claims. Any client-supplied checksum in the form is
+  // ignored: it is an assertion by the uploader about their own upload.
+  //
+  // Hashing failure fails the upload. A row that claims an unverified hash is
+  // worse than a row with no hash at all, because the next reader trusts it.
+  let bytes: Uint8Array;
+  let contentSha256: string;
+  try {
+    bytes = new Uint8Array(await file.arrayBuffer());
+    contentSha256 = sha256Hex(bytes);
+  } catch {
+    return { ok: false, error: "hash_failed" };
+  }
+
+  const up = await uploadObject(path, bytes, file.type);
   if (!up.ok) return { ok: false, error: "upload_failed" };
 
   const { error } = await supabase.from("document").insert({
@@ -96,7 +125,8 @@ export async function uploadDocument(fileId: string, formData: FormData): Promis
     expiry_date: expiryDate,
     storage_path: path,
     mime_type: file.type || null,
-    size_bytes: file.size,
+    size_bytes: bytes.byteLength,
+    content_sha256: contentSha256,
     uploaded_by: user.id,
   });
   if (error) {
@@ -322,8 +352,32 @@ export async function deleteDocument(id: string): Promise<ActionResult> {
 }
 
 /**
- * Share / unshare an APPROVED document with the client portal (Phase 1.12B).
+ * Which rule refused the share. One message per cause, because "not allowed"
+ * teaches nobody which of four conditions failed.
+ */
+function shareRefusal(doc: { type_code: unknown; status: unknown; superseded_by_id?: unknown }): string {
+  if (!isClientSafeDocument(doc.type_code as string)) return "not_client_safe";
+  if (doc.superseded_by_id) return "superseded";
+  if (!isVerified(doc.status as string)) return "not_verified";
+  return "not_shareable";
+}
+
+/**
+ * Share / unshare a document with the client portal.
  * Gated by document:approve — external disclosure is an approval-authority call.
+ *
+ * WES-4G.8 — the canonical rule `isShareable()` is enforced HERE, on the server.
+ *
+ * Two defects this closes. The check was `status !== "APPROVED"`, which after
+ * WES-4 renamed the canonical status to VERIFIED meant a properly verified
+ * document could no longer be shared at all — a regression WES-4 introduced.
+ * And it was the ONLY condition: an internal artifact, a superseded version or
+ * a document type that is not client-safe all passed, because the rule lived in
+ * the pure layer and nothing called it.
+ *
+ * Revocation is deliberately NOT gated on shareability: a document that should
+ * never have been shared must always be retractable, and re-checking the rule
+ * on the way out would leave exactly the wrong things stuck in the portal.
  */
 export async function setDocumentShared(id: string, shared: boolean): Promise<ActionResult> {
   let user;
@@ -335,7 +389,19 @@ export async function setDocumentShared(id: string, shared: boolean): Promise<Ac
   const supabase = getAdminSupabaseClient();
   const doc = await loadDocument(supabase, id, user.tenantId);
   if (!doc) return { ok: false, error: "not_found" };
-  if (shared && doc.status !== "APPROVED") return { ok: false, error: "not_approved" };
+  // Tenant scope is enforced by loadDocument; dossier access is enforced here.
+  if (!(await isFileVisible(user.id, user.tenantId, doc.file_id))) {
+    return { ok: false, error: "forbidden" };
+  }
+
+  if (shared) {
+    const eligible = isShareable({
+      typeCode: doc.type_code as string,
+      status: doc.status as string,
+      supersededById: (doc.superseded_by_id as string | null) ?? null,
+    });
+    if (!eligible) return { ok: false, error: shareRefusal(doc) };
+  }
 
   const { error } = await supabase
     .from("document")

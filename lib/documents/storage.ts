@@ -8,6 +8,7 @@
  * URLs ever leave the server.
  */
 import "server-only";
+import { createHash } from "node:crypto";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 
 export const DOCUMENTS_BUCKET = "documents";
@@ -37,16 +38,29 @@ export function buildStoragePath(
   return `${tenantId}/${fileId}/${documentId}.${ext}`;
 }
 
+/**
+ * WES-4G.5 — takes BYTES, not a `File`.
+ *
+ * The hash must describe what is actually stored. Reading the stream once and
+ * passing the same buffer to both the digest and the upload is what makes that
+ * true; hashing a `File` and separately uploading it leaves room for the two to
+ * differ, and a hash that might not describe the bytes is worse than none.
+ */
 export async function uploadObject(
   path: string,
-  file: File,
+  bytes: Uint8Array,
   contentType: string | undefined,
 ): Promise<{ ok: boolean; error?: string }> {
   const supabase = getAdminSupabaseClient();
   const { error } = await supabase.storage
     .from(DOCUMENTS_BUCKET)
-    .upload(path, file, { contentType: contentType || undefined, upsert: false });
+    .upload(path, bytes, { contentType: contentType || undefined, upsert: false });
   return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+/** sha256 of the exact bytes being stored, lowercase hex. */
+export function sha256Hex(bytes: Uint8Array): string {
+  return createHash("sha256").update(bytes).digest("hex");
 }
 
 export async function createSignedDownloadUrl(path: string): Promise<string | null> {

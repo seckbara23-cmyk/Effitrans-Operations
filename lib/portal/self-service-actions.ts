@@ -25,7 +25,7 @@ import { getServerSupabaseClient } from "@/lib/supabase/server";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
 import { validateDocumentInput } from "@/lib/documents/validate";
-import { buildStoragePath, fileExtension, removeObject, uploadObject } from "@/lib/documents/storage";
+import { buildStoragePath, fileExtension, removeObject, sha256Hex, uploadObject } from "@/lib/documents/storage";
 import { getCurrentPortalUser } from "./auth";
 import {
   isCustomerUploadableType,
@@ -92,7 +92,19 @@ async function insertCustomerDocument(
 
   const id = crypto.randomUUID();
   const path = buildStoragePath(owned.tenantId, owned.fileId, id, fileExtension(file.name, file.type));
-  const up = await uploadObject(path, file, file.type);
+  // WES-4G.5 — read once, hash, store the same bytes. Every document-creating
+  // path hashes, not just the main upload: a portal upload row with no hash is
+  // as unverifiable as any other.
+  let bytes: Uint8Array;
+  let contentSha256: string;
+  try {
+    bytes = new Uint8Array(await file.arrayBuffer());
+    contentSha256 = sha256Hex(bytes);
+  } catch {
+    return { ok: false, error: "hash_failed" };
+  }
+
+  const up = await uploadObject(path, bytes, file.type);
   if (!up.ok) return { ok: false, error: "upload_failed" };
 
   let version = 1;

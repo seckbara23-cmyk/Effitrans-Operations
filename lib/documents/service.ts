@@ -7,6 +7,7 @@
  * RLS SELECT policy (tenant + document:read + can_read_file + not deleted) is
  * the CI-tested boundary. Soft-deleted rows are excluded.
  */
+import { isGeneratableArtifact } from "./artifacts/feasibility";
 import "server-only";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
@@ -44,7 +45,10 @@ export async function listDocumentTypes(): Promise<DocumentTypeItem[]> {
     .eq("active", true)
     .order("sort_order");
   if (error) throw new Error(`[documents] catalog failed: ${error.message}`);
-  return (data ?? []).map((t) => ({
+  // WES-4G.7 — generated artifacts leave the UPLOAD catalogue. They remain real
+  // document types (existing rows keep resolving); they are simply no longer
+  // offered as something to attach, because the platform authors them.
+  return (data ?? []).filter((t) => !isGeneratableArtifact(t.code)).map((t) => ({
     code: t.code,
     labelFr: t.label_fr,
     category: t.category,

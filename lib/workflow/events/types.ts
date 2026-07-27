@@ -75,9 +75,15 @@ export const EVENT_TYPES: readonly EventTypeDef[] = [
 
   // ----------------------------------------------------------------- document
   { type: "DOCUMENT_UPLOADED", domain: "document", version: 1, emission: "trigger", metadataKeys: ["type_code"], clientSafe: true, labelFr: "Document reçu" },
-  { type: "DOCUMENT_VERIFIED", domain: "document", version: 1, emission: "trigger", metadataKeys: ["type_code", ...TRANSITION], clientSafe: true, labelFr: "Document vérifié" },
-  { type: "DOCUMENT_REJECTED", domain: "document", version: 1, emission: "trigger", metadataKeys: ["type_code", ...TRANSITION], clientSafe: false, labelFr: "Document rejeté" },
+  { type: "DOCUMENT_VERIFIED", domain: "document", version: 1, emission: "rpc", metadataKeys: ["type_code", ...TRANSITION, "reason_code", "has_reason", "reason_reference_id", "is_override"], clientSafe: true, labelFr: "Document vérifié" },
+  { type: "DOCUMENT_REJECTED", domain: "document", version: 1, emission: "rpc", metadataKeys: ["type_code", ...TRANSITION, "reason_code", "has_reason", "reason_reference_id", "is_override"], clientSafe: false, labelFr: "Document rejeté" },
   { type: "DOCUMENT_SHARED_WITH_CLIENT", domain: "document", version: 1, emission: "reserved", metadataKeys: ["type_code"], clientSafe: true, labelFr: "Document partagé" },
+  // WES-4 review transitions, emitted by review_document (the trigger no
+  // longer emits them — one owner per fact).
+  { type: "DOCUMENT_VERIFICATION_REQUESTED", domain: "document", version: 1, emission: "rpc", metadataKeys: ["type_code", ...TRANSITION, "reason_code", "has_reason", "reason_reference_id", "is_override"], clientSafe: false, labelFr: "Vérification demandée" },
+  { type: "DOCUMENT_SUPERSEDED", domain: "document", version: 1, emission: "rpc", metadataKeys: ["type_code", "reason_reference_id"], clientSafe: false, labelFr: "Document remplacé" },
+  // WES-4G — now backed by a real generator, so it stops being reserved.
+  { type: "INTERNAL_DOCUMENT_GENERATED", domain: "document", version: 1, emission: "rpc", metadataKeys: ["type_code", "artifact_code", "renderer_version", "artifact_version"], clientSafe: false, labelFr: "Document interne généré" },
 
   // ------------------------------------------------------------------- customs
   { type: "CUSTOMS_RECORD_CREATED", domain: "customs", version: 1, emission: "trigger", metadataKeys: ["required"], clientSafe: false, labelFr: "Dossier douane ouvert" },
