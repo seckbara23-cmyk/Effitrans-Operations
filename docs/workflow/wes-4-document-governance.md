@@ -3,9 +3,10 @@
 **Date:** 2026-07-27 · **Migration:** `20260727000003_document_governance` (65th)
 **Depends on:** WES-2 (projection) · WES-7 (policy) · WES-9/9A (event ledger) · WES-3/3A (access)
 
-**Scope ratified for this phase: the GOVERNANCE CORE.** Internal document generation
-(WES-4G) and the full document-panel redesign are deferred and documented in §10 — not
-silently dropped.
+**Scope ratified for this phase: the GOVERNANCE CORE.** Internal document generation and the
+operator surface were deferred to WES-4G/4H, which are now **complete** — see
+[wes-4g-generated-artifacts.md](wes-4g-generated-artifacts.md). §10 records what each phase
+closed.
 
 ---
 
@@ -14,7 +15,7 @@ silently dropped.
 | Question | Answer |
 |---|---|
 | **Which documents are uploaded?** | Category A, external evidence: Commercial Invoice, Packing List, Bill of Lading, Air Waybill, Certificate of Origin, Customs Declaration, **BAE**, Delivery Note/POD, Payment Receipt, Other. Effitrans did not author them and cannot regenerate them. |
-| **Which are generated?** | Category B, internal artifacts. Today exactly one is classified: `TRANSPORT_ORDER`. **Generation is not yet implemented** — the upload path stays until a generated replacement exists. |
+| **Which are generated?** | Category B, internal artifacts: **Demande de transport** and **Ordre de transport**, generated from structured data since WES-4G. Manual upload of either is refused at three layers. |
 | **What stays structured data?** | Category C: driver, vehicle, route, pickup, destination, ETA, GPS, status, **the BAE reference**, operational notes. A PDF of these is a printable representation, never the record. |
 | **Who uploads the BAE?** | Whoever the pinned policy binds to the `uploader` seat — the Declarant in the default model. Never hardcoded in a page. |
 | **Who verifies it?** | Whoever the policy binds to `verifier`, **and never the person who uploaded it**: the BAE is always maker-checked. `SYSTEM_ADMIN` gains nothing — administering the platform is not a verifier seat. |
@@ -33,7 +34,7 @@ responsible department, progress, or any process-engine step.
 |---|---|
 | **The BAE did not exist as a document.** It was a text string on `customs_record.bae_reference`; `canRelease()` checked only that the string was non-empty. | There was nothing to verify. A `BAE` document type is added; the reference stays as structured data beside it. |
 | **`releaseCustoms(id, ref)` did five things in one call** — recorded the reference, set `RELEASED`, stamped `reviewed_by`, fired the Transport handoff, notified the customer. One click, one person, one permission, no maker-checker, no evidence. | Split into `recordBaeReference` and `recordCustomsRelease`. |
-| **`TRANSPORT_ORDER` is an uploadable `document_type`** — an internal artifact offered as an upload. | Classified as Category B. Upload retained until generation exists. |
+| **`TRANSPORT_ORDER` is an uploadable `document_type`** — an internal artifact offered as an upload. | Classified as Category B; generation shipped in WES-4G and the upload path is now closed. |
 | **`document` had no content hash, no review record, no reviewer/uploader separation**, and only a backward `supersedes_id`. | Version metadata, `superseded_by_id` and the append-only `document_review` added. |
 | **Rejection captured one free-text sentence** via `window.prompt` into `review_note`. | Replaced by a closed reason-code registry plus a protected explanation. |
 | **`DELIVERY_NOTE` (POD) is `required_for {IMP,TRP,HND}`** — a POD counts as missing from day one, and `docsVerified = missing===0`, so documentation never verifies until delivery. | The stage-aware resolver fixes this **as a contract**; wiring it into the projection is WES-5 (§3). |
@@ -151,13 +152,12 @@ never happened. No maker-checker compliance is claimed retroactively.
 
 ## 10. Known limitations
 
-1. **Internal document generation (WES-4G) is NOT implemented.** `Demande de Transport` and
-   `Ordre de Transport` are still uploads. The artifact columns (`source_sha256`,
-   `renderer_version`, `generated_by`, `generated_at`) exist so the metadata has a home, and
-   nothing writes them yet. The upload path is deliberately retained: removing the only way
-   to record something before there is another way is how data stops being recorded at all.
-2. **`INTERNAL_DOCUMENT_GENERATED` is not emitted** — no action produces it, and WES-9's
-   rule is that a declared type must be backed by a real action.
+1. ~~**Internal document generation (WES-4G) is NOT implemented.**~~ **CLOSED by WES-4G/4H**
+   (`20260727000004`). `Demande de transport` and `Ordre de transport` are generated from
+   structured data; manual upload of either is refused at three layers. See
+   [wes-4g-generated-artifacts.md](wes-4g-generated-artifacts.md).
+2. ~~**`INTERNAL_DOCUMENT_GENERATED` is not emitted.**~~ **CLOSED** — emitted atomically by
+   `finalize_generated_artifact`.
 3. **The stage-aware resolver does not drive the projection** (§3). Two requirement views
    coexist until WES-5.
 4. **No dedicated BAE panel.** The `BAE` type is uploadable through the ordinary document
@@ -165,7 +165,8 @@ never happened. No maker-checker compliance is claimed retroactively.
    with those six buttons is not built.
 5. **`CONSUMED_AS_EVIDENCE` is reachable but nothing sets it.** Recording evidence
    consumption belongs with WES-5's engine reconciliation.
-6. **Content hashes are not computed on upload.** The column exists; `uploadDocument` does
-   not yet hash the bytes, so new rows also carry NULL. A gap, not a design choice.
-7. **Sharing is aligned in the pure layer only.** `isShareable` encodes the rule
-   (client-safe type + verified + not superseded); `setDocumentShared` does not yet call it.
+6. ~~**Content hashes are not computed on upload.**~~ **CLOSED by WES-4G.5** — all four
+   document-creating paths hash the stored bytes; hashing failure fails the upload.
+7. ~~**Sharing is aligned in the pure layer only.**~~ **CLOSED by WES-4G.8** —
+   `setDocumentShared` enforces `isShareable` plus dossier access. This also fixed a
+   regression WES-4 introduced, where a `VERIFIED` document could not be shared at all.

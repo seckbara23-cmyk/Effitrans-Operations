@@ -40,6 +40,8 @@ import { RiskPanel } from "@/components/copilot/risk-panel";
 import { assessRisk, overdueDays, type RiskInput } from "@/lib/copilot/risk-engine";
 import { EventTimeline } from "@/components/files/event-timeline";
 import { OwnershipPanel } from "@/components/files/ownership-panel";
+import { ArtifactPanel } from "@/components/documents/artifact-panel";
+import { getArtifactPanel } from "@/lib/documents/artifacts/service";
 import { getDossierAccess } from "@/lib/workflow/access/service";
 import { t } from "@/lib/i18n";
 
@@ -153,6 +155,10 @@ export default async function FileDetailPage({ params }: { params: { id: string 
   // WES-3D — the ONE access contract. Everything the ownership panel shows, and
   // the reason it is visible at all, comes from here.
   const dossierAccess = await getDossierAccess(file.id);
+  // WES-4H — Category-B artifacts. `transport:manage` mirrors the server's
+  // own gate in generateArtifact; the server re-checks it regardless.
+  const canGenerateArtifacts = hasPermission(permissions, "transport:manage");
+  const artifactItems = canReadDocs ? await getArtifactPanel(file.id) : [];
   const currentTask = tasks.find((t) => t.status === "TODO" || t.status === "IN_PROGRESS") ?? null;
 
   const lifecycle = getDossierLifecycle(lifecycleInput);
@@ -305,6 +311,13 @@ export default async function FileDetailPage({ params }: { params: { id: string 
             canEmail={canEmail}
           />
         </div>
+      )}
+      {canReadDocs && artifactItems.length > 0 && (
+        <ArtifactPanel
+          fileId={file.id}
+          items={artifactItems}
+          canGenerate={canGenerateArtifacts}
+        />
       )}
       {canReadComms && <CommunicationsTimeline messages={communications} />}
       {/* WES-9: canonical operational history. No permission gate here — the

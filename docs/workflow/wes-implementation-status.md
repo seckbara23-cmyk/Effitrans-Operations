@@ -19,8 +19,9 @@ Execution order is dependency-driven, not numeric (WES-0A §6):
 | **WES-3** | **ownership, assignment, visibility, assignment history** | ✅ **done** |
 | **WES-3A** | **assignment-path migration + department queue (closes WES-3H)** | ✅ **done** — WES-3 now complete end to end |
 | **WES-3B** | **rollout consistency repair (Recouvrement)** | ✅ **done** — console now shows what is LIVE; ⚠ operator must set EFFITRANS_COLLECTIONS_ENABLED |
-| **WES-4** | **BAE governance + document doctrine** | ✅ **done (governance core)** — generation (4G) deferred, see §10 |
-| WES-5 | engine/module reconciliation | ⬜ |
+| **WES-4** | **BAE governance + document doctrine** | ✅ **done** |
+| **WES-4G/4H** | **generated artifacts, upload hashing, sharing enforcement, operator UI** | ✅ **done** — WES-4 fully complete |
+| WES-5 | engine/module reconciliation | ⬜ **next** |
 | WES-8 | SLA engine (ADR-WES-013) | ⬜ |
 | WES-6 | missions + chauffeur portal (reuse analysis first) | ⬜ |
 

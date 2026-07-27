@@ -23,7 +23,8 @@ import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
 import { buildStoragePath, removeObject, sha256Hex, uploadObject } from "@/lib/documents/storage";
 import { isGeneratableArtifact } from "./feasibility";
-import { canonicalizeSnapshot, resolveArtifactSource, type ArtifactSourceInput } from "./source";
+import { canonicalizeSnapshot, resolveArtifactSource } from "./source";
+import { readArtifactSource } from "./service";
 import { RENDERER_VERSION, renderArtifact } from "./render";
 
 export type GenerateResult =
@@ -67,57 +68,16 @@ export async function generateArtifact(input: {
   const supabase = getAdminSupabaseClient();
 
   // ---- 1. the authoritative records ---------------------------------------
-  const [file, shipment, transport, org] = await Promise.all([
-    supabase.from("operational_file")
-      .select("id, file_number, type, created_at, client:client_id(name)")
-      .eq("id", input.fileId).eq("tenant_id", user.tenantId)
-      .maybeSingle<{ id: string; file_number: string | null; type: string; created_at: string; client: { name: string } | { name: string }[] | null }>(),
-    supabase.from("shipment")
-      .select("transport_mode, origin, destination, cargo_type, container_ref")
-      .eq("file_id", input.fileId).eq("tenant_id", user.tenantId)
-      .maybeSingle<{ transport_mode: string | null; origin: string | null; destination: string | null; cargo_type: string | null; container_ref: string | null }>(),
-    supabase.from("transport_record")
-      .select("pickup_location, delivery_location, pickup_planned, delivery_planned, driver_name, driver_user_id, vehicle_plate, trailer_or_container, transport_company, created_by, created_at")
-      .eq("file_id", input.fileId).eq("tenant_id", user.tenantId)
-      .maybeSingle<Record<string, string | null>>(),
-    supabase.from("organization").select("name").eq("id", user.tenantId).maybeSingle<{ name: string }>(),
-  ]);
+  // Shared with the panel (`readArtifactSource`): the completeness state the
+  // operator sees and the refusal the generator applies come from ONE read.
+  // Two implementations would drift, and the drift would look like a Générer
+  // button that fails when pressed.
+  const source = await readArtifactSource(supabase, user.tenantId, input.fileId);
+  if (!source) return { ok: false, error: "not_found" };
 
-  if (!file.data) return { ok: false, error: "not_found" };
-  const client = Array.isArray(file.data.client) ? file.data.client[0] : file.data.client;
-  const t = transport.data ?? {};
-
-  // The requester's display name — a person, not an id, because the document is
-  // read by humans and an id explains nothing on paper.
-  let requestedBy: string | null = null;
-  if (t.created_by) {
-    const { data } = await supabase.from("app_user")
-      .select("name, email").eq("id", t.created_by).eq("tenant_id", user.tenantId)
-      .maybeSingle<{ name: string | null; email: string }>();
-    requestedBy = data?.name ?? data?.email ?? null;
-  }
-
-  const source: ArtifactSourceInput = {
-    fileNumber: file.data.file_number,
-    fileType: file.data.type,
-    clientName: client?.name ?? null,
-    transportMode: shipment.data?.transport_mode ?? null,
-    origin: shipment.data?.origin ?? null,
-    destination: shipment.data?.destination ?? null,
-    cargoType: shipment.data?.cargo_type ?? null,
-    containerRef: shipment.data?.container_ref ?? null,
-    pickupLocation: t.pickup_location ?? null,
-    deliveryLocation: t.delivery_location ?? null,
-    pickupPlanned: t.pickup_planned ?? null,
-    deliveryPlanned: t.delivery_planned ?? null,
-    driverName: t.driver_name ?? null,
-    driverUserId: t.driver_user_id ?? null,
-    vehiclePlate: t.vehicle_plate ?? null,
-    trailerOrContainer: t.trailer_or_container ?? null,
-    transportCompany: t.transport_company ?? null,
-    requestedBy,
-    requestedAt: (t.created_at ?? file.data.created_at)?.slice(0, 10) ?? null,
-  };
+  const { data: org } = await supabase
+    .from("organization").select("name").eq("id", user.tenantId)
+    .maybeSingle<{ name: string }>();
 
   // ---- 2. refuse rather than render blanks --------------------------------
   const resolved = resolveArtifactSource(input.artifactCode, source);
@@ -145,7 +105,7 @@ export async function generateArtifact(input: {
       artifactCode: input.artifactCode,
       snapshot: resolved.snapshot,
       provenance: resolved.provenance,
-      organizationName: org.data?.name ?? "",
+      organizationName: org?.name ?? "",
       artifactVersion: nextVersion,
     });
   } catch {
