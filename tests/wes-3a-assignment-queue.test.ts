@@ -497,9 +497,12 @@ describe("WES-3A scope discipline", () => {
     expect(all).not.toMatch(/bae_governance|sla_clock|reconciliation/i);
   });
 
-  it("ships no migration — this phase is application-only", () => {
+  it("shipped no migration of its own — WES-3A was application-only", () => {
+    // Pinned by CONTENT, not by being last: WES-4 legitimately adds a later
+    // migration, and asserting "newest" would make every future phase edit
+    // this test for no reason.
     const files = readdirSync(join(root, "supabase/migrations")).filter((f) => f.endsWith(".sql"));
-    expect(files[files.length - 1]).toBe("20260727000002_assignment_history.sql");
+    expect(files.some((f) => /wes-?3a|assignment_queue/i.test(f))).toBe(false);
   });
 
   it("does not change the canonical projection or the progress formula", () => {

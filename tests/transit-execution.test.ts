@@ -329,7 +329,7 @@ describe("Phase 9.0D adds NO schema and NO new permission", () => {
   it("49 — no new migration ships (latest is still the 9.0B structures migration)", () => {
     const dir = fileURLToPath(new URL("../supabase/migrations/", import.meta.url));
     const files = readdirSync(dir).filter((f) => f.endsWith(".sql")).sort();
-    expect(files[files.length - 1]).toBe("20260727000002_assignment_history.sql");
+    expect(files[files.length - 1]).toBe("20260727000003_document_governance.sql");
     expect(files.some((f) => f.includes("transit_execution"))).toBe(false);
   });
 

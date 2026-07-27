@@ -14,6 +14,8 @@ import { assertPermission } from "@/lib/auth/require-permission";
 import { isFileVisible } from "@/lib/authz/visibility";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
+import { validateReason } from "./reason-codes";
+import { mayVerifyDocument } from "./governance";
 import { onDocumentApproved } from "@/lib/handoffs/triggers";
 import { custDocumentsReceived, custDocumentsVerified } from "@/lib/customer-notify/triggers";
 import { validateDocumentInput } from "./validate";
@@ -32,7 +34,7 @@ type Admin = ReturnType<typeof getAdminSupabaseClient>;
 async function loadDocument(supabase: Admin, id: string, tenantId: string) {
   const { data } = await supabase
     .from("document")
-    .select("id, file_id, type_code, status, storage_path")
+    .select("id, file_id, type_code, status, storage_path, uploaded_by")
     .eq("id", id)
     .eq("tenant_id", tenantId)
     .is("deleted_at", null)
@@ -116,71 +118,68 @@ export async function uploadDocument(fileId: string, formData: FormData): Promis
   return { ok: true, id };
 }
 
+/**
+ * WES-4A — submit a version for verification. UPLOADED -> UNDER_REVIEW.
+ * Atomic: status, the protected review record and the business event commit
+ * together through `review_document`.
+ */
 export async function submitDocument(id: string): Promise<ActionResult> {
-  return transition(id, "document:update", "PENDING_REVIEW", AuditActions.DOCUMENT_UPDATED, (s) =>
-    canSubmit(s),
-  );
+  return runReview(id, "SUBMITTED", "document:update", null, null);
 }
 
-export async function approveDocument(id: string): Promise<ActionResult> {
-  return review(id, "APPROVED", AuditActions.DOCUMENT_APPROVED, null);
+/**
+ * WES-4A/4D — VERIFY a version.
+ *
+ * Verification means the evidence has been checked for authenticity,
+ * completeness and relevance. It does NOT mean Effitrans approved anything a
+ * third party issued, and it does NOT advance the official process engine —
+ * that reconciliation is WES-5's.
+ *
+ * Maker-checker is resolved from the PINNED policy and enforced twice: here,
+ * and again by a trigger on `document_review`.
+ */
+export async function verifyDocument(id: string): Promise<ActionResult> {
+  return runReview(id, "VERIFIED", "document:approve", null, null);
 }
 
-export async function rejectDocument(id: string, note?: string): Promise<ActionResult> {
-  return review(id, "REJECTED", AuditActions.DOCUMENT_REJECTED, note?.trim() || null);
-}
-
-async function review(
+/**
+ * WES-4F — reject a version. A structured reason code is REQUIRED; the
+ * free-text explanation is optional, stays in the protected review record, and
+ * never reaches the immutable ledger.
+ *
+ * Rejection does not delete the file or its history.
+ */
+export async function rejectDocument(
   id: string,
-  to: DocumentStatus,
-  action: string,
-  note: string | null,
+  reasonCode: string,
+  explanation?: string | null,
 ): Promise<ActionResult> {
-  let user;
-  try {
-    user = await assertPermission("document:approve");
-  } catch {
-    return { ok: false, error: "forbidden" };
-  }
-  const supabase = getAdminSupabaseClient();
-  const doc = await loadDocument(supabase, id, user.tenantId);
-  if (!doc) return { ok: false, error: "not_found" };
-  if (!(await isFileVisible(user.id, user.tenantId, doc.file_id))) return { ok: false, error: "forbidden" };
-  if (!canReview(doc.status as DocumentStatus)) return { ok: false, error: "invalid_transition" };
-
-  const { error } = await supabase
-    .from("document")
-    .update({ status: to, reviewed_by: user.id, review_note: note })
-    .eq("id", id)
-    .eq("tenant_id", user.tenantId);
-  if (error) return { ok: false, error: error.message };
-
-  await writeAudit({
-    action,
-    actorId: user.id,
-    tenantId: user.tenantId,
-    entity: "document",
-    entityId: id,
-    before: { status: doc.status },
-    after: { status: to },
-  });
-  // Phase 2.1 — Documentation → Customs handoff once all required docs are approved.
-  if (to === "APPROVED") {
-    const hctx = { tenantId: user.tenantId, actorId: user.id };
-    await onDocumentApproved(supabase, hctx, doc.file_id);
-    // Phase 2.5 — customer "Dossier complet" notification when verification completes.
-    await custDocumentsVerified(supabase, hctx, doc.file_id);
-  }
-  revalidatePath(`/files/${doc.file_id}`);
-  return { ok: true, id };
+  return runReview(id, "REJECTED", "document:approve", reasonCode, explanation ?? null);
 }
 
-async function transition(
+/**
+ * @deprecated WES-4A — renamed to `verifyDocument`.
+ *
+ * "Approve" was the wrong word: Effitrans verifies that evidence is authentic
+ * and complete. It does not approve a Customs decision or a third party's
+ * document. Kept as a delegator so no caller silently breaks.
+ */
+export async function approveDocument(id: string): Promise<ActionResult> {
+  return verifyDocument(id);
+}
+
+/**
+ * The single review path. Everything a reviewer can do to a version goes
+ * through `review_document`, which writes the status, the protected record and
+ * the event in ONE transaction (WES-9A Model A). The application never does
+ * update-then-append-then-emit.
+ */
+async function runReview(
   id: string,
+  action: "SUBMITTED" | "VERIFIED" | "REJECTED",
   permission: string,
-  to: DocumentStatus,
-  action: string,
-  allowed: (s: DocumentStatus) => boolean,
+  reasonCode: string | null,
+  explanation: string | null,
 ): Promise<ActionResult> {
   let user;
   try {
@@ -188,31 +187,108 @@ async function transition(
   } catch {
     return { ok: false, error: "forbidden" };
   }
+
   const supabase = getAdminSupabaseClient();
   const doc = await loadDocument(supabase, id, user.tenantId);
   if (!doc) return { ok: false, error: "not_found" };
-  if (!(await isFileVisible(user.id, user.tenantId, doc.file_id))) return { ok: false, error: "forbidden" };
-  if (!allowed(doc.status as DocumentStatus)) return { ok: false, error: "invalid_transition" };
+  if (!(await isFileVisible(user.id, user.tenantId, doc.file_id))) {
+    return { ok: false, error: "forbidden" };
+  }
 
-  const { error } = await supabase
-    .from("document")
-    .update({ status: to })
-    .eq("id", id)
-    .eq("tenant_id", user.tenantId);
-  if (error) return { ok: false, error: error.message };
+  // WES-4F — the reason is validated BEFORE anything is written, against a
+  // closed registry. An unknown code is refused rather than stored as free
+  // text under a made-up name.
+  let validatedCode: string | null = null;
+  let validatedExplanation: string | null = null;
+  if (action === "REJECTED") {
+    const verdict = validateReason({
+      code: reasonCode ?? "",
+      explanation,
+      scope: "REJECTION",
+    });
+    if (!verdict.ok) return { ok: false, error: verdict.error };
+    validatedCode = verdict.code;
+    validatedExplanation = verdict.explanation;
+  }
+
+  // WES-4H — verifier authority and maker-checker, from the PINNED policy.
+  let makerChecker = false;
+  let policyVersionId: string | null = null;
+  if (action === "VERIFIED") {
+    const check = await mayVerifyDocument({
+      tenantId: user.tenantId,
+      actorId: user.id,
+      fileId: doc.file_id,
+      typeCode: doc.type_code as string,
+      uploaderId: (doc.uploaded_by as string | null) ?? null,
+    });
+    if (!check.ok) return { ok: false, error: check.error };
+    makerChecker = check.makerCheckerRequired;
+    policyVersionId = check.policyVersionId;
+  }
+
+  const { data, error } = await supabase.rpc("review_document", {
+    p_document_id: id,
+    p_action: action,
+    p_actor: user.id,
+    p_reason_code: validatedCode,
+    p_explanation: validatedExplanation,
+    p_maker_checker: makerChecker,
+    p_is_override: false,
+    p_policy_id: policyVersionId,
+  });
+  if (error) return { ok: false, error: mapReviewError(error.message) };
 
   await writeAudit({
-    action,
+    action:
+      action === "VERIFIED"
+        ? AuditActions.DOCUMENT_APPROVED
+        : action === "REJECTED"
+          ? AuditActions.DOCUMENT_REJECTED
+          : AuditActions.DOCUMENT_UPDATED,
     actorId: user.id,
     tenantId: user.tenantId,
     entity: "document",
     entityId: id,
     before: { status: doc.status },
-    after: { status: to },
+    after: { status: (data as { status?: string } | null)?.status ?? action, reason_code: validatedCode },
   });
+
+  // Phase 2.1 / 2.5 side-effects, unchanged in behaviour and deliberately
+  // OUTSIDE the transaction: a handoff task and a customer notice are not the
+  // document decision, and neither may roll it back.
+  //
+  // WES-4 does NOT make this advance the official process engine — it creates
+  // the same handoff task it always did. Engine reconciliation is WES-5.
+  if (action === "VERIFIED") {
+    const hctx = { tenantId: user.tenantId, actorId: user.id };
+    await onDocumentApproved(supabase, hctx, doc.file_id);
+    await custDocumentsVerified(supabase, hctx, doc.file_id);
+  }
+
   revalidatePath(`/files/${doc.file_id}`);
   return { ok: true, id };
 }
+
+/** Stable codes, never raw Postgres text. */
+function mapReviewError(message: string): string {
+  if (message.includes("cannot verify their own")) return "self_verification";
+  if (message.includes("reason code is required")) return "reason_required";
+  if (message.includes("already")) return "invalid_transition";
+  if (message.includes("cannot be reviewed") || message.includes("replaced, not verified")) {
+    return "invalid_transition";
+  }
+  if (message.includes("not found")) return "not_found";
+  return "review_failed";
+}
+
+/*
+ * `transition()` was removed in WES-4I. It wrote `document.status` directly and
+ * then audited separately — the dual write WES-9A prohibits. Its last caller,
+ * `submitDocument`, now goes through `review_document`, which writes the
+ * status, the protected review record and the business event in one
+ * transaction. Nothing else used it.
+ */
 
 export async function deleteDocument(id: string): Promise<ActionResult> {
   let user;

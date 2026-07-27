@@ -3565,6 +3565,29 @@ export type Database = {
         };
         Relationships: [];
       };
+      // Phase WES-4F — protected review record. Append-only; holds the
+      // free-text explanation that must never reach business_event.
+      document_review: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          document_id: string;
+          file_id: string | null;
+          document_version: number;
+          action: string;
+          reason_code: string | null;
+          explanation: string | null;
+          actor_user_id: string | null;
+          uploader_user_id: string | null;
+          maker_checker_required: boolean;
+          is_override: boolean;
+          policy_version_id: string | null;
+          created_at: string;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
       // Phase WES-3A — append-only assignment history. No Insert/Update types:
       // rows are written ONLY by the assign_* RPCs, in the same transaction as
       // the assignment itself, and a trigger blocks UPDATE and DELETE.
@@ -3760,6 +3783,39 @@ export type Database = {
           p_reason?: string | null;
           p_policy_id?: string | null;
         };
+        Returns: Json;
+      };
+      // Phase WES-4 — document status + protected review record + business
+      // event in ONE transaction (WES-9A Model A).
+      review_document: {
+        Args: {
+          p_document_id: string;
+          p_action: string;
+          p_actor: string | null;
+          p_reason_code?: string | null;
+          p_explanation?: string | null;
+          p_maker_checker?: boolean;
+          p_is_override?: boolean;
+          p_policy_id?: string | null;
+        };
+        Returns: Json;
+      };
+      supersede_document: {
+        Args: { p_old_id: string; p_new_id: string; p_actor: string | null; p_policy_id?: string | null };
+        Returns: Json;
+      };
+      record_customs_release: {
+        Args: {
+          p_customs_id: string;
+          p_bae_reference: string;
+          p_actor: string | null;
+          p_release_date?: string | null;
+          p_policy_id?: string | null;
+        };
+        Returns: Json;
+      };
+      record_bae_reference: {
+        Args: { p_customs_id: string; p_bae_reference: string; p_actor: string | null };
         Returns: Json;
       };
       next_invoice_number: {

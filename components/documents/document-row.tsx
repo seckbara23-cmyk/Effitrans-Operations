@@ -7,11 +7,11 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { t } from "@/lib/i18n";
+import { RejectControl } from "./reject-control";
 import {
-  approveDocument,
+  verifyDocument,
   createDocumentDownloadUrl,
   deleteDocument,
-  rejectDocument,
   setDocumentShared,
 } from "@/lib/documents/actions";
 import { canReview } from "@/lib/documents/status";
@@ -70,11 +70,6 @@ export function DocumentRow({
     );
   }
 
-  function reject() {
-    const note = window.prompt(t.documents.rejectPrompt) ?? undefined;
-    run(() => rejectDocument(doc.id, note));
-  }
-
   const reviewable = canApprove && canReview(doc.status);
 
   return (
@@ -128,20 +123,18 @@ export function DocumentRow({
           )}
           {reviewable && (
             <>
+              {/* WES-4A — « Vérifier », not « Approuver ». Effitrans verifies
+                  that evidence is authentic and complete; it does not approve a
+                  third party's document or a Customs decision. */}
               <button
-                onClick={() => run(() => approveDocument(doc.id))}
+                onClick={() => run(() => verifyDocument(doc.id))}
                 disabled={pending}
                 className="rounded-md border border-teal-200 px-2 py-1 text-xs font-medium text-teal-700 hover:bg-teal-50 disabled:opacity-50"
               >
-                {t.documents.approve}
+                Vérifier
               </button>
-              <button
-                onClick={reject}
-                disabled={pending}
-                className="rounded-md border border-red-200 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
-              >
-                {t.documents.reject}
-              </button>
+              {/* WES-4F — a structured reason code, not a free-text prompt. */}
+              <RejectControl documentId={doc.id} />
             </>
           )}
           {canDelete && (

@@ -120,6 +120,10 @@ export const TENANT_SCOPED_TABLES = new Set<string>([
   // append-only assignment history (Phase WES-3A). Written only by the assign_*
   // RPCs; read through the RLS-enforced client or explicitly tenant-scoped.
   "assignment_event",
+  // protected document review record (Phase WES-4F). Append-only; holds the
+  // restricted free-text explanation, so an unscoped read would leak review
+  // prose across tenants.
+  "document_review",
 ]);
 
 /**
