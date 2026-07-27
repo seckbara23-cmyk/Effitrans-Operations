@@ -251,9 +251,11 @@ describe("WES-4H scope discipline", () => {
     expect(src).not.toMatch(/MISSION_SHEET|DISPATCH_ORDER|INTERNAL_MANIFEST/);
   });
 
-  it("ships no migration — this phase is UI and documentation", () => {
-    const files = readdirSync(join(root, "supabase/migrations")).filter((f) => f.endsWith(".sql")).sort();
-    expect(files[files.length - 1]).toBe("20260727000004_generated_artifacts.sql");
+  it("shipped no migration of its own — WES-4H was UI and documentation", () => {
+    // Pinned by CONTENT, not by being last: later phases legitimately add
+    // migrations, and asserting "newest" would make each of them edit this.
+    const files = readdirSync(join(root, "supabase/migrations")).filter((f) => f.endsWith(".sql"));
+    expect(files.filter((f) => /wes-?4h|artifact_ui/i.test(f))).toEqual([]);
   });
 
   it("does not wire the evidence resolver into lifecycle or projection", () => {

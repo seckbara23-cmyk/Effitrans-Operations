@@ -37,6 +37,8 @@ export const EVENT_DOMAINS = [
   "finance",
   "policy",
   "ledger",
+  // WES-5 — official process-engine reconciliation.
+  "process",
 ] as const;
 export type EventDomain = (typeof EVENT_DOMAINS)[number];
 
@@ -138,6 +140,16 @@ export const EVENT_TYPES: readonly EventTypeDef[] = [
   { type: "INVOICE_ISSUED", domain: "finance", version: 1, emission: "trigger", metadataKeys: [...TRANSITION], clientSafe: true, labelFr: "Facture émise" },
   { type: "PAYMENT_RECORDED", domain: "finance", version: 1, emission: "trigger", metadataKeys: ["method"], clientSafe: true, labelFr: "Paiement enregistré" },
   { type: "EXPENSE_AUTHORIZED", domain: "finance", version: 1, emission: "reserved", metadataKeys: [...TRANSITION], clientSafe: false, labelFr: "Dépense autorisée" },
+
+  // ------------------------------------------------------------------ process
+  // WES-5 — emitted by reconcile_step_completion, atomically with the step
+  // transition. reason_code carries the FACT CODE that proved the step
+  // (CUSTOMS_RELEASED, POD_RECEIVED, ...); is_override marks legacy-
+  // compatibility reconciliation. Conflicts are RETURNED by the service, not
+  // emitted: an idempotent re-run would duplicate them without a dedup key,
+  // and an unreliable event is worse than none (documented deferral).
+  { type: "PROCESS_STEP_COMPLETED", domain: "process", version: 1, emission: "rpc", metadataKeys: ["workflow_step_key", "reason_code", "is_override"], clientSafe: false, labelFr: "Étape officielle réalisée" },
+  { type: "EVIDENCE_CONSUMED", domain: "process", version: 1, emission: "rpc", metadataKeys: ["workflow_step_key", "artifact_version"], clientSafe: false, labelFr: "Preuve consommée par une étape" },
 
   // ------------------------------------------------------------------- policy
   { type: "POLICY_ACTIVATED", domain: "policy", version: 1, emission: "rpc", metadataKeys: ["scope", "version"], clientSafe: false, labelFr: "Politique activée" },

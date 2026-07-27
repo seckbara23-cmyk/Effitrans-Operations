@@ -8,6 +8,7 @@
  * Storage access is mediated by lib/documents/storage (private bucket, signed
  * URLs). Soft-delete only (deleted_at). Best-effort storage cleanup on failure.
  */
+import { reconcileDossierProcess } from "@/lib/process/reconcile/service";
 import { revalidatePath } from "next/cache";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
@@ -294,6 +295,14 @@ async function runReview(
     const hctx = { tenantId: user.tenantId, actorId: user.id };
     await onDocumentApproved(supabase, hctx, doc.file_id);
     await custDocumentsVerified(supabase, hctx, doc.file_id);
+    // WES-5 — a newly verified document (a POD, a BAE) may satisfy an official
+    // step. Convergent + idempotent; never throws.
+    await reconcileDossierProcess({
+      tenantId: user.tenantId,
+      fileId: doc.file_id,
+      cause: "document_verified",
+      actorId: user.id,
+    });
   }
 
   revalidatePath(`/files/${doc.file_id}`);

@@ -23,6 +23,7 @@ const DOMAIN_TONE: Record<EventDomain, string> = {
   finance: "bg-emerald-700",
   policy: "bg-violet-600",
   ledger: "bg-slate-300",
+  process: "bg-indigo-600",
 };
 
 const METADATA_LABELS: Record<string, string> = {

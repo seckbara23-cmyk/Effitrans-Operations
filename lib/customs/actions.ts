@@ -8,6 +8,7 @@
  * Orbus). Release is a privileged step (customs:release) requiring a BAE ref.
  * Soft-delete via deleted_at; CANCELLED is the normal workflow abort.
  */
+import { reconcileDossierProcess } from "@/lib/process/reconcile/service";
 import { revalidatePath } from "next/cache";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
@@ -338,6 +339,17 @@ export async function recordCustomsRelease(
   const cctx = { tenantId: user.tenantId, actorId: user.id };
   await onCustomsReleased(supabase, cctx, rec.file_id);
   await custCustomsCleared(supabase, cctx, rec.file_id);
+
+  // WES-5 — converge the official engine on the new fact. Idempotent and
+  // never-throwing: the release already committed atomically with its event,
+  // and a failed reconciliation changes nothing (the next run catches up).
+  await reconcileDossierProcess({
+    tenantId: user.tenantId,
+    fileId: rec.file_id,
+    cause: "customs_release",
+    actorId: user.id,
+  });
+
   revalidate(rec.file_id);
   return { ok: true, id };
 }

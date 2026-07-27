@@ -8,6 +8,7 @@
  * Request-memoized: a dossier page asks several times per render, and the
  * answer cannot change mid-request.
  */
+import { missingDocumentationEvidence } from "@/lib/documents/requirements";
 import "server-only";
 import { cache } from "react";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
@@ -96,12 +97,14 @@ export const getDossierAccess = cache(
 
     const documentRows = docs.data ?? [];
     const documents = documentRows.map((d) => ({ status: d.status as string }));
-    const approvedTypes = new Set(
-      documentRows.filter((d) => d.status === "APPROVED").map((d) => d.type_code as string),
-    );
-    const missing = (docTypes.data ?? [])
-      .filter((t) => !approvedTypes.has(t.code as string))
-      .map((t) => ({ label: t.label_fr as string }));
+    // WES-5C — stage-aware: only documentation-stage evidence can hold the
+    // documentation stage, so a missing POD no longer freezes the responsible
+    // department (and therefore WES-3 access) at Documentation.
+    const missing = missingDocumentationEvidence({
+      fileType: file.type,
+      requiredCodes: (docTypes.data ?? []).map((t) => t.code as string),
+      facts: documentRows.map((d) => ({ typeCode: d.type_code as string, status: d.status as string })),
+    }).map((m) => ({ label: m.label }));
 
     const podApproved = transport.data?.status === "POD_RECEIVED";
 

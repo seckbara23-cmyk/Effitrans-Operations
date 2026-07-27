@@ -28,6 +28,7 @@
  * grants at least summary access, and detail fields are omitted when it does
  * not grant current detail.
  */
+import { missingDocumentationEvidence } from "@/lib/documents/requirements";
 import "server-only";
 import { cache } from "react";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
@@ -210,7 +211,12 @@ export const getDepartmentWorkQueue = cache(async (): Promise<DepartmentQueue> =
       fileId: f.id,
       file: { status: f.status, type: f.type },
       documents: fileDocs.map((d) => ({ status: d.status })),
-      missingRequired: requiredFor(f.type).filter((c) => !approved.has(c)).map((label) => ({ label })),
+      // WES-5C — stage-aware, same resolver as every other assembler.
+      missingRequired: missingDocumentationEvidence({
+        fileType: f.type,
+        requiredCodes: requiredFor(f.type),
+        facts: fileDocs.map((d) => ({ typeCode: d.type_code, status: d.status })),
+      }).map((m) => ({ label: m.label })),
       customs: cust ? { status: cust.status as string, required: cust.required as boolean } : null,
       transport: tr ? { status: tr.status as string } : null,
       invoices: invoicesBy.get(f.id) ?? [],

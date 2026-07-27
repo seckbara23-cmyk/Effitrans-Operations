@@ -8,6 +8,7 @@
  * schema, no stored values, no duplicate lifecycle logic. Finance data is loaded
  * only when the viewer holds finance:read.
  */
+import { missingDocumentationEvidence } from "@/lib/documents/requirements";
 import "server-only";
 import { cache } from "react";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
@@ -220,7 +221,12 @@ export const getControlTower = cache(async (
   for (const f of files) {
     const fileDocs = docsByFile.get(f.id) ?? [];
     const approved = new Set(fileDocs.filter((d) => d.status === "APPROVED").map((d) => d.typeCode));
-    const missingRequired = requiredFor(f.type).filter((code) => !approved.has(code)).map((code) => ({ label: code }));
+    // WES-5C — stage-aware: only documentation-stage evidence blocks here.
+    const missingRequired = missingDocumentationEvidence({
+      fileType: f.type,
+      requiredCodes: requiredFor(f.type),
+      facts: fileDocs.map((d) => ({ typeCode: d.typeCode, status: d.status })),
+    }).map((m) => ({ label: m.label }));
     const cust = customsByFile.get(f.id);
     const tr = transportByFile.get(f.id);
     const lifecycleInput = {

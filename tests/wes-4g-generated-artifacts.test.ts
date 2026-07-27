@@ -406,8 +406,9 @@ describe("WES-4G scope discipline", () => {
     expect(s).not.toMatch(/create table public\.mission/i);
   });
 
-  it("ships exactly one new migration", () => {
-    const files = readdirSync(join(root, "supabase/migrations")).filter((f) => f.endsWith(".sql")).sort();
-    expect(files[files.length - 1]).toBe("20260727000004_generated_artifacts.sql");
+  it("ships exactly one migration of its own", () => {
+    // Pinned by CONTENT: WES-5 legitimately adds a later migration.
+    const files = readdirSync(join(root, "supabase/migrations")).filter((f) => f.endsWith(".sql"));
+    expect(files.filter((f) => /generated_artifacts/.test(f))).toHaveLength(1);
   });
 });

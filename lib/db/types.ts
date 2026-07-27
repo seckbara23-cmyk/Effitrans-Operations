@@ -3613,6 +3613,26 @@ export type Database = {
         Update: never;
         Relationships: [];
       };
+      // Phase WES-5D — append-only evidence consumption. Written only by
+      // reconcile_step_completion.
+      evidence_consumption: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          file_id: string | null;
+          step_execution_id: string;
+          step_key: string;
+          document_id: string;
+          document_version: number | null;
+          content_sha256: string | null;
+          policy_version_id: string | null;
+          consumed_at: string;
+          created_at: string;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
       // Phase WES-3A — append-only assignment history. No Insert/Update types:
       // rows are written ONLY by the assign_* RPCs, in the same transaction as
       // the assignment itself, and a trigger blocks UPDATE and DELETE.
@@ -3829,6 +3849,20 @@ export type Database = {
           p_actor: string | null;
           p_size_bytes?: number | null;
           p_policy_id?: string | null;
+        };
+        Returns: Json;
+      };
+      // Phase WES-5 — step transition + evidence consumption + event, ONE
+      // transaction. Idempotent: COMPLETED returns already=true.
+      reconcile_step_completion: {
+        Args: {
+          p_execution_id: string;
+          p_tenant_id: string;
+          p_fact_code: string;
+          p_actor?: string | null;
+          p_evidence_doc_id?: string | null;
+          p_policy_id?: string | null;
+          p_legacy?: boolean;
         };
         Returns: Json;
       };

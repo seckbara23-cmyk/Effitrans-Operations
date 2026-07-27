@@ -9,6 +9,7 @@
  * the pure derivers — no duplicated lifecycle / risk / route / ETA calculation.
  * Presentation-only; no RLS or schema change.
  */
+import { missingDocumentationEvidence } from "@/lib/documents/requirements";
 import "server-only";
 import { getServerSupabaseClient } from "@/lib/supabase/server";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
@@ -95,7 +96,12 @@ export async function getPortalShipments(): Promise<PortalShipmentCard[]> {
     const s = f.shipment?.[0] ?? null;
     const fileDocs = docsByFile.get(f.id) ?? [];
     const approved = new Set(fileDocs.filter((d) => d.status === "APPROVED").map((d) => d.type_code));
-    const missingCodes = requiredFor(f.type).filter((code) => !approved.has(code));
+    // WES-5C — stage-aware (fixes POD blocking documentation on the portal too).
+    const missingCodes = missingDocumentationEvidence({
+      fileType: f.type,
+      requiredCodes: requiredFor(f.type),
+      facts: fileDocs.map((d) => ({ typeCode: d.type_code, status: d.status })),
+    }).map((m) => m.code);
     const cust = customsByFile.get(f.id) ?? null;
     const tr = transportByFile.get(f.id) ?? null;
     const invoices = invByFile.get(f.id) ?? [];

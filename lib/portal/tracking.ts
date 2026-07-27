@@ -10,6 +10,7 @@
  * status. Never exposes internal risk scores, SLA thresholds, staff identities,
  * tasks, audit payloads or internal blockers.
  */
+import { missingDocumentationEvidence } from "@/lib/documents/requirements";
 import "server-only";
 import { getServerSupabaseClient } from "@/lib/supabase/server";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
@@ -149,7 +150,12 @@ export async function getPortalTracking(fileId: string): Promise<PortalTracking 
     if (!cur || (STATUS_RANK[d.status] ?? 0) >= (STATUS_RANK[cur] ?? 0)) bestStatusByCode.set(d.type_code, d.status);
   }
   const approved = new Set(docs.filter((d) => d.status === "APPROVED").map((d) => d.type_code));
-  const missingRequired = requiredCodes.filter((code) => !approved.has(code));
+  // WES-5C — stage-aware.
+  const missingRequired = missingDocumentationEvidence({
+    fileType: own.type,
+    requiredCodes,
+    facts: docs.map((d) => ({ typeCode: d.type_code, status: d.status })),
+  }).map((m) => m.code);
   const missingLabels = missingRequired.map((code) => labelByCode.get(code) ?? code);
   const podApproved = docs.some((d) => d.type_code === "DELIVERY_NOTE" && d.status === "APPROVED");
 

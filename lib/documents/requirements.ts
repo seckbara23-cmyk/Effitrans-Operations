@@ -193,6 +193,53 @@ function resolveState(fact: EvidenceFact | undefined, dueNow: boolean): Requirem
   }
 }
 
+/**
+ * WES-5C/5K — THE canonical "what blocks documentation" computation.
+ * ---------------------------------------------------------------------------
+ * This is the function that fixes the POD defect. Before it, every lifecycle
+ * assembler computed `missingRequired = required_for(type) − approved`, which
+ * counted a POD (due at the TRANSPORT stage) as missing from the day a dossier
+ * opened. `docsVerified = missing === 0` then kept the Documentation stage
+ * incomplete until delivery — months after the department finished its work.
+ *
+ * The question "is documentation complete?" only concerns evidence whose
+ * doctrine places it at the documentation stage. That set is STATIC per
+ * document type (`doctrine.earliestStage`), so there is no circularity with
+ * the current stage: a POD is never documentation-stage evidence, whatever
+ * stage the dossier is in.
+ *
+ * Every lifecycle assembler now calls THIS — one resolver, one answer, exactly
+ * as WES-5C demands. Consequences, stated because they change behaviour:
+ *   * CUSTOMS_DECLARATION (customs stage) no longer gates documentation — the
+ *     customs steps are gated by `customs_record.status`, the module fact.
+ *   * TRANSPORT_ORDER (internal artifact) no longer gates anything here —
+ *     generated artifacts are not external evidence (WES-4G doctrine).
+ *   * Rejected and superseded versions do not satisfy; a verified current
+ *     version (or the legacy APPROVED alias) does.
+ */
+export function missingDocumentationEvidence(input: {
+  fileType: string;
+  /** Required type codes for this dossier type (from the catalog / policy). */
+  requiredCodes: readonly string[];
+  /** Current document rows: type + status (+ supersession when known). */
+  facts: readonly EvidenceFact[];
+  transportMode?: string | null;
+}): { code: string; label: string }[] {
+  const r = resolveEvidenceRequirements({
+    fileType: input.fileType,
+    transportMode: input.transportMode ?? null,
+    // The QUESTION is fixed at the documentation stage — see the header.
+    stage: "documentation",
+    // Customs applicability is irrelevant here: customs-stage evidence is
+    // `required_later` at the documentation stage either way.
+    customsApplicable: true,
+    policyRequiredTypes: input.requiredCodes,
+    policyResolved: true,
+    facts: input.facts,
+  });
+  return r.missingNow.map((m) => ({ code: m.typeCode, label: m.labelFr }));
+}
+
 export const REQUIREMENT_STATE_LABELS_FR: Readonly<Record<RequirementState, string>> = {
   satisfied: "Satisfait",
   under_review: "En cours de vérification",

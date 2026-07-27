@@ -8,6 +8,7 @@
  * /POD_RECEIVED require transport:complete; POD_RECEIVED enforces the approved-POD
  * gate. Soft-delete via deleted_at; CANCELLED is the normal workflow abort.
  */
+import { reconcileDossierProcess } from "@/lib/process/reconcile/service";
 import { revalidatePath } from "next/cache";
 import type { Database } from "@/lib/db/types";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
@@ -347,6 +348,17 @@ export async function changeTransportStatus(id: string, toStatus: string): Promi
   // Phase 2.5 — customer transport notifications (idempotent, once per dossier).
   if (toStatus === "IN_TRANSIT") await custTransportStarted(supabase, tctx, rec.file_id);
   if (toStatus === "DELIVERED" || toStatus === "POD_RECEIVED") await custDelivered(supabase, tctx, rec.file_id);
+
+  // WES-5 — converge the official engine on the transport fact (pickup, POD).
+  // Convergent + idempotent; never throws, never blocks the transition that
+  // already committed atomically with its own WES-9 event.
+  await reconcileDossierProcess({
+    tenantId: user.tenantId,
+    fileId: rec.file_id,
+    cause: "transport_transition",
+    actorId: user.id,
+  });
+
   revalidate(rec.file_id);
   return { ok: true, id };
 }

@@ -124,6 +124,8 @@ export const TENANT_SCOPED_TABLES = new Set<string>([
   // restricted free-text explanation, so an unscoped read would leak review
   // prose across tenants.
   "document_review",
+  // append-only evidence consumption (Phase WES-5D).
+  "evidence_consumption",
 ]);
 
 /**

@@ -8,6 +8,7 @@
  * the CI-tested boundary. Soft-deleted rows are excluded.
  */
 import { isGeneratableArtifact } from "./artifacts/feasibility";
+import { missingDocumentationEvidence } from "./requirements";
 import "server-only";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
@@ -121,10 +122,15 @@ export async function getMissingRequiredDocuments(
       .is("deleted_at", null),
   ]);
 
-  const approved = new Set(
-    (docs.data ?? []).filter((d) => d.status === "APPROVED").map((d) => d.type_code),
-  );
-  return (types.data ?? [])
-    .filter((t) => !approved.has(t.code))
-    .map((t) => ({ code: t.code, label: t.label_fr }));
+  // WES-5C — STAGE-AWARE. The old computation counted every required_for type
+  // as missing regardless of stage, so a POD (transport stage) blocked the
+  // Documentation department from day one. One canonical resolver now answers.
+  const labelByCode = new Map((types.data ?? []).map((t) => [t.code as string, t.label_fr as string]));
+  const missing = missingDocumentationEvidence({
+    fileType,
+    requiredCodes: (types.data ?? []).map((t) => t.code as string),
+    facts: (docs.data ?? []).map((d) => ({ typeCode: d.type_code as string, status: d.status as string })),
+  });
+  return missing.map((m) => ({ code: m.code, label: labelByCode.get(m.code) ?? m.label }));
 }
+
