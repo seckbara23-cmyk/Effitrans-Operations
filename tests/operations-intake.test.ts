@@ -291,7 +291,12 @@ describe("openDossierWorkflow — orchestration of existing audited actions", ()
   });
 
   it("38 — the first Operations step is activated from the frozen registry key", () => {
-    expect(open).toContain('activateStep(fileId, "operations_intake")');
+    // UAT-1 hotfix: this asserted `activateStep`, which could never succeed —
+    // the step is PENDING and PENDING -> ACTIVE is not a legal transition, so
+    // the call always returned invalid_state and the dossier opened with zero
+    // ACTIVE steps. The entry-step path walks the canonical ladder instead.
+    // The registry key itself is still frozen, which is what this test guards.
+    expect(open).toContain('activateEntryStep(fileId, "operations_intake")');
   });
 
   it("39 — the legacy DRAFT→OPENED transition goes through the EXISTING seam, only from DRAFT", () => {

@@ -6,7 +6,7 @@
  * official workflow (instance + canonical Operations owner + initial step +
  * legacy DRAFT→OPENED + « Dossier reçu » milestone) and formally hand the work
  * to Transit. This module ORCHESTRATES existing, individually-audited actions —
- * initializeProcessForFile, assignProcessOwner, skipStep, activateStep,
+ * initializeProcessForFile, assignProcessOwner, skipStep, activateEntryStep,
  * sendHandoff, transitionFile, notifyCustomer — it re-implements none of them,
  * so every sub-step keeps its own permission gate, CAS concurrency and audit
  * trail. Idempotent by composition: every constituent is idempotent or
@@ -28,10 +28,11 @@ import { roleLabel, ROLE_DISPLAY_PRIORITY } from "@/lib/navigation/roles";
 import { createNotification } from "@/lib/notifications/create";
 import { notifyCustomer } from "@/lib/customer-notify/service";
 import { validateIntake, HANDOFF_BLOCKING_CATEGORIES, type IntakeValidation } from "../intake";
-import { initializeProcessForFile, activateStep, sendHandoff } from "./actions";
+import { initializeProcessForFile, activateEntryStep, sendHandoff } from "./actions";
 import { assignProcessOwner, skipStep } from "./structures-actions";
 import { transitionFile } from "@/lib/files/actions";
 import { loadProcessSnapshot } from "./snapshot";
+import { isDone } from "./types";
 
 type Admin = ReturnType<typeof getAdminSupabaseClient>;
 type Ctx = { userId: string; tenantId: string; permissions: string[] };
@@ -371,17 +372,42 @@ export async function openDossierWorkflow(
   if (!owned.ok) return { ok: false, error: `owner_${owned.error}` };
 
   // 3. Cotation: skipped by default at intake (contract client / no quotation) so
-  //    the Operations intake step can open. Tolerant — already skipped/done is fine.
+  //    the Operations intake step can open.
+  //
+  //    The result is CHECKED. Only one failure is tolerated: a retry where
+  //    cotation is already finished — skipping a SKIPPED step is refused by the
+  //    state machine, and that refusal must not abort an otherwise valid retry.
+  //    Every other failure aborts, because continuing would leave step 4 unable
+  //    to open and report success for a workflow that never started.
   if (input.skipCotation !== false) {
-    await skipStep(fileId, "cotation", {
+    const skipped = await skipStep(fileId, "cotation", {
       reason: "Ouverture directe — dossier sans cotation préalable (client sous contrat).",
       source: "MANUAL",
     });
+    if (!skipped.ok) {
+      const after = await loadProcessSnapshot(ctx.tenantId, fileId, ctx.permissions);
+      const cotation = after?.executions.find((e) => e.stepKey === "cotation");
+      if (!cotation || !isDone(cotation.state)) {
+        return { ok: false, error: `cotation_${skipped.error}` };
+      }
+    }
   }
 
-  // 4. Open the first Operations step (tolerant: if cotation was kept, the step
-  //    stays PENDING until cotation completes — that is correct, not a failure).
-  await activateStep(fileId, "operations_intake");
+  // 4. Open the first Operations step through the ENTRY-STEP path:
+  //    PENDING -> AVAILABLE -> ACTIVE. `activateStep` alone cannot do this —
+  //    PENDING -> ACTIVE is not a legal transition, and this call previously
+  //    discarded that `invalid_state` error, which is how dossiers ended up
+  //    opened with zero ACTIVE steps.
+  //
+  //    Tolerated ONLY when cotation was deliberately KEPT: the step then
+  //    legitimately stays PENDING until cotation completes.
+  const activated = await activateEntryStep(fileId, "operations_intake");
+  if (!activated.ok) {
+    const cotationKept = input.skipCotation === false && activated.error === "prerequisites_unmet";
+    if (!cotationKept) {
+      return { ok: false, error: `activation_${activated.error}` };
+    }
+  }
 
   // 5. Legacy lifecycle: a DRAFT dossier formally becomes OPENED through the
   //    EXISTING transition seam (its own permission + audit) — the engine itself

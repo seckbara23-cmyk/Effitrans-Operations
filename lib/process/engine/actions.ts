@@ -46,6 +46,7 @@ import {
   liveByKey,
   preparerStepFor,
   prerequisitesMet,
+  isEntryStep,
   requiresIndependentReview,
 } from "./state";
 import { evaluatePickupGate } from "./gates";
@@ -206,6 +207,65 @@ async function cas(
     .eq("state", from) // <- the guard: a concurrent writer already changed it
     .select("id");
   return !error && (data?.length ?? 0) === 1;
+}
+
+/**
+ * Open a dossier's ENTRY step: PENDING -> AVAILABLE -> ACTIVE, in that order.
+ *
+ * WHY THIS EXISTS (UAT-1 defect). `buildInitialExecutions` opens step 1 only;
+ * every other step is PENDING and reaches AVAILABLE through `receiveHandoff`,
+ * which is the sole writer of that promotion. Intake legitimately SKIPS step 1
+ * (`cotation`) and then wants step 2 ACTIVE — but `PENDING -> ACTIVE` is not in
+ * ALLOWED_STEP_TRANSITIONS, so `activateStep` returned `invalid_state` and the
+ * dossier sat with zero ACTIVE steps.
+ *
+ * The state machine is NOT relaxed and `activateStep` is NOT changed: this
+ * helper performs the missing FIRST leg of the canonical ladder, for the closed
+ * `ENTRY_STEP_KEYS` list only, and only when prerequisites are genuinely met.
+ * Then it delegates the second leg to `activateStep` unchanged, so gates,
+ * evidence and audit keep their single owner.
+ *
+ * IDEMPOTENT by contract:
+ *   ACTIVE            -> ok (already open; writes nothing)
+ *   AVAILABLE         -> delegates straight to activateStep
+ *   PENDING + prereqs -> promote, then activate
+ *   anything else     -> invalid_state (fails safely; never forces a state)
+ */
+export async function activateEntryStep(fileId: string, stepKey: string): Promise<EngineResult> {
+  const c = await guard("process:manage", fileId);
+  if (isErr(c)) return fail(c);
+  // A closed list. Without this the helper would be "activate anything pending",
+  // which is exactly the guarantee the handoff ladder exists to provide.
+  if (!isEntryStep(stepKey)) return fail("invalid_state");
+
+  const st = await loadStep(c, fileId, stepKey);
+  if (typeof st === "string") return fail(st);
+
+  // Already open — a retry of the opening action must succeed, not error.
+  if (st.state === "ACTIVE") return { ok: true, id: st.execId };
+
+  if (st.state === "PENDING") {
+    const views = toViews(st.snapshot!.executions);
+    // The prerequisite rule is untouched: cotation SKIPPED counts as done
+    // (TERMINAL_DONE_STATES), a cotation still open does not.
+    if (!prerequisitesMet(stepKey, views)) return fail("prerequisites_unmet");
+    // CAS on PENDING: a concurrent opener that already promoted this row makes
+    // this return false, and the reload inside activateStep picks up their work.
+    const promoted = await cas(st.execId, c.tenantId, "PENDING", { state: "AVAILABLE" });
+    if (!promoted) {
+      const again = await loadStep(c, fileId, stepKey);
+      if (typeof again === "string") return fail(again);
+      if (again.state === "ACTIVE") return { ok: true, id: again.execId };
+      if (again.state !== "AVAILABLE") return fail("invalid_state");
+    }
+  } else if (st.state !== "AVAILABLE") {
+    // BLOCKED / SUBMITTED / APPROVED / COMPLETED / SKIPPED: never forced open.
+    return fail("invalid_state");
+  }
+
+  // Second leg, delegated unchanged — prerequisites, gates and the
+  // PROCESS_STEP_ACTIVATED audit all keep their single owner.
+  return activateStep(fileId, stepKey);
 }
 
 /** PENDING/AVAILABLE -> ACTIVE. Enforces prerequisites and the pickup join gate. */

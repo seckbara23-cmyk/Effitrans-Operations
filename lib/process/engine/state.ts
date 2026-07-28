@@ -66,6 +66,29 @@ export function canTransitionStep(from: StepState, to: StepState): boolean {
   return ALLOWED_STEP_TRANSITIONS[from].includes(to);
 }
 
+/**
+ * ENTRY STEPS — the ONLY steps that may be opened straight out of PENDING.
+ *
+ * The ladder PENDING → AVAILABLE → ACTIVE is canonical and stays canonical:
+ * every other step reaches AVAILABLE by an explicit handoff reception, which is
+ * what makes "who handed this over" answerable. But a dossier's FIRST step has
+ * no predecessor to hand it over — `buildInitialExecutions` opens step 1
+ * (`cotation`) and nothing else. When intake legitimately SKIPS cotation, step 2
+ * satisfies its prerequisites yet has no one to open it, and the workflow stalls
+ * with zero ACTIVE steps.
+ *
+ * This list is the narrow, audited exception: for these keys only, and only when
+ * their prerequisites are genuinely done, the opening action may perform the
+ * PENDING → AVAILABLE promotion itself before activating. Keeping it a closed
+ * list is the point — a general "activate anything pending" would delete the
+ * handoff-provenance guarantee for all 26 steps.
+ */
+export const ENTRY_STEP_KEYS: readonly string[] = ["operations_intake"];
+
+export function isEntryStep(stepKey: string): boolean {
+  return ENTRY_STEP_KEYS.includes(stepKey);
+}
+
 export function nextStepStates(from: StepState): StepState[] {
   return [...ALLOWED_STEP_TRANSITIONS[from]];
 }

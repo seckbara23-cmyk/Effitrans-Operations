@@ -196,3 +196,64 @@ Transit execution (T1–T10 from `TRANSIT_SOURCE_MAP`): reception confirmation
 UX, declarant assignment via Transit teams (`assignStepTeam` /
 `organization_team_member`), the customs chain steps, and the
 `CONTINUE_BEFORE_PAYMENT` decision seam at the payment gate.
+
+---
+
+## 12. UAT-1 hotfix — the zero-active-step defect (2026-07-28)
+
+**Symptom.** A dossier opened through « Ouvrir le dossier » ended with an
+instance, an owner, `cotation` SKIPPED — and **no ACTIVE step**. The workflow
+could not proceed and nothing reported an error.
+
+**Cause.** `buildInitialExecutions` opens step 1 (`cotation`) and leaves every
+other step `PENDING`. `ALLOWED_STEP_TRANSITIONS` has no `PENDING → ACTIVE` — the
+only writer of `PENDING → AVAILABLE` is `receiveHandoff`, so a step normally
+opens because someone handed it over. Intake legitimately *skips* step 1, and
+skipping cascades to nothing; `activateStep("operations_intake")` therefore hit
+
+```js
+if (!canTransitionStep(st.state, "ACTIVE")) return fail("invalid_state");
+```
+
+and returned `invalid_state`. Step 4 of the orchestration discarded the result.
+
+**Fix (application layer).**
+1. `ENTRY_STEP_KEYS` — a **closed list** (`["operations_intake"]`) in the pure
+   state core. The handoff-provenance guarantee is preserved for all other steps.
+2. `activateEntryStep(fileId, stepKey)` — performs the missing first leg
+   (`PENDING → AVAILABLE`, CAS, prerequisites enforced) then **delegates** the
+   second leg to `activateStep`, unchanged, so gates, evidence and the
+   `PROCESS_STEP_ACTIVATED` audit keep their single owner. Idempotent: `ACTIVE`
+   → success without writing; `AVAILABLE` → straight to activation; anything
+   else → `invalid_state`.
+3. `openDossierWorkflow` now **checks every result**. Exactly two failures are
+   tolerated, both legitimate: a retry where `cotation` is already done, and
+   `prerequisites_unmet` when `cotation` was deliberately kept.
+
+`activateStep` and the state machine are **unchanged**. No migration.
+
+### Remaining atomicity limitation (stated, not solved)
+
+The opening is still an **application-layer orchestration of seven writes**
+across `process_instance`, `process_step_execution`, `operational_file`,
+`notification` and the customer-milestone pipeline. supabase-js cannot hold a
+transaction across them, so **a failure part-way leaves a partial opening** —
+for example instance + owner + activated step, but the file still `DRAFT` and no
+« Dossier reçu ».
+
+What makes this acceptable for UAT rather than a blocker:
+
+* it is now **reported, never silently successful** — the action returns
+  `{ ok: false, error: "cotation_…" | "activation_…" | "owner_…" }`;
+* every constituent is idempotent or dedup-guarded, so **retrying the same
+  action converges**: init returns the existing instance, owner assignment is a
+  no-op when unchanged, the skip refusal is tolerated once cotation is done,
+  `activateEntryStep` returns success when already ACTIVE, and the milestone
+  dedup key keeps « Dossier reçu » at most once;
+* the partial state is **visible** (the panel shows the real status), not silent.
+
+A transactional RPC would have to re-implement six permission gates and six
+audit writes in SQL, duplicating the authorization model in a second language —
+a materially larger change than the defect warrants. **Recommendation: keep the
+application-layer fix for UAT-1; revisit an RPC only if UAT produces an actual
+partial-opening failure.**
