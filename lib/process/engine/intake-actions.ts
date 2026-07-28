@@ -63,19 +63,69 @@ async function intakeGuard(permission: string, fileId: string): Promise<Ctx | st
 const isErr = (v: Ctx | string): v is string => typeof v === "string";
 
 /** The dossier + shipment projection intake validation needs. Tenant-verified. */
-async function loadIntakeProjection(admin: Admin, tenantId: string, fileId: string) {
-  const { data: file } = await admin
+/**
+ * TEMPORARY UAT-1 INSTRUMENTATION — remove with the diagnostics route.
+ * A mutable sink the read path writes stage markers into. Passing it is the
+ * ONLY difference between a diagnostic call and a production call, so the two
+ * cannot diverge.
+ */
+export type IntakeDiag = {
+  guardPassed: boolean;
+  guardError: string | null;
+  fileFound: boolean;
+  fileInTenant: boolean;
+  shipmentQueryOk: boolean;
+  shipmentFound: boolean;
+  projectionLoaded: boolean;
+  snapshotLoaded: boolean;
+  processInstanceFound: boolean;
+  ownerLoaded: boolean;
+  blockersLoaded: boolean;
+  validationBuilt: boolean;
+  returnedState: boolean;
+  caughtException: boolean;
+  error: string | null;
+  failedAt: string | null;
+};
+
+/** async because this is a "use server" module — every export must be async. */
+export async function newIntakeDiag(): Promise<IntakeDiag> {
+  return {
+    guardPassed: false, guardError: null,
+    fileFound: false, fileInTenant: false,
+    shipmentQueryOk: false, shipmentFound: false,
+    projectionLoaded: false, snapshotLoaded: false,
+    processInstanceFound: false, ownerLoaded: false, blockersLoaded: false,
+    validationBuilt: false, returnedState: false,
+    caughtException: false, error: null, failedAt: null,
+  };
+}
+
+async function loadIntakeProjection(admin: Admin, tenantId: string, fileId: string, diag?: IntakeDiag) {
+  const { data: file, error: fileErr } = await admin
     .from("operational_file")
     .select("id, tenant_id, client_id, type, status, file_number")
     .eq("id", fileId)
     .maybeSingle();
+  if (diag) {
+    diag.fileFound = Boolean(file);
+    diag.fileInTenant = Boolean(file && file.tenant_id === tenantId);
+    if (fileErr) { diag.error = `operational_file: ${fileErr.message}`; diag.failedAt = "loadIntakeProjection.file"; }
+  }
   if (!file || file.tenant_id !== tenantId) return null;
-  const { data: shipment } = await admin
+  // NOTE: maybeSingle() THROWS when more than one shipment row exists for the
+  // dossier — that throw is caught by getIntakeState and becomes a silent null.
+  const { data: shipment, error: shipErr } = await admin
     .from("shipment")
     .select("transport_mode, origin, destination, bl_awb_ref, container_ref, eta")
     .eq("file_id", fileId)
     .eq("tenant_id", tenantId)
     .maybeSingle();
+  if (diag) {
+    diag.shipmentQueryOk = !shipErr;
+    diag.shipmentFound = Boolean(shipment);
+    if (shipErr) { diag.error = `shipment: ${shipErr.message}`; diag.failedAt = "loadIntakeProjection.shipment"; }
+  }
   return { file, shipment };
 }
 
@@ -162,18 +212,28 @@ export type IntakeState = {
 };
 
 /** Read-side intake state for the panel. Returns null when dark/absent/error. */
-export async function getIntakeState(fileId: string): Promise<IntakeState | null> {
+export async function getIntakeState(fileId: string, diag?: IntakeDiag): Promise<IntakeState | null> {
   const ctx = await intakeGuard("process:read", fileId);
-  if (isErr(ctx)) return null;
+  if (isErr(ctx)) {
+    if (diag) { diag.guardError = ctx; diag.failedAt = "intakeGuard"; }
+    return null;
+  }
+  if (diag) diag.guardPassed = true;
   const admin = getAdminSupabaseClient();
 
   try {
-    const projection = await loadIntakeProjection(admin, ctx.tenantId, fileId);
-    if (!projection) return null;
+    const projection = await loadIntakeProjection(admin, ctx.tenantId, fileId, diag);
+    if (!projection) {
+      if (diag && !diag.failedAt) diag.failedAt = "projection_null";
+      return null;
+    }
+    if (diag) diag.projectionLoaded = true;
     const { file, shipment } = projection;
 
     const snap = await loadProcessSnapshot(ctx.tenantId, fileId, ctx.permissions);
+    if (diag) diag.snapshotLoaded = true;
     const instance = snap?.instance ?? null;
+    if (diag) diag.processInstanceFound = Boolean(instance);
 
     let owner: IntakeState["owner"] = null;
     let openBlockers: IntakeState["openBlockers"] = [];
@@ -223,6 +283,7 @@ export async function getIntakeState(fileId: string): Promise<IntakeState | null
       openBlockers = (blockers ?? []).map((b) => ({
         id: b.id, title: b.title, category: b.category, status: b.status, customerVisible: b.customer_visible,
       }));
+      if (diag) { diag.ownerLoaded = Boolean(owner); diag.blockersLoaded = true; }
 
       handoffSent = (snap?.handoffs ?? []).some(
         (h) => h.toStepKey === "coordinator_reception" && (h.status === "SENT" || h.status === "RECEIVED"),
@@ -242,6 +303,9 @@ export async function getIntakeState(fileId: string): Promise<IntakeState | null
       ownerUserId: owner ? "assigned" : null,
     });
 
+    if (diag) diag.validationBuilt = true;
+
+    if (diag) diag.returnedState = true;
     return {
       fileNumber: file.file_number,
       fileStatus: file.status,
@@ -251,7 +315,14 @@ export async function getIntakeState(fileId: string): Promise<IntakeState | null
       handoffSent,
       openBlockers,
     };
-  } catch {
+  } catch (e) {
+    // TEMPORARY UAT-1 INSTRUMENTATION — the swallowed error is surfaced to the
+    // diagnostics sink only. Production behaviour is unchanged: still null.
+    if (diag) {
+      diag.caughtException = true;
+      diag.error = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+      if (!diag.failedAt) diag.failedAt = "try_block_exception";
+    }
     return null; // structures tables absent / transient failure — the panel simply hides
   }
 }

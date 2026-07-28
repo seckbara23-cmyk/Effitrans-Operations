@@ -20,10 +20,9 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { getEffectivePermissions } from "@/lib/rbac/permissions";
 import { hasPermission } from "@/lib/rbac/permissions";
-import { getProcessFlags } from "@/lib/process/config";
-import { getTenantProcessFlags, getTenantRollout } from "@/lib/process/rollout-server";
+import { getTenantProcessFlags, getTenantRollout, globalKillSwitch } from "@/lib/process/rollout-server";
 import { isFileVisible } from "@/lib/authz/visibility";
-import { getIntakeState } from "@/lib/process/engine/intake-actions";
+import { getIntakeState, newIntakeDiag, type IntakeDiag } from "@/lib/process/engine/intake-actions";
 import { getProcessState } from "@/lib/process/engine/service";
 
 export const dynamic = "force-dynamic";
@@ -36,7 +35,10 @@ export async function GET(request: Request) {
   const fileId = new URL(request.url).searchParams.get("fileId");
 
   // ---- layer 1: DEPLOYMENT env (process.env, read at runtime) -------------
-  const env = getProcessFlags();
+  // Via globalKillSwitch(), the SANCTIONED env-only accessor. Calling
+  // getProcessFlags() directly here would trip the rollout guard that stops a
+  // deployment-wide check standing in for a tenant-scoped decision.
+  const env = globalKillSwitch();
 
   // ---- layer 2: TENANT rollout row ---------------------------------------
   const rollout = await getTenantRollout(user.tenantId);
@@ -57,12 +59,15 @@ export async function GET(request: Request) {
   let fileVisible: boolean | null = null;
   let intakeStateResolved: boolean | null = null;
   let processStateResolved: boolean | null = null;
+  let intakeTrace: IntakeDiag | null = null;
 
   if (fileId) {
     fileVisible = await isFileVisible(user.id, user.tenantId, fileId);
     // Called unconditionally (unlike the page, which calls it only when the
     // flag is on) so the flag and the read are diagnosed independently.
-    intakeStateResolved = (await getIntakeState(fileId)) !== null;
+    // The sink is the ONLY difference from a production call — same code path.
+    intakeTrace = await newIntakeDiag();
+    intakeStateResolved = (await getIntakeState(fileId, intakeTrace)) !== null;
     processStateResolved = (await getProcessState(fileId)) !== null;
   }
 
@@ -102,5 +107,10 @@ export async function GET(request: Request) {
 
       permissionCount: permissions.length,
     },
+
+    // === the statement-level trace inside getIntakeState ===
+    // failedAt names the exact early return; error carries the previously
+    // swallowed exception message.
+    intakeTrace,
   });
 }
