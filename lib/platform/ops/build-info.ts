@@ -13,10 +13,10 @@
  */
 
 /** The latest migration shipped in this build (pinned to the directory by test). */
-export const LATEST_MIGRATION = "20260728000001_invoice_artifact_and_charge_uniqueness";
+export const LATEST_MIGRATION = "20260728000002_customs_department_discovery";
 
 /** Total migrations shipped in this build (pinned by test). */
-export const MIGRATION_COUNT = 68;
+export const MIGRATION_COUNT = 69;
 
 /** Newest DATA-probeable migration marker: this permission row proves migrations ≥ this point. */
 export const MIGRATION_PROBE = {

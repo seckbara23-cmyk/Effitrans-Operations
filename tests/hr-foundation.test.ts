@@ -276,9 +276,9 @@ describe("pages and pins", () => {
     expect(registryPage).toMatch(/hasPermission\(permissions, "hr:manage"\)/);
   });
   it("42 — the HR migration still ships (build-info newest pin moved on in WES-7)", () => {
-    // WES-9 (20260728000001_invoice_artifact_and_charge_uniqueness) is now the newest migration, so
+    // WES-9 (20260728000002_customs_department_discovery) is now the newest migration, so
     // build-info's pins point there; the HR migration + its permission remain.
-    expect(LATEST_MIGRATION).toBe("20260728000001_invoice_artifact_and_charge_uniqueness");
+    expect(LATEST_MIGRATION).toBe("20260728000002_customs_department_discovery");
     expect(MIGRATION_PROBE.permissionCode).toBe("finance:expense:read");
     expect(migrationRaw).toContain("'hr:read'");
   });
