@@ -61,7 +61,13 @@ export async function GET(request: Request) {
   let processStateResolved: boolean | null = null;
   let intakeTrace: IntakeDiag | null = null;
 
-  if (fileId) {
+  // A malformed id must be reported as a malformed id. Without this it reaches
+  // Postgres and comes back as "invalid input syntax for type uuid", which reads
+  // like a bug in the query layer when it is really a truncated query string.
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const fileIdWellFormed = fileId === null ? null : UUID_RE.test(fileId.trim());
+
+  if (fileId && fileIdWellFormed) {
     fileVisible = await isFileVisible(user.id, user.tenantId, fileId);
     // Called unconditionally (unlike the page, which calls it only when the
     // flag is on) so the flag and the read are diagnosed independently.
@@ -101,6 +107,15 @@ export async function GET(request: Request) {
       // checks dossier visibility, but every panel's guard does — so an
       // unrelated user gets the page shell with every panel silently null.
       fileIdProvided: Boolean(fileId),
+      // Echoed so a truncated/corrupted id is visible immediately. Not a secret:
+      // it is the value the caller themselves supplied.
+      fileIdReceived: fileId,
+      fileIdLength: fileId?.length ?? null,
+      fileIdWellFormed,
+      fileIdHint:
+        fileIdWellFormed === false
+          ? `not a UUID: got ${fileId?.length ?? 0} chars, expected 36 (8-4-4-4-12) — the id in the query string is malformed, nothing was queried`
+          : null,
       fileVisible,
       intakeStateResolved,
       processStateResolved,
