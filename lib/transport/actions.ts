@@ -8,6 +8,7 @@
  * /POD_RECEIVED require transport:complete; POD_RECEIVED enforces the approved-POD
  * gate. Soft-delete via deleted_at; CANCELLED is the normal workflow abort.
  */
+import { isVerified } from "@/lib/documents/doctrine";
 import { reconcileDossierProcess } from "@/lib/process/reconcile/service";
 import { revalidatePath } from "next/cache";
 import type { Database } from "@/lib/db/types";
@@ -93,7 +94,13 @@ async function approvedDocCodes(supabase: Admin, tenantId: string, fileId: strin
     .eq("tenant_id", tenantId)
     .eq("file_id", fileId)
     .is("deleted_at", null);
-  return (data ?? []).filter((d) => d.status === "APPROVED").map((d) => d.type_code);
+  // WES-4 renamed the canonical verified status to VERIFIED, and WES-5 moves a
+  // consumed document on to CONSUMED_AS_EVIDENCE. Comparing to the legacy
+  // "APPROVED" alone made POD_RECEIVED unreachable: approveDocument writes
+  // VERIFIED, so this returned [] and the POD gate always refused.
+  // `isVerified` is the canonical predicate — it maps the legacy alias and
+  // accepts the consumed state, so no fourth status list is introduced here.
+  return (data ?? []).filter((d) => isVerified(d.status)).map((d) => d.type_code);
 }
 
 async function customsGate(supabase: Admin, fileId: string) {

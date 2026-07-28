@@ -8,12 +8,14 @@
  * under review, or not visible to this caller?
  *
  * Two rules worth stating explicitly:
- *   * A document only SATISFIES when it is APPROVED. An uploaded-but-unreviewed
+ *   * A document only SATISFIES when it is VERIFIED (or consumed as evidence;
+ *     legacy rows say APPROVED). An uploaded-but-unreviewed
  *     document is `pending_review`, never `satisfied` — a step cannot complete on
  *     the strength of a document nobody has checked.
  *   * Nothing is ever inferred from free text. A BAE reference is a reference; an
  *     empty string is not a BAE.
  */
+import { isVerified } from "@/lib/documents/doctrine";
 import { DOCUMENT_MAPPINGS, mapDocument } from "../documents";
 import { getNode } from "./state";
 
@@ -67,9 +69,16 @@ export type EvidenceSnapshot = {
 
 const nonEmpty = (v: string | null | undefined): boolean => typeof v === "string" && v.trim().length > 0;
 
-/** An APPROVED document of this type exists. */
+/**
+ * A VERIFIED document of this type exists.
+ *
+ * Same WES-4/WES-5 correction as the transport POD gate: the canonical status
+ * is VERIFIED (legacy rows say APPROVED) and a document consumed as evidence
+ * reads CONSUMED_AS_EVIDENCE. Testing the legacy name alone meant every
+ * document-backed step stopped being satisfiable the moment WES-4 landed.
+ */
 function approvedDoc(snap: EvidenceSnapshot, typeCode: string): boolean {
-  return snap.documents.some((d) => d.typeCode === typeCode && d.status === "APPROVED");
+  return snap.documents.some((d) => d.typeCode === typeCode && isVerified(d.status));
 }
 
 /** A document of this type exists but has not been approved yet. */
