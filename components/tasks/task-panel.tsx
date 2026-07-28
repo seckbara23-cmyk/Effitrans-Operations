@@ -22,6 +22,7 @@ export function TaskPanel({
   canCreate,
   canUpdate,
   canDelete,
+  currentUserId = null,
 }: {
   fileId: string;
   tasks: TaskListItem[];
@@ -30,6 +31,8 @@ export function TaskPanel({
   canCreate: boolean;
   canUpdate: boolean;
   canDelete: boolean;
+  /** Signed-in user, so a row can distinguish "mine" from an intervention. */
+  currentUserId?: string | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -87,7 +90,7 @@ export function TaskPanel({
           <p className="text-xs text-slate-400">{t.tasks.empty}</p>
         ) : (
           tasks.map((task) => (
-            <TaskRow key={task.id} task={task} assignees={assignees} policyResolved={policyResolved} canUpdate={canUpdate} canDelete={canDelete} />
+            <TaskRow key={task.id} task={task} assignees={assignees} policyResolved={policyResolved} canUpdate={canUpdate} canDelete={canDelete} currentUserId={currentUserId} />
           ))
         )}
       </div>

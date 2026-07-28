@@ -12,6 +12,7 @@ import { activeTargets } from "@/lib/tasks/status";
 import { classifyDue } from "@/lib/notifications/classify";
 import { cancelTask, changeTaskStatus, completeTask } from "@/lib/tasks/actions";
 import { TaskAssignment } from "./task-assignment";
+import { PromptDialog } from "@/components/finance/prompt-dialog";
 import type { ActionResult, Assignee, TaskListItem } from "@/lib/tasks/types";
 
 const STATUS_STYLE: Record<string, string> = {
@@ -35,9 +36,17 @@ export function TaskRow({
   canUpdate,
   canDelete,
   showFile = false,
+  currentUserId = null,
 }: {
   task: TaskListItem;
   assignees: Assignee[];
+  /**
+   * The signed-in user. Used ONLY to choose between the ordinary "Terminer"
+   * and the intervention flow — the server re-decides both authority and the
+   * reason requirement (WES-3B), so a wrong value here changes nothing but the
+   * label the operator sees.
+   */
+  currentUserId?: string | null;
   /** False when the pinned policy could not be resolved (WES-3J fail-closed). */
   policyResolved?: boolean;
   canUpdate: boolean;
@@ -47,6 +56,10 @@ export function TaskRow({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [intervening, setIntervening] = useState(false);
+  // Unassigned counts as "not mine": the server refuses it too, and the dialog
+  // explains that it must be assigned or completed as an intervention.
+  const isMine = Boolean(currentUserId && task.assignedToId && task.assignedToId === currentUserId);
 
   function run(fn: () => Promise<ActionResult>) {
     setError(null);
@@ -130,11 +143,18 @@ export function TaskRow({
 
             {task.status !== "DONE" && task.status !== "CANCELLED" && (
               <button
-                onClick={() => run(() => completeTask(task.id))}
+                onClick={() =>
+                  // WES-3B — completing work that is not yours is an
+                  // INTERVENTION and needs a stated reason. That path existed
+                  // server-side but was unreachable: the UI always called
+                  // completeTask with no reason, so a non-assignee got
+                  // `not_assigned` and (untranslated) a generic failure.
+                  isMine ? run(() => completeTask(task.id)) : setIntervening(true)
+                }
                 disabled={pending}
                 className="rounded-md border border-teal-200 px-2 py-1 text-xs font-medium text-teal-700 hover:bg-teal-50 disabled:opacity-50"
               >
-                {t.tasks.actions.complete}
+                {isMine ? t.tasks.actions.complete : t.tasks.actions.completeForOther}
               </button>
             )}
             {canDelete && task.status !== "CANCELLED" && (
@@ -151,6 +171,22 @@ export function TaskRow({
       </div>
 
       {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+
+      {/* UAT — the same accessible dialog used for invoice issuance. */}
+      <PromptDialog
+        open={intervening}
+        mode="text"
+        title={t.tasks.actions.interventionTitle}
+        help={t.tasks.actions.interventionHelp}
+        label={t.tasks.actions.interventionLabel}
+        required
+        submitLabel={t.tasks.actions.complete}
+        onCancel={() => setIntervening(false)}
+        onSubmit={(reason) => {
+          setIntervening(false);
+          run(() => completeTask(task.id, { reason }));
+        }}
+      />
     </div>
   );
 }

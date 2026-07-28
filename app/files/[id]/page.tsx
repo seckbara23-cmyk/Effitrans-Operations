@@ -241,6 +241,7 @@ export default async function FileDetailPage({ params }: { params: { id: string 
       <FileForm mode="edit" fileId={file.id} initial={file} clients={clients} canUpdate={canUpdate} />
       {canReadTasks && (
         <TaskPanel
+          currentUserId={user.id}
           fileId={file.id}
           tasks={tasks}
           assignees={taskAssignees}

@@ -112,7 +112,11 @@ export const t = {
       CUSTOMS_HANDOFF: "Dossier prêt pour déclaration douanière",
       TRANSPORT_HANDOFF: "Dossier prêt pour transport",
       FINANCE_HANDOFF: "Dossier prêt pour facturation",
-      ARCHIVE_HANDOFF: "Dossier prêt pour archivage",
+      // A REMINDER, not an action. Completing this task does not close or
+      // archive anything — closure runs through « Clôture du dossier »
+      // (FileWorkflow -> transitionFile). The old wording implied the
+      // opposite and sent operators to the wrong control.
+      ARCHIVE_HANDOFF: "Vérifier que le dossier est prêt pour clôture",
     },
     notifyBody: "Dossier {file} transféré au service {dept}.",
     cards: {
@@ -1588,6 +1592,11 @@ export const t = {
       create: "Créer",
       saving: "Enregistrement…",
       complete: "Terminer",
+      completeForOther: "Terminer (intervention)",
+      interventionTitle: "Terminer la tâche d'une autre personne",
+      interventionHelp:
+        "Cette tâche est assignée à quelqu'un d'autre. L'intervention est enregistrée dans l'audit avec votre motif.",
+      interventionLabel: "Motif de l'intervention",
       cancel: "Annuler",
       assignTo: "Assigner…",
       unassigned: "Non assigné",
@@ -1610,6 +1619,11 @@ export const t = {
       invalid_transition: "Transition de statut non autorisée.",
       file_not_found: "Dossier introuvable.",
       not_found: "Tâche introuvable.",
+      // WES-3B refusals. Both existed server-side and neither was translated,
+      // so a precise refusal was flattened into the generic message.
+      not_assigned:
+        "Cette tâche n'est pas la vôtre. Assignez-la d'abord, ou terminez-la au titre d'une intervention en indiquant un motif.",
+      reason_required: "Un motif est obligatoire pour terminer la tâche d'une autre personne.",
       generic: "L'action a échoué. Veuillez réessayer.",
     },
   },
