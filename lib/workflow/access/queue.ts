@@ -28,6 +28,7 @@
  * grants at least summary access, and detail fields are omitted when it does
  * not grant current detail.
  */
+import { canonicalWorkflowInput } from "@/lib/workflow/canonical-input";
 import { missingDocumentationEvidence } from "@/lib/documents/requirements";
 import "server-only";
 import { cache } from "react";
@@ -206,7 +207,7 @@ export const getDepartmentWorkQueue = cache(async (): Promise<DepartmentQueue> =
     const cust = customsBy.get(f.id);
     const tr = transportBy.get(f.id);
 
-    const projection = buildCanonicalProjection({
+    const projection = buildCanonicalProjection(canonicalWorkflowInput({
       fileId: f.id,
       file: { status: f.status, type: f.type },
       documents: fileDocs.map((d) => ({ status: d.status })),
@@ -220,7 +221,7 @@ export const getDepartmentWorkQueue = cache(async (): Promise<DepartmentQueue> =
       transport: tr ? { status: tr.status as string } : null,
       invoices: invoicesBy.get(f.id) ?? [],
       podApproved: (tr?.status as string | undefined) === "POD_RECEIVED",
-    });
+    }));
 
     const responsible = projection.responsibleDepartment;
     if (!responsible) continue;

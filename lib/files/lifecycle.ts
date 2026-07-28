@@ -14,6 +14,7 @@
  * canonical projection (lib/workflow/projection.ts), which consumes this. Two
  * percentages over the same dossier is exactly what WES-2 exists to end.
  */
+import type { CanonicalWorkflowInput } from "@/lib/workflow/canonical-input";
 import { isVerified } from "@/lib/documents/doctrine";
 import { t } from "@/lib/i18n";
 
@@ -112,7 +113,7 @@ export const TRANSPORT_RANK: Record<string, number> = {
   CANCELLED: 0,
 };
 
-export function getDossierLifecycle(input: LifecycleInput): DossierLifecycle {
+export function getDossierLifecycle(input: CanonicalWorkflowInput): DossierLifecycle {
   const L = t.lifecycle;
   const { file } = input;
   const opened = file.status !== "DRAFT";

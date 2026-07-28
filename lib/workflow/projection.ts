@@ -38,6 +38,7 @@
  * This module adds the ladder, the ratchet and the one formula on top; it does
  * not re-derive a single fact.
  */
+import type { CanonicalWorkflowInput } from "@/lib/workflow/canonical-input";
 import { isVerified } from "@/lib/documents/doctrine";
 import {
   CUSTOMS_RANK,
@@ -146,7 +147,7 @@ function reachedOrdinal(input: LifecycleInput): number {
  * Takes the SAME input the existing lifecycle tracker takes, so no consumer needs
  * new data plumbing to migrate onto it.
  */
-export function buildCanonicalProjection(input: LifecycleInput): CanonicalProjection {
+export function buildCanonicalProjection(input: CanonicalWorkflowInput): CanonicalProjection {
   // The facts. Existing, tested derivation — reused, never re-implemented.
   const lifecycle: DossierLifecycle = getDossierLifecycle(input);
 

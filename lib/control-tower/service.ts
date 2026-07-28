@@ -8,6 +8,7 @@
  * schema, no stored values, no duplicate lifecycle logic. Finance data is loaded
  * only when the viewer holds finance:read.
  */
+import { canonicalWorkflowInput } from "@/lib/workflow/canonical-input";
 import { isVerified } from "@/lib/documents/doctrine";
 import { missingDocumentationEvidence } from "@/lib/documents/requirements";
 import "server-only";
@@ -230,7 +231,7 @@ export const getControlTower = cache(async (
     }).map((m) => ({ label: m.label }));
     const cust = customsByFile.get(f.id);
     const tr = transportByFile.get(f.id);
-    const lifecycleInput = {
+    const lifecycleInput = canonicalWorkflowInput({
       fileId: f.id,
       file: { status: f.status, type: f.type },
       documents: fileDocs.map((d) => ({ status: d.status })),
@@ -239,7 +240,7 @@ export const getControlTower = cache(async (
       transport: tr ? { status: tr.status } : null,
       invoices: invoicesByFile.get(f.id) ?? [],
       podApproved: podByFile.has(f.id),
-    };
+    });
     const lifecycle = getDossierLifecycle(lifecycleInput);
     const projection = buildCanonicalProjection(lifecycleInput);
 

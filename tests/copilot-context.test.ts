@@ -1,3 +1,4 @@
+import { canonicalWorkflowInput, type CanonicalWorkflowInput } from "@/lib/workflow/canonical-input";
 import { describe, it, expect } from "vitest";
 import { assembleCopilotContext, type AssembleInput, type CopilotAccess } from "@/lib/copilot/context";
 import { buildCanonicalProjection } from "@/lib/workflow/projection";
@@ -59,7 +60,7 @@ function lifecycleInputFor(file: FileDetail) {
 }
 
 function lifecycleFor(file: FileDetail): ReturnType<typeof getDossierLifecycle> {
-  return getDossierLifecycle(lifecycleInputFor(file));
+  return getDossierLifecycle(canonicalWorkflowInput(lifecycleInputFor(file)));
 }
 
 const FULL_ACCESS: CopilotAccess = {
@@ -77,7 +78,7 @@ function baseInput(overrides: Partial<AssembleInput> = {}): AssembleInput {
     access: FULL_ACCESS,
     now: new Date("2026-06-21T00:00:00.000Z"),
     lifecycle: lifecycleFor(FILE),
-    projection: buildCanonicalProjection(lifecycleInputFor(FILE)),
+    projection: buildCanonicalProjection(canonicalWorkflowInput(lifecycleInputFor(FILE))),
     openHandoff: null,
     documents: DOCS,
     missingDocuments: [{ code: "BL", label: "Connaissement" }],

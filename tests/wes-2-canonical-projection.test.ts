@@ -11,6 +11,7 @@
  *   PURE      the projection summarises facts — no SLA, routing, ownership,
  *             document policy, or tasks
  */
+import { canonicalWorkflowInput, type CanonicalWorkflowInput } from "@/lib/workflow/canonical-input";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, it, expect } from "vitest";
@@ -36,8 +37,8 @@ const TRACKER = read("../components/files/lifecycle-tracker.tsx");
 const DRIVER = read("../lib/driver/service.ts");
 
 /** A dossier at any point of the ladder. Everything defaults to "not started". */
-function mk(over: Partial<LifecycleInput> = {}): LifecycleInput {
-  return {
+function mk(over: Partial<LifecycleInput> = {}): CanonicalWorkflowInput {
+  return canonicalWorkflowInput({
     fileId: "f1",
     file: { status: "OPENED", type: "IMP" },
     documents: [],
@@ -47,12 +48,12 @@ function mk(over: Partial<LifecycleInput> = {}): LifecycleInput {
     invoices: [],
     podApproved: false,
     ...over,
-  };
+  });
 }
 
 const APPROVED_DOC = { status: "APPROVED" };
-const stageOf = (i: LifecycleInput) => buildCanonicalProjection(i).currentStage;
-const pct = (i: LifecycleInput) => buildCanonicalProjection(i).progressPercent;
+const stageOf = (i: CanonicalWorkflowInput) => buildCanonicalProjection(i).currentStage;
+const pct = (i: CanonicalWorkflowInput) => buildCanonicalProjection(i).progressPercent;
 
 // ============================ A. The ladder (1-5) ===========================
 
@@ -153,7 +154,7 @@ describe("RATCHET — a dossier can only move forward", () => {
   });
 
   it("10 — the stage never decreases across a forward walk of the whole lifecycle", () => {
-    const walk: LifecycleInput[] = [
+    const walk: CanonicalWorkflowInput[] = [
       mk({ file: { status: "DRAFT", type: "IMP" } }),
       mk({}),
       mk({ documents: [APPROVED_DOC] }),

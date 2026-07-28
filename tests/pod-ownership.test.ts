@@ -10,6 +10,7 @@
  * idempotency, and the scope boundaries (no driver upload, no GPS, no new
  * department/role/permission/table).
  */
+import { canonicalWorkflowInput, type CanonicalWorkflowInput } from "@/lib/workflow/canonical-input";
 import { describe, expect, it } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -29,7 +30,7 @@ const code = (p: string) => read(p).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\
 const RECEIPT = "lib/transport/pod-receipt.ts";
 const DOC_ACTIONS = "lib/documents/actions.ts";
 
-const mk = (over: Partial<LifecycleInput> = {}): LifecycleInput => ({
+const mk = (over: Partial<CanonicalWorkflowInput> = {}): CanonicalWorkflowInput => canonicalWorkflowInput({
   fileId: "f1",
   file: { status: "DELIVERED", type: "IMP" },
   documents: [{ status: "APPROVED" }],
@@ -47,34 +48,34 @@ const stageOf = (lc: ReturnType<typeof getDossierLifecycle>, key: string) =>
 // ---------------------------------------------------------------------------
 describe("responsibility after delivery", () => {
   it("DELIVERED with no verified POD → responsible department is OPERATIONS", () => {
-    const lc = getDossierLifecycle(mk());
+    const lc = getDossierLifecycle(canonicalWorkflowInput(mk()));
     expect(lc.currentStep).toBe("delivery_proof");
     expect(lc.currentDepartment).toBe("documentation");
     expect(canonicalDepartmentForLifecycle("documentation")).toBe("OPERATIONS");
   });
 
   it("FINANCE is NOT responsible while the POD is missing", () => {
-    const lc = getDossierLifecycle(mk());
+    const lc = getDossierLifecycle(canonicalWorkflowInput(mk()));
     expect(lc.currentDepartment).not.toBe("finance");
     expect(stageOf(lc, "invoiced")).toBe("pending");
   });
 
   it("the await_pod gate no longer sits on the finance stage", () => {
-    const lc = getDossierLifecycle(mk());
+    const lc = getDossierLifecycle(canonicalWorkflowInput(mk()));
     expect(lc.nextAction?.reasonCode).toBe("upload_delivery_proof");
     expect(lc.nextAction?.reasonCode).not.toBe("await_pod");
     expect(code("lib/files/lifecycle.ts")).not.toContain('gateCode: !input.podApproved ? "await_pod"');
   });
 
   it("FINANCE becomes responsible only after POD verification", () => {
-    const lc = getDossierLifecycle(mk({ transport: { status: "POD_RECEIVED" }, podApproved: true }));
+    const lc = getDossierLifecycle(canonicalWorkflowInput(mk({ transport: { status: "POD_RECEIVED" }, podApproved: true })));
     expect(stageOf(lc, "delivery_proof")).toBe("completed");
     expect(lc.currentDepartment).toBe("finance");
   });
 
   it("the canonical projection agrees — one projection, not a second opinion", () => {
-    const before = buildCanonicalProjection(mk());
-    const after = buildCanonicalProjection(mk({ transport: { status: "POD_RECEIVED" }, podApproved: true }));
+    const before = buildCanonicalProjection(canonicalWorkflowInput(mk()));
+    const after = buildCanonicalProjection(canonicalWorkflowInput(mk({ transport: { status: "POD_RECEIVED" }, podApproved: true })));
     expect(before?.responsibleDepartment).toBe("documentation");
     expect(after?.responsibleDepartment).toBe("finance");
   });
@@ -83,11 +84,11 @@ describe("responsibility after delivery", () => {
     // `transportApplicable = !transportCancelled`, so the delivery-proof stage
     // inherits the same rule as every other transport stage — no new notion of
     // applicability is introduced.
-    const cancelled = getDossierLifecycle(mk({ transport: { status: "CANCELLED" } }));
+    const cancelled = getDossierLifecycle(canonicalWorkflowInput(mk({ transport: { status: "CANCELLED" } })));
     expect(stageOf(cancelled, "delivery_proof")).toBe(stageOf(cancelled, "delivered"));
     expect(stageOf(cancelled, "delivery_proof")).toBe("skipped");
 
-    const live = getDossierLifecycle(mk({ transport: { status: "IN_TRANSIT" } }));
+    const live = getDossierLifecycle(canonicalWorkflowInput(mk({ transport: { status: "IN_TRANSIT" } })));
     expect(stageOf(live, "delivery_proof")).toBe("pending");
   });
 });

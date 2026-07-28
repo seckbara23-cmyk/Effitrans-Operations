@@ -8,6 +8,7 @@
  * Request-memoized: a dossier page asks several times per render, and the
  * answer cannot change mid-request.
  */
+import { canonicalWorkflowInput } from "@/lib/workflow/canonical-input";
 import { missingDocumentationEvidence } from "@/lib/documents/requirements";
 import "server-only";
 import { cache } from "react";
@@ -108,7 +109,7 @@ export const getDossierAccess = cache(
 
     const podApproved = transport.data?.status === "POD_RECEIVED";
 
-    const projection = buildCanonicalProjection({
+    const projection = buildCanonicalProjection(canonicalWorkflowInput({
       fileId,
       file: { status: file.status, type: file.type },
       documents,
@@ -122,7 +123,7 @@ export const getDossierAccess = cache(
       // this resolver must not require.
       invoices: (invoices.data ?? []).map((i) => ({ status: i.status as string, balance: 0 })),
       podApproved,
-    });
+    }));
 
     // Current work assignment.
     const { data: task } = await supabase

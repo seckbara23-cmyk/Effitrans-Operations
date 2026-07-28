@@ -1,3 +1,4 @@
+import { canonicalWorkflowInput, type CanonicalWorkflowInput } from "@/lib/workflow/canonical-input";
 import { describe, it, expect } from "vitest";
 import { getDossierLifecycle, type LifecycleInput } from "@/lib/files/lifecycle";
 import {
@@ -9,8 +10,8 @@ import {
   type PortalStageStatus,
 } from "@/lib/portal/progress-map";
 
-function timeline(o: Partial<LifecycleInput>) {
-  const lc = getDossierLifecycle({
+function timeline(o: Partial<CanonicalWorkflowInput>) {
+  const lc = getDossierLifecycle(canonicalWorkflowInput({
     fileId: "f",
     file: o.file ?? { status: "OPENED", type: "IMP" },
     documents: o.documents ?? [],
@@ -19,7 +20,7 @@ function timeline(o: Partial<LifecycleInput>) {
     transport: o.transport ?? null,
     invoices: o.invoices ?? [],
     podApproved: o.podApproved ?? false,
-  });
+  }));
   return toPortalTimeline(lc.steps);
 }
 const status = (tl: ReturnType<typeof timeline>, key: PortalStageKey): PortalStageStatus =>

@@ -1,9 +1,10 @@
+import { canonicalWorkflowInput, type CanonicalWorkflowInput } from "@/lib/workflow/canonical-input";
 import { describe, it, expect } from "vitest";
 import { buildCanonicalProjection } from "@/lib/workflow/projection";
 import { getDossierLifecycle, type LifecycleInput, type StepStatus } from "@/lib/files/lifecycle";
 
-function mk(overrides: Partial<LifecycleInput>): LifecycleInput {
-  return {
+function mk(overrides: Partial<CanonicalWorkflowInput>): CanonicalWorkflowInput {
+  return canonicalWorkflowInput({
     fileId: "f1",
     file: { status: "DRAFT", type: "IMP" },
     documents: [],
@@ -13,24 +14,24 @@ function mk(overrides: Partial<LifecycleInput>): LifecycleInput {
     invoices: [],
     podApproved: false,
     ...overrides,
-  };
+  });
 }
 const statusOf = (lc: ReturnType<typeof getDossierLifecycle>, key: string): StepStatus =>
   lc.steps.find((s) => s.key === key)!.status;
 
 describe("getDossierLifecycle (Phase 2.0 addendum)", () => {
   it("1. new dossier — draft is current, nothing done", () => {
-    const lc = getDossierLifecycle(mk({ file: { status: "DRAFT", type: "IMP" }, missingRequired: [{ label: "Facture commerciale" }] }));
+    const lc = getDossierLifecycle(canonicalWorkflowInput(mk({ file: { status: "DRAFT", type: "IMP" }, missingRequired: [{ label: "Facture commerciale" }] })));
     expect(statusOf(lc, "draft")).toBe("current");
     expect(statusOf(lc, "quote_approved")).toBe("pending");
     expect(lc.currentStep).toBe("draft");
     expect(lc.nextAction?.reasonCode).toBe("approve_quote");
     // WES-2 — progress lives in the canonical projection, not here.
-    expect(buildCanonicalProjection(mk({ file: { status: "DRAFT", type: "IMP" }, missingRequired: [{ label: "Facture commerciale" }] })).progressPercent).toBe(0);
+    expect(buildCanonicalProjection(canonicalWorkflowInput(mk({ file: { status: "DRAFT", type: "IMP" }, missingRequired: [{ label: "Facture commerciale" }] }))).progressPercent).toBe(0);
   });
 
   it("2. missing documents — collection is blocked with the missing list", () => {
-    const lc = getDossierLifecycle(mk({ file: { status: "OPENED", type: "IMP" }, missingRequired: [{ label: "Facture commerciale" }] }));
+    const lc = getDossierLifecycle(canonicalWorkflowInput(mk({ file: { status: "OPENED", type: "IMP" }, missingRequired: [{ label: "Facture commerciale" }] })));
     expect(statusOf(lc, "draft")).toBe("completed");
     expect(statusOf(lc, "quote_approved")).toBe("completed");
     expect(statusOf(lc, "documents_collection")).toBe("blocked");
@@ -40,7 +41,7 @@ describe("getDossierLifecycle (Phase 2.0 addendum)", () => {
   });
 
   it("3. documents verified — customs preparation becomes current", () => {
-    const lc = getDossierLifecycle(mk({ file: { status: "IN_PROGRESS", type: "IMP" }, documents: [{ status: "APPROVED" }], missingRequired: [] }));
+    const lc = getDossierLifecycle(canonicalWorkflowInput(mk({ file: { status: "IN_PROGRESS", type: "IMP" }, documents: [{ status: "APPROVED" }], missingRequired: [] })));
     expect(statusOf(lc, "documents_collection")).toBe("completed");
     expect(statusOf(lc, "documents_verified")).toBe("completed");
     expect(statusOf(lc, "customs_preparation")).toBe("current");
@@ -48,12 +49,12 @@ describe("getDossierLifecycle (Phase 2.0 addendum)", () => {
   });
 
   it("3b. customs declaration is gated until documents are verified", () => {
-    const lc = getDossierLifecycle(mk({
+    const lc = getDossierLifecycle(canonicalWorkflowInput(mk({
       file: { status: "OPENED", type: "IMP" },
       documents: [{ status: "PENDING_REVIEW" }], // collected but not approved
       missingRequired: [{ label: "BL" }],
       customs: { status: "NOT_STARTED" },
-    }));
+    })));
     // collection done (something uploaded), verified is the frontier, awaiting review
     expect(statusOf(lc, "documents_collection")).toBe("completed");
     expect(statusOf(lc, "documents_verified")).toBe("current");
@@ -62,11 +63,11 @@ describe("getDossierLifecycle (Phase 2.0 addendum)", () => {
   });
 
   it("4. customs declared — inspection is current", () => {
-    const lc = getDossierLifecycle(mk({
+    const lc = getDossierLifecycle(canonicalWorkflowInput(mk({
       file: { status: "IN_PROGRESS", type: "IMP" },
       documents: [{ status: "APPROVED" }],
       customs: { status: "DECLARED" },
-    }));
+    })));
     expect(statusOf(lc, "customs_preparation")).toBe("completed");
     expect(statusOf(lc, "customs_declaration")).toBe("completed");
     expect(statusOf(lc, "customs_inspection")).toBe("current");
@@ -74,12 +75,12 @@ describe("getDossierLifecycle (Phase 2.0 addendum)", () => {
   });
 
   it("5. customs released — transport planning becomes current (no gate)", () => {
-    const lc = getDossierLifecycle(mk({
+    const lc = getDossierLifecycle(canonicalWorkflowInput(mk({
       file: { status: "IN_PROGRESS", type: "IMP" },
       documents: [{ status: "APPROVED" }],
       customs: { status: "RELEASED" },
       transport: { status: "NOT_STARTED" },
-    }));
+    })));
     expect(statusOf(lc, "release_authorized")).toBe("completed");
     expect(statusOf(lc, "transport_planned")).toBe("current");
     expect(lc.nextAction?.reasonCode).toBe("plan_transport");
@@ -89,13 +90,13 @@ describe("getDossierLifecycle (Phase 2.0 addendum)", () => {
     // UAT-1 ownership move. This previously asserted that `invoiced` was
     // current with an `await_pod` gate — i.e. that FINANCE was responsible for
     // chasing evidence it does not collect. The wait is now its own stage.
-    const lc = getDossierLifecycle(mk({
+    const lc = getDossierLifecycle(canonicalWorkflowInput(mk({
       file: { status: "DELIVERED", type: "IMP" },
       documents: [{ status: "APPROVED" }],
       customs: { status: "RELEASED" },
       transport: { status: "DELIVERED" },
       podApproved: false,
-    }));
+    })));
     expect(statusOf(lc, "delivered")).toBe("completed");
     expect(statusOf(lc, "delivery_proof")).toBe("current");
     expect(statusOf(lc, "invoiced")).toBe("pending");
@@ -105,13 +106,13 @@ describe("getDossierLifecycle (Phase 2.0 addendum)", () => {
   });
 
   it("6b. once the POD is verified, invoicing becomes current and Finance owns it", () => {
-    const lc = getDossierLifecycle(mk({
+    const lc = getDossierLifecycle(canonicalWorkflowInput(mk({
       file: { status: "DELIVERED", type: "IMP" },
       documents: [{ status: "APPROVED" }],
       customs: { status: "RELEASED" },
       transport: { status: "POD_RECEIVED" },
       podApproved: true,
-    }));
+    })));
     expect(statusOf(lc, "delivery_proof")).toBe("completed");
     expect(statusOf(lc, "invoiced")).toBe("current");
     expect(lc.currentDepartment).toBe("finance");
@@ -120,54 +121,54 @@ describe("getDossierLifecycle (Phase 2.0 addendum)", () => {
   });
 
   it("7. invoice issued — payment is current", () => {
-    const lc = getDossierLifecycle(mk({
+    const lc = getDossierLifecycle(canonicalWorkflowInput(mk({
       file: { status: "DELIVERED", type: "IMP" },
       documents: [{ status: "APPROVED" }],
       customs: { status: "RELEASED" },
       transport: { status: "POD_RECEIVED" },
       podApproved: true,
       invoices: [{ status: "ISSUED", balance: 1000 }],
-    }));
+    })));
     expect(statusOf(lc, "invoiced")).toBe("completed");
     expect(statusOf(lc, "paid")).toBe("current");
     expect(lc.nextAction?.reasonCode).toBe("record_payment");
   });
 
   it("8. invoice paid — archive is current", () => {
-    const lc = getDossierLifecycle(mk({
+    const lc = getDossierLifecycle(canonicalWorkflowInput(mk({
       file: { status: "DELIVERED", type: "IMP" },
       documents: [{ status: "APPROVED" }],
       customs: { status: "RELEASED" },
       transport: { status: "POD_RECEIVED" },
       podApproved: true,
       invoices: [{ status: "PAID", balance: 0 }],
-    }));
+    })));
     expect(statusOf(lc, "paid")).toBe("completed");
     expect(statusOf(lc, "archived")).toBe("current");
     expect(lc.nextAction?.reasonCode).toBe("close_dossier");
   });
 
   it("9. archived — everything complete, no next action", () => {
-    const lc = getDossierLifecycle(mk({
+    const lc = getDossierLifecycle(canonicalWorkflowInput(mk({
       file: { status: "CLOSED", type: "IMP" },
       documents: [{ status: "APPROVED" }],
       customs: { status: "RELEASED" },
       transport: { status: "POD_RECEIVED" },
       podApproved: true,
       invoices: [{ status: "PAID", balance: 0 }],
-    }));
+    })));
     expect(lc.steps.every((s) => s.status === "completed")).toBe(true);
     expect(lc.currentStep).toBeNull();
     expect(lc.nextAction).toBeNull();
   });
 
   it("exposes current and next department for handoff display", () => {
-    const lc = getDossierLifecycle(mk({
+    const lc = getDossierLifecycle(canonicalWorkflowInput(mk({
       file: { status: "IN_PROGRESS", type: "IMP" },
       documents: [{ status: "APPROVED" }],
       customs: { status: "RELEASED" },
       transport: { status: "NOT_STARTED" },
-    }));
+    })));
     expect(lc.currentDepartment).toBe("transport");
     // UAT-1 — the department after transport is OPERATIONS (delivery proof),
     // not finance. Finance is reached only once the POD is verified.
@@ -175,12 +176,12 @@ describe("getDossierLifecycle (Phase 2.0 addendum)", () => {
   });
 
   it("skips customs steps when customs is not applicable (required=false)", () => {
-    const lc = getDossierLifecycle(mk({
+    const lc = getDossierLifecycle(canonicalWorkflowInput(mk({
       file: { status: "IN_PROGRESS", type: "IMP" },
       documents: [{ status: "APPROVED" }],
       customs: { status: "NOT_STARTED", required: false },
       transport: { status: "NOT_STARTED" },
-    }));
+    })));
     expect(statusOf(lc, "customs_preparation")).toBe("skipped");
     expect(statusOf(lc, "release_authorized")).toBe("skipped");
     // frontier skips straight to transport

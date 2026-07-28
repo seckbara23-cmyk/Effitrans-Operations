@@ -1,3 +1,4 @@
+import { getCanonicalDossierState } from "@/lib/workflow/dossier-state";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/page-header";
@@ -147,17 +148,26 @@ export default async function FileDetailPage({ params }: { params: { id: string 
   const canReadComms = hasPermission(permissions, "communication:read");
   const communications = canReadComms ? await listCommunicationsForFile(file.id) : [];
 
-  // Read-only derived lifecycle tracker (Phase 2.0 addendum) — no mutation.
-  const lifecycleInput = {
-    fileId: file.id,
-    file: { status: file.status, type: file.type },
-    documents: documents.map((d) => ({ status: d.status })),
-    missingRequired: missingDocs.map((m) => ({ label: m.label })),
-    customs: customsRecord ? { status: customsRecord.status, required: customsRecord.required } : null,
-    transport: transportRecord ? { status: transportRecord.status } : null,
-    invoices: (finance?.invoices ?? []).map((i) => ({ status: i.status, balance: i.balance })),
-    podApproved,
-  };
+  // ===========================================================================
+  // CANONICAL STATE — viewer-independent, by construction.
+  //
+  // This block used to assemble the workflow input from PERMISSION-GATED reads
+  // (`canReadCustoms ? customsRecord : null`), so a Finance user without
+  // customs:read was told to "prepare the customs declaration" on a dossier
+  // that was delivered, invoiced and paid: absence of permission was read as
+  // absence of progress.
+  //
+  // The state now comes from the ONE resolver, which reads everything on the
+  // admin client and does not know who is asking. The `canRead*` flags below
+  // still decide which PANELS render and which ACTIONS appear — never what the
+  // operational truth is.
+  // ===========================================================================
+  const canonical = await getCanonicalDossierState(file.id, user.tenantId);
+  // The dossier was loaded above, so the resolver cannot miss it; notFound()
+  // rather than render half a page against a dossier that vanished mid-request.
+  if (!canonical) return null;
+  const { lifecycle, projection } = canonical;
+
   // WES-3D — the ONE access contract. Everything the ownership panel shows, and
   // the reason it is visible at all, comes from here.
   const dossierAccess = await getDossierAccess(file.id);
@@ -167,10 +177,6 @@ export default async function FileDetailPage({ params }: { params: { id: string 
   const artifactItems = canReadDocs ? await getArtifactPanel(file.id) : [];
   const currentTask = tasks.find((t) => t.status === "TODO" || t.status === "IN_PROGRESS") ?? null;
 
-  const lifecycle = getDossierLifecycle(lifecycleInput);
-  // WES-2 — the ONE canonical projection. Progress, stage and next action come
-  // from here; no component on this page computes any of them.
-  const projection = buildCanonicalProjection(lifecycleInput);
   const openHandoff = await getOpenHandoffForFile(file.id);
   const sla = await getDossierStage(file.id, lifecycle.currentDepartment, lifecycle.currentStep).catch(() => null);
 

@@ -19,6 +19,7 @@
 // NOTE: runtime service imports are loaded dynamically inside buildCopilotContext
 // (below) so that the PURE `assembleCopilotContext` — and its unit tests — never
 // pull in server-only modules (e.g. the RSC `cache()` in lib/rbac/permissions).
+import { canonicalWorkflowInput } from "@/lib/workflow/canonical-input";
 import { isVerified } from "@/lib/documents/doctrine";
 import { assessRisk, riskInputFromContext, type RiskAssessment } from "@/lib/copilot/risk-engine";
 import { capItems, isCriticalEventType, COMPRESS_LIMITS } from "@/lib/copilot/compress";
@@ -544,8 +545,18 @@ export async function buildCopilotContext(
     invoices: (finance?.invoices ?? []).map((i) => ({ status: i.status, balance: i.balance })),
     podApproved,
   };
-  const lifecycle = getDossierLifecycle(lifecycleInput);
-  const projection = buildCanonicalProjection(lifecycleInput);
+  // CANONICAL STATE — the copilot must describe the SAME dossier everyone else
+  // sees. It previously built the workflow input from `access.*`-gated reads,
+  // so a Finance user's copilot reported a different stage than a Customs
+  // user's. `access.*` still governs which DETAIL is redacted below.
+  // Dynamic, like the other server-only imports in this function: a static
+  // import drags React `cache` into the pure assembler's test bundle.
+  const { getCurrentUser } = await import("@/lib/auth/current-user");
+  const { getCanonicalDossierState } = await import("@/lib/workflow/dossier-state");
+  const viewer = await getCurrentUser();
+  const canonical = viewer ? await getCanonicalDossierState(file.id, viewer.tenantId) : null;
+  const lifecycle = canonical?.lifecycle ?? getDossierLifecycle(canonicalWorkflowInput(lifecycleInput));
+  const projection = canonical?.projection ?? buildCanonicalProjection(canonicalWorkflowInput(lifecycleInput));
 
   const [openHandoff, sla] = await Promise.all([
     getOpenHandoffForFile(file.id),

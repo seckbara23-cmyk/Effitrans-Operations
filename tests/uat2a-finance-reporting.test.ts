@@ -9,6 +9,7 @@
  *     whose delivery note the dossier page already showed as verified, because
  *     those aggregates still compared to the pre-WES-4 "APPROVED" literal.
  */
+import { canonicalWorkflowInput, type CanonicalWorkflowInput } from "@/lib/workflow/canonical-input";
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -208,9 +209,9 @@ describe("reporting reconciliation — every surface uses canonical doctrine", (
       customs: null, transport: null, invoices: [], podApproved: false,
     };
     // Before the fix this ordinal was never reached for a VERIFIED document.
-    expect(buildCanonicalProjection(base)).not.toBeNull();
-    const legacy = buildCanonicalProjection({ ...base, documents: [{ status: "APPROVED" }] });
-    expect(buildCanonicalProjection(base)?.progressPercent).toBe(legacy?.progressPercent);
+    expect(buildCanonicalProjection(canonicalWorkflowInput(base))).not.toBeNull();
+    const legacy = buildCanonicalProjection(canonicalWorkflowInput({ ...base, documents: [{ status: "APPROVED" }] }));
+    expect(buildCanonicalProjection(canonicalWorkflowInput(base))?.progressPercent).toBe(legacy?.progressPercent);
   });
 
   it("the lifecycle counts a VERIFIED document as collected", () => {
@@ -220,8 +221,8 @@ describe("reporting reconciliation — every surface uses canonical doctrine", (
       customs: null, transport: null, invoices: [], podApproved: false,
     });
     // VERIFIED and APPROVED must produce identical lifecycle answers.
-    expect(getDossierLifecycle(mk("VERIFIED")).currentStep)
-      .toBe(getDossierLifecycle(mk("APPROVED")).currentStep);
+    expect(getDossierLifecycle(canonicalWorkflowInput(mk("VERIFIED"))).currentStep)
+      .toBe(getDossierLifecycle(canonicalWorkflowInput(mk("APPROVED"))).currentStep);
   });
 
   it("leaves NON-document APPROVED statuses alone (finance_request)", () => {

@@ -9,6 +9,7 @@
  * the pure derivers — no duplicated lifecycle / risk / route / ETA calculation.
  * Presentation-only; no RLS or schema change.
  */
+import { canonicalWorkflowInput } from "@/lib/workflow/canonical-input";
 import { isVerified } from "@/lib/documents/doctrine";
 import { missingDocumentationEvidence } from "@/lib/documents/requirements";
 import "server-only";
@@ -108,7 +109,7 @@ export async function getPortalShipments(): Promise<PortalShipmentCard[]> {
     // UAT-2A — canonical doctrine, so the portal agrees with the dossier.
     const podApproved = fileDocs.some((d) => d.type_code === "DELIVERY_NOTE" && isVerified(d.status));
 
-    const lifecycleInput = {
+    const lifecycleInput = canonicalWorkflowInput({
       fileId: f.id,
       file: { status: f.status, type: f.type },
       documents: fileDocs.map((d) => ({ status: d.status })),
@@ -117,7 +118,7 @@ export async function getPortalShipments(): Promise<PortalShipmentCard[]> {
       transport: tr ? { status: tr.status } : null,
       invoices: invoices.map((i) => ({ status: i.status, balance: 0 })),
       podApproved,
-    };
+    });
     const lifecycle = getDossierLifecycle(lifecycleInput);
     const projection = buildCanonicalProjection(lifecycleInput);
     const timeline = toPortalTimeline(lifecycle.steps);

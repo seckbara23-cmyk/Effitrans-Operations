@@ -10,6 +10,7 @@
  * status. Never exposes internal risk scores, SLA thresholds, staff identities,
  * tasks, audit payloads or internal blockers.
  */
+import { canonicalWorkflowInput } from "@/lib/workflow/canonical-input";
 import { isVerified } from "@/lib/documents/doctrine";
 import { missingDocumentationEvidence } from "@/lib/documents/requirements";
 import "server-only";
@@ -176,7 +177,7 @@ export async function getPortalTracking(fileId: string): Promise<PortalTracking 
   }
 
   // Reuse the lifecycle engine → customer timeline (single source of truth).
-  const lifecycleInput = {
+  const lifecycleInput = canonicalWorkflowInput({
     fileId,
     file: { status: own.status, type: own.type },
     documents: docs.map((d) => ({ status: d.status })),
@@ -185,7 +186,7 @@ export async function getPortalTracking(fileId: string): Promise<PortalTracking 
     transport: tr ? { status: tr.status } : null,
     invoices,
     podApproved,
-  };
+  });
   const lifecycle = getDossierLifecycle(lifecycleInput);
   const projection = buildCanonicalProjection(lifecycleInput);
   const timeline = toPortalTimeline(lifecycle.steps);
