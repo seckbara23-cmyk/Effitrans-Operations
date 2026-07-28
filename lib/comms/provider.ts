@@ -20,6 +20,15 @@ export type OutboundEmail = {
   subject: string;
   html: string;
   text: string;
+  /**
+   * UAT-2B — optional file attachments. Added for the official invoice, which
+   * customers expect to receive as a PDF rather than a link. Optional and
+   * additive: every existing caller is unaffected.
+   *
+   * `contentBase64` is the EXACT stored artifact, read from the private bucket
+   * and never re-rendered.
+   */
+  attachments?: readonly { filename: string; contentBase64: string }[];
 };
 
 export type SendResult = { ok: boolean; error?: string };
@@ -103,13 +112,21 @@ export function isTestingSenderBlocked(
 export function buildResendPayload(
   email: OutboundEmail,
   from: string,
-): { from: string; to: string[]; subject: string; html: string; text: string; reply_to?: string } {
+): {
+  from: string; to: string[]; subject: string; html: string; text: string;
+  reply_to?: string; attachments?: { filename: string; content: string }[];
+} {
   return {
     from,
     to: [email.to],
     subject: email.subject,
     html: email.html,
     text: email.text,
+    // Omitted entirely when there are none, so the payload is byte-identical
+    // to before for every existing caller.
+    ...(email.attachments && email.attachments.length > 0
+      ? { attachments: email.attachments.map((a) => ({ filename: a.filename, content: a.contentBase64 })) }
+      : {}),
   };
 }
 

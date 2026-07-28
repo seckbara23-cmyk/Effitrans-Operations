@@ -90,6 +90,12 @@ export const AuditActions = {
   INVOICE_CREATED: "invoice.created",
   INVOICE_UPDATED: "invoice.updated",
   INVOICE_ISSUED: "invoice.issued",
+  // UAT-2B — customer delivery of the official invoice artifact. The success
+  // record carries the delivered artifact's SHA-256, so "what did the customer
+  // actually receive" stays answerable. Failures are recorded too: a silent
+  // failed send is indistinguishable from never having tried.
+  INVOICE_SENT: "invoice.sent",
+  INVOICE_SEND_FAILED: "invoice.send_failed",
   INVOICE_VOIDED: "invoice.voided",
   INVOICE_DELETED: "invoice.deleted",
   PAYMENT_RECORDED: "payment.recorded",

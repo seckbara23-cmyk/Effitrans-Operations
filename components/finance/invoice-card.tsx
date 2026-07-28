@@ -6,6 +6,7 @@
  * issued = record/reverse payments, void.
  */
 import { PromptDialog } from "./prompt-dialog";
+import { sendInvoiceToCustomer } from "@/lib/finance/invoice-send";
 import { PAYMENT_TERMS } from "@/lib/finance/issuance";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -230,6 +231,44 @@ export function InvoiceCard({
             {f.invoices.recordPayment}
           </button>
         </form>
+      )}
+
+      {/* UAT-2B — the official accounting document. Available in EVERY
+          non-draft state, including PAID, VOID and after archival: an invoice
+          that vanishes when the dossier closes is useless exactly when an
+          auditor asks for it. All three paths (here, the portal, the email
+          attachment) resolve to the SAME finalized artifact. */}
+      {!isDraft && invoice.invoiceNumber && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+          <span className="text-xs font-medium text-navy-900">
+            Facture officielle {invoice.invoiceNumber}
+          </span>
+          <a
+            href={`/api/invoices/${invoice.id}/pdf`}
+            target="_blank"
+            rel="noopener"
+            className="rounded-md border border-navy-200 bg-white px-2 py-1 text-xs font-medium text-navy-700 hover:bg-slate-50"
+          >
+            Télécharger le PDF
+          </a>
+          {canIssueInvoice && (
+            <button
+              onClick={() =>
+                run(async () => {
+                  const r = await sendInvoiceToCustomer(invoice.id);
+                  return r.ok ? { ok: true } : { ok: false, error: r.error };
+                })
+              }
+              disabled={pending}
+              className="rounded-md border border-teal-200 bg-white px-2 py-1 text-xs font-medium text-teal-700 hover:bg-teal-50 disabled:opacity-50"
+            >
+              Envoyer au client
+            </button>
+          )}
+          <span className="text-[11px] text-slate-400">
+            Document comptable immuable — le même fichier est envoyé et téléchargé.
+          </span>
+        </div>
       )}
 
       {/* Workflow actions */}

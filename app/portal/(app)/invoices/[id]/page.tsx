@@ -41,6 +41,19 @@ export default async function PortalInvoiceDetailPage({ params }: { params: { id
           <div>
             <p className="text-xs uppercase tracking-wide text-slate-500">{user.clientName}</p>
             <h1 className="tabular text-xl font-bold text-navy-900">{inv.invoiceNumber}</h1>
+            {/* UAT-2B — the SAME finalized artifact Finance downloads and the
+                customer email attaches. Protected route; the portal user is
+                authorized against their own client. */}
+            {inv.invoiceNumber && (
+              <a
+                href={`/api/invoices/${inv.id}/pdf`}
+                target="_blank"
+                rel="noopener"
+                className="mt-2 inline-block rounded-lg border border-teal-200 bg-white px-3 py-1.5 text-xs font-medium text-teal-700 hover:bg-teal-50"
+              >
+                Télécharger le PDF
+              </a>
+            )}
           </div>
           <div className="text-right text-sm text-slate-600">
             <p>{i.issueDate}: {inv.issueDate ?? "—"}</p>
