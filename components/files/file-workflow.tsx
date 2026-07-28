@@ -32,7 +32,11 @@ export function FileWorkflow({ file, canUpdate }: { file: FileDetail; canUpdate:
   }
 
   return (
-    <div className="surface space-y-4 p-5">
+    // `id="closure"` is the archive stage's navigation target. Before it the
+    // lifecycle's "Ouvrir →" resolved to /files/{id} — the page you were
+    // already on — because ANCHOR.archive was an empty string.
+    <div id="closure" className="surface scroll-mt-24 space-y-4 p-5">
+      <h2 className="text-sm font-semibold text-navy-900">Clôture du dossier</h2>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm">
           <span className="text-slate-500">{t.files.columns.status}: </span>

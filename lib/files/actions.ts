@@ -10,6 +10,8 @@
  *
  * No customs / documents / transport module / finance / invoices.
  */
+import { closureBlockers } from "./closure";
+import { invoiceTotals, paidAmount, balanceDue } from "@/lib/finance/calc";
 import { revalidatePath } from "next/cache";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
@@ -404,16 +406,58 @@ export async function transitionFile(id: string, toStatus: string): Promise<Acti
   // Phase 1.9 close guard: an IMP/EXP dossier with a REQUIRED customs record
   // that isn't RELEASED/CANCELLED cannot be closed (customs.required is the
   // escape hatch). No record / non-IMP-EXP / required=false => allowed.
+  // CLOSURE GUARD. The lifecycle already DISPLAYED an `await_payment` gate on
+  // the archive stage, but nothing enforced it: only customs was checked, so a
+  // dossier with an unpaid invoice — or with a payment recorded but never
+  // verified — closed without complaint. A displayed gate the server does not
+  // enforce is a suggestion, not a control.
+  //
+  // The rule now lives in ONE pure function that the display and this guard
+  // both call, and the refusal names the actual unmet requirement rather than
+  // returning a generic failure.
   if (toStatus === "CLOSED") {
-    const { data: customs } = await supabase
-      .from("customs_record")
-      .select("status, required")
-      .eq("file_id", id)
-      .is("deleted_at", null)
-      .maybeSingle();
-    if (!canCloseFile(file.type as string, customs ? { status: customs.status, required: customs.required } : null)) {
-      return { ok: false, error: "customs_not_released" };
-    }
+    const [customsRes, transportRes, invoiceRes] = await Promise.all([
+      supabase.from("customs_record").select("status, required")
+        .eq("file_id", id).eq("tenant_id", admin.tenantId).is("deleted_at", null).maybeSingle(),
+      supabase.from("transport_record").select("status")
+        .eq("file_id", id).eq("tenant_id", admin.tenantId).is("deleted_at", null).maybeSingle(),
+      supabase.from("invoice").select("id, status").eq("file_id", id).eq("tenant_id", admin.tenantId),
+    ]);
+
+    const invoiceRows = invoiceRes.data ?? [];
+    const invoiceIds = invoiceRows.map((i) => i.id as string);
+    const [lineRes, payRes] = invoiceIds.length
+      ? await Promise.all([
+          supabase.from("invoice_line").select("invoice_id, quantity, unit_amount, tax_rate")
+            .eq("tenant_id", admin.tenantId).in("invoice_id", invoiceIds),
+          supabase.from("payment").select("invoice_id, amount, reversed_at, verification_status")
+            .eq("tenant_id", admin.tenantId).in("invoice_id", invoiceIds),
+        ])
+      : [{ data: [] }, { data: [] }];
+
+    const invoices = invoiceRows.map((inv) => {
+      const invId = inv.id as string;
+      const lines = (lineRes.data ?? []).filter((l) => l.invoice_id === invId)
+        .map((l) => ({ quantity: Number(l.quantity), unitAmount: Number(l.unit_amount), taxRate: Number(l.tax_rate) }));
+      const pays = (payRes.data ?? []).filter((p) => p.invoice_id === invId && p.reversed_at == null);
+      const { total } = invoiceTotals(lines);
+      const paid = paidAmount(pays.map((p) => ({ amount: Number(p.amount), reversed: false })));
+      return { status: inv.status as string, balance: balanceDue(total, paid) };
+    });
+
+    const blockers = closureBlockers({
+      fileType: file.type as string,
+      customs: customsRes.data
+        ? { status: customsRes.data.status as string, required: customsRes.data.required as boolean }
+        : null,
+      transport: transportRes.data ? { status: transportRes.data.status as string } : null,
+      invoices,
+      payments: (payRes.data ?? [])
+        .filter((p) => p.reversed_at == null)
+        .map((p) => ({ verified: p.verification_status === "VERIFIED" })),
+    });
+
+    if (blockers.length > 0) return { ok: false, error: blockers[0] };
   }
 
   const patch: { status: string; opened_at?: string } = { status: toStatus };

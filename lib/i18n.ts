@@ -77,7 +77,11 @@ export const t = {
       delivery_proof: "Preuve de livraison",
       invoiced: "Facturé",
       paid: "Payé",
-      archived: "Archivé",
+      // The final stage is CLOSURE. There is no ARCHIVED status in the model
+      // (deferred), so labelling the pending stage "Archivé" told the operator
+      // the dossier was already archived while the closing action was still
+      // outstanding.
+      archived: "Clôture",
     },
     reasons: {
       approve_quote: "Approuver le devis et ouvrir le dossier",
@@ -1731,6 +1735,12 @@ export const t = {
       numbering_failed: "Échec de la génération du numéro de dossier.",
       not_found: "Dossier introuvable.",
       customs_not_released: "Impossible de clôturer : le dédouanement n'est pas libéré (BAE).",
+      // Closure blockers — each names the ACTUAL unmet requirement, so the
+      // operator is never told only that "the action failed".
+      delivery_incomplete: "Impossible de clôturer : la livraison n'est pas terminée.",
+      no_invoice: "Impossible de clôturer : aucune facture émise pour ce dossier.",
+      invoice_outstanding: "Impossible de clôturer : une facture reste à régler.",
+      payment_unverified: "Impossible de clôturer : un paiement enregistré n'est pas encore vérifié.",
       has_operations:
         "Ce dossier contient des opérations et ne peut pas être supprimé. Vous pouvez le clôturer/annuler.",
       invalid_assignee: "Responsable invalide (membre du personnel actif requis).",

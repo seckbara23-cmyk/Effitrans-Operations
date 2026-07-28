@@ -79,7 +79,9 @@ const ANCHOR: Record<Department, string> = {
   customs: "#customs",
   transport: "#transport",
   finance: "#finance",
-  archive: "",
+  // The closure control (FileWorkflow). Empty here meant "Ouvrir" navigated
+  // to the current page and appeared to do nothing.
+  archive: "#closure",
 };
 
 /**
