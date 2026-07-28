@@ -396,7 +396,12 @@ jobs:
           code=$?
           echo "$out"
           if [ $code -ne 0 ]; then
-            echo "::error::UAT-2B invoice artifact suite failed (psql exit $code): $(echo "$out" | tail -c 900 | tr '\n' ' | ')"
+            # Surface the ERROR/NOTICE lines, not the tail. psql prints the
+            # failing SQL context AFTER the error, so `tail` shows the dump and
+            # hides the one line that says what actually went wrong.
+            err=$(echo "$out" | grep -m1 -E '^(psql:.*)?ERROR:' | tr '\n' ' ')
+            note=$(echo "$out" | grep -m1 'UAT-2B:' | tr '\n' ' ')
+            echo "::error::UAT-2B invoice artifact suite failed (psql exit $code). ${err} ${note}"
           fi
           exit $code
 

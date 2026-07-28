@@ -205,7 +205,12 @@ begin
     'VERIFIED', 1,
     p_storage_path, 'application/pdf', p_size_bytes,
     p_content_sha256, p_source_snapshot, p_renderer_version,
-    'OFFICIAL_INVOICE', 'GENERATED',
+    -- artifact_provenance is NULL by design: that column records DRIVER
+    -- provenance for transport artifacts (AUTHENTICATED_DRIVER /
+    -- LEGACY_TEXT_DRIVER / NO_DRIVER) and has no meaning for an accounting
+    -- document. Widening its CHECK to fit an invoice would pollute a column
+    -- whose whole purpose is stating how a driver was identified.
+    'OFFICIAL_INVOICE', null,
     p_actor, now(), p_actor, 'GOVERNED');
 
   perform public.emit_business_event(
