@@ -69,6 +69,17 @@ export const DOCUMENT_DOCTRINE: readonly DocumentTypeDoctrine[] = [
   // Currently uploadable — the doctrine violation the audit found. Classified
   // correctly here; the upload path is retired only once generation exists.
   { code: "TRANSPORT_ORDER",       category: "INTERNAL_ARTIFACT", labelFr: "Ordre de transport",         clientSafe: false, earliestStage: "transport" },
+
+  // UAT-2B — THE ACCOUNTING DOCUMENT. Effitrans' own service invoice, rendered
+  // from the Finance invoice record and its persisted lines, carrying the
+  // official EFT-INV number.
+  //
+  // STRICTLY SEPARATE FROM `COMMERCIAL_INVOICE`, which is the customer's or
+  // supplier's external trade invoice — evidence for customs, often in EUR,
+  // uploaded by someone else. Nothing may ever fall back from one to the other:
+  // they have different authors, different currencies and different legal
+  // meaning. `clientSafe` because the customer is its addressee.
+  { code: "OFFICIAL_INVOICE",      category: "INTERNAL_ARTIFACT", labelFr: "Facture Effitrans",          clientSafe: true,  earliestStage: "finance" },
 ] as const;
 
 const BY_CODE = new Map(DOCUMENT_DOCTRINE.map((d) => [d.code, d]));

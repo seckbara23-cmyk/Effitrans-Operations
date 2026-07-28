@@ -37,6 +37,13 @@ export type ArtifactAssessment = {
  */
 export const ARTIFACT_FEASIBILITY: readonly ArtifactAssessment[] = [
   {
+    code: "OFFICIAL_INVOICE",
+    labelFr: "Facture Effitrans",
+    verdict: "GENERATABLE_NOW",
+    rationale:
+      "La facture officielle est rendue depuis l'enregistrement Finance et ses lignes persistées : numéro EFT-INV, client, dossier, lignes, totaux et échéance existent tous au moment de l'émission. Elle est générée UNE SEULE FOIS et devient immuable.",
+  },
+  {
     code: "DEMANDE_TRANSPORT",
     labelFr: "Demande de transport",
     verdict: "GENERATABLE_NOW",

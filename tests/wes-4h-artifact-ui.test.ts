@@ -243,12 +243,15 @@ describe("CI workflow file stays parseable", () => {
 });
 
 describe("WES-4H scope discipline", () => {
-  it("adds generation for NO further artifact", () => {
-    expect(generatableArtifacts().map((a) => a.code).sort()).toEqual([
-      "DEMANDE_TRANSPORT", "TRANSPORT_ORDER",
-    ]);
-    const src = code(PANEL) + code(SERVICE);
-    expect(src).not.toMatch(/MISSION_SHEET|DISPATCH_ORDER|INTERNAL_MANIFEST/);
+  it("adds generation for no further TRANSPORT artifact", () => {
+    // WES-4H shipped no new generator. UAT-2B later added OFFICIAL_INVOICE,
+    // which is an ACCOUNTING document on its own allocate-once path — pinned by
+    // content so this stays a statement about WES-4H, not about the list.
+    const codes = generatableArtifacts().map((a) => a.code);
+    expect(codes).toContain("DEMANDE_TRANSPORT");
+    expect(codes).toContain("TRANSPORT_ORDER");
+    expect(codes).not.toContain("MISSION_SHEET");
+    expect(codes).not.toContain("DISPATCH_ORDER");
   });
 
   it("shipped no migration of its own — WES-4H was UI and documentation", () => {

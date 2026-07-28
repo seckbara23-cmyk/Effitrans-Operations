@@ -1205,6 +1205,8 @@ export type Database = {
           artifact_code: string | null;
           source_snapshot: Json | null;
           artifact_provenance: string | null;
+          /** UAT-2B — set ONLY on OFFICIAL_INVOICE artifacts. */
+          invoice_id: string | null;
         };
         Insert: {
           id?: string;
@@ -3854,6 +3856,24 @@ export type Database = {
       };
       // Phase WES-5 — step transition + evidence consumption + event, ONE
       // transaction. Idempotent: COMPLETED returns already=true.
+      // UAT-2B — allocate-once invoice artifact. Idempotent: returns the
+      // existing document instead of inserting a second one.
+      finalize_official_invoice: {
+        Args: {
+          p_document_id: string;
+          p_tenant_id: string;
+          p_file_id: string;
+          p_invoice_id: string;
+          p_invoice_number: string;
+          p_storage_path: string;
+          p_content_sha256: string;
+          p_source_snapshot: Json;
+          p_renderer_version: string;
+          p_actor: string | null;
+          p_size_bytes?: number | null;
+        };
+        Returns: Json;
+      };
       reconcile_step_completion: {
         Args: {
           p_execution_id: string;

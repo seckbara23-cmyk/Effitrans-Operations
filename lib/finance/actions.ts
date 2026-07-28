@@ -8,6 +8,7 @@
  * are editable only while DRAFT; numbers are assigned on ISSUE; payments are
  * capped at the balance due. Charges + draft invoices are soft/hard-deletable.
  */
+import { ensureOfficialInvoiceArtifact } from "./invoice-artifact";
 import { validateIssuance, dueDateFromTerm, DEFAULT_PAYMENT_TERM_DAYS } from "./issuance";
 import { revalidatePath } from "next/cache";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
@@ -313,6 +314,21 @@ export async function issueInvoice(id: string, dueDate?: string | null): Promise
   if (error) return { ok: false, error: error.message };
 
   await writeAudit({ action: AuditActions.INVOICE_ISSUED, actorId: user.id, tenantId: user.tenantId, entity: "invoice", entityId: id, after: { invoice_number: number, total: check.total, issue_date: issueDate, due_date: due } });
+
+  // UAT-2B — the official PDF is produced HERE, automatically, so Finance never
+  // has to press "Generate" before the first download. It is rendered ONCE and
+  // is immutable thereafter.
+  //
+  // A failure does NOT undo issuance: the number is allocated and the invoice
+  // is legally issued. `ensureOfficialInvoiceArtifact` is idempotent and is
+  // also called from the download path, so a missed generation self-heals
+  // instead of leaving the invoice permanently without its document.
+  await ensureOfficialInvoiceArtifact({
+    supabase,
+    tenantId: user.tenantId,
+    invoiceId: id,
+    actorId: user.id,
+  }).catch(() => null);
   // Phase 2.5 — customer "nouvelle facture" notification.
   await custInvoiceIssued(supabase, { tenantId: user.tenantId, actorId: user.id }, id);
   revalidate(inv.file_id);

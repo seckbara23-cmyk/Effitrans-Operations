@@ -66,9 +66,12 @@ describe("WES-4G.1 artifact feasibility", () => {
     }
   });
 
-  it("generates exactly the two the mandate prioritises", () => {
+  it("generates exactly the artifacts whose source data provably exists", () => {
+    // WES-4G prioritised the two transport artifacts; UAT-2B added the official
+    // invoice, whose source (invoice record + persisted lines + EFT-INV number)
+    // exists in full at the moment of issuance.
     expect(generatableArtifacts().map((a) => a.code).sort()).toEqual([
-      "DEMANDE_TRANSPORT", "TRANSPORT_ORDER",
+      "DEMANDE_TRANSPORT", "OFFICIAL_INVOICE", "TRANSPORT_ORDER",
     ]);
   });
 
