@@ -8,6 +8,7 @@
  * /POD_RECEIVED require transport:complete; POD_RECEIVED enforces the approved-POD
  * gate. Soft-delete via deleted_at; CANCELLED is the normal workflow abort.
  */
+import { advanceFileToDeliveredFromTransport } from "@/lib/files/auto-advance";
 import { recordPodReceiptFromVerifiedEvidence } from "./pod-receipt";
 import { isVerified } from "@/lib/documents/doctrine";
 import { reconcileDossierProcess } from "@/lib/process/reconcile/service";
@@ -356,6 +357,19 @@ export async function changeTransportStatus(id: string, toStatus: string): Promi
   // Phase 2.5 — customer transport notifications (idempotent, once per dossier).
   if (toStatus === "IN_TRANSIT") await custTransportStarted(supabase, tctx, rec.file_id);
   if (toStatus === "DELIVERED" || toStatus === "POD_RECEIVED") await custDelivered(supabase, tctx, rec.file_id);
+
+  // The dossier status FOLLOWS the transport fact. Without this the lifecycle
+  // (which reads transport) reached its final stage and advertised « Clôturer
+  // le dossier » while operational_file.status was still IN_PROGRESS, whose
+  // only legal next step is DELIVERED — two engines, two answers.
+  if (toStatus === "DELIVERED" || toStatus === "POD_RECEIVED") {
+    await advanceFileToDeliveredFromTransport({
+      supabase,
+      tenantId: user.tenantId,
+      fileId: rec.file_id,
+      actorId: user.id,
+    });
+  }
 
   // UAT-2A — CONVERGENCE. If Operations verified the delivery note BEFORE the
   // run was marked delivered, the receipt could not fire then. Recording

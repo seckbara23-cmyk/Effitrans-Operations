@@ -38,6 +38,7 @@
  * business events are emitted in the SAME transaction as the fact (WES-9A
  * Model A) — this file adds no second emission path.
  */
+import { advanceFileToDeliveredFromTransport } from "@/lib/files/auto-advance";
 import "server-only";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { writeAudit } from "@/lib/audit/log";
@@ -123,6 +124,9 @@ export async function recordPodReceiptFromVerifiedEvidence(input: {
       // platform recorded the receipt. It never reads as a Transport click.
       after: { status: "POD_RECEIVED", source: "AUTOMATIC_ON_POD_VERIFICATION" },
     });
+
+    // The dossier status follows the same fact on the automatic path too.
+    await advanceFileToDeliveredFromTransport({ supabase, tenantId, fileId, actorId });
 
     const ctx = { tenantId, actorId };
     // Existing Transport -> Finance handoff. WES-1D refuses a duplicate or a
