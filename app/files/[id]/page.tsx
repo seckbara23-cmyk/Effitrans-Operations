@@ -76,6 +76,10 @@ export default async function FileDetailPage({ params }: { params: { id: string 
   }
 
   const canUpdate = hasPermission(permissions, "file:update");
+  // Editing master data and advancing the status ladder are INDEPENDENT
+  // authorities. A supervisor may close a dossier without being able to
+  // rewrite it.
+  const canTransitionStatus = hasPermission(permissions, "file:transition");
   const clients = hasPermission(permissions, "client:read")
     ? (await listClients()).map((c) => ({ id: c.id, name: c.name }))
     : file.clientId
@@ -216,7 +220,7 @@ export default async function FileDetailPage({ params }: { params: { id: string 
           dossier has no process instance. Not a 26-step checklist: it answers
           "where is this, who has it, what next". */}
       <ProcessJourneyPanel fileId={file.id} />
-      <FileWorkflow file={file} canUpdate={canUpdate} />
+      <FileWorkflow file={file} canTransitionStatus={canTransitionStatus} />
       <FileAssignment
         fileId={file.id}
         currentAssigneeId={file.assignedToUserId}

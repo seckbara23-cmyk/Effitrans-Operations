@@ -140,21 +140,21 @@ on conflict do nothing;
 insert into public.role_permission (role_id, permission_id)
 select r.id, p.id
 from public.role r
-join public.permission p on p.code in ('file:create', 'file:read', 'file:update', 'file:delete')
+join public.permission p on p.code in ('file:create', 'file:read', 'file:update', 'file:delete', 'file:transition')
 where r.tenant_id = '00000000-0000-0000-0000-000000000001' and r.code = 'SYSTEM_ADMIN'
 on conflict do nothing;
 
 insert into public.role_permission (role_id, permission_id)
 select r.id, p.id
 from public.role r
-join public.permission p on p.code in ('file:create', 'file:read', 'file:update')
+join public.permission p on p.code in ('file:create', 'file:read', 'file:update', 'file:transition')
 where r.tenant_id = '00000000-0000-0000-0000-000000000001' and r.code = 'ACCOUNT_MANAGER'
 on conflict do nothing;
 
 insert into public.role_permission (role_id, permission_id)
 select r.id, p.id
 from public.role r
-join public.permission p on p.code in ('file:read', 'file:update')
+join public.permission p on p.code in ('file:read', 'file:update', 'file:transition')
 where r.tenant_id = '00000000-0000-0000-0000-000000000001' and r.code = 'COORDINATOR'
 on conflict do nothing;
 
@@ -171,8 +171,25 @@ on conflict do nothing;
 -- file:assign (new) + file:delete widened to OPS_SUPERVISOR.
 -- ---------------------------------------------------------------------------
 insert into public.permission (code, module, action, data_scope, description) values
-  ('file:assign', 'file', 'assign', 'all', 'Assign operational files to staff')
+  ('file:assign', 'file', 'assign', 'all', 'Assign operational files to staff'),
+  -- Advancing the status ladder is INDEPENDENT of editing master data.
+  -- Mirrors migration 20260728000003.
+  ('file:transition', 'file', 'transition', 'all',
+   'Advance an operational file through its status state machine (distinct from editing)')
 on conflict (code) do nothing;
+
+-- OPS_SUPERVISOR advances the dossier ladder WITHOUT editing master data: it
+-- holds no file:update, which is exactly why the transition controls were
+-- invisible to it. CEO is deliberately excluded — it reads and reports.
+-- The other three holders receive file:transition alongside their existing
+-- file:update grants above.
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'file:transition'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code = 'OPS_SUPERVISOR'
+on conflict do nothing;
 
 insert into public.role_permission (role_id, permission_id)
 select r.id, p.id

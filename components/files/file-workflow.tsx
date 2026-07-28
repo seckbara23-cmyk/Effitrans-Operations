@@ -11,7 +11,14 @@ import { transitionFile } from "@/lib/files/actions";
 import { nextStatuses } from "@/lib/files/status";
 import type { FileDetail } from "@/lib/files/types";
 
-export function FileWorkflow({ file, canUpdate }: { file: FileDetail; canUpdate: boolean }) {
+export function FileWorkflow({
+  file,
+  canTransitionStatus,
+}: {
+  file: FileDetail;
+  /** file:transition — advancing the ladder, NOT file:update (editing). */
+  canTransitionStatus: boolean;
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -42,7 +49,7 @@ export function FileWorkflow({ file, canUpdate }: { file: FileDetail; canUpdate:
           <span className="text-slate-500">{t.files.columns.status}: </span>
           <strong className="text-navy-900">{t.files.statuses[file.status]}</strong>
         </div>
-        {canUpdate && next.length > 0 && (
+        {canTransitionStatus && next.length > 0 && (
           <div className="flex gap-2">
             {next.map((to) => (
               <button

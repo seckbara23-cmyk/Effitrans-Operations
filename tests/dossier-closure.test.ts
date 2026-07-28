@@ -171,7 +171,8 @@ describe("the server enforces the SAME rule the UI displays", () => {
     const s = actions();
     const fn = s.slice(s.indexOf("export async function transitionFile"));
     // permission first, then the closure gate, before any write
-    const perm = fn.indexOf('assertPermission("file:update")');
+    // Ratified 2026-07-28: transitioning is `file:transition`, not `file:update`.
+    const perm = fn.indexOf('assertPermission("file:transition")');
     const gate = fn.indexOf("closureBlockers({");
     const write = fn.indexOf('.from("operational_file")\n    .update(');
     expect(perm).toBeGreaterThan(-1);
@@ -209,8 +210,12 @@ describe("archive-stage navigation", () => {
     expect(exists).toBe(false);
   });
 
-  it("the closure control stays gated on file:update", () => {
-    expect(code("components/files/file-workflow.tsx")).toMatch(/\{canUpdate && next\.length > 0 &&/);
+  it("the closure control is gated on file:transition, not file:update", () => {
+    // Editing master data and advancing the ladder are independent authorities.
+    expect(code("components/files/file-workflow.tsx"))
+      .toMatch(/\{canTransitionStatus && next\.length > 0 &&/);
+    expect(code("app/files/[id]/page.tsx"))
+      .toContain('hasPermission(permissions, "file:transition")');
   });
 });
 

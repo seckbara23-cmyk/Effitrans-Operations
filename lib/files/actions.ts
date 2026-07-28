@@ -385,7 +385,11 @@ export async function assignFile(id: string, assigneeUserId: string | null): Pro
 export async function transitionFile(id: string, toStatus: string): Promise<ActionResult> {
   let admin;
   try {
-    admin = await assertPermission("file:update");
+    // ADVANCING the status is `file:transition`, NOT `file:update`. The two
+    // were conflated, so OPS_SUPERVISOR -- which may open a workflow, assign
+    // its owner, complete transport and delete the dossier -- could not move
+    // the dossier forward, because it deliberately cannot EDIT master data.
+    admin = await assertPermission("file:transition");
   } catch {
     return { ok: false, error: "forbidden" };
   }

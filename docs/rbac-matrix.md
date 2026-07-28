@@ -23,6 +23,34 @@ Related: [requirements.md](requirements.md) · [database-design.md](database-des
 `permission = (module × action × data_scope)`
 
 **Actions:** `C` create · `R` read · `U` update · `D` delete/archive · `V` validate (pass a workflow gate) · `A` admin/configure.
+
+### Editing vs. transitioning (ratified 2026-07-28)
+
+`file:update` and `file:transition` are **independent authorities** and must not
+be conflated again:
+
+| Permission | Authorizes | Holders |
+|---|---|---|
+| `file:update` | editing dossier / master data | `SYSTEM_ADMIN`, `ACCOUNT_MANAGER`, `COORDINATOR` |
+| `file:transition` | advancing `operational_file.status` through the approved state machine | `SYSTEM_ADMIN`, `ACCOUNT_MANAGER`, `COORDINATOR`, **`OPS_SUPERVISOR`** |
+
+The status ladder originally inherited `file:update`, so a role could advance
+the workflow only if it could also rewrite the record. `OPS_SUPERVISOR` — which
+may open a dossier's workflow, assign its owner, complete transport and delete
+the dossier — deliberately holds no `file:update`, and therefore could not close
+a dossier at all: the transition controls never rendered.
+
+Granting `file:transition` separately lets a supervisor close a dossier without
+gaining the right to edit it. It is **not** granted to `FINANCE_OFFICER`,
+`CASHIER`, the customs roles, the transport roles, or `CEO` — none of them
+advanced the ladder before, and widening by analogy is what the Douane
+discovery audit warned against.
+
+Enforced on the server in `transitionFile` (`assertPermission("file:transition")`),
+with the transition-legality check, CAS, closure blockers, state history and
+audit all unchanged. Backfilled to existing tenants by migration
+`20260728000003_file_transition_permission.sql`, which grants by role code with
+no tenant filter.
 **Data scopes:** `OWN` (files where user is AM/assignee) · `TEAM` (coordinator's team/zone) · `CLIENT` (assigned clients) · `ALL` · `FIN` (financial fields only) · `—` none.
 
 ---
