@@ -14,6 +14,7 @@
  * canonical projection (lib/workflow/projection.ts), which consumes this. Two
  * percentages over the same dossier is exactly what WES-2 exists to end.
  */
+import { isVerified } from "@/lib/documents/doctrine";
 import { t } from "@/lib/i18n";
 
 export type StepStatus = "completed" | "current" | "pending" | "blocked" | "skipped";
@@ -118,7 +119,9 @@ export function getDossierLifecycle(input: LifecycleInput): DossierLifecycle {
   const closed = file.status === "CLOSED";
 
   // ---- documents
-  const approved = input.documents.filter((d) => d.status === "APPROVED").length;
+  // UAT-2A — the canonical engine must itself use canonical doctrine, or every
+  // surface told to "converge on the lifecycle" converges on a stale answer.
+  const approved = input.documents.filter((d) => isVerified(d.status)).length;
   const pendingReview = input.documents.filter(
     (d) => d.status === "UPLOADED" || d.status === "PENDING_REVIEW",
   ).length;

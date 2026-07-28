@@ -6,6 +6,7 @@
  * a milestone notification is generated once (dedup), through the portal +
  * email channels. No new lifecycle, no cron.
  */
+import { isVerified } from "@/lib/documents/doctrine";
 import "server-only";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { invoiceTotals } from "@/lib/finance/calc";
@@ -33,7 +34,8 @@ export async function custDocumentsVerified(supabase: Admin, ctx: Ctx, fileId: s
       supabase.from("document").select("type_code, status").eq("tenant_id", ctx.tenantId).eq("file_id", fileId).is("deleted_at", null).returns<{ type_code: string; status: string }[]>(),
     ]);
     const required = (types ?? []).filter((tp) => (tp.required_for ?? []).includes(file.type)).map((tp) => tp.code);
-    const approved = (docs ?? []).filter((d) => d.status === "APPROVED").map((d) => d.type_code);
+    // UAT-2A — a VERIFIED document must trigger the customer notice too.
+    const approved = (docs ?? []).filter((d) => isVerified(d.status as string)).map((d) => d.type_code);
     if (!documentationComplete(required, approved)) return;
     await notifyCustomer(supabase, ctx, { event: "documents_verified", fileId });
   } catch {

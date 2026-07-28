@@ -8,6 +8,7 @@
  * schema, no stored values, no duplicate lifecycle logic. Finance data is loaded
  * only when the viewer holds finance:read.
  */
+import { isVerified } from "@/lib/documents/doctrine";
 import { missingDocumentationEvidence } from "@/lib/documents/requirements";
 import "server-only";
 import { cache } from "react";
@@ -208,7 +209,8 @@ export const getControlTower = cache(async (
     const arr = docsByFile.get(d.file_id) ?? [];
     arr.push({ typeCode: d.type_code, status: d.status });
     docsByFile.set(d.file_id, arr);
-    if (d.type_code === "DELIVERY_NOTE" && d.status === "APPROVED") podByFile.add(d.file_id);
+    // UAT-2A — canonical doctrine: VERIFIED, legacy APPROVED, or consumed.
+    if (d.type_code === "DELIVERY_NOTE" && isVerified(d.status)) podByFile.add(d.file_id);
   }
   const requiredFor = (fileType: string) => types.filter((t) => (t.required_for ?? []).includes(fileType)).map((t) => t.code);
   const customsByFile = new Map(customs.map((c) => [c.file_id, c]));
@@ -220,7 +222,6 @@ export const getControlTower = cache(async (
 
   for (const f of files) {
     const fileDocs = docsByFile.get(f.id) ?? [];
-    const approved = new Set(fileDocs.filter((d) => d.status === "APPROVED").map((d) => d.typeCode));
     // WES-5C — stage-aware: only documentation-stage evidence blocks here.
     const missingRequired = missingDocumentationEvidence({
       fileType: f.type,

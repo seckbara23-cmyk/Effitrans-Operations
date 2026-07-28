@@ -8,6 +8,7 @@
  * Orbus). Release is a privileged step (customs:release) requiring a BAE ref.
  * Soft-delete via deleted_at; CANCELLED is the normal workflow abort.
  */
+import { isVerified } from "@/lib/documents/doctrine";
 import { reconcileDossierProcess } from "@/lib/process/reconcile/service";
 import { revalidatePath } from "next/cache";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
@@ -58,7 +59,8 @@ async function missingCustomsDocCodes(
   const mode = (shipment.data?.transport_mode as string | null) ?? null;
   const required = requiredCustomsDocCodes((gating.data ?? []).map((g) => g.code), mode);
   const approved = new Set(
-    (docs.data ?? []).filter((d) => d.status === "APPROVED").map((d) => d.type_code),
+    // UAT-2A — canonical doctrine.
+    (docs.data ?? []).filter((d) => isVerified(d.status as string)).map((d) => d.type_code),
   );
   return required.filter((c) => !approved.has(c));
 }

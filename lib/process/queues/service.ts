@@ -22,6 +22,7 @@
  * Legacy dossiers (no process instance) are EXCLUDED by construction: this reads
  * process_step_execution, and a dossier without an instance has no rows.
  */
+import { isVerified } from "@/lib/documents/doctrine";
 import "server-only";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { scopedFrom } from "@/lib/db/tenant-scope";
@@ -313,7 +314,7 @@ export async function getDepartmentQueue(req: QueueRequest): Promise<QueueResult
       nearlyReady: stepKey === "pickup" && !gate.ready && gate.missing.length === 1,
       podMissing:
         trn?.status === "DELIVERED" &&
-        !snap.documents.some((d) => d.typeCode === "DELIVERY_NOTE" && d.status === "APPROVED"),
+        !snap.documents.some((d) => d.typeCode === "DELIVERY_NOTE" && isVerified(d.status)),
       billingIdle: stepKey === "billing_draft" && state === "AVAILABLE",
       invoiceOverdue,
       customerImpacting: node?.clientStage !== null && node?.clientStage !== undefined,

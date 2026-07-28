@@ -203,7 +203,6 @@ export const getDepartmentWorkQueue = cache(async (): Promise<DepartmentQueue> =
 
   for (const f of fileRows) {
     const fileDocs = docsBy.get(f.id) ?? [];
-    const approved = new Set(fileDocs.filter((d) => d.status === "APPROVED").map((d) => d.type_code));
     const cust = customsBy.get(f.id);
     const tr = transportBy.get(f.id);
 

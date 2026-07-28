@@ -30,11 +30,33 @@ export type DeliveryProofState = {
 
 export function DeliveryProofPanel({ fileId, state }: { fileId: string; state: DeliveryProofState }) {
   const rank = state.transportStatus;
-  // Before delivery this is not outstanding work.
-  if (rank !== "DELIVERED" && rank !== "POD_RECEIVED") return null;
-
   const doc = state.document;
   const verified = doc ? isVerified(doc.status) : false;
+
+  // UAT-2A — EARLY VERIFIED POD. If the proof is already verified but the run
+  // is not yet marked delivered, the automatic receipt cannot fire. Say so
+  // plainly instead of leaving it silent — and do NOT touch the transport
+  // state, which only the people who did the delivery may record.
+  if (verified && rank !== "DELIVERED" && rank !== "POD_RECEIVED") {
+    return (
+      <section className="surface space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-4" id="delivery-proof">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-sm font-semibold text-navy-900">Preuve de livraison</h2>
+          <span className="text-xs text-slate-500">Responsable : Opérations</span>
+        </div>
+        <p className="text-sm text-amber-900">
+          La preuve de livraison est vérifiée, mais le transport n&apos;est pas encore marqué comme livré.
+        </p>
+        <p className="text-xs text-amber-800">
+          Terminez l&apos;étape de livraison pour poursuivre automatiquement vers la Finance. Aucune
+          nouvelle vérification ne sera nécessaire.
+        </p>
+      </section>
+    );
+  }
+
+  // Before delivery, an unverified POD is not yet outstanding work.
+  if (rank !== "DELIVERED" && rank !== "POD_RECEIVED") return null;
   const rejected = doc ? ["REJECTED", "EXPIRED", "SUPERSEDED"].includes(canonicalStatus(doc.status)) : false;
 
   const tone = verified

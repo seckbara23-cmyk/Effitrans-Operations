@@ -8,6 +8,7 @@
  * are editable only while DRAFT; numbers are assigned on ISSUE; payments are
  * capped at the balance due. Charges + draft invoices are soft/hard-deletable.
  */
+import { validateIssuance, dueDateFromTerm, DEFAULT_PAYMENT_TERM_DAYS } from "./issuance";
 import { revalidatePath } from "next/cache";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
@@ -272,19 +273,37 @@ export async function issueInvoice(id: string, dueDate?: string | null): Promise
   if (!inv) return { ok: false, error: "not_found" };
   if (!canIssue(inv.status as InvoiceStatus)) return { ok: false, error: "not_draft" };
 
-  const { count } = await supabase
+  // UAT-2A — validate the PERSISTED lines BEFORE allocating a number. Issuance
+  // consumes an official, immutable, never-reused invoice number; an invoice
+  // that should not exist must be refused while refusing is still free. The old
+  // check was `count > 0`, so a draft whose lines summed to zero — or to a
+  // negative — issued and burned a number on a meaningless document.
+  const { data: lineRows, error: linesErr } = await supabase
     .from("invoice_line")
-    .select("id", { count: "exact", head: true })
+    .select("description, quantity, unit_amount, tax_rate")
     .eq("invoice_id", id)
     .eq("tenant_id", user.tenantId);
-  if (!count) return { ok: false, error: "no_lines" };
+  if (linesErr) return { ok: false, error: linesErr.message };
+
+  const today = new Date();
+  const issueDate = today.toISOString().slice(0, 10);
+
+  const check = validateIssuance({
+    lines: (lineRows ?? []).map((l) => ({
+      description: l.description as string | null,
+      quantity: Number(l.quantity),
+      unitAmount: Number(l.unit_amount),
+      taxRate: Number(l.tax_rate),
+    })),
+    issueDate,
+    dueDate,
+  });
+  if (!check.ok) return { ok: false, error: check.error };
 
   const { data: number, error: numErr } = await supabase.rpc("next_invoice_number", { p_tenant: user.tenantId });
   if (numErr || !number) return { ok: false, error: numErr?.message ?? "numbering_failed" };
 
-  const today = new Date();
-  const issueDate = today.toISOString().slice(0, 10);
-  const due = dueDate || new Date(today.getTime() + 30 * 86_400_000).toISOString().slice(0, 10);
+  const due = dueDate || dueDateFromTerm(issueDate, DEFAULT_PAYMENT_TERM_DAYS);
 
   const { error } = await supabase
     .from("invoice")
@@ -293,7 +312,7 @@ export async function issueInvoice(id: string, dueDate?: string | null): Promise
     .eq("tenant_id", user.tenantId);
   if (error) return { ok: false, error: error.message };
 
-  await writeAudit({ action: AuditActions.INVOICE_ISSUED, actorId: user.id, tenantId: user.tenantId, entity: "invoice", entityId: id, after: { invoice_number: number } });
+  await writeAudit({ action: AuditActions.INVOICE_ISSUED, actorId: user.id, tenantId: user.tenantId, entity: "invoice", entityId: id, after: { invoice_number: number, total: check.total, issue_date: issueDate, due_date: due } });
   // Phase 2.5 — customer "nouvelle facture" notification.
   await custInvoiceIssued(supabase, { tenantId: user.tenantId, actorId: user.id }, id);
   revalidate(inv.file_id);

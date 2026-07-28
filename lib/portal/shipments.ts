@@ -9,6 +9,7 @@
  * the pure derivers — no duplicated lifecycle / risk / route / ETA calculation.
  * Presentation-only; no RLS or schema change.
  */
+import { isVerified } from "@/lib/documents/doctrine";
 import { missingDocumentationEvidence } from "@/lib/documents/requirements";
 import "server-only";
 import { getServerSupabaseClient } from "@/lib/supabase/server";
@@ -95,7 +96,6 @@ export async function getPortalShipments(): Promise<PortalShipmentCard[]> {
   return files.map((f) => {
     const s = f.shipment?.[0] ?? null;
     const fileDocs = docsByFile.get(f.id) ?? [];
-    const approved = new Set(fileDocs.filter((d) => d.status === "APPROVED").map((d) => d.type_code));
     // WES-5C — stage-aware (fixes POD blocking documentation on the portal too).
     const missingCodes = missingDocumentationEvidence({
       fileType: f.type,
@@ -105,7 +105,8 @@ export async function getPortalShipments(): Promise<PortalShipmentCard[]> {
     const cust = customsByFile.get(f.id) ?? null;
     const tr = transportByFile.get(f.id) ?? null;
     const invoices = invByFile.get(f.id) ?? [];
-    const podApproved = fileDocs.some((d) => d.type_code === "DELIVERY_NOTE" && d.status === "APPROVED");
+    // UAT-2A — canonical doctrine, so the portal agrees with the dossier.
+    const podApproved = fileDocs.some((d) => d.type_code === "DELIVERY_NOTE" && isVerified(d.status));
 
     const lifecycleInput = {
       fileId: f.id,

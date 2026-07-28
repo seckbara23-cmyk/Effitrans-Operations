@@ -19,6 +19,7 @@
 // NOTE: runtime service imports are loaded dynamically inside buildCopilotContext
 // (below) so that the PURE `assembleCopilotContext` — and its unit tests — never
 // pull in server-only modules (e.g. the RSC `cache()` in lib/rbac/permissions).
+import { isVerified } from "@/lib/documents/doctrine";
 import { assessRisk, riskInputFromContext, type RiskAssessment } from "@/lib/copilot/risk-engine";
 import { capItems, isCriticalEventType, COMPRESS_LIMITS } from "@/lib/copilot/compress";
 import { deriveRealtimeEta } from "@/lib/tracking/eta";
@@ -344,7 +345,7 @@ export function assembleCopilotContext(input: AssembleInput): CopilotContext {
         included: true,
         data: {
           total: input.documents.length,
-          approved: input.documents.filter((d) => d.status === "APPROVED").length,
+          approved: input.documents.filter((d) => isVerified(d.status)).length,
           pendingReview: input.documents.filter(
             (d) => d.status === "UPLOADED" || d.status === "PENDING_REVIEW",
           ).length,
@@ -528,7 +529,7 @@ export async function buildCopilotContext(
     ]);
 
   const podApproved = documents.some(
-    (d) => d.typeCode === "DELIVERY_NOTE" && d.status === "APPROVED",
+    (d) => d.typeCode === "DELIVERY_NOTE" && isVerified(d.status),
   );
 
   // WES-2 — ONE canonical projection. The copilot reports the same stage and the

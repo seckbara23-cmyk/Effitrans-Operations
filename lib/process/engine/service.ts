@@ -8,6 +8,7 @@
  * with the flag off, or with no instance, it simply returns null and every
  * existing page behaves exactly as it did before Phase 5.0B.
  */
+import { isVerified } from "@/lib/documents/doctrine";
 import "server-only";
 import { assertPermission } from "@/lib/auth/require-permission";
 import { getEffectivePermissions } from "@/lib/rbac/permissions";
@@ -96,7 +97,7 @@ export async function getCompatibilityDryRun(limit = 50): Promise<CompatibilityR
       transport: snap.evidence.transport ? { status: snap.evidence.transport.status } : null,
       invoices: snap.evidence.invoices,
       podApproved: snap.evidence.documents.some(
-        (d) => d.typeCode === "DELIVERY_NOTE" && d.status === "APPROVED",
+        (d) => d.typeCode === "DELIVERY_NOTE" && isVerified(d.status as string),
       ),
     });
 

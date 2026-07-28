@@ -21,7 +21,10 @@ export function FinancePipelineCard({ finance }: { finance: CockpitFinance }) {
   const recon = finance.reconciliation;
 
   return (
-    <CockpitSectionShell title="Finance" action={{ href: "/finance", label: "Ouvrir Finance" }}>
+    <CockpitSectionShell title="Finance" // UAT-2A — label the DESTINATION honestly. This card opens the
+      // portfolio, not the current dossier; the dossier-level Finance
+      // section is reached from the lifecycle banner (/files/{id}#finance).
+      action={{ href: "/finance", label: "Finance / Facturation" }}>
       <div className="space-y-4">
         {/* Finance-request pipeline (tenant-wide) */}
         <div className="surface p-4">

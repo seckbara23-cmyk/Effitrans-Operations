@@ -6,6 +6,7 @@
  * injected). Money is plain numbers (XOF default). Where a metric lacks reliable
  * source timestamps it returns null → the UI shows "Not enough data available".
  */
+import { isVerified } from "@/lib/documents/doctrine";
 import { isActiveFileStatus, isFileStatus } from "@/lib/files/status";
 
 const DAY = 86_400_000;
@@ -172,7 +173,7 @@ export function departmentProductivity(input: {
   return {
     documentation: {
       processed: docs.length,
-      verified: docs.filter((d) => d.status === "APPROVED").length,
+      verified: docs.filter((d) => isVerified(d.status)).length,
     },
     customs: {
       declarations: cust.filter((c) => c.declaration_date).length,

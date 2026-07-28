@@ -12,6 +12,7 @@
  * The panel reuses the existing transport, tracking and process read models. It
  * does not re-derive the pickup gate; it calls the engine's.
  */
+import { isVerified } from "@/lib/documents/doctrine";
 import "server-only";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { scopedFrom } from "@/lib/db/tenant-scope";
@@ -183,7 +184,7 @@ export async function getTransportPanel(
 
     const vehicleAssigned = !!str(t.vehicle_plate)?.trim();
     const driverAssigned = !!(str(t.driver_user_id) || str(t.driver_name)?.trim());
-    const podApproved = fileDocs.some((d) => d.type_code === "DELIVERY_NOTE" && d.status === "APPROVED");
+    const podApproved = fileDocs.some((d) => d.type_code === "DELIVERY_NOTE" && isVerified(d.status as string));
 
     const driverContact = resolveDriverContact({
       businessPhone,

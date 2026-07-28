@@ -4,6 +4,7 @@
  * A single document row with inline controls (Phase 1.8). Client component —
  * invokes server-action proxies only (download mints a short-TTL signed URL).
  */
+import { isVerified } from "@/lib/documents/doctrine";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { t } from "@/lib/i18n";
@@ -96,7 +97,7 @@ export function DocumentRow({
         <span>
           {t.documents.uploadedBy}: {doc.uploadedByEmail ?? "—"}
         </span>
-        {doc.status === "APPROVED" && (
+        {isVerified(doc.status) && (
           <span className={doc.sharedWithClient ? "text-teal-700" : "text-slate-400"}>
             · {doc.sharedWithClient ? t.documents.shared : t.documents.notShared}
           </span>

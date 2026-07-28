@@ -38,6 +38,7 @@
  * This module adds the ladder, the ratchet and the one formula on top; it does
  * not re-derive a single fact.
  */
+import { isVerified } from "@/lib/documents/doctrine";
 import {
   CUSTOMS_RANK,
   TRANSPORT_RANK,
@@ -121,7 +122,10 @@ function reachedOrdinal(input: LifecycleInput): number {
   let reached = 0; // draft
 
   if (input.file.status !== "DRAFT") reached = Math.max(reached, 1); // open
-  if (input.documents.some((d) => d.status === "APPROVED")) reached = Math.max(reached, 2);
+  // UAT-2A — canonical doctrine. With the legacy literal the ratchet never
+  // reached the documentation ordinal for a VERIFIED document, so the WES-2
+  // projection every surface is told to converge on was itself stale.
+  if (input.documents.some((d) => isVerified(d.status))) reached = Math.max(reached, 2);
 
   const cs = input.customs?.status ?? null;
   if (cs && ((CUSTOMS_RANK[cs] ?? 0) >= 1 || cs === "BLOCKED")) reached = Math.max(reached, 3);

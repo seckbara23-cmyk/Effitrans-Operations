@@ -8,6 +8,7 @@
  * /POD_RECEIVED require transport:complete; POD_RECEIVED enforces the approved-POD
  * gate. Soft-delete via deleted_at; CANCELLED is the normal workflow abort.
  */
+import { recordPodReceiptFromVerifiedEvidence } from "./pod-receipt";
 import { isVerified } from "@/lib/documents/doctrine";
 import { reconcileDossierProcess } from "@/lib/process/reconcile/service";
 import { revalidatePath } from "next/cache";
@@ -355,6 +356,19 @@ export async function changeTransportStatus(id: string, toStatus: string): Promi
   // Phase 2.5 — customer transport notifications (idempotent, once per dossier).
   if (toStatus === "IN_TRANSIT") await custTransportStarted(supabase, tctx, rec.file_id);
   if (toStatus === "DELIVERED" || toStatus === "POD_RECEIVED") await custDelivered(supabase, tctx, rec.file_id);
+
+  // UAT-2A — CONVERGENCE. If Operations verified the delivery note BEFORE the
+  // run was marked delivered, the receipt could not fire then. Recording
+  // DELIVERED is the moment it becomes possible, so it is retried here. No
+  // re-verification is ever required, and the same evidence gate applies.
+  if (toStatus === "DELIVERED") {
+    await recordPodReceiptFromVerifiedEvidence({
+      supabase,
+      tenantId: user.tenantId,
+      fileId: rec.file_id,
+      actorId: user.id,
+    });
+  }
 
   // WES-5 — converge the official engine on the transport fact (pickup, POD).
   // Convergent + idempotent; never throws, never blocks the transition that

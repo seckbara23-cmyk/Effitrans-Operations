@@ -8,6 +8,7 @@
  *
  * All workflow logic comes from the engine. Nothing is reconstructed here.
  */
+import { isVerified } from "@/lib/documents/doctrine";
 import "server-only";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { scopedFrom } from "@/lib/db/tenant-scope";
@@ -204,7 +205,7 @@ export async function getProcessTower(
     }
 
     // Post-delivery.
-    const podApproved = docs.some((d) => d.type_code === "DELIVERY_NOTE" && d.status === "APPROVED");
+    const podApproved = docs.some((d) => d.type_code === "DELIVERY_NOTE" && isVerified(d.status as string));
     if (trn?.status === "DELIVERED" && !podApproved) c.deliveredNoPod++;
     if (podApproved && isOpenAt(execs, "coordinator_completeness")) c.podAwaitingCompleteness++;
     if (execs.some((e) => e.step_key === "coordinator_completeness" && e.correction_of_id !== null)) {

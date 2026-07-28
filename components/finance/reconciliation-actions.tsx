@@ -5,6 +5,7 @@
  * (Phase 1.15A). Client only — invokes the finance server-action proxies. Gated
  * by the caller (finance:void). Reject = reverse + mark REJECTED.
  */
+import { PromptDialog } from "./prompt-dialog";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { t } from "@/lib/i18n";
@@ -14,6 +15,7 @@ import type { ActionResult } from "@/lib/finance/types";
 export function ReconciliationActions({ paymentId }: { paymentId: string }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const [rejecting, setRejecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const f = t.finance;
 
@@ -40,16 +42,28 @@ export function ReconciliationActions({ paymentId }: { paymentId: string }) {
         {f.invoices.verify}
       </button>
       <button
-        onClick={() => {
-          const note = window.prompt(f.invoices.rejectPrompt) ?? "";
-          run(() => rejectPayment(paymentId, note.trim() || null));
-        }}
+        onClick={() => setRejecting(true)}
         disabled={pending}
         className="rounded-md border border-slate-200 px-2 py-1 text-xs font-medium text-slate-500 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
       >
         {f.invoices.reject}
       </button>
       {error && <span className="text-xs text-red-600">{error}</span>}
+
+      {/* UAT-2A — same accessible dialog as the dossier invoice card. */}
+      <PromptDialog
+        open={rejecting}
+        mode="text"
+        title="Rejeter le paiement"
+        help="Le motif est conservé dans l'historique du paiement."
+        label="Motif du rejet"
+        submitLabel="Rejeter"
+        onCancel={() => setRejecting(false)}
+        onSubmit={(note) => {
+          setRejecting(false);
+          run(() => rejectPayment(paymentId, note || null));
+        }}
+      />
     </div>
   );
 }

@@ -7,6 +7,7 @@
  * Action helpers return a stable KEY (for tests) + a French label (for the UI),
  * keeping logic decoupled from copy.
  */
+import { isVerified } from "@/lib/documents/doctrine";
 import type { CustomsStatus } from "@/lib/customs/types";
 import type { TransportStatus } from "@/lib/transport/types";
 import type { InvoiceStatus, DocDossierRow } from "./types";
@@ -21,8 +22,9 @@ export function summarizeDossierDocs(
   requiredCodes: string[],
 ): { pending: number; verified: number; missing: number } {
   const pending = docs.filter((d) => d.status === "UPLOADED" || d.status === "PENDING_REVIEW").length;
-  const verified = docs.filter((d) => d.status === "APPROVED").length;
-  const approved = new Set(docs.filter((d) => d.status === "APPROVED").map((d) => d.typeCode));
+  // UAT-2A — canonical doctrine, so department cards match the dossier.
+  const verified = docs.filter((d) => isVerified(d.status)).length;
+  const approved = new Set(docs.filter((d) => isVerified(d.status)).map((d) => d.typeCode));
   const missing = requiredCodes.filter((c) => !approved.has(c)).length;
   return { pending, verified, missing };
 }

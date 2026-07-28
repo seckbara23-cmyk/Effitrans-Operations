@@ -5,6 +5,7 @@
  * checks its precondition then defers to the idempotent createHandoffTask. All
  * are best-effort (never throw) — a handoff must not break the parent action.
  */
+import { isVerified } from "@/lib/documents/doctrine";
 import "server-only";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { invoiceTotals, paidAmount, balanceDue } from "@/lib/finance/calc";
@@ -30,7 +31,7 @@ export async function onDocumentApproved(supabase: Admin, ctx: Ctx, fileId: stri
       supabase.from("document").select("type_code, status").eq("tenant_id", ctx.tenantId).eq("file_id", fileId).is("deleted_at", null).returns<{ type_code: string; status: string }[]>(),
     ]);
     const required = (types ?? []).filter((tp) => (tp.required_for ?? []).includes(file.type)).map((tp) => tp.code);
-    const approved = (docs ?? []).filter((d) => d.status === "APPROVED").map((d) => d.type_code);
+    const approved = (docs ?? []).filter((d) => isVerified(d.status as string)).map((d) => d.type_code);
     if (!documentationComplete(required, approved)) return;
 
     await createHandoffTask(supabase, ctx, fileId, "CUSTOMS_HANDOFF");

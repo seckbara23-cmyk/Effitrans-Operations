@@ -11,6 +11,7 @@
  *   deposit   = invoice_deposit.status + client.requires_physical_invoice_deposit
  *   steps     = process_step_execution
  */
+import { isVerified } from "@/lib/documents/doctrine";
 import "server-only";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { scopedFrom } from "@/lib/db/tenant-scope";
@@ -80,7 +81,8 @@ export async function loadClosureInput(
   ).length;
 
   const docRows = (docs ?? []) as Row[];
-  const pod = docRows.find((d) => d.type_code === "DELIVERY_NOTE" && d.status === "APPROVED");
+  // UAT-2A — closure reads the same evidence doctrine as the dossier page.
+  const pod = docRows.find((d) => d.type_code === "DELIVERY_NOTE" && isVerified(d.status as string));
 
   const transport = ((transports ?? []) as Row[])[0];
   const transportDelivered =

@@ -6,6 +6,7 @@
  * (tenant + customs:read + can_read_file + not deleted) is the CI-tested
  * boundary. Soft-deleted rows excluded.
  */
+import { isVerified } from "@/lib/documents/doctrine";
 import "server-only";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
@@ -144,7 +145,8 @@ export async function getMissingCustomsDocuments(fileId: string): Promise<Missin
     requiredCustomsDocCodes(gatingRows.map((g) => g.code), mode),
   );
   const approved = new Set(
-    (docs.data ?? []).filter((d) => d.status === "APPROVED").map((d) => d.type_code),
+    // UAT-2A — canonical doctrine.
+    (docs.data ?? []).filter((d) => isVerified(d.status as string)).map((d) => d.type_code),
   );
 
   return gatingRows

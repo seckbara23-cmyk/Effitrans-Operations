@@ -5,6 +5,8 @@
  * invokes server-action proxies. Draft = editable (lines, issue, delete);
  * issued = record/reverse payments, void.
  */
+import { PromptDialog } from "./prompt-dialog";
+import { PAYMENT_TERMS } from "@/lib/finance/issuance";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { t } from "@/lib/i18n";
@@ -69,6 +71,11 @@ export function InvoiceCard({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  // UAT-2A — one dialog, two uses. `null` = closed.
+  const [dialog, setDialog] = useState<
+    { kind: "issue" } | { kind: "reject"; paymentId: string } | null
+  >(null);
+  const todayIso = new Date().toISOString().slice(0, 10);
   const [error, setError] = useState<string | null>(null);
   const f = t.finance;
   const isDraft = invoice.status === "DRAFT";
@@ -187,10 +194,7 @@ export function InvoiceCard({
                     {f.invoices.verify}
                   </button>
                   <button
-                    onClick={() => {
-                      const note = window.prompt(f.invoices.rejectPrompt) ?? "";
-                      run(() => rejectPayment(p.id, note.trim() || null));
-                    }}
+                    onClick={() => setDialog({ kind: "reject", paymentId: p.id })}
                     disabled={pending}
                     className="text-slate-400 hover:text-red-600"
                   >
@@ -232,10 +236,7 @@ export function InvoiceCard({
       <div className="flex flex-wrap items-center gap-2">
         {isDraft && canIssueInvoice && (
           <button
-            onClick={() => {
-              const due = window.prompt(f.invoices.issuePrompt) ?? "";
-              run(() => issueInvoice(invoice.id, due.trim() || null));
-            }}
+            onClick={() => setDialog({ kind: "issue" })}
             disabled={pending}
             className="rounded-md border border-navy-200 px-2 py-1 text-xs font-medium text-navy-700 hover:bg-slate-50 disabled:opacity-50"
           >
@@ -269,6 +270,37 @@ export function InvoiceCard({
       />
 
       {error && <p className="text-xs text-red-600">{error}</p>}
+
+      {/* UAT-2A — replaces window.prompt for issuance and payment rejection. */}
+      <PromptDialog
+        open={dialog?.kind === "issue"}
+        mode="date"
+        title="Émettre la facture"
+        help={`Date d'émission : ${todayIso}. L'émission attribue un numéro officiel définitif.`}
+        label="Date d'échéance"
+        minDate={todayIso}
+        terms={PAYMENT_TERMS}
+        submitLabel="Émettre la facture"
+        onCancel={() => setDialog(null)}
+        onSubmit={(due) => {
+          setDialog(null);
+          run(() => issueInvoice(invoice.id, due || null));
+        }}
+      />
+      <PromptDialog
+        open={dialog?.kind === "reject"}
+        mode="text"
+        title="Rejeter le paiement"
+        help="Le motif est conservé dans l'historique du paiement."
+        label="Motif du rejet"
+        submitLabel="Rejeter"
+        onCancel={() => setDialog(null)}
+        onSubmit={(note) => {
+          const target = dialog?.kind === "reject" ? dialog.paymentId : null;
+          setDialog(null);
+          if (target) run(() => rejectPayment(target, note || null));
+        }}
+      />
     </div>
   );
 }
