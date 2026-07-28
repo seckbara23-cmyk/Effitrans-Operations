@@ -85,7 +85,10 @@ describe("getDossierLifecycle (Phase 2.0 addendum)", () => {
     expect(lc.nextAction?.reasonCode).toBe("plan_transport");
   });
 
-  it("6. transport delivered — invoicing is current, gated on POD", () => {
+  it("6. transport delivered — the DELIVERY PROOF stage is current, owned by Operations", () => {
+    // UAT-1 ownership move. This previously asserted that `invoiced` was
+    // current with an `await_pod` gate — i.e. that FINANCE was responsible for
+    // chasing evidence it does not collect. The wait is now its own stage.
     const lc = getDossierLifecycle(mk({
       file: { status: "DELIVERED", type: "IMP" },
       documents: [{ status: "APPROVED" }],
@@ -94,8 +97,26 @@ describe("getDossierLifecycle (Phase 2.0 addendum)", () => {
       podApproved: false,
     }));
     expect(statusOf(lc, "delivered")).toBe("completed");
+    expect(statusOf(lc, "delivery_proof")).toBe("current");
+    expect(statusOf(lc, "invoiced")).toBe("pending");
+    expect(lc.nextAction?.reasonCode).toBe("upload_delivery_proof");
+    // Transport is finished; the outstanding work belongs to Operations.
+    expect(lc.currentDepartment).toBe("documentation");
+  });
+
+  it("6b. once the POD is verified, invoicing becomes current and Finance owns it", () => {
+    const lc = getDossierLifecycle(mk({
+      file: { status: "DELIVERED", type: "IMP" },
+      documents: [{ status: "APPROVED" }],
+      customs: { status: "RELEASED" },
+      transport: { status: "POD_RECEIVED" },
+      podApproved: true,
+    }));
+    expect(statusOf(lc, "delivery_proof")).toBe("completed");
     expect(statusOf(lc, "invoiced")).toBe("current");
-    expect(lc.nextAction?.reasonCode).toBe("await_pod");
+    expect(lc.currentDepartment).toBe("finance");
+    // The gate that used to sit on the finance stage is gone for good.
+    expect(lc.nextAction?.reasonCode).not.toBe("await_pod");
   });
 
   it("7. invoice issued — payment is current", () => {
@@ -148,7 +169,9 @@ describe("getDossierLifecycle (Phase 2.0 addendum)", () => {
       transport: { status: "NOT_STARTED" },
     }));
     expect(lc.currentDepartment).toBe("transport");
-    expect(lc.nextDepartment).toBe("finance");
+    // UAT-1 — the department after transport is OPERATIONS (delivery proof),
+    // not finance. Finance is reached only once the POD is verified.
+    expect(lc.nextDepartment).toBe("documentation");
   });
 
   it("skips customs steps when customs is not applicable (required=false)", () => {

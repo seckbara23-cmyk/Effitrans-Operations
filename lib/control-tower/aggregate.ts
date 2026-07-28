@@ -47,7 +47,11 @@ export function funnelStage(currentStep: string | null, fileStatus: string): Fun
   if (currentStep.startsWith("documents_")) return "documents";
   if (currentStep.startsWith("customs_") || currentStep === "release_authorized") return "customs";
   if (currentStep === "transport_planned" || currentStep === "in_transit" || currentStep === "delivered") return "transport";
-  if (currentStep === "invoiced") return "delivered"; // transport done, awaiting invoicing
+  // UAT-1 — `delivery_proof` is the Operations-owned wait for the signed BL.
+  // Transport is finished, so it belongs in the same funnel bucket as
+  // "awaiting invoicing". Without this it fell through to the catch-all and a
+  // dossier waiting for its POD was counted as ARCHIVED.
+  if (currentStep === "delivery_proof" || currentStep === "invoiced") return "delivered";
   if (currentStep === "paid") return "invoiced"; // invoiced, awaiting payment
   if (currentStep === "archived") return "paid"; // paid, awaiting archive
   return "archived";
@@ -113,9 +117,10 @@ export type Bottleneck = { key: string; label: string; count: number };
 export function bottlenecks(rows: DossierLifecycleRow[]): Bottleneck[] {
   const docsBlocked = rows.filter((r) => r.lifecycle.blockers.some((b) => b.key === "documents_collection")).length;
   const customsInspection = rows.filter((r) => r.lifecycle.currentStep === "customs_inspection").length;
-  const awaitingPod = rows.filter(
-    (r) => r.lifecycle.currentStep === "invoiced" && r.lifecycle.nextAction?.reasonCode === "await_pod",
-  ).length;
+  // UAT-1 — "awaiting POD" used to be Finance sitting on the `invoiced` stage
+  // behind an `await_pod` gate. That gate is gone: the wait is now its own
+  // Operations-owned stage, and being ON that stage IS the bottleneck.
+  const awaitingPod = rows.filter((r) => r.lifecycle.currentStep === "delivery_proof").length;
   const overdue = rows.filter((r) => r.overdueInvoice).length;
   return [
     { key: "docs_blocked", label: "Dossiers bloqués par la documentation", count: docsBlocked },

@@ -229,12 +229,30 @@ export function getDossierLifecycle(input: LifecycleInput): DossierLifecycle {
       done: transportApplicable ? tRank >= 5 : false,
       actionCode: "mark_delivered",
     },
+    // UAT-1 — DELIVERY PROOF IS OPERATIONS' WORK, NOT FINANCE'S.
+    //
+    // Before this stage existed the POD requirement was a GATE hung on the
+    // finance stage, so the moment transport reached DELIVERED the responsible
+    // department became finance — blocked on evidence it does not collect. Most
+    // drivers here are subcontractors who send the signed BL to the office
+    // afterwards; the office, not Finance and not the driver, chases it.
+    //
+    // `documentation` maps to OPERATIONS in the canonical registry, so this one
+    // line moves responsibility without touching the department vocabulary.
+    {
+      key: "delivery_proof",
+      department: "documentation",
+      applicable: transportApplicable,
+      done: input.podApproved,
+      actionCode: "upload_delivery_proof",
+    },
     {
       key: "invoiced",
       department: "finance",
       applicable: true,
       done: hasIssued,
-      gateCode: !input.podApproved ? "await_pod" : undefined,
+      // The POD gate moved to `delivery_proof` above. Finance is never
+      // responsible for evidence it cannot obtain.
       actionCode: "issue_invoice",
     },
     {

@@ -562,13 +562,16 @@ export const EFFITRANS_PROCESS: ProcessStep[] = [
   {
     stepNumber: 17,
     key: "transport_pod_handoff",
-    labelFr: "Service Transport — remettre le BL signé au Coordinateur",
-    internalLabel: "Transport → Coordination — remise du POD, vérification documentaire",
+    labelFr: "Coordination — obtenir et faire vérifier le BL signé",
+    internalLabel: "Opérations — obtention du POD, vérification documentaire",
     clientStage: null,
     phase: "delivery",
-    department: "transport",
-    role: "TRANSPORT_OFFICER",
-    description: "Transmettre le Bordereau de Livraison signé au Coordinateur pour vérification.",
+    // UAT-1 ownership move. Most drivers are subcontractors who hand the signed
+    // BL to the office after the run; Transport's responsibility ends at
+    // DELIVERED. COORDINATOR maps to OPERATIONS in the canonical registry.
+    department: "coordination",
+    role: "COORDINATOR",
+    description: "Obtenir le Bordereau de Livraison signé auprès du chauffeur ou du client et le faire vérifier.",
     prerequisites: ["am_delivery_followup"],
     requiredDocuments: ["SIGNED_DELIVERY_NOTE"],
     requiredEvidence: ["pod_verified_at"],
@@ -577,7 +580,7 @@ export const EFFITRANS_PROCESS: ProcessStep[] = [
     nextSteps: ["coordinator_completeness"],
     parallelGroup: "main",
     slaPolicyKey: "pod_collection",
-    permissions: ["transport:complete", "process:handoff:send"],
+    permissions: ["document:create", "document:approve", "process:handoff:send"],
     implementation: {
       verdict: "partial",
       existing: [

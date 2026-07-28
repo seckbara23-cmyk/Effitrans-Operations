@@ -23,6 +23,7 @@ export function FinancePanel({
   canVoidInvoice,
   canDelete,
   canEmail = false,
+  podVerified = null,
 }: {
   fileId: string;
   finance: FinanceForFile;
@@ -33,6 +34,11 @@ export function FinancePanel({
   canVoidInvoice: boolean;
   canDelete: boolean;
   canEmail?: boolean;
+  /**
+   * UAT-1 — read-only. Finance CONSUMES verified evidence; it never uploads or
+   * verifies the delivery note. null = not applicable (no transport leg).
+   */
+  podVerified?: boolean | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -69,6 +75,17 @@ export function FinancePanel({
 
   return (
     <section className="space-y-3">
+      {podVerified !== null && (
+        <div
+          className={`mb-3 rounded-lg border p-2 text-xs ${
+            podVerified ? "border-teal-200 bg-teal-50 text-teal-800" : "border-amber-200 bg-amber-50 text-amber-800"
+          }`}
+        >
+          {podVerified
+            ? "Preuve de livraison vérifiée ✓ — prêt pour la facturation."
+            : "Preuve de livraison en attente — obtention et vérification par les Opérations."}
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold text-navy-900">{f.panelTitle}</h2>
       </div>

@@ -179,9 +179,12 @@ export function TransportPanel({
           )}
         </div>
 
-        {record.status === "DELIVERED" && !podApproved && (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
-            {tr.podMissing}
+        {/* UAT-1 — Transport's responsibility ENDS at delivery. The signed BL is
+            obtained and verified by Operations, and the platform records the
+            receipt when it is verified. Read-only statement, no action. */}
+        {record.status === "DELIVERED" && (
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-2 text-xs text-slate-600">
+            Livraison effectuée. Preuve de livraison gérée par les Opérations.
           </div>
         )}
 
@@ -189,6 +192,11 @@ export function TransportPanel({
         {targets.length > 0 && (
           <div className="flex flex-wrap items-center gap-2">
             {targets.map((s) => {
+              // UAT-1 — POD_RECEIVED is no longer a Transport click: it is
+              // recorded automatically when Operations' delivery note is
+              // VERIFIED. The STATE remains in the transport model and the
+              // server transition is unchanged; only this button is withdrawn.
+              if (s === "POD_RECEIVED") return null;
               const isComplete = completeTargets.has(s);
               const allowed = isComplete ? canComplete : canUpdate;
               if (!allowed) return null;

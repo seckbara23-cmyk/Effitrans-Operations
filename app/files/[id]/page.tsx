@@ -18,7 +18,9 @@ import { DocumentsPanel } from "@/components/documents/documents-panel";
 import { listDocuments, listDocumentTypes, getMissingRequiredDocuments } from "@/lib/documents/service";
 import { CustomsPanel } from "@/components/customs/customs-panel";
 import { getCustomsRecord, getMissingCustomsDocuments } from "@/lib/customs/service";
+import { isVerified } from "@/lib/documents/doctrine";
 import { TransportPanel } from "@/components/transport/transport-panel";
+import { DeliveryProofPanel } from "@/components/transport/delivery-proof-panel";
 import { getTransportRecord } from "@/lib/transport/service";
 import { TrackingTimeline } from "@/components/transport/tracking-timeline";
 import { getTrackingTimeline } from "@/lib/tracking/service";
@@ -116,7 +118,11 @@ export default async function FileDetailPage({ params }: { params: { id: string 
   // Embedded transport (only if the user can read transport).
   const canReadTransport = hasPermission(permissions, "transport:read");
   const transportRecord = canReadTransport ? await getTransportRecord(file.id) : null;
-  const podApproved = documents.some((d) => d.typeCode === "DELIVERY_NOTE" && d.status === "APPROVED");
+  // UAT-1 — the canonical predicate, not the pre-WES-4 literal. A POD is proof
+  // when it is VERIFIED, when it is a legacy APPROVED row, or once WES-5 has
+  // consumed it as evidence.
+  const podDocument = documents.find((d) => d.typeCode === "DELIVERY_NOTE") ?? null;
+  const podApproved = documents.some((d) => d.typeCode === "DELIVERY_NOTE" && isVerified(d.status));
 
   // Phase 3.4 — real-time tracking timeline. DARK BY DEFAULT: only when
   // TRACKING_ENABLED and the user holds tracking:read; otherwise nothing changes.
@@ -265,6 +271,21 @@ export default async function FileDetailPage({ params }: { params: { id: string 
           />
         </div>
       )}
+      {/* UAT-1 — Operations owns the delivery proof once transport is DELIVERED.
+          Hidden before delivery and rendered above Transport, because after
+          delivery it is the outstanding work. */}
+      {canReadDocs && transportRecord && (
+        <DeliveryProofPanel
+          fileId={file.id}
+          state={{
+            transportStatus: transportRecord.status,
+            document: podDocument ? { status: podDocument.status, version: podDocument.version } : null,
+            podReceived: transportRecord.status === "POD_RECEIVED",
+            canUpload: hasPermission(permissions, "document:create"),
+            canVerify: hasPermission(permissions, "document:approve"),
+          }}
+        />
+      )}
       {canReadTransport && (
         <div id="transport" className="scroll-mt-24">
           <TransportPanel
@@ -300,6 +321,7 @@ export default async function FileDetailPage({ params }: { params: { id: string 
       {canReadFinance && finance && (
         <div id="finance" className="scroll-mt-24">
           <FinancePanel
+            podVerified={transportRecord ? podApproved : null}
             fileId={file.id}
             finance={finance}
             canCreate={hasPermission(permissions, "finance:create")}

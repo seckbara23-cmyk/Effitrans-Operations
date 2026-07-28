@@ -8,6 +8,7 @@
  * Storage access is mediated by lib/documents/storage (private bucket, signed
  * URLs). Soft-delete only (deleted_at). Best-effort storage cleanup on failure.
  */
+import { recordPodReceiptFromVerifiedEvidence } from "@/lib/transport/pod-receipt";
 import { reconcileDossierProcess } from "@/lib/process/reconcile/service";
 import { revalidatePath } from "next/cache";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
@@ -295,14 +296,35 @@ async function runReview(
     const hctx = { tenantId: user.tenantId, actorId: user.id };
     await onDocumentApproved(supabase, hctx, doc.file_id);
     await custDocumentsVerified(supabase, hctx, doc.file_id);
+    // UAT-1 — a VERIFIED delivery note IS the proof of receipt. Operations owns
+    // obtaining and verifying it; recording the receipt is the mechanical
+    // consequence, so the platform does it rather than asking Transport to
+    // click a second time for a fact already established.
+    //
+    // Only for DELIVERY_NOTE, only when transport is DELIVERED, and only
+    // through the same evidence gate the manual transition uses. It runs its
+    // own reconciliation, so the generic call below is skipped when it fires.
+    let podHandled = false;
+    if (doc.type_code === "DELIVERY_NOTE") {
+      const outcome = await recordPodReceiptFromVerifiedEvidence({
+        supabase,
+        tenantId: user.tenantId,
+        fileId: doc.file_id,
+        actorId: user.id,
+      });
+      podHandled = outcome === "recorded";
+    }
+
     // WES-5 — a newly verified document (a POD, a BAE) may satisfy an official
     // step. Convergent + idempotent; never throws.
-    await reconcileDossierProcess({
-      tenantId: user.tenantId,
-      fileId: doc.file_id,
-      cause: "document_verified",
-      actorId: user.id,
-    });
+    if (!podHandled) {
+      await reconcileDossierProcess({
+        tenantId: user.tenantId,
+        fileId: doc.file_id,
+        cause: "document_verified",
+        actorId: user.id,
+      });
+    }
   }
 
   revalidatePath(`/files/${doc.file_id}`);
