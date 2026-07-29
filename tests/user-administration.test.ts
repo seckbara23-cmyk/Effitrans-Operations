@@ -761,12 +761,47 @@ describe("the forced-change flag is not self-clearable — proven in CI, not ass
     expect(s).toContain("s1_sees_tenant_b");
   });
 
-  it("proves the WRITE half: self-clearing and self-extending affect ZERO rows", () => {
+  it("proves the WRITE half: self-clearing and self-extending change NOTHING", () => {
     const s = read(suite);
     expect(s).toMatch(/update public\.app_user set must_change_password = false/);
     expect(s).toMatch(/update public\.app_user set temp_password_expires_at/);
     expect(s).toContain("cleared<>0 or expiry_moved<>0");
+    // The PROPERTY is asserted, not the mechanism.
     expect(s).toContain("flag_after is not true");
+    expect(s).toMatch(/expiry_after >= '2100-01-01T00:00:00Z'/);
+  });
+
+  it("accepts EITHER refusal mechanism — the missing grant or the missing policy", () => {
+    // `authenticated` holds SELECT ONLY on app_user, so the UPDATE is rejected at
+    // the PRIVILEGE layer (an exception), before RLS is consulted. Were that grant
+    // ever added, the absence of an UPDATE policy would still reduce it to zero
+    // rows. The suite records which one fired instead of assuming.
+    const s = read(suite);
+    expect(s).toContain("exception when others then");
+    expect(s).toContain("clear_refusal := 'privilege_' || sqlstate");
+    expect(s).toContain("clear_refused_by");
+    const grants = read("supabase/migrations/20260613000004_grant_table_privileges.sql");
+    expect(grants).toMatch(/grant select on[\s\S]{0,200}public\.app_user/);
+    expect(grants).not.toMatch(/grant (update|all)[^;]*public\.app_user/);
+  });
+
+  it("runs LAST in CI — a new suite must never skip the established ones", () => {
+    // A failing step aborts the job: when this suite sat mid-list, its own bug
+    // skipped 33 downstream RLS suites.
+    const ci = read(".github/workflows/ci.yml");
+    const mine = ci.indexOf("rls_staff_password_test.sql");
+    const others = [...ci.matchAll(/-f supabase\/tests\/(\w+)\.sql/g)]
+      .map((m) => ci.indexOf(`${m[1]}.sql`))
+      .filter((i) => i !== mine);
+    expect(mine).toBeGreaterThan(Math.max(...others));
+  });
+
+  it("surfaces the real SQL error, not a bare exit code", () => {
+    // psql prints the failing statement AFTER the error, so a tail would hide it.
+    const ci = read(".github/workflows/ci.yml");
+    const step = ci.slice(ci.indexOf("Run RLS staff password lifecycle test"));
+    expect(step).toContain("ERROR:");
+    expect(step).toContain("::error::");
   });
 
   it("is non-destructive", () => {

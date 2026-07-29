@@ -190,11 +190,6 @@ jobs:
           PGPASSWORD: postgres
         run: psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/rls_portal_temp_password_test.sql
 
-      - name: Run RLS staff password lifecycle test (2026-07-29)
-        env:
-          PGPASSWORD: postgres
-        run: psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/rls_staff_password_test.sql
-
       - name: Run RLS tracking test (Phase 3.4)
         env:
           PGPASSWORD: postgres
@@ -422,6 +417,26 @@ jobs:
             err=$(echo "$out" | grep -m1 -E '^(psql:.*)?ERROR:' | tr '\n' ' ')
             note=$(echo "$out" | grep -m1 'DOUANE:' | tr '\n' ' ')
             echo "::error::Douane discovery suite failed (psql exit $code). ${err} ${note}"
+          fi
+          exit $code
+
+      # Newest suite runs LAST on purpose: a failing step aborts the job and skips
+      # every later one, so a brand-new suite must never sit in front of the
+      # established ones. Same annotation handling as Douane — psql prints the
+      # failing SQL context AFTER the error, so surface the ERROR line itself
+      # rather than leaving a bare "exit code 3".
+      - name: Run RLS staff password lifecycle test (2026-07-29)
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set +e
+          out=$(psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/rls_staff_password_test.sql 2>&1)
+          code=$?
+          echo "$out"
+          if [ $code -ne 0 ]; then
+            err=$(echo "$out" | grep -m1 -E '^(psql:.*)?ERROR:' | tr '\n' ' ')
+            note=$(echo "$out" | grep -m1 'RLS STAFF PASSWORD FAIL' | tr '\n' ' ')
+            echo "::error::Staff password lifecycle suite failed (psql exit $code). ${err} ${note}"
           fi
           exit $code
 
