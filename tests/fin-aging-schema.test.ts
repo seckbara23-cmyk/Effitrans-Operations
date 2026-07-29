@@ -314,6 +314,34 @@ describe("trigger functions handle DELETE correctly", () => {
     expect(creates.length).toBeGreaterThan(10);
     for (const t of creates) expect(drops.has(t), `${t} lacks a drop-if-exists guard`).toBe(true);
   });
+
+  it("every POLICY creation is idempotent too — CREATE POLICY has no IF NOT EXISTS", () => {
+    // Postgres offers no IF NOT EXISTS for CREATE POLICY, so an unguarded one
+    // makes the whole migration fail on a second run with "policy already
+    // exists" — the exact scenario an operator hits when re-applying a
+    // corrected migration to a database that already has the first version.
+    const m = sql();
+    const creates = [...m.matchAll(/^create policy (\w+) on /gm)].map((x) => x[1]);
+    const drops = new Set([...m.matchAll(/^drop policy if exists (\w+) on /gm)].map((x) => x[1]));
+    expect(creates.length).toBe(10);
+    for (const p of creates) expect(drops.has(p), `${p} lacks a drop-if-exists guard`).toBe(true);
+  });
+
+  it("nothing else in the migration would fail a second run", () => {
+    const m = sql();
+    // Tables, columns, indexes and constraints are all guarded; functions use
+    // CREATE OR REPLACE; inserts use ON CONFLICT DO NOTHING.
+    for (const [pattern, guard] of [
+      [/^create table (?!if not exists)/gm, "create table without IF NOT EXISTS"],
+      [/^create (unique )?index (?!if not exists)/gm, "create index without IF NOT EXISTS"],
+      [/^create function /gm, "create function without OR REPLACE"],
+    ] as [RegExp, string][]) {
+      expect(m.match(pattern), guard).toBeNull();
+    }
+    for (const ins of m.match(/^insert into public\.\w+/gm) ?? []) {
+      expect(m, ins).toContain("on conflict");
+    }
+  });
 });
 
 // ===========================================================================

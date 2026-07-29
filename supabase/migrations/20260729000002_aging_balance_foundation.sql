@@ -648,23 +648,28 @@ alter table public.legacy_import_staging_row enable row level security;
 alter table public.legacy_import_error       enable row level security;
 alter table public.legacy_receivable_link    enable row level security;
 
+drop policy if exists aging_template_select on public.aging_template_version;
 create policy aging_template_select on public.aging_template_version
   for select to authenticated
   using ((tenant_id is null or tenant_id = public.auth_tenant_id())
          and public.has_permission('finance:aging:read'));
 
+drop policy if exists aging_report_select on public.aging_report;
 create policy aging_report_select on public.aging_report
   for select to authenticated
   using (tenant_id = public.auth_tenant_id() and public.has_permission('finance:aging:read'));
 
+drop policy if exists aging_report_row_select on public.aging_report_row;
 create policy aging_report_row_select on public.aging_report_row
   for select to authenticated
   using (tenant_id = public.auth_tenant_id() and public.has_permission('finance:aging:read'));
 
+drop policy if exists aging_report_totals_select on public.aging_report_totals;
 create policy aging_report_totals_select on public.aging_report_totals
   for select to authenticated
   using (tenant_id = public.auth_tenant_id() and public.has_permission('finance:aging:read'));
 
+drop policy if exists aging_report_artifact_select on public.aging_report_artifact;
 create policy aging_report_artifact_select on public.aging_report_artifact
   for select to authenticated
   using (tenant_id = public.auth_tenant_id() and public.has_permission('finance:aging:read'));
@@ -672,22 +677,27 @@ create policy aging_report_artifact_select on public.aging_report_artifact
 -- Share links carry a token hash and a recipient. Only the roles that may create
 -- them may read them, and there is NO anon policy: the public download route
 -- resolves a token through the service role with a uniform 404.
+drop policy if exists aging_report_share_select on public.aging_report_share;
 create policy aging_report_share_select on public.aging_report_share
   for select to authenticated
   using (tenant_id = public.auth_tenant_id() and public.has_permission('finance:aging:share'));
 
+drop policy if exists legacy_batch_select on public.legacy_import_batch;
 create policy legacy_batch_select on public.legacy_import_batch
   for select to authenticated
   using (tenant_id = public.auth_tenant_id() and public.has_permission('finance:aging:import_stage'));
 
+drop policy if exists legacy_staging_select on public.legacy_import_staging_row;
 create policy legacy_staging_select on public.legacy_import_staging_row
   for select to authenticated
   using (tenant_id = public.auth_tenant_id() and public.has_permission('finance:aging:import_stage'));
 
+drop policy if exists legacy_error_select on public.legacy_import_error;
 create policy legacy_error_select on public.legacy_import_error
   for select to authenticated
   using (tenant_id = public.auth_tenant_id() and public.has_permission('finance:aging:import_stage'));
 
+drop policy if exists legacy_link_select on public.legacy_receivable_link;
 create policy legacy_link_select on public.legacy_receivable_link
   for select to authenticated
   using (tenant_id = public.auth_tenant_id() and public.has_permission('finance:aging:read'));
