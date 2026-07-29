@@ -13,10 +13,10 @@
  */
 
 /** The latest migration shipped in this build (pinned to the directory by test). */
-export const LATEST_MIGRATION = "20260728000003_file_transition_permission";
+export const LATEST_MIGRATION = "20260729000001_user_administration_and_password_lifecycle";
 
 /** Total migrations shipped in this build (pinned by test). */
-export const MIGRATION_COUNT = 70;
+export const MIGRATION_COUNT = 71;
 
 /** Newest DATA-probeable migration marker: this permission row proves migrations ≥ this point. */
 export const MIGRATION_PROBE = {

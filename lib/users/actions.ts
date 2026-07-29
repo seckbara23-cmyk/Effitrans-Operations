@@ -12,7 +12,7 @@
  */
 import { revalidatePath } from "next/cache";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
-import { assertPermission } from "@/lib/auth/require-permission";
+import { assertAnyPermission } from "@/lib/auth/require-permission";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
 import { reportError } from "@/lib/observability/report";
@@ -24,6 +24,10 @@ import { sendStaffWelcome, returnsLink, type WelcomeResult } from "./welcome-sen
 import { canTransition, toStaffStatus } from "./lifecycle";
 import { setUserAuthBan } from "@/lib/platform/session-revocation";
 import { NON_ASSIGNABLE_STAFF_ROLE_CODES } from "./service";
+// 2026-07-29 — each action now names the capability it needs instead of sharing
+// one `admin:users:manage` token. userAdminCodes() returns [granular, umbrella],
+// so a tenant whose migration has not been applied yet is never locked out.
+import { userAdminCodes } from "./permissions";
 import type { ActionResult, CredentialMode, CreateUserError } from "./types";
 
 type Admin = ReturnType<typeof getAdminSupabaseClient>;
@@ -79,10 +83,18 @@ export async function createUser(form: {
   roleIds?: string[];
   sendWelcome?: boolean;
   credentialMode?: CredentialMode;
+  /**
+   * 2026-07-29 — the create form now offers Active / Inactive. Anything other
+   * than an explicit "inactive" creates an active user, which is the behaviour
+   * every existing caller relies on. Note that an inactive user cannot sign in
+   * at all (getCurrentUser denies non-active), so a setup link sent to one will
+   * not work until they are reactivated — the UI says so.
+   */
+  status?: "active" | "inactive";
 }): Promise<ActionResult> {
   let admin;
   try {
-    admin = await assertPermission("admin:users:manage");
+    admin = await assertAnyPermission(userAdminCodes("create"));
   } catch {
     return { ok: false, error: "forbidden" };
   }
@@ -167,12 +179,13 @@ export async function createUser(form: {
   }
 
   // --- Stage 2: the tenant profile --------------------------------------------------
+  const createdStatus = form.status === "inactive" ? "inactive" : "active";
   const { error: insErr } = await supabase.from("app_user").insert({
     id: authId,
     tenant_id: admin.tenantId,
     email,
     name: form.name?.trim() || null,
-    status: "active",
+    status: createdStatus,
   });
   if (insErr) {
     // COMPENSATE: undo ONLY what we created. A reused (pre-existing) auth user is left
@@ -198,7 +211,13 @@ export async function createUser(form: {
     tenantId: admin.tenantId,
     entity: "app_user",
     entityId: authId,
-    after: { email, roles: requestedRoles, credentialMode: mode, reusedAuthUser: !createdHere },
+    after: {
+      email,
+      roles: requestedRoles,
+      credentialMode: mode,
+      status: createdStatus,
+      reusedAuthUser: !createdHere,
+    },
   });
 
   // --- Welcome (best-effort). A password is never emailed; setup_email always sends a
@@ -232,7 +251,9 @@ export async function createUser(form: {
 export async function sendWelcomeEmail(userId: string): Promise<ActionResult> {
   let admin;
   try {
-    admin = await assertPermission("admin:users:manage");
+    // Credential DELIVERY, not user creation: this mints the same one-time
+    // recovery link a password reset does, so it takes the same capability.
+    admin = await assertAnyPermission(userAdminCodes("resetPassword"));
   } catch {
     return { ok: false, error: "forbidden" };
   }
@@ -279,7 +300,7 @@ export async function sendWelcomeEmail(userId: string): Promise<ActionResult> {
 export async function setUserStatus(userId: string, status: "active" | "inactive"): Promise<ActionResult> {
   let admin;
   try {
-    admin = await assertPermission("admin:users:manage");
+    admin = await assertAnyPermission(userAdminCodes("disable"));
   } catch {
     return { ok: false, error: "forbidden" };
   }
@@ -342,7 +363,7 @@ export async function setUserStatus(userId: string, status: "active" | "inactive
 export async function archiveUser(userId: string): Promise<ActionResult> {
   let admin;
   try {
-    admin = await assertPermission("admin:users:manage");
+    admin = await assertAnyPermission(userAdminCodes("disable"));
   } catch {
     return { ok: false, error: "forbidden" };
   }
@@ -395,7 +416,7 @@ export async function archiveUser(userId: string): Promise<ActionResult> {
 export async function restoreUser(userId: string): Promise<ActionResult> {
   let admin;
   try {
-    admin = await assertPermission("admin:users:manage");
+    admin = await assertAnyPermission(userAdminCodes("disable"));
   } catch {
     return { ok: false, error: "forbidden" };
   }
@@ -437,10 +458,22 @@ export async function restoreUser(userId: string): Promise<ActionResult> {
   return { ok: true };
 }
 
+/**
+ * Role assignment is DUAL-AUTHORITY, and deliberately so. `admin:roles:manage`
+ * (which has always guarded it) means "may shape what roles can do";
+ * `admin:users:update` means "may edit this staff user", and a user's role
+ * assignments are the substance of that edit. Either authorises it.
+ *
+ * This widens nothing today — SYSTEM_ADMIN is the only holder of both — but it
+ * keeps the granular vocabulary honest: a permission described as "edit a staff
+ * user (name, status, role assignments)" must actually authorise that.
+ */
+const ROLE_EDIT_CODES = ["admin:roles:manage", "admin:users:update", "admin:users:manage"] as const;
+
 export async function assignRole(userId: string, roleId: string): Promise<ActionResult> {
   let admin;
   try {
-    admin = await assertPermission("admin:roles:manage");
+    admin = await assertAnyPermission(ROLE_EDIT_CODES);
   } catch {
     return { ok: false, error: "forbidden" };
   }
@@ -476,7 +509,7 @@ export async function assignRole(userId: string, roleId: string): Promise<Action
 export async function revokeRole(userId: string, roleId: string): Promise<ActionResult> {
   let admin;
   try {
-    admin = await assertPermission("admin:roles:manage");
+    admin = await assertAnyPermission(ROLE_EDIT_CODES);
   } catch {
     return { ok: false, error: "forbidden" };
   }

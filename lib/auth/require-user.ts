@@ -14,6 +14,7 @@ import {
   type CurrentUser,
 } from "./current-user";
 import { isDriverOnly } from "./staff-identity";
+import { getStaffPasswordGate, passwordGateRedirect } from "@/lib/users/password-gate";
 
 /**
  * Returns the authenticated STAFF user, or redirects.
@@ -45,5 +46,20 @@ export async function requireUser(): Promise<CurrentUser> {
   // also holds the driver role is STAFF and must render the staff page, not be bounced to
   // /driver. Membership in DRIVER is not a driver IDENTITY.
   if (isDriverOnly(user.roles)) redirect("/driver");
+
+  // 2026-07-29 — the staff password gate. An administrator who issues a
+  // temporary password sets must_change_password in the same operation, so a
+  // session that survived the change can reach exactly one screen: the one that
+  // changes the password. An expired temporary password reaches a terminal
+  // notice instead — it is never exchangeable for a permanent one, because the
+  // credential it was authenticated with is dead.
+  //
+  // Both targets live under /auth, which the middleware treats as public and the
+  // route contract renders without redirecting, so neither can loop. The gate
+  // itself fails OPEN (see lib/users/password-gate.ts): a policy that cannot be
+  // read must never present as a lockout.
+  const gate = passwordGateRedirect(await getStaffPasswordGate(user.id));
+  if (gate) redirect(gate);
+
   return user;
 }

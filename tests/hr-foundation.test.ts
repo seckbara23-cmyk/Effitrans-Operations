@@ -276,9 +276,10 @@ describe("pages and pins", () => {
     expect(registryPage).toMatch(/hasPermission\(permissions, "hr:manage"\)/);
   });
   it("42 — the HR migration still ships (build-info newest pin moved on in WES-7)", () => {
-    // WES-9 (20260728000003_file_transition_permission) is now the newest migration, so
-    // build-info's pins point there; the HR migration + its permission remain.
-    expect(LATEST_MIGRATION).toBe("20260728000003_file_transition_permission");
+    // The newest migration keeps moving on (granular user administration, as of
+    // 2026-07-29), so build-info's pins point there; the HR migration + its
+    // permission remain untouched, which is what this test actually guards.
+    expect(LATEST_MIGRATION).toBe("20260729000001_user_administration_and_password_lifecycle");
     expect(MIGRATION_PROBE.permissionCode).toBe("finance:expense:read");
     expect(migrationRaw).toContain("'hr:read'");
   });

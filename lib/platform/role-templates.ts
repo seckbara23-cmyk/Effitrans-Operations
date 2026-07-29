@@ -66,6 +66,13 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     requiredForEveryTenant: true,
     permissions: [
       "admin:config:manage", "admin:roles:manage", "admin:users:manage", "analytics:read",
+      // 2026-07-29 — granular user administration. `admin:users:manage` above is the
+      // DEPRECATED umbrella, kept granted so a tenant mid-migration is never locked out
+      // of its own user administration; every action accepts either. Ratified:
+      // SYSTEM_ADMIN only — HR_OFFICER was considered for :read and deferred.
+      "admin:users:create", "admin:users:disable", "admin:users:read",
+      "admin:users:reset_password", "admin:users:temp_password", "admin:users:unlock",
+      "admin:users:update",
       "audit:read:all", "client:create", "client:delete", "client:read", "client:update",
       "communication:manage", "communication:read", "communication:send", "customs:create",
       "customs:delete", "customs:read", "customs:release", "customs:update", "document:approve",

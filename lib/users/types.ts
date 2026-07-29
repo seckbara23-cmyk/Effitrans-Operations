@@ -9,6 +9,7 @@ export type AdminUserRole = {
 
 import type { Presence } from "./presence";
 import type { StaffStatus } from "./lifecycle";
+import type { PasswordStatus } from "./password-lifecycle";
 
 export type AdminUser = {
   id: string;
@@ -25,6 +26,14 @@ export type AdminUser = {
   lastLoginMethod: string | null;
   loginCount: number;
   onboardingEmailSentAt: string | null;
+  // 2026-07-29 — staff password lifecycle. `passwordChangedAt` is null for every
+  // user predating the columns and is NOT backfilled: the platform does not know
+  // when they last changed their password, and « inconnue » is the honest answer.
+  passwordChangedAt: string | null;
+  mustChangePassword: boolean;
+  tempPasswordExpiresAt: string | null;
+  /** Derived server-side so the directory and the details panel cannot disagree. */
+  passwordStatus: PasswordStatus;
 };
 
 /** SYSTEM_ADMIN dashboard presence summary. */

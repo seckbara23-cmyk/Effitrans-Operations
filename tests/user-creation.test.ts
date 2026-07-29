@@ -233,7 +233,22 @@ describe("welcome email is honest and audited", () => {
 
 describe("authorization stays server-side", () => {
   it("every action re-checks its permission; nothing trusts the client", () => {
-    expect(actionsCode).toContain('assertPermission("admin:users:manage")');
+    // 2026-07-29 — createUser names its own capability instead of the retired
+    // `admin:users:manage` umbrella. What matters is unchanged: the check happens
+    // SERVER-side, before anything else.
+    expect(actionsCode).toContain('assertAnyPermission(userAdminCodes("create"))');
+    // Every exported action gates BEFORE it touches the service-role client —
+    // the property that matters, and one a long parameter list cannot skew.
+    const exports = [...actionsCode.matchAll(/export async function (\w+)/g)].map((m) => m[1]);
+    expect(exports.length).toBeGreaterThan(4);
+    for (const name of exports) {
+      const start = actionsCode.indexOf(`export async function ${name}`);
+      const body = actionsCode.slice(start);
+      const gate = body.indexOf("assertAnyPermission(");
+      const client = body.indexOf("getAdminSupabaseClient()");
+      expect(gate, name).toBeGreaterThan(-1);
+      if (client > -1) expect(gate, name).toBeLessThan(client);
+    }
     // The tenant + actor come from the resolved admin, never the form.
     expect(actionsCode).toContain("admin.tenantId");
     expect(actionsCode).toContain("admin.id");

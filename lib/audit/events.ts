@@ -26,6 +26,13 @@ export const AuditActions = {
   // Phase 6.0E-3 — an outstanding invitation cancelled (the user is deactivated, which
   // getCurrentUser enforces, so the outstanding setup link becomes unusable).
   USER_INVITATION_CANCELLED: "user.invitation.cancelled",
+  // 2026-07-29 — staff password lifecycle. The generated password NEVER appears in any
+  // of these payloads; what is recorded is that one was issued, by whom, against whom,
+  // for which ratified reason, and from which IP.
+  USER_TEMP_PASSWORD_GENERATED: "user.temp_password.generated",
+  USER_PASSWORD_RESET_SENT: "user.password_reset.sent",
+  USER_PASSWORD_CHANGED: "user.password.changed",
+  USER_ACCOUNT_UNLOCKED: "user.account.unlocked",
   ADMIN_OVERRIDE_ACCESS: "admin.override.access", // isOverride: true
   AUTH_LOGIN: "auth.login",
   AUTH_LOGOUT: "auth.logout",

@@ -7,9 +7,11 @@
  * imports NO server-only code (no admin client, no service role). All authority
  * lives server-side in the actions (permission-gated + audited).
  */
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { t } from "@/lib/i18n";
+import { groupRolesByDepartment, type DepartmentKey } from "@/lib/users/departments";
 import {
   createUser,
   setUserStatus,
@@ -164,9 +166,27 @@ export function UsersAdmin({
   const [credentialMode, setCredentialMode] = useState<CredentialMode>("setup_email");
   const [newRoleIds, setNewRoleIds] = useState<string[]>([]);
   const [sendWelcome, setSendWelcome] = useState(true);
+  // Department → Role. The department is a FILTER over the roles this tenant
+  // actually has; it is never submitted and never stored. Authority comes from
+  // the role, which is why only roleIds travel to the server.
+  const [department, setDepartment] = useState<DepartmentKey | "">("");
+  const [roleToAdd, setRoleToAdd] = useState("");
+  const [newStatus, setNewStatus] = useState<"active" | "inactive">("active");
   // The one-time credential result (generated password / returned setup link). Lives
   // ONLY here in memory; dismissing or refreshing loses it, by design.
   const [credential, setCredential] = useState<CredentialResult | null>(null);
+
+  // Grouped once per role list. A role no heading claims still appears — under
+  // « Autres » — so a role added later can never become silently unassignable.
+  const groups = useMemo(() => groupRolesByDepartment(roles), [roles]);
+  const rolesInDepartment = useMemo(
+    () => groups.find((g) => g.key === department)?.roles ?? [],
+    [groups, department],
+  );
+  const selectedRoles = useMemo(
+    () => roles.filter((r) => newRoleIds.includes(r.id)),
+    [roles, newRoleIds],
+  );
 
   function run(fn: () => Promise<ActionResult>, onOk?: (res: ActionResult & { ok: true }) => void) {
     setError(null);
@@ -199,121 +219,190 @@ export function UsersAdmin({
       <div className="surface p-5">
         <h2 className="text-sm font-semibold text-navy-900">{t.users.actions.create}</h2>
         <p className="mt-1 text-xs text-slate-500">{t.users.note}</p>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <input
-            type="email"
-            placeholder={t.users.form.email}
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
-          />
-          <input
-            type="text"
-            placeholder={t.users.form.name}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
-          />
-          {/* The password field appears ONLY in manual mode — no always-required field. */}
-          {credentialMode === "manual" ? (
-            <div className="relative">
-              <input
-                type={showPassword ? "text" : "password"}
-                placeholder={t.users.form.password}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 pr-14 text-sm"
-              />
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <div>
+            <label htmlFor="new-email" className="block text-xs font-medium text-slate-600">
+              {t.users.form.email}
+            </label>
+            <input
+              id="new-email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label htmlFor="new-name" className="block text-xs font-medium text-slate-600">
+              {t.users.form.name}
+            </label>
+            <input
+              id="new-name"
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+            />
+          </div>
+
+          {/* Department FILTERS the role list. It is never submitted: a user's
+              authority comes from their role, not from a heading. */}
+          <div>
+            <label htmlFor="new-department" className="block text-xs font-medium text-slate-600">
+              {t.users.form.department}
+            </label>
+            <select
+              id="new-department"
+              value={department}
+              onChange={(e) => {
+                setDepartment(e.target.value as DepartmentKey | "");
+                setRoleToAdd(""); // a stale role from the previous department would be a trap
+              }}
+              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+            >
+              <option value="">{t.users.form.selectDepartment}</option>
+              {groups.map((g) => (
+                <option key={g.key} value={g.key}>
+                  {g.labelFr}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label htmlFor="new-role" className="block text-xs font-medium text-slate-600">
+              {t.users.form.role}
+            </label>
+            <div className="mt-1 flex gap-2">
+              <select
+                id="new-role"
+                value={roleToAdd}
+                disabled={!department}
+                onChange={(e) => setRoleToAdd(e.target.value)}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm disabled:bg-slate-50 disabled:text-slate-400"
+              >
+                <option value="">
+                  {department ? t.users.form.selectRole : t.users.form.roleNeedsDepartment}
+                </option>
+                {rolesInDepartment.map((r) => (
+                  <option key={r.id} value={r.id} disabled={newRoleIds.includes(r.id)}>
+                    {r.labelFr ?? r.code}
+                  </option>
+                ))}
+              </select>
               <button
                 type="button"
-                onClick={() => setShowPassword((v) => !v)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-500 hover:text-navy-700"
-                aria-label={showPassword ? "Masquer" : "Afficher"}
+                disabled={!roleToAdd || newRoleIds.includes(roleToAdd)}
+                onClick={() => {
+                  setNewRoleIds((ids) => (ids.includes(roleToAdd) ? ids : [...ids, roleToAdd]));
+                  setRoleToAdd("");
+                }}
+                className="shrink-0 rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-navy-700 hover:bg-slate-50 disabled:opacity-50"
               >
-                {showPassword ? "Masquer" : "Afficher"}
+                {t.users.form.addSelectedRole}
               </button>
             </div>
-          ) : (
-            <div className="hidden sm:block" aria-hidden />
+          </div>
+
+          <div>
+            <label htmlFor="new-status" className="block text-xs font-medium text-slate-600">
+              {t.users.form.statusLabel}
+            </label>
+            <select
+              id="new-status"
+              value={newStatus}
+              onChange={(e) => setNewStatus(e.target.value as "active" | "inactive")}
+              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+            >
+              <option value="active">{t.users.form.statusActive}</option>
+              <option value="inactive">{t.users.form.statusInactive}</option>
+            </select>
+          </div>
+
+          {/* The password field appears ONLY in manual mode — no always-required field. */}
+          {credentialMode === "manual" && (
+            <div>
+              <label htmlFor="new-password" className="block text-xs font-medium text-slate-600">
+                {t.users.form.password}
+              </label>
+              <div className="relative mt-1">
+                <input
+                  id="new-password"
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 pr-16 text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-500 hover:text-navy-700"
+                  aria-label={showPassword ? "Masquer" : "Afficher"}
+                >
+                  {showPassword ? "Masquer" : "Afficher"}
+                </button>
+              </div>
+            </div>
           )}
-          <button
-            disabled={pending}
-            onClick={() =>
-              run(
-                () =>
-                  createUser({
-                    email,
-                    name,
-                    credentialMode,
-                    ...(credentialMode === "manual" ? { password } : {}),
-                    roleIds: newRoleIds,
-                    sendWelcome,
-                  }),
-                (res) => {
-                  setEmail("");
-                  setName("");
-                  setPassword("");
-                  setNewRoleIds([]);
-                  // A one-time secret (generated password) or a returned link goes into a
-                  // dedicated result panel; otherwise show the honest welcome notice.
-                  if (res.temporaryPassword || res.setupLink) {
-                    setCredential({ email, name, temporaryPassword: res.temporaryPassword, setupLink: res.setupLink });
-                  } else {
-                    setNotice(welcomeNotice(res.welcome));
-                  }
-                },
-              )
-            }
-            className="rounded-lg bg-navy-900 px-3 py-2 text-sm font-medium text-white hover:bg-navy-800 disabled:opacity-60"
-          >
-            {pending ? t.users.form.submitting : t.users.form.submit}
-          </button>
         </div>
 
-        {/* Credential mode selector (5.0E-4). Secure setup email is the default. */}
-        <fieldset className="mt-3">
+        <p className="mt-2 text-[11px] text-slate-400">{t.users.form.departmentHint}</p>
+
+        {/* Roles chosen so far. A user may hold several — the picker adds one at a
+            time, and each stays removable before the user is created. */}
+        <div className="mt-3">
+          <div className="text-xs font-medium text-slate-600">{t.users.form.selectedRoles}</div>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {selectedRoles.length === 0 && (
+              <span className="text-xs text-slate-400">{t.users.form.noRoleSelected}</span>
+            )}
+            {selectedRoles.map((r) => (
+              <span
+                key={r.id}
+                className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-xs text-navy-800"
+              >
+                {r.labelFr ?? r.code}
+                <button
+                  type="button"
+                  onClick={() => setNewRoleIds((ids) => ids.filter((x) => x !== r.id))}
+                  className="text-slate-400 hover:text-red-600"
+                  aria-label={`${t.users.actions.revoke} ${r.labelFr ?? r.code}`}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        </div>
+
+        {/* Credential mode (5.0E-4). Secure setup email is the default and the
+            recommendation; each option states what the SYSTEM does. */}
+        <fieldset className="mt-4">
           <legend className="text-xs font-medium text-slate-600">{t.users.form.credentialMode}</legend>
-          <div className="mt-1.5 flex flex-wrap gap-4">
+          <div className="mt-1.5 space-y-2">
             {([
-              ["setup_email", t.users.form.modeSetupEmail],
-              ["generate", t.users.form.modeGenerate],
-              ["manual", t.users.form.modeManual],
-            ] as [CredentialMode, string][]).map(([mode, label]) => (
-              <label key={mode} className="flex items-center gap-1.5 text-xs text-slate-600">
+              ["setup_email", t.users.form.modeSetupEmail, t.users.form.modeSetupEmailHint],
+              ["generate", t.users.form.modeGenerate, t.users.form.modeGenerateHint],
+              ["manual", t.users.form.modeManual, t.users.form.modeManualHint],
+            ] as [CredentialMode, string, string][]).map(([mode, label, hint]) => (
+              <label key={mode} className="flex items-start gap-2 text-xs text-slate-600">
                 <input
                   type="radio"
                   name="credentialMode"
+                  className="mt-0.5"
                   checked={credentialMode === mode}
                   onChange={() => setCredentialMode(mode)}
                 />
-                {label}
+                <span>
+                  <span className="font-medium text-navy-800">{label}</span>
+                  <span className="block text-[11px] text-slate-400">{hint}</span>
+                </span>
               </label>
             ))}
           </div>
-          <p className="mt-1 text-[11px] text-slate-400">{t.users.form.passwordHint}</p>
+          <p className="mt-2 text-[11px] text-slate-400">{t.users.form.passwordHint}</p>
         </fieldset>
 
-        {credential && (
-          <CredentialPanel result={credential} onDismiss={() => setCredential(null)} />
-        )}
-        {roles.length > 0 && (
-          <div className="mt-3 flex flex-wrap gap-3">
-            {roles.map((r) => (
-              <label key={r.id} className="flex items-center gap-1.5 text-xs text-slate-600">
-                <input
-                  type="checkbox"
-                  checked={newRoleIds.includes(r.id)}
-                  onChange={(e) =>
-                    setNewRoleIds((ids) =>
-                      e.target.checked ? [...ids, r.id] : ids.filter((x) => x !== r.id),
-                    )
-                  }
-                />
-                {r.labelFr ?? r.code}
-              </label>
-            ))}
-          </div>
-        )}
         {/* In setup_email mode the secure link IS the mechanism (always sent); the
             opt-in checkbox only makes sense for the password modes. */}
         {credentialMode !== "setup_email" && (
@@ -326,6 +415,45 @@ export function UsersAdmin({
             {t.users.form.sendWelcome}
           </label>
         )}
+
+        <button
+          disabled={pending}
+          onClick={() =>
+            run(
+              () =>
+                createUser({
+                  email,
+                  name,
+                  credentialMode,
+                  ...(credentialMode === "manual" ? { password } : {}),
+                  roleIds: newRoleIds,
+                  sendWelcome,
+                  status: newStatus,
+                }),
+              (res) => {
+                setEmail("");
+                setName("");
+                setPassword("");
+                setNewRoleIds([]);
+                setDepartment("");
+                setRoleToAdd("");
+                setNewStatus("active");
+                // A one-time secret (generated password) or a returned link goes into a
+                // dedicated result panel; otherwise show the honest welcome notice.
+                if (res.temporaryPassword || res.setupLink) {
+                  setCredential({ email, name, temporaryPassword: res.temporaryPassword, setupLink: res.setupLink });
+                } else {
+                  setNotice(welcomeNotice(res.welcome));
+                }
+              },
+            )
+          }
+          className="mt-4 rounded-lg bg-navy-900 px-4 py-2 text-sm font-medium text-white hover:bg-navy-800 disabled:opacity-60"
+        >
+          {pending ? t.users.form.submitting : t.users.form.submit}
+        </button>
+
+        {credential && <CredentialPanel result={credential} onDismiss={() => setCredential(null)} />}
       </div>
 
       {/* Directory. 8.1A — archived users are hidden by default and EXCLUDED AT QUERY LEVEL;
@@ -423,16 +551,22 @@ function UserRow({
         </div>
         {canEditRoles && available.length > 0 && (
           <div className="mt-2 flex items-center gap-2">
+            {/* Same taxonomy as the create form, as optgroups — a flat list of
+                twenty-eight roles is the thing this change exists to remove. */}
             <select
               value={roleToAdd}
               onChange={(e) => setRoleToAdd(e.target.value)}
               className="rounded-md border border-slate-200 px-2 py-1 text-xs"
             >
               <option value="">{t.users.actions.addRole}…</option>
-              {available.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.labelFr ?? r.code}
-                </option>
+              {groupRolesByDepartment(available).map((g) => (
+                <optgroup key={g.key} label={g.labelFr}>
+                  {g.roles.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.labelFr ?? r.code}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
             </select>
             <button
@@ -560,6 +694,14 @@ function UserRow({
             >
               {t.users.actions.resendWelcome}
             </button>
+            {/* Password management lives on the details page, not in a table row:
+                it needs a confirmation dialog and a one-time secret reveal. */}
+            <Link
+              href={`/users/${user.id}`}
+              className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-medium text-navy-700 hover:bg-slate-50"
+            >
+              {t.users.actions.details}
+            </Link>
           </div>
         )}
       </td>

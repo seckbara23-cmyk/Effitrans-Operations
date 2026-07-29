@@ -31,9 +31,12 @@ const currentUser = read("../lib/auth/current-user.ts");
 
 describe("a client cannot spoof the actor or the tenant of a server action", () => {
   it("the actor is resolved server-side from the session, never taken as an argument", () => {
-    // createUser's signature carries email/name/roles/credentialMode — NO actorId, NO
-    // tenantId. The actor + tenant come from assertPermission(...).tenantId/.id.
-    expect(userActions).toContain("admin = await assertPermission(");
+    // createUser's signature carries email/name/roles/credentialMode/status — NO
+    // actorId, NO tenantId. The actor + tenant come from the resolved gate's
+    // .tenantId/.id. (2026-07-29: the gate is assertAnyPermission, which accepts
+    // the granular capability or the deprecated umbrella; the resolution of WHO
+    // is acting is identical — getCurrentUser() from the session.)
+    expect(userActions).toMatch(/admin = await assertAnyPermission\(/);
     expect(userActions).toContain("tenant_id: admin.tenantId");
     expect(userActions).not.toMatch(/function createUser\([^)]*actorId/);
     expect(userActions).not.toMatch(/function createUser\([^)]*tenantId/);

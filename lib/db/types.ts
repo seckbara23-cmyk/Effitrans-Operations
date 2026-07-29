@@ -160,6 +160,10 @@ export type Database = {
           last_login_method: string | null;
           login_count: number;
           onboarding_email_sent_at: string | null;
+          // 2026-07-29 (migration 20260729000001) — staff password lifecycle.
+          password_changed_at: string | null;
+          must_change_password: boolean;
+          temp_password_expires_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -175,6 +179,9 @@ export type Database = {
           last_login_method?: string | null;
           login_count?: number;
           onboarding_email_sent_at?: string | null;
+          password_changed_at?: string | null;
+          must_change_password?: boolean;
+          temp_password_expires_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -190,6 +197,9 @@ export type Database = {
           last_login_method?: string | null;
           login_count?: number;
           onboarding_email_sent_at?: string | null;
+          password_changed_at?: string | null;
+          must_change_password?: boolean;
+          temp_password_expires_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };

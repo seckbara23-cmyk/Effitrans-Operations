@@ -299,6 +299,28 @@ export const t = {
     },
     notConfigured:
       "L'authentification n'est pas encore configurée sur cet environnement.",
+    // 2026-07-29 — the STAFF forced password change, the mirror of the portal's.
+    changePassword: {
+      title: "Définir votre mot de passe",
+      intro:
+        "Un mot de passe temporaire a été émis pour votre compte. Pour continuer, remplacez-le par un mot de passe personnel.",
+      newPassword: "Nouveau mot de passe",
+      confirmPassword: "Confirmer le mot de passe",
+      submit: "Enregistrer et continuer",
+      submitting: "Enregistrement…",
+      mismatch: "Les mots de passe ne correspondent pas.",
+      tooShort: "Le mot de passe doit comporter au moins 8 caractères.",
+      error: "La mise à jour a échoué. Veuillez réessayer.",
+      verifying: "Vérification…",
+    },
+    passwordExpired: {
+      title: "Mot de passe temporaire expiré",
+      intro:
+        "Le mot de passe temporaire émis pour votre compte a dépassé sa durée de validité. Il n'est plus accepté et ne peut pas être prolongé.",
+      whatNow:
+        "Demandez à votre administrateur système de générer un nouveau mot de passe temporaire. Pour des raisons de sécurité, l'opération est tracée.",
+      signOut: "Se déconnecter",
+    },
   },
   audit: {
     title: "Journal d'audit",
@@ -1461,6 +1483,7 @@ export const t = {
       assign: "Attribuer",
       revoke: "Retirer",
       resendWelcome: "Renvoyer l'e-mail",
+      details: "Détails",
     },
     archive: {
       confirmTitle: "Archiver cet utilisateur ?",
@@ -1487,12 +1510,30 @@ export const t = {
       submitting: "Création…",
       noRoles: "Aucun rôle disponible",
       sendWelcome: "Envoyer un e-mail de bienvenue (lien sécurisé pour définir le mot de passe)",
-      // Phase 5.0E-4 — credential-mode selector.
-      credentialMode: "Identifiant initial",
-      modeSetupEmail: "Envoyer un lien sécurisé de création de mot de passe",
+      // Phase 5.0E-4 — credential-mode selector. Wording revised 2026-07-29: each
+      // option now says what the SYSTEM does, not just what it is called.
+      credentialMode: "Mot de passe initial",
+      modeSetupEmail: "Envoyer un e-mail de création de mot de passe (recommandé)",
+      modeSetupEmailHint: "Envoie un lien sécurisé permettant à l'utilisateur de définir lui-même son mot de passe.",
       modeGenerate: "Générer un mot de passe temporaire",
+      modeGenerateHint: "Le système génère un mot de passe temporaire sécurisé, affiché une seule fois.",
       modeManual: "Saisir un mot de passe temporaire",
+      modeManualHint: "L'administrateur saisit lui-même le mot de passe temporaire.",
       passwordHint: "Aucun mot de passe n'est jamais envoyé par e-mail — uniquement un lien sécurisé.",
+      // 2026-07-29 — Department → Role selection replaces the checkbox wall.
+      department: "Département",
+      selectDepartment: "Sélectionner un département",
+      role: "Rôle",
+      selectRole: "Sélectionner un rôle",
+      roleNeedsDepartment: "Choisissez d'abord un département",
+      addSelectedRole: "Ajouter ce rôle",
+      selectedRoles: "Rôles attribués",
+      noRoleSelected: "Aucun rôle sélectionné",
+      statusLabel: "Statut",
+      statusActive: "Actif",
+      statusInactive: "Inactif",
+      departmentHint:
+        "Le département sert uniquement à filtrer la liste des rôles. Les autorisations proviennent du rôle attribué.",
     },
     // Credential result panel (generate mode) — shown ONCE.
     credential: {
@@ -1536,7 +1577,48 @@ export const t = {
       welcome_failed: "L'e-mail de bienvenue n'a pas pu être envoyé. Réessayez.",
       user_archived:
         "Cet utilisateur est archivé. Restaurez-le d'abord pour effectuer cette action.",
+      // 2026-07-29 — temporary-password generation.
+      reason_required: "Indiquez le motif de la génération du mot de passe temporaire.",
+      reason_invalid: "Ce motif n'est pas reconnu.",
+      reason_note_required: "Précisez le motif dans le champ « Autre motif ».",
+      reason_note_too_long: "La précision du motif est trop longue (280 caractères maximum).",
+      reset_failed:
+        "Le mot de passe temporaire n'a pas pu être appliqué. L'ancien mot de passe reste valable ; réessayez.",
       generic: "L'action a échoué. Veuillez réessayer.",
+    },
+    // 2026-07-29 — Password Management (user details).
+    password: {
+      title: "Gestion du mot de passe",
+      lastChange: "Dernière modification",
+      lastChangeUnknown: "Inconnue — antérieure au suivi",
+      statusLabel: "État du mot de passe",
+      expiresAt: "Expire le",
+      sendReset: "Envoyer un e-mail de réinitialisation",
+      sendResetDone: "E-mail de réinitialisation envoyé.",
+      generate: "Générer un nouveau mot de passe temporaire",
+      unlock: "Déverrouiller le compte",
+      unlockDone: "Compte déverrouillé — l'utilisateur peut à nouveau se connecter.",
+      confirmTitle: "Générer un nouveau mot de passe temporaire ?",
+      confirmBody: [
+        "Le mot de passe actuel de l'utilisateur sera immédiatement invalidé.",
+        "Un nouveau mot de passe temporaire sera généré et affiché une seule fois.",
+        "L'utilisateur devra le changer dès sa prochaine connexion.",
+      ],
+      confirmReason: "Motif (obligatoire)",
+      confirmNote: "Précision",
+      confirmNotePlaceholder: "Précisez le motif…",
+      confirm: "Générer le mot de passe",
+      cancel: "Annuler",
+      resultTitle: "Mot de passe temporaire généré",
+      resultUser: "Utilisateur",
+      resultPassword: "Mot de passe temporaire",
+      resultExpires: "Expire le",
+      resultForceChange: "Changement du mot de passe obligatoire à la première connexion",
+      resultWarning:
+        "Ce mot de passe est affiché une seule fois. Après fermeture de cette fenêtre, il est irrécupérable : en cas de perte, générez-en un nouveau. Transmettez-le par un canal sécurisé.",
+      copy: "Copier",
+      copied: "Copié",
+      close: "Fermer",
     },
     note: "Choisissez comment l'utilisateur obtient son premier accès. Aucun mot de passe n'est jamais transmis par e-mail — seul un lien sécurisé l'est.",
     presence: {

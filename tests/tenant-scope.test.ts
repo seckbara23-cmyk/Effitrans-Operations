@@ -99,6 +99,14 @@ const KNOWN_UNSCOPED_READS: Record<string, string> = {
   "lib/portal/actions.ts::client_user": "self portal identity lookup by auth id",
   "lib/portal/oauth.ts::app_user": "self identity lookup by auth id (orphan-cleanup gate)",
   "lib/portal/password-change.ts::client_user": "self portal identity lookup by auth id",
+  // 2026-07-29 — the staff password lifecycle. Both read app_user by PRIMARY KEY,
+  // and the key is the AUTHENTICATED SESSION'S OWN id — a strictly tighter scope
+  // than a tenant filter, since it can resolve exactly one row and only the
+  // caller's. The administrative actions in the same file (generate / reset /
+  // unlock) DO carry .eq("tenant_id", admin.tenantId); these two are the
+  // self-service half of the flow, where there is no admin tenant to scope by.
+  "lib/users/password-actions.ts::app_user": "self staff lookup by auth id (forced-change gate + completion)",
+  "lib/users/password-gate.ts::app_user": "self staff lookup by auth id (login gate reads its own flags)",
   "lib/portal/password-reset.ts::client_user": "self portal identity lookup by auth id",
   "lib/customer-notify/actions.ts::client_user": "self portal identity lookup by auth id (prefs)",
 

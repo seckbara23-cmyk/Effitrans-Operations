@@ -73,11 +73,16 @@ describe("migration — additive status extension, nothing destructive", () => {
 describe("archive/restore actions — SYSTEM_ADMIN gate, ban reuse, audit, no delete", () => {
   const src = code("../lib/users/actions.ts");
 
-  it("archiveUser and restoreUser gate on admin:users:manage (held ONLY by SYSTEM_ADMIN)", () => {
+  // 2026-07-29 — the single `admin:users:manage` umbrella was split into a
+  // granular family. Archiving and restoring are now `admin:users:disable`;
+  // userAdminCodes() returns [granular, umbrella], so the umbrella still works
+  // for a tenant whose migration has not been applied. Held by SYSTEM_ADMIN only,
+  // exactly as before — the gate narrowed in NAME, not in membership.
+  it("archiveUser and restoreUser gate on admin:users:disable (held ONLY by SYSTEM_ADMIN)", () => {
     const archive = src.slice(src.indexOf("export async function archiveUser"));
     const restore = src.slice(src.indexOf("export async function restoreUser"));
-    expect(archive).toContain('assertPermission("admin:users:manage")');
-    expect(restore).toContain('assertPermission("admin:users:manage")');
+    expect(archive).toContain('assertAnyPermission(userAdminCodes("disable"))');
+    expect(restore).toContain('assertAnyPermission(userAdminCodes("disable"))');
   });
   it("archive refuses self (no self-lockout) and uses the lifecycle module for legality", () => {
     expect(src).toMatch(/archiveUser[\s\S]{0,400}userId === admin\.id/);

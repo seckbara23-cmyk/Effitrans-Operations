@@ -21,6 +21,14 @@ export type RouteContext = {
   portalStatus?: PortalStatus; // meaningful only when identity === "portal"
   mustChangePassword?: boolean; // meaningful only for an ACTIVE portal user
   /**
+   * 2026-07-29 — the STAFF password gate, the mirror of `mustChangePassword`.
+   * Meaningful only for a staff identity. `staffPasswordExpired` wins over
+   * `staffMustChangePassword`: an expired temporary password must not be
+   * exchangeable for a permanent one through the change screen.
+   */
+  staffMustChangePassword?: boolean;
+  staffPasswordExpired?: boolean;
+  /**
    * Platform administration is an ORTHOGONAL capability, not a tenant identity: a
    * platform admin may also have a tenant identity (then `identity` is staff/portal)
    * or none. Platform routes are gated by this flag; tenant routes are gated by
@@ -32,6 +40,8 @@ export type RouteContext = {
 export const STAFF_LOGIN = "/login";
 export const PORTAL_LOGIN = "/portal/login";
 export const PORTAL_CHANGE_PASSWORD = "/portal/auth/change-password";
+export const STAFF_CHANGE_PASSWORD = "/auth/change-password";
+export const STAFF_PASSWORD_EXPIRED = "/auth/password-expired";
 export const DASHBOARD = "/dashboard";
 export const PORTAL_HOME = "/portal";
 export const PLATFORM_HOME = "/platform";
@@ -111,7 +121,14 @@ export function pageRedirect(path: string, ctx: RouteContext): string | null {
   }
 
   if (isStaffApp(path)) {
-    if (ctx.identity === "staff") return null; // render
+    if (ctx.identity === "staff") {
+      // The staff password gate (require-user.ts). Both targets are /auth paths,
+      // which isStaffAuth classifies as public and this function renders without
+      // redirecting — so neither can loop back here. Expiry is checked FIRST.
+      if (ctx.staffPasswordExpired) return STAFF_PASSWORD_EXPIRED;
+      if (ctx.staffMustChangePassword) return STAFF_CHANGE_PASSWORD;
+      return null; // render
+    }
     if (ctx.identity === "portal") return PORTAL_HOME; // require-user: bounce portal to portal
     if (ctx.isPlatformAdmin) return PLATFORM_HOME; // pure platform admin → platform (no login loop)
     return STAFF_LOGIN; // none/orphan

@@ -2,15 +2,18 @@
  * User directory reads (Task 6a). SERVER-ONLY.
  * ---------------------------------------------------------------------------
  * Admin-scoped reads of the user directory. Uses the service-role client (a
- * privileged admin read) gated by `admin:users:manage`, so RLS on app_user is
- * left UNCHANGED (the self-only policy still applies to ordinary user-context
- * reads). Tenant-scoped to the caller's organization. Reads are not audited.
+ * privileged admin read) gated by `admin:users:read` — or the deprecated
+ * `admin:users:manage` umbrella — so RLS on app_user is left UNCHANGED (the
+ * self-only policy still applies to ordinary user-context reads). Tenant-scoped
+ * to the caller's organization. Reads are not audited.
  */
 import "server-only";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
-import { assertPermission } from "@/lib/auth/require-permission";
+import { assertAnyPermission } from "@/lib/auth/require-permission";
 import { classifyPresence } from "./presence";
 import { toStaffStatus } from "./lifecycle";
+import { userAdminCodes } from "./permissions";
+import { passwordStatus } from "./password-lifecycle";
 import type { AdminUser, AdminUserRole, AssignableRole, PresenceSummary } from "./types";
 
 type UserRow = {
@@ -27,12 +30,47 @@ type UserRow = {
 };
 
 /**
+ * The password-lifecycle columns, read SEPARATELY and fail-soft.
+ *
+ * Migrations in this project are applied by an operator, independently of the
+ * deploy. If these three columns were folded into the directory's main select,
+ * the window between "code deployed" and "migration 71 applied" would fail the
+ * whole query — and the user-administration page, the one place from which an
+ * administrator could react, would render empty. So they are fetched on their
+ * own and an error yields an empty map: the directory renders in full, and the
+ * password column reads « inconnue » until the migration lands.
+ */
+type PasswordRow = {
+  id: string;
+  password_changed_at: string | null;
+  must_change_password: boolean | null;
+  temp_password_expires_at: string | null;
+};
+
+async function readPasswordLifecycle(
+  supabase: ReturnType<typeof getAdminSupabaseClient>,
+  tenantId: string,
+): Promise<Map<string, PasswordRow>> {
+  try {
+    const { data, error } = await supabase
+      .from("app_user")
+      .select("id, password_changed_at, must_change_password, temp_password_expires_at")
+      .eq("tenant_id", tenantId)
+      .returns<PasswordRow[]>();
+    if (error) return new Map();
+    return new Map((data ?? []).map((r) => [r.id, r] as const));
+  } catch {
+    return new Map();
+  }
+}
+
+/**
  * Directory read. ARCHIVED users are excluded AT QUERY LEVEL by default (8.1A) — the page never
  * fetches rows it will not show; the "show archived" filter re-queries with the flag instead of
  * filtering in React.
  */
 export async function listUsers(opts: { includeArchived?: boolean } = {}): Promise<AdminUser[]> {
-  const admin = await assertPermission("admin:users:manage");
+  const admin = await assertAnyPermission(userAdminCodes("read"));
   const supabase = getAdminSupabaseClient();
   const now = new Date();
 
@@ -47,11 +85,14 @@ export async function listUsers(opts: { includeArchived?: boolean } = {}): Promi
   const { data: users, error } = await query.order("email").returns<UserRow[]>();
   if (error) throw new Error(`[users] directory read failed: ${error.message}`);
 
-  const { data: roleRows, error: roleErr } = await supabase
-    .from("user_role")
-    .select("user_id, role:role_id(id, code, label_fr)")
-    .eq("tenant_id", admin.tenantId)
-    .returns<{ user_id: string; role: { id: string; code: string; label_fr: string | null } | null }[]>();
+  const [{ data: roleRows, error: roleErr }, passwordRows] = await Promise.all([
+    supabase
+      .from("user_role")
+      .select("user_id, role:role_id(id, code, label_fr)")
+      .eq("tenant_id", admin.tenantId)
+      .returns<{ user_id: string; role: { id: string; code: string; label_fr: string | null } | null }[]>(),
+    readPasswordLifecycle(supabase, admin.tenantId),
+  ]);
   if (roleErr) throw new Error(`[users] role read failed: ${roleErr.message}`);
 
   const byUser = new Map<string, AdminUserRole[]>();
@@ -62,7 +103,9 @@ export async function listUsers(opts: { includeArchived?: boolean } = {}): Promi
     byUser.set(r.user_id, list);
   }
 
-  return (users ?? []).map((u) => ({
+  return (users ?? []).map((u) => {
+    const pw = passwordRows.get(u.id);
+    return {
     id: u.id,
     email: u.email,
     name: u.name,
@@ -78,12 +121,39 @@ export async function listUsers(opts: { includeArchived?: boolean } = {}): Promi
     lastLoginMethod: u.last_login_method,
     loginCount: u.login_count ?? 0,
     onboardingEmailSentAt: u.onboarding_email_sent_at,
-  }));
+    // Absent columns (migration not yet applied) read as "unknown", never as a
+    // manufactured date and never as "no temporary password outstanding".
+    passwordChangedAt: pw?.password_changed_at ?? null,
+    mustChangePassword: pw?.must_change_password ?? false,
+    tempPasswordExpiresAt: pw?.temp_password_expires_at ?? null,
+    passwordStatus: passwordStatus({
+      passwordChangedAt: pw?.password_changed_at ?? null,
+      mustChangePassword: pw?.must_change_password ?? false,
+      tempPasswordExpiresAt: pw?.temp_password_expires_at ?? null,
+      now,
+    }),
+    };
+  });
 }
 
-/** SYSTEM_ADMIN presence summary (gated admin:users:manage). Derived counts only. */
+/**
+ * One user, for the details page. Same shape and same derivations as the
+ * directory — reusing listUsers rather than writing a second projection, so the
+ * two views can never disagree about a user's status or password state. Archived
+ * users are included: the details page is exactly where an administrator goes to
+ * look at one.
+ *
+ * Returns null for an unknown id or one belonging to another tenant, which the
+ * page renders as a plain "not found" — a cross-tenant probe learns nothing.
+ */
+export async function getAdminUser(userId: string): Promise<AdminUser | null> {
+  const all = await listUsers({ includeArchived: true });
+  return all.find((u) => u.id === userId) ?? null;
+}
+
+/** SYSTEM_ADMIN presence summary (gated admin:users:read). Derived counts only. */
 export async function getPresenceSummary(): Promise<PresenceSummary> {
-  const admin = await assertPermission("admin:users:manage");
+  const admin = await assertAnyPermission(userAdminCodes("read"));
   const supabase = getAdminSupabaseClient();
   const onlineSince = new Date(Date.now() - 5 * 60 * 1000).toISOString();
   const dayStart = new Date();
@@ -125,7 +195,7 @@ export async function getPresenceSummary(): Promise<PresenceSummary> {
 export const NON_ASSIGNABLE_STAFF_ROLE_CODES = ["CLIENT_USER"] as const;
 
 export async function listAssignableRoles(): Promise<AssignableRole[]> {
-  const admin = await assertPermission("admin:users:manage");
+  const admin = await assertAnyPermission(userAdminCodes("read"));
   const supabase = getAdminSupabaseClient();
   const { data, error } = await supabase
     .from("role")

@@ -1140,3 +1140,44 @@ join public.permission p on p.code = 'finance:expense:read'
 where r.tenant_id = '00000000-0000-0000-0000-000000000001'
   and r.code in ('CHIEF_OF_TRANSIT', 'COORDINATOR', 'CEO')
 on conflict do nothing;
+
+-- ===========================================================================
+-- 2026-07-29 — Granular user administration. Mirrors migration
+-- 20260729000001. The single `admin:users:manage` umbrella could not express
+-- "may read the directory" separately from "may create and archive users", so
+-- every user-administration capability travelled together. Regenerating a
+-- temporary password — which invalidates a live credential — now carries its
+-- own permission instead of riding on the token that also lists users.
+--
+-- Ratified 2026-07-29: SYSTEM_ADMIN only at this stage. HR_OFFICER was
+-- considered for admin:users:read and explicitly deferred.
+--
+-- `admin:users:manage` above is NOT revoked: it remains granted and is honoured
+-- by every action as a deprecated compatibility fallback.
+-- ===========================================================================
+insert into public.permission (code, module, action, data_scope, description) values
+  ('admin:users:read',           'admin', 'read',           'all',
+   'Read the staff user directory'),
+  ('admin:users:create',         'admin', 'create',         'all',
+   'Create a staff user'),
+  ('admin:users:update',         'admin', 'update',         'all',
+   'Edit a staff user (name, status, role assignments)'),
+  ('admin:users:disable',        'admin', 'disable',        'all',
+   'Suspend, archive and restore a staff user'),
+  ('admin:users:reset_password', 'admin', 'reset_password', 'all',
+   'Send a staff user the secure password-reset email'),
+  ('admin:users:temp_password',  'admin', 'temp_password',  'all',
+   'Generate a temporary password, invalidating the user''s current one'),
+  ('admin:users:unlock',         'admin', 'unlock',         'all',
+   'Unlock a staff account (lift an authentication ban)')
+on conflict (code) do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id from public.role r
+join public.permission p on p.code in (
+  'admin:users:read', 'admin:users:create', 'admin:users:update', 'admin:users:disable',
+  'admin:users:reset_password', 'admin:users:temp_password', 'admin:users:unlock'
+)
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code = 'SYSTEM_ADMIN'
+on conflict do nothing;
