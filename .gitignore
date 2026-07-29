@@ -34,3 +34,12 @@ next-env.d.ts
 
 # local AI evaluation outputs (raw model answers — never commit)
 /eval-results/
+
+# Finance reference workbooks and any spreadsheet drop. The Aging Balance reference
+# workbook carries real client names and receivable amounts (the supplied "anonymized"
+# copy still listed the top-10 clients on its Graphiques tab), and this repository is
+# PUBLIC. Only structure-only fixtures under tests/fixtures/ may be committed —
+# tests/fin-aging-engine.test.ts fails if business data appears in one.
+*.xlsx
+*.xlsm
+*.xls
