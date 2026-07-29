@@ -55,6 +55,12 @@ export interface ScopedQuery<Data = unknown> extends PromiseLike<PgResponse<Data
   neq(column: string, value: unknown): ScopedQuery<Data>;
   in(column: string, values: readonly unknown[]): ScopedQuery<Data>;
   is(column: string, value: unknown): ScopedQuery<Data>;
+  /**
+   * PostgREST negation, e.g. `.not("file_id", "is", null)`. Declared here
+   * because the wrapper is a typed facade over the real builder — the method
+   * already existed at runtime; only the interface omitted it.
+   */
+  not(column: string, operator: string, value: unknown): ScopedQuery<Data>;
   gte(column: string, value: unknown): ScopedQuery<Data>;
   lte(column: string, value: unknown): ScopedQuery<Data>;
   order(column: string, options?: { ascending?: boolean; nullsFirst?: boolean }): ScopedQuery<Data>;

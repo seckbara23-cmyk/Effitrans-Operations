@@ -65,6 +65,10 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     description: "Tenant administrator — manages users, roles and configuration for the company. Full operational read + admin.",
     requiredForEveryTenant: true,
     permissions: [
+      // FIN-AGING-2 — administers, does NOT approve. No import_approve, validate,
+      // finalize, share or template_manage: platform administration is not
+      // financial signoff authority (ratified D-11).
+      "finance:aging:draft_create", "finance:aging:draft_update", "finance:aging:export", "finance:aging:import_stage", "finance:aging:print", "finance:aging:read",
       "admin:config:manage", "admin:roles:manage", "admin:users:manage", "analytics:read",
       // 2026-07-29 — granular user administration. `admin:users:manage` above is the
       // DEPRECATED umbrella, kept granted so a tenant mid-migration is never locked out
@@ -112,6 +116,8 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     description: "Governance — full company visibility (read-only across modules), no daily admin.",
     requiredForEveryTenant: false,
     permissions: [
+      // FIN-AGING-2 — reads and exports; no sharing authority unless later ratified.
+      "finance:aging:export", "finance:aging:print", "finance:aging:read",
       "analytics:read", "audit:read:all", "client:read", "communication:read", "customs:read",
       "document:read", "executive:dashboard:read", "file:read", "file:read:all", "finance:read",
       "org:read:own", ...BASE,
@@ -281,6 +287,7 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "Finance — full finance module plus finance:validate, the CHECKER half of official step 21 (invoice validation). Phase 5.0A recommends narrowing this role by removing finance:create once BILLING_OFFICER is staffed; 5.0B does NOT do that (it would change existing users' access), so maker != checker is enforced on IDENTITY in the engine instead. See docs/phase-5.0b-process-engine.md.",
     requiredForEveryTenant: false,
     permissions: [
+      "finance:aging:draft_create", "finance:aging:draft_update", "finance:aging:export", "finance:aging:print", "finance:aging:read",
       "analytics:read", "collections:manage", "communication:read", "communication:send",
       "file:read", "file:read:all", "finance:create", "finance:issue", "finance:payment",
       "finance:read", "finance:update", "finance:validate", "finance:void", ...BASE,
@@ -563,6 +570,7 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "Finance — comptabilité. Authorizer seat for the « Visa Comptable » on the Bon de Dépenses. Foundation grant is read + export of expense documents; signing authority is wired in 11.0C/D.",
     requiredForEveryTenant: false,
     permissions: [
+      "finance:aging:draft_create", "finance:aging:draft_update", "finance:aging:export", "finance:aging:import_stage", "finance:aging:print", "finance:aging:read",
       ...BASE, "finance:read", "finance:expense:read", "finance:expense:export",
     ],
   },
@@ -575,6 +583,7 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "Finance — trésorerie (authorization, distinct from the Cashier's execution role). Authorizer seat for the « Visa Trésorière » on the Autorisation de Dépenses. Foundation grant is read + export; signing authority is wired in 11.0C/D.",
     requiredForEveryTenant: false,
     permissions: [
+      "finance:aging:export", "finance:aging:print", "finance:aging:read",
       ...BASE, "finance:read", "finance:expense:read", "finance:expense:export",
       // Phase 11.0D — a signing seat of the Autorisation chain (DEC-C08/C11).
       "finance:expense:sign",
@@ -589,6 +598,9 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "Direction administrative et financière. Authorizer seat for the « Visa DAF » on both documents. Foundation grant is read + export; signing authority is wired in 11.0C/D.",
     requiredForEveryTenant: false,
     permissions: [
+      // FIN-AGING-2 — the full Aging Balance authority: prepares, approves imports,
+      // validates, finalizes, shares and administers templates.
+      "finance:aging:draft_create", "finance:aging:draft_update", "finance:aging:export", "finance:aging:finalize", "finance:aging:import_approve", "finance:aging:import_stage", "finance:aging:print", "finance:aging:read", "finance:aging:share", "finance:aging:template_manage", "finance:aging:validate",
       ...BASE, "finance:read", "finance:expense:read", "finance:expense:export",
       // Phase 11.0D — a signing seat of the Autorisation chain (DEC-C08/C11).
       "finance:expense:sign",
@@ -603,6 +615,9 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "Direction générale adjointe. Authorizer seat for the « Visa DGA » on the Bon de Dépenses. Foundation grant is read + export; signing authority is wired in 11.0C/D.",
     requiredForEveryTenant: false,
     permissions: [
+      // FIN-AGING-2 — approval authority: import approval, validation, finalization
+      // and external sharing. Does not prepare drafts or stage imports.
+      "finance:aging:export", "finance:aging:finalize", "finance:aging:import_approve", "finance:aging:print", "finance:aging:read", "finance:aging:share", "finance:aging:validate",
       ...BASE, "finance:read", "finance:expense:read", "finance:expense:export",
     ],
   },

@@ -37,7 +37,11 @@ import type {
 
 type Admin = ReturnType<typeof getAdminSupabaseClient>;
 
-function revalidate(fileId?: string) {
+// FIN-AGING-2 — `invoice.file_id` is nullable for OPENING_IMPORT receivables
+// (Q-08): a legacy balance that predates the platform has no dossier page to
+// revalidate. The guard below already handled that shape; the signature now
+// admits it instead of forcing every caller to launder a null.
+function revalidate(fileId?: string | null) {
   if (fileId) revalidatePath(`/files/${fileId}`);
   revalidatePath("/finance");
   revalidatePath("/finance/reconciliation");
@@ -460,8 +464,13 @@ export async function recordPayment(invoiceId: string, input: PaymentInput): Pro
   await supabase.from("invoice").update({ status: newStatus }).eq("id", invoiceId).eq("tenant_id", user.tenantId);
 
   await writeAudit({ action: AuditActions.PAYMENT_RECORDED, actorId: user.id, tenantId: user.tenantId, entity: "invoice", entityId: invoiceId, after: { amount, method: input.method } });
-  // Phase 2.1 — Finance → Archive handoff once the dossier is fully paid.
-  await onPaymentRecorded(supabase, { tenantId: user.tenantId, actorId: user.id }, inv.file_id);
+  // Phase 2.1 — Finance → Archive handoff once the dossier is fully paid. A
+  // legacy OPENING_IMPORT receivable has no dossier (Q-08), so there is no
+  // operational workflow to advance — paying it settles a balance, it does not
+  // complete a shipment.
+  if (inv.file_id) {
+    await onPaymentRecorded(supabase, { tenantId: user.tenantId, actorId: user.id }, inv.file_id);
+  }
   revalidate(inv.file_id);
   return { ok: true, id: invoiceId };
 }

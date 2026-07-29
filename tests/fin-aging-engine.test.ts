@@ -551,13 +551,17 @@ describe("the phase stays DARK and the layers stay independent", () => {
     }
   });
 
-  it("no route, no migration, no permission, no role grant ships with this phase", () => {
+  it("no route and no renderer ship — the engine is reachable from nowhere", () => {
     let routeExists = true;
     try { read("app/finance/aging/page.tsx"); } catch { routeExists = false; }
     expect(routeExists).toBe(false);
 
-    expect(read("supabase/seed.sql")).not.toContain("finance:aging");
-    expect(read("lib/platform/role-templates.ts")).not.toContain("finance:aging");
+    // The `finance:aging:*` permissions and their schema arrived with
+    // FIN-AGING-2, which is why this assertion no longer claims their absence —
+    // their correctness is proven in tests/fin-aging-schema.test.ts. What stays
+    // true here is the property this phase owns: the ENGINE is not wired to
+    // anything, so nothing can reach it whatever a role may now hold.
+    expect(code("lib/nav.ts")).not.toContain("finance/aging");
   });
 
   it("nothing outside the engine imports it yet — it is genuinely dark", () => {

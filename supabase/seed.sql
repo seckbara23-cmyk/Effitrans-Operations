@@ -1181,3 +1181,98 @@ join public.permission p on p.code in (
 where r.tenant_id = '00000000-0000-0000-0000-000000000001'
   and r.code = 'SYSTEM_ADMIN'
 on conflict do nothing;
+
+-- ===========================================================================
+-- FIN-AGING-2 (2026-07-29) — Aging Balance permissions. Mirrors migration
+-- 20260729000002. Ratified least-privilege matrix (D-11).
+--
+-- SYSTEM_ADMIN reads, drafts, stages imports, exports and prints — but does NOT
+-- approve imports, validate, finalize, share, or manage templates. Administering
+-- the platform is not financial signoff authority; granting it "so an admin can
+-- unblock things" is exactly how maker-checker becomes decorative.
+--
+-- Codes carry an underscore in the third segment (draft_create, import_stage,
+-- template_manage): the ratified names used a fourth colon segment, which the
+-- repository's permission convention — module:action[:scope], [a-z_] only —
+-- does not admit. Same semantics, established separator (cf. admin:users:
+-- reset_password).
+-- ===========================================================================
+insert into public.permission (code, module, action, data_scope, description) values
+  ('finance:aging:read',            'finance_aging', 'read',             'all', 'Consulter la balance âgée'),
+  ('finance:aging:draft_create',    'finance_aging', 'draft_create',     'all', 'Créer un brouillon de balance âgée'),
+  ('finance:aging:draft_update',    'finance_aging', 'draft_update',     'all', 'Modifier un brouillon de balance âgée'),
+  ('finance:aging:import_stage',    'finance_aging', 'import_stage',     'all', 'Préparer et valider un import de créances historiques'),
+  ('finance:aging:import_approve',  'finance_aging', 'import_approve',   'all', 'Approuver un lot d''import dans le grand livre clients'),
+  ('finance:aging:validate',        'finance_aging', 'validate',         'all', 'Valider une balance âgée'),
+  ('finance:aging:finalize',        'finance_aging', 'finalize',         'all', 'Finaliser une balance âgée'),
+  ('finance:aging:export',          'finance_aging', 'export',           'all', 'Exporter une balance âgée (Excel / PDF)'),
+  ('finance:aging:print',           'finance_aging', 'print',            'all', 'Imprimer une balance âgée'),
+  ('finance:aging:share',           'finance_aging', 'share',            'all', 'Partager en externe une balance âgée finalisée'),
+  ('finance:aging:template_manage', 'finance_aging', 'template_manage',  'all', 'Administrer les modèles de balance âgée')
+on conflict (code) do nothing;
+
+-- Read: the seven finance-visible seats.
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id from public.role r
+join public.permission p on p.code = 'finance:aging:read'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('FINANCE_OFFICER', 'ACCOUNTANT', 'TREASURER', 'DAF', 'DGA', 'CEO', 'SYSTEM_ADMIN')
+on conflict do nothing;
+
+-- Draft creation and editing.
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id from public.role r
+join public.permission p on p.code in ('finance:aging:draft_create', 'finance:aging:draft_update')
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('FINANCE_OFFICER', 'ACCOUNTANT', 'DAF', 'SYSTEM_ADMIN')
+on conflict do nothing;
+
+-- Import staging (preparation). Approval is a DIFFERENT seat, below.
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id from public.role r
+join public.permission p on p.code = 'finance:aging:import_stage'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('ACCOUNTANT', 'DAF', 'SYSTEM_ADMIN')
+on conflict do nothing;
+
+-- Import approval — NOT SYSTEM_ADMIN.
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id from public.role r
+join public.permission p on p.code = 'finance:aging:import_approve'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('DAF', 'DGA')
+on conflict do nothing;
+
+-- Validation and finalization — NOT SYSTEM_ADMIN.
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id from public.role r
+join public.permission p on p.code in ('finance:aging:validate', 'finance:aging:finalize')
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('DAF', 'DGA')
+on conflict do nothing;
+
+-- Export and print.
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id from public.role r
+join public.permission p on p.code in ('finance:aging:export', 'finance:aging:print')
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('FINANCE_OFFICER', 'ACCOUNTANT', 'TREASURER', 'DAF', 'DGA', 'CEO', 'SYSTEM_ADMIN')
+on conflict do nothing;
+
+-- External sharing — DAF and DGA only. The CEO reads and exports but does not
+-- automatically receive operational sharing authority.
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id from public.role r
+join public.permission p on p.code = 'finance:aging:share'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('DAF', 'DGA')
+on conflict do nothing;
+
+-- Template administration — DAF. Technical template deployment stays a platform
+-- concern and must not let a platform administrator approve financial content.
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id from public.role r
+join public.permission p on p.code = 'finance:aging:template_manage'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code = 'DAF'
+on conflict do nothing;

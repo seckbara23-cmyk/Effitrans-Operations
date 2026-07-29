@@ -279,7 +279,7 @@ describe("pages and pins", () => {
     // The newest migration keeps moving on (granular user administration, as of
     // 2026-07-29), so build-info's pins point there; the HR migration + its
     // permission remain untouched, which is what this test actually guards.
-    expect(LATEST_MIGRATION).toBe("20260729000001_user_administration_and_password_lifecycle");
+    expect(LATEST_MIGRATION).toBe("20260729000002_aging_balance_foundation");
     expect(MIGRATION_PROBE.permissionCode).toBe("finance:expense:read");
     expect(migrationRaw).toContain("'hr:read'");
   });

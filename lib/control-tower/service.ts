@@ -164,7 +164,12 @@ export const getControlTower = cache(async (
   const paymentPairs: { start: string | null; end: string | null }[] = [];
   if (canFinance) {
     const [invRes, lineRes, payRes] = await Promise.all([
-      supabase.from("invoice").select("id, file_id, status, due_date, issue_date, updated_at").eq("tenant_id", tenant).returns<{ id: string; file_id: string; status: string; due_date: string | null; issue_date: string | null; updated_at: string }[]>(),
+      // FIN-AGING-2 — the control tower groups invoices BY DOSSIER, so it asks
+      // only for invoices that have one. An OPENING_IMPORT receivable (Q-08) is
+      // a legacy balance with no operational file and no place in this view;
+      // filtering it out at the query keeps the row type below truthful rather
+      // than asserting a non-null column that the schema no longer guarantees.
+      supabase.from("invoice").select("id, file_id, status, due_date, issue_date, updated_at").eq("tenant_id", tenant).not("file_id", "is", null).returns<{ id: string; file_id: string; status: string; due_date: string | null; issue_date: string | null; updated_at: string }[]>(),
       supabase.from("invoice_line").select("invoice_id, quantity, unit_amount, tax_rate").eq("tenant_id", tenant).returns<{ invoice_id: string; quantity: number; unit_amount: number; tax_rate: number }[]>(),
       supabase.from("payment").select("invoice_id, amount, reversed_at, paid_at").eq("tenant_id", tenant).returns<{ invoice_id: string; amount: number; reversed_at: string | null; paid_at: string }[]>(),
     ]);

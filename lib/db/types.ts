@@ -2192,7 +2192,10 @@ export type Database = {
         Row: {
           id: string;
           tenant_id: string;
-          file_id: string;
+          file_id: string | null;
+          // FIN-AGING-2 (migration 20260729000002) — Q-08 provenance.
+          provenance: string;
+          legacy_file_reference: string | null;
           client_id: string | null;
           invoice_number: string | null;
           status: string;
@@ -2263,7 +2266,9 @@ export type Database = {
         Update: {
           id?: string;
           tenant_id?: string;
-          file_id?: string;
+          file_id?: string | null;
+          provenance?: string;
+          legacy_file_reference?: string | null;
           client_id?: string | null;
           invoice_number?: string | null;
           status?: string;

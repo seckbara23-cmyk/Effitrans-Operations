@@ -98,8 +98,15 @@ export async function getCollectionsQueue(
   const today = todayInTimezone((org as Row | null)?.timezone as string | undefined ?? "Africa/Dakar");
 
   // (1) the receivables. A dossier is in Collections once its invoice was sent.
+  //
+  // FIN-AGING-2 — the queue is DOSSIER-keyed (it loads files, follow-ups and
+  // assignments by file_id), so it asks only for invoices that have a dossier.
+  // An OPENING_IMPORT legacy balance (Q-08) has none; it belongs to the Aging
+  // Balance, and pulling it in here would break the file join rather than
+  // usefully surface it.
   let q = scopedFrom(admin, "invoice", tenantId)
     .select("*")
+    .not("file_id", "is", null)
     .in("status", ["ISSUED", "PARTIALLY_PAID", "PAID"]);
   if (filters.assigneeId) q = q.eq("collections_assignee_id", filters.assigneeId);
   if (filters.unassigned) q = q.is("collections_assignee_id", null);

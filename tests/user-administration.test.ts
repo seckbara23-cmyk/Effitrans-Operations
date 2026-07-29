@@ -785,15 +785,16 @@ describe("the forced-change flag is not self-clearable — proven in CI, not ass
     expect(grants).not.toMatch(/grant (update|all)[^;]*public\.app_user/);
   });
 
-  it("runs LAST in CI — a new suite must never skip the established ones", () => {
+  it("runs AFTER every suite that predates it — a new suite must not skip established ones", () => {
     // A failing step aborts the job: when this suite sat mid-list, its own bug
-    // skipped 33 downstream RLS suites.
+    // skipped 33 downstream RLS suites. The rule is "append", not "be last" —
+    // later phases append after this one, so claiming the final slot forever
+    // would just make the next phase's suite fail this assertion.
     const ci = read(".github/workflows/ci.yml");
     const mine = ci.indexOf("rls_staff_password_test.sql");
-    const others = [...ci.matchAll(/-f supabase\/tests\/(\w+)\.sql/g)]
-      .map((m) => ci.indexOf(`${m[1]}.sql`))
-      .filter((i) => i !== mine);
-    expect(mine).toBeGreaterThan(Math.max(...others));
+    // The Douane suite was the final one when this suite was added.
+    const lastPredecessor = ci.indexOf("rls_customs_discovery_test.sql");
+    expect(mine).toBeGreaterThan(lastPredecessor);
   });
 
   it("surfaces the real SQL error, not a bare exit code", () => {
