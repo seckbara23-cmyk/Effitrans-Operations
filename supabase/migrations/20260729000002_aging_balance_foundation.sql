@@ -170,6 +170,7 @@ create unique index if not exists uq_aging_report_one_final
 create index if not exists idx_aging_report_tenant_date
   on public.aging_report (tenant_id, reporting_date desc);
 
+drop trigger if exists trg_aging_report_updated_at on public.aging_report;
 create trigger trg_aging_report_updated_at before update on public.aging_report
   for each row execute function public.set_updated_at();
 
@@ -313,6 +314,7 @@ create table if not exists public.legacy_import_batch (
   constraint legacy_batch_approver_differs check (approved_by is null or approved_by <> prepared_by)
 );
 
+drop trigger if exists trg_legacy_batch_updated_at on public.legacy_import_batch;
 create trigger trg_legacy_batch_updated_at before update on public.legacy_import_batch
   for each row execute function public.set_updated_at();
 
@@ -387,8 +389,10 @@ create table if not exists public.legacy_receivable_link (
 
 create index if not exists idx_legacy_link_invoice on public.legacy_receivable_link (invoice_id);
 
+drop trigger if exists trg_legacy_link_no_update on public.legacy_receivable_link;
 create trigger trg_legacy_link_no_update before update on public.legacy_receivable_link
   for each row execute function public.prevent_mutation();
+drop trigger if exists trg_legacy_link_no_delete on public.legacy_receivable_link;
 create trigger trg_legacy_link_no_delete before delete on public.legacy_receivable_link
   for each row execute function public.prevent_mutation();
 
@@ -398,16 +402,25 @@ create trigger trg_legacy_link_no_delete before delete on public.legacy_receivab
 -- Once VALIDATED, the snapshot rows are frozen: the numbers a validator signed
 -- must be the numbers a reader sees. Later payments produce a NEW report that
 -- supersedes this one; they never edit it.
+-- NOTE ON `NEW` IN A DELETE TRIGGER: PL/pgSQL leaves NEW UNASSIGNED for DELETE,
+-- so `coalesce(new.report_id, old.report_id)` does not evaluate to old — it
+-- raises "record \"new\" is not assigned yet". The branch below is therefore
+-- required, not stylistic; the same applies to returning a row.
 create or replace function public.enforce_aging_snapshot_immutable()
 returns trigger language plpgsql as $$
-declare v_status text;
+declare
+  v_status text;
+  v_report uuid;
 begin
-  select status into v_status from public.aging_report
-   where id = coalesce(new.report_id, old.report_id);
+  if tg_op = 'DELETE' then v_report := old.report_id; else v_report := new.report_id; end if;
+
+  select status into v_status from public.aging_report where id = v_report;
   if v_status is not null and v_status <> 'DRAFT' then
     raise exception 'aging snapshot is immutable: report is %, rows may only change while DRAFT', v_status;
   end if;
-  return coalesce(new, old);
+
+  if tg_op = 'DELETE' then return old; end if;
+  return new;
 end;
 $$;
 
@@ -505,21 +518,30 @@ create trigger trg_aging_artifact_protect before update or delete on public.agin
 -- A template version that any report pins may not be edited or removed. This is
 -- what makes "template changes do not alter existing snapshots" true rather than
 -- merely intended.
+-- Same NEW-is-unassigned rule as above: deleting an UNPINNED template would
+-- otherwise fall through to `coalesce(new, old)` and fail with an error about
+-- record assignment rather than succeeding.
 create or replace function public.protect_pinned_aging_template()
 returns trigger language plpgsql as $$
+declare pinned boolean;
 begin
-  if exists (select 1 from public.aging_report r where r.template_id = old.id) then
-    if tg_op = 'DELETE' then
+  select exists (select 1 from public.aging_report r where r.template_id = old.id) into pinned;
+
+  if tg_op = 'DELETE' then
+    if pinned then
       raise exception 'template version % is pinned by an existing report', old.id;
     end if;
-    if new.config is distinct from old.config
-       or new.renderer_key is distinct from old.renderer_key
-       or new.version is distinct from old.version
-       or new.code is distinct from old.code then
-      raise exception 'template version % is pinned by an existing report and is immutable', old.id;
-    end if;
+    return old;
   end if;
-  return coalesce(new, old);
+
+  if pinned
+     and (new.config is distinct from old.config
+          or new.renderer_key is distinct from old.renderer_key
+          or new.version is distinct from old.version
+          or new.code is distinct from old.code) then
+    raise exception 'template version % is pinned by an existing report and is immutable', old.id;
+  end if;
+  return new;
 end;
 $$;
 
@@ -552,18 +574,25 @@ begin
 end;
 $$;
 
+drop trigger if exists trg_aging_row_tenant on public.aging_report_row;
 create trigger trg_aging_row_tenant before insert or update on public.aging_report_row
   for each row execute function public.enforce_aging_tenant_match('report');
+drop trigger if exists trg_aging_totals_tenant on public.aging_report_totals;
 create trigger trg_aging_totals_tenant before insert or update on public.aging_report_totals
   for each row execute function public.enforce_aging_tenant_match('report');
+drop trigger if exists trg_aging_artifact_tenant on public.aging_report_artifact;
 create trigger trg_aging_artifact_tenant before insert or update on public.aging_report_artifact
   for each row execute function public.enforce_aging_tenant_match('report');
+drop trigger if exists trg_aging_share_tenant on public.aging_report_share;
 create trigger trg_aging_share_tenant before insert or update on public.aging_report_share
   for each row execute function public.enforce_aging_tenant_match('artifact');
+drop trigger if exists trg_staging_tenant on public.legacy_import_staging_row;
 create trigger trg_staging_tenant before insert or update on public.legacy_import_staging_row
   for each row execute function public.enforce_aging_tenant_match('batch');
+drop trigger if exists trg_import_error_tenant on public.legacy_import_error;
 create trigger trg_import_error_tenant before insert or update on public.legacy_import_error
   for each row execute function public.enforce_aging_tenant_match('batch');
+drop trigger if exists trg_legacy_link_tenant on public.legacy_receivable_link;
 create trigger trg_legacy_link_tenant before insert on public.legacy_receivable_link
   for each row execute function public.enforce_aging_tenant_match('invoice');
 
@@ -580,6 +609,7 @@ begin
 end;
 $$;
 
+drop trigger if exists trg_legacy_link_file_tenant on public.legacy_receivable_link;
 create trigger trg_legacy_link_file_tenant before insert on public.legacy_receivable_link
   for each row execute function public.enforce_legacy_link_file_tenant();
 
@@ -597,6 +627,7 @@ begin
 end;
 $$;
 
+drop trigger if exists trg_staging_file_tenant on public.legacy_import_staging_row;
 create trigger trg_staging_file_tenant before insert or update on public.legacy_import_staging_row
   for each row execute function public.enforce_staging_file_tenant();
 

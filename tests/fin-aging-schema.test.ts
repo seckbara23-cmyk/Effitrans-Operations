@@ -270,6 +270,53 @@ describe("immutability and lifecycle are enforced in the database", () => {
 });
 
 // ===========================================================================
+describe("trigger functions handle DELETE correctly", () => {
+  // In a PL/pgSQL row trigger, NEW is UNASSIGNED for DELETE — `new.col` and even
+  // a bare `coalesce(new, old)` raise "record \"new\" is not assigned yet"
+  // rather than falling back to OLD. Two functions here were written that way
+  // and would have failed the first time anyone deleted a snapshot row or an
+  // unpinned template. Caught by review before CI ever ran the migration; this
+  // guard keeps the pattern from returning.
+  const deleteCapable = () => {
+    const m = sql();
+    const names = [...m.matchAll(/create trigger (\w+) before[^\n]*delete[^\n]*\n\s*for each row execute function public\.(\w+)/g)];
+    return [...new Set(names.map((x) => x[2]))];
+  };
+
+  it("finds the DELETE-capable trigger functions", () => {
+    expect(deleteCapable().length).toBeGreaterThan(0);
+  });
+
+  it("none of them dereferences NEW without a TG_OP branch", () => {
+    const m = sql();
+    for (const fn of deleteCapable()) {
+      if (fn === "prevent_mutation") continue; // always raises; never returns
+      const start = m.indexOf(`function public.${fn}()`);
+      const body = m.slice(start, m.indexOf("$$;", start));
+      const touchesNew = /\bnew\./.test(body) || /coalesce\(\s*new\s*,/.test(body);
+      if (touchesNew) {
+        // Any TG_OP branch is fine — guarding the UPDATE path (touch NEW inside,
+        // fall through to raise on DELETE) is as correct as guarding the DELETE
+        // path. What must not happen is NEW being read unconditionally.
+        expect(body, `${fn} must branch on tg_op before touching NEW`).toMatch(/tg_op\s*=\s*'(DELETE|UPDATE|INSERT)'/);
+      }
+    }
+  });
+
+  it("never returns coalesce(new, old) — that itself fails on DELETE", () => {
+    expect(sql()).not.toMatch(/return coalesce\(\s*new\s*,\s*old\s*\)/);
+  });
+
+  it("every trigger creation is idempotent, matching the header's claim", () => {
+    const m = sql();
+    const creates = [...m.matchAll(/^create trigger (\w+) /gm)].map((x) => x[1]);
+    const drops = new Set([...m.matchAll(/^drop trigger if exists (\w+) /gm)].map((x) => x[1]));
+    expect(creates.length).toBeGreaterThan(10);
+    for (const t of creates) expect(drops.has(t), `${t} lacks a drop-if-exists guard`).toBe(true);
+  });
+});
+
+// ===========================================================================
 describe("maker-checker is structural", () => {
   it("the report cannot exist with one person on both sides", () => {
     const m = sql();
