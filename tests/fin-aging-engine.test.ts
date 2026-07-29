@@ -551,27 +551,28 @@ describe("the phase stays DARK and the layers stay independent", () => {
     }
   });
 
-  it("no route and no renderer ship — the engine is reachable from nowhere", () => {
-    let routeExists = true;
-    try { read("app/finance/aging/page.tsx"); } catch { routeExists = false; }
-    expect(routeExists).toBe(false);
-
-    // The `finance:aging:*` permissions and their schema arrived with
-    // FIN-AGING-2, which is why this assertion no longer claims their absence —
-    // their correctness is proven in tests/fin-aging-schema.test.ts. What stays
-    // true here is the property this phase owns: the ENGINE is not wired to
-    // anything, so nothing can reach it whatever a role may now hold.
-    expect(code("lib/nav.ts")).not.toContain("finance/aging");
+  it("no RENDERER ships — the engine feeds a screen, not a file", () => {
+    // FIN-AGING-3 gave the engine a read-only route, so this no longer claims
+    // that nothing consumes it; that route's own guarantees are proven in
+    // tests/fin-aging-workspace.test.ts. What this phase still owns is that no
+    // Excel or PDF renderer exists to turn a report into a distributable
+    // artifact — that is FIN-AGING-6/7 and it has not happened.
+    for (const p of ["lib/finance/aging/xlsx.ts", "lib/finance/aging/pdf.ts"]) {
+      let exists = true;
+      try { read(p); } catch { exists = false; }
+      expect(exists, p).toBe(false);
+    }
   });
 
-  it("nothing outside the engine imports it yet — it is genuinely dark", () => {
-    const consumers = [
-      "lib/finance/actions.ts", "lib/finance/service.ts", "lib/collections/service.ts",
-      "lib/nav.ts", "lib/modules.ts",
-    ];
-    for (const p of consumers) {
+  it("the engine has exactly ONE data-layer consumer — the read service", () => {
+    // The engine must not sprout callers that assemble AR inputs their own way;
+    // every route reaches it through lib/finance/aging/server/read-service.ts,
+    // which is the single place that knows how to turn canonical Finance rows
+    // into engine inputs. Existing finance and collections code is untouched.
+    for (const p of ["lib/finance/actions.ts", "lib/finance/service.ts", "lib/collections/service.ts"]) {
       expect(read(p), p).not.toContain("finance/aging");
     }
+    expect(read("lib/finance/aging/server/read-service.ts")).toContain("buildAgingReport");
   });
 });
 

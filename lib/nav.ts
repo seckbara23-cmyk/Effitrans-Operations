@@ -110,6 +110,11 @@ export const BASE_SECTIONS: NavigationSection[] = [
         permissionsAnyOf: ["customs:read", "transport:read"],
       },
       { key: "finance", label: "Finance", href: "/departments/finance", iconKey: "finance", permission: "finance:read" },
+      // FIN-AGING-3 deliberately adds NOTHING here. « Balance âgée » is a Finance
+      // WORKSPACE, and the ratified sidebar realignment made DÉPARTEMENTS exactly
+      // three entries — Opérations, Transit, Finance — with workspaces reached
+      // from their department hub, exactly as Douane, Transport, Documentation
+      // and Caisse already are. Its entry lives in app/departments/finance.
     ],
   },
   {

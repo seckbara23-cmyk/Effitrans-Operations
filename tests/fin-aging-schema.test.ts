@@ -525,24 +525,32 @@ describe("the DB suite is wired into CI, last, with a readable failure", () => {
 
 // ===========================================================================
 describe("the phase stays DARK", () => {
-  it("no aging route exists", () => {
-    for (const p of ["app/finance/aging/page.tsx", "app/finance/aging/import/page.tsx"]) {
-      let exists = true;
-      try { read(p); } catch { exists = false; }
-      expect(exists, p).toBe(false);
+  it("no WRITE surface exists for any of these tables", () => {
+    // FIN-AGING-3 added a READ-ONLY route, so "no route" is no longer the claim.
+    // What this phase's schema still owns: nothing anywhere writes an aging
+    // report, a snapshot, an artifact, a share link or an import batch.
+    let importRoute = true;
+    try { read("app/finance/aging/import/page.tsx"); } catch { importRoute = false; }
+    expect(importRoute).toBe(false);
+
+    for (const p of [
+      "app/finance/aging/page.tsx",
+      "lib/finance/aging/server/read-service.ts",
+      "lib/finance/actions.ts",
+      "lib/finance/service.ts",
+    ]) {
+      const s = code(p);
+      for (const t of ["aging_report", "aging_report_row", "aging_report_artifact",
+                       "aging_report_share", "legacy_import_batch"]) {
+        expect(s, `${p} touches ${t}`).not.toContain(t);
+      }
     }
   });
 
-  it("no navigation entry, no module flag, no renderer", () => {
-    expect(code("lib/nav.ts")).not.toContain("aging");
-    for (const p of ["lib/finance/actions.ts", "lib/finance/service.ts"]) {
-      expect(code(p), p).not.toContain("aging_report");
-    }
-  });
-
-  it("the pure engine from FIN-AGING-1 is still unwired", () => {
-    expect(code("lib/nav.ts")).not.toContain("finance/aging");
-    expect(code("lib/modules.ts")).not.toContain("finance/aging");
+  it("the read route is gated by permission AND an env kill switch", () => {
+    const page = code("app/finance/aging/page.tsx");
+    expect(page).toContain("agingWorkspaceEnabled()");
+    expect(page).toContain('hasPermission(permissions, "finance:aging:read")');
   });
 
   it("the migration is NOT applied by this phase — the operator sequence is 68,69,70,71 first", () => {

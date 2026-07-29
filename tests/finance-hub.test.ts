@@ -42,13 +42,19 @@ describe("Finance hub workspace links (Scope E)", () => {
     // at all »: 11.0B ratified the finance:expense:* family, so 11.0C's link may
     // use it. Every scoped finance permission on this page must be one that
     // actually exists in the permission catalog.
-    const scoped = [...financeDept.matchAll(/"(finance:[a-z]+:[a-z]+)"/g)].map((m) => m[1]);
-    const catalog = readFileSync(
-      fileURLToPath(new URL("../supabase/migrations/20260725000001_expense_documents.sql", import.meta.url)),
-      "utf8",
-    );
+    // FIN-AGING-2 ratified a second scoped family, finance:aging:*, so the
+    // catalogue this checks against is now the union of the migrations that
+    // define them. The intent is unchanged and is the point of the test: a link
+    // may only cite a permission that really exists.
+    const scoped = [...financeDept.matchAll(/"(finance:[a-z]+:[a-z_]+)"/g)].map((m) => m[1]);
+    const catalog = [
+      "../supabase/migrations/20260725000001_expense_documents.sql",
+      "../supabase/migrations/20260729000002_aging_balance_foundation.sql",
+    ]
+      .map((p) => readFileSync(fileURLToPath(new URL(p, import.meta.url)), "utf8"))
+      .join("\n");
     for (const code of scoped) expect(catalog, code).toContain(`'${code}'`);
-    expect(scoped).toEqual(["finance:expense:read"]);
+    expect(scoped.sort()).toEqual(["finance:aging:read", "finance:expense:read"]);
   });
 });
 

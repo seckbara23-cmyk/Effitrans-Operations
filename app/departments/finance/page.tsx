@@ -12,6 +12,7 @@ import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-s
 import { DeptSlaCard } from "@/components/departments/dept-sla-card";
 import { DeptAttentionCard } from "@/components/departments/dept-attention-card";
 import { financeCards, financeNextAction } from "@/lib/departments/classify";
+import { agingWorkspaceEnabled } from "@/lib/finance/aging/rollout";
 import { t } from "@/lib/i18n";
 
 export const metadata: Metadata = { title: "Finance" };
@@ -73,11 +74,17 @@ export default async function FinanceDepartmentPage() {
   // The sidebar (lib/navigation/build.ts) already gated on the flag AND the
   // permission; this list did not. Two gating implementations, drifted — the
   // exact failure mode the navigation builder's own header warns about.
+  const agingEnabled = agingWorkspaceEnabled();
   const financeLinks = [
     { label: "Facturation", href: "/finance", permission: "finance:read", desc: "Factures, encours et statuts de règlement." },
     { label: "Recouvrement", href: "/collections", permission: "collections:manage", available: collectionsAvailable, desc: "Balance âgée, relances et promesses." },
     { label: "Autorisations de dépenses", href: "/finance/autorisations-depenses", permission: "finance:expense:read", desc: "Établir, soumettre et imprimer les autorisations de dépenses." },
     { label: "Caisse", href: "/finance/caisse", permission: "caisse:manage", desc: "Opérations de caisse et de trésorerie (espèces, chèques, Mobile Money, banques)." },
+    // FIN-AGING-3 — read-only aged balance. `available` is REQUIRED here, not
+    // decorative: /finance/aging 404s unless the env kill switch is on, so a
+    // permission-only tile would link to a dead page — the same defect WES-3A.6
+    // fixed for Recouvrement.
+    { label: "Balance âgée", href: "/finance/aging", permission: "finance:aging:read", available: agingEnabled, desc: "Encours clients par tranche d'ancienneté, analyse par client et dossiers critiques." },
     { label: "Rapprochement", href: "/finance/reconciliation", permission: "finance:read", desc: "Vérification des paiements reçus." },
     { label: "Rapports", href: "/reports", permission: "report:read", desc: "Indicateurs financiers et exports." },
   ].filter((l) => hasPermission(permissions, l.permission) && l.available !== false);
