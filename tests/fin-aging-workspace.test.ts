@@ -406,6 +406,197 @@ describe("permission enforcement", () => {
 });
 
 // ===========================================================================
+describe("FIN-AGING-3A — the flag × permission matrix", () => {
+  // Four combinations, one outcome. The route reads the flag FIRST and 404s, so
+  // the two lower-left cases are indistinguishable from a route that does not
+  // exist — which is the point.
+  const page = () => code(PAGE);
+
+  it("flag OFF — the route 404s before authentication is even attempted", () => {
+    const p = page();
+    const flag = p.indexOf("if (!agingWorkspaceEnabled()) notFound();");
+    expect(flag).toBeGreaterThan(-1);
+    // Compare against the CALL SITES, not the imports at the top of the file.
+    expect(flag).toBeLessThan(p.indexOf("await requireUser()"));
+    expect(flag).toBeLessThan(p.indexOf("await getEffectivePermissions("));
+  });
+
+  it("flag ON + permission OFF — a refusal, not a blank page and not data", () => {
+    const p = page();
+    const gate = p.indexOf('!hasPermission(permissions, "finance:aging:read")');
+    expect(gate).toBeGreaterThan(-1);
+    expect(gate).toBeLessThan(p.indexOf("getAgingReportView("));
+    expect(p).toContain("Vous n&apos;avez pas l&apos;autorisation de consulter la balance âgée.");
+  });
+
+  it("flag ON + permission ON is the ONLY combination that reads data", () => {
+    const p = page();
+    // Both gates precede the single call that touches Finance records.
+    const read = p.indexOf("getAgingReportView(");
+    expect(p.indexOf("agingWorkspaceEnabled()")).toBeLessThan(read);
+    expect(p.indexOf('hasPermission(permissions, "finance:aging:read")')).toBeLessThan(read);
+  });
+
+  it("the hub tile needs BOTH as well — permission alone would link to a 404", () => {
+    const hub = code("app/departments/finance/page.tsx");
+    expect(hub).toMatch(/label: "Balance âgée"[\s\S]{0,220}available: agingEnabled/);
+    expect(hub).toContain("hasPermission(permissions, l.permission) && l.available !== false");
+  });
+
+  it("the flag fails closed — anything but the literal \"true\" is off", () => {
+    expect(code("lib/finance/aging/rollout.ts"))
+      .toContain('process.env.EFFITRANS_FINANCE_AGING_ENABLED === "true"');
+  });
+});
+
+// ===========================================================================
+describe("FIN-AGING-3A — sorting is a way of looking, not of counting", () => {
+  it("sorting changes the ORDER of displayed rows and nothing else", () => {
+    const r = vm();
+    const w = code(WORKSPACE);
+    // The sort helper copies before sorting — the report's own array is never
+    // mutated, which is what keeps every other tab stable.
+    expect(w).toContain("return [...rows].sort(");
+    expect(w).toMatch(/const visibleRows = useMemo\(\(\) => sortRows\(filterRows\(rows, filters\), sort\)/);
+    // Totals are read straight off the view model, never off visibleRows.
+    expect(w).not.toMatch(/visibleRows[\s\S]{0,40}reduce/);
+    expect(r.kpis.totalOutstanding).toBe(sum(r.rows.map((x) => x.outstanding)));
+  });
+
+  it("ordering is total — ties break on invoice number, so it cannot reshuffle", () => {
+    expect(code(WORKSPACE)).toContain('a.invoiceNumber.localeCompare(b.invoiceNumber, "fr")');
+  });
+
+  it("a third click returns to the engine's canonical order", () => {
+    expect(code(WORKSPACE)).toMatch(/dir === "asc" \? \{ key: sortKey, dir: "desc" \} : null/);
+  });
+
+  it("sortable headings announce their state with aria-sort", () => {
+    const w = code(WORKSPACE);
+    expect(w).toContain('aria-sort={dir === "asc" ? "ascending" : dir === "desc" ? "descending" : "none"}');
+  });
+});
+
+// ===========================================================================
+describe("FIN-AGING-3A — accessibility", () => {
+  it("the tab strip implements the FULL ARIA pattern, not half of it", () => {
+    // role="tab" without a tabpanel, aria-controls or arrow keys announces a
+    // widget and then fails to behave like one — worse than plain buttons.
+    const w = code(WORKSPACE);
+    expect(w).toContain('role="tablist"');
+    expect(w).toContain('role="tabpanel"');
+    expect(w).toContain('aria-controls="aging-tabpanel"');
+    expect(w).toContain("aria-labelledby={`aging-tab-${tab}`}");
+    expect(w).toContain("tabIndex={tab === t.key ? 0 : -1}"); // roving tabindex
+    expect(w).toContain('e.key === "ArrowRight"');
+    expect(w).toContain('e.key === "ArrowLeft"');
+  });
+
+  it("SVG charts carry a text alternative — role=img hides their contents", () => {
+    const c = code(CHARTS);
+    expect(c).toContain("function ChartDataTable");
+    expect((c.match(/<ChartDataTable/g) ?? []).length).toBe(2); // the two SVG charts
+    expect(c).toContain('<table className="sr-only">');
+    expect(c).toContain('<th scope="row">');
+  });
+
+  it("the top-clients chart is NOT labelled an image — it is real text", () => {
+    const c = code(CHARTS);
+    const fn = c.slice(c.indexOf("export function TopClientsChart"));
+    expect(fn).not.toContain('role="img"');
+    expect(fn).toContain('aria-label="Principaux clients par encours"');
+  });
+
+  it("no body text sits at slate-400 (about 2.8:1 on white — below 4.5:1)", () => {
+    for (const p of [WORKSPACE, CHARTS]) {
+      expect(code(p), p).not.toContain("text-slate-400");
+    }
+  });
+
+  it("interactive controls have a visible focus ring", () => {
+    const w = code(WORKSPACE);
+    expect((w.match(/focus-visible:ring/g) ?? []).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("long tables keep their headings visible while scrolling", () => {
+    expect(code(WORKSPACE)).toMatch(/<thead className="sticky top-0/);
+  });
+
+  it("every table is captioned and column-scoped", () => {
+    const w = code(WORKSPACE);
+    expect((w.match(/<caption className="sr-only">/g) ?? []).length).toBeGreaterThanOrEqual(4);
+    expect((w.match(/scope="col"/g) ?? []).length).toBeGreaterThan(15);
+  });
+});
+
+// ===========================================================================
+describe("FIN-AGING-3A — the synthetic preview dataset", () => {
+  const DATASET = "supabase/demo/aging_preview_dataset.sql";
+  const sql = () => read(DATASET);
+
+  it("exists and shouts that it is preview-only", () => {
+    expect(sql()).toContain("NEVER RUN THIS AGAINST PRODUCTION");
+  });
+
+  it("writes ONLY into its own demo tenant", () => {
+    const s = sql();
+    const tenants = [...s.matchAll(/tenant_id\s*=\s*'([0-9a-f-]{36})'/g)].map((m) => m[1]);
+    for (const t of tenants) expect(t).toBe("00000000-0000-0000-0000-00000000de00");
+    // …and it is not the seeded Effitrans tenant.
+    expect(s).not.toContain("00000000-0000-0000-0000-000000000001");
+  });
+
+  it("aborts rather than touch a tenant holding anything real", () => {
+    const s = sql();
+    expect(s).toContain("REFUSING:");
+    expect(s).toMatch(/not like 'DEMO-%'/);
+  });
+
+  it("is idempotent and reversible", () => {
+    const s = sql();
+    expect(s).toContain("delete from public.invoice");
+    expect(s).toContain("TEARDOWN");
+  });
+
+  it("every fixture name is an obvious placeholder", () => {
+    const s = sql();
+    const names = [...s.matchAll(/'(Client Démo [^']+)'/g)].map((m) => m[1]);
+    expect(names.length).toBeGreaterThanOrEqual(10);
+    for (const n of names) expect(n).toMatch(/^Client Démo /);
+    expect(s).toMatch(/'DEMO-INV-\d{4}'|DEMO-INV-' \|\| spec\.suffix/);
+  });
+
+  it("exercises every state the review checklist names", () => {
+    const s = sql();
+    for (const marker of [
+      "OPENING_IMPORT",     // legacy rows with a preserved reference
+      "'EUR'",              // foreign-currency exclusion
+      "disputed_at",        // dispute indicator
+      "PARTIALLY_PAID",     // partial payment
+      "'PAID'",             // settled → excluded
+      "DEMO-PAY-FUTURE",    // a payment after a back-dated arrêté
+      "2505",               // the oldest critical balance
+      "365",                // the boundary pair
+      "366",
+    ]) {
+      expect(s, marker).toContain(marker);
+    }
+  });
+
+  it("uses only valid hex UUID literals", () => {
+    const bad = [...sql().matchAll(/'([0-9a-zA-Z-]{36})'/g)]
+      .map((m) => m[1])
+      .filter((u) => !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(u));
+    expect(bad).toEqual([]);
+  });
+
+  it("is NOT wired into CI or the normal seed — it is an operator tool", () => {
+    expect(read(".github/workflows/ci.yml")).not.toContain("aging_preview_dataset");
+    expect(read("supabase/seed.sql")).not.toContain("DEMO-INV");
+  });
+});
+
+// ===========================================================================
 describe("presentation is French-first and honest", () => {
   it("formats XOF as FCFA with French separators and no centimes", () => {
     expect(formatAmount(123456700, "XOF")).toMatch(/FCFA$/);

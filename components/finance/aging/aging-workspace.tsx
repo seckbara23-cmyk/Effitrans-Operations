@@ -40,6 +40,7 @@ import {
   BUCKET_KEYS,
   RISK_LABEL_FR,
   type AgingReportViewModel,
+  type AgingRow as AgingRowT,
   type BucketKey,
   type RiskKey,
 } from "@/lib/finance/aging";
@@ -56,6 +57,34 @@ type TabKey = (typeof TABS)[number]["key"];
 
 const PAGE_SIZE = 50;
 
+/** Columns the raw-data table can be ordered by. Display only — see `sortRows`. */
+const SORTABLE = {
+  invoiceNumber: "Facture",
+  issueDate: "Date édition",
+  dueDate: "Échéance",
+  clientName: "Client",
+  outstanding: "Montant",
+  daysOverdue: "Jours retard",
+} as const;
+type SortKey = keyof typeof SORTABLE;
+
+/**
+ * Order rows for display. Comparison only — no row is added, removed or
+ * recomputed, so every total on every other tab is untouched. Ties break on
+ * invoice number so the order is total and a re-render cannot reshuffle equals.
+ */
+function sortRows(rows: AgingRowT[], sort: { key: SortKey; dir: "asc" | "desc" } | null): AgingRowT[] {
+  if (!sort) return rows;
+  const sign = sort.dir === "asc" ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    const k = sort.key;
+    let d: number;
+    if (k === "outstanding" || k === "daysOverdue") d = (a[k] as number) - (b[k] as number);
+    else d = String(a[k]).localeCompare(String(b[k]), "fr");
+    return d !== 0 ? d * sign : a.invoiceNumber.localeCompare(b.invoiceNumber, "fr");
+  });
+}
+
 function Info({ text }: { text: string }) {
   return (
     <span
@@ -66,6 +95,49 @@ function Info({ text }: { text: string }) {
     >
       ?
     </span>
+  );
+}
+
+/**
+ * A sortable column heading. `aria-sort` is what makes the ordering audible to a
+ * screen reader; without it the arrow is decoration only sighted users can read.
+ */
+function SortableTh({
+  sortKey,
+  sort,
+  setSort,
+  align = "left",
+  children,
+}: {
+  sortKey: SortKey;
+  sort: { key: SortKey; dir: "asc" | "desc" } | null;
+  setSort: (s: { key: SortKey; dir: "asc" | "desc" } | null) => void;
+  align?: "left" | "right";
+  children: React.ReactNode;
+}) {
+  const active = sort?.key === sortKey;
+  const dir = active ? sort!.dir : null;
+  return (
+    <th
+      scope="col"
+      aria-sort={dir === "asc" ? "ascending" : dir === "desc" ? "descending" : "none"}
+      className={`px-3 py-2.5 font-semibold ${align === "right" ? "text-right" : ""}`}
+    >
+      <button
+        type="button"
+        // asc → desc → back to the engine's own order, so a user can always
+        // return to the canonical ordering rather than being stuck in theirs.
+        onClick={() =>
+          setSort(!active ? { key: sortKey, dir: "asc" } : dir === "asc" ? { key: sortKey, dir: "desc" } : null)
+        }
+        className="inline-flex items-center gap-1 uppercase tracking-wide hover:text-navy-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50"
+      >
+        {children}
+        <span aria-hidden className={active ? "text-teal-700" : "text-slate-300"}>
+          {dir === "desc" ? "▼" : "▲"}
+        </span>
+      </button>
+    </th>
   );
 }
 
@@ -125,10 +197,14 @@ export function AgingWorkspace({
   const [tab, setTab] = useState<TabKey>("dashboard");
   const [filters, setFilters] = useState<RowFilters>({});
   const [page, setPage] = useState(0);
+  // Display ordering only. Sorting a table is a way of LOOKING at the same rows;
+  // it changes no total, and the tests assert that. Default null = the engine's
+  // own deterministic order (invoice number ascending).
+  const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" } | null>(null);
 
   const { rows, kpis, buckets, clients, critical, criticalTotal, charts, exclusions, currency } = report;
 
-  const visibleRows = useMemo(() => filterRows(rows, filters), [rows, filters]);
+  const visibleRows = useMemo(() => sortRows(filterRows(rows, filters), sort), [rows, filters, sort]);
   const pageRows = visibleRows.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
   const pageCount = Math.max(1, Math.ceil(visibleRows.length / PAGE_SIZE));
   const filtered = hasActiveFilters(filters);
@@ -219,15 +295,31 @@ export function AgingWorkspace({
         </p>
       </div>
 
-      {/* ---------------------------------------------------------------- tabs */}
+      {/* ---------------------------------------------------------------- tabs
+          A COMPLETE ARIA tab pattern, not a partial one. The first version had
+          role="tab" and aria-selected but no tabpanel, no aria-controls and no
+          arrow-key handling — which announces a widget to a screen reader and
+          then fails to behave like it, worse than plain buttons. Roving
+          tabindex: one stop for the whole strip, arrows move between tabs. */}
       <div className="flex flex-wrap gap-1 border-b border-slate-200" role="tablist" aria-label="Vues de la balance âgée">
-        {TABS.map((t) => (
+        {TABS.map((t, i) => (
           <button
             key={t.key}
+            id={`aging-tab-${t.key}`}
             role="tab"
             aria-selected={tab === t.key}
+            aria-controls="aging-tabpanel"
+            tabIndex={tab === t.key ? 0 : -1}
             onClick={() => setTab(t.key)}
-            className={`-mb-px rounded-t-lg border-b-2 px-3.5 py-2 text-sm font-medium transition ${
+            onKeyDown={(e) => {
+              const delta = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+              if (!delta) return;
+              e.preventDefault();
+              const next = TABS[(i + delta + TABS.length) % TABS.length];
+              setTab(next.key);
+              document.getElementById(`aging-tab-${next.key}`)?.focus();
+            }}
+            className={`-mb-px rounded-t-lg border-b-2 px-3.5 py-2 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50 ${
               tab === t.key
                 ? "border-teal-600 text-navy-900"
                 : "border-transparent text-slate-500 hover:text-navy-800"
@@ -238,6 +330,8 @@ export function AgingWorkspace({
           </button>
         ))}
       </div>
+
+      <div id="aging-tabpanel" role="tabpanel" aria-labelledby={`aging-tab-${tab}`} tabIndex={-1}>
 
       {/* ================================================== TABLEAU DE BORD */}
       {tab === "dashboard" && (
@@ -407,15 +501,18 @@ export function AgingWorkspace({
             <div className="overflow-x-auto">
               <table className="w-full min-w-[1180px] text-left text-sm">
                 <caption className="sr-only">Détail des factures en cours</caption>
-                <thead className="bg-sand-50 text-xs uppercase tracking-wide text-slate-500">
+                {/* Sticky header: a 50-row table scrolls past its own headings
+                    otherwise, and « Montant » vs « Jours retard » are easy to
+                    confuse once the labels are gone. */}
+                <thead className="sticky top-0 z-10 bg-sand-50 text-xs uppercase tracking-wide text-slate-500 shadow-[inset_0_-1px_0_#e2e8f0]">
                   <tr>
-                    <th scope="col" className="px-3 py-2.5 font-semibold">Facture</th>
-                    <th scope="col" className="px-3 py-2.5 font-semibold">Date édition</th>
-                    <th scope="col" className="px-3 py-2.5 font-semibold">Échéance</th>
+                    <SortableTh sortKey="invoiceNumber" sort={sort} setSort={setSort}>Facture</SortableTh>
+                    <SortableTh sortKey="issueDate" sort={sort} setSort={setSort}>Date édition</SortableTh>
+                    <SortableTh sortKey="dueDate" sort={sort} setSort={setSort}>Échéance</SortableTh>
                     <th scope="col" className="px-3 py-2.5 font-semibold">Dossier</th>
-                    <th scope="col" className="px-3 py-2.5 font-semibold">Client</th>
-                    <th scope="col" className="px-3 py-2.5 text-right font-semibold">Montant</th>
-                    <th scope="col" className="px-3 py-2.5 text-right font-semibold">Jours retard</th>
+                    <SortableTh sortKey="clientName" sort={sort} setSort={setSort}>Client</SortableTh>
+                    <SortableTh sortKey="outstanding" sort={sort} setSort={setSort} align="right">Montant</SortableTh>
+                    <SortableTh sortKey="daysOverdue" sort={sort} setSort={setSort} align="right">Jours retard</SortableTh>
                     <th scope="col" className="px-3 py-2.5 font-semibold">Tranche</th>
                     <th scope="col" className="px-3 py-2.5 font-semibold">Risque</th>
                     <th scope="col" className="px-3 py-2.5 font-semibold">Provenance</th>
@@ -423,7 +520,7 @@ export function AgingWorkspace({
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {pageRows.length === 0 && (
-                    <tr><td colSpan={10} className="px-3 py-10 text-center text-sm text-slate-400">
+                    <tr><td colSpan={10} className="px-3 py-10 text-center text-sm text-slate-500">
                       Aucune facture ne correspond à ces critères.
                     </td></tr>
                   )}
@@ -507,13 +604,13 @@ export function AgingWorkspace({
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {clients.length === 0 && (
-                  <tr><td colSpan={8} className="px-4 py-10 text-center text-sm text-slate-400">
+                  <tr><td colSpan={8} className="px-4 py-10 text-center text-sm text-slate-500">
                     Aucun encours client à cette date.
                   </td></tr>
                 )}
                 {clients.map((c, i) => (
                   <tr key={c.clientId} className="hover:bg-slate-50/60">
-                    <td className="px-4 py-2.5 tabular-nums text-slate-400">{i + 1}</td>
+                    <td className="px-4 py-2.5 tabular-nums text-slate-500">{i + 1}</td>
                     <td className="px-4 py-2.5 font-medium text-navy-900">{c.clientName}</td>
                     <td className="px-4 py-2.5 text-right tabular-nums">{formatInteger(c.invoiceCount)}</td>
                     <td className="px-4 py-2.5 text-right tabular-nums font-medium">{formatAmount(c.amount, currency)}</td>
@@ -566,7 +663,7 @@ export function AgingWorkspace({
                 </thead>
                 <tbody className="divide-y divide-red-100">
                   {critical.length === 0 && (
-                    <tr><td colSpan={canReadFollowUps ? 8 : 7} className="px-3 py-10 text-center text-sm text-slate-400">
+                    <tr><td colSpan={canReadFollowUps ? 8 : 7} className="px-3 py-10 text-center text-sm text-slate-500">
                       Aucun dossier critique à cette date.
                     </td></tr>
                   )}
@@ -585,7 +682,7 @@ export function AgingWorkspace({
                         <td className="px-3 py-2.5 tabular-nums text-slate-600">{formatDateFr(r.dueDate)}</td>
                         <td className="px-3 py-2.5 text-slate-600">
                           {d.text}
-                          {d.legacy && <span className="ml-1.5 text-[10px] text-slate-400">(réf. héritée)</span>}
+                          {d.legacy && <span className="ml-1.5 text-[10px] text-slate-500">(réf. héritée)</span>}
                         </td>
                         <td className="px-3 py-2.5 text-slate-700">{r.clientName}</td>
                         <td className="px-3 py-2.5 text-right tabular-nums font-semibold text-red-700">
@@ -649,9 +746,11 @@ export function AgingWorkspace({
         </div>
       )}
 
-      <p className="text-center text-xs text-slate-400">
+      </div>
+
+      <p className="text-center text-xs text-slate-500">
         Balance âgée arrêtée au {formatDateLongFr(report.reportingDate)} · moteur {report.schemeKey} ·{" "}
-        <Link href="/finance" className="underline hover:text-slate-600">Retour à Finance</Link>
+        <Link href="/departments/finance" className="underline hover:text-slate-700">Retour à Finance</Link>
       </p>
     </div>
   );

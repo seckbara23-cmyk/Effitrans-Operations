@@ -20,9 +20,49 @@ const GRID = "#e2e8f0";
 
 function Empty({ label }: { label: string }) {
   return (
-    <div className="flex h-56 items-center justify-center rounded-lg border border-dashed border-slate-200 text-sm text-slate-400">
+    <div className="flex h-56 items-center justify-center rounded-lg border border-dashed border-slate-200 text-sm text-slate-500">
       {label}
     </div>
+  );
+}
+
+/**
+ * The text alternative every SVG chart needs.
+ *
+ * `role="img"` + `aria-label` gives a screen reader the chart's TITLE and then
+ * hides everything inside it — so the figures themselves become unreachable. A
+ * visually-hidden table restores them, and because it is built from the same
+ * series the chart draws, the two cannot say different things.
+ */
+function ChartDataTable({
+  caption,
+  categories,
+  values,
+  format,
+}: {
+  caption: string;
+  categories: readonly string[];
+  values: readonly number[];
+  format: (v: number) => string;
+}) {
+  return (
+    <table className="sr-only">
+      <caption>{caption}</caption>
+      <thead>
+        <tr>
+          <th scope="col">Catégorie</th>
+          <th scope="col">Valeur</th>
+        </tr>
+      </thead>
+      <tbody>
+        {categories.map((c, i) => (
+          <tr key={c}>
+            <th scope="row">{c}</th>
+            <td>{format(values[i])}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
@@ -53,8 +93,9 @@ export function BucketAmountChart({
   const barW = Math.min(slot * 0.6, 64);
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="h-64 w-full" role="img"
-         aria-label="Encours par tranche d'ancienneté">
+    <>
+      <svg viewBox={`0 0 ${W} ${H}`} className="h-64 w-full" role="img"
+           aria-label="Encours par tranche d'ancienneté">
       <line x1={padL} y1={H - padB} x2={W - padL} y2={H - padB} stroke={GRID} strokeWidth="1" />
       {values.map((v, i) => {
         const h = Math.max(2, ((H - padT - padB) * v) / max);
@@ -80,7 +121,14 @@ export function BucketAmountChart({
           </g>
         );
       })}
-    </svg>
+      </svg>
+      <ChartDataTable
+        caption="Encours par tranche d'ancienneté"
+        categories={series.categories}
+        values={values}
+        format={(v) => formatAmountCompact(v, currency)}
+      />
+    </>
   );
 }
 
@@ -154,6 +202,12 @@ export function BucketShareChart({
           </li>
         ))}
       </ul>
+      <ChartDataTable
+        caption="Répartition en pourcentage de l'encours par tranche"
+        categories={series.categories}
+        values={bps}
+        format={formatShare}
+      />
     </div>
   );
 }
@@ -167,7 +221,10 @@ export function TopClientsChart({ series, currency }: { series: ChartSeries; cur
   const max = Math.max(...values, 1);
 
   return (
-    <ul className="space-y-2" role="img" aria-label="Top clients par encours">
+    /* No role="img" here, deliberately: this chart is built from real text, so
+       labelling it an image would HIDE the client names and amounts it already
+       exposes. A list of labelled values is its own best alternative. */
+    <ul className="space-y-2" aria-label="Principaux clients par encours">
       {series.categories.map((name, i) => (
         <li key={`${name}-${i}`} className="grid grid-cols-[minmax(0,11rem)_1fr_auto] items-center gap-3">
           <span className="truncate text-xs text-slate-600" title={name}>{name}</span>
