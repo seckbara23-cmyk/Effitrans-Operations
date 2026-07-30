@@ -597,11 +597,89 @@ describe("FIN-AGING-3A — the synthetic preview dataset", () => {
 });
 
 // ===========================================================================
+describe("FIN-AGING-3B — it looks like it belongs in Effitrans", () => {
+  const w = () => code(WORKSPACE);
+
+  it("KPI cards use the house StatCard shape, not an invented palette", () => {
+    // components/departments/stat-card.tsx: white `surface`, coloured accent bar
+    // on the left, small slate label, large `tabular` navy figure. Tinted card
+    // backgrounds appear nowhere else in the platform.
+    const s = w();
+    expect(s).toContain("before:absolute before:inset-y-0 before:left-0 before:w-1");
+    expect(s).toContain("before:bg-navy-700");
+    expect(s).toContain('className="tabular mt-2 text-2xl font-bold text-navy-900"');
+    expect(s).not.toMatch(/tone === "critical"[\s\S]{0,60}bg-red-50/); // the old tinted card
+  });
+
+  it("tabs use the house pill styling from ShippingNav", () => {
+    const s = w();
+    expect(s).toContain('tab === t.key ? "bg-navy-900 text-white" : "text-slate-600 hover:bg-slate-100"');
+    expect(s).toContain("rounded-md px-3 py-1.5 text-sm font-medium transition");
+  });
+
+  it("navigation carries no emoji — the platform's labels are plain", () => {
+    const s = w();
+    const tabsBlock = s.slice(s.indexOf("const TABS = ["), s.indexOf("type TabKey"));
+    expect(tabsBlock).not.toMatch(/[\u{1F300}-\u{1FAFF}]/u);
+    // …but the workbook's ratified dashboard risk labels keep theirs.
+    expect(read("lib/finance/aging/buckets.ts")).toContain("✅ Sain");
+  });
+
+  it("a breadcrumb says where the workspace sits, like every other one", () => {
+    const s = w();
+    expect(s).toContain('aria-label="Fil d\'Ariane"');
+    expect(s).toMatch(/href="\/departments\/finance"[\s\S]{0,80}Finance/);
+  });
+
+  it("figures use the house `tabular` class", () => {
+    const s = w();
+    expect(s).not.toContain("tabular-nums");
+    expect((s.match(/\btabular\b/g) ?? []).length).toBeGreaterThan(15);
+  });
+
+  it("form controls use the shared `.input` class where they can", () => {
+    expect(w()).toContain('className="input mt-1 w-auto"');
+  });
+
+  it("the arrêté is restated in French, because a native date input is locale-bound", () => {
+    // <input type="date"> renders per BROWSER locale — an en-US profile shows
+    // 07/30/2026 and no CSS changes that. The control keeps its picker and its
+    // accessibility; the date is restated unambiguously beneath it.
+    const s = w();
+    expect(s).toContain('aria-describedby="arrete-fr"');
+    expect(s).toMatch(/id="arrete-fr"[\s\S]{0,200}formatDateFr\(report\.reportingDate\)/);
+  });
+
+  it("the footer recedes by size and separation, never by failing contrast", () => {
+    const s = w();
+    expect(s).toContain('className="border-t border-slate-100 pt-3 text-center text-[11px] text-slate-500"');
+    expect(s).not.toContain("text-slate-400");
+    // The technical provenance is still there — it is how a figure is traced.
+    expect(s).toContain("barème {report.schemeKey}");
+  });
+
+  it("empty states reuse the house visual language without misusing the page-level component", () => {
+    const s = w();
+    expect(s).toContain("stamp-frame");
+    expect(s).toContain("bg-sand-50");
+    // The shared EmptyState is a full-page treatment with a dashboard link —
+    // wrong inside a table cell, so it is deliberately NOT imported.
+    expect(s).not.toContain('from "@/components/ui/empty-state"');
+  });
+});
+
+// ===========================================================================
 describe("presentation is French-first and honest", () => {
-  it("formats XOF as FCFA with French separators and no centimes", () => {
-    expect(formatAmount(123456700, "XOF")).toMatch(/FCFA$/);
-    expect(formatAmount(123456700, "XOF")).not.toContain(",00");
-    expect(formatAmount(100000, "EUR")).toContain("EUR");
+  it("uses the ISO currency code everywhere — the platform's own convention", () => {
+    // lib/operations/kpi/format.ts states the rule: "explicit currency code
+    // (never abbreviated ambiguously)". FCFA appeared in no other component, so
+    // this module was the outlier; it now matches.
+    expect(formatAmount(123456700, "XOF")).toMatch(/ XOF$/);
+    expect(formatAmount(123456700, "XOF")).not.toContain(",00"); // XOF is zero-decimal
+    expect(formatAmount(100000, "EUR")).toMatch(/ EUR$/);
+    for (const p of [WORKSPACE, CHARTS, "lib/finance/aging/presentation.ts"]) {
+      expect(code(p), p).not.toContain("FCFA");
+    }
   });
 
   it("dates use the workbook's forms", () => {
@@ -655,12 +733,18 @@ describe("presentation is French-first and honest", () => {
     expect(w).toContain('aria-selected=');
   });
 
-  it("has explicit empty states rather than blank tables", () => {
+  it("has polished empty states that say WHY, not blank tables", () => {
     const w = code(WORKSPACE);
-    expect(w).toContain("Aucune facture ne correspond à ces critères.");
-    expect(w).toContain("Aucun dossier critique à cette date.");
-    expect(w).toContain("Aucun encours client à cette date.");
-    expect(code(CHARTS)).toContain("Aucun encours à représenter");
+    expect(w).toContain("function TableEmpty");
+    expect(w).toContain("Aucune facture ne correspond à ces critères");
+    expect(w).toContain("Aucun dossier critique à cette date");
+    expect(w).toContain("Aucun encours client à cette date");
+    // Each one explains the cause rather than stating a bare absence.
+    expect(w).toContain("Élargissez la recherche");
+    expect(w).toContain("c'est une bonne nouvelle");
+    const c = code(CHARTS);
+    expect(c).toContain("Aucun encours à représenter");
+    expect((c.match(/hint="/g) ?? []).length).toBe(4);
   });
 
   it("has an error state that does not leak internals in production", () => {

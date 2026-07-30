@@ -18,6 +18,7 @@
 import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { IconCoins } from "@/lib/icons";
 import {
   AVERAGE_DELAY_NOTE,
   BUCKET_FILL,
@@ -46,12 +47,16 @@ import {
 } from "@/lib/finance/aging";
 import { BucketAmountChart, BucketShareChart, RiskDistribution, TopClientsChart } from "./aging-charts";
 
+// No emoji. The workbook's SHEET names carry them and the dashboard's risk
+// column reproduces them faithfully (ratified), but Effitrans navigation does
+// not — ShippingNav, the sidebar and every hub use plain labels, so emoji here
+// would mark this screen as the odd one out.
 const TABS = [
-  { key: "dashboard", label: "Tableau de bord", icon: "📊" },
-  { key: "rows", label: "Données brutes", icon: "📋" },
-  { key: "clients", label: "Analyse clients", icon: "👥" },
-  { key: "critical", label: "Dossiers critiques", icon: "⛔" },
-  { key: "charts", label: "Graphiques", icon: "📈" },
+  { key: "dashboard", label: "Tableau de bord" },
+  { key: "rows", label: "Données brutes" },
+  { key: "clients", label: "Analyse clients" },
+  { key: "critical", label: "Dossiers critiques" },
+  { key: "charts", label: "Graphiques" },
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
 
@@ -141,6 +146,27 @@ function SortableTh({
   );
 }
 
+/**
+ * The empty state used inside a table.
+ *
+ * The shared `components/ui/empty-state.tsx` is a full-page treatment with a
+ * "back to dashboard" link — right for an empty route, wrong inside a table
+ * cell. This borrows its visual language (stamp frame, sand tile, muted copy)
+ * at a size that fits, so the two read as the same family without misusing one
+ * for the other's job.
+ */
+function TableEmpty({ title, hint }: { title: string; hint?: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center px-6 py-12 text-center">
+      <div className="stamp-frame mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-sand-50 text-amber-600">
+        <IconCoins className="h-5 w-5" />
+      </div>
+      <p className="text-sm font-medium text-navy-800">{title}</p>
+      {hint && <p className="mt-1 max-w-sm text-xs leading-relaxed text-slate-500">{hint}</p>}
+    </div>
+  );
+}
+
 function RiskChip({ risk }: { risk: RiskKey }) {
   return (
     <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ring-1 ${RISK_CHIP_CLASS[risk]}`}>
@@ -148,6 +174,24 @@ function RiskChip({ risk }: { risk: RiskKey }) {
     </span>
   );
 }
+
+/**
+ * A KPI card in the platform's own shape.
+ *
+ * The first version used tinted card backgrounds, which nothing else in
+ * Effitrans does. `components/departments/stat-card.tsx` is the house pattern:
+ * a white `surface` with a coloured accent bar down the left edge, a small
+ * slate label and a large `tabular` navy figure. Adopting it — rather than a
+ * palette invented here — is what makes this screen look like it belongs. The
+ * only addition is the optional `?` affordance, since some of these figures
+ * genuinely need their definition stated.
+ */
+const KPI_TONE: Record<string, string> = {
+  neutral: "before:bg-navy-700",
+  accent: "before:bg-teal-600",
+  warn: "before:bg-amber-500",
+  critical: "before:bg-red-500",
+};
 
 function Kpi({
   label,
@@ -158,26 +202,18 @@ function Kpi({
 }: {
   label: string;
   value: string;
-  tone?: "neutral" | "warn" | "critical" | "accent";
+  tone?: keyof typeof KPI_TONE;
   hint?: string;
   sub?: string;
 }) {
-  const toneClass =
-    tone === "critical"
-      ? "border-red-200 bg-red-50"
-      : tone === "warn"
-        ? "border-amber-200 bg-amber-50"
-        : tone === "accent"
-          ? "border-teal-200 bg-teal-50"
-          : "border-slate-200 bg-white";
   return (
-    <div className={`rounded-xl border p-4 ${toneClass}`}>
-      <div className="flex items-start text-xs font-medium uppercase tracking-wide text-slate-500">
+    <div className={`surface relative overflow-hidden p-4 before:absolute before:inset-y-0 before:left-0 before:w-1 ${KPI_TONE[tone]}`}>
+      <p className="flex items-start text-xs font-medium text-slate-500">
         <span>{label}</span>
         {hint && <Info text={hint} />}
-      </div>
-      <div className="mt-1.5 text-xl font-semibold tabular-nums text-navy-900">{value}</div>
-      {sub && <div className="mt-0.5 text-xs text-slate-500">{sub}</div>}
+      </p>
+      <p className="tabular mt-2 text-2xl font-bold text-navy-900">{value}</p>
+      {sub && <p className="mt-1 text-xs text-slate-500">{sub}</p>}
     </div>
   );
 }
@@ -258,6 +294,14 @@ export function AgingWorkspace({
 
   return (
     <div className="space-y-5">
+      {/* Breadcrumb, as every other workspace has (ShippingNav). The sidebar is a
+          frozen contract, so a workspace has to say where it sits itself. */}
+      <nav className="flex flex-wrap items-center gap-1 text-xs text-slate-500" aria-label="Fil d'Ariane">
+        <Link href="/departments/finance" className="hover:text-teal-700">Finance</Link>
+        <span aria-hidden>›</span>
+        <span className="font-medium text-navy-700">Balance âgée</span>
+      </nav>
+
       {/* ---------------------------------------------------------------- controls */}
       <div className="surface flex flex-wrap items-end gap-4 p-4">
         <div>
@@ -270,8 +314,16 @@ export function AgingWorkspace({
             type="date"
             defaultValue={report.reportingDate}
             onChange={(e) => e.target.value && navigate({ date: e.target.value })}
-            className="mt-1 rounded-lg border border-slate-200 px-3 py-2 text-sm"
+            aria-describedby="arrete-fr"
+            className="input mt-1 w-auto"
           />
+          {/* A native date input renders in the BROWSER's locale, so an en-US
+              profile shows 07/30/2026 and no CSS can change it. Rather than
+              replace the control — and lose its picker and its accessibility —
+              the arrêté is restated unambiguously in French underneath. */}
+          <p id="arrete-fr" className="mt-1 text-xs text-slate-500">
+            Arrêté au <span className="tabular font-medium text-navy-700">{formatDateFr(report.reportingDate)}</span>
+          </p>
         </div>
         <div>
           <label htmlFor="devise" className="block text-xs font-medium text-slate-600">
@@ -301,7 +353,9 @@ export function AgingWorkspace({
           arrow-key handling — which announces a widget to a screen reader and
           then fails to behave like it, worse than plain buttons. Roving
           tabindex: one stop for the whole strip, arrows move between tabs. */}
-      <div className="flex flex-wrap gap-1 border-b border-slate-200" role="tablist" aria-label="Vues de la balance âgée">
+      {/* House tab styling, copied from ShippingNav so the two workspaces read
+          as one product: navy pill for the active view, slate hover otherwise. */}
+      <div className="flex flex-wrap gap-1 border-b border-slate-200 pb-2" role="tablist" aria-label="Vues de la balance âgée">
         {TABS.map((t, i) => (
           <button
             key={t.key}
@@ -319,13 +373,10 @@ export function AgingWorkspace({
               setTab(next.key);
               document.getElementById(`aging-tab-${next.key}`)?.focus();
             }}
-            className={`-mb-px rounded-t-lg border-b-2 px-3.5 py-2 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50 ${
-              tab === t.key
-                ? "border-teal-600 text-navy-900"
-                : "border-transparent text-slate-500 hover:text-navy-800"
+            className={`rounded-md px-3 py-1.5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50 ${
+              tab === t.key ? "bg-navy-900 text-white" : "text-slate-600 hover:bg-slate-100"
             }`}
           >
-            <span aria-hidden className="mr-1.5">{t.icon}</span>
             {t.label}
           </button>
         ))}
@@ -391,20 +442,20 @@ export function AgingWorkspace({
                           {b.labelFr}
                         </span>
                       </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums">{formatInteger(b.invoiceCount)}</td>
-                      <td className="px-4 py-2.5 text-right tabular-nums">{formatAmount(b.amount, currency)}</td>
-                      <td className="px-4 py-2.5 text-right tabular-nums">{formatShare(b.shareBasisPoints)}</td>
-                      <td className="px-4 py-2.5 text-right tabular-nums">{formatInteger(b.clientCount)}</td>
-                      <td className="px-4 py-2.5 text-right tabular-nums">{formatDays(b.averageDaysOverdue)}</td>
+                      <td className="px-4 py-2.5 text-right tabular">{formatInteger(b.invoiceCount)}</td>
+                      <td className="px-4 py-2.5 text-right tabular">{formatAmount(b.amount, currency)}</td>
+                      <td className="px-4 py-2.5 text-right tabular">{formatShare(b.shareBasisPoints)}</td>
+                      <td className="px-4 py-2.5 text-right tabular">{formatInteger(b.clientCount)}</td>
+                      <td className="px-4 py-2.5 text-right tabular">{formatDays(b.averageDaysOverdue)}</td>
                       <td className="px-4 py-2.5">{b.riskLabelDashboardFr}</td>
                     </tr>
                   ))}
                   <tr className="bg-navy-900 font-semibold text-white">
                     <td className="px-4 py-2.5">TOTAL GÉNÉRAL</td>
-                    <td className="px-4 py-2.5 text-right tabular-nums">{formatInteger(kpis.invoiceCount)}</td>
-                    <td className="px-4 py-2.5 text-right tabular-nums">{formatAmount(kpis.totalOutstanding, currency)}</td>
-                    <td className="px-4 py-2.5 text-right tabular-nums">{rows.length === 0 ? "—" : "100,0 %"}</td>
-                    <td className="px-4 py-2.5 text-right tabular-nums">{formatInteger(kpis.clientCount)}</td>
+                    <td className="px-4 py-2.5 text-right tabular">{formatInteger(kpis.invoiceCount)}</td>
+                    <td className="px-4 py-2.5 text-right tabular">{formatAmount(kpis.totalOutstanding, currency)}</td>
+                    <td className="px-4 py-2.5 text-right tabular">{rows.length === 0 ? "—" : "100,0 %"}</td>
+                    <td className="px-4 py-2.5 text-right tabular">{formatInteger(kpis.clientCount)}</td>
                     <td className="px-4 py-2.5" />
                     <td className="px-4 py-2.5" />
                   </tr>
@@ -520,8 +571,11 @@ export function AgingWorkspace({
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {pageRows.length === 0 && (
-                    <tr><td colSpan={10} className="px-3 py-10 text-center text-sm text-slate-500">
-                      Aucune facture ne correspond à ces critères.
+                    <tr><td colSpan={10}>
+                      <TableEmpty
+                        title="Aucune facture ne correspond à ces critères"
+                        hint="Élargissez la recherche ou réinitialisez les filtres pour revoir l'ensemble du portefeuille."
+                      />
                     </td></tr>
                   )}
                   {pageRows.map((r) => {
@@ -536,8 +590,8 @@ export function AgingWorkspace({
                             </span>
                           )}
                         </td>
-                        <td className="px-3 py-2.5 tabular-nums text-slate-600">{formatDateFr(r.issueDate)}</td>
-                        <td className="px-3 py-2.5 tabular-nums text-slate-600">{formatDateFr(r.dueDate)}</td>
+                        <td className="px-3 py-2.5 tabular text-slate-600">{formatDateFr(r.issueDate)}</td>
+                        <td className="px-3 py-2.5 tabular text-slate-600">{formatDateFr(r.dueDate)}</td>
                         <td className="px-3 py-2.5 text-slate-600">
                           {d.text}
                           {d.legacy && (
@@ -548,10 +602,10 @@ export function AgingWorkspace({
                           )}
                         </td>
                         <td className="px-3 py-2.5 text-slate-700">{r.clientName}</td>
-                        <td className="px-3 py-2.5 text-right tabular-nums font-medium text-navy-900">
+                        <td className="px-3 py-2.5 text-right tabular font-medium text-navy-900">
                           {formatAmount(r.outstanding, currency)}
                         </td>
-                        <td className="px-3 py-2.5 text-right tabular-nums">{formatDays(r.daysOverdue)}</td>
+                        <td className="px-3 py-2.5 text-right tabular">{formatDays(r.daysOverdue)}</td>
                         <td className="px-3 py-2.5 text-slate-600">{r.bucketLabelFr}</td>
                         <td className="px-3 py-2.5"><RiskChip risk={r.risk} /></td>
                         <td className="px-3 py-2.5 text-xs text-slate-500">
@@ -604,19 +658,22 @@ export function AgingWorkspace({
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {clients.length === 0 && (
-                  <tr><td colSpan={8} className="px-4 py-10 text-center text-sm text-slate-500">
-                    Aucun encours client à cette date.
+                  <tr><td colSpan={8}>
+                    <TableEmpty
+                      title="Aucun encours client à cette date"
+                      hint="Aucune facture n'était ouverte à la date d'arrêté sélectionnée."
+                    />
                   </td></tr>
                 )}
                 {clients.map((c, i) => (
                   <tr key={c.clientId} className="hover:bg-slate-50/60">
-                    <td className="px-4 py-2.5 tabular-nums text-slate-500">{i + 1}</td>
+                    <td className="px-4 py-2.5 tabular text-slate-500">{i + 1}</td>
                     <td className="px-4 py-2.5 font-medium text-navy-900">{c.clientName}</td>
-                    <td className="px-4 py-2.5 text-right tabular-nums">{formatInteger(c.invoiceCount)}</td>
-                    <td className="px-4 py-2.5 text-right tabular-nums font-medium">{formatAmount(c.amount, currency)}</td>
-                    <td className="px-4 py-2.5 text-right tabular-nums">{formatDays(c.averageDaysOverdue)}</td>
-                    <td className="px-4 py-2.5 text-right tabular-nums">{formatDays(c.maxDaysOverdue)}</td>
-                    <td className="px-4 py-2.5 text-right tabular-nums">{formatShare(c.shareBasisPoints)}</td>
+                    <td className="px-4 py-2.5 text-right tabular">{formatInteger(c.invoiceCount)}</td>
+                    <td className="px-4 py-2.5 text-right tabular font-medium">{formatAmount(c.amount, currency)}</td>
+                    <td className="px-4 py-2.5 text-right tabular">{formatDays(c.averageDaysOverdue)}</td>
+                    <td className="px-4 py-2.5 text-right tabular">{formatDays(c.maxDaysOverdue)}</td>
+                    <td className="px-4 py-2.5 text-right tabular">{formatShare(c.shareBasisPoints)}</td>
                     <td className="px-4 py-2.5"><RiskChip risk={c.risk} /></td>
                   </tr>
                 ))}
@@ -624,11 +681,11 @@ export function AgingWorkspace({
                   <tr className="bg-navy-900 font-semibold text-white">
                     <td className="px-4 py-2.5" />
                     <td className="px-4 py-2.5">TOTAL</td>
-                    <td className="px-4 py-2.5 text-right tabular-nums">{formatInteger(kpis.invoiceCount)}</td>
-                    <td className="px-4 py-2.5 text-right tabular-nums">{formatAmount(kpis.totalOutstanding, currency)}</td>
+                    <td className="px-4 py-2.5 text-right tabular">{formatInteger(kpis.invoiceCount)}</td>
+                    <td className="px-4 py-2.5 text-right tabular">{formatAmount(kpis.totalOutstanding, currency)}</td>
                     <td className="px-4 py-2.5" />
                     <td className="px-4 py-2.5" />
-                    <td className="px-4 py-2.5 text-right tabular-nums">100,0 %</td>
+                    <td className="px-4 py-2.5 text-right tabular">100,0 %</td>
                     <td className="px-4 py-2.5" />
                   </tr>
                 )}
@@ -663,8 +720,11 @@ export function AgingWorkspace({
                 </thead>
                 <tbody className="divide-y divide-red-100">
                   {critical.length === 0 && (
-                    <tr><td colSpan={canReadFollowUps ? 8 : 7} className="px-3 py-10 text-center text-sm text-slate-500">
-                      Aucun dossier critique à cette date.
+                    <tr><td colSpan={canReadFollowUps ? 8 : 7}>
+                      <TableEmpty
+                        title="Aucun dossier critique à cette date"
+                        hint="Aucune facture ne dépasse 365 jours de retard — c'est une bonne nouvelle."
+                      />
                     </td></tr>
                   )}
                   {critical.map((r) => {
@@ -679,16 +739,16 @@ export function AgingWorkspace({
                             </span>
                           )}
                         </td>
-                        <td className="px-3 py-2.5 tabular-nums text-slate-600">{formatDateFr(r.dueDate)}</td>
+                        <td className="px-3 py-2.5 tabular text-slate-600">{formatDateFr(r.dueDate)}</td>
                         <td className="px-3 py-2.5 text-slate-600">
                           {d.text}
                           {d.legacy && <span className="ml-1.5 text-[10px] text-slate-500">(réf. héritée)</span>}
                         </td>
                         <td className="px-3 py-2.5 text-slate-700">{r.clientName}</td>
-                        <td className="px-3 py-2.5 text-right tabular-nums font-semibold text-red-700">
+                        <td className="px-3 py-2.5 text-right tabular font-semibold text-red-700">
                           {formatAmount(r.outstanding, currency)}
                         </td>
-                        <td className="px-3 py-2.5 text-right tabular-nums font-semibold text-red-700">
+                        <td className="px-3 py-2.5 text-right tabular font-semibold text-red-700">
                           {formatInteger(r.daysOverdue)} j
                         </td>
                         <td className="px-3 py-2.5 text-xs text-slate-500">
@@ -705,8 +765,8 @@ export function AgingWorkspace({
                   {critical.length > 0 && (
                     <tr className="bg-red-100 font-semibold text-red-900">
                       <td className="px-3 py-2.5" colSpan={4}>TOTAL – Dossiers critiques</td>
-                      <td className="px-3 py-2.5 text-right tabular-nums">{formatAmount(criticalTotal.amount, currency)}</td>
-                      <td className="px-3 py-2.5 text-right tabular-nums">{formatInteger(criticalTotal.invoiceCount)}</td>
+                      <td className="px-3 py-2.5 text-right tabular">{formatAmount(criticalTotal.amount, currency)}</td>
+                      <td className="px-3 py-2.5 text-right tabular">{formatInteger(criticalTotal.invoiceCount)}</td>
                       <td className="px-3 py-2.5" />
                       {canReadFollowUps && <td className="px-3 py-2.5" />}
                     </tr>
@@ -748,9 +808,18 @@ export function AgingWorkspace({
 
       </div>
 
-      <p className="text-center text-xs text-slate-500">
-        Balance âgée arrêtée au {formatDateLongFr(report.reportingDate)} · moteur {report.schemeKey} ·{" "}
-        <Link href="/departments/finance" className="underline hover:text-slate-700">Retour à Finance</Link>
+      {/* Technical provenance stays available — it is how a figure is traced —
+          but it is metadata, not content, so it recedes to the smallest type on
+          the page and drops the underline that made it look like a call to
+          action. */}
+      {/* De-emphasised by SIZE and separation, not by colour: slate-400 on white
+          is ~2.8:1 and fails AA, and metadata a reader may need to quote should
+          still be legible. The contrast guard caught this on the first attempt. */}
+      <p className="border-t border-slate-100 pt-3 text-center text-[11px] text-slate-500">
+        Arrêté au <span className="tabular">{formatDateLongFr(report.reportingDate)}</span>
+        {" · "}barème {report.schemeKey}
+        {" · "}
+        <Link href="/departments/finance" className="hover:text-slate-600">Finance</Link>
       </p>
     </div>
   );
@@ -781,7 +850,7 @@ function ExclusionNotice({
         {[...byReason.entries()].map(([reason, v]) => (
           <li key={reason} className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2 text-xs">
             <span className="text-slate-600">{EXCLUSION_LABEL_FR[reason] ?? reason}</span>
-            <span className="tabular-nums text-slate-500">
+            <span className="tabular text-slate-500">
               {formatInteger(v.count)} · {formatAmount(v.amount, currency)}
             </span>
           </li>

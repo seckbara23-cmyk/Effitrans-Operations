@@ -12,16 +12,27 @@
  * reproduced in an XLSX chart part and a vector PDF (FIN-AGING-6/7). Owning the
  * geometry keeps the web, Excel and PDF renderings describable by the same spec.
  */
+import { IconCoins } from "@/lib/icons";
 import { BUCKET_FILL, formatAmountCompact, formatShare } from "@/lib/finance/aging/presentation";
 import type { BucketKey, ChartSeries } from "@/lib/finance/aging";
 
 const AXIS = "#94a3b8";
 const GRID = "#e2e8f0";
 
-function Empty({ label }: { label: string }) {
+/**
+ * Chart empty state, in the platform's visual language (stamp frame + sand tile
+ * + muted copy), sized for a card rather than a page. It states WHY there is
+ * nothing to draw — "no data" alone leaves a reader wondering whether the chart
+ * is broken or the portfolio is genuinely clear.
+ */
+function Empty({ label, hint }: { label: string; hint?: string }) {
   return (
-    <div className="flex h-56 items-center justify-center rounded-lg border border-dashed border-slate-200 text-sm text-slate-500">
-      {label}
+    <div className="flex h-56 flex-col items-center justify-center rounded-lg border border-dashed border-slate-200 px-6 text-center">
+      <div className="stamp-frame mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-sand-50 text-amber-600">
+        <IconCoins className="h-5 w-5" />
+      </div>
+      <p className="text-sm font-medium text-navy-800">{label}</p>
+      {hint && <p className="mt-1 max-w-xs text-xs leading-relaxed text-slate-500">{hint}</p>}
     </div>
   );
 }
@@ -81,7 +92,7 @@ export function BucketAmountChart({
 }) {
   const values = series.values;
   const max = Math.max(...values, 1);
-  if (values.every((v) => v === 0)) return <Empty label="Aucun encours à représenter" />;
+  if (values.every((v) => v === 0)) return <Empty label="Aucun encours à représenter" hint="Aucune facture ouverte à la date d'arrêté sélectionnée." />;
 
   const W = 720;
   const H = 260;
@@ -148,7 +159,7 @@ export function BucketShareChart({
 }) {
   const bps = series.values;
   const total = bps.reduce((a, b) => a + b, 0);
-  if (total === 0) return <Empty label="Aucune répartition à représenter" />;
+  if (total === 0) return <Empty label="Aucune répartition à représenter" hint="La répartition apparaîtra dès qu'un encours existera." />;
 
   const size = 240;
   const cx = size / 2;
@@ -216,7 +227,7 @@ export function BucketShareChart({
 export function TopClientsChart({ series, currency }: { series: ChartSeries; currency: string }) {
   const values = series.values;
   if (values.length === 0 || values.every((v) => v === 0)) {
-    return <Empty label="Aucun client à représenter" />;
+    return <Empty label="Aucun client à représenter" hint="Aucun client ne présente d'encours à cette date." />;
   }
   const max = Math.max(...values, 1);
 
@@ -252,7 +263,7 @@ export function RiskDistribution({
   currency: string;
 }) {
   const total = segments.reduce((a, s) => a + s.amount, 0);
-  if (total === 0) return <Empty label="Aucune exposition à représenter" />;
+  if (total === 0) return <Empty label="Aucune exposition à représenter" hint="Le portefeuille est entièrement soldé à cette date." />;
   return (
     <div>
       <div className="flex h-5 w-full overflow-hidden rounded-md">

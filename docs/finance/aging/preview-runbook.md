@@ -98,6 +98,21 @@ it aborts if that tenant ever holds a non-demo invoice; every row is prefixed
 
 ---
 
+## 3b. FIN-AGING-3B — visual consistency pass
+
+Presentation only; no rule, calculation, query, permission or schema touched.
+
+| Finding | Why it mattered | Fix |
+|---|---|---|
+| Amounts printed « FCFA », the currency selector printed « XOF » | The platform's own rule is stated in `lib/operations/kpi/format.ts` — *"explicit currency code (never abbreviated ambiguously)"* — and FCFA appeared in **no other component**. This module was the sole outlier. | ISO code everywhere |
+| KPI cards used tinted backgrounds | Nothing else in Effitrans does. `StatCard` is the house pattern: white `surface`, coloured accent bar, `tabular` figure. | Adopted `StatCard`'s shape |
+| Tabs were teal underlines with emoji | `ShippingNav` is the house tab pattern (navy pill), and platform navigation carries no emoji | Pill styling, labels only — the workbook's ratified dashboard risk emoji stay |
+| No breadcrumb | Every other workspace states where it sits, because the sidebar is a frozen contract | « Finance › Balance âgée » |
+| Native date input renders in the **browser's** locale (`07/30/2026` on en-US) and no CSS can change it | The arrêté is the single most important parameter on the page | Control kept (picker + a11y); the date restated in French beneath it, wired with `aria-describedby` |
+| Plain one-line empty cells | The platform's empty states explain themselves | `TableEmpty` + chart empties in the house language, each saying *why* it is empty |
+| Footer competed with content | Provenance is metadata, not content | Recedes by size and a hairline rule — **not** by colour: `slate-400` is ≈2.8:1 and fails AA. My own contrast guard caught the first attempt. |
+| `tabular-nums` vs the house `.tabular` class | Consistency of figure rendering | 28 occurrences switched |
+
 ## 4. Review checklist for the Finance Manager
 
 Nothing below is a code change — it is what to look at.

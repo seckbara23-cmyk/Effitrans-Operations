@@ -19,11 +19,17 @@ import type { BucketKey, RiskKey } from "./buckets";
 // ---------------------------------------------------------------------------
 
 /**
- * Minor units → « 1 234 567 FCFA ».
+ * Minor units → « 1 234 567 XOF ».
+ *
+ * THE CURRENCY IS ALWAYS THE ISO CODE. The first version printed « FCFA » for
+ * XOF, which read naturally but made this the only module in the platform doing
+ * so: lib/operations/kpi/format.ts states the house rule outright — "explicit
+ * currency code (never abbreviated ambiguously)" — and FCFA appeared in no other
+ * component. One convention, and it is the platform's, not this module's.
  *
  * XOF is a zero-decimal currency in practice, so centimes are not displayed;
  * they are still carried exactly in the engine, which is why the rounding
- * happens HERE, at the presentation boundary, and never in a total.
+ * happens HERE, at the presentation boundary, and never inside a total.
  */
 export function formatAmount(minorUnits: number, currency = "XOF"): string {
   const major = minorUnits / 100;
@@ -32,17 +38,16 @@ export function formatAmount(minorUnits: number, currency = "XOF"): string {
     minimumFractionDigits: zeroDecimal ? 0 : 2,
     maximumFractionDigits: zeroDecimal ? 0 : 2,
   }).format(major);
-  return `${body} ${currency === "XOF" ? "FCFA" : currency}`;
+  return `${body} ${currency}`;
 }
 
-/** Compact form for chart labels and tight cards: « 1,2 M » / « 845 k ». */
+/** Compact form for chart labels and tight cards: « 1,2 M XOF » / « 845 k XOF ». */
 export function formatAmountCompact(minorUnits: number, currency = "XOF"): string {
   const major = Math.abs(minorUnits) / 100;
   const sign = minorUnits < 0 ? "-" : "";
-  const unit = currency === "XOF" ? "FCFA" : currency;
-  if (major >= 1_000_000) return `${sign}${(major / 1_000_000).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} M ${unit}`;
-  if (major >= 1_000) return `${sign}${Math.round(major / 1_000).toLocaleString("fr-FR")} k ${unit}`;
-  return `${sign}${Math.round(major).toLocaleString("fr-FR")} ${unit}`;
+  if (major >= 1_000_000) return `${sign}${(major / 1_000_000).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} M ${currency}`;
+  if (major >= 1_000) return `${sign}${Math.round(major / 1_000).toLocaleString("fr-FR")} k ${currency}`;
+  return `${sign}${Math.round(major).toLocaleString("fr-FR")} ${currency}`;
 }
 
 export function formatInteger(n: number): string {
