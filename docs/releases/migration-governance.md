@@ -35,6 +35,15 @@ Part of [RELEASE-0](README.md). No migration is executed by this phase.
 
 ## 3. The live backlog, bundled (the concrete first releases)
 
+> **AUDIT OUTCOME (2026-07-31, Operator Task 1 + manual SQL audit):** the bundles below
+> were written assuming 68–72 were unapplied. Production probes proved **57–72 are all
+> structurally applied**; only the ledger (56/72) lags. R1.0 therefore became **R1.0-R —
+> ledger reconciliation, not DDL deployment**: see `R1.0/reconciliation-runbook.md` for
+> the evidence matrix and the exact `migration repair` commands (all 16 versions — five
+> alone would leave 57–67 as pending non-idempotent booby traps). The §3 tables below are
+> retained as the per-migration *validation* reference, which is unchanged. This is the
+> §1 verify-first rule doing its job on its first outing.
+
 ### Bundle R1.0 — Governance & Finance Consolidation (migrations 68–71)
 
 | # | Migration | Delivers | Post-migration validation |
