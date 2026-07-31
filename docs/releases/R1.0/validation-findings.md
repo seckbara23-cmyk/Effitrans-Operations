@@ -10,9 +10,13 @@ explicitly and separately from the evidence.
 ## DEF-R10-03 — « Action non autorisée. » cannot distinguish a denial from a failure
 
 **Raised:** 2026-07-31, during B4 · **Reporter:** operator (production)
-**Classification:** **confirmed error-classification defect** (the conflation below is
-provable from the code). The *underlying* cause of this particular refusal is **not yet
-determined** — two candidates remain, separated by the tests in §5.
+**Classification:** **confirmed error-classification defect**, pre-existing, **not an R1.0
+blocker**. *Underlying cause resolved 2026-07-31:* the same action **succeeded** later in
+the same production session (B4 PASS). A missing grant cannot succeed on retry, so reading
+**(A) genuine denial is eliminated** — the refusal was reading **(B)**, a non-authorization
+failure reported as a refusal. The bare catch stands as the defect: it is what made a
+transient failure indistinguishable from a permission problem, and it cost two rounds of
+investigation to establish.
 
 ### 1. Observation
 

@@ -401,7 +401,18 @@ Record which option you took: `☐ preview  ☐ production wait  ☐ deferred`
 | B1 | Invoice three-hash | ☐ PASS ☐ FAIL | | | H = |
 | B2 | Customs discovery | ☐ PASS ☐ FAIL | | | role used = |
 | B3 | Dossier closure | ☐ PASS ☐ FAIL | | | |
-| B4 | Temp-password lifecycle | ☐ PASS ☐ FAIL | | | expired path = |
+| B4 | Temp-password lifecycle | ✅ PASS | 2026-07-31 | operator | admin-issued path; forced change confirmed; expired path deferred (preview-only) |
+
+## Observation classification vocabulary
+
+Used for every observation from B1 onward, so a refusal is never silently read as a failure:
+
+| Verdict | Meaning |
+|---|---|
+| **PASS** | The expected result occurred, with the evidence in hand |
+| **FAIL** | The mechanism did not do what it promises — needs classification: release blocker · pre-existing defect · data issue · operator issue |
+| **EXPECTED GATE** | The system refused **by design** (a closure blocker, a permission the seat genuinely lacks, an archived record). Not a failure — record the wording and move on; never force it |
+| **NOT APPLICABLE** | The precondition for this step does not exist in production (no such record, no such seat). Record why; do not substitute silently |
 
 When every row is PASS, complete [`release-signoff.md`](release-signoff.md) — R1.0 is not
 closed until that document is signed.
