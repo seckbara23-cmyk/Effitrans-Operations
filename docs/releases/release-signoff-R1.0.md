@@ -97,13 +97,33 @@ R1.0 cannot be signed with an unresolved row.
 | A2 | Production verification sweep (exit 0) | Operator | ✅ **PASS** | 2026-07-31 | `verify-production.mjs` → ALL CHECKS PASSED, **exit code 0**; SHA `5b24164a57fc45cdf82221ade7ebbe2634d838c9` |
 | A3 | Ops dashboard: `72 · dernière : 20260729000002_…`, no `warn` | Operator | ✅ **PASS** | 2026-07-31 | Commit `5b24164a57fc…`, branche `main`, env `production`, **Migrations livrées 72**, dernière `20260729000002_aging_balance_foundation`, Déploiement **Sain**, base de données joignable, Santé plateforme **Sain**, Sécurité **Sain** |
 | B1 | Invoice three-hash on `EFT-INV-2026-00001` | DAF / Finance | ☐ PASS ☐ FAIL | | H = |
-| B2 | Customs discovery without assignment | Douane (CUSTOMS_DECLARANT) | 🔄 **IN PROGRESS — positive target CONFIRMED** | 2026-07-31 | Seat `uat.douane@effitrans.sn`, sole role **CUSTOMS_DECLARANT**; no ownership/task/step/assignment history **by construction** (account created for this test). Saw **3 dossiers on `/files`** — a LIST, which only the migration-69 coarse filter can produce. Opened `EFT-IMP-2026-00002`: Douane panel present, `customs_record` badged « **Requis** » (= `required = true`), and the page attributes access itself: « **Visible parce que : Département destinataire** ». **Remaining: negative control** (§ below) |
+| B2 | Customs discovery without assignment | Douane (CUSTOMS_DECLARANT) | ✅ **PASS — with stated limitation** | 2026-07-31 | Seat `uat.douane@effitrans.sn`, sole role **CUSTOMS_DECLARANT**; no ownership/task/step/assignment history **by construction** (account created for this test). Saw **3 dossiers on `/files`** — a LIST, which only the migration-69 coarse filter can produce. Opened `EFT-IMP-2026-00002`: Douane panel present, `customs_record` badged « **Requis** » (= `required = true`), page attributes access itself: « **Visible parce que : Département destinataire** ». **Limitation (operator, verbatim):** « Contrôle négatif non exécutable — aucun dossier sans volet douane requis n'existe en production au moment de la validation. » |
 | B3 | Closure of `EFT-IMP-2026-00003` | OPS_SUPERVISOR | ✅ **PASS** | 2026-07-31 | Statut = **Clôturé**; full lifecycle history preserved (Brouillon → Ouvert → En cours → Livré → Clôturé); operational journal intact after closure; official invoice artifact and generated documents still present; journal read-only/immutable. « Supprimer le dossier » remains visible — **EXPECTED GATE**, see OBS-R10-07 |
 | B4 | Temporary-password lifecycle | SYSTEM_ADMIN + test account | ✅ **PASS** | 2026-07-31 | Admin-issued temp password generated from `/users/{id}`; status became « Mot de passe temporaire en attente de changement »; login **forced** to `/auth/change-password`; password changed; `/dashboard` reachable only afterwards. First attempt (creation-time password) tested the wrong path — see **DEF-R10-01**; the intermediate refusal is **DEF-R10-03**, both in [`R1.0/validation-findings.md`](R1.0/validation-findings.md). Expired path: **deferred** (preview-only; production writes to force expiry not authorized). |
 
 **Deviations, substitutions and refusals recorded during validation** *(a gate that
 correctly refuses is a pass for the gate — record it here rather than forcing it)*:
 
+- **2026-07-31 · B2 · negative control not executed.** Operator decision, recorded verbatim:
+  « Contrôle négatif non exécutable — aucun dossier sans volet douane requis n'existe en
+  production au moment de la validation. » Production held exactly three dossiers
+  (`EFT-IMP-2026-00001/2/3`), all visible to both SYSTEM_ADMIN and the customs seat.
+  **What is evidenced:** a customs-role account with no assignment of any kind discovered
+  dossiers in a *list*, on a dossier whose customs record is badged « Requis », with the
+  application attributing access to a department relation — the behaviour migration 69 adds.
+  **What is not evidenced:** that the filter *excludes* a dossier without a required customs
+  leg. No such dossier existed to test against, and the option to create a disposable control
+  was declined. Per-dossier verification of the other two (Check A) and their access-reason
+  attribution (Check B) were not captured, so the limitation's premise rests on the
+  operator's reading of the dataset rather than on a recorded per-dossier check. The
+  `/departments/customs` queue result for the customs seat was likewise not captured.
+  **Re-test trigger:** the first production dossier created without a required customs leg
+  makes this control executable — run it then.
+- **2026-07-31 · B3 · OBS-R10-07** — « Supprimer le dossier » stays visible on a closed
+  dossier. **EXPECTED GATE:** it is a true physical delete, permitted only for an empty
+  shell; the invoice artifact, documents, customs and transport records on
+  `EFT-IMP-2026-00003` make it structurally undeletable, and the UI names the refusal.
+  Residual for governance: the guard is content-based, not lifecycle-based.
 - **2026-07-31 · B4 · DEF-R10-01** — a test account was created with credential mode
   « générer »; its creation-time password did **not** force a change at first login.
   Root cause: `createUser` never writes `must_change_password` (column defaults to
