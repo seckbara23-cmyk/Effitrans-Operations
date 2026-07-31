@@ -46,7 +46,8 @@ erDiagram
 | `hr_import_batch/_staging_row/_error` | **NEW** (HR-1C) | one generalized pipeline (FIN-AGING-2 shape); staging `raw` is C2/C3 → purge policy required |
 | `hr_leave_*` | **NEW** (HR-4) | categories/entitlements (config) + requests/balances; ON_LEAVE stays derived |
 | `employee_compensation` / `employee_bank_account` / `employee_benefit` | **NEW** (HR-7) | **C3**; own permission pair; Finance sees interface outputs only |
-| `employee_status_history` | **REJECTED** | the audit log + lifecycle events already are the history; a second store would drift |
+| `employee_status_history` | **REJECTED — superseded 2026-07-31** | the *status-only* history stays rejected; the governance addendum ratified the broader **`hr_employee_event`** cross-domain ledger (WES-9 idiom) instead — see [hr-governance-addendum-2026-07-31.md](hr-governance-addendum-2026-07-31.md) §7 |
+| `hr_employee_event` | **NEW** (HR-1, ratified) | append-only employment ledger feeding the Employee Timeline; `prevent_mutation`; C3 values never in payloads (a salary revision carries kind + date, never the amount) |
 | `employee_contact` / `employee_emergency_contact` | **REJECTED** | columns exist on `employee`; fragmentation without a privacy gain (emergency contact is C2 either way) |
 | `employee_note` | **REJECTED for now** | free-text HR notes are a liability magnet; revisit with the disciplinary domain (HR-6) where notes get a classification and a gate |
 | `employee_audit_view` | **REJECTED** | query `audit_log`; views that duplicate audit invite divergence |
@@ -57,6 +58,11 @@ permission, service-role writes, registered in `lib/db/tenant-tables.ts` (leak-g
 in the CI RLS suite (appended last, per the standing rule).
 
 ## 2. Roadmap — re-based on what is actually built
+
+> **Superseded 2026-07-31**: management ratified a renumbered roadmap (HR-1 = Dashboard +
+> Organization Foundation, …, HR-9 = Reporting & Analytics) in
+> [hr-governance-addendum-2026-07-31.md](hr-governance-addendum-2026-07-31.md) §11, which
+> is now authoritative. The table below is retained as the pre-ratification proposal.
 
 | Phase | Scope | Status |
 |---|---|---|

@@ -26,9 +26,14 @@ canonical department (code, fixed)             ← platform vocabulary, unchange
                                                         effective_from / effective_to
 ```
 
-- `hr_org_unit`: `parent_unit_id` for sub-units; `canonical_department` CHECK ties every
-  unit to the fixed vocabulary, so HR structure can never contradict the platform's
-  department model. Inactive units are flagged, never deleted.
+- `hr_org_unit`: `parent_unit_id` for sub-units; inactive units are flagged, never deleted.
+  **Amended by the 2026-07-31 governance addendum (§5):** units carry
+  `unit_kind ∈ BUSINESS_UNIT · DEPARTMENT · SECTION · TEAM` (Company = the `organization`
+  row; parent chains descend the kind order by trigger), and `canonical_department` is
+  **nullable** — a unit *may* map to one of the four platform codes for interop, but
+  cross-cutting units need no forced mapping. The platform-facing `employee.department`
+  derives from the mapping when present. The navigation hierarchy and the HR hierarchy
+  never read each other (test-pinned once HR-1 lands).
 - `hr_position`: replaces free-text `job_title` as the *catalog*; the free-text column
   remains as display fallback until positions are configured (setup wizard, HR-0A).
   Positions grant **nothing** — same doctrine as departments, test-pinned the same way.
