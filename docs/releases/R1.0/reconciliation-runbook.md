@@ -47,6 +47,17 @@ therefore covers all sixteen versions.** Every one has direct structural evidenc
 Probe methodology was validated with negative controls (`PGRST205` for a nonexistent
 table, `42703` for a nonexistent column) before any positive result was trusted.
 
+> **Verification Addendum (2026-07-31), REQUIRED BEFORE §3:** the stricter
+> versioned-change standard exposed two wrong-object probes in the original matrix —
+> migration 60 had been "confirmed" via a table that belongs to 58, and migration 63 via a
+> column that belongs to 62. The corrected, per-migration evidence with **exact SQL** is
+> in [`verification-57-67.md`](verification-57-67.md), and the consolidated read-only
+> script the operator must run **first** is [`verification-57-67.sql`](verification-57-67.sql).
+> The repair in §3 is authorized only when every row of that script returns `passed=true`.
+> Sequence: **script → share results → review → repair (§3.3) → verify 72/72 (§3.4) →
+> spot-checks (§3.5) → smoke/UAT → sign-off.** REST RPC probes were additionally retracted
+> as evidence (PGRST202 fires on signature mismatch, not only absence).
+
 ## 3. The repair — commands
 
 **Mechanism ruling:** `supabase migration repair --status applied <version> [<version> …]`
