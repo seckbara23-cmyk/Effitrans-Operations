@@ -7,6 +7,119 @@ explicitly and separately from the evidence.
 
 ---
 
+## DEF-R10-03 — « Action non autorisée. » cannot distinguish a denial from a failure
+
+**Raised:** 2026-07-31, during B4 · **Reporter:** operator (production)
+**Classification:** **confirmed error-classification defect** (the conflation below is
+provable from the code). The *underlying* cause of this particular refusal is **not yet
+determined** — two candidates remain, separated by the tests in §5.
+
+### 1. Observation
+
+SYSTEM_ADMIN on `/users/{uat-id}`; the details page renders; the button « Générer un
+nouveau mot de passe temporaire » **is visible**; a valid reason is chosen; « Générer le mot
+de passe » returns « **Action non autorisée.** » and no password is generated.
+
+### 2. Exact execution path
+
+| Step | Location | What happens |
+|---|---|---|
+| 1 | `app/users/[id]/page.tsx:106` | Page passes `canGenerateTempPassword={canUserAdmin(permissions, "tempPassword")}` |
+| 2 | `components/users/user-password-panel.tsx:196` | Button renders **only** when `canGenerateTempPassword && !isSelf` |
+| 3 | `components/users/user-password-panel.tsx:200-203` | Click opens the confirm dialog (client state only) |
+| 4 | `components/users/user-password-panel.tsx:101` | « Générer le mot de passe » calls `generateStaffTempPassword(user.id, { reason, note })` |
+| 5 | `lib/users/password-actions.ts:1` | `"use server"` — server-action boundary |
+| 6 | **`lib/users/password-actions.ts:104-108`** | **The failing block.** `try { admin = await assertAnyPermission(userAdminCodes("tempPassword")) } catch { return { ok:false, error:"forbidden" } }` |
+| 7 | `lib/users/permissions.ts:47` | Codes checked: **`admin:users:temp_password`** OR **`admin:users:manage`** |
+| 8 | `lib/users/password-actions.ts:102` → `components/users/user-password-panel.tsx:103` | `error:"forbidden"` → `t.users.errors.forbidden` → « Action non autorisée. » |
+
+Execution **never reaches** the reason validation (`:110`), the self-check (`:113`), the
+tenant-scoped target read (`:116-122`), GoTrue (`:126`) or the flag write (`:138`).
+
+### 3. The seven questions
+
+| # | Question | Answer |
+|---|---|---|
+| 1 | Which server action executes | `generateStaffTempPassword` — `lib/users/password-actions.ts:99` |
+| 2 | Which permission(s) it checks | `admin:users:temp_password` **OR** `admin:users:manage` (`userAdminCodes("tempPassword")`) |
+| 3 | Different permission than the page? | The **page-entry** gate is `read`; the **button** gate is `tempPassword` — *the same pair the action checks*, via the same `canUserAdmin`/`hasPermission` predicate (both are plain `Array.includes`, `lib/rbac/check.ts:10`). So no: the button and the action agree by construction. |
+| 4 | Does tenant validation fail? | **Not reached.** The tenant-scoped read is `:116-122` and returns `not_found` → « Utilisateur introuvable. » — a **different** message. Ruled out by the observed string. |
+| 5 | Does actor == target fail? | **Not reached.** `:113` returns `cannot_disable_self` → « Vous ne pouvez pas désactiver votre propre compte. » — a different message; and the button hides when `isSelf`. Ruled out twice. |
+| 6 | Should SYSTEM_ADMIN be allowed by design? | **Yes.** Migration 71 grants all 7 codes to **every** `SYSTEM_ADMIN` role (`20260729000001…sql:110-124`, no tenant filter), and the umbrella remains accepted. |
+| 7 | Production defect or expected behaviour? | The **message** is a confirmed defect (§4). Whether the refusal *itself* is correct depends on §5. |
+
+### 4. The confirmed defect: a bare catch
+
+```ts
+try { admin = await assertAnyPermission(userAdminCodes("tempPassword")); }
+catch { return { ok: false, error: "forbidden" }; }
+```
+
+`catch` with no discrimination maps **every** throw class to an authorization refusal.
+`assertAnyPermission` (`lib/auth/require-permission.ts:41-47`) can throw for three
+materially different reasons:
+
+1. `PermissionError` — a genuine denial;
+2. `getCurrentUser()` resolving to **null** — an *authentication* failure (expired or
+   unrefreshable session), which is not a denial at all;
+3. `getEffectivePermissions()` **throwing** — `lib/rbac/permissions.ts:29-31` raises
+   `[rbac] failed to resolve permissions: …` on any RPC error — an *infrastructure* failure.
+
+All three surface to the operator as « Action non autorisée. » **The message is therefore
+not evidence of a permission problem**, and the same pattern repeats across the module.
+No fix proposed.
+
+### 5. What the evidence does and does not settle
+
+Two readings survive, and they are mutually exclusive:
+
+- **(A) Genuine denial.** The effective permissions lack both codes. But then step 2 could
+  not have rendered the button — it is gated on the *same* pair. For (A) to hold, the page
+  render and the click must have resolved different permission sets.
+- **(B) Masked non-authorization failure.** The permissions are intact (consistent with the
+  visible button) and `assertAnyPermission` threw for reason 2 or 3 above. An expired
+  access token between page render and click produces exactly this, and would also explain
+  why `createUser` / `archiveUser` — the same helper, the same module pattern — succeeded
+  earlier in the session.
+
+**Discriminators, cheapest first, all production-safe:**
+
+1. **Hard-reload `/users/{id}` (Ctrl+F5) and immediately repeat the action.** Success on a
+   fresh session ⇒ **(B)**, session-expiry masked as a refusal.
+2. Still refused → on the same page click « **Envoyer un e-mail de réinitialisation** »
+   (`admin:users:reset_password`, same module, different code; harmless — it mints a link
+   to the test account). Refused too ⇒ the whole module, not one code.
+3. Still ambiguous → the read-only query pair below. This is the sanctioned
+   "a smoke test failed → look" exception:
+
+```sql
+select r.code as role, p.code as permission
+  from public.role_permission rp
+  join public.role r       on r.id = rp.role_id
+  join public.permission p on p.id = rp.permission_id
+ where p.code like 'admin:users:%'
+ order by 1, 2;
+
+-- exactly what both gates call, for the administrator's own id
+select code from public.get_user_permissions(
+  (select id from public.app_user where email = 'seckbara23@gmail.com')
+) where code like 'admin:users:%' order by 1;
+```
+
+If the second returns `admin:users:temp_password`, reading **(A) is eliminated** and the
+refusal was a masked failure.
+
+### 6. Is B4 blocked by an implementation defect?
+
+**Not by a defect in the lever itself** — `generateStaffTempPassword` never executed, so
+nothing about its behaviour has been contradicted. B4 is **blocked pending §5**: the answer
+determines whether the obstacle is a grant gap (data, one INSERT), a session artefact (retry
+resolves it), or an infrastructure failure (investigate the RPC). The bare-catch defect is
+real and independent, and it is precisely what made this ambiguous — but it does not itself
+prevent B4 from passing.
+
+---
+
 ## OBS-R10-02 — `/users/{id}` refused while `/users` was accessible
 
 **Raised:** 2026-07-31, during B4 · **Reporter:** operator (production)
