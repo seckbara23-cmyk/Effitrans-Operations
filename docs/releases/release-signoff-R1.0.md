@@ -93,9 +93,9 @@ R1.0 cannot be signed with an unresolved row.
 
 | # | Check | Seat | Result | Date | Evidence / notes |
 |---|---|---|---|---|---|
-| A1 | Served SHA = `main` HEAD | Operator | ☐ PASS ☐ FAIL | | |
-| A2 | Production verification sweep (exit 0) | Operator | ☐ PASS ☐ FAIL | | |
-| A3 | Ops dashboard: `72 · dernière : 20260729000002_…`, no `warn` | Operator | ☐ PASS ☐ FAIL | | |
+| A1 | Served SHA = `main` HEAD | Operator | ✅ **PASS** | 2026-07-31 | `5b24164a57fc45cdf82221ade7ebbe2634d838c9` = `main` HEAD; verified inside A2's version check |
+| A2 | Production verification sweep (exit 0) | Operator | ✅ **PASS** | 2026-07-31 | `verify-production.mjs` → ALL CHECKS PASSED, **exit code 0**; SHA `5b24164a57fc45cdf82221ade7ebbe2634d838c9` |
+| A3 | Ops dashboard: `72 · dernière : 20260729000002_…`, no `warn` | Operator | ✅ **PASS** | 2026-07-31 | Commit `5b24164a57fc…`, branche `main`, env `production`, **Migrations livrées 72**, dernière `20260729000002_aging_balance_foundation`, Déploiement **Sain**, base de données joignable, Santé plateforme **Sain**, Sécurité **Sain** |
 | B1 | Invoice three-hash on `EFT-INV-2026-00001` | DAF / Finance | ☐ PASS ☐ FAIL | | H = |
 | B2 | Customs discovery without assignment | Chef de transit / Douane | ☐ PASS ☐ FAIL | | role = |
 | B3 | Closure of `EFT-IMP-2026-00003` | OPS_SUPERVISOR | ☐ PASS ☐ FAIL | | |

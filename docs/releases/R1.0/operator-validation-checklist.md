@@ -294,6 +294,27 @@ Proves migration **71** in the running system.
 > Use a **test** account, never a real employee. An administrator **cannot** issue a
 > temporary password to themselves — that refusal is itself expected behaviour.
 
+### Solo-operator adaptation (used on 2026-07-31)
+
+When one person holds the only production session, three rules keep the test non-destructive:
+
+1. **Never sign out of the admin session.** Do the test-account login in a **private /
+   incognito window**; the admin session survives in the main window. If the temporary
+   password is somehow lost mid-test, the recovery lever (`Générer…` again) is only
+   reachable from that surviving admin session.
+2. **Never target a real employee.** Issuing a temporary password **immediately invalidates
+   the target's current password** — on a real account that is an outage for a colleague who
+   never asked for one. The target must be an account whose lockout costs nothing.
+3. **The admin account is never the target.** The server refuses self-issue
+   (`generateStaffTempPassword` rejects `userId === admin.id`) precisely because an
+   administrator holding only a forced-change credential is a self-inflicted outage. The
+   refusal is a designed control — worth observing once, not worth working around.
+
+Creating a test account, if none exists, is **additive and supported** (`admin:users:create`
+with credential mode « générer ») but note the platform's archive-not-delete lifecycle
+(Phase 8.1A): the row can be **archived, never deleted**. Choose the account name knowing it
+is permanent.
+
 ### Exact clicks — issuing
 
 1. Sign in at `/login` as SYSTEM_ADMIN → go to **`/users`**.
@@ -361,9 +382,9 @@ Record which option you took: `☐ preview  ☐ production wait  ☐ deferred`
 
 | # | Check | Result | Date | Initials | Notes |
 |---|---|---|---|---|---|
-| A1 | Served SHA (`/api/version`) | ✔ (auto, 2026-07-31: `1abccda` → re-confirm at run time) | | | |
-| A2 | Production verification sweep | ☐ PASS ☐ FAIL | | | |
-| A3 | Operations dashboard | ☐ PASS ☐ FAIL | | | |
+| A1 | Served SHA (`/api/version`) | ✅ PASS | 2026-07-31 | operator | `5b24164a57fc…` = `main` HEAD |
+| A2 | Production verification sweep | ✅ PASS | 2026-07-31 | operator | ALL CHECKS PASSED, exit 0 |
+| A3 | Operations dashboard | ✅ PASS | 2026-07-31 | operator | 72 · `20260729000002_…`; Déploiement/Santé/Sécurité all **Sain** |
 | B1 | Invoice three-hash | ☐ PASS ☐ FAIL | | | H = |
 | B2 | Customs discovery | ☐ PASS ☐ FAIL | | | role used = |
 | B3 | Dossier closure | ☐ PASS ☐ FAIL | | | |
