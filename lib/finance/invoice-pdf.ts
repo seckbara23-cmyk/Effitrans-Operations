@@ -20,11 +20,50 @@
  * is never re-rendered; whether it has since been paid is application state,
  * shown in the app and the portal, not written back into an issued accounting
  * document.
+ *
+ * ===========================================================================
+ * COORDINATES ARE TOP-DOWN (corrected 2026-07-31 — DEF-R10-05)
+ * ===========================================================================
+ * `PdfDoc` is a TOP-LEFT origin API: `y` is the distance from the TOP of the
+ * page and GROWS DOWNWARD; the class converts to PDF's bottom-left space
+ * internally (`py = this.height - y`). Every other renderer in the codebase
+ * follows that contract — `lib/reports/templates.ts` does `this.y += h`,
+ * `lib/copilot/export.ts` starts at the margin and increments.
+ *
+ * This renderer originally did the opposite: it started at `y = 800` and
+ * DECREMENTED, as if y were measured from the bottom. On A4 (841.89 pt) the
+ * first line therefore landed 41.89 pt from the BOTTOM and each step moved the
+ * next element UPWARD — the invoice was built from the bottom of the page
+ * toward the middle, in inverted order, with the top half blank.
+ *
+ * The layout below is the same design, expressed correctly: start at the top
+ * margin, advance with `+=`. The spacing magnitudes are unchanged; only the
+ * direction, the two column merge points, the header band anchor, the page
+ * overflow guard and the totals rule anchor were corrected.
+ *
+ * ===========================================================================
+ * WHY THE VERSION CONSTANT MOVES WITH IT
+ * ===========================================================================
+ * Correcting the geometry changes the bytes, and the bytes are the artifact:
+ * their SHA-256 is what makes an issued invoice verifiable. Artifacts are
+ * generated ONCE and are immutable (lib/finance/invoice-artifact.ts), so
+ * invoices already issued keep their original bytes, their original hash AND
+ * their original `renderer_version` — this correction reaches only invoices
+ * issued from now on. The constant is what tells the two apart forever.
  */
 import { PdfDoc, textWidth } from "@/lib/reports/pdf";
 import { invoiceTotals } from "./calc";
 
-export const INVOICE_RENDERER_VERSION = "uat2b-1";
+/**
+ * Renderer identity, recorded on every artifact at finalization.
+ *
+ *   uat2b-1  original release. Correct content, inverted geometry (DEF-R10-05).
+ *   uat2b-2  2026-07-31 — geometry corrected to the top-down contract.
+ *
+ * Never reuse a version for different output: the whole point is that an
+ * artifact can be traced to the exact renderer that produced its bytes.
+ */
+export const INVOICE_RENDERER_VERSION = "uat2b-2";
 
 export type InvoiceSnapshotLine = {
   description: string;
@@ -93,11 +132,13 @@ const clean = (v: string | null | undefined): string | null => {
 export function renderOfficialInvoice(snapshot: InvoiceSnapshot): Uint8Array {
   const doc = new PdfDoc({ size: "A4" });
   const W = 595.28;
-  let y = 800;
+  const H = doc.height;
+  // TOP-DOWN: y is the distance from the top of the page and grows downward.
+  let y = M;
 
   // ---- issuer -------------------------------------------------------------
   doc.text(M, y, snapshot.organizationName, { size: 16, bold: true, color: NAVY });
-  y -= 16;
+  y += 16;
   for (const v of [
     clean(snapshot.organizationAddress),
     clean(snapshot.organizationPhone),
@@ -106,36 +147,38 @@ export function renderOfficialInvoice(snapshot: InvoiceSnapshot): Uint8Array {
   ]) {
     if (!v) continue; // configured only — never invented
     doc.text(M, y, v, { size: 8, color: GREY });
-    y -= 10;
+    y += 10;
   }
 
   // ---- invoice identity (right) ------------------------------------------
-  let ry = 800;
+  let ry = M;
   doc.text(W - M, ry, "FACTURE", { size: 18, bold: true, color: NAVY, align: "right" });
-  ry -= 20;
+  ry += 20;
   doc.text(W - M, ry, snapshot.invoiceNumber, { size: 12, bold: true, align: "right" });
-  ry -= 14;
+  ry += 14;
   doc.text(W - M, ry, `Date d'émission : ${snapshot.issueDate}`, { size: 9, color: GREY, align: "right" });
-  ry -= 11;
+  ry += 11;
   if (snapshot.dueDate) {
     doc.text(W - M, ry, `Échéance : ${snapshot.dueDate}`, { size: 9, color: GREY, align: "right" });
-    ry -= 11;
+    ry += 11;
   }
 
-  y = Math.min(y, ry) - 18;
+  // Two columns were written in parallel; continue below the LOWER of the two,
+  // which top-down is the LARGER y.
+  y = Math.max(y, ry) + 18;
 
   // ---- customer + dossier -------------------------------------------------
   doc.line(M, y, W - M, y, LINE);
-  y -= 16;
+  y += 16;
   const leftTop = y;
   doc.text(M, y, "Facturé à", { size: 8, bold: true, color: GREY });
-  y -= 12;
+  y += 12;
   doc.text(M, y, snapshot.customerName, { size: 10, bold: true });
-  y -= 12;
+  y += 12;
   const addr = clean(snapshot.customerAddress);
   if (addr) {
     doc.text(M, y, addr, { size: 9, color: GREY });
-    y -= 11;
+    y += 11;
   }
 
   let dy = leftTop;
@@ -157,28 +200,32 @@ export function renderOfficialInvoice(snapshot: InvoiceSnapshot): Uint8Array {
 
   for (const l of dossier) {
     doc.text(W - M, dy, l, { size: 9, color: GREY, align: "right" });
-    dy -= 11;
+    dy += 11;
   }
 
-  y = Math.min(y, dy) - 14;
+  y = Math.max(y, dy) + 14;
 
   // ---- lines --------------------------------------------------------------
   const COL_Q = W - M - 210;
   const COL_U = W - M - 130;
   const COL_T = W - M;
 
-  doc.fillRect(M, y - 4, W - 2 * M, 18, [0.96, 0.97, 0.98]);
+  // The band sits BEHIND the header baseline: top-left origin, so its top edge
+  // is above the baseline and it extends downward past the descenders.
+  doc.fillRect(M, y - 14, W - 2 * M, 18, [0.96, 0.97, 0.98]);
   doc.text(M + 4, y, "Désignation", { size: 8, bold: true, color: NAVY });
   doc.text(COL_Q, y, "Qté", { size: 8, bold: true, color: NAVY, align: "right" });
   doc.text(COL_U, y, "P.U.", { size: 8, bold: true, color: NAVY, align: "right" });
   doc.text(COL_T, y, "Montant", { size: 8, bold: true, color: NAVY, align: "right" });
-  y -= 20;
+  y += 20;
 
   const cur = snapshot.currency;
   for (const l of snapshot.lines) {
-    if (y < 140) {
+    // Overflow: break when the cursor comes within 140 pt of the page bottom,
+    // and restart the next page at the TOP margin.
+    if (y > H - 140) {
       doc.addPage();
-      y = 800;
+      y = M;
     }
     // Truncate rather than wrap: deterministic width, no reflow surprises.
     let desc = l.description;
@@ -191,9 +238,9 @@ export function renderOfficialInvoice(snapshot: InvoiceSnapshot): Uint8Array {
     doc.text(COL_Q, y, String(l.quantity), { size: 9, align: "right" });
     doc.text(COL_U, y, formatMoney(l.unitAmount, cur), { size: 9, align: "right" });
     doc.text(COL_T, y, formatMoney(l.quantity * l.unitAmount, cur), { size: 9, align: "right" });
-    y -= 8;
+    y += 8;
     doc.line(M, y, W - M, y, LINE);
-    y -= 12;
+    y += 12;
   }
 
   // ---- totals — the SAME function Finance and the portal use --------------
@@ -201,7 +248,7 @@ export function renderOfficialInvoice(snapshot: InvoiceSnapshot): Uint8Array {
     snapshot.lines.map((l) => ({ quantity: l.quantity, unitAmount: l.unitAmount, taxRate: l.taxRate })),
   );
 
-  y -= 6;
+  y += 6;
   const rows: [string, string, boolean][] = [
     ["Sous-total", formatMoney(subtotal, cur), false],
     ["TVA", formatMoney(tax, cur), false],
@@ -209,23 +256,24 @@ export function renderOfficialInvoice(snapshot: InvoiceSnapshot): Uint8Array {
   ];
   for (const [label, value, bold] of rows) {
     if (bold) {
-      doc.line(COL_U - 60, y + 12, COL_T, y + 12, LINE);
-      y -= 2;
+      // The rule sits ABOVE the TOTAL row — top-down, above is the smaller y.
+      doc.line(COL_U - 60, y - 12, COL_T, y - 12, LINE);
+      y += 2;
     }
     doc.text(COL_U, y, label, { size: bold ? 10 : 9, bold, color: bold ? NAVY : GREY, align: "right" });
     doc.text(COL_T, y, value, { size: bold ? 11 : 9, bold, color: bold ? NAVY : [0, 0, 0], align: "right" });
-    y -= bold ? 16 : 13;
+    y += bold ? 16 : 13;
   }
 
   // ---- payment details (configured only) ----------------------------------
   const pay = (snapshot.paymentDetails ?? []).map(clean).filter((v): v is string => Boolean(v));
   if (pay.length > 0) {
-    y -= 10;
+    y += 10;
     doc.text(M, y, "Coordonnées de règlement", { size: 8, bold: true, color: NAVY });
-    y -= 12;
+    y += 12;
     for (const l of pay) {
       doc.text(M, y, l, { size: 8, color: GREY });
-      y -= 10;
+      y += 10;
     }
   }
 

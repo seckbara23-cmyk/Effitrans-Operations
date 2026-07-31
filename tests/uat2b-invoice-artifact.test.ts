@@ -294,7 +294,11 @@ describe("the customer portal reuses the finance model", () => {
 // ---------------------------------------------------------------------------
 describe("scope discipline", () => {
   it("the renderer version is pinned", () => {
-    expect(INVOICE_RENDERER_VERSION).toBe("uat2b-1");
+    // Bumped 2026-07-31 for DEF-R10-05 (geometry corrected to the top-down
+    // contract). This pin is deliberate friction: the version is stamped on
+    // every artifact, so it may only move together with a change in the bytes
+    // the renderer produces — and moving it must be a conscious edit here.
+    expect(INVOICE_RENDERER_VERSION).toBe("uat2b-2");
   });
 
   it("no credit-note implementation was started", () => {

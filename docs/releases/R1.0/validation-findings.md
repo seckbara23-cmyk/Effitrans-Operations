@@ -7,11 +7,101 @@ explicitly and separately from the evidence.
 
 ---
 
+## OBS-R10-06 — 3 073-byte response vs 1 641-byte saved file
+
+**Raised:** 2026-07-31, during B1 · **Verdict: the server is exonerated by construction; the
+discrepancy is introduced by the browser's PDF viewer on save.** Not a defect in the
+platform. B1's capture procedure was wrong and has been corrected.
+
+### The evidence
+
+| | |
+|---|---|
+| Response | `200`, `Content-Type: application/pdf`, `Content-Length: 3073`, `X-Invoice-Sha256: a1442d13…8c2e` |
+| Saved file | `EFT-INV-2026-00001-current.pdf`, **1 641 bytes**, `d6ed259c…0adf4` |
+
+### What is hashed, and what is sent
+
+One buffer, start to finish — `lib/finance/invoice-artifact.ts:96-115`:
+
+```ts
+const bytes = renderOfficialInvoice(snapshot);   // :96
+const contentSha256 = sha256Hex(bytes);          // :97   <- the header value
+await uploadObject(storagePath, bytes, "application/pdf");  // :101  <- the stored object
+… finalize_official_invoice(… p_content_sha256: contentSha256 …)     // :104-115
+```
+
+and at download — `app/api/invoices/[id]/pdf/route.ts:90-109`:
+
+```ts
+const bytes = new Uint8Array(await blob.arrayBuffer());   // :95  the stored object
+return new NextResponse(bytes, { headers: {
+  "Content-Length": String(bytes.byteLength),             // :103 derived from the body itself
+  "X-Invoice-Sha256": artifact.contentSha256,             // :107 the hash of those same bytes
+}});
+```
+
+**`Content-Length` is trustworthy** — it is computed from the very buffer being sent, not
+from a stored number. **3 073 is the true body length.** No text codec touches the bytes
+(`TextDecoder`, `.text()`, `toString(` are all absent from the route). The route imports no
+renderer, so nothing generates a second PDF on download.
+
+### The service worker is not involved
+
+`public/sw.js` — `cacheableStatic()` (`:52-59`) returns true **only** for `/_next/static/`,
+`/icons/` and `/favicon.ico`. For everything else the fetch handler **returns at `:81`
+without calling `event.respondWith`**, so the browser's normal network path applies: the SW
+cannot transform, truncate, replace or cache the response — and every `cache.put` in the
+file sits downstream of that gate. DevTools labelling the request « from service worker »
+reflects an SW-**controlled client**, not interception. Pinned by
+`tests/invoice-byte-integrity.test.ts`, which evaluates the real predicate out of `sw.js`.
+
+### What actually produced 1 641 bytes
+
+Two facts converge:
+
+1. **Our PDFs are uncompressed.** `lib/reports/pdf.ts:259` writes page content as
+   `<< /Length n >> stream … endstream` with **no `/Filter`**. A 3 073-byte uncompressed
+   text-only invoice is exactly the expected size.
+2. **The file was produced by the viewer, not the network.** The name
+   `…-current.pdf` is not ours — `invoiceFileName()` (`invoice-artifact.ts:43-45`) returns
+   `${invoiceNumber}.pdf`, and the response carries
+   `Content-Disposition: inline; filename="EFT-INV-2026-00001.pdf"`. The suffix comes from
+   Edge's PDF viewer save path, which **re-serialises the document through its own PDF
+   engine** — re-writing the object structure and compressing the streams. Roughly halving
+   an uncompressed content stream is precisely what that produces.
+
+So the 1 641-byte file is a **semantically equivalent re-encoding**, not the artifact. It is
+neither "the previous artifact" nor "a later one": both hashes describe the same accounting
+content, and only `a1442d13…` describes the bytes the platform issued and stores.
+
+### Consequence for B1 — the procedure was at fault
+
+**H3 must be the bytes as delivered.** Never the viewer's Save button. Corrected in
+`operator-validation-checklist.md`: use « Enregistrer la cible du lien sous… » on the link
+(or `curl` with the session cookie), then hash the saved file, and check that its byte
+length equals the advertised `Content-Length`.
+
+### Residual observation (not a defect, worth knowing)
+
+The route publishes `artifact.contentSha256` **from the database row** rather than hashing
+the streamed bytes on every request. That is a deliberate cost choice, and the two cannot
+diverge through any code path in the repo (one buffer is hashed and uploaded together, and
+nothing ever updates the column). Should storage and the row ever diverge through an
+out-of-band act, the header would describe the row rather than the body — which is exactly
+what B1's H3 check would expose.
+
+---
+
 ## DEF-R10-05 — the official invoice PDF is laid out upside-down (coordinate mismatch)
 
 **Raised:** 2026-07-31, during B1 · **Reporter:** operator (production)
 **Classification:** **post-R1.0 defect — Major (document quality), NOT a release blocker.**
-No effect on B1: the three-hash test verifies byte identity, not geometry.
+**FIXED 2026-07-31 — awaiting deployment and production retest.** Renderer corrected to the
+top-down contract; `INVOICE_RENDERER_VERSION` → `uat2b-2`; geometry regression suite added
+(`tests/invoice-pdf-geometry.test.ts`) and proven to fail against the old layout. Issued
+invoices are untouched by design — see
+[`docs/finance/invoice-artifact-immutability.md`](../../finance/invoice-artifact-immutability.md).
 
 ### 1. What the pipeline actually is
 

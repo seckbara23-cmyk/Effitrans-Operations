@@ -135,6 +135,22 @@ so a header/bytes match proves the stored hash describes the served artifact, an
 staff/portal match proves both paths resolve to the same finalized artifact. No SQL is
 required (an optional confirming query is at the end).
 
+> ### ⚠️ Capture rule learned on 2026-07-31 (OBS-R10-06)
+>
+> **Never hash a file saved from the browser's PDF *viewer*.** Edge and Chrome re-serialise
+> the document through their own PDF engine when you use the viewer's Save button: the
+> result renders identically but is a different file — in the observed case 1 641 bytes
+> against the 3 073 the server sent, because our PDFs ship with uncompressed content streams
+> and the viewer compresses them. A `…-current.pdf` filename is the tell; the platform names
+> the file `EFT-INV-…….pdf`.
+>
+> **H3 must be the bytes as delivered:**
+> - right-click the link → « **Enregistrer la cible du lien sous…** » (never open-then-save), **or**
+> - `curl` the URL with the session cookie.
+>
+> Then check the saved file's **byte length equals the advertised `Content-Length`** before
+> hashing. A length mismatch means you captured a re-encoding, not the artifact — recapture.
+
 ### Exact clicks — staff path
 
 1. Sign in at `/login` as the Finance/DAF seat.
@@ -148,10 +164,13 @@ required (an optional confirming query is at the end).
    expected, once, and is not a failure.*
 6. In DevTools, select the `pdf` request → **Headers → Response Headers** → record
    `X-Invoice-Sha256` = `H1 = ________________________________`
-7. Save the PDF locally, then hash the file:
+7. Save the delivered bytes — **right-click the link → « Enregistrer la cible du lien sous… »**
+   (not the viewer's Save button; see the capture rule above). Then:
    ```powershell
-   certutil -hashfile "C:\path\to\downloaded.pdf" SHA256
+   (Get-Item "C:\path\to\EFT-INV-2026-00001.pdf").Length     # must equal Content-Length
+   certutil -hashfile "C:\path\to\EFT-INV-2026-00001.pdf" SHA256
    ```
+   `saved length = ______` (must equal the advertised `Content-Length`)
    `H3 = ________________________________` *(certutil prints spaces — ignore them; compare case-insensitively)*
 
 ### Exact clicks — portal path
