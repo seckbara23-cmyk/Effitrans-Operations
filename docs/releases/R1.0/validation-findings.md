@@ -5,6 +5,13 @@ Findings discovered while executing
 recorded here whether or not it blocks the release; the classification is stated
 explicitly and separately from the evidence.
 
+> **Commit identifiers in this document.** The 2026-07-31 history sanitation changed five
+> commit SHAs — **because the repository's history was rewritten, not because any application
+> behaviour changed**. The fix commit referred to below as `106423a` is now **`733c116`**;
+> the full mapping is in
+> [`history-sanitation-2026-07-31.md`](history-sanitation-2026-07-31.md). Every other SHA
+> cited here predates the rewrite and still resolves.
+
 ---
 
 ## OBS-R10-07 — « Supprimer le dossier » stays visible on a closed dossier

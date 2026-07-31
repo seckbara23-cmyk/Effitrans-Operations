@@ -10,7 +10,7 @@ Reproducible pin of exactly what was audited. **The deployed commit must match t
 | Branch | `main` |
 | Commit title | Phase 7.7: Executive Intelligence Dashboard |
 | Repository | github.com/seckbara23-cmyk/Effitrans-Operations (**public** — finding F-2) |
-| Working tree at audit | clean except one untracked non-code file (`Effitrand SaaS Discovery Questionnaire.docx`) |
+| Working tree at audit | clean except one untracked non-code file (the Effitrans discovery questionnaire, held outside the repository) |
 
 ## Verification on this SHA
 

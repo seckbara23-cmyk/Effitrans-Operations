@@ -84,6 +84,14 @@ mechanism writes **history only**, in both directions (§5 reversal).
 | Documentation commit | `d8b37d8` — CI **green**: build success (10 steps), rls-tests success (66 steps), **0 skipped** |
 | Schema/code changes in R1.0 | **none** |
 
+> **Commit identifiers after 2026-07-31.** A repository-history sanitation on 2026-07-31
+> (two business documents purged from a public repo) changed **five** commit SHAs. **No
+> application behaviour, code, schema or configuration changed** — trees are identical apart
+> from the removed files, and every SHA cited in this document predates the rewrite and still
+> resolves. Mapping and verification:
+> [`R1.0/history-sanitation-2026-07-31.md`](R1.0/history-sanitation-2026-07-31.md).
+> The invoice-renderer fix, recorded below as `106423a`, is now **`733c116`**.
+
 ---
 
 ## 3. Operational validation results

@@ -11,6 +11,14 @@ repair applied under operator GO after 30/30 verification rows passed; ledger re
 > instead of probing — the exact drift the release framework exists to catch, caught on
 > its first run.
 
+> **History sanitation, 2026-07-31.** Two business documents were committed by mistake into
+> a public repository and were purged from git history with `git-filter-repo`, followed by a
+> lease-guarded force-push. **Five commit SHAs changed as a result. No application behaviour,
+> code, schema or configuration changed** — the trees are identical apart from the two
+> removed files. Full mapping and verification in
+> [`R1.0/history-sanitation-2026-07-31.md`](R1.0/history-sanitation-2026-07-31.md). Every SHA
+> cited elsewhere in this document predates the rewrite and still resolves.
+
 ## Current production (verified 2026-07-31, post-repair)
 
 | Item | Value |

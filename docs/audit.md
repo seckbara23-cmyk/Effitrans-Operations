@@ -1,7 +1,7 @@
 # Effitrans Logistics Operations Platform — Pre-Build Audit
 
 **Auditor role:** Senior ERP/SaaS architect, logistics operations consultant, product auditor
-**Source:** SaaS Discovery Questionnaire v1.0 (Q1–Q33), prepared by Bara Seck for Abdul Lahad / Effitrans, 2026-06-03
+**Source:** Effitrans discovery questionnaire v1.0 (Q1–Q33), 2026-06-03 — held outside the repository
 **Codebase reviewed:** Next.js 14 + React 18 + Tailwind mock UI (modules: dashboard, shipments, customs, customers, documents, finance, tasks, reports, users, settings). No backend or database yet.
 **Date:** 2026-06-13
 

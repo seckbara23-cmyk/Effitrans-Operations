@@ -5,8 +5,8 @@
 **Authoritative source:** "PROCESSUS OPÉRATIONNEL – EFFITRANS" (26 steps + parallel customs/transport branch), as transcribed in the Phase 5.0 brief.
 
 > **Source-document caveat.** The workflow document and organisational diagram were *not* attached to the
-> session and are not in the repository (the only document present is
-> `Effitrand SaaS Discovery Questionnaire.docx`). This audit is built against the 26-step specification as
+> session and are not in the repository (the only document available was the Effitrans discovery
+> questionnaire, held outside the repository). This audit is built against the 26-step specification as
 > written in the Phase 5.0 brief. Before Phase 5.0B begins, the original document should be committed to
 > `docs/` so the registry can be diffed against the authoritative text.
 
