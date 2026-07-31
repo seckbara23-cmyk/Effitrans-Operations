@@ -10,8 +10,9 @@ explicitly and separately from the evidence.
 ## OBS-R10-02 — `/users/{id}` refused while `/users` was accessible
 
 **Raised:** 2026-07-31, during B4 · **Reporter:** operator (production)
-**Classification:** **not established as a defect — the two observations cannot come from
-one session** · **Blocks B4 execution until resolved; not an R1.0 blocker**
+**Classification:** ✅ **RESOLVED 2026-07-31 — no defect.** Operator screenshots confirmed
+the refusal came from the UAT account's own session, exactly as the audit predicted. The
+authorization system behaved correctly. Retained as a record of the audit.
 
 ### 1. Observation
 
@@ -138,7 +139,43 @@ unproven in the running system.
 (or the wording corrected to match the behaviour) — a decision to be taken deliberately,
 not folded into a reconciliation release.
 
-### 6. One observation settles it definitively
+### 6. Exact execution trace (added 2026-07-31, after OBS-R10-02 was resolved)
+
+**The create form executes `createUser()`. It never calls `generateStaffTempPassword()`** —
+`components/users/users-admin.tsx` imports only from `@/lib/users/actions` (lines 15-23) and
+has no reference to `password-actions.ts` anywhere.
+
+| Step | Location | What happens |
+|---|---|---|
+| 1 | `components/users/users-admin.tsx:383-401` | Radio « Générer un mot de passe temporaire » sets `credentialMode = "generate"` |
+| 2 | `components/users/users-admin.tsx:419-432` | Submit calls `createUser({ email, name, credentialMode, roleIds, sendWelcome, status })` |
+| 3 | `lib/users/actions.ts:1` | `"use server"` — server-action boundary |
+| 4 | `lib/users/actions.ts:79, 97` | `createUser` gates on `assertAnyPermission(userAdminCodes("create"))` |
+| 5 | `lib/users/actions.ts:141` | `generateTempPassword()` — CSPRNG from `lib/portal/temp-password.ts:40`, **the same generator the admin lever uses** |
+| 6 | `lib/users/actions.ts:166-170` | GoTrue `auth.admin.createUser({ email, password, email_confirm: true })` — the credential is live immediately |
+| 7 | `lib/users/actions.ts:183-189` | **The decisive line.** `app_user` insert names `id, tenant_id, email, name, status` — **no `must_change_password`, no `temp_password_expires_at`, no `password_changed_at`** |
+| 8 | `20260729000001…sql:130` | Column is `boolean not null default false` → row created **disarmed** |
+| 9 | `lib/users/actions.ts:208-221` | Audit written as `USER_CREATED_WITH_TEMP_PASSWORD` — the name asserts a lifecycle the row does not have |
+| 10 | `lib/users/actions.ts:235-242` → `users-admin.tsx:82-112` | Password returned once and shown by `CredentialPanel`, under the warning that promises a forced first-login change |
+| 11 | first login → `lib/auth/require-user.ts:61` | Gate reads `false` → `evaluatePasswordGate` returns `"ok"` → `/dashboard` renders. **Correct behaviour on a disarmed row.** |
+
+**Contrast — the lever B4 actually tests:**
+`components/users/user-password-panel.tsx:101` → `generateStaffTempPassword`
+(`lib/users/password-actions.ts:99`) → GoTrue password update (`:126`) → **flag update
+(`:138-149`)** setting `must_change_password: true`, `temp_password_expires_at`,
+`password_changed_at` → audit with `forcedChange: true` (`:166`).
+
+**Root cause restated precisely:** the two paths share the password *generator* and nothing
+else. Arming the lifecycle exists **only** in `generateStaffTempPassword`. `createUser`
+dates from Phase 5.0E-4 and was never extended when migration 71 introduced the columns, so
+in the create flow "temporary" means only *shown once*, never *must be changed* — while
+three labels (the mode name, the panel warning, the audit action) say otherwise.
+
+**Consequence for B4: none — no code fix is required.** The mechanism B4 tests is reachable
+in the production UI today, on `/users/{id}`. DEF-R10-01 concerns the *create* path, which
+B4 does not test.
+
+### 7. One observation settles it definitively
 
 The root cause above is read from code. The live discriminator, requiring no SQL, is on
 `/users/{id}` for the UAT account — the row « **État du mot de passe** »:
