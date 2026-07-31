@@ -419,7 +419,7 @@ Record which option you took: `☐ preview  ☐ production wait  ☐ deferred`
 | A3 | Operations dashboard | ✅ PASS | 2026-07-31 | operator | 72 · `20260729000002_…`; Déploiement/Santé/Sécurité all **Sain** |
 | B1 | Invoice three-hash | ☐ PASS ☐ FAIL | | | H = |
 | B2 | Customs discovery | ☐ PASS ☐ FAIL | | | role used = |
-| B3 | Dossier closure | ☐ PASS ☐ FAIL | | | |
+| B3 | Dossier closure | ✅ PASS | 2026-07-31 | operator | `EFT-IMP-2026-00003` → Clôturé; history + journal + artifacts preserved; delete control = expected gate (OBS-R10-07) |
 | B4 | Temp-password lifecycle | ✅ PASS | 2026-07-31 | operator | admin-issued path; forced change confirmed; expired path deferred (preview-only) |
 
 ## Observation classification vocabulary

@@ -7,6 +7,53 @@ explicitly and separately from the evidence.
 
 ---
 
+## OBS-R10-07 — « Supprimer le dossier » stays visible on a closed dossier
+
+**Raised:** 2026-07-31, during B3 · **Verdict: EXPECTED GATE.** The action is a **true
+physical delete**, but it is content-guarded and cannot reach a dossier carrying business
+records. B3 is unaffected — **PASS**.
+
+### What the control actually does
+
+`deleteFile` (`lib/files/actions.ts:237-277`) performs `.delete()` on `operational_file`
+with FK cascade. It is **not** a soft delete: there is no `deleted_at`, no archive state.
+
+It is gated by `evaluateHardDelete` (`lib/files/delete-policy.ts:38`), which permits the
+delete **only for an empty shell** — zero finance records, documents, customs, transport and
+tasks. Anything else returns `has_operations` and no write occurs. The module comment states
+the reason plainly: every FK to `operational_file` cascades, so the guard is what stops a
+delete from destroying business records.
+
+### Why `EFT-IMP-2026-00003` is structurally undeletable
+
+The very evidence B3 verified is what blocks it: the official invoice artifact, the
+generated documents, the customs record and the transport record each make
+`hasBlockingOperations()` true. The UI states the refusal in French rather than hiding it —
+« Ce dossier contient des opérations et ne peut pas être supprimé. Vous pouvez le
+clôturer/annuler. » — and the confirmation text scopes the action explicitly: « Supprimer
+définitivement ce dossier **vide** ? »
+
+The button renders on permission (`file:delete` — SYSTEM_ADMIN / OPS_SUPERVISOR); the
+refusal is content-based and enforced server-side. Consistent with the house doctrine of
+naming a refusal instead of silently hiding the control.
+
+### Audit durability
+
+The audit row is written **before** the delete (`actions.ts:258-266`), and
+`audit_log.entity_id` is a plain `uuid` with **no foreign key** to `operational_file`
+(`20260613000001_create_foundation_tables.sql:76-91`) — only `tenant_id` and `actor_id` are
+FKs. So even a legitimate empty-shell delete leaves its audit trail intact.
+
+### Residual observation for governance (not a defect, not a B3 failure)
+
+**The guard is content-based, not lifecycle-based.** A dossier that is *closed but empty*
+remains physically deletable, and its `file_status_history` would cascade with it. In
+practice such a dossier is a mistake-shell, but closure itself confers no protection. If
+closure should be terminal against deletion, that is a governance decision to ratify — a
+one-line status condition in `evaluateHardDelete` — not a defect in what was specified.
+
+---
+
 ## OBS-R10-06 — 3 073-byte response vs 1 641-byte saved file
 
 **Raised:** 2026-07-31, during B1 · **Verdict: the server is exonerated by construction; the

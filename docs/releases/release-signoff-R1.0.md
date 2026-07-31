@@ -98,7 +98,7 @@ R1.0 cannot be signed with an unresolved row.
 | A3 | Ops dashboard: `72 · dernière : 20260729000002_…`, no `warn` | Operator | ✅ **PASS** | 2026-07-31 | Commit `5b24164a57fc…`, branche `main`, env `production`, **Migrations livrées 72**, dernière `20260729000002_aging_balance_foundation`, Déploiement **Sain**, base de données joignable, Santé plateforme **Sain**, Sécurité **Sain** |
 | B1 | Invoice three-hash on `EFT-INV-2026-00001` | DAF / Finance | ☐ PASS ☐ FAIL | | H = |
 | B2 | Customs discovery without assignment | Chef de transit / Douane | ☐ PASS ☐ FAIL | | role = |
-| B3 | Closure of `EFT-IMP-2026-00003` | OPS_SUPERVISOR | ☐ PASS ☐ FAIL | | |
+| B3 | Closure of `EFT-IMP-2026-00003` | OPS_SUPERVISOR | ✅ **PASS** | 2026-07-31 | Statut = **Clôturé**; full lifecycle history preserved (Brouillon → Ouvert → En cours → Livré → Clôturé); operational journal intact after closure; official invoice artifact and generated documents still present; journal read-only/immutable. « Supprimer le dossier » remains visible — **EXPECTED GATE**, see OBS-R10-07 |
 | B4 | Temporary-password lifecycle | SYSTEM_ADMIN + test account | ✅ **PASS** | 2026-07-31 | Admin-issued temp password generated from `/users/{id}`; status became « Mot de passe temporaire en attente de changement »; login **forced** to `/auth/change-password`; password changed; `/dashboard` reachable only afterwards. First attempt (creation-time password) tested the wrong path — see **DEF-R10-01**; the intermediate refusal is **DEF-R10-03**, both in [`R1.0/validation-findings.md`](R1.0/validation-findings.md). Expired path: **deferred** (preview-only; production writes to force expiry not authorized). |
 
 **Deviations, substitutions and refusals recorded during validation** *(a gate that
