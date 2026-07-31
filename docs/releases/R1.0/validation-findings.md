@@ -7,6 +7,124 @@ explicitly and separately from the evidence.
 
 ---
 
+## DEF-R10-05 — the official invoice PDF is laid out upside-down (coordinate mismatch)
+
+**Raised:** 2026-07-31, during B1 · **Reporter:** operator (production)
+**Classification:** **post-R1.0 defect — Major (document quality), NOT a release blocker.**
+No effect on B1: the three-hash test verifies byte identity, not geometry.
+
+### 1. What the pipeline actually is
+
+**There is no browser, no HTML and no CSS anywhere in this pipeline.** `package.json`
+contains no `puppeteer`, `playwright`, `pdfkit`, `pdf-lib` or `jsPDF`. The engine is
+`lib/reports/pdf.ts` — a hand-rolled PDF writer emitting content-stream operators directly.
+So of the candidates raised:
+
+| Candidate | Verdict |
+|---|---|
+| HTML layout | **NOT APPLICABLE** — no HTML |
+| Print CSS | **NOT APPLICABLE** — no CSS |
+| Playwright / Puppeteer rendering | **NOT APPLICABLE** — no headless browser in the dependency tree |
+| Fixed header reservation | **NOT APPLICABLE** to this document — the header band belongs to `ReportLayout` (`lib/reports/templates.ts`), which the invoice does **not** use; it writes to `PdfDoc` directly |
+| Page-break rules | **Contributing, not causal** — the guard is inverted too (§3), but only on multi-page invoices |
+| Another rendering defect | ✅ **THE CAUSE — a coordinate-convention mismatch** |
+
+### 2. Root cause
+
+`PdfDoc` is a **top-down** API. Its own comments say « top-left origin », and every
+primitive converts on the caller's behalf:
+
+```ts
+// lib/reports/pdf.ts:149  (text)
+const py = this.height - y;
+// :160 fillRect, :166 strokeRect, :174 line, :195 image — all `this.height - y…`
+```
+
+`lib/finance/invoice-pdf.ts` was written against a **bottom-up** mental model: it starts at
+`let y = 800` (`:96`) and **decrements** (`y -= 16`, `:100`) to advance down the page.
+
+With A4 height 841.89 the first line is therefore emitted at
+`py = 841.89 − 800 = 41.89` — **41.89 pt from the BOTTOM** — and every subsequent
+decrement moves the next element **upward**. The document is built from the bottom of the
+page toward the middle, leaving the top blank. That is precisely the reported symptom.
+
+**Every other renderer uses the house convention** — top-down and incrementing:
+
+| File | Convention |
+|---|---|
+| `lib/reports/templates.ts` (ReportLayout) | `this.y += h`; header stamped at `y = 24`/`40` |
+| `lib/copilot/export.ts` | `let y = M + 6` then `y += 20` |
+| `lib/finance/expense/pdf.ts` | via ReportLayout |
+| **`lib/finance/invoice-pdf.ts`** | **`let y = 800` then `y -= …` — the sole outlier** |
+
+### 3. Predicted secondary symptoms (confirm these to close the diagnosis)
+
+1. **The vertical order is inverted** — the organization name sits at the very bottom of the
+   page, « Coordonnées de règlement » highest, the line table between them. This is the
+   decisive confirmation; a merely *shifted* but correctly-ordered invoice would mean a
+   different cause.
+2. The « Désignation / Qté / P.U. / Montant » shading band (`fillRect(M, y - 4, …, 18)`,
+   `:170`) sits offset from its own header text.
+3. On a multi-page invoice the guard `if (y < 140) { addPage(); y = 800 }` (`:179-182`) is
+   inverted: `y` *falls* as content is added, so the break fires when content nears the top,
+   and the new page restarts at the bottom.
+
+### 4. Why CI is green
+
+`tests/uat2b-invoice-artifact.test.ts` pins **determinism** (same snapshot → same hash),
+**provenance** (no `Date.now`, no `Intl`, no invented values), **money formatting**, and the
+`%PDF-` header. **It asserts nothing about geometry.** No test in the suite reads a single
+coordinate — so a layout inversion passes every gate. That absence is itself worth recording.
+
+### 5. Severity and blast radius
+
+| Dimension | Assessment |
+|---|---|
+| Data correctness | **Unaffected** — amounts, totals, dossier, client all correct; `invoiceTotals` is the shared function |
+| Hash / verifiability | **Unaffected** — the renderer is deterministic; H1 = H2 = H3 holds regardless of layout |
+| B1 acceptance | **Unaffected** — B1 tests byte identity across paths |
+| Business impact | **Major.** This is *the* accounting document: sent to customers, used for tax and banking. An invoice printed bottom-up is not presentable |
+
+### 6. The immutability consequence — the reason this should not wait
+
+Official invoice artifacts are **generate-once and immutable**
+(`lib/finance/invoice-artifact.ts:12-13, 61-72` — the function returns early when an
+artifact exists, and `finalize_official_invoice` returns the existing row). So:
+
+- every invoice already issued keeps this layout **permanently**;
+- fixing the renderer **changes the bytes, hence the hash**, so it cannot silently repair
+  what is already issued — re-issue would be a governed act, not a redeploy;
+- therefore the cost grows with every invoice issued. `INVOICE_RENDERER_VERSION`
+  (`invoice-pdf.ts:27`, currently `"uat2b-1"`) is the existing hook for versioning that
+  decision.
+
+### 7. Minimal corrective change (recommended — NOT implemented)
+
+**Confine the change to `lib/finance/invoice-pdf.ts`.** Do **not** touch `lib/reports/pdf.ts`:
+four other renderers depend on its current, correct, documented convention.
+
+The mechanical inversion:
+
+| Line(s) | Now | Minimal change |
+|---|---|---|
+| `:96`, `:113` | `let y = 800`, `let ry = 800` | start at the top margin: `M` (40) |
+| all `y -= n`, `ry -= n`, `dy -= n` | decrement | `+= n` |
+| `:125`, `:163` | `Math.min(y, ry)` / `Math.min(y, dy)` | `Math.max(…)` — "lowest point reached" flips sense |
+| `:170` | `fillRect(M, y - 4, …)` | re-anchor the band relative to the baseline in top-down terms |
+| `:179-182` | `if (y < 140) { addPage(); y = 800 }` | `if (y > 700) { addPage(); y = M }` |
+| `:212` | totals rule at `y + 12` | `y - 12` |
+
+Then add the missing guard: **one geometry regression test** asserting the issuer block is
+emitted in the top quarter of the page — the class of test whose absence let this ship.
+
+### 8. Release position
+
+**Post-R1.0 defect.** R1.0 ships no code; this renderer has been in production since UAT-2B.
+It does not block R1.0, and it does not block B1 — **continue B1 to H1/H2/H3.** It should be
+scheduled promptly for the reason in §6, not because the release depends on it.
+
+---
+
 ## OBS-R10-04 — dossier `EFT-IMP-2026-00003` carries invoice `EFT-INV-2026-00001`
 
 **Raised:** 2026-07-31, during B1 · **Verdict: EXPECTED — independent numbering by design.**
