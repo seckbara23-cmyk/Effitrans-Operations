@@ -1,7 +1,12 @@
 # R1.0 Smoke & UAT Checklist · R1.1 Activation Checklist
 
 Companion to the [reconciliation runbook](reconciliation-runbook.md). Run **after** the
-ledger repair verifies 72/72. Every step is performed by the named seat on production,
+ledger repair verifies 72/72 *(done — 2026-07-31)*.
+
+> **Execute from [`operator-validation-checklist.md`](operator-validation-checklist.md)**,
+> which is the step-by-step form of §A–B below: exact URL, seat, clicks, expected result,
+> pass/fail criterion and the remedy on failure. This page remains the summary contract;
+> record the outcome in [`../release-signoff-R1.0.md`](../release-signoff-R1.0.md). Every step is performed by the named seat on production,
 with test-designated records only. Record each result inline (✔/✘ + date + initials) —
 this document, filled in, becomes the release's UAT record.
 
