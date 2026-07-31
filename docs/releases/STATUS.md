@@ -1,7 +1,8 @@
 # Release Status — standing table (updated at every release event)
 
-*Last updated: 2026-07-31 (R1.0-R — production state verified; reconciliation package
-prepared).*
+*Last updated: 2026-07-31 (R1.0-R — **ledger reconciliation EXECUTED**: 16-version
+repair applied under operator GO after 30/30 verification rows passed; ledger reads
+**72/72**).*
 
 > **Correction (2026-07-31).** The previous version of this table stated "schema current
 > through migration 67; 68–72 pending". The Operator-Task-1 audit proved that wrong:
@@ -10,20 +11,20 @@ prepared).*
 > instead of probing — the exact drift the release framework exists to catch, caught on
 > its first run.
 
-## Current production (verified 2026-07-31, read-only audit)
+## Current production (verified 2026-07-31, post-repair)
 
 | Item | Value |
 |---|---|
-| Application | serves `main` HEAD (verified `a4b07d7` at audit time) via `/api/version` |
-| Schema | **structurally current through migration 72** (probes + manual SQL audit; evidence matrix in `R1.0/reconciliation-runbook.md`) |
-| Migration ledger | **56 / 72 recorded** — 16 versions unrecorded (`20260724000002` → `20260729000002`); **repair pending** |
+| Application | serves `main` HEAD (verified `1abccda` post-repair) via `/api/version` |
+| Schema | **structurally current through migration 72** (probes + manual SQL audit + 30/30 verification script; evidence in `R1.0/verification-57-67.md`) |
+| Migration ledger | **72 / 72 recorded** — reconciled 2026-07-31 via `migration repair --status applied` (16 versions, history-only; runbook §3.3); post-repair list: zero unrecorded, zero LOCAL≠REMOTE, last `20260729000002` |
 | Activation state | Aging dark via unset `EFFITRANS_FINANCE_AGING_ENABLED` (route 404s); permission grants for 70/71/72 live in DB per manual audit; rollout-row states unverified read-only |
 
 ## Pending releases
 
 | Release | Content (REVISED) | State | Blockers |
 |---|---|---|---|
-| **R1.0-R** | **Ledger reconciliation** (repair 16 versions — no DDL) + the outstanding UAT (three-hash, Douane, closure, temp password) | package ready: `R1.0/` | operator execution |
+| **R1.0-R** | **Ledger reconciliation DONE** (16 versions repaired, 72/72 verified, schema untouched) — remaining: smoke/UAT §A–C + sign-off | repair executed 2026-07-31 | operator UAT (B1–B4) + sign-offs |
 | **R1.1** | **Activation only**: flag flip + smoke + sign-off (schema + grants already live) | checklist ready: `R1.0/smoke-uat-checklist.md` §D | Q-01 · preview visual sign-off · R1.0 complete |
 | R1.2 | FIN-AGING-4 legacy import (unbuilt) | specified | R1.1 |
 | R2.0 | HR-1..HR-4 (unbuilt; registry live **and its migration applied** — HR-1 runs in production already, gated by `hr:read` holders) | architecture ratified | HRQ-D2 · structure answers · go |
@@ -44,3 +45,4 @@ Messaging Center activation state — *verify at R3.0 planning*.
 | Release | Date | SHA | Migrations | Sign-off |
 |---|---|---|---|---|
 | — (pre-framework) | ≤ 2026-07-31 | rolling | 1–72 applied (57–72 outside the ledger; reconciliation = R1.0-R) | Phase 8.0 gate documents |
+| R1.0-R (ledger reconciliation) | 2026-07-31 | `1abccda` (no code change; app already served it) | ledger repaired to **72/72** — `migration repair --status applied` × 16 (`20260724000002` → `20260729000002`); no DDL; schema spot-checks unchanged | verification 30/30 (operator) · repair GO (operator) · **UAT §A–C pending** |

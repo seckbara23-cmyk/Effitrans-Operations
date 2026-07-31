@@ -191,3 +191,19 @@ No activation changes (no env flag, no tenant row, no grant script — migration
 grants already exist in the DB and stay inert while `EFFITRANS_FINANCE_AGING_ENABLED` is
 unset). No code deploy (production already serves current `main`). R1.0 completes only
 when the [smoke/UAT checklist](smoke-uat-checklist.md) passes and sign-offs are recorded.
+
+## 7. Execution record — 2026-07-31
+
+Executed under explicit operator GO after the verification script returned **30/30
+`passed=true`** (including the previously-INSUFFICIENT rows for 60 and 63).
+
+| Step | Result |
+|---|---|
+| §3.1 token unset + stored login | `projects list` OK; linked ref `xtpppzhkiagdpmnghdlc` |
+| §3.2 stop gate | **PASS** — exactly 56 recorded (last `20260724000001`), exactly the expected 16 unrecorded |
+| §3.3 repair | one invocation, 16 versions → `Repaired migration history: [20260724000002 … 20260729000002] => applied`; no apply/push/DDL output |
+| §3.4 ledger | `migration list` → **72 rows, 72 recorded, 0 unrecorded, 0 LOCAL≠REMOTE**, last `20260729000002` |
+| §3.5 sanity (read-only subset) | `employee`, `business_event`, `document.artifact_code`, `invoice.provenance`, `aging_report` all still HTTP 200 — schema untouched. Full SQL-editor spot-checks (permission counts 7 / 11, `schema_migrations` count 72) remain listed for the operator alongside UAT. |
+| Smoke A1 | `/api/version` → `{"sha":"1abccda…","env":"production"}` |
+
+**R1.0-R reconciliation is complete.** Next: smoke/UAT checklist §A–C, then sign-off.
