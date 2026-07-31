@@ -315,6 +315,19 @@ with credential mode « générer ») but note the platform's archive-not-delete
 (Phase 8.1A): the row can be **archived, never deleted**. Choose the account name knowing it
 is permanent.
 
+> ### ⚠️ Precondition learned on 2026-07-31 (DEF-R10-01)
+>
+> **The password under test must be issued from `/users/{id}`, not from account creation.**
+> Two different generators exist and only one arms the gate:
+>
+> | Path | Arms `must_change_password`? |
+> |---|---|
+> | « Nouvel utilisateur » → mode « Générer un mot de passe temporaire » (`createUser`) | **NO** — as built; see [`validation-findings.md`](validation-findings.md) |
+> | `/users/{id}` → « Générer un nouveau mot de passe temporaire » (`generateStaffTempPassword`) | **YES** — writes the flag, the expiry and the change stamp in one update |
+>
+> A B4 run that logs in with a creation-time password tests the wrong path and will
+> correctly land on `/dashboard`. Step 4 below is the step that matters.
+
 ### Exact clicks — issuing
 
 1. Sign in at `/login` as SYSTEM_ADMIN → go to **`/users`**.

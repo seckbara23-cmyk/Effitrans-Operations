@@ -99,10 +99,19 @@ R1.0 cannot be signed with an unresolved row.
 | B1 | Invoice three-hash on `EFT-INV-2026-00001` | DAF / Finance | ☐ PASS ☐ FAIL | | H = |
 | B2 | Customs discovery without assignment | Chef de transit / Douane | ☐ PASS ☐ FAIL | | role = |
 | B3 | Closure of `EFT-IMP-2026-00003` | OPS_SUPERVISOR | ☐ PASS ☐ FAIL | | |
-| B4 | Temporary-password lifecycle | SYSTEM_ADMIN + test account | ☐ PASS ☐ FAIL | | expired path = |
+| B4 | Temporary-password lifecycle | SYSTEM_ADMIN + test account | ⏳ **OPEN — retest required** | 2026-07-31 | First attempt used the **creation-time** generated password, which does not arm the gate; the B4 mechanism (admin-issued temp password from `/users/{id}`) was not exercised. See **DEF-R10-01** in [`R1.0/validation-findings.md`](R1.0/validation-findings.md). |
 
 **Deviations, substitutions and refusals recorded during validation** *(a gate that
 correctly refuses is a pass for the gate — record it here rather than forcing it)*:
+
+- **2026-07-31 · B4 · DEF-R10-01** — a test account was created with credential mode
+  « générer »; its creation-time password did **not** force a change at first login.
+  Root cause: `createUser` never writes `must_change_password` (column defaults to
+  `false`), while the create panel's own wording promises a forced change. The
+  migration-71 lever (`generateStaffTempPassword`) is a **different** path and does arm
+  the gate — it remains untested. Classified an **implementation defect, pre-existing,
+  not an R1.0 blocker**; B4 stays OPEN pending retest. Full analysis:
+  [`R1.0/validation-findings.md`](R1.0/validation-findings.md).
 
 ```
 _____________________________________________________________________________
