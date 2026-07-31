@@ -418,7 +418,7 @@ Record which option you took: `☐ preview  ☐ production wait  ☐ deferred`
 | A2 | Production verification sweep | ✅ PASS | 2026-07-31 | operator | ALL CHECKS PASSED, exit 0 |
 | A3 | Operations dashboard | ✅ PASS | 2026-07-31 | operator | 72 · `20260729000002_…`; Déploiement/Santé/Sécurité all **Sain** |
 | B1 | Invoice three-hash | ☐ PASS ☐ FAIL | | | H = |
-| B2 | Customs discovery | ☐ PASS ☐ FAIL | | | role used = |
+| B2 | Customs discovery | 🔄 IN PROGRESS | 2026-07-31 | operator | positive target CONFIRMED (`uat.douane@effitrans.sn`, CUSTOMS_DECLARANT, `EFT-IMP-2026-00002` « Requis » + « Visible parce que : Département destinataire »); negative control outstanding |
 | B3 | Dossier closure | ✅ PASS | 2026-07-31 | operator | `EFT-IMP-2026-00003` → Clôturé; history + journal + artifacts preserved; delete control = expected gate (OBS-R10-07) |
 | B4 | Temp-password lifecycle | ✅ PASS | 2026-07-31 | operator | admin-issued path; forced change confirmed; expired path deferred (preview-only) |
 
