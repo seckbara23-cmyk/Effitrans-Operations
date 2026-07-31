@@ -7,6 +7,65 @@ explicitly and separately from the evidence.
 
 ---
 
+## OBS-R10-02 — `/users/{id}` refused while `/users` was accessible
+
+**Raised:** 2026-07-31, during B4 · **Reporter:** operator (production)
+**Classification:** **not established as a defect — the two observations cannot come from
+one session** · **Blocks B4 execution until resolved; not an R1.0 blocker**
+
+### 1. Observation
+
+While authenticated as SYSTEM_ADMIN (`seckbara23@gmail.com`): `/users` accessible, user
+creation works, archive/suspend works — but `/users/{id}` for the UAT account returns
+« Vous n'avez pas l'autorisation de gérer les utilisateurs. »
+
+### 2. The authorization path, audited
+
+| Question | Answer | File · line |
+|---|---|---|
+| Permission checked by `/users/[id]` | `admin:users:read` **OR** `admin:users:manage` | `app/users/[id]/page.tsx:41` → `canUserAdmin(permissions, "read")` |
+| Granular instead of umbrella? | **No.** `userAdminCodes("read")` returns **both** codes and the gate passes if **either** is held | `lib/users/permissions.ts:47-54` |
+| Does the check differ from the list page? | **No — identical call, identical argument, identical source array** | list: `app/users/page.tsx:40`; detail: `app/users/[id]/page.tsx:41` |
+| Is the authenticated user evaluated correctly? | Yes — `requireUser()` then `getEffectivePermissions(current.id)`, the same pair the list page uses | `app/users/[id]/page.tsx:38-39` |
+| Could the loader have produced this message? | **No.** `getAdminUser` → `listUsers` → `assertAnyPermission(userAdminCodes("read"))` **throws** on refusal (error boundary), and a missing record renders `t.users.errors.not_found`, a different string | `lib/users/service.ts:150-152, 73` |
+
+The string « Vous n'avez pas l'autorisation de gérer les utilisateurs. » (`t.users.forbidden`)
+occurs in exactly **two** places in the entire codebase — the two page gates above. So the
+message pins the failure to the page gate, which means the effective permission array for
+**that request** contained neither `admin:users:read` nor `admin:users:manage`.
+
+### 3. Why this cannot be a route-level defect
+
+Both routes read the same array, produced by the same function, for the same user id, and
+apply the same predicate. **One session cannot yield both outcomes.** Therefore the two
+observations were made in **two different request contexts**.
+
+**Leading explanation:** the detail page was opened in the **private/incognito window
+authenticated as the UAT account** — the window opened for B4's login step. That account was
+deliberately created with **no roles** (per the B4 solo-operator procedure), so it is
+authenticated (no `/login` redirect) and holds **zero** permissions — which renders exactly
+this notice on `/users/{id}`. The SYSTEM_ADMIN evidence (list, create, archive) comes from
+the main window.
+
+### 4. The decisive test (no SQL, no writes)
+
+**In the same window and tab that produced the refusal**, open `/users`:
+
+| Result | Conclusion |
+|---|---|
+| `/users` **also** refuses | Session mix-up confirmed — **no defect**. Re-run the B4 steps in the SYSTEM_ADMIN window. |
+| `/users` renders the directory while `/users/{id}` refuses, same tab, same minute | A genuine contradiction that the code cannot express. Escalate with: the account email shown in the topbar on **both** screens, the full `/users/{id}` URL, and whether a hard refresh changes it. The remaining candidate would be `get_user_permissions` returning an incomplete set for one request — a database-side issue, not a route-gate one. |
+
+### 5. Effect on the release
+
+- **Not an R1.0 blocker.** R1.0 ships no code; `app/users/[id]/page.tsx` has been in
+  production since `2fec38b`, unchanged by this release.
+- **Blocks B4 execution.** The lever under test — « Générer un nouveau mot de passe
+  temporaire » — exists only on `/users/{id}`. B4 stays **OPEN** until the detail page is
+  reachable in the SYSTEM_ADMIN session.
+
+---
+
 ## DEF-R10-01 — a creation-time generated password does not arm the forced-change gate
 
 **Raised:** 2026-07-31, during B4 · **Reporter:** operator (production)
