@@ -7,6 +7,53 @@ explicitly and separately from the evidence.
 
 ---
 
+## OBS-R10-04 — dossier `EFT-IMP-2026-00003` carries invoice `EFT-INV-2026-00001`
+
+**Raised:** 2026-07-31, during B1 · **Verdict: EXPECTED — independent numbering by design.**
+Not a defect, not an operator error, and it does **not** invalidate the B1 evidence.
+
+### Why the numbers do not correspond
+
+Dossiers and invoices are minted by **two independent counters**, and neither derives from
+the other:
+
+| Artefact | RPC | Counter table | Prefix |
+|---|---|---|---|
+| Dossier | `next_file_number` — `lib/files/actions.ts:60` | `file_counter` (`lib/db/tenant-tables.ts:41`) | `EFT-IMP` / per type |
+| Invoice | `next_invoice_number` — `lib/finance/actions.ts:308`, `lib/process/billing/actions.ts:451` | `invoice_counter` (`lib/db/tenant-tables.ts:53`) | `EFT-INV` |
+
+Same family as the expense documents (`EFT-AUT`, `EFT-BON` — `lib/finance/expense/numbering.ts`).
+The sequences count **different things**, so a tenant's 3rd import dossier legitimately
+carries its 1st official invoice. An invoice number that mirrored its dossier number would
+be the anomaly.
+
+### Why the mapping is already proven by where it was seen
+
+The « Facture officielle » strip is rendered by `FinancePanel`, fed by
+`getFinanceForFile(file.id)` (`app/files/[id]/page.tsx:148`), which queries `invoice` with
+**`.eq("file_id", fileId)`** and `.eq("tenant_id", …)` (`lib/finance/service.ts:164-168`).
+An invoice belonging to another dossier is **structurally incapable** of appearing in that
+panel. The strip's presence on `/files/{EFT-IMP-2026-00003}` *is* the mapping evidence.
+
+Independent second source: the PDF prints « **Dossier : {fileNumber}** »
+(`lib/finance/invoice-pdf.ts:142`), resolved from `operational_file.file_number` for the
+invoice's own `file_id` (`lib/finance/invoice-artifact.ts:145-147, 203`) — so the artifact
+declares its own dossier, from the bytes rather than the UI.
+
+### Evidence required before resuming H1/H2/H3
+
+Three confirmations, all read-only (see the operator response of 2026-07-31); they must
+**agree**. If the `/finance` row named a different dossier while the panel and the PDF named
+this one, that would be a genuine mapping defect and B1 would stop.
+
+### Note for B3
+
+No ordering constraint. `app/api/invoices/[id]/pdf/route.ts` states availability is
+deliberately broad — an issued invoice stays downloadable after payment, cancellation,
+**closure and archival**. Closing `EFT-IMP-2026-00003` in B3 will not affect B1's artefact.
+
+---
+
 ## DEF-R10-03 — « Action non autorisée. » cannot distinguish a denial from a failure
 
 **Raised:** 2026-07-31, during B4 · **Reporter:** operator (production)
