@@ -43,3 +43,8 @@ next-env.d.ts
 *.xlsx
 *.xlsm
 *.xls
+
+# Local editor MCP config and business documents — never in a public repo
+.vscode/mcp.json
+*.docx
+*.pptx
