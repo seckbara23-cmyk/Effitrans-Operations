@@ -84,5 +84,12 @@ the existing guide with **no changes to it** — the preflight simply starts pas
 4. Push branch `preview/aging-d2` → Vercel builds it with the Preview env.
 5. Resume the D2 guide at Step 1's fingerprint (it must now pass), then Steps 3–7.
 
-**Decision:** ☐ Option A (requires D2 re-ratification) · ☐ Option B (provision, then D2)
-Decided by: ____________ · Date: ________
+**Decision:** ☑ **Option B — DECIDED AND EXECUTED 2026-08-01** · Decided by: operator (Bara Seck)
+
+Provisioned: preview project **`qrotqyaaugyzgljcwcpg`** (≠ production `xtpppzhkiagdpmnghdlc` ✔).
+Verified by the operator: **72/72 migrations** · fingerprint clean before seed
+(`org_count = 0`, `invoice_count = 0`, production invoice absent) · synthetic dataset
+loaded · **Q-01 data-level check: `DEMO-INV-0023` outstanding = 5 000 000** (8 M billed −
+3 M paid). D2 resumes at the reviewer-login step of
+[`d2-preview-execution.md`](d2-preview-execution.md); the on-screen Q-01 check (V8)
+still applies at review time.
