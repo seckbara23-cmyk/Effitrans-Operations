@@ -107,7 +107,20 @@ insert into public.operational_file (id, tenant_id, file_number, type, client_id
   ('00000000-0000-0000-0000-00000000f101', '00000000-0000-0000-0000-00000000de00', 'DEMO-IMP-2026-0001', 'IMP', '00000000-0000-0000-0000-0000000c1e01', 'IN_PROGRESS'),
   ('00000000-0000-0000-0000-00000000f102', '00000000-0000-0000-0000-00000000de00', 'DEMO-IMP-2026-0002', 'IMP', '00000000-0000-0000-0000-0000000c1e02', 'IN_PROGRESS'),
   ('00000000-0000-0000-0000-00000000f103', '00000000-0000-0000-0000-00000000de00', 'DEMO-EXP-2026-0003', 'EXP', '00000000-0000-0000-0000-0000000c1e03', 'DELIVERED'),
-  ('00000000-0000-0000-0000-00000000f104', '00000000-0000-0000-0000-00000000de00', 'DEMO-TRP-2026-0004', 'TRP', '00000000-0000-0000-0000-0000000c1e04', 'DELIVERED')
+  ('00000000-0000-0000-0000-00000000f104', '00000000-0000-0000-0000-00000000de00', 'DEMO-TRP-2026-0004', 'TRP', '00000000-0000-0000-0000-0000000c1e04', 'DELIVERED'),
+  -- FND-R11-02: dossiers for Epsilon and Zêta, so their PLATFORM_NATIVE invoices
+  -- satisfy invoice_dossier_or_legacy_reference (Q-08: dossier mandatory for
+  -- native provenance). Added when the constraint rejected the original rows.
+  ('00000000-0000-0000-0000-00000000f105', '00000000-0000-0000-0000-00000000de00', 'DEMO-IMP-2026-0005', 'IMP', '00000000-0000-0000-0000-0000000c1e05', 'DELIVERED'),
+  ('00000000-0000-0000-0000-00000000f106', '00000000-0000-0000-0000-00000000de00', 'DEMO-EXP-2026-0006', 'EXP', '00000000-0000-0000-0000-0000000c1e06', 'DELIVERED'),
+  -- FND-R11-02 (second finding): the tail clients billed against dossiers owned
+  -- by OTHER clients — a state production cannot reach, since an invoice is
+  -- created from a dossier and inherits its client. Each client now owns the
+  -- dossier it is billed against.
+  ('00000000-0000-0000-0000-00000000f107', '00000000-0000-0000-0000-00000000de00', 'DEMO-IMP-2026-0007', 'IMP', '00000000-0000-0000-0000-0000000c1e09', 'IN_PROGRESS'),
+  ('00000000-0000-0000-0000-00000000f108', '00000000-0000-0000-0000-00000000de00', 'DEMO-IMP-2026-0008', 'IMP', '00000000-0000-0000-0000-0000000c1e10', 'DELIVERED'),
+  ('00000000-0000-0000-0000-00000000f109', '00000000-0000-0000-0000-00000000de00', 'DEMO-EXP-2026-0009', 'EXP', '00000000-0000-0000-0000-0000000c1e11', 'DELIVERED'),
+  ('00000000-0000-0000-0000-00000000f110', '00000000-0000-0000-0000-00000000de00', 'DEMO-TRP-2026-0010', 'TRP', '00000000-0000-0000-0000-0000000c1e12', 'IN_PROGRESS')
 on conflict (id) do nothing;
 
 -- ---------------------------------------------------------------- invoices
@@ -132,24 +145,28 @@ begin
       ('00000000-0000-0000-0000-0000000c1e03'::uuid, '00000000-0000-0000-0000-00000000f103'::uuid, '0006',   60,   780000::numeric, 'PLATFORM_NATIVE', null,        'XOF', false),
       ('00000000-0000-0000-0000-0000000c1e04'::uuid, '00000000-0000-0000-0000-00000000f104'::uuid, '0007',   61,  3300000::numeric, 'PLATFORM_NATIVE', null,        'XOF', false),
       ('00000000-0000-0000-0000-0000000c1e04'::uuid, '00000000-0000-0000-0000-00000000f104'::uuid, '0008',   90,  1200000::numeric, 'PLATFORM_NATIVE', null,        'XOF', false),
-      ('00000000-0000-0000-0000-0000000c1e05'::uuid, null,                                          '0009',   91, 14500000::numeric, 'PLATFORM_NATIVE', 'DEMO-EXT-2025-311', 'XOF', false),
-      ('00000000-0000-0000-0000-0000000c1e05'::uuid, null,                                          '0010',  180,  6400000::numeric, 'PLATFORM_NATIVE', 'DEMO-EXT-2025-312', 'XOF', false),
-      ('00000000-0000-0000-0000-0000000c1e06'::uuid, null,                                          '0011',  181,  2750000::numeric, 'PLATFORM_NATIVE', 'DEMO-EXT-2025-401', 'XOF', false),
+      -- FND-R11-02 correction: these four were PLATFORM_NATIVE with no dossier and
+      -- a legacy reference — the exact combination the Q-08 constraint forbids
+      -- (and did reject). Native invoices now carry their client's own dossier and
+      -- no legacy reference; the buckets they exercise (91/180/181/365) are unchanged.
+      ('00000000-0000-0000-0000-0000000c1e05'::uuid, '00000000-0000-0000-0000-00000000f105'::uuid, '0009',   91, 14500000::numeric, 'PLATFORM_NATIVE', null::text,  'XOF', false),
+      ('00000000-0000-0000-0000-0000000c1e05'::uuid, '00000000-0000-0000-0000-00000000f105'::uuid, '0010',  180,  6400000::numeric, 'PLATFORM_NATIVE', null,        'XOF', false),
+      ('00000000-0000-0000-0000-0000000c1e06'::uuid, '00000000-0000-0000-0000-00000000f106'::uuid, '0011',  181,  2750000::numeric, 'PLATFORM_NATIVE', null,        'XOF', false),
       -- 365 must NOT be critical; 366 must be. The pair sits here so the boundary
       -- is visible on screen, not only in a unit test.
-      ('00000000-0000-0000-0000-0000000c1e06'::uuid, null,                                          '0012',  365,  1950000::numeric, 'PLATFORM_NATIVE', 'DEMO-EXT-2025-402', 'XOF', false),
+      ('00000000-0000-0000-0000-0000000c1e06'::uuid, '00000000-0000-0000-0000-00000000f106'::uuid, '0012',  365,  1950000::numeric, 'PLATFORM_NATIVE', null,        'XOF', false),
       ('00000000-0000-0000-0000-0000000c1e07'::uuid, null,                                          '0013',  366,  8800000::numeric, 'OPENING_IMPORT',  'DEMO-LEG-2024-118', 'XOF', false),
       ('00000000-0000-0000-0000-0000000c1e07'::uuid, null,                                          '0014',  742, 12300000::numeric, 'OPENING_IMPORT',  'DEMO-LEG-2023-042', 'XOF', false),
       ('00000000-0000-0000-0000-0000000c1e08'::uuid, null,                                          '0015', 1580,  4700000::numeric, 'OPENING_IMPORT',  'DEMO-LEG-2021-007', 'XOF', false),
       ('00000000-0000-0000-0000-0000000c1e08'::uuid, null,                                          '0016', 2505,  2100000::numeric, 'OPENING_IMPORT',  'DEMO-LEG-2019-044', 'XOF', false),
       -- --- a disputed receivable: visible, aged normally, flagged ---
-      ('00000000-0000-0000-0000-0000000c1e09'::uuid, '00000000-0000-0000-0000-00000000f101'::uuid, '0017',   75,  3600000::numeric, 'PLATFORM_NATIVE', null,        'XOF', true),
+      ('00000000-0000-0000-0000-0000000c1e09'::uuid, '00000000-0000-0000-0000-00000000f107'::uuid, '0017',   75,  3600000::numeric, 'PLATFORM_NATIVE', null,        'XOF', true),
       -- --- long tail, so the Top-10 chart has an eleventh client to cut off ---
-      ('00000000-0000-0000-0000-0000000c1e10'::uuid, '00000000-0000-0000-0000-00000000f102'::uuid, '0018',   22,   540000::numeric, 'PLATFORM_NATIVE', null,        'XOF', false),
-      ('00000000-0000-0000-0000-0000000c1e11'::uuid, '00000000-0000-0000-0000-00000000f103'::uuid, '0019',    5,   180000::numeric, 'PLATFORM_NATIVE', null,        'XOF', false),
+      ('00000000-0000-0000-0000-0000000c1e10'::uuid, '00000000-0000-0000-0000-00000000f108'::uuid, '0018',   22,   540000::numeric, 'PLATFORM_NATIVE', null,        'XOF', false),
+      ('00000000-0000-0000-0000-0000000c1e11'::uuid, '00000000-0000-0000-0000-00000000f109'::uuid, '0019',    5,   180000::numeric, 'PLATFORM_NATIVE', null,        'XOF', false),
       -- --- a client entirely in the future: proves the « Faible » client floor ---
-      ('00000000-0000-0000-0000-0000000c1e12'::uuid, '00000000-0000-0000-0000-00000000f104'::uuid, '0020',  -30,  2600000::numeric, 'PLATFORM_NATIVE', null,        'XOF', false),
-      ('00000000-0000-0000-0000-0000000c1e12'::uuid, '00000000-0000-0000-0000-00000000f104'::uuid, '0021',  -58,  1400000::numeric, 'PLATFORM_NATIVE', null,        'XOF', false),
+      ('00000000-0000-0000-0000-0000000c1e12'::uuid, '00000000-0000-0000-0000-00000000f110'::uuid, '0020',  -30,  2600000::numeric, 'PLATFORM_NATIVE', null,        'XOF', false),
+      ('00000000-0000-0000-0000-0000000c1e12'::uuid, '00000000-0000-0000-0000-00000000f110'::uuid, '0021',  -58,  1400000::numeric, 'PLATFORM_NATIVE', null,        'XOF', false),
       -- --- foreign currency: excluded from an XOF report, counted, never converted ---
       ('00000000-0000-0000-0000-0000000c1e01'::uuid, '00000000-0000-0000-0000-00000000f101'::uuid, '0022',   40,    95000::numeric, 'PLATFORM_NATIVE', null,        'EUR', false),
       -- --- partially paid (payment applied below) ---
