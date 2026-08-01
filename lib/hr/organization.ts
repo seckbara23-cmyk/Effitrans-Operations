@@ -111,3 +111,22 @@ export const hrDashboardCounts = cache(async (tenantId: string): Promise<HrDashb
     locations: locations.count ?? 0,
   };
 });
+
+/** HR-2 — assignment history for one employee (open row first, then closed desc). */
+export type EmployeeAssignmentRow = Tbl["employee_assignment"]["Row"];
+
+export const listEmployeeAssignments = cache(
+  async (tenantId: string, employeeId: string): Promise<EmployeeAssignmentRow[]> => {
+    const supabase = getAdminSupabaseClient();
+    const { data, error } = await supabase
+      .from("employee_assignment")
+      .select("*")
+      .eq("tenant_id", tenantId)
+      .eq("employee_id", employeeId)
+      .order("effective_from", { ascending: false })
+      .order("created_at", { ascending: false });
+    if (error) throw new Error(`[hr] assignments read failed: ${error.message}`);
+    const rows = data ?? [];
+    return [...rows.filter((r) => r.effective_to === null), ...rows.filter((r) => r.effective_to !== null)];
+  },
+);

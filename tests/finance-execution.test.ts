@@ -385,9 +385,9 @@ describe("Phase 9.0E permission reuse and scope", () => {
     const dir = fileURLToPath(new URL("../supabase/migrations/", import.meta.url));
     const files = readdirSync(dir).filter((f) => f.endsWith(".sql")).sort();
     // 11.0B (expense documents) is the current newest; build-info is pinned to it.
-    expect(files[files.length - 1]).toBe("20260801000001_hr_organization_foundation.sql");
+    expect(files[files.length - 1]).toBe("20260801000002_hr_employee_workspace.sql");
     const buildInfo = read("../lib/platform/ops/build-info.ts");
-    expect(buildInfo).toContain('LATEST_MIGRATION = "20260801000001_hr_organization_foundation"');
+    expect(buildInfo).toContain('LATEST_MIGRATION = "20260801000002_hr_employee_workspace"');
     expect(buildInfo).toContain(`MIGRATION_COUNT = ${files.length}`);
   });
 

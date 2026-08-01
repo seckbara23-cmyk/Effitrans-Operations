@@ -24,6 +24,7 @@ import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
 import { getEffectivePermissions } from "@/lib/rbac/permissions";
 import { writeAudit } from "@/lib/audit/log";
+import { emitHrEvent } from "./ledger";
 import { AuditActions } from "@/lib/audit/events";
 import type { Database } from "@/lib/db/types";
 import {
@@ -148,6 +149,16 @@ export async function createEmployee(input: CreateEmployeeInput): Promise<HrActi
 
   const { data, error } = await admin.from("employee").insert(row).select("id").single();
   if (error || !data) return fail("write_failed");
+
+  // HR-2 — MANDATORY ledger emission; compensation: the fresh row is removed.
+  const createdEmitted = await emitHrEvent({
+    tenantId: ctx.tenantId, employeeId: data.id, kind: "created", actorId: ctx.userId,
+    payload: { employee_number: numData, department: input.department },
+  });
+  if (!createdEmitted) {
+    await admin.from("employee").delete().eq("id", data.id).eq("tenant_id", ctx.tenantId);
+    return fail("write_failed");
+  }
 
   await writeAudit({
     action: AuditActions.HR_EMPLOYEE_CREATED,
@@ -302,6 +313,16 @@ export async function transitionEmployee(
   if (error) return fail("write_failed") as TransitionResult;
   if (!updated) return fail("invalid_state") as TransitionResult;
 
+  // HR-2 — MANDATORY ledger emission; compensation: the status is reverted.
+  const statusEmitted = await emitHrEvent({
+    tenantId: ctx.tenantId, employeeId: id, kind: "status_changed", actorId: ctx.userId,
+    payload: { from, to: toStatus },
+  });
+  if (!statusEmitted) {
+    await admin.from("employee").update({ status: from }).eq("id", id).eq("tenant_id", ctx.tenantId);
+    return fail("write_failed") as TransitionResult;
+  }
+
   await writeAudit({
     action: AuditActions.HR_EMPLOYEE_STATUS_CHANGED,
     tenantId: ctx.tenantId,
@@ -360,6 +381,16 @@ export async function linkEmployeeAccount(id: string, appUserId: string): Promis
     .eq("id", id);
   if (error) return fail("account_already_linked"); // partial-unique violation lands here
 
+  // HR-2 — MANDATORY ledger emission; compensation: the link is undone.
+  const linkEmitted = await emitHrEvent({
+    tenantId: ctx.tenantId, employeeId: id, kind: "account_linked", actorId: ctx.userId,
+    payload: { linked_app_user_id: appUserId },
+  });
+  if (!linkEmitted) {
+    await admin.from("employee").update({ linked_app_user_id: null }).eq("id", id).eq("tenant_id", ctx.tenantId);
+    return fail("write_failed");
+  }
+
   await writeAudit({
     action: AuditActions.HR_EMPLOYEE_ACCOUNT_LINKED,
     tenantId: ctx.tenantId,
@@ -393,6 +424,16 @@ export async function unlinkEmployeeAccount(id: string): Promise<HrActionResult>
     .eq("tenant_id", ctx.tenantId)
     .eq("id", id);
   if (error) return fail("write_failed");
+
+  // HR-2 — MANDATORY ledger emission; compensation: the link is restored.
+  const unlinkEmitted = await emitHrEvent({
+    tenantId: ctx.tenantId, employeeId: id, kind: "account_unlinked", actorId: ctx.userId,
+    payload: {},
+  });
+  if (!unlinkEmitted) {
+    await admin.from("employee").update({ linked_app_user_id: employee.linked_app_user_id }).eq("id", id).eq("tenant_id", ctx.tenantId);
+    return fail("write_failed");
+  }
 
   await writeAudit({
     action: AuditActions.HR_EMPLOYEE_ACCOUNT_UNLINKED,

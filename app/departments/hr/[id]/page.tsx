@@ -16,6 +16,10 @@ import { linkableAccounts } from "@/lib/hr/read";
 import { employeeStatusLabelFr, nextEmployeeStatuses, type EmployeeStatus } from "@/lib/hr/lifecycle";
 import { departmentLabelFr, isCanonicalDepartment } from "@/lib/organization/departments";
 import { EmployeeAdmin } from "@/components/hr/employee-admin";
+import { AssignmentPanel } from "@/components/hr/assignment-panel";
+import { listEmployeeAssignments, listOrgUnits, listPositions, listWorkLocations } from "@/lib/hr/organization";
+import { getEmployeeTimeline, HR_EVENT_LABEL_FR, type HrEventKind } from "@/lib/hr/ledger";
+import { listEmployees } from "@/lib/hr/read";
 
 export const metadata: Metadata = { title: "Employé" };
 export const dynamic = "force-dynamic";
@@ -42,6 +46,19 @@ export default async function EmployeeProfilePage({ params }: { params: { id: st
   const deptLabel = isCanonicalDepartment(employee.department) ? departmentLabelFr(employee.department) : employee.department;
   const allowedTransitions = nextEmployeeStatuses(employee.status as EmployeeStatus);
   const accounts = canManage ? await linkableAccounts(user.tenantId) : [];
+
+  // HR-2 — the workspace reads: assignment history, catalogs, timeline, managers.
+  const [assignments, units, positions, locations, timeline, directory] = await Promise.all([
+    listEmployeeAssignments(user.tenantId, employee.id),
+    listOrgUnits(user.tenantId),
+    listPositions(user.tenantId),
+    listWorkLocations(user.tenantId),
+    getEmployeeTimeline(user.tenantId, employee.id),
+    listEmployees(user.tenantId),
+  ]);
+  const managers = directory
+    .filter((e) => e.status === "ACTIVE")
+    .map((e) => ({ id: e.id, label: `${e.first_name} ${e.last_name} (${e.employee_number})` }));
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -98,6 +115,49 @@ export default async function EmployeeProfilePage({ params }: { params: { id: st
           <p className="text-sm text-slate-500">Aucun compte de connexion lié. Cet employé peut exister sans accès à la plateforme.</p>
         )}
       </section>
+
+      <AssignmentPanel
+        employeeId={employee.id}
+        assignments={assignments}
+        units={units}
+        positions={positions}
+        locations={locations}
+        managers={managers}
+        canManage={canManage}
+      />
+
+      {/* HR-2 — the Timeline: a projection of the append-only ledger. Never editable. */}
+      <section className="surface p-4">
+        <h2 className="mb-3 text-sm font-semibold text-navy-900">Chronologie</h2>
+        {timeline.length === 0 ? (
+          <p className="text-sm text-slate-500">Aucun événement enregistré.</p>
+        ) : (
+          <ul className="space-y-1.5 text-sm">
+            {timeline.map((ev) => (
+              <li key={ev.id} className="flex flex-wrap items-center gap-2 text-slate-600">
+                <span className="tabular text-xs text-slate-400">{ev.occurred_at.slice(0, 16).replace("T", " ")}</span>
+                <strong className="text-navy-800">{HR_EVENT_LABEL_FR[ev.event_kind as HrEventKind] ?? ev.event_kind}</strong>
+                {ev.event_kind === "status_changed" && typeof ev.payload === "object" && ev.payload && (
+                  <span className="text-xs text-slate-400">{String((ev.payload as Record<string, unknown>).from)} → {String((ev.payload as Record<string, unknown>).to)}</span>
+                )}
+                {ev.event_kind === "assignment_changed" && typeof ev.payload === "object" && ev.payload && (
+                  <span className="text-xs text-slate-400">{String((ev.payload as Record<string, unknown>).change_kind ?? "")}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {/* HR-3 territory — visible, dark, honest. */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {["Contrats", "Documents", "Notes"].map((t) => (
+          <div key={t} aria-disabled="true" className="surface p-4 opacity-60">
+            <p className="text-sm font-semibold text-slate-500">{t}</p>
+            <p className="mt-1 text-xs text-slate-400">À venir — HR-3</p>
+          </div>
+        ))}
+      </div>
 
       {canManage && (
         <EmployeeAdmin

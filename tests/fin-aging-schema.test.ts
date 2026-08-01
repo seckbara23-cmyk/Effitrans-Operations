@@ -520,7 +520,7 @@ describe("the DB suite is wired into CI, last, with a readable failure", () => {
   });
 
   it("build-info pins the new migration", () => {
-    expect(LATEST_MIGRATION).toBe("20260801000001_hr_organization_foundation");
+    expect(LATEST_MIGRATION).toBe("20260801000002_hr_employee_workspace");
   });
 });
 

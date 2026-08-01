@@ -287,7 +287,7 @@ export async function parseCsv(text: string): Promise<string[][]> {
 
 /** Upload → Stage: create the batch and its verbatim staging rows. */
 export async function stageHrImport(input: {
-  importKind: "ORG_UNITS" | "POSITIONS" | "WORK_LOCATIONS";
+  importKind: "ORG_UNITS" | "POSITIONS" | "WORK_LOCATIONS" | "EMPLOYEES";
   filename: string;
   csvText: string;
 }): Promise<HrActionResult> {
@@ -347,7 +347,16 @@ const KIND_FIELDS: Record<string, { required: string[]; optional: string[] }> = 
   ORG_UNITS: { required: ["name", "unit_kind"], optional: ["code", "parent_code", "canonical_department"] },
   POSITIONS: { required: ["title"], optional: ["code", "description"] },
   WORK_LOCATIONS: { required: ["name"], optional: ["city"] },
+  // HR-2 — staging-only, like everything above. Matricule optional: minting is
+  // the application phase's job (and stays behind HRQ-A4 with the rest).
+  EMPLOYEES: {
+    required: ["first_name", "last_name", "department"],
+    optional: ["employee_number", "job_title", "email", "phone", "status", "hire_date"],
+  },
 };
+
+const CANONICAL_DEPARTMENTS = ["OPERATIONS", "TRANSIT", "FINANCE", "HUMAN_RESOURCES"];
+const EMPLOYEE_IMPORT_STATUSES = ["DRAFT", "ACTIVE", "SUSPENDED", "TERMINATED", "ARCHIVED"];
 
 /** Mapping + Validation + Preview: parse every row, record errors, set VALIDATED. */
 export async function validateHrImport(batchId: string, mapping: Record<string, string>): Promise<HrActionResult> {
@@ -392,6 +401,17 @@ export async function validateHrImport(batchId: string, mapping: Record<string, 
     }
     if (batch.import_kind === "ORG_UNITS" && parsed.unit_kind && !UNIT_KINDS.includes(parsed.unit_kind as UnitKind)) {
       problems.push({ field: "unit_kind", code: "invalid_kind", message_fr: `Type d'unité inconnu : ${parsed.unit_kind}` });
+    }
+    if (batch.import_kind === "EMPLOYEES") {
+      if (!CANONICAL_DEPARTMENTS.includes(parsed.department)) {
+        problems.push({ field: "department", code: "invalid_department", message_fr: `Département inconnu : ${parsed.department}` });
+      }
+      if (parsed.status && !EMPLOYEE_IMPORT_STATUSES.includes(parsed.status)) {
+        problems.push({ field: "status", code: "invalid_status", message_fr: `Statut inconnu : ${parsed.status}` });
+      }
+      if (parsed.hire_date && !/^\d{4}-\d{2}-\d{2}$/.test(parsed.hire_date)) {
+        problems.push({ field: "hire_date", code: "invalid_date", message_fr: "Date d'embauche invalide (AAAA-MM-JJ attendu)" });
+      }
     }
     const status = problems.length > 0 ? "REJECTED" : "VALID";
     if (problems.length > 0) {
