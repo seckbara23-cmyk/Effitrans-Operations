@@ -33,7 +33,8 @@ Q-01 (D1) and the preview visual sign-off (D2)).*
 | Release | Content (REVISED) | State | Blockers |
 |---|---|---|---|
 | ~~R1.0~~ | ✅ **RELEASED 2026-08-01** — moved to Deployment history | signed: `release-signoff-R1.0.md` §4/§7 | — |
-| **R1.1** *(next)* | **Activation only**: flag flip + smoke + sign-off (schema + grants already live) | checklist ready: `R1.0/smoke-uat-checklist.md` §D — **D3 CLOSED** by the R1.0 signature | Q-01 (D1) · preview visual sign-off (D2) · D4 grant check |
+| **R1.1** | ⏸ **ACCEPTANCE DEFERRED 2026-08-01** (management decision): implementation complete, preview infrastructure live (`qrotqyaaugyzgljcwcpg`, corrected dataset `3c2cb58`); remaining work is **acceptance/governance only** (D2 visual review → D5 flag → D6 smoke → D7 DAF). Production flag stays **unset** until the gates complete. D1 ✅ D3 ✅ D4 ✅ | parked at D2 | resumes on management go |
+| **R2.0 — HR** *(active focus)* | Development focus shifted to the **Effitrans HR Platform** (2026-08-01). HR-0F architecture freeze: `docs/hr/hr-0f-architecture-freeze.md` | architecture phase | HR-1 starts on explicit go once the freeze blockers clear |
 | R1.2 | FIN-AGING-4 legacy import (unbuilt) | specified | R1.1 |
 | R2.0 | HR-1..HR-4 (unbuilt; registry live **and its migration applied** — HR-1 runs in production already, gated by `hr:read` holders) | architecture ratified | HRQ-D2 · structure answers · go |
 
