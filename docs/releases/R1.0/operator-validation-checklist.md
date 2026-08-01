@@ -417,7 +417,7 @@ Record which option you took: `☐ preview  ☐ production wait  ☐ deferred`
 | A1 | Served SHA (`/api/version`) | ✅ PASS | 2026-07-31 | operator | `5b24164a57fc…` = `main` HEAD |
 | A2 | Production verification sweep | ✅ PASS | 2026-07-31 | operator | ALL CHECKS PASSED, exit 0 |
 | A3 | Operations dashboard | ✅ PASS | 2026-07-31 | operator | 72 · `20260729000002_…`; Déploiement/Santé/Sécurité all **Sain** |
-| B1 | Invoice three-hash | ☐ PASS ☐ FAIL | | | H = |
+| B1 | Invoice three-hash | ✅ PASS | 2026-08-01 | operator | H1 = H2 = H3 = `A1442D13…8C2E`; saved length 3073 = Content-Length; layout check deferred to next new invoice (DEF-R10-05, not a B1 criterion) |
 | B2 | Customs discovery | ✅ PASS (limitation) | 2026-07-31 | operator | `uat.douane@effitrans.sn` / CUSTOMS_DECLARANT; `EFT-IMP-2026-00002` « Requis » + « Visible parce que : Département destinataire ». Négatif non exécutable — aucun dossier sans volet douane requis en production |
 | B3 | Dossier closure | ✅ PASS | 2026-07-31 | operator | `EFT-IMP-2026-00003` → Clôturé; history + journal + artifacts preserved; delete control = expected gate (OBS-R10-07) |
 | B4 | Temp-password lifecycle | ✅ PASS | 2026-07-31 | operator | admin-issued path; forced change confirmed; expired path deferred (preview-only) |

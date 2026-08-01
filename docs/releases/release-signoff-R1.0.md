@@ -1,11 +1,13 @@
 # Release R1.0 — Official Sign-off
 
 **Release:** R1.0 — *Production migration-ledger reconciliation and operational validation*
-**Prepared:** 2026-07-31 · **Status:** ☐ **OPEN — awaiting §3 results and §4 signatures**
+**Prepared:** 2026-07-31 · **Status:** 🟢 **§3 COMPLETE (2026-08-01) — awaiting §4 signatures only**
 
 > This document is the release record. It is **not valid until every box in §3 is
-> resolved and §4 is signed**. Sections 1 and 2 are already established fact, evidenced
-> below; sections 3–5 are completed by the seats that perform the work.
+> resolved and §4 is signed**. Sections 1 and 2 are established fact; **§3 closed on
+> 2026-08-01 with zero unresolved rows** — every check is PASS, every deviation is
+> recorded with its classification. What remains is exclusively §4: the human
+> signatures. Nothing technical is outstanding.
 
 ---
 
@@ -104,7 +106,7 @@ R1.0 cannot be signed with an unresolved row.
 | A1 | Served SHA = `main` HEAD | Operator | ✅ **PASS** | 2026-07-31 | `5b24164a57fc45cdf82221ade7ebbe2634d838c9` = `main` HEAD; verified inside A2's version check |
 | A2 | Production verification sweep (exit 0) | Operator | ✅ **PASS** | 2026-07-31 | `verify-production.mjs` → ALL CHECKS PASSED, **exit code 0**; SHA `5b24164a57fc45cdf82221ade7ebbe2634d838c9` |
 | A3 | Ops dashboard: `72 · dernière : 20260729000002_…`, no `warn` | Operator | ✅ **PASS** | 2026-07-31 | Commit `5b24164a57fc…`, branche `main`, env `production`, **Migrations livrées 72**, dernière `20260729000002_aging_balance_foundation`, Déploiement **Sain**, base de données joignable, Santé plateforme **Sain**, Sécurité **Sain** |
-| B1 | Invoice three-hash on `EFT-INV-2026-00001` | DAF / Finance | ⏳ **OPEN — H2 (portal) outstanding** | 2026-08-01 | Served SHA `c29b7cf` verified. **Staff path:** HTTP `200` · `Content-Type: application/pdf` · `Content-Length: 3073` · `Content-Disposition: inline; filename="EFT-INV-2026-00001.pdf"` · **H1** `a1442d1311ab2845edb24480a28401268eb8f532fdc9ccf74eefdd21928c8c2e`. **Download (« Enregistrer la cible du lien sous… »):** length `3073` = Content-Length ✔ · **H3** `a1442d1311ab2845edb24480a28401268eb8f532fdc9ccf74eefdd21928c8c2e` = H1 ✔. Corrected-layout check (new invoice, `uat2b-2`) **deferred** to the next naturally issued invoice — artifact immutability makes it independent of B1's criterion. **PASS requires H2 = H1.** |
+| B1 | Invoice three-hash on `EFT-INV-2026-00001` | DAF / Finance | ✅ **PASS** | 2026-08-01 | Served SHA `c29b7cf` verified. **Staff endpoint: PASS** — HTTP `200` · `Content-Type: application/pdf` · `Content-Length: 3073` · `Content-Disposition: inline; filename="EFT-INV-2026-00001.pdf"` · **H1** `A1442D1311AB2845EDB24480A28401268EB8F532FDC9CCF74EEFDD21928C8C2E`. **Portal endpoint: PASS** — **H2** `A1442D1311AB2845EDB24480A28401268EB8F532FDC9CCF74EEFDD21928C8C2E`. **Downloaded file** (« Enregistrer la cible du lien sous… »): length `3073` = Content-Length ✔ · **H3** `A1442D1311AB2845EDB24480A28401268EB8F532FDC9CCF74EEFDD21928C8C2E`. **Result: H1 = H2 = H3** (hex case differs from the lowercase response header; SHA-256 comparison is case-insensitive). One artifact serves both paths; the stored hash describes the served bytes. Corrected-layout check (`uat2b-2`) **deferred** to the next naturally issued invoice — a DEF-R10-05 verification, outside B1's criterion. |
 | B2 | Customs discovery without assignment | Douane (CUSTOMS_DECLARANT) | ✅ **PASS — with stated limitation** | 2026-07-31 | Seat `uat.douane@effitrans.sn`, sole role **CUSTOMS_DECLARANT**; no ownership/task/step/assignment history **by construction** (account created for this test). Saw **3 dossiers on `/files`** — a LIST, which only the migration-69 coarse filter can produce. Opened `EFT-IMP-2026-00002`: Douane panel present, `customs_record` badged « **Requis** » (= `required = true`), page attributes access itself: « **Visible parce que : Département destinataire** ». **Limitation (operator, verbatim):** « Contrôle négatif non exécutable — aucun dossier sans volet douane requis n'existe en production au moment de la validation. » |
 | B3 | Closure of `EFT-IMP-2026-00003` | OPS_SUPERVISOR | ✅ **PASS** | 2026-07-31 | Statut = **Clôturé**; full lifecycle history preserved (Brouillon → Ouvert → En cours → Livré → Clôturé); operational journal intact after closure; official invoice artifact and generated documents still present; journal read-only/immutable. « Supprimer le dossier » remains visible — **EXPECTED GATE**, see OBS-R10-07 |
 | B4 | Temporary-password lifecycle | SYSTEM_ADMIN + test account | ✅ **PASS** | 2026-07-31 | Admin-issued temp password generated from `/users/{id}`; status became « Mot de passe temporaire en attente de changement »; login **forced** to `/auth/change-password`; password changed; `/dashboard` reachable only afterwards. First attempt (creation-time password) tested the wrong path — see **DEF-R10-01**; the intermediate refusal is **DEF-R10-03**, both in [`R1.0/validation-findings.md`](R1.0/validation-findings.md). Expired path: **deferred** (preview-only; production writes to force expiry not authorized). |
@@ -150,14 +152,30 @@ _____________________________________________________________________________
 
 ## 4. Signatures
 
+> **Execution note for the signers.** All seven §3 checks were physically executed by the
+> platform operator, who held the relevant production sessions (including the dedicated
+> UAT seats `uat.r10@…` and `uat.douane@…` created for B4/B2). A signature below
+> therefore attests to *reviewing the recorded evidence for that scope*, not to having
+> personally executed the steps. Where one person occupies several seats, sign each
+> scope-row they are accountable for — the rows exist so each scope is consciously
+> accepted, not to manufacture five people.
+
 | Seat | Scope | Name | Result | Date | Signature |
 |---|---|---|---|---|---|
-| Operator | A1–A3, ledger reconciliation | | ☐ accept ☐ reject | | |
-| DAF / Finance Manager | B1 | | ☐ accept ☐ reject | | |
-| Chef de transit | B2 | | ☐ accept ☐ reject | | |
-| OPS Supervisor | B3 | | ☐ accept ☐ reject | | |
-| SYSTEM_ADMIN | B4 | | ☐ accept ☐ reject | | |
-| Release owner | R1.0 as a whole | | ☐ **RELEASED** ☐ held | | |
+| Operator | A1–A3, ledger reconciliation, B1 execution | | ☐ accept ☐ reject | | |
+| DAF / Finance Manager | B1 evidence | | ☐ accept ☐ reject | | |
+| Chef de transit / Douane | B2 evidence (incl. the stated limitation) | | ☐ accept ☐ reject | | |
+| OPS Supervisor | B3 evidence | | ☐ accept ☐ reject | | |
+| SYSTEM_ADMIN | B4 evidence | | ☐ accept ☐ reject | | |
+| Release owner | R1.0 as a whole, incl. deferred items (§3 deviations) | | ☐ **RELEASED** ☐ held | | |
+
+**Deferred items the release owner accepts by signing** (all recorded above with
+classifications; none is an R1.0 gate):
+1. B2 negative control — not executable in the current dataset; re-test trigger recorded.
+2. B4 expired-password path — preview-only by rule; not yet run.
+3. B1 corrected-layout check — awaits the next naturally issued invoice (`uat2b-2`).
+4. DEF-R10-01 (creation-path password does not arm the gate) and DEF-R10-03 (bare catch
+   conflates failure classes) — pre-existing defects, scheduled outside R1.0.
 
 ---
 

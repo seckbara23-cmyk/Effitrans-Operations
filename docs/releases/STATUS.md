@@ -1,8 +1,7 @@
 # Release Status — standing table (updated at every release event)
 
-*Last updated: 2026-07-31 (R1.0-R — **ledger reconciliation EXECUTED**: 16-version
-repair applied under operator GO after 30/30 verification rows passed; ledger reads
-**72/72**).*
+*Last updated: 2026-08-01 (**R1.0 validation COMPLETE** — all seven §3 checks PASS,
+B1 closed with H1 = H2 = H3; sign-off document awaits §4 signatures only).*
 
 > **Correction (2026-07-31).** The previous version of this table stated "schema current
 > through migration 67; 68–72 pending". The Operator-Task-1 audit proved that wrong:
@@ -32,8 +31,8 @@ repair applied under operator GO after 30/30 verification rows passed; ledger re
 
 | Release | Content (REVISED) | State | Blockers |
 |---|---|---|---|
-| **R1.0-R** | **Ledger reconciliation DONE** (16 versions repaired, 72/72 verified, schema untouched) — remaining: smoke/UAT §A–C + sign-off | repair executed 2026-07-31 | operator UAT (B1–B4) + sign-offs |
-| **R1.1** | **Activation only**: flag flip + smoke + sign-off (schema + grants already live) | checklist ready: `R1.0/smoke-uat-checklist.md` §D | Q-01 · preview visual sign-off · R1.0 complete |
+| **R1.0** | **Validation COMPLETE 2026-08-01** — A1–A3 + B1–B4 all PASS (B2 with stated limitation); §3 has zero unresolved rows | **awaiting §4 signatures** in `release-signoff-R1.0.md` | signatures only — no technical blocker |
+| **R1.1** | **Activation only**: flag flip + smoke + sign-off (schema + grants already live) | checklist ready: `R1.0/smoke-uat-checklist.md` §D — **D3 closes with the §4 signatures** | Q-01 (D1) · preview visual sign-off (D2) · §4 signatures (D3) · D4 grant check |
 | R1.2 | FIN-AGING-4 legacy import (unbuilt) | specified | R1.1 |
 | R2.0 | HR-1..HR-4 (unbuilt; registry live **and its migration applied** — HR-1 runs in production already, gated by `hr:read` holders) | architecture ratified | HRQ-D2 · structure answers · go |
 
@@ -44,10 +43,14 @@ repair applied under operator GO after 30/30 verification rows passed; ledger re
 | [`R1.0/operator-validation-checklist.md`](R1.0/operator-validation-checklist.md) | executable A2/A3/B1–B4: exact URL, seat, clicks, expected, pass/fail, remedy |
 | [`release-signoff-R1.0.md`](release-signoff-R1.0.md) | the official sign-off record — R1.0 closes only when signed |
 
-## Outstanding UAT (defined, not yet run)
+## Outstanding UAT
 
-Three-hash (B1) · Douane discovery (B2) · closure EFT-IMP-2026-00003 (B3) · temp-password
-lifecycle incl. expired path via preview (B4) · aging preview visual checklist (D2).
+**R1.0 UAT complete 2026-08-01** — B1 (H1 = H2 = H3 on `EFT-INV-2026-00001`), B2
+(positive target; negative control not executable — limitation recorded), B3
+(`EFT-IMP-2026-00003` → Clôturé), B4 (temp-password lifecycle) all PASS.
+**Still open, deferred with recorded triggers:** B4 expired path (preview-only) · B2
+negative control (first non-customs dossier) · B1 corrected-layout check (next new
+invoice, `uat2b-2`) · aging preview visual checklist (**D2**, blocks R1.1).
 
 ## Known decision blockers
 
@@ -60,4 +63,5 @@ Messaging Center activation state — *verify at R3.0 planning*.
 | Release | Date | SHA | Migrations | Sign-off |
 |---|---|---|---|---|
 | — (pre-framework) | ≤ 2026-07-31 | rolling | 1–72 applied (57–72 outside the ledger; reconciliation = R1.0-R) | Phase 8.0 gate documents |
-| R1.0-R (ledger reconciliation) | 2026-07-31 | `1abccda` (no code change; app already served it) | ledger repaired to **72/72** — `migration repair --status applied` × 16 (`20260724000002` → `20260729000002`); no DDL; schema spot-checks unchanged | verification 30/30 (operator) · repair GO (operator) · **UAT §A–C pending** |
+| R1.0-R (ledger reconciliation) | 2026-07-31 | `1abccda` (no code change; app already served it) | ledger repaired to **72/72** — `migration repair --status applied` × 16 (`20260724000002` → `20260729000002`); no DDL; schema spot-checks unchanged | verification 30/30 (operator) · repair GO (operator) |
+| R1.0 validation (UAT §A–B) | 2026-07-31 → 2026-08-01 | `c29b7cf` at completion (post-sanitation head) | none — validation only. Side products shipped during UAT: invoice-renderer geometry fix `733c116` (`uat2b-2`, immutable artifacts untouched) + history sanitation (5 SHAs remapped) | A1–A3, B1–B4 **all PASS** (B2 with stated limitation) · **§4 signatures pending** |
