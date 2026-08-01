@@ -51,7 +51,7 @@ export default async function EmployeeProfilePage({ params }: { params: { id: st
         subtitle={`${employee.employee_number} · ${deptLabel}${employee.job_title ? ` · ${employee.job_title}` : ""}`}
       />
 
-      <Link href="/departments/hr" className="inline-block text-xs text-teal-700 hover:underline">← Registre du personnel</Link>
+      <Link href="/departments/hr/registre" className="inline-block text-xs text-teal-700 hover:underline">← Registre du personnel</Link>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <section className="surface p-4">

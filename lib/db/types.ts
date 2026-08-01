@@ -3278,6 +3278,147 @@ export type Database = {
         Update: { next_seq?: number };
         Relationships: [];
       };
+      // HR-1 — Organization Foundation (migration 73). All dark-first.
+      hr_configuration: {
+        Row: {
+          id: string; tenant_id: string; status: string;
+          employee_number_keep_existing: boolean; employee_number_prefix: string | null;
+          employment_kinds: unknown; termination_reasons: unknown;
+          activated_by: string | null; activated_at: string | null;
+          created_at: string; updated_at: string;
+        };
+        Insert: {
+          id?: string; tenant_id: string; status?: string;
+          employee_number_keep_existing?: boolean; employee_number_prefix?: string | null;
+          employment_kinds?: unknown; termination_reasons?: unknown;
+          activated_by?: string | null; activated_at?: string | null;
+        };
+        Update: {
+          status?: string; employee_number_keep_existing?: boolean;
+          employee_number_prefix?: string | null; employment_kinds?: unknown;
+          termination_reasons?: unknown; activated_by?: string | null; activated_at?: string | null;
+        };
+        Relationships: [];
+      };
+      hr_org_unit: {
+        Row: {
+          id: string; tenant_id: string; parent_id: string | null; unit_kind: string;
+          name: string; code: string | null; canonical_department: string | null;
+          is_active: boolean; created_at: string; updated_at: string;
+        };
+        Insert: {
+          id?: string; tenant_id: string; parent_id?: string | null; unit_kind: string;
+          name: string; code?: string | null; canonical_department?: string | null;
+          is_active?: boolean;
+        };
+        Update: {
+          parent_id?: string | null; unit_kind?: string; name?: string; code?: string | null;
+          canonical_department?: string | null; is_active?: boolean;
+        };
+        Relationships: [];
+      };
+      hr_position: {
+        Row: {
+          id: string; tenant_id: string; title: string; code: string | null;
+          description: string | null; is_active: boolean; created_at: string; updated_at: string;
+        };
+        Insert: {
+          id?: string; tenant_id: string; title: string; code?: string | null;
+          description?: string | null; is_active?: boolean;
+        };
+        Update: { title?: string; code?: string | null; description?: string | null; is_active?: boolean };
+        Relationships: [];
+      };
+      hr_work_location: {
+        Row: {
+          id: string; tenant_id: string; name: string; city: string | null; country: string;
+          is_active: boolean; created_at: string; updated_at: string;
+        };
+        Insert: {
+          id?: string; tenant_id: string; name: string; city?: string | null; country?: string;
+          is_active?: boolean;
+        };
+        Update: { name?: string; city?: string | null; country?: string; is_active?: boolean };
+        Relationships: [];
+      };
+      employee_assignment: {
+        Row: {
+          id: string; tenant_id: string; employee_id: string;
+          org_unit_id: string | null; position_id: string | null; work_location_id: string | null;
+          manager_employee_id: string | null; assignment_kind: string;
+          effective_from: string; effective_to: string | null; note: string | null;
+          created_by: string | null; created_at: string;
+        };
+        Insert: {
+          id?: string; tenant_id: string; employee_id: string;
+          org_unit_id?: string | null; position_id?: string | null; work_location_id?: string | null;
+          manager_employee_id?: string | null; assignment_kind?: string;
+          effective_from?: string; effective_to?: string | null; note?: string | null;
+          created_by?: string | null;
+        };
+        Update: { effective_to?: string | null; note?: string | null };
+        Relationships: [];
+      };
+      hr_employee_event: {
+        Row: {
+          id: string; tenant_id: string; employee_id: string; event_kind: string;
+          occurred_at: string; actor_id: string | null; payload: unknown; created_at: string;
+        };
+        Insert: {
+          id?: string; tenant_id: string; employee_id: string; event_kind: string;
+          occurred_at?: string; actor_id?: string | null; payload?: unknown;
+        };
+        Update: never;
+        Relationships: [];
+      };
+      hr_import_batch: {
+        Row: {
+          id: string; tenant_id: string; batch_number: string; import_kind: string;
+          source_filename: string | null; source_file_sha256: string | null; status: string;
+          mapping: unknown; row_count: number; error_count: number;
+          prepared_by: string | null; prepared_at: string;
+          submitted_by: string | null; submitted_at: string | null;
+          approved_by: string | null; approved_at: string | null;
+          rejection_reason: string | null; created_at: string; updated_at: string;
+        };
+        Insert: {
+          id?: string; tenant_id: string; batch_number: string; import_kind: string;
+          source_filename?: string | null; source_file_sha256?: string | null; status?: string;
+          mapping?: unknown; row_count?: number; error_count?: number;
+          prepared_by?: string | null;
+        };
+        Update: {
+          status?: string; mapping?: unknown; row_count?: number; error_count?: number;
+          submitted_by?: string | null; submitted_at?: string | null;
+          approved_by?: string | null; approved_at?: string | null;
+          rejection_reason?: string | null;
+        };
+        Relationships: [];
+      };
+      hr_import_staging_row: {
+        Row: {
+          id: string; tenant_id: string; batch_id: string; source_row_number: number;
+          raw: unknown; parsed: unknown; status: string;
+        };
+        Insert: {
+          id?: string; tenant_id: string; batch_id: string; source_row_number: number;
+          raw: unknown; parsed?: unknown; status?: string;
+        };
+        Update: { parsed?: unknown; status?: string };
+        Relationships: [];
+      };
+      hr_import_error: {
+        Row: {
+          id: string; tenant_id: string; batch_id: string; staging_row_id: string | null;
+          field: string | null; code: string; message_fr: string; created_at: string;
+        };
+        Insert: {
+          id?: string; tenant_id: string; batch_id: string; staging_row_id?: string | null;
+          field?: string | null; code: string; message_fr: string;
+        };
+        Update: never;
+        Relationships: [];
+      };
       // Phase 11.0B — Finance Expense Documents.
       expense_authorization: {
         Row: {

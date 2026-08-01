@@ -34,7 +34,7 @@ Q-01 (D1) and the preview visual sign-off (D2)).*
 |---|---|---|---|
 | ~~R1.0~~ | ✅ **RELEASED 2026-08-01** — moved to Deployment history | signed: `release-signoff-R1.0.md` §4/§7 | — |
 | **R1.1** | ⏸ **ACCEPTANCE DEFERRED 2026-08-01** (management decision): implementation complete, preview infrastructure live (`qrotqyaaugyzgljcwcpg`, corrected dataset `3c2cb58`); remaining work is **acceptance/governance only** (D2 visual review → D5 flag → D6 smoke → D7 DAF). Production flag stays **unset** until the gates complete. D1 ✅ D3 ✅ D4 ✅ | parked at D2 | resumes on management go |
-| **R2.0 — HR** *(active focus)* | Development focus shifted to the **Effitrans HR Platform** (2026-08-01). HR-0F architecture freeze: `docs/hr/hr-0f-architecture-freeze.md` | architecture phase | HR-1 starts on explicit go once the freeze blockers clear |
+| **R2.0 — HR** *(active focus)* | **HR-1 IMPLEMENTED 2026-08-01** (dark): migration **73** (unapplied in prod — operator step), dashboard + org foundation + config center + import staging; `hr:config:manage`/`hr:sensitive:read` catalog-only (granted to nobody — B1 pause). Report: `docs/hr/hr-1-completion-report.md` | HR-2 awaits explicit approval | activation: apply 73 · B1 grant ratification · B2 seeds |
 | R1.2 | FIN-AGING-4 legacy import (unbuilt) | specified | R1.1 |
 | R2.0 | HR-1..HR-4 (unbuilt; registry live **and its migration applied** — HR-1 runs in production already, gated by `hr:read` holders) | architecture ratified | HRQ-D2 · structure answers · go |
 

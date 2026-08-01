@@ -474,7 +474,8 @@ describe("the DB suite is wired into CI, last, with a readable failure", () => {
 
   it("it runs LAST — a new suite must never skip the established ones", () => {
     const ci = read(".github/workflows/ci.yml");
-    const mine = ci.indexOf("rls_aging_balance_test.sql");
+    // HR-1 appended its suite after this one (the standing rule: newest runs last).
+    const mine = ci.indexOf("rls_hr_organization_test.sql");
     const others = [...ci.matchAll(/-f supabase\/tests\/(\w+)\.sql/g)]
       .map((m) => ci.indexOf(`${m[1]}.sql`))
       .filter((i) => i !== mine);
@@ -519,7 +520,7 @@ describe("the DB suite is wired into CI, last, with a readable failure", () => {
   });
 
   it("build-info pins the new migration", () => {
-    expect(LATEST_MIGRATION).toBe("20260729000002_aging_balance_foundation");
+    expect(LATEST_MIGRATION).toBe("20260801000001_hr_organization_foundation");
   });
 });
 
