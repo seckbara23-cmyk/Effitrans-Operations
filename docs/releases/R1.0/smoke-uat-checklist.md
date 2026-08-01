@@ -82,10 +82,10 @@ therefore **pure activation** — and it does not begin until its gates close:
 
 | # | Gate / step | Owner | Status |
 |---|---|---|---|
-| D1 | **Q-01 formally closed**, recorded verbatim: « Montant = outstanding balance as of the reporting date » | Finance Manager | ☐ |
-| D2 | Aging preview **visual sign-off** recorded (checklist in `docs/finance/aging/preview-runbook.md` §4) | Finance Manager | ☐ |
-| D3 | R1.0 sign-off complete (§C above) | operator | ☐ |
-| D4 | Verify grants match the ratified matrix (read-only): `select r.code, p.code from role_permission rp join role r on r.id=rp.role_id join permission p on p.id=rp.permission_id where p.code like 'finance:aging:%' order by 1,2;` — SYSTEM_ADMIN must NOT hold validate/finalize/import_approve/share/template_manage | operator | ☐ |
+| D1 | **Q-01 formally closed**, recorded verbatim: « Montant = outstanding balance as of the reporting date » | Finance Manager | ✅ **CLOSED 2026-08-01** — confirmed verbatim: « Montant = outstanding balance as of the reporting date. » |
+| D2 | Aging preview **visual sign-off** recorded (checklist in `docs/finance/aging/preview-runbook.md` §4) | Finance Manager | 🔄 **IN PROGRESS 2026-08-01** — execution guide: [`../R1.1/d2-preview-execution.md`](../R1.1/d2-preview-execution.md) |
+| D3 | R1.0 sign-off complete (§C above) | operator | ✅ **CLOSED 2026-08-01** — R1.0 RELEASED (`release-signoff-R1.0.md` §7) |
+| D4 | Verify grants match the ratified matrix (read-only): [`../R1.1/d4-grant-verification.sql`](../R1.1/d4-grant-verification.sql) — SYSTEM_ADMIN must NOT hold validate/finalize/import_approve/share/template_manage | operator | ✅ **PASS 2026-08-01** — operator ran the 16-check script; all rows `passed=true` |
 | D5 | Set `EFFITRANS_FINANCE_AGING_ENABLED=true` on the **Production** Vercel environment; redeploy | operator | ☐ |
 | D6 | Smoke: « Balance âgée » tile appears on `/departments/finance` for a `finance:aging:read` holder and NOT for others; `/finance/aging` renders all five tabs; foreign-currency exclusion notice appears when applicable; the view states it is provisional | DAF | ☐ |
 | D7 | DAF business sign-off recorded | DAF | ☐ |

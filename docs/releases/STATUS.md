@@ -55,7 +55,8 @@ invoice, `uat2b-2`) · aging preview visual checklist (**D2**, blocks R1.1).
 
 ## Known decision blockers
 
-Q-01 (« Montant » = outstanding — required verbatim closure for R1.1) · HRQ-D2 ceiling
+~~Q-01~~ **CLOSED 2026-08-01**, verbatim: « Montant = outstanding balance as of the
+reporting date. » (Finance Manager — unblocks R1.1 D1) · HRQ-D2 ceiling
 9→11 · HRQ-A4 staging purge · HRQ-D1 reason vocabulary · DEC-B63 legal gates ·
 Messaging Center activation state — *verify at R3.0 planning*.
 
