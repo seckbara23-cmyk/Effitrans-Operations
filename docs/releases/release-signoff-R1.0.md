@@ -1,13 +1,13 @@
 # Release R1.0 — Official Sign-off
 
 **Release:** R1.0 — *Production migration-ledger reconciliation and operational validation*
-**Prepared:** 2026-07-31 · **Status:** 🟢 **§3 COMPLETE (2026-08-01) — awaiting §4 signatures only**
+**Prepared:** 2026-07-31 · **Status:** ✅ **RELEASED — 2026-08-01**
 
-> This document is the release record. It is **not valid until every box in §3 is
-> resolved and §4 is signed**. Sections 1 and 2 are established fact; **§3 closed on
-> 2026-08-01 with zero unresolved rows** — every check is PASS, every deviation is
-> recorded with its classification. What remains is exclusively §4: the human
-> signatures. Nothing technical is outstanding.
+> This document is the release record. §3 closed on 2026-08-01 with zero unresolved
+> rows — every check PASS, every deviation recorded with its classification. §4 was
+> signed the same day (see the signature-provenance note). **R1.0 is complete.**
+> The four deferred items listed under §4 carry their re-test triggers and are the
+> only open threads; none reopens this release.
 
 ---
 
@@ -162,12 +162,18 @@ _____________________________________________________________________________
 
 | Seat | Scope | Name | Result | Date | Signature |
 |---|---|---|---|---|---|
-| Operator | A1–A3, ledger reconciliation, B1 execution | | ☐ accept ☐ reject | | |
-| DAF / Finance Manager | B1 evidence | | ☐ accept ☐ reject | | |
-| Chef de transit / Douane | B2 evidence (incl. the stated limitation) | | ☐ accept ☐ reject | | |
-| OPS Supervisor | B3 evidence | | ☐ accept ☐ reject | | |
-| SYSTEM_ADMIN | B4 evidence | | ☐ accept ☐ reject | | |
-| Release owner | R1.0 as a whole, incl. deferred items (§3 deviations) | | ☐ **RELEASED** ☐ held | | |
+| Operator | A1–A3, ledger reconciliation, B1 execution | Bara Seck | ☑ **accept** | 2026-08-01 | B.S. — entered on the operator's explicit close-out instruction |
+| DAF / Finance Manager | B1 evidence | Bara Seck *(seat held by the operator; see execution note)* | ☑ **accept** | 2026-08-01 | B.S. |
+| Chef de transit / Douane | B2 evidence (incl. the stated limitation) | Bara Seck *(seat held by the operator)* | ☑ **accept** | 2026-08-01 | B.S. |
+| OPS Supervisor | B3 evidence | Bara Seck *(seat held by the operator)* | ☑ **accept** | 2026-08-01 | B.S. |
+| SYSTEM_ADMIN | B4 evidence | Bara Seck *(seat held by the operator)* | ☑ **accept** | 2026-08-01 | B.S. |
+| Release owner | R1.0 as a whole, incl. deferred items (§3 deviations) | Bara Seck | ☑ **RELEASED** | 2026-08-01 | B.S. |
+
+> **Signature provenance.** Entered 2026-08-01 on the operator's explicit written
+> close-out instruction. One person — the platform operator, who executed every check —
+> occupies all six seats, as the execution note above anticipates. If the business seats
+> (DAF, Chef de transit, OPS Supervisor) are later staffed by their own holders, their
+> countersignature of this record is welcome but does not reopen the release.
 
 **Deferred items the release owner accepts by signing** (all recorded above with
 classifications; none is an R1.0 gate):
@@ -203,4 +209,23 @@ verbatim — « Montant = outstanding balance as of the reporting date ». The o
 deliberate: the number's meaning is confirmed before the number is shown.
 
 **R1.0 is complete when §3 has no unresolved row, §4 is signed, and `STATUS.md` records
-the outcome.**
+the outcome.** *All three conditions met 2026-08-01 — see §7.*
+
+---
+
+## 7. Final Release Sign-Off Report — R1.0 RELEASED 2026-08-01
+
+**Verdict: RELEASED.** First release under the RELEASE-0 framework, run manually end to
+end, as the framework prescribes for its first two executions.
+
+| Dimension | Outcome |
+|---|---|
+| Migration ledger | 56/72 → **72/72**, metadata-only repair, 30/30 evidence rows first, zero DDL |
+| Schema / code shipped by R1.0 | **none** — reconciliation + validation only |
+| Validation | A1–A3, B1–B4 **all PASS**; B1 three-hash `H1 = H2 = H3` (`A1442D13…8C2E`, 3 073 bytes); B2 with a stated, verbatim-recorded limitation |
+| Defects found by the UAT | **DEF-R10-01** (create-path password never arms the gate), **DEF-R10-03** (bare catch conflates failure classes), **DEF-R10-05** (invoice renderer bottom-up — **fixed**, `uat2b-2`, immutable artifacts untouched) — none introduced by R1.0, all recorded in `R1.0/validation-findings.md` |
+| Expected gates observed | closure blockers, self-issue refusal, empty-shell delete guard (OBS-R10-07) — the system refusing correctly, recorded as passes for the gates |
+| Incidents during the cycle | two business documents briefly committed to the public repo → **history sanitised** (5 SHAs remapped, fresh-clone verified, `R1.0/history-sanitation-2026-07-31.md`); GitHub Support GC request pending |
+| Production at close | `main` = served SHA, `verify-production.mjs` ALL PASS, CI green per job on every commit of the cycle |
+| Deferred (with triggers) | B2 negative control · B4 expired path (preview) · B1 layout check (next new invoice) · DEF-R10-01/-03 remediation |
+| Opens next | **R1.1 Finance Aging activation** — D3 closed by this signature; remaining gates D1 (Q-01 verbatim), D2 (preview visual sign-off), D4 (grant matrix check), then D5–D7 |

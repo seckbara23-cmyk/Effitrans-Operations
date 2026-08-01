@@ -1,7 +1,8 @@
 # Release Status — standing table (updated at every release event)
 
-*Last updated: 2026-08-01 (**R1.0 validation COMPLETE** — all seven §3 checks PASS,
-B1 closed with H1 = H2 = H3; sign-off document awaits §4 signatures only).*
+*Last updated: 2026-08-01 (**R1.0 RELEASED** — §3 all PASS, §4 signed; see
+`release-signoff-R1.0.md` §7 for the final report. Next: R1.1 activation, gated on
+Q-01 (D1) and the preview visual sign-off (D2)).*
 
 > **Correction (2026-07-31).** The previous version of this table stated "schema current
 > through migration 67; 68–72 pending". The Operator-Task-1 audit proved that wrong:
@@ -31,8 +32,8 @@ B1 closed with H1 = H2 = H3; sign-off document awaits §4 signatures only).*
 
 | Release | Content (REVISED) | State | Blockers |
 |---|---|---|---|
-| **R1.0** | **Validation COMPLETE 2026-08-01** — A1–A3 + B1–B4 all PASS (B2 with stated limitation); §3 has zero unresolved rows | **awaiting §4 signatures** in `release-signoff-R1.0.md` | signatures only — no technical blocker |
-| **R1.1** | **Activation only**: flag flip + smoke + sign-off (schema + grants already live) | checklist ready: `R1.0/smoke-uat-checklist.md` §D — **D3 closes with the §4 signatures** | Q-01 (D1) · preview visual sign-off (D2) · §4 signatures (D3) · D4 grant check |
+| ~~R1.0~~ | ✅ **RELEASED 2026-08-01** — moved to Deployment history | signed: `release-signoff-R1.0.md` §4/§7 | — |
+| **R1.1** *(next)* | **Activation only**: flag flip + smoke + sign-off (schema + grants already live) | checklist ready: `R1.0/smoke-uat-checklist.md` §D — **D3 CLOSED** by the R1.0 signature | Q-01 (D1) · preview visual sign-off (D2) · D4 grant check |
 | R1.2 | FIN-AGING-4 legacy import (unbuilt) | specified | R1.1 |
 | R2.0 | HR-1..HR-4 (unbuilt; registry live **and its migration applied** — HR-1 runs in production already, gated by `hr:read` holders) | architecture ratified | HRQ-D2 · structure answers · go |
 
@@ -64,4 +65,4 @@ Messaging Center activation state — *verify at R3.0 planning*.
 |---|---|---|---|---|
 | — (pre-framework) | ≤ 2026-07-31 | rolling | 1–72 applied (57–72 outside the ledger; reconciliation = R1.0-R) | Phase 8.0 gate documents |
 | R1.0-R (ledger reconciliation) | 2026-07-31 | `1abccda` (no code change; app already served it) | ledger repaired to **72/72** — `migration repair --status applied` × 16 (`20260724000002` → `20260729000002`); no DDL; schema spot-checks unchanged | verification 30/30 (operator) · repair GO (operator) |
-| R1.0 validation (UAT §A–B) | 2026-07-31 → 2026-08-01 | `c29b7cf` at completion (post-sanitation head) | none — validation only. Side products shipped during UAT: invoice-renderer geometry fix `733c116` (`uat2b-2`, immutable artifacts untouched) + history sanitation (5 SHAs remapped) | A1–A3, B1–B4 **all PASS** (B2 with stated limitation) · **§4 signatures pending** |
+| **R1.0** (reconciliation + validation) | 2026-07-31 → **2026-08-01 RELEASED** | `c29b7cf` at completion (post-sanitation head) | none — validation only. Side products shipped during UAT: invoice-renderer geometry fix `733c116` (`uat2b-2`, immutable artifacts untouched) + history sanitation (5 SHAs remapped) | A1–A3, B1–B4 **all PASS** (B2 with stated limitation) · **§4 signed 2026-08-01** (Bara Seck, all seats; provenance note in the sign-off) |
