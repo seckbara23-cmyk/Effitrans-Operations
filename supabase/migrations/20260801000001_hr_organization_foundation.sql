@@ -22,7 +22,7 @@
 -- ===========================================================================
 -- 1. PERMISSIONS — catalog only, granted to NOBODY (B1 pause, stated above)
 -- ===========================================================================
-insert into public.permission (code, module, action, scope, description) values
+insert into public.permission (code, module, action, data_scope, description) values
   ('hr:config:manage',  'hr', 'config_manage',  'all',
    'Administrer la configuration RH (centre de configuration / assistant)'),
   ('hr:sensitive:read', 'hr', 'sensitive_read', 'all',
