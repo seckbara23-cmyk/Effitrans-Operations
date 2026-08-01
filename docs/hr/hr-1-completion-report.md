@@ -1,8 +1,38 @@
 # HR-1 — Dashboard & Organization Foundation: Completion Report
 
 **Date:** 2026-08-01 · **Architecture:** HR-0F (frozen; no decision revisited)
+**Status:** ✅ **CLOSED — deployed to production 2026-08-01 (operator PASS)**
 **Deployment posture:** dark-first — the configuration surface denies everyone until
 HRQ-D2 grants its permission; org tables ship empty; the import pipeline is staging-only.
+
+## Production deployment record (operator, 2026-08-01)
+
+| Step | Result |
+|---|---|
+| Migration `20260801000001` (from `43bf42e`, repo at `c47f95b`) | **applied — success, no rows returned** |
+| Permission catalog | `hr:config:manage` + `hr:sensitive:read` — count **2** |
+| Permission grants | count **0** — **the B1 pause intact in production** |
+| Tables | `hr_org_unit` · `employee_assignment` · `hr_employee_event` · `hr_work_location` present |
+| Ledger | `migration repair --status applied 20260801000001` → `migration list` Local = Remote → **73/73** |
+
+**No further operator deployment work remains for HR-1.** Code was already continuously
+deployed; the schema is now live; everything user-facing stays dark behind permissions
+that either nobody holds (`hr:config:manage`) or only HR_OFFICER holds (`hr:read`/`hr:manage`).
+
+## Incident record — INC-HR1-01: `scope` vs `data_scope` (42703)
+
+The first push (`4536f10`) named the permission column `scope`; the canonical table
+(RBAC foundation) has **`data_scope`**. Caught twice: CI's Start-Supabase step aborted
+(all suites skipped — the known red-CI class), and the operator hit the identical 42703
+applying from the stale commit in the production SQL editor — **atomic, nothing landed**,
+verified by probes. Fix: one word (`43bf42e`). Two process hardenings came out of it:
+
+1. **`tests/migration-schema-compat.test.ts`** (`c47f95b`) — every migration's permission
+   INSERT must use `data_scope`; every INSERT into a pre-existing table must name only
+   columns present in the DB types; FK targets and helper functions verified. Fails on
+   `4536f10`, passes on `43bf42e`.
+2. **Operator SQL is gated on CI-green** — a migration is applied only after its commit
+   shows build + rls-tests fully green with zero skipped, never from the freshest push.
 
 ## Architecture reuse report
 
