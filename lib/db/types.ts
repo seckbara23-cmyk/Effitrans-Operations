@@ -2572,9 +2572,9 @@ export type Database = {
         Relationships: [];
       };
       ec_triage_item: {
-        Row: { id: string; tenant_id: string | null; message_id: string; status: string; assigned_to: string | null; assigned_at: string | null; resolved_at: string | null; note: string | null; created_at: string; updated_at: string };
+        Row: { id: string; tenant_id: string | null; message_id: string; status: string; assigned_to: string | null; assigned_at: string | null; resolved_at: string | null; note: string | null; created_at: string; updated_at: string; outcome: string | null; outcome_file_id: string | null; outcome_client_id: string | null; discard_reason_code: string | null; outcome_comment: string | null; outcome_recorded_by: string | null; outcome_recorded_at: string | null };
         Insert: { id?: string; tenant_id?: string | null; message_id: string; status?: string; assigned_to?: string | null; assigned_at?: string | null; note?: string | null };
-        Update: { status?: string; assigned_to?: string | null; assigned_at?: string | null; resolved_at?: string | null; note?: string | null };
+        Update: { status?: string; assigned_to?: string | null; assigned_at?: string | null; resolved_at?: string | null; note?: string | null; outcome?: string | null; outcome_file_id?: string | null; outcome_client_id?: string | null; discard_reason_code?: string | null; outcome_comment?: string | null; outcome_recorded_by?: string | null; outcome_recorded_at?: string | null };
         Relationships: [];
       };
       tenant_ec_inbound_rollout: {
@@ -4120,6 +4120,18 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      ec_assign_triage: {
+        Args: { p_tenant: string; p_item: string; p_actor: string; p_assignee: string };
+        Returns: string;
+      };
+      ec_review_triage: {
+        Args: { p_tenant: string; p_item: string; p_actor: string };
+        Returns: string;
+      };
+      ec_resolve_triage: {
+        Args: { p_tenant: string; p_item: string; p_actor: string; p_outcome: string; p_file_id?: string | null; p_client_id?: string | null; p_reason_code?: string | null; p_comment?: string | null };
+        Returns: string;
+      };
       hr_open_performance_cycle: {
         Args: { p_tenant: string; p_cycle: string; p_actor: string };
         Returns: number;

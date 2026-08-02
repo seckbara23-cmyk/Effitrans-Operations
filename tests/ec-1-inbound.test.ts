@@ -35,9 +35,11 @@ const EC_TABLES = [
 describe("migration chain", () => {
   it("adds exactly one migration after 79 and touches none before it", () => {
     const all = readdirSync(join(root, "supabase", "migrations")).filter((f) => f.endsWith(".sql")).sort();
-    expect(all.length).toBe(80);
-    expect(all[79]).toBe("20260804000001_ec_inbound_foundation.sql");
-    expect(all[78]).toBe("20260803000002_hr_training.sql");
+    // Pinned RELATIVELY: later phases legitimately add migrations, and a global
+    // count would make every future phase look like a breach of EC-1's promise.
+    const hr6 = all.indexOf("20260803000002_hr_training.sql");
+    expect(hr6).toBeGreaterThan(-1);
+    expect(all[hr6 + 1]).toBe("20260804000001_ec_inbound_foundation.sql");
   });
 
   it("is idempotent and makes no destructive change", () => {

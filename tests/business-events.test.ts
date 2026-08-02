@@ -46,6 +46,9 @@ const ASSIGNMENT = "supabase/migrations/20260727000002_assignment_history.sql";
 const DOC_GOV = "supabase/migrations/20260727000003_document_governance.sql";
 const ARTIFACTS = "supabase/migrations/20260727000004_generated_artifacts.sql";
 const RECONCILE = "supabase/migrations/20260727000005_process_reconciliation.sql";
+// EC-2 widened the domain CHECK again (communication) and emits the
+// correspondence types from its resolve/assign RPCs.
+const EC_TRIAGE = "supabase/migrations/20260805000001_ec_triage_outcomes.sql";
 const migration = () => sqlCode(MIGRATION);
 /** WES-9A: the emission functions as they stand today (62 replaced by 63). */
 const atomicity = () => sqlCode(ATOMICITY);
@@ -631,7 +634,7 @@ describe("event sources", () => {
   it("keeps the SQL domain CHECK aligned with EVENT_DOMAINS", () => {
     // The CHECK was widened by WES-5 (migration 67), so the union of the
     // ledger migration and its later amendments is the source of truth.
-    const sql = migration() + sqlCode(RECONCILE);
+    const sql = migration() + sqlCode(RECONCILE) + sqlCode(EC_TRIAGE);
     for (const domain of EVENT_DOMAINS) expect(sql).toContain(`'${domain}'`);
   });
 
@@ -652,7 +655,8 @@ describe("event sources", () => {
     // Across every migration that emits: WES-9 ships the domain events, WES-3
     // the assignment ones. A type declared emitted with nothing emitting it
     // would be a lie about coverage, which is what this guards.
-    const all = migration() + atomicity() + sqlCode(ASSIGNMENT) + sqlCode(DOC_GOV) + sqlCode(ARTIFACTS) + sqlCode(RECONCILE);
+    const all = migration() + atomicity() + sqlCode(ASSIGNMENT) + sqlCode(DOC_GOV)
+      + sqlCode(ARTIFACTS) + sqlCode(RECONCILE) + sqlCode(EC_TRIAGE);
     for (const def of emittedEventTypes()) {
       expect(all).toContain(`'${def.type}'`);
     }

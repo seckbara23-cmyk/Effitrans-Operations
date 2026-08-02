@@ -39,6 +39,10 @@ export const EVENT_DOMAINS = [
   "ledger",
   // WES-5 — official process-engine reconciliation.
   "process",
+  // EC-2 — inbound customer correspondence joins the operational timeline.
+  // The DOSSIER is the subject when correspondence is attached to one, which is
+  // what gives a shipment its communication dimension (Digital LOS).
+  "communication",
 ] as const;
 export type EventDomain = (typeof EVENT_DOMAINS)[number];
 
@@ -150,6 +154,25 @@ export const EVENT_TYPES: readonly EventTypeDef[] = [
   // and an unreliable event is worse than none (documented deferral).
   { type: "PROCESS_STEP_COMPLETED", domain: "process", version: 1, emission: "rpc", metadataKeys: ["workflow_step_key", "reason_code", "is_override"], clientSafe: false, labelFr: "Étape officielle réalisée" },
   { type: "EVIDENCE_CONSUMED", domain: "process", version: 1, emission: "rpc", metadataKeys: ["workflow_step_key", "artifact_version"], clientSafe: false, labelFr: "Preuve consommée par une étape" },
+
+  // ------------------------------------------------------------ communication
+  // EC-2. Metadata carries IDENTIFIERS AND CODES ONLY — never a subject, a
+  // sender, a filename or a body. The discard COMMENT stays in ec_triage_item;
+  // only its reason_code travels, exactly as WES-4 does for rejection reasons.
+  //
+  // CORRESPONDENCE_RECEIVED is RESERVED, deliberately. EC-1's capture pipeline
+  // is a multi-step application sequence, not a single transaction, so nothing
+  // may claim the trigger/rpc guarantee for it. Declaring it now fixes the name
+  // so a later phase adds emission rather than a second vocabulary.
+  { type: "CORRESPONDENCE_RECEIVED", domain: "communication", version: 1, emission: "reserved", metadataKeys: ["triage_item_id", "message_id", "mailbox_id"], clientSafe: false, labelFr: "Correspondance reçue" },
+  { type: "CORRESPONDENCE_ASSIGNED", domain: "communication", version: 1, emission: "rpc", metadataKeys: ["triage_item_id", "message_id"], clientSafe: false, labelFr: "Correspondance attribuée" },
+  { type: "CORRESPONDENCE_REASSIGNED", domain: "communication", version: 1, emission: "rpc", metadataKeys: ["triage_item_id", "message_id"], clientSafe: false, labelFr: "Correspondance réattribuée" },
+  // The one event whose subject is the DOSSIER — this is what places a customer
+  // interaction on that shipment's timeline.
+  { type: "CORRESPONDENCE_ATTACHED", domain: "communication", version: 1, emission: "rpc", metadataKeys: ["triage_item_id", "message_id"], clientSafe: false, labelFr: "Correspondance rattachée au dossier" },
+  { type: "CORRESPONDENCE_QUOTATION_HANDOFF", domain: "communication", version: 1, emission: "rpc", metadataKeys: ["triage_item_id", "message_id"], clientSafe: false, labelFr: "Correspondance orientée vers une cotation" },
+  { type: "CORRESPONDENCE_RESOLVED", domain: "communication", version: 1, emission: "rpc", metadataKeys: ["triage_item_id", "message_id", "outcome"], clientSafe: false, labelFr: "Correspondance traitée" },
+  { type: "CORRESPONDENCE_DISCARDED", domain: "communication", version: 1, emission: "rpc", metadataKeys: ["triage_item_id", "message_id", "reason_code"], clientSafe: false, labelFr: "Correspondance rejetée" },
 
   // ------------------------------------------------------------------- policy
   { type: "POLICY_ACTIVATED", domain: "policy", version: 1, emission: "rpc", metadataKeys: ["scope", "version"], clientSafe: false, labelFr: "Politique activée" },

@@ -24,6 +24,9 @@ const DOMAIN_TONE: Record<EventDomain, string> = {
   policy: "bg-violet-600",
   ledger: "bg-slate-300",
   process: "bg-indigo-600",
+  // EC-2: customer correspondence attached to this dossier — the communication
+  // dimension of the shipment timeline.
+  communication: "bg-rose-600",
 };
 
 const METADATA_LABELS: Record<string, string> = {
