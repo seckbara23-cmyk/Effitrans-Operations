@@ -31,7 +31,11 @@ export type HrEventKind =
   | "onboarding_completed"
   | "onboarding_cancelled"
   | "asset_assigned"
-  | "asset_returned";
+  | "asset_returned"
+  | "leave_requested"
+  | "leave_approved"
+  | "leave_refused"
+  | "leave_cancelled";
 
 /** French labels for the projection — one entry per kind, exhaustively. */
 export const HR_EVENT_LABEL_FR: Record<HrEventKind, string> = {
@@ -51,6 +55,10 @@ export const HR_EVENT_LABEL_FR: Record<HrEventKind, string> = {
   onboarding_cancelled: "Intégration annulée",
   asset_assigned: "Équipement attribué",
   asset_returned: "Équipement restitué",
+  leave_requested: "Congé demandé",
+  leave_approved: "Congé approuvé",
+  leave_refused: "Congé refusé",
+  leave_cancelled: "Congé annulé",
 };
 
 export type EmitInput = {

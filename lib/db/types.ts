@@ -3407,6 +3407,30 @@ export type Database = {
         Update: { parsed?: unknown; status?: string };
         Relationships: [];
       };
+      hr_leave_category: {
+        Row: { id: string; tenant_id: string; code: string; label_fr: string; is_paid: boolean | null; requires_evidence: boolean; is_provisional: boolean; is_active: boolean; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; code: string; label_fr: string; is_paid?: boolean | null; requires_evidence?: boolean; is_provisional?: boolean; is_active?: boolean };
+        Update: { label_fr?: string; is_paid?: boolean | null; requires_evidence?: boolean; is_provisional?: boolean; is_active?: boolean };
+        Relationships: [];
+      };
+      hr_leave_entitlement: {
+        Row: { id: string; tenant_id: string; employee_id: string; category_id: string; period_start: string; period_end: string; opening_tenths: number; accrued_tenths: number; taken_tenths: number; note: string | null; created_by: string | null; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; employee_id: string; category_id: string; period_start: string; period_end: string; opening_tenths?: number; accrued_tenths?: number; taken_tenths?: number; note?: string | null; created_by?: string | null };
+        Update: { opening_tenths?: number; accrued_tenths?: number; taken_tenths?: number; note?: string | null; period_end?: string };
+        Relationships: [];
+      };
+      hr_leave_request: {
+        Row: { id: string; tenant_id: string; employee_id: string; category_id: string; status: string; start_date: string; end_date: string; day_tenths: number; reason: string | null; evidence_document_id: string | null; requested_by: string; submitted_at: string | null; approved_by: string | null; decided_at: string | null; decision_note: string | null; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; employee_id: string; category_id: string; status?: string; start_date: string; end_date: string; day_tenths: number; reason?: string | null; evidence_document_id?: string | null; requested_by: string };
+        Update: { status?: string; submitted_at?: string | null; decision_note?: string | null; evidence_document_id?: string | null };
+        Relationships: [];
+      };
+      hr_attendance_day: {
+        Row: { id: string; tenant_id: string; employee_id: string; work_date: string; worked_minutes: number; source: string; note: string | null; recorded_by: string | null; recorded_at: string };
+        Insert: { id?: string; tenant_id: string; employee_id: string; work_date: string; worked_minutes: number; source?: string; note?: string | null; recorded_by?: string | null };
+        Update: { worked_minutes?: number; source?: string; note?: string | null };
+        Relationships: [];
+      };
       hr_checklist_template: {
         Row: { id: string; tenant_id: string; code: string; label_fr: string; is_active: boolean; created_at: string; updated_at: string };
         Insert: { id?: string; tenant_id: string; code: string; label_fr: string; is_active?: boolean };
@@ -4006,6 +4030,14 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      hr_decide_leave_request: {
+        Args: { p_tenant: string; p_request: string; p_actor: string; p_decision: string; p_note?: string | null };
+        Returns: string;
+      };
+      hr_cancel_leave_request: {
+        Args: { p_tenant: string; p_request: string; p_actor: string; p_reason: string };
+        Returns: string;
+      };
       hr_assign_equipment: {
         Args: { p_tenant: string; p_equipment: string; p_employee: string; p_actor: string; p_expected_return?: string | null; p_condition?: string | null; p_note?: string | null };
         Returns: string;

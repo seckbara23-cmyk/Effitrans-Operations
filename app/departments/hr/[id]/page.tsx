@@ -23,6 +23,9 @@ import { listEmployees } from "@/lib/hr/read";
 import { EmployeeFilePanel } from "@/components/hr/employee-file-panel";
 import { listDocumentTypes, listEmployeeDocuments, listEmployeeContracts } from "@/lib/hr/employee-file";
 import { listEmployeeCustody, listEquipment, listEquipmentTypes, getLiveOnboardingCase, ONBOARDING_STATUS_FR, RETURN_OUTCOME_FR } from "@/lib/hr/onboarding";
+import { deriveEmployeePresence, listEntitlements, listLeaveRequests, withBalances, LEAVE_STATUS_FR } from "@/lib/hr/leave";
+import { PRESENCE_LABEL_FR } from "@/lib/hr/leave/presence";
+import { formatTenths } from "@/lib/hr/leave/balance";
 
 export const metadata: Metadata = { title: "Employé" };
 export const dynamic = "force-dynamic";
@@ -60,6 +63,12 @@ export default async function EmployeeProfilePage({ params }: { params: { id: st
     listEmployees(user.tenantId),
   ]);
   const canSeeSensitive = hasPermission(permissions, "hr:sensitive:read");
+  const [presence, entitlements, leaveRequests] = await Promise.all([
+    deriveEmployeePresence(user.tenantId, employee.id, employee.status),
+    listEntitlements(user.tenantId, employee.id),
+    listLeaveRequests(user.tenantId, employee.id),
+  ]);
+  const balances = withBalances(entitlements);
   const [custody, allEquipment, eqTypes, liveCase] = await Promise.all([
     listEmployeeCustody(user.tenantId, employee.id),
     listEquipment(user.tenantId),
@@ -173,6 +182,40 @@ export default async function EmployeeProfilePage({ params }: { params: { id: st
         canManage={canManage}
         currentUserId={user.id}
       />
+      {/* HR-5 — congés : le statut de présence est DÉDUIT, jamais stocké. */}
+      <section className="surface p-4">
+        <h2 className="mb-3 text-sm font-semibold text-navy-900">
+          Congés <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+            {PRESENCE_LABEL_FR[presence]} (déduit)
+          </span>
+        </h2>
+        {balances.length === 0 ? <p className="text-sm text-slate-500">Aucun droit à congé saisi.</p> : (
+          <ul className="space-y-1 text-sm">
+            {balances.map((b) => (
+              <li key={b.id} className="flex flex-wrap items-center gap-2">
+                <span className="tabular text-xs text-slate-400">{b.period_start} → {b.period_end}</span>
+                <span className="text-navy-900">Restant {formatTenths(b.balance.remainingTenths)}</span>
+                <span className="text-xs text-slate-400">
+                  (ouverture {formatTenths(b.opening_tenths)} + acquis {formatTenths(b.accrued_tenths)} − pris {formatTenths(b.taken_tenths)})
+                </span>
+                {b.balance.overdrawn && <span className="text-xs text-red-600">dépassement</span>}
+              </li>
+            ))}
+          </ul>
+        )}
+        {leaveRequests.length > 0 && (
+          <ul className="mt-3 space-y-1 border-t border-slate-100 pt-2 text-sm text-slate-600">
+            {leaveRequests.slice(0, 5).map((r) => (
+              <li key={r.id} className="flex flex-wrap items-center gap-2">
+                <span className="tabular text-xs text-slate-400">{r.start_date} → {r.end_date}</span>
+                <span className="tabular text-xs">{formatTenths(r.day_tenths)}</span>
+                <span className="text-xs">{LEAVE_STATUS_FR[r.status] ?? r.status}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
       {/* HR-4 — équipements confiés (attribution depuis l'espace Équipements) */}
       <section className="surface p-4">
         <h2 className="mb-3 text-sm font-semibold text-navy-900">Équipements confiés</h2>

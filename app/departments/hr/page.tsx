@@ -20,6 +20,7 @@ import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { employeeStats } from "@/lib/hr/read";
 import { hrDashboardCounts, getHrConfiguration } from "@/lib/hr/organization";
 import { hrOperationsCounts } from "@/lib/hr/onboarding";
+import { leaveCounts } from "@/lib/hr/leave";
 
 export const metadata: Metadata = { title: "Ressources humaines" };
 export const dynamic = "force-dynamic";
@@ -59,11 +60,12 @@ export default async function HrDashboardPage() {
   const canConfigure = hasPermission(permissions, "hr:config:manage");
   const canManage = hasPermission(permissions, "hr:manage");
 
-  const [stats, counts, config, ops] = await Promise.all([
+  const [stats, counts, config, ops, leave] = await Promise.all([
     employeeStats(user.tenantId),
     hrDashboardCounts(user.tenantId),
     getHrConfiguration(user.tenantId),
     hrOperationsCounts(user.tenantId),
+    leaveCounts(user.tenantId),
   ]);
 
   return (
@@ -88,6 +90,8 @@ export default async function HrDashboardPage() {
         <StatCard label="Tâches d'intégration en retard" value={ops.overdueItems} tone={ops.overdueItems > 0 ? "amber" : "slate"} />
         <StatCard label="Équipements attribués" value={ops.assetsAssigned} tone="teal" />
         <StatCard label="Restitutions attendues" value={ops.assetsAwaitingReturn} tone={ops.assetsAwaitingReturn > 0 ? "amber" : "slate"} />
+        <StatCard label="Congés à décider" value={leave.pending} tone={leave.pending > 0 ? "amber" : "slate"} />
+        <StatCard label="En congé aujourd'hui" value={leave.onLeaveToday} tone="navy" />
       </div>
 
       {config === null && (
@@ -116,7 +120,7 @@ export default async function HrDashboardPage() {
         )}
         <WorkspaceTile href="/departments/hr/onboarding" title="Intégration" subtitle="Dossiers, check-lists et suivi des accès" />
         <WorkspaceTile href="/departments/hr/equipement" title="Équipements" subtitle="Parc, attribution et restitution" />
-        <DarkTile title="Congés" phase="HR-5" />
+        <WorkspaceTile href="/departments/hr/conges" title="Congés" subtitle="Demandes, droits et présence" />
         <DarkTile title="Performance" phase="HR-6" />
       </div>
     </div>
