@@ -40,6 +40,11 @@ const SYSTEM_MACHINE_ACTIONS = new Set<string>([
   "portal.login.rejected",
   // Phase 3.4 — external GPS/carrier provider webhook (reserved; no human actor).
   "tracking.provider.webhook_received",
+  // Phase EC-1 — inbound email arrives from a mail provider, not a person.
+  // Attribution is the ec_webhook_event row (provider, provider_event_id).
+  "ec.inbound.received",
+  "ec.inbound.quarantined",
+  "ec.inbound.rejected",
 ]);
 
 export function isSystemAction(action: string): boolean {

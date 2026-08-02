@@ -2547,6 +2547,42 @@ export type Database = {
         Update: { tenant_id?: string; year?: number; next_seq?: number };
         Relationships: [];
       };
+      ec_mailbox: {
+        Row: { id: string; tenant_id: string; address: string; label_fr: string; purpose: string; is_active: boolean; note: string | null; created_by: string | null; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; address: string; label_fr: string; purpose?: string; is_active?: boolean; note?: string | null; created_by?: string | null };
+        Update: { label_fr?: string; purpose?: string; is_active?: boolean; note?: string | null };
+        Relationships: [];
+      };
+      ec_webhook_event: {
+        Row: { id: string; tenant_id: string | null; provider: string; provider_event_id: string; signature_valid: boolean; outcome: string; detail: string | null; received_at: string };
+        Insert: { id?: string; tenant_id?: string | null; provider: string; provider_event_id: string; signature_valid: boolean; outcome: string; detail?: string | null };
+        Update: Record<string, never>;
+        Relationships: [];
+      };
+      ec_inbound_message: {
+        Row: { id: string; tenant_id: string | null; mailbox_id: string | null; provider: string; provider_event_id: string; provider_message_id: string | null; message_id: string | null; in_reply_to: string | null; references_header: string | null; thread_key: string | null; from_address: string; from_name: string | null; to_addresses: Json; cc_addresses: Json; subject: string | null; raw_sha256: string; raw_storage_path: string; raw_size_bytes: number; headers: Json; text_body_path: string | null; html_body_path: string | null; received_at: string; captured_at: string; capture_status: string; quarantine_reason: string | null };
+        Insert: { id?: string; tenant_id?: string | null; mailbox_id?: string | null; provider: string; provider_event_id: string; provider_message_id?: string | null; message_id?: string | null; in_reply_to?: string | null; references_header?: string | null; thread_key?: string | null; from_address: string; from_name?: string | null; to_addresses?: Json; cc_addresses?: Json; subject?: string | null; raw_sha256: string; raw_storage_path: string; raw_size_bytes: number; headers?: Json; text_body_path?: string | null; html_body_path?: string | null; received_at: string; capture_status?: string; quarantine_reason?: string | null };
+        Update: Record<string, never>;
+        Relationships: [];
+      };
+      ec_inbound_attachment: {
+        Row: { id: string; tenant_id: string | null; message_id: string; filename: string; original_filename: string | null; mime_type: string | null; size_bytes: number; sha256: string | null; storage_path: string | null; stored: boolean; rejection_reason: string | null; created_at: string };
+        Insert: { id?: string; tenant_id?: string | null; message_id: string; filename: string; original_filename?: string | null; mime_type?: string | null; size_bytes?: number; sha256?: string | null; storage_path?: string | null; stored?: boolean; rejection_reason?: string | null };
+        Update: Record<string, never>;
+        Relationships: [];
+      };
+      ec_triage_item: {
+        Row: { id: string; tenant_id: string | null; message_id: string; status: string; assigned_to: string | null; assigned_at: string | null; resolved_at: string | null; note: string | null; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id?: string | null; message_id: string; status?: string; assigned_to?: string | null; assigned_at?: string | null; note?: string | null };
+        Update: { status?: string; assigned_to?: string | null; assigned_at?: string | null; resolved_at?: string | null; note?: string | null };
+        Relationships: [];
+      };
+      tenant_ec_inbound_rollout: {
+        Row: { tenant_id: string; enabled: boolean; note: string | null; first_enabled_at: string | null; updated_at: string; updated_by: string | null };
+        Insert: { tenant_id: string; enabled?: boolean; note?: string | null; first_enabled_at?: string | null; updated_by?: string | null };
+        Update: { enabled?: boolean; note?: string | null; first_enabled_at?: string | null; updated_by?: string | null };
+        Relationships: [];
+      };
       communication_message: {
         Row: {
           id: string;

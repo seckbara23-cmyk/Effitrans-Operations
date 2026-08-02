@@ -119,6 +119,12 @@ export const AuditActions = {
   PROVIDER_WEBHOOK_RECEIVED: "provider.webhook.received", // machine
   PROVIDER_WEBHOOK_REPLAYED: "provider.webhook.replayed", // machine (dup/replay/reject)
   PAYMENT_AUTO_RECORDED: "payment.auto_recorded", // machine (webhook success)
+  // Phase EC-1 — inbound email capture. MACHINE events (a mail provider posted;
+  // there is no human actor). Payloads carry identifiers, outcome and a short
+  // classification ONLY — never a subject, body, address, filename or header.
+  EC_INBOUND_RECEIVED: "ec.inbound.received", // machine (captured + routed)
+  EC_INBOUND_QUARANTINED: "ec.inbound.quarantined", // machine (unroutable — kept, tenant-less)
+  EC_INBOUND_REJECTED: "ec.inbound.rejected", // machine (signature refused)
   // Phase 1.12 — Customer Portal
   PORTAL_USER_INVITED: "portal.user.invited",
   PORTAL_USER_ACTIVATED: "portal.user.activated",

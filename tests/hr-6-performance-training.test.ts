@@ -35,11 +35,13 @@ const TRAIN_TABLES = ["hr_training_course", "hr_training_plan", "hr_training_enr
 describe("migration chain — additive, forward-only", () => {
   it("adds exactly two migrations after 77, and touches none of the first 77", () => {
     const all = readdirSync(join(root, "supabase", "migrations")).filter((f) => f.endsWith(".sql")).sort();
-    expect(all.length).toBe(79);
-    expect(all[77]).toBe("20260803000001_hr_performance.sql");
-    expect(all[78]).toBe("20260803000002_hr_training.sql");
-    // Strictly after the HR-5 migration, so the chain replays in order.
-    expect(all[76]).toBe("20260802000003_hr_leave_attendance.sql");
+    // Pinned RELATIVELY, not as a global count: later phases legitimately add
+    // migrations, and a global-count pin would make every future phase look
+    // like a breach of HR-6's guarantee (the HR-5A lesson, applied here).
+    const hr5 = all.indexOf("20260802000003_hr_leave_attendance.sql");
+    expect(hr5).toBeGreaterThan(-1);
+    expect(all[hr5 + 1]).toBe("20260803000001_hr_performance.sql");
+    expect(all[hr5 + 2]).toBe("20260803000002_hr_training.sql");
   });
 
   it("is idempotent DDL and makes no destructive change", () => {
