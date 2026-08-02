@@ -15,7 +15,7 @@
  * every existing write path is still obliged to supply one.
  */
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { TENANT_ROLE_TEMPLATES } from "@/lib/platform/role-templates";
@@ -476,11 +476,22 @@ describe("the DB suite is wired into CI, last, with a readable failure", () => {
     const ci = read(".github/workflows/ci.yml");
     // Each phase appends its suite after the last (the standing rule: newest
     // runs last), so this pin moves to whichever suite is currently newest.
-    const mine = ci.indexOf("rls_commercial_quotation_test.sql");
+    const mine = ci.indexOf("rls_commercial_activation_test.sql");
     const others = [...ci.matchAll(/-f supabase\/tests\/(\w+)\.sql/g)]
       .map((m) => ci.indexOf(`${m[1]}.sql`))
       .filter((i) => i !== mine);
     expect(mine).toBeGreaterThan(Math.max(...others));
+  });
+
+  it("EVERY suite in supabase/tests is wired into CI — none is written and forgotten", () => {
+    // The ordering pin above must be moved by hand each phase, so it cannot
+    // catch the failure that actually matters: a suite that exists in the repo
+    // and never runs anywhere. This check is self-maintaining and does.
+    const ci = read(".github/workflows/ci.yml");
+    const dir = join(root, "supabase", "tests");
+    for (const f of readdirSync(dir).filter((n) => n.endsWith(".sql"))) {
+      expect(ci, `supabase/tests/${f} is not run by CI`).toContain(`-f supabase/tests/${f}`);
+    }
   });
 
   it("surfaces the real SQL error rather than a bare exit code", () => {
@@ -520,8 +531,12 @@ describe("the DB suite is wired into CI, last, with a readable failure", () => {
     }
   });
 
-  it("build-info pins the new migration", () => {
-    expect(LATEST_MIGRATION).toBe("20260806000001_commercial_quotation");
+  it("build-info pins the newest migration on disk", () => {
+    // Read from the directory rather than restating a filename every phase must
+    // come back and edit — the invariant is the PIN, not which file is newest.
+    const migs = readdirSync(join(root, "supabase", "migrations"))
+      .filter((f) => f.endsWith(".sql")).sort();
+    expect(LATEST_MIGRATION).toBe(migs[migs.length - 1].replace(/\.sql$/, ""));
   });
 });
 

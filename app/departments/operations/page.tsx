@@ -18,14 +18,37 @@ export const metadata: Metadata = { title: "Opérations" };
 export const dynamic = "force-dynamic";
 
 /** Any of these grants access to the hub — mirrors the sidebar's permissionsAnyOf. */
-const HUB_ANY_OF = ["file:read", "client:read", "document:read"];
+// EC-3C adds the two quotation authorities. Without them a QUOTATION_MANAGER —
+// whose template is profile:* + quotation:* + messaging — held none of the three
+// original codes, so the hub 404'd and /commercial was unreachable by navigation
+// for the exact role that owns it. The hub renders NO data, only tiles the caller
+// already has permission for, so widening the gate exposes nothing.
+const HUB_ANY_OF = [
+  "file:read", "client:read", "document:read",
+  "quotation:create", "quotation:validate",
+];
 
-const WORKSPACES = [
+/** A tile is gated by ONE permission or by ANY OF a set — never both. */
+type HubTile = {
+  label: string; href: string; desc: string;
+  permission?: string; permissionsAnyOf?: readonly string[];
+};
+
+const WORKSPACES: HubTile[] = [
   { label: "Dossiers", href: "/files", permission: "file:read", desc: "Dossiers d'importation, d'exportation et de transit." },
   { label: "Clients", href: "/clients", permission: "client:read", desc: "Sociétés clientes, contacts et historique des opérations." },
   { label: "Documentation", href: "/departments/documentation", permission: "document:read", desc: "Pièces des dossiers : commerciales, transport, douane, certificats." },
   { label: "Tâches & affectations", href: "/tasks", permission: "task:read", desc: "Actions à mener, échéances et dossiers bloqués." },
   { label: "Communications", href: "/communications", permission: "communication:read", desc: "Communications opérationnelles avec les clients." },
+  // EC-3C — the Commercial workspace. `permissionsAnyOf` because the agents
+  // (quotation:create) and the validating supervisors (quotation:validate) hold
+  // DIFFERENT permissions and both must reach it; DEC-C32 refuses to give the
+  // supervisor quotation:create merely to make things visible.
+  {
+    label: "Commercial", href: "/commercial",
+    permissionsAnyOf: ["quotation:create", "quotation:validate"],
+    desc: "Cotations : préparation, validation interne, envoi et acceptation client.",
+  },
 ];
 
 export default async function OperationsHubPage() {
@@ -33,7 +56,10 @@ export default async function OperationsHubPage() {
   const permissions = await getEffectivePermissions(user.id);
   if (!HUB_ANY_OF.some((p) => hasPermission(permissions, p))) notFound();
 
-  const visible = WORKSPACES.filter((w) => hasPermission(permissions, w.permission));
+  const visible = WORKSPACES.filter((w) => {
+    if (w.permissionsAnyOf) return w.permissionsAnyOf.some((p) => hasPermission(permissions, p));
+    return w.permission ? hasPermission(permissions, w.permission) : false;
+  });
 
   return (
     <div className="animate-fade-in space-y-6">

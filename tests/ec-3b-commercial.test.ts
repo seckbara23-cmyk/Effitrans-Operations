@@ -28,6 +28,8 @@ const code = (p: string) =>
   read(p).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "").replace(/^\s*--.*$/gm, "");
 
 const MIG = "supabase/migrations/20260806000001_commercial_quotation.sql";
+/** EC-3C — the activation migration that assigns the ratified matrix. */
+const ACTIVATION = "supabase/migrations/20260807000001_commercial_activation.sql";
 const ACTIONS = "lib/commercial/actions.ts";
 const MONEY = "lib/commercial/money.ts";
 const PDF = "lib/commercial/pdf.ts";
@@ -35,9 +37,10 @@ const SERVICE = "lib/commercial/service.ts";
 
 // ---------------------------------------------------------------------------
 describe("migration chain", () => {
-  it("adds one migration after 81 and touches none before it", () => {
+  it("EC-3B is migration 82 and EC-3C adds exactly one more, touching none before", () => {
     const all = readdirSync(join(root, "supabase", "migrations")).filter((f) => f.endsWith(".sql")).sort();
-    expect(all.length).toBe(82);
+    expect(all.length).toBe(83);
+    expect(all[82]).toBe("20260807000001_commercial_activation.sql");
     expect(all[81]).toBe("20260806000001_commercial_quotation.sql");
     expect(all[80]).toBe("20260805000001_ec_triage_outcomes.sql");
   });
@@ -68,26 +71,75 @@ describe("permissions — act 2 gains its authority; the blanket grant is revoke
     expect(seed).toMatch(/quotation:create[\s\S]{0,200}SYSTEM_ADMIN/);
   });
 
-  it("the revocation holds at EVERY source, not just the migration", () => {
-    // The migration's DELETE only cleans rows that already exist. The seed runs
-    // AFTER migrations under `supabase db reset`, and the role templates
-    // provision every NEW tenant — so a grant left in either one silently
-    // reinstates what the freeze withdrew. CI caught this the only way it could:
-    // the RLS suite read the live grant count (9) while this file's text-only
-    // assertions were all green. Both sources are now checked directly.
-    const LEGACY = /quotation:(create|send|approve)/;
+  it("the EXACT ratified matrix holds at all THREE sources (DEC-C32)", () => {
+    // This contract began life as "no quotation grant exists anywhere", which
+    // was right while EC-3B held every authority ungranted. Migration 83 makes
+    // some grants legitimate, so an absence check would now fail correctly and
+    // invite being weakened or deleted — and deleting it would remove the only
+    // guard on the three-source rule. It became an EXACT-MATRIX assertion
+    // instead: the same lesson as the information_schema absence check.
+    //
+    // The migration's DELETE only cleans rows that already exist; the seed runs
+    // AFTER migrations under `supabase db reset`; the templates provision every
+    // NEW tenant. All three must state the same matrix or the database
+    // disagrees with itself — which is exactly the defect CI caught in EC-3B.
+    const MATRIX: Record<string, string[]> = {
+      QUOTATION_MANAGER: ["quotation:approve", "quotation:create", "quotation:send"],
+      OPS_SUPERVISOR: ["quotation:validate"],
+    };
+    const ALL = ["quotation:create", "quotation:send", "quotation:approve", "quotation:validate"];
 
-    const seed = code("supabase/seed.sql");
-    for (const stmt of seed.split(/;\s*\n/)) {
-      if (/insert into public\.role_permission/i.test(stmt)) {
-        expect(stmt, "seed.sql re-grants a withdrawn quotation authority").not.toMatch(LEGACY);
+    /** Quotation codes a role receives, per source, as a sorted set. */
+    function fromSeed(role: string): string[] {
+      const seed = code("supabase/seed.sql");
+      const found = new Set<string>();
+      for (const stmt of seed.split(/;\s*\n/)) {
+        if (!/insert into public\.role_permission/i.test(stmt)) continue;
+        if (!new RegExp(`'${role}'`).test(stmt)) continue;
+        for (const c of ALL) if (stmt.includes(`'${c}'`)) found.add(c);
       }
+      return [...found].sort();
+    }
+    function fromTemplate(role: string): string[] {
+      const tpl = code("lib/platform/role-templates.ts");
+      const start = tpl.indexOf(`key: "${role}"`);
+      expect(start, `${role} missing from role-templates`).toBeGreaterThan(-1);
+      const next = tpl.indexOf('key: "', start + 10);
+      const block = tpl.slice(start, next === -1 ? tpl.length : next);
+      return ALL.filter((c) => block.includes(`"${c}"`)).sort();
+    }
+    function fromMigration(role: string): string[] {
+      const sql = code(ACTIVATION);
+      const found = new Set<string>();
+      for (const stmt of sql.split(/;\s*\n/)) {
+        if (!/insert into public\.role_permission/i.test(stmt)) continue;
+        if (!new RegExp(`'${role}'`).test(stmt)) continue;
+        for (const c of ALL) if (stmt.includes(`'${c}'`)) found.add(c);
+      }
+      return [...found].sort();
     }
 
-    // Templates: no role may carry a quotation authority in its permission list.
-    const tpl = code("lib/platform/role-templates.ts");
-    expect(tpl, "a role template still grants a withdrawn quotation authority")
-      .not.toMatch(new RegExp(`"${LEGACY.source}"`));
+    for (const [role, expected] of Object.entries(MATRIX)) {
+      const want = [...expected].sort();
+      expect(fromMigration(role), `migration 83: ${role}`).toEqual(want);
+      expect(fromSeed(role), `seed.sql: ${role}`).toEqual(want);
+      expect(fromTemplate(role), `role-templates: ${role}`).toEqual(want);
+    }
+
+    // SYSTEM_ADMIN holds NOTHING, at every source. Checked separately and
+    // explicitly, because this is the invariant the whole model rests on.
+    expect(fromSeed("SYSTEM_ADMIN"), "seed.sql grants SYSTEM_ADMIN a quotation authority").toEqual([]);
+    expect(fromTemplate("SYSTEM_ADMIN"), "a template grants SYSTEM_ADMIN a quotation authority").toEqual([]);
+    expect(fromMigration("SYSTEM_ADMIN"), "migration 83 grants SYSTEM_ADMIN a quotation authority").toEqual([]);
+
+    // And no OTHER role may pick one up anywhere.
+    const templates = code("lib/platform/role-templates.ts");
+    for (const role of Object.keys(MATRIX)) void role;
+    const holders = [...templates.matchAll(/key: "([A-Z_]+)"/g)].map((m) => m[1]);
+    for (const role of holders) {
+      if (role in MATRIX) continue;
+      expect(fromTemplate(role), `${role} must hold no quotation authority`).toEqual([]);
+    }
   });
 
   it("grants nothing and never names SYSTEM_ADMIN as a recipient", () => {
@@ -537,11 +589,22 @@ describe("security and scope", () => {
     }
   });
 
-  it("EC-3C/EC-3D scope is not started: no workspace route, no send-mail, no conversion orchestration", () => {
-    expect(existsSync(join(root, "app", "commercial"))).toBe(false);
+  it("EC-3D scope is not started: Commercial still creates no dossier", () => {
+    // This marker used to assert that app/commercial did not exist. EC-3C
+    // legitimately created it, so the claim was re-aimed at what EC-3D owns
+    // rather than deleted — a phase-boundary marker is only useful while it
+    // names the NEXT boundary.
+    expect(existsSync(join(root, "app", "commercial"))).toBe(true);
     const a = code(ACTIONS);
-    // recordConversion RECORDS; it does not orchestrate creation.
+    // recordConversion RECORDS a dossier Operations made; it never makes one.
     expect(a).toContain("export async function recordConversion");
     expect(a).not.toContain("createFile(");
+    // No commercial surface writes into dossier internals, at any layer.
+    for (const f of ["lib/commercial/actions.ts", "lib/commercial/service.ts",
+                     "lib/commercial/send.ts", "lib/commercial/queues.ts"]) {
+      const src = code(f);
+      expect(src, `${f} inserts into operational_file`)
+        .not.toMatch(/from\("operational_file"\)[\s\S]{0,80}\.(insert|update|upsert|delete)\(/);
+    }
   });
 });

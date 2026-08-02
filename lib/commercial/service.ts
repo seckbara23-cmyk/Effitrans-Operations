@@ -12,11 +12,54 @@ import "server-only";
  * (the WES-9C reasoning applied to money).
  */
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
+import { getCurrentUser } from "@/lib/auth/current-user";
+import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { quotationTotals, type QuotationTotals } from "./money";
 import type { QuotationStatus, RequestStatus, AcceptanceKind } from "./model";
 
 export * from "./model";
 export * from "./money";
+
+/**
+ * The permissions that may READ commercial data — DEC-C32, and the same pair
+ * the SELECT policies name. Exported so the pages, the queues and the tests all
+ * read the set from one place instead of three drifting copies.
+ */
+export const COMMERCIAL_READ_PERMISSIONS = ["quotation:create", "quotation:validate"] as const;
+
+export class CommercialAccessError extends Error {
+  constructor(reason: string) {
+    super(`[commercial] read refused: ${reason}`);
+    this.name = "CommercialAccessError";
+  }
+}
+
+/**
+ * EVERY read below runs on the admin client, which BYPASSES RLS. The policies
+ * on `quotation*` are therefore defence in depth for direct PostgREST access —
+ * they are NOT what protects these functions. This gate is.
+ *
+ * It checks two things, because either alone is insufficient:
+ *
+ *   1. the caller holds `quotation:create` OR `quotation:validate` — a
+ *      supervisor who may only validate still has to SEE what they validate,
+ *      and DEC-C32 refuses to solve that by granting them `create`;
+ *   2. the `tenantId` the caller passed is their OWN. The admin client would
+ *      happily read another tenant's rows, and "the id came from a tenant-scoped
+ *      row" is exactly the reasoning that produces cross-tenant reads later.
+ *
+ * Returns the permissions so callers can shape a queue without re-resolving.
+ */
+export async function assertCommercialRead(tenantId: string): Promise<string[]> {
+  const user = await getCurrentUser();
+  if (!user) throw new CommercialAccessError("not authenticated");
+  if (user.tenantId !== tenantId) throw new CommercialAccessError("cross-tenant read");
+  const permissions = await getEffectivePermissions(user.id);
+  if (!COMMERCIAL_READ_PERMISSIONS.some((c) => hasPermission(permissions, c))) {
+    throw new CommercialAccessError("missing quotation:create or quotation:validate");
+  }
+  return permissions;
+}
 
 export type QuotationLine = {
   id: string;
@@ -92,6 +135,7 @@ function mapQuotation(r: any): Quotation {
 export async function listRequests(
   tenantId: string, status?: RequestStatus,
 ): Promise<QuotationRequest[]> {
+  await assertCommercialRead(tenantId);
   const s = getAdminSupabaseClient();
   let q = s.from("quotation_request")
     .select("id, client_id, reference, subject, triage_item_id, status, created_at, client:client_id(name)")
@@ -118,6 +162,7 @@ export async function getRequest(tenantId: string, requestId: string): Promise<Q
 
 /** Every version of a request's quotation, newest first. History is permanent. */
 export async function listVersions(tenantId: string, requestId: string): Promise<Quotation[]> {
+  await assertCommercialRead(tenantId);
   const s = getAdminSupabaseClient();
   const { data, error } = await s.from("quotation").select(Q_COLS)
     .eq("tenant_id", tenantId).eq("request_id", requestId)
@@ -127,6 +172,7 @@ export async function listVersions(tenantId: string, requestId: string): Promise
 }
 
 export async function getQuotation(tenantId: string, quotationId: string): Promise<Quotation | null> {
+  await assertCommercialRead(tenantId);
   const s = getAdminSupabaseClient();
   const { data, error } = await s.from("quotation").select(Q_COLS)
     .eq("tenant_id", tenantId).eq("id", quotationId).maybeSingle();
@@ -135,6 +181,7 @@ export async function getQuotation(tenantId: string, quotationId: string): Promi
 }
 
 export async function listLines(tenantId: string, quotationId: string): Promise<QuotationLine[]> {
+  await assertCommercialRead(tenantId);
   const s = getAdminSupabaseClient();
   const { data, error } = await s.from("quotation_line")
     .select("id, position, description, quantity_milli, unit_amount_minor, tax_rate_bp")
@@ -157,6 +204,95 @@ export async function quotationWithTotals(
   return { quotation, lines, totals: quotationTotals(lines) };
 }
 
+/* ========================================================================== */
+/* EC-3C — workspace reads                                                    */
+/* ========================================================================== */
+
+export type QuotationListItem = Quotation & {
+  clientName: string | null;
+  subject: string | null;
+};
+
+/**
+ * Every quotation the workspace shows, newest first, enriched with the two
+ * labels a queue needs. One query with joins rather than a read-per-row: the
+ * queues are partitions of THIS list (lib/commercial/queues.ts), so the page
+ * loads the set once and slices it in memory.
+ */
+export async function listQuotations(
+  tenantId: string, statuses?: readonly QuotationStatus[],
+): Promise<QuotationListItem[]> {
+  await assertCommercialRead(tenantId);
+  const s = getAdminSupabaseClient();
+  let q = s.from("quotation")
+    .select(`${Q_COLS}, client:client_id(name), request:request_id(subject)`)
+    .eq("tenant_id", tenantId);
+  if (statuses && statuses.length > 0) q = q.in("status", statuses as string[]);
+  const { data, error } = await q.order("created_at", { ascending: false }).limit(300);
+  if (error) throw new Error(`[commercial] quotations read failed: ${error.message}`);
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  return (data ?? []).map((r: any) => {
+    const c = Array.isArray(r.client) ? r.client[0] : r.client;
+    const rq = Array.isArray(r.request) ? r.request[0] : r.request;
+    return { ...mapQuotation(r), clientName: c?.name ?? null, subject: rq?.subject ?? null };
+  });
+  /* eslint-enable @typescript-eslint/no-explicit-any */
+}
+
+/** Clients for the drafting picker. Tenant-scoped; no cross-tenant client is selectable. */
+export async function listCommercialClients(
+  tenantId: string,
+): Promise<{ id: string; name: string }[]> {
+  await assertCommercialRead(tenantId);
+  const s = getAdminSupabaseClient();
+  const { data, error } = await s.from("client").select("id, name")
+    .eq("tenant_id", tenantId).order("name").limit(500);
+  if (error) throw new Error(`[commercial] clients read failed: ${error.message}`);
+  return (data ?? []).map((c) => ({ id: c.id, name: c.name }));
+}
+
+export type QuotationHandoff = {
+  triageItemId: string;
+  clientId: string | null;
+  clientName: string | null;
+  recordedAt: string | null;
+  alreadyLinked: boolean;
+};
+
+/**
+ * EC-2 handoffs — triage items resolved as HANDOFF_TO_QUOTATION.
+ *
+ * EC-2's contract is that the handoff records INTENT and mints no quotation
+ * row, so these are shown as an inbox: an agent opens one DELIBERATELY, which
+ * is the only thing that creates a request. Nothing here auto-creates, and
+ * EC-2's quarantine semantics are untouched — a quarantined item never carries
+ * an outcome, so it can never appear in this list.
+ */
+export async function listQuotationHandoffs(tenantId: string): Promise<QuotationHandoff[]> {
+  await assertCommercialRead(tenantId);
+  const s = getAdminSupabaseClient();
+  const [{ data, error }, { data: linked }] = await Promise.all([
+    s.from("ec_triage_item")
+      .select("id, outcome_client_id, outcome_recorded_at, client:outcome_client_id(name)")
+      .eq("tenant_id", tenantId).eq("outcome", "HANDOFF_TO_QUOTATION")
+      .order("outcome_recorded_at", { ascending: false }).limit(100),
+    s.from("quotation_request").select("triage_item_id")
+      .eq("tenant_id", tenantId).not("triage_item_id", "is", null),
+  ]);
+  if (error) throw new Error(`[commercial] handoffs read failed: ${error.message}`);
+  const used = new Set((linked ?? []).map((r) => r.triage_item_id as string));
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  return (data ?? []).map((r: any) => {
+    const c = Array.isArray(r.client) ? r.client[0] : r.client;
+    return {
+      triageItemId: r.id, clientId: r.outcome_client_id ?? null,
+      clientName: c?.name ?? null, recordedAt: r.outcome_recorded_at ?? null,
+      alreadyLinked: used.has(r.id),
+    };
+  });
+  /* eslint-enable @typescript-eslint/no-explicit-any */
+}
+
 export type CommercialCounts = {
   openRequests: number;
   pendingValidation: number;
@@ -166,6 +302,7 @@ export type CommercialCounts = {
 
 /** Live counters for the workspace. No scheduler; computed on load. */
 export async function commercialCounts(tenantId: string): Promise<CommercialCounts> {
+  await assertCommercialRead(tenantId);
   const s = getAdminSupabaseClient();
   const head = { count: "exact" as const, head: true };
   const [open, pending, sent, accepted] = await Promise.all([

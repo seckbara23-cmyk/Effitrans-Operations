@@ -10,6 +10,7 @@ import { describe, it, expect } from "vitest";
 import { resolveCurrentPosition, type PositionInputs } from "@/lib/shipping/intelligence/position";
 import { classifyFreshness, freshnessLabel, ageLabelFr } from "@/lib/shipping/intelligence/freshness";
 import { sourceLabelFr, confidenceLabelFr } from "@/lib/shipping/intelligence/events";
+import { LATEST_MIGRATION } from "@/lib/platform/ops/build-info";
 
 const read = (p: string) => readFileSync(fileURLToPath(new URL(p, import.meta.url)), "utf8");
 const code = (p: string) => read(p).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
@@ -171,6 +172,10 @@ describe("build-info stays pinned to the new migration", () => {
   it("LATEST_MIGRATION matches the newest file on disk", () => {
     const dir = fileURLToPath(new URL("../supabase/migrations", import.meta.url));
     const migs = readdirSync(dir).filter((f) => f.endsWith(".sql")).sort();
-    expect(migs[migs.length - 1]).toBe("20260806000001_commercial_quotation.sql");
+    // Was a hardcoded filename, which tested the directory against itself and
+    // needed editing every phase. Now it checks what the name promises:
+    // build-info's constant equals the newest migration on disk.
+    const newest = migs[migs.length - 1].replace(/\.sql$/, "");
+    expect(LATEST_MIGRATION).toBe(newest);
   });
 });

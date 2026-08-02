@@ -640,15 +640,36 @@ where r.tenant_id = '00000000-0000-0000-0000-000000000001'
   and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR', 'FINANCE_OFFICER', 'COLLECTIONS_OFFICER')
 on conflict do nothing;
 
--- EC-3B — the Phase-5.0B placeholder grant of quotation:create/send/approve to
--- SYSTEM_ADMIN, OPS_SUPERVISOR and QUOTATION_MANAGER is DELIBERATELY ABSENT.
+-- EC-3C — the quotation authority matrix ratified as DEC-C32. This seed runs
+-- AFTER migrations under `supabase db reset`, so it must state the SAME matrix
+-- as migration 83 and lib/platform/role-templates.ts. EC-3B proved why: a grant
+-- present in only some of the three sources produces a database that disagrees
+-- with itself, and the disagreement is invisible until an RLS suite counts the
+-- live grants. Parity is enforced by tests/role-templates.test.ts and by the
+-- exact-matrix contract in tests/ec-3b-commercial.test.ts.
 --
--- Migration 82 withdraws it (the EC-3A freeze: now that the authorities are
--- real, who holds them is a ratification — RATIFY-EC3-1 — not a default). The
--- seed runs AFTER migrations under `supabase db reset`, so leaving the grant
--- here silently reinstated it and let SYSTEM_ADMIN read quotations through
--- quotation_select. Nothing re-grants these until management answers.
--- Mirrored in lib/platform/role-templates.ts (parity: tests/role-templates.test.ts).
+-- SYSTEM_ADMIN is ABSENT from both statements, deliberately and permanently:
+-- an administrator must never prepare, validate, send or accept an offer.
+
+-- Quotation agents — prepare, send, and record the customer's acceptance.
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code in ('quotation:create', 'quotation:send', 'quotation:approve')
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code = 'QUOTATION_MANAGER'
+on conflict do nothing;
+
+-- Internal managerial validation ONLY. Not quotation:create — DEC-C32 refuses
+-- granting it to OPS_SUPERVISOR merely to make quotations readable; the SELECT
+-- policies were widened to `create OR validate` instead.
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'quotation:validate'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code = 'OPS_SUPERVISOR'
+on conflict do nothing;
 
 insert into public.role_permission (role_id, permission_id)
 select r.id, p.id

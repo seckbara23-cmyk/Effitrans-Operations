@@ -440,7 +440,10 @@ describe("Phase 9.0C adds NO schema and NO permissions", () => {
   it("59 — no new migration ships with 9.0C (latest is still the 9.0B structures migration)", () => {
     const dir = fileURLToPath(new URL("../supabase/migrations/", import.meta.url));
     const files = readdirSync(dir).filter((f) => f.endsWith(".sql")).sort();
-    expect(files[files.length - 1]).toBe("20260806000001_commercial_quotation.sql");
+    // The claim is that 9.0C shipped NO migration of its own — that is what
+    // `.some()` below states, and it stays true no matter what later phases add.
+    // Naming the newest file here asserted something about every FUTURE phase
+    // instead, so each one had to come back and edit this line.
     expect(files.some((f) => f.includes("intake"))).toBe(false);
   });
 

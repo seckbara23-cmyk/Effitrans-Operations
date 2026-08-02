@@ -384,10 +384,14 @@ describe("Phase 9.0E permission reuse and scope", () => {
   it("51 — build-info tracks the latest migration + count in lockstep", () => {
     const dir = fileURLToPath(new URL("../supabase/migrations/", import.meta.url));
     const files = readdirSync(dir).filter((f) => f.endsWith(".sql")).sort();
-    // 11.0B (expense documents) is the current newest; build-info is pinned to it.
-    expect(files[files.length - 1]).toBe("20260806000001_commercial_quotation.sql");
+    // Compared against the DIRECTORY, not a hardcoded name. The pin is what
+    // matters — "build-info tracks the newest migration" — and naming the file
+    // here made every later phase edit this test to restate a fact it already
+    // reads from disk. It now stays true without maintenance and still fails
+    // the moment build-info drifts.
+    const newest = files[files.length - 1].replace(/\.sql$/, "");
     const buildInfo = read("../lib/platform/ops/build-info.ts");
-    expect(buildInfo).toContain('LATEST_MIGRATION = "20260806000001_commercial_quotation"');
+    expect(buildInfo).toContain(`LATEST_MIGRATION = "${newest}"`);
     expect(buildInfo).toContain(`MIGRATION_COUNT = ${files.length}`);
   });
 

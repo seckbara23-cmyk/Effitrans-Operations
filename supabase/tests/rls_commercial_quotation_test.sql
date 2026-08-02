@@ -1,6 +1,6 @@
 -- RLS + invariants test — EC-3B Commercial/Quotation (migration 82). BEGIN/ROLLBACK.
 -- Proves: the Phase-5.0D blanket grant is REVOKED (0 grants on all four codes,
--- SYSTEM_ADMIN included); quotation:validate exists and is granted to NOBODY;
+-- SYSTEM_ADMIN included); the EXACT ratified grant matrix (DEC-C32) is live;
 -- MAKER-CHECKER is structural (the preparer cannot validate, via RPC AND via
 -- CHECK); a sent quotation is immutable and its lines are frozen; only ONE live
 -- version may exist per request; revision supersedes and the old version stays
@@ -60,7 +60,7 @@ create temp table _r (check_name text, value int) on commit drop;
 
 do $$
 declare
-  validate_perm int; legacy_grants int; validate_grants int;
+  validate_perm int; matrix_grants int; offmatrix_grants int; admin_grants int;
   q1 uuid; q2 uuid; num text;
   same_actor_rejected int := 0; check_rejected int := 0;
   send_before_validate_rejected int := 0; frozen_rejected int := 0;
@@ -74,15 +74,40 @@ declare
 begin
   perform set_config('role', 'postgres', true);
 
-  -- The new authority exists and is held by NOBODY.
+  -- The authority exists.
   select count(*) into validate_perm from public.permission where code = 'quotation:validate';
-  select count(*) into validate_grants from public.role_permission rp
-    join public.permission p on p.id = rp.permission_id where p.code = 'quotation:validate';
-  -- The Phase-5.0D blanket grant is GONE (the test role's own create grant excluded).
-  select count(*) into legacy_grants from public.role_permission rp
+
+  -- EC-3C: the EXACT ratified matrix, read LIVE from the database (DEC-C32).
+  -- This assertion used to be "granted to NOBODY", which was correct while
+  -- EC-3B held everything ungranted. Migration 83 makes some grants legitimate,
+  -- so the check was REPLACED by an exact-matrix one rather than deleted: the
+  -- protection is stronger, not weaker, because it now also fails if a grant is
+  -- MISSING or lands on the wrong role.
+  select count(*) into matrix_grants from public.role_permission rp
     join public.permission p on p.id = rp.permission_id
-   where p.code in ('quotation:create','quotation:send','quotation:approve')
-     and rp.role_id <> '00000000-0000-0000-0000-00000000c3b1';
+    join public.role r on r.id = rp.role_id
+   where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+     and ((r.code = 'QUOTATION_MANAGER'
+           and p.code in ('quotation:create','quotation:send','quotation:approve'))
+       or (r.code = 'OPS_SUPERVISOR' and p.code = 'quotation:validate'));
+
+  -- Nobody OUTSIDE the matrix holds any quotation authority (the suite's own
+  -- fixture role excepted — it exists to prove RLS, not to model a real seat).
+  select count(*) into offmatrix_grants from public.role_permission rp
+    join public.permission p on p.id = rp.permission_id
+    join public.role r on r.id = rp.role_id
+   where p.code in ('quotation:create','quotation:send','quotation:approve','quotation:validate')
+     and rp.role_id <> '00000000-0000-0000-0000-00000000c3b1'
+     and not ((r.code = 'QUOTATION_MANAGER'
+               and p.code in ('quotation:create','quotation:send','quotation:approve'))
+           or (r.code = 'OPS_SUPERVISOR' and p.code = 'quotation:validate'));
+
+  -- The invariant the whole model rests on, asserted on its own.
+  select count(*) into admin_grants from public.role_permission rp
+    join public.permission p on p.id = rp.permission_id
+    join public.role r on r.id = rp.role_id
+   where r.code = 'SYSTEM_ADMIN'
+     and p.code in ('quotation:create','quotation:send','quotation:approve','quotation:validate');
 
   -- Draft v1 with two lines, integer money throughout.
   -- Through the RPC, so creation and its event commit together.
@@ -226,8 +251,9 @@ begin
   perform set_config('role', 'postgres', true);
 
   insert into _r values
-    ('event_created', ev_created), ('validate_permission_rows', validate_perm), ('validate_grants', validate_grants),
-    ('legacy_blanket_grants', legacy_grants),
+    ('event_created', ev_created), ('validate_permission_rows', validate_perm),
+    ('ratified_matrix_grants', matrix_grants), ('off_matrix_grants', offmatrix_grants),
+    ('system_admin_quotation_grants', admin_grants),
     ('same_actor_rejected_rpc', same_actor_rejected),
     ('same_actor_rejected_check', check_rejected),
     ('send_before_validate_rejected', send_before_validate_rejected),
@@ -243,7 +269,7 @@ begin
     ('reader_sees', reader_sees), ('system_admin_sees', admin_sees), ('portal_sees', portal_sees),
     ('finance_rows_created', finance_rows);
 
-  if ev_created<>1 or validate_perm<>1 or validate_grants<>0 or legacy_grants<>0
+  if ev_created<>1 or validate_perm<>1 or matrix_grants<>4 or offmatrix_grants<>0 or admin_grants<>0
      or same_actor_rejected<>1 or check_rejected<>1
      or send_before_validate_rejected<>1
      or frozen_rejected<>1 or lines_frozen_rejected<>1 or two_live_rejected<>1
@@ -255,8 +281,8 @@ begin
      or reader_sees<>1 or admin_sees<>0 or portal_sees<>0
      or finance_rows<>0
   then
-    raise exception 'EC-3B FAIL: vperm=% vgrant=% legacy=% sameRpc=% sameChk=% sendEarly=% frozen=% linesFrozen=% twoLive=% acceptNoKind=% convEarly=% sup=% v1=% subtotal=% evVal=% evSent=% evAcc=% evRev=% evConv=% evConvDoss=% reader=% admin=% portal=% finance=%',
-      validate_perm, validate_grants, legacy_grants, same_actor_rejected, check_rejected,
+    raise exception 'EC-3B FAIL: vperm=% matrix=% offmatrix=% admin_grants=% sameRpc=% sameChk=% sendEarly=% frozen=% linesFrozen=% twoLive=% acceptNoKind=% convEarly=% sup=% v1=% subtotal=% evVal=% evSent=% evAcc=% evRev=% evConv=% evConvDoss=% reader=% admin=% portal=% finance=%',
+      validate_perm, matrix_grants, offmatrix_grants, admin_grants, same_actor_rejected, check_rejected,
       send_before_validate_rejected, frozen_rejected, lines_frozen_rejected, two_live_rejected,
       accept_without_kind_rejected, convert_before_accept_rejected, superseded_kept, v1_visible,
       sub_total, ev_validated, ev_sent, ev_accepted, ev_revised, ev_converted,

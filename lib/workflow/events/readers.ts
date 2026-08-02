@@ -155,6 +155,68 @@ async function resolveActorNames(ids: (string | null)[]): Promise<Map<string, st
 // Customer portal projection
 // ---------------------------------------------------------------------------
 
+/**
+ * EC-3C — one quotation's business-event history.
+ *
+ * Read on the ADMIN client, deliberately. `business_event_select` admits only
+ * dossier events (through `can_read_file`) and configuration events; a
+ * commercial event carries `dossier_id = NULL` until conversion, so RLS cannot
+ * serve this timeline at all. Rather than widen a policy on a shared ledger
+ * table — which would change what every other module's events are worth — this
+ * follows the pattern already used by `readClientTimeline` and
+ * `resolveActorNames`: service-role read, explicit tenant scope, and an
+ * application gate the CALLER must have passed (`assertCommercialRead`).
+ *
+ * Selected by `metadata.quotation_id`, which every commercial event carries —
+ * including `QUOTATION_CONVERTED_TO_DOSSIER`, whose subject is the dossier. So
+ * the conversion appears on both timelines, which is exactly right: it is the
+ * one event that belongs to both stories.
+ */
+export async function readQuotationTimeline(
+  tenantId: string,
+  quotationId: string,
+  limit = 100,
+): Promise<TimelineEvent[]> {
+  const admin = getAdminSupabaseClient();
+  const { data, error } = await admin
+    .from("business_event")
+    .select(SELECT)
+    .eq("tenant_id", tenantId)
+    .eq("metadata->>quotation_id", quotationId)
+    .order("occurred_at", { ascending: false })
+    .limit(limit);
+
+  if (error || !data) return [];
+
+  const rows = data as unknown as Row[];
+  const names = await resolveActorNames(rows.map((r) => r.actor_user_id));
+  return rows
+    .map((r) => toTimelineEvent(r, r.actor_user_id ? names.get(r.actor_user_id) ?? null : null))
+    .filter((e): e is TimelineEvent => e !== null);
+}
+
+/** Recent commercial activity across the tenant — the landing page's event strip. */
+export async function readCommercialActivity(
+  tenantId: string,
+  limit = 12,
+): Promise<TimelineEvent[]> {
+  const admin = getAdminSupabaseClient();
+  const { data, error } = await admin
+    .from("business_event")
+    .select(SELECT)
+    .eq("tenant_id", tenantId)
+    .eq("event_domain", "commercial")
+    .order("occurred_at", { ascending: false })
+    .limit(limit);
+
+  if (error || !data) return [];
+  const rows = data as unknown as Row[];
+  const names = await resolveActorNames(rows.map((r) => r.actor_user_id));
+  return rows
+    .map((r) => toTimelineEvent(r, r.actor_user_id ? names.get(r.actor_user_id) ?? null : null))
+    .filter((e): e is TimelineEvent => e !== null);
+}
+
 export type ClientTimelineEvent = {
   id: string;
   type: string;

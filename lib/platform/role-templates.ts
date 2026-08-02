@@ -92,11 +92,11 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "admin_service:manage", "collections:manage", "courier:assign", "courier:deposit",
       "customs:assign", "customs:register", "customs:validate", "finance:validate",
       "process:close", "process:completeness:review", ...PROCESS_HANDOFF, "process:manage",
-      // EC-3B — the Phase-5.0B placeholder grant of quotation:approve/create/send
-      // is WITHDRAWN here, as migration 82 withdraws it from existing tenants.
-      // Removing it from the migration alone would have been cosmetic: this
-      // template provisions every NEW tenant, so the grant would simply return.
-      // Re-granting is RATIFY-EC3-1, a management decision, not a migration.
+      // EC-3B withdrew the Phase-5.0B placeholder grant of quotation:*, and
+      // EC-3C (DEC-C32) keeps SYSTEM_ADMIN out of the matrix PERMANENTLY: an
+      // administrator must never prepare, validate, send or accept a commercial
+      // offer. Removing it from the migration alone would have been cosmetic —
+      // this template provisions every NEW tenant, so the grant would return.
       "process:read",
       "transport:request", "logistics:copilot:read",
       // Phase 8.7 — Messaging Center. SYSTEM_ADMIN reaches every department + manage/moderate.
@@ -143,10 +143,11 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     labelEn: "Quotation Manager",
     genericName: "QUOTATION_MANAGER",
     description:
-      "Pricing/quotation lead — owns official step 1 (Cotation). EC-3B built the quotation MODULE and, per the EC-3A governance freeze, WITHDREW the Phase-5.0B placeholder quotation:* grant from every role including this one: the authorities are now real, so who holds them is a ratification (RATIFY-EC3-1), not a default. This role therefore cannot quote until management answers.",
+      "Pricing/quotation lead — owns official step 1 (Cotation). EC-3C activates the authorities ratified as DEC-C32: this role PREPARES, SENDS and records the customer's ACCEPTANCE. It deliberately does NOT hold quotation:validate — internal validation belongs to OPS_SUPERVISOR, and `validated_by <> prepared_by` is enforced by the database besides.",
     requiredForEveryTenant: false,
     permissions: [
-      ...BASE,
+      // EC-3C / DEC-C32 — the quotation-agent side of the two-person model.
+      ...BASE, "quotation:approve", "quotation:create", "quotation:send",
       // Phase 8.7 — Messaging Center. Direct/dossier threads only (no department inbox).
       "messaging:read", "messaging:send",
     ],
@@ -332,7 +333,11 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "admin_service:manage", "collections:manage", "courier:assign", "customs:assign",
       "customs:register", "customs:validate", "finance:validate", "process:close",
       "process:completeness:review", ...PROCESS_HANDOFF, "process:manage", "process:read",
-      // EC-3B — quotation:approve/create/send withdrawn; see SYSTEM_ADMIN above.
+      // EC-3C / DEC-C32 — the CHECKER side of the two-person quotation model:
+      // internal managerial validation, and nothing else. Deliberately NOT
+      // quotation:create — granting it merely to make quotations readable is
+      // explicitly refused; the SELECT policies read `create OR validate`.
+      "quotation:validate",
       "transport:request",
       "logistics:copilot:read",
       // Phase 8.7 — Messaging Center. Full supervisory reach: every department + manage/moderate.

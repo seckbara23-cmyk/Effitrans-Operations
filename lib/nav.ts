@@ -100,7 +100,14 @@ export const BASE_SECTIONS: NavigationSection[] = [
         // metaphor while Transit wears the truck.
         iconKey: "gear",
         // Owns dossiers, clients and documentation — visible to any of their readers.
-        permissionsAnyOf: ["file:read", "client:read", "document:read"],
+        // EC-3C adds the quotation authorities: the Commercial workspace lives on
+        // this hub (DÉPARTEMENTS stays at exactly three entries), and a quotation
+        // agent holds none of the first three codes, so without this the section
+        // never appeared and the workspace was unreachable.
+        permissionsAnyOf: [
+          "file:read", "client:read", "document:read",
+          "quotation:create", "quotation:validate",
+        ],
       },
       {
         key: "transit",

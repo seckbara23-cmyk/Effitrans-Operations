@@ -25,7 +25,15 @@ describe("Phase 2.0 — department navigation", () => {
     const byLabel = Object.fromEntries(dept.items.map((i) => [i.label, i]));
     expect(dept.items.map((i) => i.label)).toEqual(["Opérations", "Transit", "Finance"]);
     expect(byLabel["Opérations"].href).toBe("/departments/operations");
-    expect(byLabel["Opérations"].permissionsAnyOf).toEqual(["file:read", "client:read", "document:read"]);
+    // EC-3C adds the two quotation authorities. The Commercial workspace lives on
+    // the Operations HUB (DÉPARTEMENTS stays at three entries, asserted above), and
+    // a QUOTATION_MANAGER holds none of the first three codes — so without this the
+    // section never rendered for them and /commercial was unreachable. Kept as exact
+    // equality: this list must never widen silently.
+    expect(byLabel["Opérations"].permissionsAnyOf).toEqual([
+      "file:read", "client:read", "document:read",
+      "quotation:create", "quotation:validate",
+    ]);
     expect(byLabel["Transit"].href).toBe("/departments/transit");
     expect(byLabel["Transit"].permissionsAnyOf).toEqual(["customs:read", "transport:read"]);
     expect(byLabel["Finance"].href).toBe("/departments/finance");
