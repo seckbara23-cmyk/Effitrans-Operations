@@ -204,10 +204,21 @@ begin
   select count(*) into assigned_event from public.business_event where event_type = 'CORRESPONDENCE_ASSIGNED';
   select count(*) into reassigned_event from public.business_event where event_type = 'CORRESPONDENCE_REASSIGNED';
 
-  -- The handoff created NO quotation. There is no quotation table at all yet,
-  -- which is exactly the point: EC-2 could not have created one.
-  select count(*) into quotations_created from information_schema.tables
-   where table_schema = 'public' and table_name in ('quotation','quotation_line','quotation_request');
+  -- The handoff created NO quotation.
+  --
+  -- This used to assert that no quotation TABLE existed — true when EC-2
+  -- shipped, and legitimately invalidated by EC-3B (migration 82), which
+  -- creates exactly those tables. What EC-2 actually promises is narrower and
+  -- permanent: its handoff records INTENT and mints no quotation ROW. The
+  -- to_regclass guard keeps the claim true whether or not the Commercial
+  -- module exists, so this suite pins EC-2's behaviour and nothing else.
+  if to_regclass('public.quotation') is null then
+    quotations_created := 0;
+  else
+    execute 'select (select count(*) from public.quotation where tenant_id = $1)
+                  + (select count(*) from public.quotation_request where tenant_id = $1)'
+      into quotations_created using '00000000-0000-0000-0000-000000000001'::uuid;
+  end if;
 
   -- The discard COMMENT never entered the event payload; only the code did.
   if exists (select 1 from public.business_event
@@ -241,7 +252,7 @@ begin
     ('event_resolved', resolved_event), ('event_handoff', handoff_event),
     ('event_discarded', discard_event), ('event_assigned', assigned_event),
     ('event_reassigned', reassigned_event),
-    ('quotation_tables_created', quotations_created);
+    ('quotation_rows_created', quotations_created);
 
   if perm_rows<>2 or perm_grants<>0
      or reader_sees<>1 or reader_sees_quarantine<>0 or admin_sees<>0 or portal_sees<>0
@@ -253,7 +264,7 @@ begin
      or assigned_event<>1 or reassigned_event<>1
      or quotations_created<>0
   then
-    raise exception 'EC-2 FAIL: perms=% grants=% reader=% quar=% adm=% por=% qTri=% resOut=% attDoss=% disReason=% immut=% xTenant=% evAtt=% evAttDoss=% evRes=% evHand=% evDisc=% evAsg=% evReasg=% quotTables=%',
+    raise exception 'EC-2 FAIL: perms=% grants=% reader=% quar=% adm=% por=% qTri=% resOut=% attDoss=% disReason=% immut=% xTenant=% evAtt=% evAttDoss=% evRes=% evHand=% evDisc=% evAsg=% evReasg=% quotRows=%',
       perm_rows, perm_grants, reader_sees, reader_sees_quarantine, admin_sees, portal_sees,
       quarantine_triage_rejected, resolve_without_outcome_rejected, attach_without_dossier_rejected,
       discard_without_reason_rejected, outcome_immutable_rejected, cross_tenant_rejected,

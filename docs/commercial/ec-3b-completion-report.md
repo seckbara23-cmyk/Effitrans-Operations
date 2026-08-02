@@ -118,6 +118,20 @@ Also fixed: an invisible **U+00A0** had crept into the money formatter. It is in
 correct French thousands separator, so it was made **explicit** with a documented escape
 rather than silently replaced.
 
+**One cross-phase regression, and the guard it produced.** The first CI run failed in
+**EC-2's** suite, not EC-3B's — and because that abort skipped every later step, EC-3B's own
+suite never ran. EC-2 had asserted `quotation_tables_created = 0` by counting
+`information_schema.tables`; migration 82 creates exactly those tables, so the assertion was
+*correctly* falsified. **Migration 82 was not touched.** EC-2's check was rewritten to count
+quotation **rows** for the test tenant, which is what EC-2 actually promises — its handoff
+records intent and mints nothing — and is true in every future phase; a `to_regclass` guard
+keeps it valid whether or not the Commercial module exists. A new contract then forbids the
+whole fragile shape: **no SQL suite may assert a table's absence via `information_schema`**,
+because an absence claim about the *schema* is a claim about every phase that follows, while
+an absence claim about *rows* is a claim about the phase's own behaviour. This is the second
+instance of the pattern (EC-1's fixture was the first), so it is now pinned rather than
+remembered.
+
 **The SQL suite runs in CI only** (no Docker here); production is held until CI is green.
 
 ## 10. Deployment guide

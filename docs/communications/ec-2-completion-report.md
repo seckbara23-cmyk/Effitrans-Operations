@@ -140,7 +140,7 @@ to read migration 81) · 7 drift pins · EC-1's chain pin made relative.
 present. `tests/ec-2-triage.test.ts` — 43 contracts. `rls_ec_triage_test.sql` — 20 checks
 including quarantine-untriable, resolve-requires-outcome, attach-requires-dossier,
 discard-requires-reason, outcome-immutable, **cross-tenant attachment refused**,
-`CORRESPONDENCE_ATTACHED` carrying the dossier, **no quotation table created**, and the
+`CORRESPONDENCE_ATTACHED` carrying the dossier, **no quotation row created**, and the
 discard comment proven absent from the event payload.
 
 **CI: GREEN — run `30758769202`, commit `91ad948`.** `build` success (10 steps, 0
@@ -225,8 +225,11 @@ permission and no quotation workflow.
 * **Quarantine semantics were not changed.** EC-1's guard is not redefined, quarantine
   stays capture-time and unroutable-only, a quarantined item is refused triage, and no
   second quarantine concept exists anywhere — each pinned by test.
-* **No quotation was created.** No quotation entity, table, column or write exists;
-  the handoff stores intent. Pinned by test *and* by the RLS suite (`quotation_tables_created = 0`).
+* **No quotation was created.** As of EC-2 no quotation entity, table, column or write
+  existed; the handoff stores intent. Pinned by test *and* by the RLS suite
+  (`quotation_rows_created = 0`). EC-3B later created the tables, as its freeze authorised;
+  the suite's check was rewritten from a table count to a **row** count so it keeps pinning
+  what EC-2 promises — the handoff mints no quotation — rather than the absence of a module.
 * **No dossier was created automatically.** No outcome creates a dossier, client,
   document, task or invoice; attachment links to a dossier that already exists, and
   attachment promotion into `public.document` remains a separate human act.

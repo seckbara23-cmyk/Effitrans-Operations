@@ -501,6 +501,20 @@ describe("security and scope", () => {
     }
   });
 
+  it("no SQL suite asserts a table's ABSENCE via information_schema (cross-phase guard)", () => {
+    // EC-2's suite asserted "no quotation TABLE exists" — true then, and
+    // legitimately invalidated by migration 82, which breaks that suite in CI.
+    // An absence claim about the SCHEMA is a claim about every future phase; an
+    // absence claim about ROWS is a claim about the phase's own behaviour, and
+    // only the second is durable. This flags the fragile form.
+    const dir = join(root, "supabase", "tests");
+    for (const f of readdirSync(dir).filter((n) => n.endsWith(".sql"))) {
+      const sql = readFileSync(join(dir, f), "utf8").replace(/^\s*--.*$/gm, "");
+      expect(sql, `${f}: asserts table absence via information_schema`)
+        .not.toMatch(/from information_schema\.tables[\s\S]{0,200}?table_name in \(/);
+    }
+  });
+
   it("EC-3C/EC-3D scope is not started: no workspace route, no send-mail, no conversion orchestration", () => {
     expect(existsSync(join(root, "app", "commercial"))).toBe(false);
     const a = code(ACTIONS);

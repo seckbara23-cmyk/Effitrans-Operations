@@ -71,7 +71,7 @@ shape **[O]**. The line model EC-3 needs already exists twice.
 
 | Layer | State | Evidence |
 |---|---|---|
-| Entity (`quotation`, `quotation_line`, `quotation_request`) | **absent** | 0 tables; EC-2's RLS suite asserts `quotation_tables_created = 0` [O] |
+| Entity (`quotation`, `quotation_line`, `quotation_request`) | **absent** | 0 tables at audit time; EC-2's RLS suite asserted it [O] *(EC-3B created them; the suite now asserts `quotation_rows_created = 0`)* |
 | Permissions | 3 catalogued, over-granted, act 2 missing | FINDING-1/2 |
 | Document types | `QUOTATION`, `QUOTATION_APPROVAL` **exist** | [O] |
 | Role | `QUOTATION_MANAGER` exists — **5 permissions total**, holds no `file:read`, no `client:read`, no `communication:read` | [O] — a stub seat |
