@@ -1,6 +1,10 @@
 # Release Status — standing table (updated at every release event)
 
-*Last updated: 2026-08-02 (**HR-6 CLOSED** — migrations 78–79 applied, ledger **79/79**,
+*Last updated: 2026-08-05 (**EC-2 CLOSED** — migrations **80–81** applied, ledger
+**81/81** reconciled, CI green with zero skipped; deployment PASS with **no sequencing
+deviation**. Enterprise Communications inbound capture + triage are DEPLOYED DARK: both
+permissions granted to nobody, flag unset, `ec_mailbox` empty. See
+`docs/communications/ec-deployment-record.md`. Previously: **HR-6 CLOSED** — migrations 78–79 applied, ledger **79/79**,
 CI green with zero skipped; deployment PASS with **DEV-HR6-01** recorded and closed. See
 `docs/hr/hr-6-deployment-record.md`. Previously: **R1.0 RELEASED** 2026-08-01 — §3 all
 PASS, §4 signed, `release-signoff-R1.0.md` §7).*
@@ -46,6 +50,7 @@ PASS, §4 signed, `release-signoff-R1.0.md` §7).*
 | ~~R1.0~~ | ✅ **RELEASED 2026-08-01** — moved to Deployment history | signed: `release-signoff-R1.0.md` §4/§7 | — |
 | **R1.1** | ⏸ **ACCEPTANCE DEFERRED 2026-08-01** (management decision): implementation complete, preview infrastructure live (`qrotqyaaugyzgljcwcpg`, corrected dataset `3c2cb58`); remaining work is **acceptance/governance only** (D2 visual review → D5 flag → D6 smoke → D7 DAF). Production flag stays **unset** until the gates complete. D1 ✅ D3 ✅ D4 ✅ | parked at D2 | resumes on management go |
 | **R2.0 — HR** *(active focus)* | **HR-1 → HR-6 DEPLOYED** (**HR-6 CLOSED 2026-08-02**: migrations **78–79**, ledger **79/79**; performance cycles, objectives, competencies, evaluations + training register live-dark; **one** new permission `hr:performance:finalize`, **granted to nobody** pending RATIFY-HR6-1; no scoring formula, no LMS, no procurement — each pinned absent by test; **DEV-HR6-01** early-application deviation recorded and closed. Reports: `docs/hr/hr-6-completion-report.md`, `docs/hr/hr-6-deployment-record.md`). Previously: (HR-5 closed 2026-08-02: migration **77**, ledger **77/77**; leave + attendance live-dark, ON_LEAVE derived, `hr:leave:approve` ungranted pending ratification). Previously: (HR-4 closed 2026-08-02: migration **76**, ledger **76/76**; onboarding cases, checklists, equipment custody + 4 transactional RPCs live-dark; department icons made distinct). Previously: (HR-3 closed 2026-08-02: migration **75**, ledger **75/75** after INC-HR3-01 drift repair; employee file + contracts live-dark; `employee_identifier` withheld per DEC-B63). Previously: (HR-2 closed 2026-08-02: migration **74** applied, ledger **74/74**; assignment engine + timeline ledger + EMPLOYEES staging live-dark; ADR-HR2-01 recorded). Previously: HR-1 — migration **73 applied in production** (operator; ledger repaired → **73/73**); dashboard + org foundation + config center + import staging live-dark; `hr:config:manage`/`hr:sensitive:read` catalog-only, **0 grants verified in prod** (B1 pause intact). Report: `docs/hr/hr-1-completion-report.md` | HR-1 & HR-2 **CLOSED**; HR-3 brief ready (`docs/hr/hr-3-implementation-brief.md`), awaits explicit approval | B1 grant ratification · B2 structure seeds · B3 purge window (blocks batch application only) |
+| **R3.0 — Enterprise Communications** | **EC-1 + EC-2 DEPLOYED DARK, EC-2 CLOSED 2026-08-05**: migrations **80–81**, ledger **81/81**. EC-1 = signed-webhook inbound capture (immutable evidence, quarantine for unroutable mail, `communication:inbound:read` minted because `communication:read` already reaches SYSTEM_ADMIN). EC-2 = triage workspace, **four** outcomes (quarantine deliberately NOT one — ratified Q-EC2-1), outcome-immutable, cross-tenant attachment refused twice, and the first phase emitting under the Digital-LOS rule (`CORRESPONDENCE_ATTACHED` carries the DOSSIER). Reports: `docs/communications/ec-{1,2}-completion-report.md`, `ec-deployment-record.md` | **CLOSED** — activation gated | RATIFY-EC1-1/EC2-1 (grants) · Q-EC2-2 (mailbox) · DEC-EC-D2 (provider+DPA) · EDGE-EC1-1 (rate limiting) |
 | R1.2 | FIN-AGING-4 legacy import (unbuilt) | specified | R1.1 |
 | R2.0 | HR-1..HR-4 (unbuilt; registry live **and its migration applied** — HR-1 runs in production already, gated by `hr:read` holders) | architecture ratified | HRQ-D2 · structure answers · go |
 
@@ -72,6 +77,16 @@ reporting date. » (Finance Manager — unblocks R1.1 D1) · HRQ-D2 ceiling
 9→11 · HRQ-A4 staging purge · HRQ-D1 reason vocabulary · DEC-B63 legal gates ·
 Messaging Center activation state — *verify at R3.0 planning*.
 
+**Opened by EC-1/EC-2 (2026-08-05), none blocking any build:**
+**RATIFY-EC1-1 / EC2-1** grant `communication:inbound:read` + `communication:triage` to
+ACCOUNT_MANAGER + OPS_SUPERVISOR (**until then nobody can open the triage workspace, so
+it cannot reach UAT**) · **Q-EC2-2** create `operations@effitrans.com` + its `ec_mailbox`
+row · **DEC-EC-D2** inbound provider + DPA (RESEND stays `not_configured`) ·
+**EDGE-EC1-1** edge rate limiting before the webhook is publicly reachable ·
+**EC-3 BLOCKER:** `QUOTATION_MANAGER` and `OPS_SUPERVISOR` each hold `quotation:create`
++ `:send` + `:approve`, against the ratified two-person model — must be split before EC-3
+activation.
+
 **Opened by HR-6 (2026-08-02), all management — no operator action:**
 **RATIFY-HR6-1** which seat holds `hr:performance:finalize` (**nothing can be finalized
 until granted**; note the finalizer≠reviewer constraint means a single-seat HR department
@@ -88,4 +103,5 @@ only) · **HRQ-P4** the competency framework (catalogue ships empty by design).
 | R1.0-R (ledger reconciliation) | 2026-07-31 | `1abccda` (no code change; app already served it) | ledger repaired to **72/72** — `migration repair --status applied` × 16 (`20260724000002` → `20260729000002`); no DDL; schema spot-checks unchanged | verification 30/30 (operator) · repair GO (operator) |
 | **R1.0** (reconciliation + validation) | 2026-07-31 → **2026-08-01 RELEASED** | `c29b7cf` at completion (post-sanitation head) | none — validation only. Side products shipped during UAT: invoice-renderer geometry fix `733c116` (`uat2b-2`, immutable artifacts untouched) + history sanitation (5 SHAs remapped) | A1–A3, B1–B4 **all PASS** (B2 with stated limitation) · **§4 signed 2026-08-01** (Bara Seck, all seats; provenance note in the sign-off) |
 | **HR-1** (Dashboard & Organization Foundation) | 2026-08-01 **DEPLOYED** | `43bf42e` (migration) / `c47f95b` (repo at deploy) | **73** applied in production by the operator after the `scope`→`data_scope` correction; ledger repaired → **73/73**; prod verification: 2 permission rows · **0 grants** (B1 pause) · all tables present | operator deployment PASS · CI 67/67 RLS steps ×2 · business gates open (B1/B2/B3) |
+| **EC-1 + EC-2** (Enterprise Communications: inbound capture + triage) | 2026-08-05 **CLOSED** | `aa50fd9` (EC-1) / `91ad948` (EC-2, CI green; **no migration file differs** from `fc88633`) | **80–81** applied; ledger **81/81**. Independent verification: ledger zero-mismatched · **6/6 EC tables** · **11/11 EC indexes** (9 from 80, 2 from 81) | deployment **PASS** · CI run `30758769202` **green, 74+10 steps, 0 skipped, 0 failed**, both EC suites executed by name · **no sequencing deviation** (applied after green, unlike DEV-HR6-01) · open: grants + mailbox + provider/DPA + rate limiting (**management/ops, not operator**) |
 | **HR-6** (Performance & Training) | 2026-08-02 **CLOSED** | `91bb84c` (migrations) → `fc04190` (CI green; **no migration file differs**) | **78–79** applied by the operator **ahead of CI** (DEV-HR6-01); ledger repaired → **79/79**. Independent verification: ledger 79/79 zero-mismatched · **9/9 tables** (control group first) · **13/13 indexes** incl. the last of migration 79 | deployment **PASS** · CI run `30751865999` **green, 72+10 steps, 0 skipped, 0 failed**, both HR-6 suites executed by name · DEV-HR6-01 **closed** · open: RATIFY-HR6-1 + HRQ-P1..P4 (**management, not operator**) |

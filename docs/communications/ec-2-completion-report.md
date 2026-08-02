@@ -1,7 +1,8 @@
 # EC-2 — Triage Workspace: Completion Report
 
 **Date:** 2026-08-05 · **Migration:** 81 `20260805000001_ec_triage_outcomes.sql`
-**New permissions: 0** · **New grants: 0** · **Production: DARK**
+**New permissions: 0** · **New grants: 0** · **Production: DEPLOYED DARK — ledger 81/81**
+**Status: CLOSED 2026-08-05.** Deployment PASS: [ec-deployment-record.md](ec-deployment-record.md).
 Governance: [ec-2-governance-freeze.md](ec-2-governance-freeze.md) (approved `ed39925`).
 
 ---
@@ -142,10 +143,28 @@ discard-requires-reason, outcome-immutable, **cross-tenant attachment refused**,
 `CORRESPONDENCE_ATTACHED` carrying the dossier, **no quotation table created**, and the
 discard comment proven absent from the event payload.
 
-**CI is the SQL suite's first execution** (no Docker here). Production stays dark
-regardless.
+**CI: GREEN — run `30758769202`, commit `91ad948`.** `build` success (10 steps, 0
+skipped, 0 failed); `rls-tests` success (**74 steps, 0 skipped, 0 failed**), with
+`Run EC-1 inbound email isolation test` and `Run EC-2 triage outcomes isolation test`
+both passing **by name**.
 
-## 11. Migration / operator procedure
+One red run preceded it (`fc88633`) and the failure was a **cross-suite fixture
+regression, not a schema defect**: migration 81's outcome guard applies to every writer
+of `ec_triage_item`, so a bare `set status = 'RESOLVED'` in **EC-1's** suite was rejected
+(`EC611`), aborting it and skipping EC-2's suite behind it. Fixed by recording an outcome
+in EC-1's fixture rather than relaxing the rule, plus a static cross-suite guard so the
+class cannot recur. **Migration 81 never changed** — `git diff --name-only fc88633
+91ad948 -- supabase/migrations/` returns 0 files.
+
+## 11. Migration / operator procedure *(historical — executed 2026-08-05; retained as the record)*
+
+**Outcome: PASS.** Migrations 80 and 81 applied and **reconciled at 81/81**. Independent
+verification: ledger 81/81 zero-mismatched · **6/6 EC tables** · **11/11 EC indexes**
+(9 from migration 80, 2 from migration 81). Full evidence and the residual-checks note in
+[ec-deployment-record.md](ec-deployment-record.md).
+
+**No operator work remains for EC-1 or EC-2** — no migration, repair, replay, grant or
+configuration. What remains is management ratification (§12).
 
 1. **Wait for CI green** — per job, per step, **zero skipped**. The `EC-2 triage` suite
    must appear and pass. A green summary is not evidence (DEV-HR6-01).
@@ -211,6 +230,10 @@ permission and no quotation workflow.
 * **No dossier was created automatically.** No outcome creates a dossier, client,
   document, task or invoice; attachment links to a dossier that already exists, and
   attachment promotion into `public.document` remains a separate human act.
-* **Production remains dark:** migration unapplied, both permissions granted to nobody,
-  inbound flag unset, tenant rollout table empty, `ec_mailbox` empty.
-* **EC-3 has not begun.**
+* **Production is DEPLOYED and DARK:** migrations 80–81 applied (ledger 81/81), both
+  permissions granted to nobody, inbound flag unset, tenant rollout table empty,
+  `ec_mailbox` empty, `/communications/triage` 404s for every user. Applying these
+  migrations changed nothing observable — the intent.
+* **No sequencing deviation:** unlike DEV-HR6-01, application followed a green run with a
+  per-step zero-skipped check.
+* **EC-2 is CLOSED (2026-08-05). EC-3 has not begun.**
