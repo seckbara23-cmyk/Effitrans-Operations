@@ -20,7 +20,11 @@ export type HrEventKind =
   | "assignment_changed"
   | "status_changed"
   | "account_linked"
-  | "account_unlinked";
+  | "account_unlinked"
+  | "document_added"
+  | "contract_added"
+  | "contract_verified"
+  | "contract_ended";
 
 /** French labels for the projection — one entry per kind, exhaustively. */
 export const HR_EVENT_LABEL_FR: Record<HrEventKind, string> = {
@@ -29,6 +33,10 @@ export const HR_EVENT_LABEL_FR: Record<HrEventKind, string> = {
   status_changed: "Statut d'emploi modifié",
   account_linked: "Compte de connexion lié",
   account_unlinked: "Compte de connexion délié",
+  document_added: "Document ajouté au dossier",
+  contract_added: "Contrat enregistré",
+  contract_verified: "Contrat vérifié (visa à quatre yeux)",
+  contract_ended: "Contrat terminé",
 };
 
 export type EmitInput = {

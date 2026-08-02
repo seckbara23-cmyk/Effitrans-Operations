@@ -23,6 +23,7 @@ const ERROR_FR: Record<string, string> = {
   forbidden: "Action non autorisée.",
   not_found: "Employé introuvable.",
   invalid_state: "Transition de statut non permise.",
+  missing_required_document: "Clôture impossible : le « solde de tout compte » signé doit d'abord être ajouté au dossier de l'employé.",
   reason_required: "Un motif est requis pour enregistrer un départ.",
   account_not_eligible: "Le compte sélectionné n'est pas un compte actif de cette organisation.",
   account_already_linked: "Ce compte est déjà lié à un autre employé.",

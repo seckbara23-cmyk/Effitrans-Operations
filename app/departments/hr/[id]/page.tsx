@@ -20,6 +20,8 @@ import { AssignmentPanel } from "@/components/hr/assignment-panel";
 import { listEmployeeAssignments, listOrgUnits, listPositions, listWorkLocations } from "@/lib/hr/organization";
 import { getEmployeeTimeline, HR_EVENT_LABEL_FR, type HrEventKind } from "@/lib/hr/ledger";
 import { listEmployees } from "@/lib/hr/read";
+import { EmployeeFilePanel } from "@/components/hr/employee-file-panel";
+import { listDocumentTypes, listEmployeeDocuments, listEmployeeContracts } from "@/lib/hr/employee-file";
 
 export const metadata: Metadata = { title: "Employé" };
 export const dynamic = "force-dynamic";
@@ -55,6 +57,12 @@ export default async function EmployeeProfilePage({ params }: { params: { id: st
     listWorkLocations(user.tenantId),
     getEmployeeTimeline(user.tenantId, employee.id),
     listEmployees(user.tenantId),
+  ]);
+  const canSeeSensitive = hasPermission(permissions, "hr:sensitive:read");
+  const [docTypes, documents, contracts] = await Promise.all([
+    listDocumentTypes(user.tenantId),
+    listEmployeeDocuments(user.tenantId, employee.id, canSeeSensitive),
+    listEmployeeContracts(user.tenantId, employee.id),
   ]);
   const managers = directory
     .filter((e) => e.status === "ACTIVE")
@@ -149,14 +157,18 @@ export default async function EmployeeProfilePage({ params }: { params: { id: st
         )}
       </section>
 
-      {/* HR-3 territory — visible, dark, honest. */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        {["Contrats", "Documents", "Notes"].map((t) => (
-          <div key={t} aria-disabled="true" className="surface p-4 opacity-60">
-            <p className="text-sm font-semibold text-slate-500">{t}</p>
-            <p className="mt-1 text-xs text-slate-400">À venir — HR-3</p>
-          </div>
-        ))}
+      {/* HR-3 — the Employee File: Documents + Contrats live. Notes stays dark. */}
+      <EmployeeFilePanel
+        employeeId={employee.id}
+        documents={documents}
+        contracts={contracts}
+        docTypes={docTypes}
+        canManage={canManage}
+        currentUserId={user.id}
+      />
+      <div aria-disabled="true" className="surface p-4 opacity-60">
+        <p className="text-sm font-semibold text-slate-500">Notes</p>
+        <p className="mt-1 text-xs text-slate-400">À venir — pas de socle ratifié</p>
       </div>
 
       {canManage && (

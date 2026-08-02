@@ -3407,6 +3407,30 @@ export type Database = {
         Update: { parsed?: unknown; status?: string };
         Relationships: [];
       };
+      hr_document_type: {
+        Row: { id: string; tenant_id: string; code: string; label_fr: string; data_class: string; has_validity: boolean; required_for_termination: boolean; is_active: boolean; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; code: string; label_fr: string; data_class?: string; has_validity?: boolean; required_for_termination?: boolean; is_active?: boolean };
+        Update: { label_fr?: string; data_class?: string; has_validity?: boolean; required_for_termination?: boolean; is_active?: boolean };
+        Relationships: [];
+      };
+      hr_document: {
+        Row: { id: string; tenant_id: string; employee_id: string; document_type_id: string; title: string; storage_path: string; mime_type: string | null; size_bytes: number | null; content_sha256: string | null; expiry_date: string | null; uploaded_by: string | null; uploaded_at: string; deleted_at: string | null };
+        Insert: { id?: string; tenant_id: string; employee_id: string; document_type_id: string; title: string; storage_path: string; mime_type?: string | null; size_bytes?: number | null; content_sha256?: string | null; expiry_date?: string | null; uploaded_by?: string | null };
+        Update: { deleted_at?: string | null; expiry_date?: string | null; title?: string };
+        Relationships: [];
+      };
+      employment_contract: {
+        Row: { id: string; tenant_id: string; employee_id: string; contract_kind: string; status: string; start_date: string; end_date: string | null; probation_end: string | null; document_id: string | null; prepared_by: string; verified_by: string | null; verified_at: string | null; ended_at: string | null; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; employee_id: string; contract_kind: string; status?: string; start_date: string; end_date?: string | null; probation_end?: string | null; document_id?: string | null; prepared_by: string };
+        Update: { status?: string; end_date?: string | null; verified_by?: string | null; verified_at?: string | null; ended_at?: string | null };
+        Relationships: [];
+      };
+      hr_template_version: {
+        Row: { id: string; tenant_id: string; code: string; version: number; title: string; body_md: string; created_by: string | null; created_at: string };
+        Insert: { id?: string; tenant_id: string; code: string; version: number; title: string; body_md: string; created_by?: string | null };
+        Update: never;
+        Relationships: [];
+      };
       hr_import_error: {
         Row: {
           id: string; tenant_id: string; batch_id: string; staging_row_id: string | null;

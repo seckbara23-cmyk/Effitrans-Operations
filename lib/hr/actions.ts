@@ -25,6 +25,7 @@ import { assertPermission } from "@/lib/auth/require-permission";
 import { getEffectivePermissions } from "@/lib/rbac/permissions";
 import { writeAudit } from "@/lib/audit/log";
 import { emitHrEvent } from "./ledger";
+import { missingTerminationDocuments } from "./employee-file";
 import { AuditActions } from "@/lib/audit/events";
 import type { Database } from "@/lib/db/types";
 import {
@@ -40,6 +41,7 @@ type Ctx = { userId: string; tenantId: string };
 
 export type HrActionError =
   | "forbidden"
+  | "missing_required_document"
   | "not_found"
   | "invalid_input"
   | "invalid_state"
@@ -302,6 +304,13 @@ export async function transitionEmployee(
   }
 
   // CAS: only transition if still in `from` (guards a concurrent status change).
+  // HR-3 — the ratified transition rule (addendum §6): TERMINATED requires the
+  // signed « solde de tout compte » (every required_for_termination type).
+  if (toStatus === "TERMINATED") {
+    const missing = await missingTerminationDocuments(ctx.tenantId, id);
+    if (missing.length > 0) return fail("missing_required_document") as TransitionResult;
+  }
+
   const { data: updated, error } = await admin
     .from("employee")
     .update(patch)
