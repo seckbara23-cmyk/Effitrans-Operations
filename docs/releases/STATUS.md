@@ -1,6 +1,14 @@
 # Release Status — standing table (updated at every release event)
 
-*Last updated: 2026-08-05 (**EC-2 CLOSED** — migrations **80–81** applied, ledger
+*Last updated: 2026-08-06 (**EC-3B CLOSED** — migration **82** applied, ledger **82/82**
+reconciled, CI green with zero skipped; deployment PASS with **no sequencing deviation**.
+The Commercial/Quotation foundation is DEPLOYED DARK: 4 tables at 0 rows, `quotation:validate`
+granted to nobody, and the Phase-5.0B blanket grant of `quotation:create/send/approve`
+**withdrawn at all three sources** — so no user holds any quotation authority at all. See
+`docs/commercial/ec-3b-deployment-record.md`. **RATIFY-EC3-1 ANSWERED** the same day
+(**DEC-C32**) — ratified but **not yet applied**; activation is additive migration 83,
+planned in `docs/commercial/ec-3c-implementation-brief.md`, **not authorised**.
+Previously: **EC-2 CLOSED** — migrations **80–81** applied, ledger
 **81/81** reconciled, CI green with zero skipped; deployment PASS with **no sequencing
 deviation**. Enterprise Communications inbound capture + triage are DEPLOYED DARK: both
 permissions granted to nobody, flag unset, `ec_mailbox` empty. See
@@ -50,7 +58,7 @@ PASS, §4 signed, `release-signoff-R1.0.md` §7).*
 | ~~R1.0~~ | ✅ **RELEASED 2026-08-01** — moved to Deployment history | signed: `release-signoff-R1.0.md` §4/§7 | — |
 | **R1.1** | ⏸ **ACCEPTANCE DEFERRED 2026-08-01** (management decision): implementation complete, preview infrastructure live (`qrotqyaaugyzgljcwcpg`, corrected dataset `3c2cb58`); remaining work is **acceptance/governance only** (D2 visual review → D5 flag → D6 smoke → D7 DAF). Production flag stays **unset** until the gates complete. D1 ✅ D3 ✅ D4 ✅ | parked at D2 | resumes on management go |
 | **R2.0 — HR** *(active focus)* | **HR-1 → HR-6 DEPLOYED** (**HR-6 CLOSED 2026-08-02**: migrations **78–79**, ledger **79/79**; performance cycles, objectives, competencies, evaluations + training register live-dark; **one** new permission `hr:performance:finalize`, **granted to nobody** pending RATIFY-HR6-1; no scoring formula, no LMS, no procurement — each pinned absent by test; **DEV-HR6-01** early-application deviation recorded and closed. Reports: `docs/hr/hr-6-completion-report.md`, `docs/hr/hr-6-deployment-record.md`). Previously: (HR-5 closed 2026-08-02: migration **77**, ledger **77/77**; leave + attendance live-dark, ON_LEAVE derived, `hr:leave:approve` ungranted pending ratification). Previously: (HR-4 closed 2026-08-02: migration **76**, ledger **76/76**; onboarding cases, checklists, equipment custody + 4 transactional RPCs live-dark; department icons made distinct). Previously: (HR-3 closed 2026-08-02: migration **75**, ledger **75/75** after INC-HR3-01 drift repair; employee file + contracts live-dark; `employee_identifier` withheld per DEC-B63). Previously: (HR-2 closed 2026-08-02: migration **74** applied, ledger **74/74**; assignment engine + timeline ledger + EMPLOYEES staging live-dark; ADR-HR2-01 recorded). Previously: HR-1 — migration **73 applied in production** (operator; ledger repaired → **73/73**); dashboard + org foundation + config center + import staging live-dark; `hr:config:manage`/`hr:sensitive:read` catalog-only, **0 grants verified in prod** (B1 pause intact). Report: `docs/hr/hr-1-completion-report.md` | HR-1 & HR-2 **CLOSED**; HR-3 brief ready (`docs/hr/hr-3-implementation-brief.md`), awaits explicit approval | B1 grant ratification · B2 structure seeds · B3 purge window (blocks batch application only) |
-| **R3.0 — Enterprise Communications** | **EC-1 + EC-2 DEPLOYED DARK, EC-2 CLOSED 2026-08-05**: migrations **80–81**, ledger **81/81**. EC-1 = signed-webhook inbound capture (immutable evidence, quarantine for unroutable mail, `communication:inbound:read` minted because `communication:read` already reaches SYSTEM_ADMIN). EC-2 = triage workspace, **four** outcomes (quarantine deliberately NOT one — ratified Q-EC2-1), outcome-immutable, cross-tenant attachment refused twice, and the first phase emitting under the Digital-LOS rule (`CORRESPONDENCE_ATTACHED` carries the DOSSIER). Reports: `docs/communications/ec-{1,2}-completion-report.md`, `ec-deployment-record.md` | **CLOSED** — activation gated | RATIFY-EC1-1/EC2-1 (grants) · Q-EC2-2 (mailbox) · DEC-EC-D2 (provider+DPA) · EDGE-EC1-1 (rate limiting) |
+| **R3.0 — Enterprise Communications + Commercial** *(active focus)* | **EC-3B DEPLOYED DARK + CLOSED 2026-08-06**: migration **82**, ledger **82/82**. Commercial/Quotation foundation — 4 tables, 8 RPCs, integer minor units only, **no pricing and no tax rule**, maker-checker as a structural CHECK, one-live-version as a partial unique index, and ten `commercial` events all emitted from inside their RPC. **Nobody holds any quotation authority**: `quotation:validate` minted ungranted and the Phase-5.0B blanket grant withdrawn at migration + seed + role templates. **RATIFY-EC3-1 answered (DEC-C32)**; EC-3C brief written, implementation **not authorised**. Reports: `docs/commercial/ec-3b-completion-report.md`, `ec-3b-deployment-record.md`, `ec-3c-implementation-brief.md`. Previously: **EC-1 + EC-2 DEPLOYED DARK, EC-2 CLOSED 2026-08-05**: migrations **80–81**, ledger **81/81**. EC-1 = signed-webhook inbound capture (immutable evidence, quarantine for unroutable mail, `communication:inbound:read` minted because `communication:read` already reaches SYSTEM_ADMIN). EC-2 = triage workspace, **four** outcomes (quarantine deliberately NOT one — ratified Q-EC2-1), outcome-immutable, cross-tenant attachment refused twice, and the first phase emitting under the Digital-LOS rule (`CORRESPONDENCE_ATTACHED` carries the DOSSIER). Reports: `docs/communications/ec-{1,2}-completion-report.md`, `ec-deployment-record.md` | **CLOSED** — activation gated | RATIFY-EC1-1/EC2-1 (grants) · Q-EC2-2 (mailbox) · DEC-EC-D2 (provider+DPA) · EDGE-EC1-1 (rate limiting) |
 | R1.2 | FIN-AGING-4 legacy import (unbuilt) | specified | R1.1 |
 | R2.0 | HR-1..HR-4 (unbuilt; registry live **and its migration applied** — HR-1 runs in production already, gated by `hr:read` holders) | architecture ratified | HRQ-D2 · structure answers · go |
 
@@ -82,10 +90,20 @@ Messaging Center activation state — *verify at R3.0 planning*.
 ACCOUNT_MANAGER + OPS_SUPERVISOR (**until then nobody can open the triage workspace, so
 it cannot reach UAT**) · **Q-EC2-2** create `operations@effitrans.com` + its `ec_mailbox`
 row · **DEC-EC-D2** inbound provider + DPA (RESEND stays `not_configured`) ·
-**EDGE-EC1-1** edge rate limiting before the webhook is publicly reachable ·
-**EC-3 BLOCKER:** `QUOTATION_MANAGER` and `OPS_SUPERVISOR` each hold `quotation:create`
-+ `:send` + `:approve`, against the ratified two-person model — must be split before EC-3
-activation.
+**EDGE-EC1-1** edge rate limiting before the webhook is publicly reachable.
+
+~~**EC-3 BLOCKER**~~ **RESOLVED 2026-08-06 by EC-3B + DEC-C32.** The blanket grant that
+gave `QUOTATION_MANAGER` *and* `OPS_SUPERVISOR` *and* `SYSTEM_ADMIN` all three of
+`quotation:create/send/approve` is **withdrawn** — at the migration, the seed **and** the
+role templates (only the three together made it real). **RATIFY-EC3-1 is answered**
+(**DEC-C32**): QUOTATION_MANAGER = `create`+`send`+`approve` · OPS_SUPERVISOR =
+`validate` **only** · SYSTEM_ADMIN = **none**. The two-person model is now enforced by role
+membership *and* by `validated_by <> prepared_by`. **The decision is ratified, not
+applied:** the grant is additive migration **83** and **remains unauthorised**, so nobody
+can quote today. The required audit found one real gap — the RLS SELECT policies gate on
+`quotation:create` alone, so a validating supervisor would see nothing; the fix widens them
+to `create OR validate`, inventing **no** `quotation:read`
+(`docs/commercial/ec-3c-implementation-brief.md` §2).
 
 **Opened by HR-6 (2026-08-02), all management — no operator action:**
 **RATIFY-HR6-1** which seat holds `hr:performance:finalize` (**nothing can be finalized
@@ -104,4 +122,5 @@ only) · **HRQ-P4** the competency framework (catalogue ships empty by design).
 | **R1.0** (reconciliation + validation) | 2026-07-31 → **2026-08-01 RELEASED** | `c29b7cf` at completion (post-sanitation head) | none — validation only. Side products shipped during UAT: invoice-renderer geometry fix `733c116` (`uat2b-2`, immutable artifacts untouched) + history sanitation (5 SHAs remapped) | A1–A3, B1–B4 **all PASS** (B2 with stated limitation) · **§4 signed 2026-08-01** (Bara Seck, all seats; provenance note in the sign-off) |
 | **HR-1** (Dashboard & Organization Foundation) | 2026-08-01 **DEPLOYED** | `43bf42e` (migration) / `c47f95b` (repo at deploy) | **73** applied in production by the operator after the `scope`→`data_scope` correction; ledger repaired → **73/73**; prod verification: 2 permission rows · **0 grants** (B1 pause) · all tables present | operator deployment PASS · CI 67/67 RLS steps ×2 · business gates open (B1/B2/B3) |
 | **EC-1 + EC-2** (Enterprise Communications: inbound capture + triage) | 2026-08-05 **CLOSED** | `aa50fd9` (EC-1) / `91ad948` (EC-2, CI green; **no migration file differs** from `fc88633`) | **80–81** applied; ledger **81/81**. Independent verification: ledger zero-mismatched · **6/6 EC tables** · **11/11 EC indexes** (9 from 80, 2 from 81) | deployment **PASS** · CI run `30758769202` **green, 74+10 steps, 0 skipped, 0 failed**, both EC suites executed by name · **no sequencing deviation** (applied after green, unlike DEV-HR6-01) · open: grants + mailbox + provider/DPA + rate limiting (**management/ops, not operator**) |
+| **EC-3B** (Commercial / Quotation foundation) | 2026-08-06 **CLOSED** | `7733304` (foundation) → `f9058f1` → `b735bb7` (CI green; **no migration file differs** from `7733304`) | **82** applied; ledger **82/82**, no repair, no replay. Independent verification: ledger 82 entries, **0** local-only / **0** orphan / **0** mismatched · **4/4 tables PRESENT at 0 rows** (control group + negative control first) · **`uq_quotation_one_live_version` + 4 PKs** present · `/api/version` = `b735bb7`. **Boundary stated:** grant count = 0 accepted from the operator — no Docker/`psql`/service key here to run arbitrary SQL | deployment **PASS** · CI run `30769464325` **green, 75+10 steps, 0 skipped, 0 failed**, EC-1/EC-2/EC-3B suites all executed **by name** · **no sequencing deviation** · **RATIFY-EC3-1 answered same day (DEC-C32)**, activation migration 83 **unauthorised** |
 | **HR-6** (Performance & Training) | 2026-08-02 **CLOSED** | `91bb84c` (migrations) → `fc04190` (CI green; **no migration file differs**) | **78–79** applied by the operator **ahead of CI** (DEV-HR6-01); ledger repaired → **79/79**. Independent verification: ledger 79/79 zero-mismatched · **9/9 tables** (control group first) · **13/13 indexes** incl. the last of migration 79 | deployment **PASS** · CI run `30751865999` **green, 72+10 steps, 0 skipped, 0 failed**, both HR-6 suites executed by name · DEV-HR6-01 **closed** · open: RATIFY-HR6-1 + HRQ-P1..P4 (**management, not operator**) |

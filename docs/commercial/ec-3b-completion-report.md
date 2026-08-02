@@ -5,6 +5,19 @@
 **Grants REVOKED:** the Phase-5.0D blanket grant of `quotation:create/send/approve`
 **Production: DARK** · Frozen by [ec-3a-governance-freeze.md](ec-3a-governance-freeze.md)
 
+> **STATUS: CLOSED 2026-08-06.** Deployed to production, **ledger 82/82**, CI green with
+> **zero skipped**, deployment **PASS** with **no sequencing deviation**. Independent
+> verification and its one stated boundary: [ec-3b-deployment-record.md](ec-3b-deployment-record.md).
+> **No operator work remains.**
+>
+> **RATIFY-EC3-1 is ANSWERED** (2026-08-06, **DEC-C32**): QUOTATION_MANAGER holds
+> `quotation:create` + `:send` + `:approve`; OPS_SUPERVISOR holds `quotation:validate`
+> **only**; SYSTEM_ADMIN receives **none**. The decision is ratified but **not yet
+> applied** — activation is additive migration 83, planned in
+> [ec-3c-implementation-brief.md](ec-3c-implementation-brief.md) and **not authorised to
+> begin**. Until that migration is applied and authorised, the gate still binds: nobody
+> can quote.
+
 ---
 
 ## 1. Repository reuse audit (performed before any code)
@@ -170,8 +183,8 @@ remembered.
 
 | Ref | Decision | Owner |
 |---|---|---|
-| **RATIFY-EC3-1** | who holds `quotation:create` / `:validate` / `:send` / `:approve` — **the blanket grant is now revoked, so nobody can quote until this is answered** | management |
-| **MD-Q3** | is validation required for every quotation, or above a threshold? And who validates when only one Operations seat exists? | management |
+| ~~**RATIFY-EC3-1**~~ | ✅ **ANSWERED 2026-08-06 (DEC-C32).** QUOTATION_MANAGER = `create`+`send`+`approve` · OPS_SUPERVISOR = `validate` only · SYSTEM_ADMIN = none. **Ratified, not yet applied** — the grant is additive migration 83 (EC-3C brief §2), unauthorised. The audit it required found one real gap: the shipped RLS SELECT policies gate on `quotation:create` alone, so a validating supervisor would see nothing. Corrected by widening those policies to `create OR validate`; **no `quotation:read` invented** | management ✅ |
+| **MD-Q3** | is validation required for every quotation, or above a threshold? And who validates when only one Operations seat exists? *(DEC-C32 answers **who**, not **when**: it names OPS_SUPERVISOR as validator but does not set a threshold, and the single-seat case still cannot self-validate — `validated_by <> prepared_by`)* | management |
 | **MD-Q10** | tax rates — per tenant, per client, per service? Nothing is defaulted until answered | management + counsel |
 | MD-Q11 | numbering: `DEV-{year}-{seq}` shipped; confirm or change before real numbers exist | management |
 | MD-Q13 | may a quotation address a prospect who is not yet a `client`? (schema takes the reversible NOT NULL path) | management |
