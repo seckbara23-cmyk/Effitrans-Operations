@@ -96,8 +96,6 @@ begin
     '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000eee71',
     '00000000-0000-0000-0000-000000000c71'::uuid, '00000000-0000-0000-0000-00000000007a',
     null::date, '2026-06-30'::date) into enr;
-  select count(*) into ev_assigned from public.hr_employee_event
-   where event_kind = 'training_assigned' and employee_id = '00000000-0000-0000-0000-0000000eee71';
 
   -- requires_evidence: completing without a certificate is refused.
   begin
@@ -112,10 +110,6 @@ begin
     '00000000-0000-0000-0000-000000000001', enr, '00000000-0000-0000-0000-00000000007a',
     'RÉUSSI', '2026-03-01'::date, '00000000-0000-0000-0000-00000000dc71');
   select expiry_date into expiry from public.hr_training_enrollment where id = enr;
-  select count(*) into ev_completed from public.hr_employee_event
-   where event_kind = 'training_completed' and employee_id = '00000000-0000-0000-0000-0000000eee71';
-  select count(*) into ev_cert from public.hr_employee_event
-   where event_kind = 'certificate_recorded' and employee_id = '00000000-0000-0000-0000-0000000eee71';
 
   -- A completed enrollment cannot be re-closed or edited.
   begin
@@ -142,6 +136,21 @@ begin
     cert_attach_ok := 1;
   exception when others then cert_attach_ok := 0;
   end;
+
+  -- LEDGER COUNTS ARE TAKEN HERE, AFTER ALL ACTIVITY — never mid-suite. Counting
+  -- an event stream while it is still being written asserts against a snapshot
+  -- that the rest of the suite then invalidates.
+  --   assigned  = 2 : both enrollments
+  --   completed = 2 : both completions
+  --   cert      = 1 : only the FIRST completion carried a certificate. Attaching
+  --                   one to enr2 afterwards is a plain UPDATE, not the RPC, so
+  --                   it emits nothing — and that asymmetry is the point.
+  select count(*) into ev_assigned from public.hr_employee_event
+   where event_kind = 'training_assigned' and employee_id = '00000000-0000-0000-0000-0000000eee71';
+  select count(*) into ev_completed from public.hr_employee_event
+   where event_kind = 'training_completed' and employee_id = '00000000-0000-0000-0000-0000000eee71';
+  select count(*) into ev_cert from public.hr_employee_event
+   where event_kind = 'certificate_recorded' and employee_id = '00000000-0000-0000-0000-0000000eee71';
 
   -- RLS.
   perform set_config('role', 'authenticated', true);
