@@ -19,6 +19,7 @@ import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { employeeStats } from "@/lib/hr/read";
 import { hrDashboardCounts, getHrConfiguration } from "@/lib/hr/organization";
+import { hrOperationsCounts } from "@/lib/hr/onboarding";
 
 export const metadata: Metadata = { title: "Ressources humaines" };
 export const dynamic = "force-dynamic";
@@ -58,10 +59,11 @@ export default async function HrDashboardPage() {
   const canConfigure = hasPermission(permissions, "hr:config:manage");
   const canManage = hasPermission(permissions, "hr:manage");
 
-  const [stats, counts, config] = await Promise.all([
+  const [stats, counts, config, ops] = await Promise.all([
     employeeStats(user.tenantId),
     hrDashboardCounts(user.tenantId),
     getHrConfiguration(user.tenantId),
+    hrOperationsCounts(user.tenantId),
   ]);
 
   return (
@@ -78,6 +80,14 @@ export default async function HrDashboardPage() {
         <StatCard label="Départements RH" value={counts.departments} tone="navy" />
         <StatCard label="Postes" value={counts.positions} tone="slate" />
         <StatCard label="Unités d'organisation" value={counts.units} tone="slate" />
+      </div>
+
+      {/* HR-4 — live operational counters */}
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        <StatCard label="Intégrations en cours" value={ops.activeCases} tone="navy" />
+        <StatCard label="Tâches d'intégration en retard" value={ops.overdueItems} tone={ops.overdueItems > 0 ? "amber" : "slate"} />
+        <StatCard label="Équipements attribués" value={ops.assetsAssigned} tone="teal" />
+        <StatCard label="Restitutions attendues" value={ops.assetsAwaitingReturn} tone={ops.assetsAwaitingReturn > 0 ? "amber" : "slate"} />
       </div>
 
       {config === null && (
@@ -104,8 +114,8 @@ export default async function HrDashboardPage() {
         ) : (
           <DarkTile title="Imports" phase="hr:manage requis" />
         )}
-        <DarkTile title="Contrats" phase="HR-3" />
-        <DarkTile title="Documents" phase="HR-3" />
+        <WorkspaceTile href="/departments/hr/onboarding" title="Intégration" subtitle="Dossiers, check-lists et suivi des accès" />
+        <WorkspaceTile href="/departments/hr/equipement" title="Équipements" subtitle="Parc, attribution et restitution" />
         <DarkTile title="Congés" phase="HR-5" />
         <DarkTile title="Performance" phase="HR-6" />
       </div>

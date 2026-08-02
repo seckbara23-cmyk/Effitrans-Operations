@@ -57,6 +57,18 @@ export function IconUsers(props: IconProps) {
   );
 }
 
+export function IconTeam(props: IconProps) {
+  return (
+    <Base {...props}>
+      <circle cx="12" cy="7" r="2.6" />
+      <circle cx="5" cy="10" r="2" />
+      <circle cx="19" cy="10" r="2" />
+      <path d="M7 20a5 5 0 0 1 10 0" />
+      <path d="M2 19a4 4 0 0 1 4-4M22 19a4 4 0 0 0-4-4" />
+    </Base>
+  );
+}
+
 export function IconContainer(props: IconProps) {
   return (
     <Base {...props}>

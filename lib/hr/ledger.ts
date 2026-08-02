@@ -24,7 +24,14 @@ export type HrEventKind =
   | "document_added"
   | "contract_added"
   | "contract_verified"
-  | "contract_ended";
+  | "contract_ended"
+  | "onboarding_created"
+  | "onboarding_started"
+  | "onboarding_item_completed"
+  | "onboarding_completed"
+  | "onboarding_cancelled"
+  | "asset_assigned"
+  | "asset_returned";
 
 /** French labels for the projection — one entry per kind, exhaustively. */
 export const HR_EVENT_LABEL_FR: Record<HrEventKind, string> = {
@@ -37,6 +44,13 @@ export const HR_EVENT_LABEL_FR: Record<HrEventKind, string> = {
   contract_added: "Contrat enregistré",
   contract_verified: "Contrat vérifié (visa à quatre yeux)",
   contract_ended: "Contrat terminé",
+  onboarding_created: "Dossier d'intégration créé",
+  onboarding_started: "Intégration démarrée",
+  onboarding_item_completed: "Élément d'intégration complété",
+  onboarding_completed: "Intégration terminée",
+  onboarding_cancelled: "Intégration annulée",
+  asset_assigned: "Équipement attribué",
+  asset_returned: "Équipement restitué",
 };
 
 export type EmitInput = {

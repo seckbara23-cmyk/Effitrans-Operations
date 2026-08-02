@@ -22,6 +22,7 @@ import { getEmployeeTimeline, HR_EVENT_LABEL_FR, type HrEventKind } from "@/lib/
 import { listEmployees } from "@/lib/hr/read";
 import { EmployeeFilePanel } from "@/components/hr/employee-file-panel";
 import { listDocumentTypes, listEmployeeDocuments, listEmployeeContracts } from "@/lib/hr/employee-file";
+import { listEmployeeCustody, listEquipment, listEquipmentTypes, getLiveOnboardingCase, ONBOARDING_STATUS_FR, RETURN_OUTCOME_FR } from "@/lib/hr/onboarding";
 
 export const metadata: Metadata = { title: "Employé" };
 export const dynamic = "force-dynamic";
@@ -59,6 +60,12 @@ export default async function EmployeeProfilePage({ params }: { params: { id: st
     listEmployees(user.tenantId),
   ]);
   const canSeeSensitive = hasPermission(permissions, "hr:sensitive:read");
+  const [custody, allEquipment, eqTypes, liveCase] = await Promise.all([
+    listEmployeeCustody(user.tenantId, employee.id),
+    listEquipment(user.tenantId),
+    listEquipmentTypes(user.tenantId),
+    getLiveOnboardingCase(user.tenantId, employee.id),
+  ]);
   const [docTypes, documents, contracts] = await Promise.all([
     listDocumentTypes(user.tenantId),
     listEmployeeDocuments(user.tenantId, employee.id, canSeeSensitive),
@@ -166,6 +173,35 @@ export default async function EmployeeProfilePage({ params }: { params: { id: st
         canManage={canManage}
         currentUserId={user.id}
       />
+      {/* HR-4 — équipements confiés (attribution depuis l'espace Équipements) */}
+      <section className="surface p-4">
+        <h2 className="mb-3 text-sm font-semibold text-navy-900">Équipements confiés</h2>
+        {liveCase && (
+          <p className="mb-2 text-sm text-slate-600">
+            Intégration : <strong className="text-navy-800">{ONBOARDING_STATUS_FR[liveCase.status] ?? liveCase.status}</strong>
+            {" · "}<Link href="/departments/hr/onboarding" className="text-teal-700 hover:underline">ouvrir le dossier</Link>
+          </p>
+        )}
+        {custody.length === 0 ? <p className="text-sm text-slate-500">Aucun équipement confié.</p> : (
+          <ul className="space-y-1 text-sm">
+            {custody.map((c) => {
+              const eq = allEquipment.find((e) => e.id === c.equipment_id);
+              const type = eqTypes.find((t) => t.id === eq?.equipment_type_id);
+              return (
+                <li key={c.id} className="flex flex-wrap items-center gap-2">
+                  <span className="font-mono text-xs text-teal-700">{eq?.asset_tag ?? "—"}</span>
+                  <span className="text-navy-900">{type?.label_fr ?? "—"}</span>
+                  <span className="tabular text-xs text-slate-400">
+                    {c.assigned_on}{c.returned_on ? ` → ${c.returned_on}` : " → en cours"}
+                  </span>
+                  {c.return_outcome && <span className="text-xs text-slate-500">{RETURN_OUTCOME_FR[c.return_outcome] ?? c.return_outcome}</span>}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+
       <div aria-disabled="true" className="surface p-4 opacity-60">
         <p className="text-sm font-semibold text-slate-500">Notes</p>
         <p className="mt-1 text-xs text-slate-400">À venir — pas de socle ratifié</p>

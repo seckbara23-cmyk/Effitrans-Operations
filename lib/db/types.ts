@@ -3407,6 +3407,54 @@ export type Database = {
         Update: { parsed?: unknown; status?: string };
         Relationships: [];
       };
+      hr_checklist_template: {
+        Row: { id: string; tenant_id: string; code: string; label_fr: string; is_active: boolean; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; code: string; label_fr: string; is_active?: boolean };
+        Update: { label_fr?: string; is_active?: boolean };
+        Relationships: [];
+      };
+      hr_checklist_item_template: {
+        Row: { id: string; tenant_id: string; template_id: string; position: number; label_fr: string; responsible_function: string | null; is_required: boolean; is_blocking: boolean; evidence_required: boolean; due_offset_days: number };
+        Insert: { id?: string; tenant_id: string; template_id: string; position: number; label_fr: string; responsible_function?: string | null; is_required?: boolean; is_blocking?: boolean; evidence_required?: boolean; due_offset_days?: number };
+        Update: { label_fr?: string; is_required?: boolean; is_blocking?: boolean; evidence_required?: boolean; due_offset_days?: number };
+        Relationships: [];
+      };
+      hr_onboarding_case: {
+        Row: { id: string; tenant_id: string; employee_id: string; template_id: string | null; status: string; planned_start_date: string | null; actual_start_date: string | null; hr_officer_id: string | null; manager_employee_id: string | null; work_location_id: string | null; position_id: string | null; completed_at: string | null; cancelled_at: string | null; cancellation_reason: string | null; summary: string | null; created_by: string | null; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; employee_id: string; template_id?: string | null; status?: string; planned_start_date?: string | null; actual_start_date?: string | null; hr_officer_id?: string | null; manager_employee_id?: string | null; work_location_id?: string | null; position_id?: string | null; summary?: string | null; created_by?: string | null };
+        Update: { status?: string; planned_start_date?: string | null; actual_start_date?: string | null; hr_officer_id?: string | null; manager_employee_id?: string | null; work_location_id?: string | null; position_id?: string | null; completed_at?: string | null; cancelled_at?: string | null; cancellation_reason?: string | null; summary?: string | null };
+        Relationships: [];
+      };
+      hr_onboarding_item: {
+        Row: { id: string; tenant_id: string; case_id: string; item_template_id: string | null; position: number; label_fr: string; responsible_function: string | null; is_required: boolean; is_blocking: boolean; evidence_required: boolean; due_date: string | null; status: string; evidence_document_id: string | null; comment: string | null; completed_by: string | null; completed_at: string | null };
+        Insert: { id?: string; tenant_id: string; case_id: string; item_template_id?: string | null; position: number; label_fr: string; responsible_function?: string | null; is_required?: boolean; is_blocking?: boolean; evidence_required?: boolean; due_date?: string | null; status?: string };
+        Update: { status?: string; evidence_document_id?: string | null; comment?: string | null; completed_by?: string | null; completed_at?: string | null; due_date?: string | null };
+        Relationships: [];
+      };
+      hr_provisioning_request: {
+        Row: { id: string; tenant_id: string; case_id: string; kind: string; status: string; linked_app_user_id: string | null; note: string | null; requested_by: string | null; requested_at: string; completed_by: string | null; completed_at: string | null };
+        Insert: { id?: string; tenant_id: string; case_id: string; kind: string; status?: string; linked_app_user_id?: string | null; note?: string | null; requested_by?: string | null };
+        Update: { status?: string; linked_app_user_id?: string | null; note?: string | null; completed_by?: string | null; completed_at?: string | null };
+        Relationships: [];
+      };
+      hr_equipment_type: {
+        Row: { id: string; tenant_id: string; code: string; label_fr: string; is_active: boolean; created_at: string };
+        Insert: { id?: string; tenant_id: string; code: string; label_fr: string; is_active?: boolean };
+        Update: { label_fr?: string; is_active?: boolean };
+        Relationships: [];
+      };
+      hr_equipment: {
+        Row: { id: string; tenant_id: string; equipment_type_id: string; asset_tag: string; serial_number: string | null; description: string | null; condition: string; lifecycle_status: string; ownership_source: string; acquisition_date: string | null; is_active: boolean; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; equipment_type_id: string; asset_tag: string; serial_number?: string | null; description?: string | null; condition?: string; lifecycle_status?: string; ownership_source?: string; acquisition_date?: string | null; is_active?: boolean };
+        Update: { condition?: string; lifecycle_status?: string; description?: string | null; is_active?: boolean; serial_number?: string | null };
+        Relationships: [];
+      };
+      hr_equipment_assignment: {
+        Row: { id: string; tenant_id: string; equipment_id: string; employee_id: string; assigned_by: string | null; assigned_on: string; expected_return_date: string | null; returned_on: string | null; condition_at_issue: string | null; condition_at_return: string | null; return_outcome: string | null; acknowledgement_document_id: string | null; note: string | null; returned_by: string | null; created_at: string };
+        Insert: { id?: string; tenant_id: string; equipment_id: string; employee_id: string; assigned_by?: string | null; expected_return_date?: string | null; condition_at_issue?: string | null; note?: string | null };
+        Update: { acknowledgement_document_id?: string | null; note?: string | null };
+        Relationships: [];
+      };
       hr_document_type: {
         Row: { id: string; tenant_id: string; code: string; label_fr: string; data_class: string; has_validity: boolean; required_for_termination: boolean; is_active: boolean; created_at: string; updated_at: string };
         Insert: { id?: string; tenant_id: string; code: string; label_fr: string; data_class?: string; has_validity?: boolean; required_for_termination?: boolean; is_active?: boolean };
@@ -3958,6 +4006,22 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      hr_assign_equipment: {
+        Args: { p_tenant: string; p_equipment: string; p_employee: string; p_actor: string; p_expected_return?: string | null; p_condition?: string | null; p_note?: string | null };
+        Returns: string;
+      };
+      hr_return_equipment: {
+        Args: { p_tenant: string; p_assignment: string; p_actor: string; p_outcome: string; p_condition?: string | null; p_note?: string | null };
+        Returns: string;
+      };
+      hr_complete_onboarding_item: {
+        Args: { p_tenant: string; p_item: string; p_actor: string; p_status: string; p_evidence?: string | null; p_comment?: string | null };
+        Returns: string;
+      };
+      hr_complete_onboarding: {
+        Args: { p_tenant: string; p_case: string; p_actor: string };
+        Returns: string;
+      };
       get_user_permissions: {
         Args: { p_user: string };
         Returns: { code: string }[];

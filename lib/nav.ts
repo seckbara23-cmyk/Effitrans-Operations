@@ -96,7 +96,9 @@ export const BASE_SECTIONS: NavigationSection[] = [
         key: "operations",
         label: "Opérations",
         href: "/departments/operations",
-        iconKey: "container",
+        // HR-4: a GEAR, not a container — Operations must not wear a transport
+        // metaphor while Transit wears the truck.
+        iconKey: "gear",
         // Owns dossiers, clients and documentation — visible to any of their readers.
         permissionsAnyOf: ["file:read", "client:read", "document:read"],
       },
@@ -137,7 +139,8 @@ export const BASE_SECTIONS: NavigationSection[] = [
         key: "hr",
         label: "Ressources humaines",
         href: "/departments/hr",
-        iconKey: "users",
+        // HR-4: a TEAM mark, distinct from Administration's IconUsers.
+        iconKey: "team",
         permission: "hr:read",
       },
       { key: "reports", label: "Rapports", href: "/reports", iconKey: "report", permission: "analytics:read" },

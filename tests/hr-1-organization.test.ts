@@ -146,7 +146,8 @@ describe("navigation & pages — ratified placement", () => {
 
   it("dark cards name their phase instead of linking nowhere", () => {
     const dash = read("app/departments/hr/page.tsx");
-    for (const phase of ["HR-3", "HR-5", "HR-6"]) expect(dash).toContain(phase);
+    // HR-4 turned the HR-3 tiles into live workspaces; Congés/Performance stay dark.
+    for (const phase of ["HR-5", "HR-6"]) expect(dash).toContain(phase);
     expect(dash).toContain('aria-disabled="true"');
   });
 

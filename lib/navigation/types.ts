@@ -45,6 +45,8 @@ export type NavigationContext = {
 
 /** Icon key — a component cannot cross the server→client boundary. */
 export type NavIconKey =
+  | "gear"
+  | "team"
   | "star"
   | "tower"
   | "stamp"
