@@ -117,9 +117,19 @@ the workflow and withholding the C3 prose.
 `rls_hr_performance_test.sql` (21 checks) + `rls_hr_training_test.sql` (12 checks).
 
 **Local gates: 197 files / 4771 tests green · tsc 0 errors · build clean**, both new
-routes present. **The two SQL suites run in CI only** — there is no Docker in this
-environment, so their first execution is the CI run, and production is held until it is
-green.
+routes present.
+
+**CI: GREEN — run `30751865999`, commit `fc04190`.** `build` success (10 steps, 0
+skipped, 0 failed); `rls-tests` success (**72 steps, 0 skipped, 0 failed**). All seven HR
+RLS suites executed and passed by name, including **HR-6 performance** and **HR-6
+training**.
+
+Two red runs preceded it and **both failures were in test assertions, never in a
+migration** — ledger event counts taken mid-suite, before later activity emitted the
+events being asserted. The second fix moved *all* counts to after all activity rather
+than adjusting a number. `git diff --name-only 91bb84c fc04190 -- supabase/migrations/`
+returns **0 files**: the SQL that ran in production is byte-identical to the SQL that
+went green. Full sequence in [hr-6-deployment-record.md](hr-6-deployment-record.md) §3.
 
 ## 16. Risks and open management decisions
 
@@ -136,7 +146,32 @@ green.
 department cannot finalize anything**. That is correct separation of duties, and it is
 better discovered now than at the first review cycle.
 
-## 17. Operator deployment procedure
+## 16b. Deployment outcome — PASS, and HR-6 CLOSED
+
+**Applied to production `xtpppzhkiagdpmnghdlc`; ledger 79/79.**
+
+| Verification | Method | Result |
+|---|---|---|
+| Migration ledger | `migration list --linked`, parsed | **79/79**, 79 in lockstep, **zero mismatched** |
+| Tables | `inspect db table-stats --linked` | **9/9** present (5-table control group proved the probe first) |
+| Indexes | `inspect db index-stats --linked` | **13/13**, incl. `idx_enrollment_expiry` — the last index in migration 79's DDL |
+| Permission row · grants · RPCs · policies | transactional atomicity + CI on a clean 1→79 chain | established; direct-observation SQL in the deployment record §2.4 |
+| CI | run `30751865999` | **green, 0 skipped, 0 failed**, both HR-6 suites executed |
+
+**Sequencing deviation DEV-HR6-01 — CLOSED, no harm, control reinforced.**
+Production was applied before CI was green, against the standing rule, and the run
+at that moment was red. No harm resulted, and verifiably so: every failure was in a
+test assertion and no migration file changed across the three commits. The genuine
+exposure — migration 79 applied while its RLS suite had never executed anywhere,
+having been skipped behind an aborting step — is retired now that the suite has run
+and passed. Reinforced control: **application waits for a green run *and* a per-step
+check showing zero skipped**, because a green summary can hide a skipped suite.
+
+**No operator work remains for HR-6.** No migration, no repair, no replay, no grant,
+no configuration. What remains is **management ratification**, not operator action:
+RATIFY-HR6-1 (`hr:performance:finalize` holder) and HRQ-P1..P4.
+
+## 17. Operator deployment procedure *(historical — executed; retained as the record)*
 
 1. **Wait for CI green** on this commit — per job, per step, **0 skipped**. Both new
    suites (`HR-6 performance`, `HR-6 training`) must appear and pass. Do not proceed on a
@@ -174,11 +209,11 @@ better discovered now than at the first review cycle.
    20260803000002` — **repair, never replay** — and re-run `migration list` to confirm.
 6. Report back: the four counts, and the ledger line.
 
-## 18. Readiness
+## 18. Readiness — **HR-6 CLOSED 2026-08-02**
 
-**Is HR-6 complete and ready for HR-7?** The schema, engine, workspace, ledger, audit and
-tests are complete and CI-gated. It is ready for HR-7 **once migrations 78–79 are applied
-and the ledger reads 79/79**.
+**Is HR-6 complete and ready for HR-7?** **Yes.** Schema, engine, workspace, ledger,
+audit and tests are complete; migrations 78–79 are applied; the ledger reads **79/79**;
+CI is green with zero skipped. **HR-6 is formally CLOSED.**
 
 **What remains dark or blocked?** Finalization — `hr:performance:finalize` is held by
 nobody, by design, pending RATIFY-HR6-1. The competency catalogue ships empty. Employee
@@ -189,4 +224,6 @@ the pre-existing HRQ-D2.
 
 **HR-7 has not begun.** No payroll, compensation, ATS, succession, offboarding, talent
 ranking, predictive analytics, AI-generated evaluation content, LMS delivery or training
-procurement exists anywhere in this phase — each is pinned absent by test.
+procurement exists anywhere in this phase — each is pinned absent by test. A brief only
+exists at [hr-7-implementation-brief.md](hr-7-implementation-brief.md); **no HR-7 code,
+migration or permission has been written**, and HR-7 begins only on explicit approval.
