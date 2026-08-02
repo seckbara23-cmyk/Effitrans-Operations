@@ -183,6 +183,13 @@ creates no dossier and writes into no dossier internals — pinned across all fo
 
 **Local: 201 files / 4950 tests green · tsc 0 · build clean** (all three routes compiled).
 
+**CI: GREEN — run `30773158495` (`48f27c8`), `rls-tests` 76 steps / 0 skipped / 0 failed,
+`build` 10 / 0 / 0.** All four EC suites executed **by name**:
+`EC-1 inbound email` · `EC-2 triage outcomes` · `EC-3B commercial quotation` ·
+**`EC-3C commercial activation` — success on its first execution**. The clean **1 → 83**
+migration chain is therefore proven, and migration 83 has never been applied anywhere while
+its suite was unproven (the DEV-HR6-01 exposure).
+
 * `tests/ec-3c-commercial-workspace.test.ts` — 34 contracts.
 * `supabase/tests/rls_commercial_activation_test.sql` — 15 checks in real PostgreSQL,
   including **the one the whole audit existed for**: a validate-only supervisor sees the

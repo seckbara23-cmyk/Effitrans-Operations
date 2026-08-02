@@ -6,7 +6,7 @@ exact ratified matrix (QUOTATION_MANAGER `create`+`send`+`approve` · OPS_SUPERV
 `validate` only · SYSTEM_ADMIN **none**), mirrored in the seed and the role templates, and
 widens the three quotation SELECT policies to `create OR validate` — the defect that left a
 validating supervisor unable to see what they validate. Reads on the RLS-bypassing admin
-client are now explicitly gated. **Production is unchanged until the operator applies 83**;
+client are now explicitly gated. **CI GREEN** — run `30773158495`, 76+10 steps, **0 skipped, 0 failed**, all four EC suites by name (the EC-3C suite passing on its first execution), so the clean 1→83 chain is proven. **Production is unchanged until the operator applies 83**;
 once applied, the module becomes reachable for whoever holds the two roles, so **seat
 assignment is the remaining gate**. See `docs/commercial/ec-3c-completion-report.md`.
 Previously: **EC-3B CLOSED** — migration **82** applied, ledger **82/82**
