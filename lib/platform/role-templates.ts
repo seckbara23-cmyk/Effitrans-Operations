@@ -92,7 +92,12 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "admin_service:manage", "collections:manage", "courier:assign", "courier:deposit",
       "customs:assign", "customs:register", "customs:validate", "finance:validate",
       "process:close", "process:completeness:review", ...PROCESS_HANDOFF, "process:manage",
-      "process:read", "quotation:approve", "quotation:create", "quotation:send",
+      // EC-3B — the Phase-5.0B placeholder grant of quotation:approve/create/send
+      // is WITHDRAWN here, as migration 82 withdraws it from existing tenants.
+      // Removing it from the migration alone would have been cosmetic: this
+      // template provisions every NEW tenant, so the grant would simply return.
+      // Re-granting is RATIFY-EC3-1, a management decision, not a migration.
+      "process:read",
       "transport:request", "logistics:copilot:read",
       // Phase 8.7 — Messaging Center. SYSTEM_ADMIN reaches every department + manage/moderate.
       "messaging:read", "messaging:send", "messaging:read:documentation", "messaging:read:customs",
@@ -138,10 +143,10 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     labelEn: "Quotation Manager",
     genericName: "QUOTATION_MANAGER",
     description:
-      "Pricing/quotation lead — owns official step 1 (Cotation). Phase 5.0B grants the quotation:* permissions; the quotation MODULE itself (quotation table, approval evidence, contract-client bypass) is Phase 5.0D, so these are inert until then.",
+      "Pricing/quotation lead — owns official step 1 (Cotation). EC-3B built the quotation MODULE and, per the EC-3A governance freeze, WITHDREW the Phase-5.0B placeholder quotation:* grant from every role including this one: the authorities are now real, so who holds them is a ratification (RATIFY-EC3-1), not a default. This role therefore cannot quote until management answers.",
     requiredForEveryTenant: false,
     permissions: [
-      ...BASE, "quotation:approve", "quotation:create", "quotation:send",
+      ...BASE,
       // Phase 8.7 — Messaging Center. Direct/dossier threads only (no department inbox).
       "messaging:read", "messaging:send",
     ],
@@ -327,7 +332,8 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "admin_service:manage", "collections:manage", "courier:assign", "customs:assign",
       "customs:register", "customs:validate", "finance:validate", "process:close",
       "process:completeness:review", ...PROCESS_HANDOFF, "process:manage", "process:read",
-      "quotation:approve", "quotation:create", "quotation:send", "transport:request",
+      // EC-3B — quotation:approve/create/send withdrawn; see SYSTEM_ADMIN above.
+      "transport:request",
       "logistics:copilot:read",
       // Phase 8.7 — Messaging Center. Full supervisory reach: every department + manage/moderate.
       "messaging:read", "messaging:send", "messaging:read:documentation", "messaging:read:customs",

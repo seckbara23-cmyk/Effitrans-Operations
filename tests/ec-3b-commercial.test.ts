@@ -68,6 +68,28 @@ describe("permissions — act 2 gains its authority; the blanket grant is revoke
     expect(seed).toMatch(/quotation:create[\s\S]{0,200}SYSTEM_ADMIN/);
   });
 
+  it("the revocation holds at EVERY source, not just the migration", () => {
+    // The migration's DELETE only cleans rows that already exist. The seed runs
+    // AFTER migrations under `supabase db reset`, and the role templates
+    // provision every NEW tenant — so a grant left in either one silently
+    // reinstates what the freeze withdrew. CI caught this the only way it could:
+    // the RLS suite read the live grant count (9) while this file's text-only
+    // assertions were all green. Both sources are now checked directly.
+    const LEGACY = /quotation:(create|send|approve)/;
+
+    const seed = code("supabase/seed.sql");
+    for (const stmt of seed.split(/;\s*\n/)) {
+      if (/insert into public\.role_permission/i.test(stmt)) {
+        expect(stmt, "seed.sql re-grants a withdrawn quotation authority").not.toMatch(LEGACY);
+      }
+    }
+
+    // Templates: no role may carry a quotation authority in its permission list.
+    const tpl = code("lib/platform/role-templates.ts");
+    expect(tpl, "a role template still grants a withdrawn quotation authority")
+      .not.toMatch(new RegExp(`"${LEGACY.source}"`));
+  });
+
   it("grants nothing and never names SYSTEM_ADMIN as a recipient", () => {
     const sql = code(MIG);
     expect(sql).not.toMatch(/insert into public\.role_permission/i);

@@ -640,13 +640,15 @@ where r.tenant_id = '00000000-0000-0000-0000-000000000001'
   and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR', 'FINANCE_OFFICER', 'COLLECTIONS_OFFICER')
 on conflict do nothing;
 
-insert into public.role_permission (role_id, permission_id)
-select r.id, p.id
-from public.role r
-join public.permission p on p.code in ('quotation:create', 'quotation:send', 'quotation:approve')
-where r.tenant_id = '00000000-0000-0000-0000-000000000001'
-  and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR', 'QUOTATION_MANAGER')
-on conflict do nothing;
+-- EC-3B — the Phase-5.0B placeholder grant of quotation:create/send/approve to
+-- SYSTEM_ADMIN, OPS_SUPERVISOR and QUOTATION_MANAGER is DELIBERATELY ABSENT.
+--
+-- Migration 82 withdraws it (the EC-3A freeze: now that the authorities are
+-- real, who holds them is a ratification — RATIFY-EC3-1 — not a default). The
+-- seed runs AFTER migrations under `supabase db reset`, so leaving the grant
+-- here silently reinstated it and let SYSTEM_ADMIN read quotations through
+-- quotation_select. Nothing re-grants these until management answers.
+-- Mirrored in lib/platform/role-templates.ts (parity: tests/role-templates.test.ts).
 
 insert into public.role_permission (role_id, permission_id)
 select r.id, p.id

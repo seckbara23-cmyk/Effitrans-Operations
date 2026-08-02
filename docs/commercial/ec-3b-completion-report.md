@@ -42,6 +42,17 @@ OPS_SUPERVISOR and QUOTATION_MANAGER; `quotation:approve`'s misleading descripti
 corrected without renaming the code (the process registry references it). Safe because
 no quotation module ever existed — the grant governed nothing.
 
+**The revocation needed three edits, not one — and CI proved it.** The migration's
+`DELETE` only removes rows that already exist. Two other sources re-created them:
+`supabase/seed.sql`, which runs **after** migrations under `supabase db reset`, and
+`lib/platform/role-templates.ts`, which provisions **every new tenant**. So the migration
+alone was cosmetic: SYSTEM_ADMIN kept `quotation:create`, and because `quotation_select`
+gates on exactly that permission, **SYSTEM_ADMIN could read quotations** — the one thing
+the freeze forbids. The RLS suite reported `legacy=9` (3 roles × 3 permissions) and
+`admin=1` from a single cause. Both sources were corrected and a contract now asserts the
+revocation **at every source**, because the pre-existing text-only assertion on the
+migration was green throughout.
+
 ## 3. Maker-checker — structural
 
 `constraint quotation_validator_differs check (validated_by <> prepared_by)` **plus**
