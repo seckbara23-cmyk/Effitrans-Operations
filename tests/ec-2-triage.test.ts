@@ -30,9 +30,11 @@ const DETAIL = "app/communications/triage/[id]/page.tsx";
 describe("migration chain", () => {
   it("adds one migration after 80 and touches none before it", () => {
     const all = readdirSync(join(root, "supabase", "migrations")).filter((f) => f.endsWith(".sql")).sort();
-    expect(all.length).toBe(81);
-    expect(all[80]).toBe("20260805000001_ec_triage_outcomes.sql");
-    expect(all[79]).toBe("20260804000001_ec_inbound_foundation.sql");
+    // Pinned RELATIVELY: later phases legitimately add migrations, and a global
+    // count would make every future phase look like a breach of EC-2's promise.
+    const ec1 = all.indexOf("20260804000001_ec_inbound_foundation.sql");
+    expect(ec1).toBeGreaterThan(-1);
+    expect(all[ec1 + 1]).toBe("20260805000001_ec_triage_outcomes.sql");
   });
 
   it("is additive: no table created, no column dropped, no destructive statement", () => {

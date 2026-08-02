@@ -2547,6 +2547,30 @@ export type Database = {
         Update: { tenant_id?: string; year?: number; next_seq?: number };
         Relationships: [];
       };
+      quotation_request: {
+        Row: { id: string; tenant_id: string; client_id: string; reference: string | null; subject: string | null; triage_item_id: string | null; status: string; opened_by: string | null; closed_at: string | null; closure_reason: string | null; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; client_id: string; reference?: string | null; subject?: string | null; triage_item_id?: string | null; status?: string; opened_by?: string | null };
+        Update: { status?: string; reference?: string | null; subject?: string | null; closed_at?: string | null; closure_reason?: string | null };
+        Relationships: [];
+      };
+      quotation: {
+        Row: { id: string; tenant_id: string; request_id: string; client_id: string; quotation_number: string | null; version: number; supersedes_id: string | null; status: string; currency: string; terms: string | null; validity_note: string | null; prepared_by: string | null; submitted_at: string | null; validated_by: string | null; validated_at: string | null; rejection_reason_code: string | null; sent_by: string | null; sent_at: string | null; acceptance_kind: string | null; accepted_on: string | null; acceptance_recorded_by: string | null; acceptance_document_id: string | null; acceptance_message_id: string | null; declined_on: string | null; decline_reason_code: string | null; converted_file_id: string | null; converted_at: string | null; converted_by: string | null; cancelled_at: string | null; cancellation_reason_code: string | null; artifact_storage_path: string | null; artifact_sha256: string | null; artifact_renderer_version: string | null; artifact_generated_at: string | null; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; request_id: string; client_id: string; version?: number; supersedes_id?: string | null; status?: string; currency?: string; terms?: string | null; validity_note?: string | null; prepared_by?: string | null };
+        Update: { status?: string; terms?: string | null; validity_note?: string | null; artifact_storage_path?: string | null; artifact_sha256?: string | null; artifact_renderer_version?: string | null; artifact_generated_at?: string | null };
+        Relationships: [];
+      };
+      quotation_line: {
+        Row: { id: string; tenant_id: string; quotation_id: string; position: number; description: string; quantity_milli: number; unit_amount_minor: number; tax_rate_bp: number; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; quotation_id: string; position: number; description: string; quantity_milli: number; unit_amount_minor: number; tax_rate_bp?: number };
+        Update: { description?: string; quantity_milli?: number; unit_amount_minor?: number; tax_rate_bp?: number; position?: number };
+        Relationships: [];
+      };
+      quotation_counter: {
+        Row: { tenant_id: string; year: number; next_seq: number };
+        Insert: { tenant_id: string; year: number; next_seq?: number };
+        Update: { next_seq?: number };
+        Relationships: [];
+      };
       ec_mailbox: {
         Row: { id: string; tenant_id: string; address: string; label_fr: string; purpose: string; is_active: boolean; note: string | null; created_by: string | null; created_at: string; updated_at: string };
         Insert: { id?: string; tenant_id: string; address: string; label_fr: string; purpose?: string; is_active?: boolean; note?: string | null; created_by?: string | null };
@@ -4120,6 +4144,16 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      quotation_create: { Args: { p_tenant: string; p_request: string; p_actor: string }; Returns: string };
+      next_quotation_number: { Args: { p_tenant: string }; Returns: string };
+      quotation_submit: { Args: { p_tenant: string; p_quotation: string; p_actor: string }; Returns: string };
+      quotation_validate: { Args: { p_tenant: string; p_quotation: string; p_actor: string; p_decision: string; p_reason_code?: string | null }; Returns: string };
+      quotation_send: { Args: { p_tenant: string; p_quotation: string; p_actor: string }; Returns: string };
+      quotation_record_decision: { Args: { p_tenant: string; p_quotation: string; p_actor: string; p_decision: string; p_acceptance_kind?: string | null; p_on?: string | null; p_document?: string | null; p_message?: string | null; p_reason_code?: string | null }; Returns: string };
+      quotation_revise: { Args: { p_tenant: string; p_quotation: string; p_actor: string }; Returns: string };
+      quotation_cancel: { Args: { p_tenant: string; p_quotation: string; p_actor: string; p_reason_code: string }; Returns: string };
+      quotation_record_conversion: { Args: { p_tenant: string; p_quotation: string; p_actor: string; p_file: string }; Returns: string };
+      emit_business_event: { Args: { p_tenant_id: string; p_event_type: string; p_event_domain: string; p_source: string; p_subject_type: string; p_subject_id?: string | null; p_dossier_id?: string | null; p_actor_user_id?: string | null; p_metadata?: Json; p_causation_id?: string | null; p_event_version?: number }; Returns: string };
       ec_assign_triage: {
         Args: { p_tenant: string; p_item: string; p_actor: string; p_assignee: string };
         Returns: string;

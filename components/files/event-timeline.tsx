@@ -27,6 +27,8 @@ const DOMAIN_TONE: Record<EventDomain, string> = {
   // EC-2: customer correspondence attached to this dossier — the communication
   // dimension of the shipment timeline.
   communication: "bg-rose-600",
+  // EC-3B: the commercial provenance of this dossier.
+  commercial: "bg-amber-700",
 };
 
 const METADATA_LABELS: Record<string, string> = {

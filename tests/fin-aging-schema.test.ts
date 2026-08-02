@@ -476,7 +476,7 @@ describe("the DB suite is wired into CI, last, with a readable failure", () => {
     const ci = read(".github/workflows/ci.yml");
     // Each phase appends its suite after the last (the standing rule: newest
     // runs last), so this pin moves to whichever suite is currently newest.
-    const mine = ci.indexOf("rls_ec_triage_test.sql");
+    const mine = ci.indexOf("rls_commercial_quotation_test.sql");
     const others = [...ci.matchAll(/-f supabase\/tests\/(\w+)\.sql/g)]
       .map((m) => ci.indexOf(`${m[1]}.sql`))
       .filter((i) => i !== mine);
@@ -521,7 +521,7 @@ describe("the DB suite is wired into CI, last, with a readable failure", () => {
   });
 
   it("build-info pins the new migration", () => {
-    expect(LATEST_MIGRATION).toBe("20260805000001_ec_triage_outcomes");
+    expect(LATEST_MIGRATION).toBe("20260806000001_commercial_quotation");
   });
 });
 

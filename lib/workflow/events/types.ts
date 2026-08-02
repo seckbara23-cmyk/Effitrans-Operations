@@ -43,6 +43,8 @@ export const EVENT_DOMAINS = [
   // The DOSSIER is the subject when correspondence is attached to one, which is
   // what gives a shipment its communication dimension (Digital LOS).
   "communication",
+  // EC-3B — the commercial offer that precedes the dossier.
+  "commercial",
 ] as const;
 export type EventDomain = (typeof EVENT_DOMAINS)[number];
 
@@ -172,6 +174,24 @@ export const EVENT_TYPES: readonly EventTypeDef[] = [
   { type: "CORRESPONDENCE_ATTACHED", domain: "communication", version: 1, emission: "rpc", metadataKeys: ["triage_item_id", "message_id"], clientSafe: false, labelFr: "Correspondance rattachée au dossier" },
   { type: "CORRESPONDENCE_QUOTATION_HANDOFF", domain: "communication", version: 1, emission: "rpc", metadataKeys: ["triage_item_id", "message_id"], clientSafe: false, labelFr: "Correspondance orientée vers une cotation" },
   { type: "CORRESPONDENCE_RESOLVED", domain: "communication", version: 1, emission: "rpc", metadataKeys: ["triage_item_id", "message_id", "outcome"], clientSafe: false, labelFr: "Correspondance traitée" },
+  // ---------------------------------------------------------------- commercial
+  // EC-3B. Identifiers and codes only — no amounts, no prose. WES-9C's deny-list
+  // already blocks amount/price/currency/reason, and the quotation's money never
+  // travels: the ledger points at the quotation, which stays authoritative.
+  { type: "QUOTATION_CREATED", domain: "commercial", version: 1, emission: "rpc", metadataKeys: ["quotation_id", "request_id"], clientSafe: false, labelFr: "Cotation créée" },
+  { type: "QUOTATION_SUBMITTED", domain: "commercial", version: 1, emission: "rpc", metadataKeys: ["quotation_id", "request_id"], clientSafe: false, labelFr: "Cotation soumise à validation" },
+  { type: "QUOTATION_VALIDATED", domain: "commercial", version: 1, emission: "rpc", metadataKeys: ["quotation_id", "request_id"], clientSafe: false, labelFr: "Cotation validée en interne" },
+  { type: "QUOTATION_REJECTED", domain: "commercial", version: 1, emission: "rpc", metadataKeys: ["quotation_id", "reason_code"], clientSafe: false, labelFr: "Cotation renvoyée au préparateur" },
+  // The customer knows they received it, so this one is client-safe.
+  { type: "QUOTATION_SENT", domain: "commercial", version: 1, emission: "rpc", metadataKeys: ["quotation_id", "request_id"], clientSafe: true, labelFr: "Cotation envoyée au client" },
+  { type: "QUOTATION_ACCEPTED", domain: "commercial", version: 1, emission: "rpc", metadataKeys: ["quotation_id", "request_id", "acceptance_kind"], clientSafe: true, labelFr: "Cotation acceptée par le client" },
+  { type: "QUOTATION_DECLINED", domain: "commercial", version: 1, emission: "rpc", metadataKeys: ["quotation_id", "request_id"], clientSafe: false, labelFr: "Cotation refusée par le client" },
+  { type: "QUOTATION_REVISED", domain: "commercial", version: 1, emission: "rpc", metadataKeys: ["quotation_id", "supersedes_id", "request_id"], clientSafe: false, labelFr: "Cotation révisée (nouvelle version)" },
+  { type: "QUOTATION_CANCELLED", domain: "commercial", version: 1, emission: "rpc", metadataKeys: ["quotation_id", "request_id", "reason_code"], clientSafe: false, labelFr: "Cotation annulée" },
+  // THE keystone: subject and dossier_id are the DOSSIER, so a shipment's
+  // timeline begins with its commercial provenance.
+  { type: "QUOTATION_CONVERTED_TO_DOSSIER", domain: "commercial", version: 1, emission: "rpc", metadataKeys: ["quotation_id", "request_id"], clientSafe: true, labelFr: "Dossier ouvert depuis la cotation" },
+
   { type: "CORRESPONDENCE_DISCARDED", domain: "communication", version: 1, emission: "rpc", metadataKeys: ["triage_item_id", "message_id", "reason_code"], clientSafe: false, labelFr: "Correspondance rejetée" },
 
   // ------------------------------------------------------------------- policy
