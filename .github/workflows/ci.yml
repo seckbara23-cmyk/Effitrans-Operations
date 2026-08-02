@@ -515,6 +515,36 @@ jobs:
           fi
           exit $code
 
+      - name: Run HR-6 performance isolation test
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set +e
+          out=$(psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/rls_hr_performance_test.sql 2>&1)
+          code=$?
+          echo "$out"
+          if [ $code -ne 0 ]; then
+            err=$(echo "$out" | grep -m1 -E '^(psql:.*)?ERROR:' | tr '\n' ' ')
+            note=$(echo "$out" | grep -m1 'HR-6 PERF FAIL' | tr '\n' ' ')
+            echo "::error::HR-6 performance suite failed (psql exit $code). ${err} ${note}"
+          fi
+          exit $code
+
+      - name: Run HR-6 training isolation test
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set +e
+          out=$(psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/rls_hr_training_test.sql 2>&1)
+          code=$?
+          echo "$out"
+          if [ $code -ne 0 ]; then
+            err=$(echo "$out" | grep -m1 -E '^(psql:.*)?ERROR:' | tr '\n' ' ')
+            note=$(echo "$out" | grep -m1 'HR-6 TRAIN FAIL' | tr '\n' ' ')
+            echo "::error::HR-6 training suite failed (psql exit $code). ${err} ${note}"
+          fi
+          exit $code
+
       - name: Stop local Supabase
         if: always()
         run: supabase stop

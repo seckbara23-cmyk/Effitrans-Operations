@@ -3431,6 +3431,60 @@ export type Database = {
         Update: { worked_minutes?: number; source?: string; note?: string | null };
         Relationships: [];
       };
+      hr_performance_cycle: {
+        Row: { id: string; tenant_id: string; code: string; label_fr: string; cycle_kind: string; status: string; period_start: string; period_end: string; opens_on: string | null; submission_deadline: string | null; review_deadline: string | null; finalized_at: string | null; cancelled_at: string | null; cancellation_reason: string | null; hr_owner_id: string | null; target_scope: string; target_org_unit_id: string | null; target_position_id: string | null; weight_total_bp: number; created_by: string | null; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; code: string; label_fr: string; cycle_kind: string; status?: string; period_start: string; period_end: string; opens_on?: string | null; submission_deadline?: string | null; review_deadline?: string | null; hr_owner_id?: string | null; target_scope?: string; target_org_unit_id?: string | null; target_position_id?: string | null; weight_total_bp?: number; created_by?: string | null };
+        Update: { status?: string; label_fr?: string; submission_deadline?: string | null; review_deadline?: string | null; finalized_at?: string | null; cancelled_at?: string | null; cancellation_reason?: string | null; hr_owner_id?: string | null };
+        Relationships: [];
+      };
+      hr_competency: {
+        Row: { id: string; tenant_id: string; code: string; label_fr: string; description: string | null; category: string | null; scale_min: number; scale_max: number; scale_labels: Record<string, string>; is_active: boolean; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; code: string; label_fr: string; description?: string | null; category?: string | null; scale_min?: number; scale_max?: number; scale_labels?: Record<string, string>; is_active?: boolean };
+        Update: { code?: string; label_fr?: string; description?: string | null; category?: string | null; scale_min?: number; scale_max?: number; scale_labels?: Record<string, string>; is_active?: boolean; tenant_id?: string };
+        Relationships: [];
+      };
+      hr_competency_expectation: {
+        Row: { id: string; tenant_id: string; position_id: string; competency_id: string; expected_level: number; created_at: string };
+        Insert: { id?: string; tenant_id: string; position_id: string; competency_id: string; expected_level: number };
+        Update: { expected_level?: number };
+        Relationships: [];
+      };
+      hr_evaluation: {
+        Row: { id: string; tenant_id: string; cycle_id: string; employee_id: string; manager_employee_id: string | null; status: string; self_comments: string | null; self_entered_by: string | null; self_submitted_at: string | null; manager_comments: string | null; manager_strengths: string | null; manager_development: string | null; recommended_actions: string | null; manager_entered_by: string | null; manager_submitted_at: string | null; moderation_note: string | null; final_summary: string | null; finalized_by: string | null; finalized_at: string | null; acknowledged_by: string | null; acknowledged_at: string | null; acknowledgment_note: string | null; cancelled_at: string | null; cancellation_reason: string | null; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; cycle_id: string; employee_id: string; manager_employee_id?: string | null; status?: string };
+        Update: { status?: string; cancelled_at?: string | null; cancellation_reason?: string | null };
+        Relationships: [];
+      };
+      hr_objective: {
+        Row: { id: string; tenant_id: string; cycle_id: string; employee_id: string; title: string; description: string | null; category: string | null; weight_bp: number; measurable_target: string | null; due_date: string | null; status: string; progress_bp: number; manager_achievement_bp: number | null; manager_assessment: string | null; completion_note: string | null; evidence_document_id: string | null; version: number; supersedes_objective_id: string | null; locked_at: string | null; created_by: string | null; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; cycle_id: string; employee_id: string; title: string; description?: string | null; category?: string | null; weight_bp?: number; measurable_target?: string | null; due_date?: string | null; status?: string; created_by?: string | null };
+        Update: { status?: string; progress_bp?: number; manager_achievement_bp?: number | null; manager_assessment?: string | null; completion_note?: string | null; evidence_document_id?: string | null; locked_at?: string | null };
+        Relationships: [];
+      };
+      hr_competency_assessment: {
+        Row: { id: string; tenant_id: string; evaluation_id: string; competency_id: string; self_level: number | null; manager_level: number | null; expected_level: number | null; note: string | null; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; evaluation_id: string; competency_id: string; self_level?: number | null; manager_level?: number | null; expected_level?: number | null; note?: string | null };
+        Update: { self_level?: number | null; manager_level?: number | null; expected_level?: number | null; note?: string | null; tenant_id?: string; evaluation_id?: string; competency_id?: string };
+        Relationships: [];
+      };
+      hr_training_course: {
+        Row: { id: string; tenant_id: string; code: string; title: string; provider: string | null; category: string | null; delivery_mode: string; duration_minutes: number | null; validity_months: number | null; is_mandatory: boolean; target_org_unit_id: string | null; target_position_id: string | null; requires_evidence: boolean; is_active: boolean; created_by: string | null; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; code: string; title: string; provider?: string | null; category?: string | null; delivery_mode?: string; duration_minutes?: number | null; validity_months?: number | null; is_mandatory?: boolean; target_org_unit_id?: string | null; target_position_id?: string | null; requires_evidence?: boolean; is_active?: boolean; created_by?: string | null };
+        Update: { code?: string; title?: string; provider?: string | null; category?: string | null; delivery_mode?: string; duration_minutes?: number | null; validity_months?: number | null; is_mandatory?: boolean; target_org_unit_id?: string | null; target_position_id?: string | null; requires_evidence?: boolean; is_active?: boolean; tenant_id?: string };
+        Relationships: [];
+      };
+      hr_training_plan: {
+        Row: { id: string; tenant_id: string; employee_id: string; label_fr: string; period_start: string; period_end: string; status: string; note: string | null; created_by: string | null; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; employee_id: string; label_fr: string; period_start: string; period_end: string; status?: string; note?: string | null; created_by?: string | null };
+        Update: { status?: string; label_fr?: string; note?: string | null };
+        Relationships: [];
+      };
+      hr_training_enrollment: {
+        Row: { id: string; tenant_id: string; employee_id: string; course_id: string; plan_id: string | null; status: string; planned_date: string | null; due_date: string | null; started_at: string | null; completed_on: string | null; result: string | null; certificate_document_id: string | null; expiry_date: string | null; provider_reference: string | null; note: string | null; cancellation_reason: string | null; assigned_by: string | null; completed_by: string | null; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; employee_id: string; course_id: string; plan_id?: string | null; status?: string; planned_date?: string | null; due_date?: string | null; assigned_by?: string | null; note?: string | null };
+        Update: { status?: string; started_at?: string | null; planned_date?: string | null; due_date?: string | null; certificate_document_id?: string | null; note?: string | null };
+        Relationships: [];
+      };
       hr_checklist_template: {
         Row: { id: string; tenant_id: string; code: string; label_fr: string; is_active: boolean; created_at: string; updated_at: string };
         Insert: { id?: string; tenant_id: string; code: string; label_fr: string; is_active?: boolean };
@@ -4030,6 +4084,42 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      hr_open_performance_cycle: {
+        Args: { p_tenant: string; p_cycle: string; p_actor: string };
+        Returns: number;
+      };
+      hr_submit_self_assessment: {
+        Args: { p_tenant: string; p_evaluation: string; p_actor: string; p_comments: string | null };
+        Returns: string;
+      };
+      hr_submit_manager_review: {
+        Args: { p_tenant: string; p_evaluation: string; p_actor: string; p_comments: string | null; p_strengths?: string | null; p_development?: string | null; p_actions?: string | null };
+        Returns: string;
+      };
+      hr_finalize_evaluation: {
+        Args: { p_tenant: string; p_evaluation: string; p_actor: string; p_moderation_note?: string | null; p_final_summary?: string | null };
+        Returns: string;
+      };
+      hr_acknowledge_evaluation: {
+        Args: { p_tenant: string; p_evaluation: string; p_actor: string; p_note?: string | null };
+        Returns: string;
+      };
+      hr_assign_objective: {
+        Args: { p_tenant: string; p_cycle: string; p_employee: string; p_actor: string; p_title: string; p_weight_bp: number; p_description?: string | null; p_category?: string | null; p_target?: string | null; p_due?: string | null; p_supersedes?: string | null };
+        Returns: string;
+      };
+      hr_assign_training: {
+        Args: { p_tenant: string; p_employee: string; p_course: string; p_actor: string; p_planned?: string | null; p_due?: string | null; p_plan?: string | null };
+        Returns: string;
+      };
+      hr_complete_training: {
+        Args: { p_tenant: string; p_enrollment: string; p_actor: string; p_result?: string | null; p_completed_on?: string | null; p_certificate?: string | null; p_provider_reference?: string | null };
+        Returns: string;
+      };
+      hr_close_training_enrollment: {
+        Args: { p_tenant: string; p_enrollment: string; p_actor: string; p_status: string; p_reason?: string | null };
+        Returns: string;
+      };
       hr_decide_leave_request: {
         Args: { p_tenant: string; p_request: string; p_actor: string; p_decision: string; p_note?: string | null };
         Returns: string;

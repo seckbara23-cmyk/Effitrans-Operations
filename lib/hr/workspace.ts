@@ -16,6 +16,8 @@ import "server-only";
  *     notice period is implied, because none has been ratified.
  */
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
+import { performanceCounts, type PerformanceCounts } from "./performance";
+import { trainingCounts, type TrainingCounts } from "./training";
 
 /** Default look-ahead for expiry surfaces. A display window, not a legal rule. */
 export const EXPIRY_WINDOW_DAYS = 30;
@@ -103,17 +105,24 @@ export type HrCenterData = {
   expiringContracts: ExpiringContract[] | null;
   expiringDocuments: ExpiringDocument[] | null;
   recentActivity: RecentActivity[] | null;
+  /** HR-6. Null when unreadable — « indisponible », never zero. */
+  performance: PerformanceCounts | null;
+  training: TrainingCounts | null;
 };
 
 export async function getHrCenterData(tenantId: string): Promise<HrCenterData> {
-  const [c, d, a] = await Promise.allSettled([
+  const [c, d, a, p, t] = await Promise.allSettled([
     expiringContracts(tenantId),
     expiringDocuments(tenantId),
     recentHrActivity(tenantId),
+    performanceCounts(tenantId),
+    trainingCounts(tenantId),
   ]);
   return {
     expiringContracts: c.status === "fulfilled" ? c.value : null,
     expiringDocuments: d.status === "fulfilled" ? d.value : null,
     recentActivity: a.status === "fulfilled" ? a.value : null,
+    performance: p.status === "fulfilled" ? p.value : null,
+    training: t.status === "fulfilled" ? t.value : null,
   };
 }

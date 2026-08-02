@@ -35,7 +35,18 @@ export type HrEventKind =
   | "leave_requested"
   | "leave_approved"
   | "leave_refused"
-  | "leave_cancelled";
+  | "leave_cancelled"
+  // HR-6. Emitted by the transactional RPCs, never by draft edits: a review the
+  // employee never saw does not belong in the narrative of their employment.
+  | "performance_cycle_opened"
+  | "objective_assigned"
+  | "self_assessment_submitted"
+  | "manager_review_submitted"
+  | "performance_review_finalized"
+  | "performance_review_acknowledged"
+  | "training_assigned"
+  | "training_completed"
+  | "certificate_recorded";
 
 /** French labels for the projection — one entry per kind, exhaustively. */
 export const HR_EVENT_LABEL_FR: Record<HrEventKind, string> = {
@@ -59,6 +70,15 @@ export const HR_EVENT_LABEL_FR: Record<HrEventKind, string> = {
   leave_approved: "Congé approuvé",
   leave_refused: "Congé refusé",
   leave_cancelled: "Congé annulé",
+  performance_cycle_opened: "Cycle d'évaluation ouvert",
+  objective_assigned: "Objectif assigné",
+  self_assessment_submitted: "Auto-évaluation soumise",
+  manager_review_submitted: "Évaluation du manager soumise",
+  performance_review_finalized: "Évaluation finalisée",
+  performance_review_acknowledged: "Évaluation accusée de réception",
+  training_assigned: "Formation assignée",
+  training_completed: "Formation terminée",
+  certificate_recorded: "Certificat enregistré",
 };
 
 export type EmitInput = {

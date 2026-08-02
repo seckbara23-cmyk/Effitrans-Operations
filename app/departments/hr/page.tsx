@@ -26,6 +26,7 @@ import { hrDashboardCounts, getHrConfiguration } from "@/lib/hr/organization";
 import { hrOperationsCounts } from "@/lib/hr/onboarding";
 import { leaveCounts } from "@/lib/hr/leave";
 import { getHrCenterData, EXPIRY_WINDOW_DAYS } from "@/lib/hr/workspace";
+import { CERTIFICATE_EXPIRY_WINDOW_DAYS } from "@/lib/hr/training";
 import { HR_EVENT_LABEL_FR, type HrEventKind } from "@/lib/hr/ledger";
 
 export const metadata: Metadata = { title: "Ressources humaines" };
@@ -113,6 +114,12 @@ export default async function HrOperationsCenterPage() {
           { label: `Documents expirant (${EXPIRY_WINDOW_DAYS} j)`, value: documentsSoon ?? UNAVAILABLE, tone: "amber" },
           { label: "Restitutions attendues", value: ops.assetsAwaitingReturn, tone: "red" },
           { label: "Tâches d'intégration en retard", value: ops.overdueItems, tone: "red" },
+          // HR-6. Live signals, computed on load — no scheduler exists, and none
+          // was invented to produce them (see the HR-5A deferral).
+          { label: "Revues à finaliser", value: center.performance?.awaitingFinalization ?? UNAVAILABLE, tone: "amber" },
+          { label: "Objectifs en retard", value: center.performance?.objectivesOverdue ?? UNAVAILABLE, tone: "amber" },
+          { label: "Formations obligatoires en retard", value: center.training?.mandatoryOverdue ?? UNAVAILABLE, tone: "red" },
+          { label: `Certificats expirant (${CERTIFICATE_EXPIRY_WINDOW_DAYS} j)`, value: center.training?.expiringSoon ?? UNAVAILABLE, tone: "amber" },
         ]}
       />
 
@@ -139,8 +146,8 @@ export default async function HrOperationsCenterPage() {
           {canManage
             ? <WorkspaceTile href="/departments/hr/imports" title="Imports" subtitle="Préparation — application non activée" />
             : <GatedTile title="Imports" gate="hr:manage" />}
-          <SoonTile title="Performance" note="À venir — HR-6" />
-          <SoonTile title="Formation" note="À venir — HR-6" />
+          <WorkspaceTile href="/departments/hr/performance" title="Performance" subtitle="Cycles, objectifs, compétences" />
+          <WorkspaceTile href="/departments/hr/formation" title="Formation" subtitle="Catalogue, inscriptions, certificats" />
           <SoonTile title="Préparation de paie" note="À venir — HR-7" />
           <SoonTile title="Offboarding" note="À venir — HR-8" />
           <SoonTile title="Reporting RH" note="À venir — HR-9" />

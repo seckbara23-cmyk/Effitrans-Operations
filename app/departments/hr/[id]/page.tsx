@@ -26,6 +26,8 @@ import { listEmployeeCustody, listEquipment, listEquipmentTypes, getLiveOnboardi
 import { deriveEmployeePresence, listEntitlements, listLeaveRequests, withBalances, listAttendance, LEAVE_STATUS_FR } from "@/lib/hr/leave";
 import { PRESENCE_LABEL_FR } from "@/lib/hr/leave/presence";
 import { formatTenths } from "@/lib/hr/leave/balance";
+import { listEvaluations, listObjectives, listCycles, EVALUATION_STATUS_FR } from "@/lib/hr/performance";
+import { listEnrollments, listCourses, ENROLLMENT_STATUS_FR } from "@/lib/hr/training";
 
 export const metadata: Metadata = { title: "Employé" };
 export const dynamic = "force-dynamic";
@@ -81,6 +83,16 @@ export default async function EmployeeProfilePage({ params }: { params: { id: st
     listEmployeeDocuments(user.tenantId, employee.id, canSeeSensitive),
     listEmployeeContracts(user.tenantId, employee.id),
   ]);
+  // HR-6 — the workflow is visible on hr:read; the C3 prose needs hr:sensitive:read.
+  const [evaluations, employeeObjectives, cycles, enrollments, courses] = await Promise.all([
+    listEvaluations(user.tenantId, { employeeId: employee.id, canReadSensitive: canSeeSensitive }),
+    listObjectives(user.tenantId, { employeeId: employee.id }),
+    listCycles(user.tenantId),
+    listEnrollments(user.tenantId, { employeeId: employee.id }),
+    listCourses(user.tenantId),
+  ]);
+  const cycleLabel = (id: string) => cycles.find((c) => c.id === id)?.labelFr ?? "Cycle";
+  const courseTitle = (id: string) => courses.find((c) => c.id === id)?.title ?? "Formation";
   const managers = directory
     .filter((e) => e.status === "ACTIVE")
     .map((e) => ({ id: e.id, label: `${e.first_name} ${e.last_name} (${e.employee_number})` }));
@@ -263,6 +275,59 @@ export default async function EmployeeProfilePage({ params }: { params: { id: st
                 </li>
               );
             })}
+          </ul>
+        )}
+      </section>
+
+      {/* HR-6 — performance : le déroulé est visible, le CONTENU est C3. */}
+      <section className="surface p-4">
+        <h2 className="mb-3 text-sm font-semibold text-navy-900">Performance</h2>
+        {evaluations.length === 0 ? (
+          <p className="text-sm text-slate-500">
+            Aucune évaluation. Les cycles se lancent depuis{" "}
+            <Link href="/departments/hr/performance" className="text-teal-700 hover:underline">Performance</Link>.
+          </p>
+        ) : (
+          <ul className="space-y-1.5 text-sm">
+            {evaluations.map((ev) => {
+              const own = employeeObjectives.filter((o) => o.cycleId === ev.cycleId);
+              return (
+                <li key={ev.id} className="flex flex-wrap items-center gap-2 text-slate-600">
+                  <strong className="text-navy-800">{cycleLabel(ev.cycleId)}</strong>
+                  <span className="text-xs">{EVALUATION_STATUS_FR[ev.status]}</span>
+                  <span className="text-xs text-slate-400">{own.length} objectif(s)</span>
+                  {ev.finalizedAt && (
+                    <span className="tabular text-xs text-slate-400">finalisée le {ev.finalizedAt.slice(0, 10)}</span>
+                  )}
+                  {ev.contentWithheld && (
+                    <span className="text-xs italic text-slate-400">contenu réservé (hr:sensitive:read)</span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+
+      {/* HR-6 — formation : exigences, réalisation et preuves. Pas de contenu. */}
+      <section className="surface p-4">
+        <h2 className="mb-3 text-sm font-semibold text-navy-900">Formation</h2>
+        {enrollments.length === 0 ? (
+          <p className="text-sm text-slate-500">
+            Aucune formation enregistrée. Les affectations se font depuis{" "}
+            <Link href="/departments/hr/formation" className="text-teal-700 hover:underline">Formation</Link>.
+          </p>
+        ) : (
+          <ul className="space-y-1 text-sm text-slate-600">
+            {enrollments.map((e) => (
+              <li key={e.id} className="flex flex-wrap items-center gap-2">
+                <span className="text-navy-900">{courseTitle(e.courseId)}</span>
+                <span className="text-xs">{ENROLLMENT_STATUS_FR[e.status]}</span>
+                {e.completedOn && <span className="tabular text-xs text-slate-400">terminée le {e.completedOn}</span>}
+                {e.expiryDate && <span className="tabular text-xs text-slate-400">expire le {e.expiryDate}</span>}
+                {e.certificateDocumentId && <span className="text-xs text-teal-700">certificat</span>}
+              </li>
+            ))}
           </ul>
         )}
       </section>

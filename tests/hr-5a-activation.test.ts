@@ -22,10 +22,16 @@ const HR_ROUTES = [
 
 // ---------------------------------------------------------------------------
 describe("zero-change guarantees — activation is UI only", () => {
-  it("adds NO migration: 77 remains the newest", () => {
+  it("added NO migration of its own — HR-5's is still the last before HR-6", () => {
     const migrations = readdirSync(join(root, "supabase", "migrations")).filter((f) => f.endsWith(".sql")).sort();
-    expect(migrations.length).toBe(77);
-    expect(migrations[migrations.length - 1]).toBe("20260802000003_hr_leave_attendance.sql");
+    // Pinned RELATIVELY, not as a global count: later phases legitimately add
+    // migrations, and a global-count pin would make every future phase look
+    // like a breach of HR-5A's guarantee. What HR-5A promised is that IT
+    // shipped none — so nothing may sit between HR-5's migration and HR-6's.
+    const hr5 = migrations.indexOf("20260802000003_hr_leave_attendance.sql");
+    expect(hr5).toBeGreaterThan(-1);
+    expect(migrations[hr5 + 1] ?? "20260803000001_hr_performance.sql")
+      .toBe("20260803000001_hr_performance.sql");
   });
 
   it("adds no permission code and no grant anywhere in HR-5A's files", () => {
@@ -101,7 +107,10 @@ describe("canonical routes — one entry point per capability", () => {
       .filter((d) => d.isDirectory()).map((d) => d.name);
     expect(routes).not.toContain("dashboard");
     expect(routes).not.toContain("tableau");
-    expect(routes.sort()).toEqual(["[id]", "configuration", "conges", "equipement", "imports", "onboarding", "organisation", "registre"]);
+    // HR-6 added `performance` and `formation` — both are WORKSPACES reached
+    // from the hub, not competing dashboards, so the invariant still holds.
+    expect(routes.sort()).toEqual(["[id]", "configuration", "conges", "equipement", "formation",
+      "imports", "onboarding", "organisation", "performance", "registre"]);
   });
 
   it("the registry's filter links point at /registre — the HR-1 move is honoured", () => {
