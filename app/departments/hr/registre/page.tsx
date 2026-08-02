@@ -50,7 +50,7 @@ function StatusBadge({ status }: { status: string }) {
 export default async function HrRegistryPage({
   searchParams,
 }: {
-  searchParams?: { status?: string; department?: string };
+  searchParams?: { status?: string; department?: string; q?: string };
 }) {
   const header = <PageHeader meta="Management" title="Ressources humaines" subtitle="Registre du personnel — identité, département, fonction, statut d'emploi et liaison de compte." />;
 
@@ -66,17 +66,24 @@ export default async function HrRegistryPage({
   if (searchParams?.department && isCanonicalDepartment(searchParams.department)) {
     filters.department = searchParams.department;
   }
+  if (searchParams?.q?.trim()) {
+    filters.q = searchParams.q.trim().slice(0, 80);
+  }
 
   const [stats, rows] = await Promise.all([employeeStats(user.tenantId), listEmployees(user.tenantId, filters)]);
 
+  // HR-5A fix: these links pointed at /departments/hr, which became the HR
+  // Operations Center in HR-1 — every filter click left the registry and lost
+  // the filter. They belong to /registre, the registry's canonical route.
   const filterHref = (patch: Partial<EmployeeFilters>) => {
     const sp = new URLSearchParams();
     const status = patch.status ?? filters.status;
     const department = patch.department ?? filters.department;
     if (status) sp.set("status", status);
     if (department) sp.set("department", department);
+    if (filters.q) sp.set("q", filters.q);
     const qs = sp.toString();
-    return qs ? `/departments/hr?${qs}` : "/departments/hr";
+    return qs ? `/departments/hr/registre?${qs}` : "/departments/hr/registre";
   };
 
   return (
@@ -93,6 +100,23 @@ export default async function HrRegistryPage({
       {canManage && <EmployeeCreateForm />}
 
       {/* Filters */}
+      {/* HR-5A — a filter over the columns this table already shows. Not a
+          global search: the platform has no search index, and building one here
+          would be parallel infrastructure (documented as deferred). */}
+      <form method="get" action="/departments/hr/registre" className="flex flex-wrap items-center gap-2">
+        {filters.status && <input type="hidden" name="status" value={filters.status} />}
+        {filters.department && <input type="hidden" name="department" value={filters.department} />}
+        <label htmlFor="hr-q" className="sr-only">Filtrer par nom, matricule ou fonction</label>
+        <input id="hr-q" name="q" defaultValue={filters.q ?? ""} placeholder="Nom, matricule ou fonction…"
+          className="w-64 rounded-md border border-slate-200 px-2 py-1.5 text-sm" />
+        <button type="submit" className="rounded-lg bg-navy-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-navy-800">
+          Filtrer
+        </button>
+        {filters.q && (
+          <Link href={filterHref({})} className="text-xs text-teal-700 hover:underline">Effacer</Link>
+        )}
+      </form>
+
       <div className="flex flex-wrap items-center gap-2 text-xs">
         <span className="text-slate-400">Statut :</span>
         <Link href={filterHref({ status: undefined })} className={`rounded px-2 py-1 ${!filters.status ? "bg-navy-700 text-white" : "bg-slate-100 text-slate-600"}`}>Tous</Link>

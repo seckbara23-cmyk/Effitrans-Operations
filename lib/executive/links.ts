@@ -8,6 +8,10 @@
  * Each target is an EXISTING route — tests assert every one resolves to a real page.
  */
 export const DRILL = {
+  hr: "/departments/hr",
+  hrLeave: "/departments/hr/conges",
+  hrOnboarding: "/departments/hr/onboarding",
+  hrEquipment: "/departments/hr/equipement",
   operations: "/departments/transport",
   shipping: "/shipping",
   air: "/air",

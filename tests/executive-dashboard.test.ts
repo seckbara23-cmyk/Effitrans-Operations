@@ -31,6 +31,7 @@ function ctx(over: Partial<ExecutiveIntelligence> = {}): ExecutiveIntelligence {
   return {
     generatedAt: "2026-07-17T10:00:00Z",
     sections: [...EXECUTIVE_SECTIONS],
+    hr: null,
     unavailable: [],
     kpis: [],
     operations: null, financial: null, customers: null, documents: null, ai: null,

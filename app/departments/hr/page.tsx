@@ -1,31 +1,37 @@
 /**
- * HR-1 — the HR Dashboard, the hub's first page (ratified addendum §10).
- * ---------------------------------------------------------------------------
- * Eight cards. Cards whose module is not yet implemented render DARK
- * (disabled, « À venir — HR-n ») — never a broken link, never a hidden
- * surprise. The shipped Employee Registry is a WORKSPACE reached from here
- * (/departments/hr/registre), exactly as Douane/Transport/Caisse hang off
- * their department hubs.
+ * HR-5A — the HR Operations Center. The department hub, at the same standard as
+ * Opérations / Transit / Finance. (Supersedes the HR-1 dashboard shell; same
+ * ratified route, no competing dashboard was created.)
  *
- * Gate: hr:read (SYSTEM_ADMIN holds no hr:* — DEC-B25). Route re-checks;
- * the sidebar entry under MANAGEMENT filters on the same permission.
+ * COMPOSITION ONLY. Every figure comes from a read service HR-1..HR-5 already
+ * owns; this page computes nothing of its own. In particular « en congé » is
+ * HR-5's projection over APPROVED windows — no ON_LEAVE is stored anywhere.
+ *
+ * Honest states: a figure that could not be read renders « indisponible », which
+ * is a different thing from zero and is never rendered as zero.
+ *
+ * Gate: hr:read (SYSTEM_ADMIN holds no hr:* — DEC-B25). Restricted surfaces stay
+ * gated on their own permissions and say what they are waiting for.
  */
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/departments/stat-card";
+import { DeptAttentionCard } from "@/components/departments/dept-attention-card";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { employeeStats } from "@/lib/hr/read";
 import { hrDashboardCounts, getHrConfiguration } from "@/lib/hr/organization";
 import { hrOperationsCounts } from "@/lib/hr/onboarding";
 import { leaveCounts } from "@/lib/hr/leave";
+import { getHrCenterData, EXPIRY_WINDOW_DAYS } from "@/lib/hr/workspace";
+import { HR_EVENT_LABEL_FR, type HrEventKind } from "@/lib/hr/ledger";
 
 export const metadata: Metadata = { title: "Ressources humaines" };
 export const dynamic = "force-dynamic";
 
-/** A live module tile: links to its workspace. */
+/** A live capability: links to its canonical route. */
 function WorkspaceTile({ href, title, subtitle }: { href: string; title: string; subtitle: string }) {
   return (
     <Link href={href} className="surface block p-5 transition hover:border-teal-300 hover:shadow-sm">
@@ -35,17 +41,27 @@ function WorkspaceTile({ href, title, subtitle }: { href: string; title: string;
   );
 }
 
-/** A dark tile: the module exists in the roadmap, not in the product yet. */
-function DarkTile({ title, phase }: { title: string; phase: string }) {
+/** A roadmap capability: disabled, and honest about which phase owns it. */
+function SoonTile({ title, note }: { title: string; note: string }) {
   return (
     <div aria-disabled="true" className="surface p-5 opacity-60">
       <p className="text-sm font-semibold text-slate-500">{title}</p>
-      <p className="mt-1 text-xs text-slate-400">À venir — {phase}</p>
+      <p className="mt-1 text-xs text-slate-400">{note}</p>
     </div>
   );
 }
 
-export default async function HrDashboardPage() {
+/** Built, but waiting on an authority nobody holds yet. Named, not hidden. */
+function GatedTile({ title, gate }: { title: string; gate: string }) {
+  return (
+    <div aria-disabled="true" className="surface p-5 opacity-60">
+      <p className="text-sm font-semibold text-slate-500">{title}</p>
+      <p className="mt-1 text-xs text-slate-400">Autorisation requise — {gate}</p>
+    </div>
+  );
+}
+
+export default async function HrOperationsCenterPage() {
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
     return (
       <div className="animate-fade-in space-y-6">
@@ -60,69 +76,106 @@ export default async function HrDashboardPage() {
   const canConfigure = hasPermission(permissions, "hr:config:manage");
   const canManage = hasPermission(permissions, "hr:manage");
 
-  const [stats, counts, config, ops, leave] = await Promise.all([
+  const [stats, counts, config, ops, leave, center] = await Promise.all([
     employeeStats(user.tenantId),
     hrDashboardCounts(user.tenantId),
     getHrConfiguration(user.tenantId),
     hrOperationsCounts(user.tenantId),
     leaveCounts(user.tenantId),
+    getHrCenterData(user.tenantId),
   ]);
+
+  const UNAVAILABLE = "indisponible";
+  const contractsSoon = center.expiringContracts?.length ?? null;
+  const documentsSoon = center.expiringDocuments?.length ?? null;
 
   return (
     <div className="animate-fade-in space-y-6">
       <PageHeader
         meta="Management"
         title="Ressources humaines"
-        subtitle="Tableau de bord RH — effectifs, organisation et espaces de travail."
+        subtitle="Centre d'opérations RH — effectifs, intégration, équipements, congés et organisation."
       />
 
-      {/* Headcount + structure at a glance */}
+      {/* Effectifs — the headline row */}
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-        <StatCard label="Employés actifs" value={stats.active} tone="teal" />
-        <StatCard label="Départements RH" value={counts.departments} tone="navy" />
-        <StatCard label="Postes" value={counts.positions} tone="slate" />
-        <StatCard label="Unités d'organisation" value={counts.units} tone="slate" />
+        <StatCard label="Employés actifs" value={stats.active} tone="teal" href="/departments/hr/registre" />
+        <StatCard label="En congé aujourd'hui" value={leave.onLeaveToday} tone="navy" href="/departments/hr/conges" />
+        <StatCard label="Intégrations en cours" value={ops.activeCases} tone="navy" href="/departments/hr/onboarding" />
+        <StatCard label="Équipements attribués" value={ops.assetsAssigned} tone="slate" href="/departments/hr/equipement" />
       </div>
 
-      {/* HR-4 — live operational counters */}
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-        <StatCard label="Intégrations en cours" value={ops.activeCases} tone="navy" />
-        <StatCard label="Tâches d'intégration en retard" value={ops.overdueItems} tone={ops.overdueItems > 0 ? "amber" : "slate"} />
-        <StatCard label="Équipements attribués" value={ops.assetsAssigned} tone="teal" />
-        <StatCard label="Restitutions attendues" value={ops.assetsAwaitingReturn} tone={ops.assetsAwaitingReturn > 0 ? "amber" : "slate"} />
-        <StatCard label="Congés à décider" value={leave.pending} tone={leave.pending > 0 ? "amber" : "slate"} />
-        <StatCard label="En congé aujourd'hui" value={leave.onLeaveToday} tone="navy" />
-      </div>
+      {/* Attention — zero and « indisponible » read differently, deliberately */}
+      <DeptAttentionCard
+        items={[
+          { label: "Congés à décider", value: leave.pending, tone: "amber" },
+          { label: `Contrats expirant (${EXPIRY_WINDOW_DAYS} j)`, value: contractsSoon ?? UNAVAILABLE, tone: "amber" },
+          { label: `Documents expirant (${EXPIRY_WINDOW_DAYS} j)`, value: documentsSoon ?? UNAVAILABLE, tone: "amber" },
+          { label: "Restitutions attendues", value: ops.assetsAwaitingReturn, tone: "red" },
+          { label: "Tâches d'intégration en retard", value: ops.overdueItems, tone: "red" },
+        ]}
+      />
 
       {config === null && (
         <div className="surface p-4 text-sm text-slate-600">
-          La structure RH n'est pas encore configurée. Le centre de configuration
-          {canConfigure ? " est accessible ci-dessous." : " sera accessible une fois l'autorisation « hr:config:manage » attribuée (ratification HRQ-D2 en attente)."}
+          La structure RH n&apos;est pas encore configurée{canConfigure
+            ? " — le centre de configuration est accessible ci-dessous."
+            : " ; le centre de configuration requiert « hr:config:manage », autorisation en attente de ratification (HRQ-D2)."}
         </div>
       )}
 
-      {/* The eight cards — live modules link, unbuilt modules are dark */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
-        <WorkspaceTile href="/departments/hr/registre" title="Employés" subtitle="Registre du personnel — identité, statut, compte" />
-        <WorkspaceTile href="/departments/hr/organisation" title="Organisation" subtitle="Arbre des unités — lecture seule" />
-        {canConfigure ? (
-          <WorkspaceTile href="/departments/hr/configuration" title="Départements & Postes" subtitle="Centre de configuration (permanent)" />
-        ) : (
-          <div aria-disabled="true" className="surface p-5 opacity-60">
-            <p className="text-sm font-semibold text-slate-500">Départements & Postes</p>
-            <p className="mt-1 text-xs text-slate-400">Configuration — autorisation en attente (HRQ-D2)</p>
-          </div>
-        )}
-        {canManage ? (
-          <WorkspaceTile href="/departments/hr/imports" title="Imports" subtitle="Préparation des données — pipeline en attente d'activation" />
-        ) : (
-          <DarkTile title="Imports" phase="hr:manage requis" />
-        )}
-        <WorkspaceTile href="/departments/hr/onboarding" title="Intégration" subtitle="Dossiers, check-lists et suivi des accès" />
-        <WorkspaceTile href="/departments/hr/equipement" title="Équipements" subtitle="Parc, attribution et restitution" />
-        <WorkspaceTile href="/departments/hr/conges" title="Congés" subtitle="Demandes, droits et présence" />
-        <DarkTile title="Performance" phase="HR-6" />
+      {/* Canonical entry points — exactly one per completed capability */}
+      <div>
+        <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Espaces de travail</p>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
+          <WorkspaceTile href="/departments/hr/registre" title="Employés" subtitle="Registre — identité, statut, compte lié" />
+          <WorkspaceTile href="/departments/hr/organisation" title="Organisation" subtitle="Arbre des unités — lecture seule" />
+          <WorkspaceTile href="/departments/hr/onboarding" title="Intégration" subtitle="Dossiers, check-lists, accès" />
+          <WorkspaceTile href="/departments/hr/equipement" title="Équipements" subtitle="Parc, attribution, restitution" />
+          <WorkspaceTile href="/departments/hr/conges" title="Congés & présence" subtitle="Demandes, droits, saisie de présence" />
+          {canConfigure
+            ? <WorkspaceTile href="/departments/hr/configuration" title="Configuration" subtitle="Structure, postes, numérotation" />
+            : <GatedTile title="Configuration" gate="hr:config:manage (HRQ-D2)" />}
+          {canManage
+            ? <WorkspaceTile href="/departments/hr/imports" title="Imports" subtitle="Préparation — application non activée" />
+            : <GatedTile title="Imports" gate="hr:manage" />}
+          <SoonTile title="Performance" note="À venir — HR-6" />
+          <SoonTile title="Formation" note="À venir — HR-6" />
+          <SoonTile title="Préparation de paie" note="À venir — HR-7" />
+          <SoonTile title="Offboarding" note="À venir — HR-8" />
+          <SoonTile title="Reporting RH" note="À venir — HR-9" />
+        </div>
       </div>
+
+      {/* Structure — what the organisation actually contains today */}
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        <StatCard label="Unités d'organisation" value={counts.units} tone="slate" href="/departments/hr/organisation" />
+        <StatCard label="Départements RH" value={counts.departments} tone="slate" />
+        <StatCard label="Postes" value={counts.positions} tone="slate" />
+        <StatCard label="Sites de travail" value={counts.locations} tone="slate" />
+      </div>
+
+      {/* Activité récente — a projection of the append-only ledger */}
+      <section className="surface p-5">
+        <h2 className="mb-3 text-sm font-semibold text-navy-900">Activité RH récente</h2>
+        {center.recentActivity === null ? (
+          <p className="text-sm text-slate-500">Activité indisponible pour le moment.</p>
+        ) : center.recentActivity.length === 0 ? (
+          <p className="text-sm text-slate-500">Aucune activité enregistrée.</p>
+        ) : (
+          <ul className="space-y-1.5 text-sm">
+            {center.recentActivity.map((e) => (
+              <li key={e.id} className="flex flex-wrap items-center gap-2 text-slate-600">
+                <span className="tabular text-xs text-slate-400">{e.occurredAt.slice(0, 16).replace("T", " ")}</span>
+                <strong className="text-navy-800">{HR_EVENT_LABEL_FR[e.kind as HrEventKind] ?? e.kind}</strong>
+                <Link href={`/departments/hr/${e.employeeId}`} className="text-xs text-teal-700 hover:underline">
+                  voir l&apos;employé
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
     </div>
   );
 }

@@ -138,7 +138,9 @@ describe("navigation & pages — ratified placement", () => {
 
   it("the hub is the dashboard; the registry lives at /registre", () => {
     const dash = read("app/departments/hr/page.tsx");
-    expect(dash).toContain("Tableau de bord RH");
+    // HR-5A renamed the hub to the HR Operations Center on the SAME route —
+    // no competing dashboard route was created.
+    expect(dash).toContain("Centre d'opérations RH");
     expect(dash).not.toContain("EmployeeCreateForm"); // no employee CRUD on the dashboard
     const registre = read("app/departments/hr/registre/page.tsx");
     expect(registre).toContain("EmployeeCreateForm"); // the shipped registry, moved intact

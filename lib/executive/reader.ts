@@ -40,6 +40,7 @@ import { getCopilotConfig } from "@/lib/copilot/engine";
 import { readNotificationKpis } from "./readers/portal-ops";
 import { readFleetMap } from "./readers/fleet-map";
 import { readExecutiveTimeline } from "./readers/timeline";
+import { readHrOverview } from "./readers/hr";
 import { countAlertsByLevel, kpi, mergeExecutiveAlerts, normalizeSeverity, successRate } from "./compose";
 import { DRILL, MODE_HREF } from "./links";
 import type {
@@ -62,7 +63,7 @@ export const getExecutiveIntelligence = cache(async (): Promise<ExecutiveIntelli
   const sections: ExecutiveSection[] = [];
   const unavailable: ExecutiveSection[] = [];
 
-  const [ctR, biR, anR, ccR, diR, aiR, notifR, mapR, tlR] = await Promise.allSettled([
+  const [ctR, biR, anR, ccR, diR, aiR, notifR, mapR, tlR, hrR] = await Promise.allSettled([
     getControlTower(perms),
     getBusinessIntelligence(perms),
     getAnalytics(canFinance),
@@ -72,6 +73,7 @@ export const getExecutiveIntelligence = cache(async (): Promise<ExecutiveIntelli
     readNotificationKpis(),
     readFleetMap(),
     readExecutiveTimeline(),
+    readHrOverview(),
   ]);
 
   const ct = settled(ctR);
@@ -251,6 +253,27 @@ export const getExecutiveIntelligence = cache(async (): Promise<ExecutiveIntelli
     kpi("aiRequests", `Requêtes IA (${AI_WINDOW_DAYS} j)`, ai?.total ?? null, "copilot-usage", DRILL.ai),
   ];
 
+  // ---------------------------------------------------------------- hr ----
+  // HR-5A: pure composition over HR-1..HR-5 read services. The reader SELF-GATES
+  // on hr:read and returns null for a viewer who lacks it — so HR is reported
+  // as unavailable rather than as zero, exactly as the financial row is
+  // withheld from a viewer without finance:read.
+  const hr = settled(hrR);
+  if (hr) {
+    kpis.push(
+      kpi("hr.headcount", "Effectif actif", hr.headcount, "hr-dashboard", DRILL.hr),
+      kpi("hr.on_leave", "En congé aujourd'hui", hr.onLeaveToday, "hr-dashboard", DRILL.hrLeave),
+      kpi("hr.onboarding", "Intégrations en cours", hr.activeOnboarding, "hr-dashboard", DRILL.hrOnboarding),
+      kpi("hr.contracts_expiring", `Contrats expirant (${hr.expiryWindowDays} j)`, hr.contractsExpiring, "hr-dashboard", DRILL.hr),
+      kpi("hr.documents_expiring", `Documents expirant (${hr.expiryWindowDays} j)`, hr.documentsExpiring, "hr-dashboard", DRILL.hr),
+      kpi("hr.equipment_issued", "Équipements attribués", hr.equipmentIssued, "hr-dashboard", DRILL.hrEquipment),
+    );
+    sections.push("hr");
+  } else {
+    unavailable.push("hr");
+  }
+
+
   // ---------------------------------------------------------------- governance ----
   // SLA / bottlenecks / client table come from the SAME control-tower + BI pass already performed
   // above — never a second read.
@@ -274,6 +297,7 @@ export const getExecutiveIntelligence = cache(async (): Promise<ExecutiveIntelli
     customers,
     documents,
     ai,
+    hr,
     performance,
     governance,
     map: fleet,

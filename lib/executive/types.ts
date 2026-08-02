@@ -1,3 +1,4 @@
+import type { HrOverview } from "./readers/hr";
 /**
  * Executive Intelligence Dashboard — shared types (Phase 7.7). PURE.
  * ---------------------------------------------------------------------------
@@ -16,7 +17,7 @@
 /** The dashboard's rows/sections — used for availability + degradation reporting. */
 export const EXECUTIVE_SECTIONS = [
   "operations", "shipping", "air", "road", "customs", "financial",
-  "customers", "documents", "ai", "map", "timeline", "alerts",
+  "customers", "documents", "ai", "hr", "map", "timeline", "alerts",
 ] as const;
 export type ExecutiveSection = (typeof EXECUTIVE_SECTIONS)[number];
 
@@ -24,7 +25,7 @@ export type ExecutiveSection = (typeof EXECUTIVE_SECTIONS)[number];
 export const KPI_SOURCES = [
   "control-tower", "business-intelligence", "command-center", "shipping-dashboard",
   "air-dashboard", "customs-intelligence", "docintel-dashboard", "copilot-usage",
-  "portal-ops", "fleet-map",
+  "portal-ops", "fleet-map", "hr-dashboard",
 ] as const;
 export type KpiSource = (typeof KPI_SOURCES)[number];
 
@@ -196,6 +197,7 @@ export type ExecutiveIntelligence = {
   customers: CustomerIntelligence | null;
   documents: DocumentIntelligence | null;
   ai: AiIntelligence | null;
+  hr: HrOverview | null;
   performance: PerformanceOverview | null;
   governance: ExecutiveGovernance | null;
   map: ExecutiveMap | null;
@@ -216,6 +218,7 @@ export const SECTION_LABEL: Record<ExecutiveSection, string> = {
   financial: "Finance",
   customers: "Clients",
   documents: "Documents",
+  hr: "Ressources humaines",
   ai: "Intelligence artificielle",
   map: "Carte",
   timeline: "Chronologie",

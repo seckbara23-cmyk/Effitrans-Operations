@@ -19,7 +19,18 @@ export type EmployeeListItem = Pick<
   "id" | "employee_number" | "first_name" | "last_name" | "preferred_name" | "department" | "job_title" | "status"
 > & { has_account: boolean };
 
-export type EmployeeFilters = { status?: string; department?: string };
+export type EmployeeFilters = {
+  status?: string;
+  department?: string;
+  /**
+   * HR-5A — directory filter over the columns the list ALREADY shows
+   * (name, matricule, job title). This is a filter on an existing page, not a
+   * search engine: the platform has no global search index, and building one
+   * here would be a parallel infrastructure. Sensitive fields are never
+   * matched — the filter cannot reach a field the row does not display.
+   */
+  q?: string;
+};
 
 /** Directory rows, tenant-scoped, newest first. */
 export async function listEmployees(tenantId: string, filters: EmployeeFilters = {}): Promise<EmployeeListItem[]> {
@@ -31,6 +42,13 @@ export async function listEmployees(tenantId: string, filters: EmployeeFilters =
     .order("created_at", { ascending: false });
   if (filters.status) q = q.eq("status", filters.status);
   if (filters.department) q = q.eq("department", filters.department);
+  const term = filters.q?.trim();
+  if (term) {
+    const safe = term.replace(/[%,()]/g, " ");
+    q = q.or(
+      `first_name.ilike.%${safe}%,last_name.ilike.%${safe}%,employee_number.ilike.%${safe}%,job_title.ilike.%${safe}%`,
+    );
+  }
   const { data } = await q;
   return (data ?? []).map((r) => ({
     id: r.id,

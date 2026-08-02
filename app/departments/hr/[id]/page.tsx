@@ -23,7 +23,7 @@ import { listEmployees } from "@/lib/hr/read";
 import { EmployeeFilePanel } from "@/components/hr/employee-file-panel";
 import { listDocumentTypes, listEmployeeDocuments, listEmployeeContracts } from "@/lib/hr/employee-file";
 import { listEmployeeCustody, listEquipment, listEquipmentTypes, getLiveOnboardingCase, ONBOARDING_STATUS_FR, RETURN_OUTCOME_FR } from "@/lib/hr/onboarding";
-import { deriveEmployeePresence, listEntitlements, listLeaveRequests, withBalances, LEAVE_STATUS_FR } from "@/lib/hr/leave";
+import { deriveEmployeePresence, listEntitlements, listLeaveRequests, withBalances, listAttendance, LEAVE_STATUS_FR } from "@/lib/hr/leave";
 import { PRESENCE_LABEL_FR } from "@/lib/hr/leave/presence";
 import { formatTenths } from "@/lib/hr/leave/balance";
 
@@ -63,10 +63,11 @@ export default async function EmployeeProfilePage({ params }: { params: { id: st
     listEmployees(user.tenantId),
   ]);
   const canSeeSensitive = hasPermission(permissions, "hr:sensitive:read");
-  const [presence, entitlements, leaveRequests] = await Promise.all([
+  const [presence, entitlements, leaveRequests, attendance] = await Promise.all([
     deriveEmployeePresence(user.tenantId, employee.id, employee.status),
     listEntitlements(user.tenantId, employee.id),
     listLeaveRequests(user.tenantId, employee.id),
+    listAttendance(user.tenantId, employee.id, 10),
   ]);
   const balances = withBalances(entitlements);
   const [custody, allEquipment, eqTypes, liveCase] = await Promise.all([
@@ -210,6 +211,27 @@ export default async function EmployeeProfilePage({ params }: { params: { id: st
                 <span className="tabular text-xs text-slate-400">{r.start_date} → {r.end_date}</span>
                 <span className="tabular text-xs">{formatTenths(r.day_tenths)}</span>
                 <span className="text-xs">{LEAVE_STATUS_FR[r.status] ?? r.status}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {/* HR-5A — présence saisie (la saisie elle-même vit dans l'espace Congés) */}
+      <section className="surface p-4">
+        <h2 className="mb-3 text-sm font-semibold text-navy-900">Présence — dernières journées saisies</h2>
+        {attendance.length === 0 ? (
+          <p className="text-sm text-slate-500">
+            Aucune journée saisie. La saisie s&apos;effectue dans{" "}
+            <Link href="/departments/hr/conges" className="text-teal-700 hover:underline">Congés &amp; présence</Link>.
+          </p>
+        ) : (
+          <ul className="space-y-1 text-sm text-slate-600">
+            {attendance.map((a) => (
+              <li key={a.id} className="flex flex-wrap items-center gap-2">
+                <span className="tabular text-xs text-slate-400">{a.work_date}</span>
+                <span className="tabular">{Math.floor(a.worked_minutes / 60)} h {String(a.worked_minutes % 60).padStart(2, "0")}</span>
+                <span className="text-[11px] text-slate-400">{a.source}</span>
               </li>
             ))}
           </ul>
