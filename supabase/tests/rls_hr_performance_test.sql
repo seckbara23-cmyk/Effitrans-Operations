@@ -111,8 +111,6 @@ begin
     '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-00000000c061',
     '00000000-0000-0000-0000-0000000eee61', '00000000-0000-0000-0000-00000000006a',
     'Objectif test', 6000) into obj_one;
-  select count(*) into ev_objective from public.hr_employee_event
-   where event_kind = 'objective_assigned' and employee_id = '00000000-0000-0000-0000-0000000eee61';
 
   -- Off-scale competency levels are refused by the tenant's own scale.
   begin
@@ -166,6 +164,10 @@ begin
     null::text, null::text, null::text, null::date, obj_one) into obj_amended;
   select count(*) into superseded_kept from public.hr_objective
    where id = obj_one and status = 'SUPERSEDED';
+  -- Counted HERE, after the amendment: an amendment is an assignment too, so
+  -- both the original and the amended objective must appear on the timeline.
+  select count(*) into ev_objective from public.hr_employee_event
+   where event_kind = 'objective_assigned' and employee_id = '00000000-0000-0000-0000-0000000eee61';
 
   -- Now the live total is exactly 10000 bp and finalization succeeds.
   perform public.hr_finalize_evaluation(
