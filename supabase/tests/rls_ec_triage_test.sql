@@ -119,6 +119,7 @@ begin
 
   -- RULE 2: RESOLVED requires an outcome (direct UPDATE bypassing the RPC).
   begin
+    -- EXPECT-FAIL: resolving with no outcome must raise EC611.
     update public.ec_triage_item set status = 'RESOLVED'
      where id = '00000000-0000-0000-0000-0000000ec211';
   exception when others then resolve_without_outcome_rejected := 1;

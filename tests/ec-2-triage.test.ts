@@ -399,6 +399,25 @@ describe("scope boundaries", () => {
     }
   });
 
+  it("no SQL suite resolves a triage item without an outcome (cross-suite guard)", () => {
+    // EC-2's outcome guard applies to EVERY writer of ec_triage_item, including
+    // fixtures in OTHER suites. This exact interaction broke EC-1's suite once:
+    // a bare `set status = 'RESOLVED'` now raises EC611. A vitest cannot run the
+    // SQL, so it reads it instead — cheap, and it catches the regression class.
+    const dir = join(root, "supabase", "tests");
+    for (const f of readdirSync(dir).filter((n) => n.endsWith(".sql"))) {
+      const sql = readFileSync(join(dir, f), "utf8");
+      // Comments are KEPT: a deliberate negative marks itself EXPECT-FAIL.
+      for (const m of sql.matchAll(/update public\.ec_triage_item[\s\S]*?;/g)) {
+        const stmt = m[0];
+        if (!/status *= *'RESOLVED'/.test(stmt)) continue;
+        const preceding = sql.slice(Math.max(0, m.index! - 200), m.index!);
+        if (preceding.includes("EXPECT-FAIL")) continue;
+        expect(stmt, `${f}: resolving without an outcome`).toMatch(/outcome *=/);
+      }
+    }
+  });
+
   it("is registered in CI as its own suite, and EC-1's suite still runs", () => {
     const ci = read(".github/workflows/ci.yml");
     expect(ci).toContain("rls_ec_triage_test.sql");

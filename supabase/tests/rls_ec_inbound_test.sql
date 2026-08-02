@@ -161,7 +161,15 @@ begin
      where id = '00000000-0000-0000-0000-0000000ec201';
   exception when others then requarantine_rejected := 1;
   end;
-  update public.ec_triage_item set status = 'RESOLVED', resolved_at = now()
+  -- EC-2 (migration 81) added a coherence rule to this table: reaching RESOLVED
+  -- now REQUIRES a recorded outcome, with its actor and moment. This fixture
+  -- therefore records one. EC-1's own subject — the STATUS machine and its
+  -- terminal states — is unchanged and still asserted below.
+  update public.ec_triage_item
+     set status = 'RESOLVED', resolved_at = now(),
+         outcome = 'GENERAL_CORRESPONDENCE',
+         outcome_recorded_by = '00000000-0000-0000-0000-0000000ec001',
+         outcome_recorded_at = now()
    where id = '00000000-0000-0000-0000-0000000ec201';
   begin
     update public.ec_triage_item set status = 'IN_REVIEW'
