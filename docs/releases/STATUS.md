@@ -7,7 +7,7 @@ EC-3B's RPC, writing to **no** dossier table and deliberately not driving
 `openDossierWorkflow`, which owns the process instance and the `file_opened` milestone.
 EC-3D adds **no commercial schema, no RPC and no permission**; migration 84 only widens the
 `client_notification` category CHECK and adds a nullable `quotation_id` so the EXISTING
-Customer Notify pipeline can carry a decision. **New blocker: SEATS-CONVERT** — converting
+Customer Notify pipeline can carry a decision. **CI GREEN** — run `30774583748`, 77+10 steps, **0 skipped, 0 failed**, all five EC suites by name (EC-3D passing on its first execution), so the clean 1→84 chain is proven. **New blocker: SEATS-CONVERT** — converting
 needs `file:create` AND commercial read, and no ROLE holds both, so a person must hold one
 of each; acceptance works meanwhile. See `docs/commercial/ec-3d-completion-report.md`.
 Previously: **EC-3C BUILT — migration 83 NOT YET APPLIED**. The Commercial

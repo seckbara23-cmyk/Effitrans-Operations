@@ -164,6 +164,12 @@ emission site. Payloads carry **identifiers only** — no customer message body,
 ## 14. Tests and CI
 
 **Local: 202 files / 4981 tests green · tsc 0 · build clean.**
+
+**CI: GREEN — run `30774583748` (`6f01a67`), `rls-tests` 77 steps / 0 skipped / 0 failed,
+`build` 10 / 0 / 0.** All five EC suites executed **by name**: EC-1 · EC-2 · EC-3B · EC-3C ·
+**EC-3D commercial conversion — success on its first execution**. The clean **1 → 84**
+migration chain is proven, so migration 84 has never been applied anywhere while its suite
+was unproven (the DEV-HR6-01 exposure).
 31 EC-3D contracts + an RLS suite of 11 checks in real PostgreSQL. `mapRpc` was **extracted**
 to `lib/commercial/errors.ts` so conversion maps the same SQLSTATEs rather than keeping a
 second copy.
