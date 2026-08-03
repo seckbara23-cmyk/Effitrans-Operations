@@ -16,9 +16,14 @@ export type CustomerEvent =
   | "transport_started"
   | "delivered"
   | "invoice_issued"
-  | "payment_received";
+  | "payment_received"
+  // EC-3D — the commercial decision, acknowledged to the customer. A quotation
+  // has NO dossier and NO invoice at this point, so these resolve their
+  // recipient through the quotation itself (see service.ts).
+  | "quotation_accepted"
+  | "quotation_declined";
 
-export type NotifyCategory = "shipment" | "invoice" | "payment";
+export type NotifyCategory = "shipment" | "invoice" | "payment" | "commercial";
 /** Channels — email + portal in MVP; sms/whatsapp are reserved extension points. */
 export type NotifyChannel = "email" | "portal";
 
@@ -35,6 +40,8 @@ export const CUSTOMER_EVENTS: Record<CustomerEvent, CustomerEventDef> = {
   delivered: { category: "shipment", template: "shipment_delivered" },
   invoice_issued: { category: "invoice", template: "invoice_issued" },
   payment_received: { category: "payment", template: "payment_received" },
+  quotation_accepted: { category: "commercial", template: "quotation_accepted" },
+  quotation_declined: { category: "commercial", template: "quotation_declined" },
 };
 
 export const CUSTOMER_EVENT_KEYS = Object.keys(CUSTOMER_EVENTS) as CustomerEvent[];
@@ -61,5 +68,9 @@ export function emailAllowed(prefs: EmailPrefs, category: NotifyCategory): boole
   if (category === "shipment") return prefs.notify_shipment;
   if (category === "invoice") return prefs.notify_invoice;
   if (category === "payment") return prefs.notify_payment;
+  // EC-3D — a quotation acknowledgement follows the SHIPMENT preference. No new
+  // preference column is invented: the quotation is the shipment's first step,
+  // and a customer who muted shipment updates has muted this too.
+  if (category === "commercial") return prefs.notify_shipment;
   return false;
 }

@@ -9,6 +9,8 @@ import {
   COMMERCIAL_READ_PERMISSIONS, QUOTATION_STATUS_FR,
 } from "@/lib/commercial/service";
 import { partition, visibleQueues, QUEUE_LABEL_FR } from "@/lib/commercial/queues";
+import { commercialMetrics } from "@/lib/commercial/metrics";
+import { commercialTimezone } from "@/lib/commercial/service";
 import { readCommercialActivity } from "@/lib/workflow/events/readers";
 
 export const metadata: Metadata = { title: "Commercial" };
@@ -34,12 +36,17 @@ export default async function CommercialPage() {
   // than 403: an empty workspace would still confirm the module is here.
   if (!COMMERCIAL_READ_PERMISSIONS.some((p) => hasPermission(permissions, p))) notFound();
 
-  const [quotations, handoffs, counts, activity] = await Promise.all([
+  const [quotations, handoffs, counts, activity, timezone] = await Promise.all([
     listQuotations(user.tenantId),
     listQuotationHandoffs(user.tenantId),
     commercialCounts(user.tenantId),
     readCommercialActivity(user.tenantId),
+    commercialTimezone(user.tenantId),
   ]);
+
+  // EC-3D dashboard. Computed from the rows already loaded — no second query —
+  // with TENANT-LOCAL day boundaries, not UTC ones.
+  const metrics = commercialMetrics(quotations, timezone);
 
   const buckets = partition(quotations);
   const queues = visibleQueues(permissions);
@@ -63,11 +70,24 @@ export default async function CommercialPage() {
         }
       />
 
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      {/* EC-3D — the commercial cockpit. Counts, never money: an amount is a
+          per-currency question and mixing the two is how a currency-blind KPI
+          ships. « Aujourd'hui » and « ce mois-ci » are tenant-local. */}
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <Stat label="En attente de réponse client" value={metrics.awaitingCustomer} />
+        <Stat label="Acceptées aujourd'hui" value={metrics.acceptedToday} />
+        <Stat label="Refusées aujourd'hui" value={metrics.declinedToday} />
+        <Stat
+          label="Délai moyen de réponse"
+          value={metrics.averageResponseDays === null ? "—" : `${metrics.averageResponseDays} j`}
+        />
+        <Stat label="En attente de conversion" value={metrics.pendingConversion} />
+        <Stat label="Converties ce mois-ci" value={metrics.convertedThisMonth} />
+      </section>
+
+      <section className="grid gap-3 sm:grid-cols-2">
         <Stat label="Demandes ouvertes" value={counts.openRequests} />
         <Stat label="En attente de validation" value={counts.pendingValidation} />
-        <Stat label="En attente du client" value={counts.awaitingCustomer} />
-        <Stat label="Acceptées, non converties" value={counts.acceptedNotConverted} />
       </section>
 
       {/* EC-2 handoffs. The handoff records INTENT and mints nothing: opening one
@@ -163,7 +183,7 @@ export default async function CommercialPage() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: number }) {
+function Stat({ label, value }: { label: string; value: number | string }) {
   return (
     <div className="surface p-4">
       <p className="text-xs uppercase tracking-wide text-slate-500">{label}</p>

@@ -37,10 +37,11 @@ const SERVICE = "lib/commercial/service.ts";
 
 // ---------------------------------------------------------------------------
 describe("migration chain", () => {
-  it("EC-3B is migration 82 and EC-3C adds exactly one more, touching none before", () => {
+  it("EC-3B sits at position 82, immediately after EC-2, and moved nothing before it", () => {
+    // Asserts EC-3B's OWN position. It used to also assert what the newest
+    // migration was, which made every later phase edit this test to restate a
+    // fact that belongs to build-info's pin.
     const all = readdirSync(join(root, "supabase", "migrations")).filter((f) => f.endsWith(".sql")).sort();
-    expect(all.length).toBe(83);
-    expect(all[82]).toBe("20260807000001_commercial_activation.sql");
     expect(all[81]).toBe("20260806000001_commercial_quotation.sql");
     expect(all[80]).toBe("20260805000001_ec_triage_outcomes.sql");
   });

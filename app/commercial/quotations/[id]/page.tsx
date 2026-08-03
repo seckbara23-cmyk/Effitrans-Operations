@@ -12,7 +12,9 @@ import { quotationTotals, formatAmountMinor, formatQuantityMilli, formatRateBp }
 import {
   canEditLines, canSubmit, canValidate, canSend, canRecordDecision,
   canRevise, canCancel, validationBlockedReason,
+  canConvert, conversionBlockedReason,
 } from "@/lib/commercial/queues";
+import { ConversionPanel } from "@/components/commercial/conversion-panel";
 import { readQuotationTimeline } from "@/lib/workflow/events/readers";
 import { QuotationStudio } from "@/components/commercial/quotation-studio";
 
@@ -115,6 +117,21 @@ export default async function QuotationDetailPage({ params }: { params: { id: st
             {ACCEPTANCE_KIND_FR[quotation.acceptanceKind]}
           </p>
         ) : null}
+        {/* EC-3D — once converted, Operations owns the dossier and Commercial is
+            read-only. The link is the handover, stated plainly. */}
+        {quotation.convertedFileId ? (
+          <p className="mt-4 text-sm text-navy-900">
+            Convertie en dossier le{" "}
+            {quotation.convertedAt
+              ? new Date(quotation.convertedAt).toLocaleDateString("fr-FR")
+              : "—"}{" "}
+            ·{" "}
+            <Link href={`/files/${quotation.convertedFileId}`} className="underline">
+              ouvrir le dossier
+            </Link>
+            . Les Opérations en sont propriétaires ; le Commercial n&apos;agit plus dessus.
+          </p>
+        ) : null}
         {quotation.rejectionReasonCode ? (
           <p className="mt-4 text-sm text-amber-800">
             Refusée en validation interne · motif : {quotation.rejectionReasonCode}
@@ -135,6 +152,19 @@ export default async function QuotationDetailPage({ params }: { params: { id: st
         validationBlocked={validationBlockedReason(quotation, permissions, user.id)}
         hasArtifact={Boolean(quotation.artifactStoragePath)}
       />
+
+      {/* Conversion — only for an ACCEPTED quotation, and only for a seat that
+          holds the Operations authority. Others see why, not a dead button. */}
+      {quotation.status === "ACCEPTED" && !quotation.convertedFileId ? (
+        canConvert(quotation, permissions) ? (
+          <ConversionPanel quotationId={quotation.id} blockedReason={null} />
+        ) : (
+          <ConversionPanel
+            quotationId={quotation.id}
+            blockedReason={conversionBlockedReason(quotation, permissions)}
+          />
+        )
+      ) : null}
 
       {versions.length > 1 ? (
         <section className="surface p-5">

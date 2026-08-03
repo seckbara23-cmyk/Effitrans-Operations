@@ -25,6 +25,8 @@ export type NotifyParams = {
   event: CustomerEvent;
   fileId?: string;
   invoiceId?: string;
+  /** EC-3D — a commercial decision, before any dossier or invoice exists. */
+  quotationId?: string;
   /** Extra template vars (amount, deliveryDate, paymentDate). */
   vars?: Record<string, string | number | null | undefined>;
 };
@@ -44,9 +46,11 @@ export async function notifyCustomer(
     let clientId: string | null = null;
     let fileId: string | null = params.fileId ?? null;
     let invoiceId: string | null = params.invoiceId ?? null;
+    const quotationId: string | null = params.quotationId ?? null;
     let fileNumber: string | null = null;
     let clientName: string | null = null;
     let invoiceNumber: string | null = null;
+    let quotationNumber: string | null = null;
 
     if (invoiceId) {
       const { data: inv } = await supabase
@@ -61,6 +65,20 @@ export async function notifyCustomer(
       clientId = inv.file?.client_id ?? null;
       fileNumber = inv.file?.file_number ?? null;
       clientName = inv.file?.client?.name ?? null;
+    } else if (quotationId) {
+      // EC-3D — the ONLY branch that resolves a recipient without a dossier or
+      // an invoice, because at acceptance neither exists yet. Tenant-scoped like
+      // its siblings: the admin client bypasses RLS.
+      const { data: q } = await supabase
+        .from("quotation")
+        .select("client_id, quotation_number, client:client_id(name)")
+        .eq("tenant_id", ctx.tenantId)
+        .eq("id", quotationId)
+        .maybeSingle<{ client_id: string | null; quotation_number: string | null; client: { name: string } | null }>();
+      if (!q) return "skipped";
+      clientId = q.client_id;
+      quotationNumber = q.quotation_number;
+      clientName = q.client?.name ?? null;
     } else if (fileId) {
       const { data: f } = await supabase
         .from("operational_file")
@@ -74,7 +92,7 @@ export async function notifyCustomer(
       clientName = f.client?.name ?? null;
     }
 
-    const entityId = invoiceId ?? fileId;
+    const entityId = invoiceId ?? fileId ?? quotationId;
     if (!clientId || !entityId) return "skipped";
     const dk = dedupKey(params.event, entityId);
 
@@ -91,6 +109,7 @@ export async function notifyCustomer(
         body: ev?.message ?? "",
         file_id: fileId,
         invoice_id: invoiceId,
+        quotation_id: quotationId,
         dedup_key: dk,
       })
       .select("id")
@@ -121,13 +140,20 @@ export async function notifyCustomer(
       .returns<{ email: string; name: string | null; notify_email: boolean; notify_shipment: boolean; notify_invoice: boolean; notify_payment: boolean }[]>();
 
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "";
-    const portalLink = invoiceId ? `${siteUrl}/portal/invoices/${invoiceId}` : `${siteUrl}/portal/files/${fileId}`;
+    // A quotation has no portal page of its own; the customer's inbox is the
+    // right destination rather than a link to a dossier that does not exist.
+    const portalLink = invoiceId
+      ? `${siteUrl}/portal/invoices/${invoiceId}`
+      : fileId
+        ? `${siteUrl}/portal/files/${fileId}`
+        : `${siteUrl}/portal/notifications`;
     const vars = {
       clientName: clientName ?? "",
       fileNumber: fileNumber ?? "",
       status: ev?.message ?? "",
       portalLink,
       invoiceNumber: invoiceNumber ?? "",
+      quotationNumber: quotationNumber ?? "",
       ...(params.vars ?? {}),
     };
 

@@ -14,6 +14,7 @@ import "server-only";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
+import { resolveTimezone } from "@/lib/operations/kpi/windows";
 import { quotationTotals, type QuotationTotals } from "./money";
 import type { QuotationStatus, RequestStatus, AcceptanceKind } from "./model";
 
@@ -291,6 +292,17 @@ export async function listQuotationHandoffs(tenantId: string): Promise<Quotation
     };
   });
   /* eslint-enable @typescript-eslint/no-explicit-any */
+}
+
+/**
+ * The tenant's timezone, for tenant-local day boundaries in the metrics.
+ * Gated like every other read here: the admin client bypasses RLS.
+ */
+export async function commercialTimezone(tenantId: string): Promise<string> {
+  await assertCommercialRead(tenantId);
+  const s = getAdminSupabaseClient();
+  const { data } = await s.from("organization").select("timezone").eq("id", tenantId).maybeSingle();
+  return resolveTimezone((data as { timezone?: string | null } | null)?.timezone ?? null);
 }
 
 export type CommercialCounts = {

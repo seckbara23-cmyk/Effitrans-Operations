@@ -20,7 +20,11 @@ export type TemplateKey =
   // yet — Phase 2.5 decides the notification strategy).
   | "shipment_progress"
   | "shipment_delivered"
-  | "payment_received";
+  | "payment_received"
+  // EC-3D — the customer's own decision, acknowledged. These carry a QUOTATION
+  // number, never a dossier number: at acceptance no dossier exists yet.
+  | "quotation_accepted"
+  | "quotation_declined";
 
 export type Template = { subject: string; html: string; text: string };
 
@@ -102,6 +106,16 @@ export const TEMPLATES: Record<TemplateKey, Template> = {
     subject: "Livraison effectuée — dossier {{fileNumber}}",
     html: "<p>Bonjour {{clientName}},</p><p>Votre expédition {{fileNumber}} a été livrée. Merci de votre confiance.</p><p><a href=\"{{portalLink}}\">Voir les détails</a></p>",
     text: "Bonjour {{clientName}},\nVotre expédition {{fileNumber}} a été livrée.\nDétails : {{portalLink}}",
+  },
+  quotation_accepted: {
+    subject: "Cotation {{quotationNumber}} — acceptation enregistrée",
+    html: "<p>Bonjour {{clientName}},</p><p>Nous avons bien enregistré votre acceptation de la cotation <strong>{{quotationNumber}}</strong>. Votre dossier va être ouvert et vous serez informé de son avancement.</p>",
+    text: "Bonjour {{clientName}},\nNous avons bien enregistré votre acceptation de la cotation {{quotationNumber}}.\nVotre dossier va être ouvert et vous serez informé de son avancement.",
+  },
+  quotation_declined: {
+    subject: "Cotation {{quotationNumber}} — clôturée",
+    html: "<p>Bonjour {{clientName}},</p><p>Nous prenons note de votre décision concernant la cotation <strong>{{quotationNumber}}</strong>. Nous restons à votre disposition pour toute nouvelle demande.</p>",
+    text: "Bonjour {{clientName}},\nNous prenons note de votre décision concernant la cotation {{quotationNumber}}.\nNous restons à votre disposition pour toute nouvelle demande.",
   },
   payment_received: {
     subject: "Paiement reçu — facture {{invoiceNumber}}",

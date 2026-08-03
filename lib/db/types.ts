@@ -2770,6 +2770,7 @@ export type Database = {
           body: string;
           file_id: string | null;
           invoice_id: string | null;
+          quotation_id: string | null;
           conversation_id: string | null;
           dedup_key: string;
           read_at: string | null;
@@ -2787,6 +2788,7 @@ export type Database = {
           body: string;
           file_id?: string | null;
           invoice_id?: string | null;
+          quotation_id?: string | null;
           conversation_id?: string | null;
           dedup_key: string;
           read_at?: string | null;
@@ -2804,6 +2806,7 @@ export type Database = {
           body?: string;
           file_id?: string | null;
           invoice_id?: string | null;
+          quotation_id?: string | null;
           conversation_id?: string | null;
           dedup_key?: string;
           read_at?: string | null;

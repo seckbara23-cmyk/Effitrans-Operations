@@ -19,6 +19,8 @@ export const QUOTATION_READ = "quotation:create";
 export const QUOTATION_VALIDATE = "quotation:validate";
 export const QUOTATION_SEND = "quotation:send";
 export const QUOTATION_APPROVE = "quotation:approve";
+/** EC-3D — the OPERATIONS authority conversion needs. Commercial never holds it. */
+export const FILE_CREATE = "file:create";
 
 /** The minimum a quotation-shaped row must carry to be queued and judged. */
 export type QueueableQuotation = {
@@ -34,6 +36,8 @@ export type CommercialQueueKey =
   | "readyToSend"
   | "sent"
   | "accepted"
+  | "readyForConversion"
+  | "converted"
   | "declined"
   | "cancelled";
 
@@ -43,6 +47,8 @@ export const QUEUE_LABEL_FR: Record<CommercialQueueKey, string> = {
   readyToSend: "Validées — prêtes à envoyer",
   sent: "Envoyées — en attente de réponse client",
   accepted: "Acceptées",
+  readyForConversion: "Prêtes à convertir en dossier",
+  converted: "Converties en dossier",
   declined: "Refusées par le client",
   cancelled: "Annulées",
 };
@@ -52,7 +58,13 @@ const QUEUE_STATUS: Record<CommercialQueueKey, QuotationStatus[]> = {
   awaitingValidation: ["PENDING_VALIDATION"],
   readyToSend: ["VALIDATED"],
   sent: ["SENT"],
+  // The commercial OUTCOME view: both are offers the customer accepted.
   accepted: ["ACCEPTED", "CONVERTED"],
+  // The ACTIONABLE view. A quotation leaves ACCEPTED the moment it converts, so
+  // "accepted" and "not yet converted" are the same set — no second flag is
+  // consulted and the two views cannot disagree.
+  readyForConversion: ["ACCEPTED"],
+  converted: ["CONVERTED"],
   declined: ["DECLINED"],
   cancelled: ["CANCELLED"],
 };
@@ -75,6 +87,10 @@ export function visibleQueues(permissions: readonly string[]): CommercialQueueKe
   if (agent || validator) out.push("awaitingValidation");
   if (agent) out.push("readyToSend", "sent");
   if (agent || validator) out.push("accepted", "declined", "cancelled");
+  // EC-3D — the conversion queues. Shown to whoever can READ commercial data,
+  // because knowing what awaits Operations is not the same as being able to
+  // convert it; the button itself is gated by `canConvert`.
+  if (agent || validator) out.push("readyForConversion", "converted");
   return out;
 }
 
@@ -145,6 +161,28 @@ export function canRevise(q: QueueableQuotation, permissions: readonly string[])
     permissions.includes(QUOTATION_READ) &&
     (q.status === "SENT" || q.status === "DECLINED" || q.status === "VALIDATED")
   );
+}
+
+/**
+ * EC-3D — may this actor convert?
+ *
+ * Requires the OPERATIONS authority `file:create`, never a commercial one:
+ * Commercial requests a dossier, Operations creates it. Permissions union across
+ * roles, so a seat holding both a commercial role and an Operations role can do
+ * this; no role holds both on its own, which is a seat-assignment decision and
+ * deliberately not solved by granting Commercial an Operations permission.
+ */
+export function canConvert(q: QueueableQuotation, permissions: readonly string[]): boolean {
+  return permissions.includes(FILE_CREATE) && q.status === "ACCEPTED";
+}
+
+/** Why the convert button is absent for someone looking at an accepted offer. */
+export function conversionBlockedReason(
+  q: QueueableQuotation, permissions: readonly string[],
+): string | null {
+  if (q.status !== "ACCEPTED") return null;
+  if (permissions.includes(FILE_CREATE)) return null;
+  return "La création du dossier appartient aux Opérations : cette cotation attend un intervenant habilité à ouvrir un dossier.";
 }
 
 export function canCancel(q: QueueableQuotation, permissions: readonly string[]): boolean {

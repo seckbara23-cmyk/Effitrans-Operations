@@ -3,9 +3,17 @@ import { CUSTOMER_EVENTS, CUSTOMER_EVENT_KEYS, isCustomerEvent, dedupKey, emailA
 import { t } from "@/lib/i18n";
 
 describe("customer notification events (Phase 2.5)", () => {
-  it("maps the eight milestones to category + Hub template", () => {
-    // Phase 9.0C added file_opened (« Dossier reçu ») to the original seven.
-    expect(CUSTOMER_EVENT_KEYS).toHaveLength(8);
+  it("maps every milestone to a category + Hub template", () => {
+    // Phase 9.0C added file_opened (« Dossier reçu ») to the original seven;
+    // EC-3D added the two commercial decisions. Asserted as an exact SET rather
+    // than a count, so a new event has to be named here deliberately instead of
+    // a number being nudged.
+    expect([...CUSTOMER_EVENT_KEYS].sort()).toEqual([
+      "customs_cleared", "delivered", "documents_received", "documents_verified",
+      "file_opened", "invoice_issued", "payment_received",
+      "quotation_accepted", "quotation_declined", "transport_started",
+    ]);
+    expect(CUSTOMER_EVENTS.quotation_accepted).toEqual({ category: "commercial", template: "quotation_accepted" });
     expect(CUSTOMER_EVENTS.file_opened).toEqual({ category: "shipment", template: "shipment_progress" });
     expect(CUSTOMER_EVENTS.documents_received).toEqual({ category: "shipment", template: "shipment_progress" });
     expect(CUSTOMER_EVENTS.customs_cleared).toEqual({ category: "shipment", template: "shipment_progress" });

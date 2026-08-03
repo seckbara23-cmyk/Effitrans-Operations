@@ -82,10 +82,10 @@ describe("migration 83 — the ratified matrix and nothing else", () => {
     expect(sql).toMatch(/drop policy if exists/);
   });
 
-  it("touches no migration before it", () => {
+  it("sits at position 83, immediately after EC-3B, and moved nothing before it", () => {
     const all = readdirSync(join(root, "supabase", "migrations")).filter((f) => f.endsWith(".sql")).sort();
-    expect(all[all.length - 1]).toBe("20260807000001_commercial_activation.sql");
-    expect(all.length).toBe(83);
+    expect(all[82]).toBe("20260807000001_commercial_activation.sql");
+    expect(all[81]).toBe("20260806000001_commercial_quotation.sql");
   });
 });
 

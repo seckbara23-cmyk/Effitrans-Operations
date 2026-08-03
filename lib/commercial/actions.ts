@@ -22,6 +22,8 @@
  * creation path and then records the link; sending goes through `lib/comms`.
  */
 import { revalidatePath } from "next/cache";
+import { mapRpcError } from "./errors";
+import { notifyCustomer } from "@/lib/customer-notify/service";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
 import { writeAudit } from "@/lib/audit/log";
@@ -37,19 +39,8 @@ import {
 
 export type CommercialResult = { ok: true; id?: string; number?: string } | { ok: false; error: string; detail?: string };
 
-const RPC_ERRORS: Record<string, string> = {
-  QT600: "request_not_found", QT601: "quotation_not_found", QT602: "not_draft", QT603: "no_lines",
-  QT604: "invalid_decision", QT605: "not_pending_validation",
-  QT606: "same_actor", QT607: "reason_required", QT608: "not_validated",
-  QT609: "not_sent", QT610: "quotation_immutable", QT611: "terminal",
-  QT612: "lines_frozen", QT613: "invalid_acceptance_kind",
-  QT614: "not_revisable", QT615: "reason_required", QT616: "not_accepted",
-  QT617: "dossier_not_found",
-};
-const mapRpc = (e: { code?: string; message?: string } | null) => ({
-  error: (e?.code && RPC_ERRORS[e.code]) || "save_failed",
-  detail: e?.message,
-});
+// The vocabulary now lives in ./errors so EC-3D maps the same codes (no copy).
+const mapRpc = mapRpcError;
 
 const PATH = "/commercial/quotations";
 
@@ -335,7 +326,20 @@ export async function recordCustomerDecision(input: {
     entityId: input.quotationId,
     after: { acceptance_kind: input.acceptance?.kind ?? null },
   });
+
+  // EC-3D — acknowledge the decision to the customer through the EXISTING
+  // Customer Notify pipeline (portal inbox + prefs-gated email, dedup-guarded).
+  // Best-effort by that pipeline's contract: it never throws and returns
+  // "skipped" rather than failing a recorded business decision. « Dossier créé »
+  // is NOT sent here — `openDossierWorkflow` owns `file_opened`, and publishing
+  // it from Commercial would duplicate a milestone Operations already sends.
+  await notifyCustomer(s, { tenantId: user.tenantId, actorId: user.id }, {
+    event: input.decision === "ACCEPTED" ? "quotation_accepted" : "quotation_declined",
+    quotationId: input.quotationId,
+  });
+
   revalidatePath(PATH);
+  revalidatePath("/commercial");
   return { ok: true, id: input.quotationId };
 }
 
