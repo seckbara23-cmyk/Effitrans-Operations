@@ -13,10 +13,10 @@
  */
 
 /** The latest migration shipped in this build (pinned to the directory by test). */
-export const LATEST_MIGRATION = "20260808000001_commercial_conversion";
+export const LATEST_MIGRATION = "20260809000001_decision_plane_ordinal";
 
 /** Total migrations shipped in this build (pinned by test). */
-export const MIGRATION_COUNT = 84;
+export const MIGRATION_COUNT = 85;
 
 /** Newest DATA-probeable migration marker: this permission row proves migrations ≥ this point. */
 export const MIGRATION_PROBE = {

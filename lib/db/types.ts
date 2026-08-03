@@ -4052,6 +4052,7 @@ export type Database = {
           policy_version_id: string | null;
           policy_provenance: string | null;
           occurred_at: string;
+          ordinal: number | null;
           created_at: string;
         };
         Insert: never;

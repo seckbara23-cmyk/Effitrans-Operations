@@ -284,8 +284,10 @@ describe("migration 84", () => {
   it("is additive and touches nothing before it", () => {
     const sql = code(MIGRATION);
     expect(sql).not.toMatch(/\bdrop table\b|\bdrop column\b|\btruncate\b/i);
+    // Asserts EC-3D's OWN position, not what is newest — the recurring
+    // maintenance defect this repo has now hit four times.
     const all = readdirSync(join(root, "supabase", "migrations")).filter((f) => f.endsWith(".sql")).sort();
-    expect(all[all.length - 1]).toBe("20260808000001_commercial_conversion.sql");
-    expect(all.length).toBe(84);
+    expect(all[83]).toBe("20260808000001_commercial_conversion.sql");
+    expect(all[82]).toBe("20260807000001_commercial_activation.sql");
   });
 });

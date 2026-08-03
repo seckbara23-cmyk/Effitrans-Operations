@@ -122,7 +122,7 @@ export async function readDossierTimeline(
  * necessarily allowed to browse the staff directory. Tenant-scoped explicitly:
  * the service role bypasses RLS.
  */
-async function resolveActorNames(ids: (string | null)[]): Promise<Map<string, string>> {
+export async function resolveActorNames(ids: (string | null)[]): Promise<Map<string, string>> {
   const unique = Array.from(new Set(ids.filter((id): id is string => Boolean(id))));
   const out = new Map<string, string>();
   if (unique.length === 0) return out;
