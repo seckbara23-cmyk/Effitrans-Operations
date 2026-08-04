@@ -149,9 +149,9 @@ begin
   -- 5. EXPENSE_AUTHORIZED — dossier-linked only (RATIFY-UT3-2 unresolved).
   -- =====================================================================
   insert into public.expense_authorization
-    (id, tenant_id, file_id, beneficiary, reason, status, requested_by)
+    (id, tenant_id, file_id, amount, beneficiary, reason, status, requested_by)
   values (gen_random_uuid(), '00000000-0000-0000-0000-000000000001',
-          '00000000-0000-0000-0000-00000000e3f1', 'Bénéficiaire', 'Motif',
+          '00000000-0000-0000-0000-00000000e3f1', 150000, 'Bénéficiaire', 'Motif',
           'IN_APPROVAL', '00000000-0000-0000-0000-00000000e301')
   returning id into exp;
   update public.expense_authorization set status = 'APPROVED' where id = exp;
@@ -161,9 +161,9 @@ begin
   -- A dossier-LESS expense: no visibility branch would admit its event, so the
   -- emitter stays silent rather than inventing one.
   insert into public.expense_authorization
-    (id, tenant_id, file_id, beneficiary, reason, status, requested_by)
+    (id, tenant_id, file_id, amount, beneficiary, reason, status, requested_by)
   values (gen_random_uuid(), '00000000-0000-0000-0000-000000000001',
-          null, 'Bénéficiaire 2', 'Motif 2', 'IN_APPROVAL',
+          null, 150000, 'Bénéficiaire 2', 'Motif 2', 'IN_APPROVAL',
           '00000000-0000-0000-0000-00000000e301')
   returning id into exp;
   update public.expense_authorization set status = 'APPROVED' where id = exp;
