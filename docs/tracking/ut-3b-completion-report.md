@@ -5,6 +5,21 @@
 **New permissions: none · New tables: none · New RPCs: none · No RPC edited**
 **Governing docs:** [ut-3a-emitter-governance-audit.md](ut-3a-emitter-governance-audit.md) · DEC-B88
 
+> **STATUS: DEPLOYED & CLOSED 2026-08-11.** Migration 86 applied, **ledger 86/86**, CI green
+> with zero skipped, deployment **PASS** with **no sequencing deviation**. Independent
+> verification and its stated boundary:
+> [deployment-record-86.md](../releases/deployment-record-86.md).
+>
+> **No historical backfill occurred** — `business_event` is unchanged at ~26 rows, the same
+> count verified before migration 86.
+>
+> **One optional operator action remains:** the `HISTORICAL_EVENTS_NOT_BACKFILLED` marker is
+> not yet recorded. A gap found at verification: `recordLedgerStartMarker()` shipped with
+> **no invocation surface** (UT-3B forbade UI), so the sanctioned operator path is the
+> read-then-emit pair in the deployment record §3. Not recording it is a safe state.
+>
+> **UT-3C has not begun.**
+
 ---
 
 ## 1. Repository audit
