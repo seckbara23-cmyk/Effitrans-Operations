@@ -86,6 +86,29 @@ Also required in the same migration: **seven registry entries change `emission: 
 backfill, no touching `ADMIN_OVERRIDE_EXECUTED` / `WORKFLOW_REVERSED` (ADR-UT3-1 stands —
 their acts still do not exist), and no road-adapter SQL (Option C needs none).
 
+## 4b. What WAS delivered under this stop
+
+The road observation adapter (UT3-ROAD, Option C) — the only part of UT-3B that provably
+needs no migration and is independent of the emitter blockage. Commit `c112d22`,
+**CI green: run `30928123884`, 78+10 steps, 0 skipped, 0 failed.**
+
+`public.tracking_event` joins the Observation Plane through the **same UT-2 adapter**,
+attributed directly by `file_id` with no shipment hop, carrying **`confidence: null`**.
+The source vocabulary is mapped twice, for two different purposes, and the distinction is
+the point: to the frozen **origin** axis, and to **freshness thresholds only**. Freshness is
+computed staleness; confidence is a claim the source either made or did not. Road made
+none, so it stays null whatever the threshold table says — pinned by a test asserting no
+confidence grade appears in that table.
+
+Milestones only (geofence proximity, session plumbing, repeatable checkpoints and the two
+prose-carrying types excluded by allow-list). Client-safety is the **intersection** of the
+allow-list and the row's own `customer_visible` flag — narrowing the store's judgement,
+never widening it. `customer_message`, `internal_note` and coordinates are never selected.
+
+**A defect caught in the first draft:** the shipment lookup short-circuited the whole plane,
+so a dossier with road legs but no ocean/air booking would have returned nothing. The
+lookup now gates ocean and air only.
+
 ## 5. What is NOT blocked
 
 **The road observation adapter (UT3-ROAD, Option C) requires no migration** and is
@@ -107,6 +130,7 @@ independently the moment you say so.
 ## Confirmations
 
 * **Zero emitters implemented** — the brief's stop condition triggered before any code.
+  **UT-3B is NOT complete** and is not claimed to be.
 * **No migration was added.** The reason it became necessary is §1: same-transaction
   emission is only reachable from a trigger or an RPC, and both are SQL.
 * **No UI, no schema change, no permission change, no history copied, `audit_log`
