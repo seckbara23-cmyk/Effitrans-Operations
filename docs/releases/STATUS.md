@@ -1,6 +1,16 @@
 # Release Status — standing table (updated at every release event)
 
-*Last updated: 2026-08-11 (**MIGRATION 86 DEPLOYED · UT-3B CLOSED**. Ledger **86/86**, no
+*Last updated: 2026-08-12 (**UT-4 COMPLETE — nothing to deploy**. The Unified Operational
+Timeline is live on the dossier page: both planes, ordered and grouped by the frozen
+chronology rules, with filters, group-safe paging and authorized links out to the owning
+workspaces. **No route was created** — a dossier timeline already existed and was ABSORBED,
+so one dossier still has exactly one history. The load-bearing decision: chronology is
+assigned BEFORE filtering, or a filter would manufacture provability by hiding the entry
+that shared an instant. **CI GREEN** run `30953710749`, 79+10 steps, 0 skipped; the rls step
+count is unchanged from UT-3B, which is itself evidence UT-4 added no database surface. No
+migration, emitter, store or permission. See `docs/tracking/ut-4-completion-report.md`.
+**UT-5, Customer Portal 2.0, AI Operations Center and Enterprise Mail have not begun.**
+Previously: **MIGRATION 86 DEPLOYED · UT-3B CLOSED**. Ledger **86/86**, no
 replay, no mismatch, deployment **PASS** with no sequencing deviation. **No historical
 backfill:** `business_event` is unchanged at ~26 rows, the same count verified before the
 migration — the seven emitters are live for **new acts only**. Independent verification and
@@ -190,6 +200,7 @@ only) · **HRQ-P4** the competency framework (catalogue ships empty by design).
 | **R1.0** (reconciliation + validation) | 2026-07-31 → **2026-08-01 RELEASED** | `c29b7cf` at completion (post-sanitation head) | none — validation only. Side products shipped during UAT: invoice-renderer geometry fix `733c116` (`uat2b-2`, immutable artifacts untouched) + history sanitation (5 SHAs remapped) | A1–A3, B1–B4 **all PASS** (B2 with stated limitation) · **§4 signed 2026-08-01** (Bara Seck, all seats; provenance note in the sign-off) |
 | **HR-1** (Dashboard & Organization Foundation) | 2026-08-01 **DEPLOYED** | `43bf42e` (migration) / `c47f95b` (repo at deploy) | **73** applied in production by the operator after the `scope`→`data_scope` correction; ledger repaired → **73/73**; prod verification: 2 permission rows · **0 grants** (B1 pause) · all tables present | operator deployment PASS · CI 67/67 RLS steps ×2 · business gates open (B1/B2/B3) |
 | **EC-1 + EC-2** (Enterprise Communications: inbound capture + triage) | 2026-08-05 **CLOSED** | `aa50fd9` (EC-1) / `91ad948` (EC-2, CI green; **no migration file differs** from `fc88633`) | **80–81** applied; ledger **81/81**. Independent verification: ledger zero-mismatched · **6/6 EC tables** · **11/11 EC indexes** (9 from 80, 2 from 81) | deployment **PASS** · CI run `30758769202` **green, 74+10 steps, 0 skipped, 0 failed**, both EC suites executed by name · **no sequencing deviation** (applied after green, unlike DEV-HR6-01) · open: grants + mailbox + provider/DPA + rate limiting (**management/ops, not operator**) |
+| **UT-4** (Unified Operational Timeline UI) | 2026-08-12 **COMPLETE — nothing to deploy** | `849af88` | **none** — no migration, schema, permission, flag or route (pinned) | gates: 205 files / 5138 tests green, tsc 0, build clean · CI `30953710749` 79+10 steps, 0 skipped · UI queries no module table · `audit_log` excluded · clientSafe projection still unwired (UT-5) |
 | **UT-3B** (Decision Plane emitters) | 2026-08-11 **CLOSED** | `fe6a9ff` | **86** `20260810000001_decision_plane_emitters.sql` — **APPLIED** 2026-08-11, ledger 86/86. Six trigger functions + six triggers; no RPC edited, no table, permission or policy | gates: 204 files / 5077 tests green, tsc 0 · CI `30935590218` 79+10 steps, 0 skipped · emitters proven in real PostgreSQL incl. **nothing survives ROLLBACK** · no backfill: events appear for NEW acts only |
 | **UT-2** (Unified Tracking: merged two-plane read model) | 2026-08-10 **BUILT — nothing to deploy** | `031d9db` | **none** — UT-2 adds no migration, no schema, no permission and no flag (pinned by test) | gates: 204 files / 5064 tests green, tsc 0, build clean · no UI, no emitter, no store · `audit_log` excluded · new blocker **UT3-ROAD** (road store has no `confidence`) |
 | **UT-1** (Unified Tracking: ordering foundation) | 2026-08-09 **CLOSED** | `a201baf` | **85** `20260809000001_decision_plane_ordinal.sql` — **APPLIED** 2026-08-09. Adds a nullable ordinal + sequence + BEFORE INSERT trigger, and corrects the `business_event` SELECT policy to subject-based visibility. No table, no RPC, no permission | gates: 203 files / 5024 tests green, tsc 0 · **nothing backfilled**, no `occurred_at` rewritten · SYSTEM_ADMIN narrowed, never broadened · `audit_log` never a timeline source (pinned) |
