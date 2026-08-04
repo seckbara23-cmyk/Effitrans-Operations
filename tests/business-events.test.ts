@@ -621,20 +621,36 @@ describe("WES-9E/9M boundaries", () => {
 // 9L — UI
 // ---------------------------------------------------------------------------
 describe("WES-9L timeline UI", () => {
-  it("is read-only — no forms, no actions", () => {
-    const src = code("components/files/event-timeline.tsx");
-    expect(src).not.toContain("<form");
-    expect(src).not.toContain("use client");
-    expect(src).not.toContain("onClick");
+  it("writes nothing — the timeline reads history, it never records it", () => {
+    // UT-4 added filters and paging, so the surface is interactive. What must
+    // stay true is that it MUTATES nothing: no form, no write, no emit.
+    for (const f of ["components/files/event-timeline.tsx", "components/files/unified-timeline-view.tsx"]) {
+      const src = code(f);
+      expect(src, f).not.toContain("<form");
+      expect(src, f).not.toMatch(/\.(insert|update|upsert|delete)\(/);
+      expect(src, f).not.toContain("emit_business_event");
+    }
+    // The server wrapper stays a server component.
+    expect(code("components/files/event-timeline.tsx")).not.toContain("use client");
   });
 
   it("shows a missing actor honestly instead of inventing one", () => {
-    expect(code("components/files/event-timeline.tsx")).toContain("Auteur non enregistré");
+    // UT-4 moved presentation into the client view and made this MORE precise:
+    // no actorId means the domain records none, an unresolved actorId is a
+    // directory limit, and the two now read differently.
+    const src = code("components/files/unified-timeline-view.tsx");
+    expect(src).toContain("Auteur non enregistré");
+    expect(src).toContain("Auteur non identifié");
   });
 
   it("states that coverage is partial rather than implying completeness", () => {
-    const src = read("components/files/event-timeline.tsx");
-    expect(src).toMatch(/n&apos;y figurent pas encore/);
+    // The old footnote named handoffs and expense visas as missing; UT-3B
+    // emitted both, so it was retired rather than left to mislead. The honest
+    // statement is now about a real and current limit: where no ledger boundary
+    // marker exists, an empty early period is NOT evidence of a quiet period.
+    const src = code("components/files/unified-timeline-view.tsx");
+    expect(src).toMatch(/ne signifie pas qu'il ne s'est rien passé/);
+    expect(src).toContain("hasLedgerBoundary");
   });
 
   it("is mounted on the dossier page", () => {

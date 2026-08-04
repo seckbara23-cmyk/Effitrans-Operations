@@ -24,14 +24,25 @@ import { readObservationPlane } from "./observation-plane";
 import {
   assignChronology, compareUnified, fromDecisionEntry, truncateAtGroupBoundary,
   encodeUnifiedCursor, decodeUnifiedCursor, isBeforeUnifiedCursor, toClientSafe,
-  type UnifiedEntry,
+  type UnifiedEntry, type Plane,
 } from "./merged";
+import type { EventOrigin } from "./contract";
+import {
+  matchesFilter, matchesOrigin, matchesPlane, type TimelineFilter,
+} from "./presentation";
 
 export type UnifiedQuery = {
   dossierId: string;
   limit?: number;
   /** Opaque; from `nextCursor`. */
   cursor?: string;
+  /**
+   * UT-4 presentation filters. They narrow what is SHOWN and never what is
+   * TRUE: see the chronology note in `readUnifiedTimeline`.
+   */
+  filter?: TimelineFilter;
+  plane?: Plane | null;
+  origin?: EventOrigin | null;
 };
 
 export type UnifiedPage = {
@@ -84,13 +95,28 @@ export async function readUnifiedTimeline(query: UnifiedQuery): Promise<UnifiedP
     (e) => e.dossierId === query.dossierId && e.tenantId === user.tenantId,
   );
 
+  // CHRONOLOGY IS ASSIGNED BEFORE FILTERING, and this order is load-bearing.
+  //
+  // An entry is unprovable because something else shared its instant. If the
+  // filter ran first, hiding that something else would make the survivor look
+  // individually ordered — the filter would have MANUFACTURED provability, and
+  // a user narrowing to "Commercial" would be shown a firmer history than
+  // exists. Assigning first means `chronologyProvable` describes what happened,
+  // not what is currently on screen.
   const withChronology = assignChronology(scoped)
     .map((e) => ({ ...e, paginationToken: `${e.occurredAt}|${e.entryId}` }))
     .sort((a, b) => -compareUnified(a, b)); // newest first for reading
 
+  const filtered = withChronology.filter(
+    (e) =>
+      matchesFilter(e, query.filter ?? "all") &&
+      matchesPlane(e, query.plane ?? null) &&
+      matchesOrigin(e, query.origin ?? null),
+  );
+
   const afterCursor = cursor
-    ? withChronology.filter((e) => isBeforeUnifiedCursor(e, cursor))
-    : withChronology;
+    ? filtered.filter((e) => isBeforeUnifiedCursor(e, cursor))
+    : filtered;
 
   const { page, hasMore } = truncateAtGroupBoundary(afterCursor, limit);
   const last = page[page.length - 1];

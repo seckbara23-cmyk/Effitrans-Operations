@@ -320,7 +320,7 @@ describe("Digital-LOS events", () => {
   });
 
   it("the dossier timeline component acknowledges the new domain", () => {
-    expect(code("components/files/event-timeline.tsx")).toContain("communication:");
+    expect(code("lib/unified-timeline/presentation.ts")).toContain("communication:");
   });
 });
 

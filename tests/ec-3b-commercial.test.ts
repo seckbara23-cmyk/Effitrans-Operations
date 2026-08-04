@@ -502,7 +502,7 @@ describe("Digital LOS events", () => {
   });
 
   it("the dossier timeline acknowledges the new domain", () => {
-    expect(code("components/files/event-timeline.tsx")).toContain("commercial:");
+    expect(code("lib/unified-timeline/presentation.ts")).toContain("commercial:");
   });
 });
 
