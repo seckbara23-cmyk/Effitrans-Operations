@@ -4,6 +4,17 @@
 **Commit:** `a201baf` · **New permissions: none** · **New tables: none** · **New RPCs: none**
 **Governing decision:** **DEC-B88** (UT-1A freeze) · Audit: [ut-0-architecture-audit.md](ut-0-architecture-audit.md)
 
+> **STATUS: DEPLOYED & CLOSED 2026-08-09.** Migration 85 applied to production, **ledger
+> 85/85**, CI green with zero skipped, deployment **PASS** with **no sequencing deviation**.
+> Independent verification and its stated boundaries:
+> [deployment-record-83-85.md](../releases/deployment-record-83-85.md).
+> **No operator work remains.**
+>
+> **UT-1 IS FORMALLY CLOSED.** The Decision Plane ordering foundation is live: new events
+> carry a monotonic ordinal; historical rows keep `ordinal IS NULL` and are grouped, never
+> ordered. **UT-2 has not begun** and is not authorised.
+
+
 ---
 
 ## 1. Repository audit (performed before code)

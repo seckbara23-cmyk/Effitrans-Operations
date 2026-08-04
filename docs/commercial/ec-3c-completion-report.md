@@ -4,6 +4,16 @@
 **Commit:** `59b2691` · **New permissions: none** — EC-3C *assigns* what EC-3B minted
 **Governing decision:** **DEC-C32** (RATIFY-EC3-1) · Freeze: [ec-3a-governance-freeze.md](ec-3a-governance-freeze.md)
 
+> **STATUS: DEPLOYED & CLOSED 2026-08-09.** Migration 83 applied to production, **ledger
+> 85/85**, CI green with zero skipped, deployment **PASS** with **no sequencing deviation**.
+> Independent verification and its stated boundaries:
+> [deployment-record-83-85.md](../releases/deployment-record-83-85.md).
+> **No operator work remains.**
+>
+> **Remaining gate is management, not engineering: SEATS** — QUOTATION_MANAGER and
+> OPS_SUPERVISOR must be held by **different** people, or nothing can be validated.
+
+
 ---
 
 ## 1. Repository audit (performed before any code)

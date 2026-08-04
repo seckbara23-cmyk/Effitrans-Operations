@@ -4,6 +4,18 @@
 **Commit:** `6f01a67` · **New permissions: none** · **New RPCs: none**
 **Predecessors:** EC-3A/3B/3C **closed and not reopened**
 
+> **STATUS: DEPLOYED & CLOSED 2026-08-09.** Migration 84 applied to production, **ledger
+> 85/85**, CI green with zero skipped, deployment **PASS** with **no sequencing deviation**.
+> Independent verification and its stated boundaries:
+> [deployment-record-83-85.md](../releases/deployment-record-83-85.md).
+> **No operator work remains.**
+>
+> **Remaining gate is management, not engineering: SEATS-CONVERT** — no ROLE holds both
+> `file:create` and commercial read, so one **person** must hold one of each. Until such a
+> seat exists, acceptance works and **conversion cannot be performed by anyone**; the UI
+> says so rather than showing a dead button.
+
+
 ---
 
 ## 1. Repository audit (returned before any code was written)
