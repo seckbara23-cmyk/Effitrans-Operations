@@ -1,6 +1,16 @@
 # Release Status — standing table (updated at every release event)
 
-*Last updated: 2026-08-09 (**MIGRATIONS 83–85 DEPLOYED · EC-3C, EC-3D and UT-1 CLOSED**.
+*Last updated: 2026-08-10 (**UT-2 BUILT — no migration, nothing to deploy**. The merged
+two-plane Unified Timeline read model: one dossier, one history, composed from
+`business_event` and the ocean/air observation stores, owning no table and copying nothing.
+Same-instant cross-plane entries are GROUPED, never given a precedence — a defect that
+reintroduced exactly that precedence through an `A:`/`B:` id prefix was caught by its own
+test and fixed. Plane-B visibility is dossier-derived in the application because the
+observation policies are `transport:read`-based. The clientSafe projection is built and
+exposed to nothing. **`public.tracking_event` (road) is documented as a GAP, not silently
+absorbed:** it has no `confidence` column, and admitting it would mean fabricating a grade
+or adding a migration — raised as UT3-ROAD. See `docs/tracking/ut-2-completion-report.md`.
+**UT-3 has not begun.** Previously: **MIGRATIONS 83–85 DEPLOYED · EC-3C, EC-3D and UT-1 CLOSED**.
 Ledger reconciled at **85/85** via the sanctioned history-only repair, no replay, no
 mismatch, deployment **PASS** with **no sequencing deviation** — every one applied after its
 own CI suite was green. Independent verification: ledger 85 entries with 0 unapplied / 0
@@ -161,6 +171,7 @@ only) · **HRQ-P4** the competency framework (catalogue ships empty by design).
 | **R1.0** (reconciliation + validation) | 2026-07-31 → **2026-08-01 RELEASED** | `c29b7cf` at completion (post-sanitation head) | none — validation only. Side products shipped during UAT: invoice-renderer geometry fix `733c116` (`uat2b-2`, immutable artifacts untouched) + history sanitation (5 SHAs remapped) | A1–A3, B1–B4 **all PASS** (B2 with stated limitation) · **§4 signed 2026-08-01** (Bara Seck, all seats; provenance note in the sign-off) |
 | **HR-1** (Dashboard & Organization Foundation) | 2026-08-01 **DEPLOYED** | `43bf42e` (migration) / `c47f95b` (repo at deploy) | **73** applied in production by the operator after the `scope`→`data_scope` correction; ledger repaired → **73/73**; prod verification: 2 permission rows · **0 grants** (B1 pause) · all tables present | operator deployment PASS · CI 67/67 RLS steps ×2 · business gates open (B1/B2/B3) |
 | **EC-1 + EC-2** (Enterprise Communications: inbound capture + triage) | 2026-08-05 **CLOSED** | `aa50fd9` (EC-1) / `91ad948` (EC-2, CI green; **no migration file differs** from `fc88633`) | **80–81** applied; ledger **81/81**. Independent verification: ledger zero-mismatched · **6/6 EC tables** · **11/11 EC indexes** (9 from 80, 2 from 81) | deployment **PASS** · CI run `30758769202` **green, 74+10 steps, 0 skipped, 0 failed**, both EC suites executed by name · **no sequencing deviation** (applied after green, unlike DEV-HR6-01) · open: grants + mailbox + provider/DPA + rate limiting (**management/ops, not operator**) |
+| **UT-2** (Unified Tracking: merged two-plane read model) | 2026-08-10 **BUILT — nothing to deploy** | `031d9db` | **none** — UT-2 adds no migration, no schema, no permission and no flag (pinned by test) | gates: 204 files / 5064 tests green, tsc 0, build clean · no UI, no emitter, no store · `audit_log` excluded · new blocker **UT3-ROAD** (road store has no `confidence`) |
 | **UT-1** (Unified Tracking: ordering foundation) | 2026-08-09 **CLOSED** | `a201baf` | **85** `20260809000001_decision_plane_ordinal.sql` — **APPLIED** 2026-08-09. Adds a nullable ordinal + sequence + BEFORE INSERT trigger, and corrects the `business_event` SELECT policy to subject-based visibility. No table, no RPC, no permission | gates: 203 files / 5024 tests green, tsc 0 · **nothing backfilled**, no `occurred_at` rewritten · SYSTEM_ADMIN narrowed, never broadened · `audit_log` never a timeline source (pinned) |
 | **EC-3D** (Customer acceptance & dossier conversion) | 2026-08-09 **CLOSED** | `6f01a67` | **84** `20260808000001_commercial_conversion.sql` — **APPLIED** 2026-08-09. Adds no commercial schema and no RPC; widens the `client_notification` category CHECK to admit `commercial` and adds a nullable `quotation_id` | gates: 202 files / 4981 tests green, tsc 0, build clean · conversion invokes the Operations `createFile` contract and writes no dossier table (test-pinned) · cross-tenant conversion refused by QT617 · **SEATS-CONVERT** blocker recorded |
 | **EC-3C** (Commercial / Quotation workspace) | 2026-08-09 **CLOSED** | `59b2691` | **83** `20260807000001_commercial_activation.sql` — **APPLIED** 2026-08-09; ledger 85/85. Grants the DEC-C32 matrix at all three sources and widens the three quotation SELECT policies to `create OR validate` | gates: 201 files / 4950 tests green, tsc 0, build clean · **no permission invented** (`quotation:read` explicitly refused) · SYSTEM_ADMIN named only inside a `delete` · remaining gate is **seat assignment**, not engineering |
