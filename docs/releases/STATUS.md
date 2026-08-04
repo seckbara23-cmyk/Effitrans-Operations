@@ -10,7 +10,7 @@ observation policies are `transport:read`-based. The clientSafe projection is bu
 exposed to nothing. **`public.tracking_event` (road) is documented as a GAP, not silently
 absorbed:** it has no `confidence` column, and admitting it would mean fabricating a grade
 or adding a migration — raised as UT3-ROAD. See `docs/tracking/ut-2-completion-report.md`.
-**UT-3 has not begun.** Previously: **MIGRATIONS 83–85 DEPLOYED · EC-3C, EC-3D and UT-1 CLOSED**.
+**CI GREEN** — run `30917288697`, 78+10 steps, **0 skipped, 0 failed**; the rls-tests step count is unchanged from UT-1, which is itself evidence that UT-2 added no database surface. **UT-3 has not begun.** Previously: **MIGRATIONS 83–85 DEPLOYED · EC-3C, EC-3D and UT-1 CLOSED**.
 Ledger reconciled at **85/85** via the sanctioned history-only repair, no replay, no
 mismatch, deployment **PASS** with **no sequencing deviation** — every one applied after its
 own CI suite was green. Independent verification: ledger 85 entries with 0 unapplied / 0

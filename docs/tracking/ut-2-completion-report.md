@@ -167,7 +167,10 @@ suite would have re-asserted someone else's invariants.
 
 ## 14. CI
 
-Pending at the time of writing; the result is recorded below when the run completes.
+**GREEN — run `30917288697` (`031d9db`), `rls-tests` 78 steps / 0 skipped / 0 failed,
+`build` 10 / 0 / 0.** The step count is **unchanged from UT-1's 78**, which is itself the
+evidence that UT-2 added no database surface: a phase that had touched schema or policy
+would have had to add a suite.
 
 ## 15. Deployment implications
 
