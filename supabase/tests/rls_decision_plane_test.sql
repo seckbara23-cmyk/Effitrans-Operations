@@ -36,6 +36,20 @@ select '00000000-0000-0000-0000-00000000d104', r.id, r.tenant_id from public.rol
 where r.tenant_id = '00000000-0000-0000-0000-000000000001' and r.code = 'SYSTEM_ADMIN'
 on conflict do nothing;
 
+-- A dossier reader. d101 was originally given NO role, so can_read_file()
+-- correctly refused it — a fixture that under-provisioned its own actor, not a
+-- policy defect. `file:read:all` is what the WES-9 suite uses for the same job.
+insert into public.role (id, tenant_id, code, label_fr, label_en, is_provisional) values
+  ('00000000-0000-0000-0000-00000000d1a1', '00000000-0000-0000-0000-000000000001',
+   'UT1_FILE_READER', 'Lecteur dossiers (test)', 'UT1 File Reader', true)
+on conflict (tenant_id, code) do nothing;
+insert into public.role_permission (role_id, permission_id)
+select '00000000-0000-0000-0000-00000000d1a1', p.id from public.permission p
+where p.code in ('file:read', 'file:read:all') on conflict do nothing;
+insert into public.user_role (user_id, role_id, tenant_id) values
+  ('00000000-0000-0000-0000-00000000d101', '00000000-0000-0000-0000-00000000d1a1', '00000000-0000-0000-0000-000000000001')
+on conflict do nothing;
+
 -- A mail reader: no seeded role holds communication:inbound:read.
 insert into public.role (id, tenant_id, code, label_fr, label_en, is_provisional) values
   ('00000000-0000-0000-0000-00000000d1b1', '00000000-0000-0000-0000-000000000001',
