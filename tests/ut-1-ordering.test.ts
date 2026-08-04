@@ -313,9 +313,13 @@ describe("scope boundaries — UT-1 only", () => {
     expect(existsSync(join(root, "components", "tracking"))).toBe(false);
   });
 
-  it("UT-2 has not begun: no cross-plane merge exists", () => {
-    const files = readdirSync(join(root, "lib", "unified-timeline"));
-    expect(files.sort()).toEqual(["contract.ts", "decision-plane.ts"]);
-    expect(code(CONTRACT)).not.toMatch(/mergePlanes|observationPlane|crossPlane/i);
+  it("UT-1's own reader stays single-plane, whatever later phases add", () => {
+    // This marker used to assert that lib/unified-timeline held exactly two
+    // files — true until UT-2 legitimately added the merge. Re-aimed at what
+    // UT-1 actually owns: its reader touches one plane and nothing else.
+    const src = code(READER);
+    expect(src).toMatch(/from\("business_event"\)/);
+    expect(src).not.toMatch(/ocean_tracking_event|air_tracking_event|tracking_event/);
+    expect(code(CONTRACT)).not.toMatch(/observationPlane|crossPlane/i);
   });
 });
