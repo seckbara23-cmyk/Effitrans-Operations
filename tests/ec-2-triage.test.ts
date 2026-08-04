@@ -260,9 +260,12 @@ describe("Digital-LOS events", () => {
     }
   });
 
-  it("CORRESPONDENCE_RECEIVED is reserved — EC-1's capture is not transactional", () => {
-    expect(getEventType("CORRESPONDENCE_RECEIVED")!.emission).toBe("reserved");
-    // Nothing emits it.
+  it("CORRESPONDENCE_RECEIVED is NOT emitted by EC-2 — it belongs to attribution", () => {
+    // It was reserved while EC-1's capture was a non-transactional app write.
+    // UT-3B (migration 86) put it on a trigger at first tenant attribution.
+    // What EC-2 still guarantees is that TRIAGE does not emit it: arrival and
+    // triage are different facts, and triage is far too late to claim arrival.
+    expect(getEventType("CORRESPONDENCE_RECEIVED")!.emission).toBe("trigger");
     expect(code(MIG)).not.toContain("'CORRESPONDENCE_RECEIVED'");
   });
 
@@ -277,7 +280,13 @@ describe("Digital-LOS events", () => {
     const fn = sql.slice(sql.indexOf("function public.ec_resolve_triage"));
     expect(fn).toContain("update public.ec_triage_item");
     expect(fn).toContain("perform public.emit_business_event");
-    for (const def of EVENT_TYPES.filter((d) => d.domain === "communication" && d.emission !== "reserved")) {
+    // Every communication event EC-2 owns is RPC-emitted. CORRESPONDENCE_RECEIVED
+    // is excluded: it is owned by capture/attribution, not by triage, and is
+    // trigger-emitted since UT-3B.
+    for (const def of EVENT_TYPES.filter(
+      (d) => d.domain === "communication" && d.emission !== "reserved"
+             && d.type !== "CORRESPONDENCE_RECEIVED",
+    )) {
       expect(def.emission, def.type).toBe("rpc");
     }
   });

@@ -52,6 +52,9 @@ const EC_TRIAGE = "supabase/migrations/20260805000001_ec_triage_outcomes.sql";
 // EC-3B widened the domain CHECK again (commercial) and emits the quotation
 // types from its lifecycle RPCs.
 const COMMERCIAL = "supabase/migrations/20260806000001_commercial_quotation.sql";
+/** UT-3B — the six trigger emitters (migration 86). */
+const UT3_EMITTERS = "supabase/migrations/20260810000001_decision_plane_emitters.sql";
+const LEDGER_MARKER = "lib/workflow/events/ledger-marker.ts";
 const migration = () => sqlCode(MIGRATION);
 /** WES-9A: the emission functions as they stand today (62 replaced by 63). */
 const atomicity = () => sqlCode(ATOMICITY);
@@ -107,17 +110,34 @@ describe("WES-9A event taxonomy", () => {
     }
   });
 
-  it("keeps app-layer-only actions RESERVED rather than unreliably emitted", () => {
-    // These are real features whose writes are application multi-writes. WES-9J
-    // prefers fewer trustworthy events over broad unreliable coverage.
-    for (const reserved of [
-      "HANDOFF_SENT",
-      "HANDOFF_RECEIVED",
-      "EXPENSE_AUTHORIZED",
-      "DOCUMENT_SHARED_WITH_CLIENT",
-    ]) {
+  it("keeps events whose ACT DOES NOT EXIST reserved — the only reason left", () => {
+    // WES-9J kept four app-layer writes reserved rather than emit them
+    // unreliably. UT-3B (migration 86) put those four onto database triggers,
+    // so they now emit inside their owning transaction and the reason for
+    // reserving them is gone.
+    //
+    // What remains reserved is a stronger claim: these two describe capabilities
+    // the platform DOES NOT HAVE. There is no override act and no reversal act
+    // anywhere in the codebase, and an emitter without an act fabricates
+    // history. They stay reserved until the act is built — and the phase that
+    // builds it emits them in the same transaction (ADR-UT3-1).
+    for (const reserved of ["ADMIN_OVERRIDE_EXECUTED", "WORKFLOW_REVERSED"]) {
       expect(getEventType(reserved)?.emission).toBe("reserved");
     }
+    // Exactly two, so a future phase cannot quietly park a third here.
+    expect(EVENT_TYPES.filter((e) => e.emission === "reserved").map((e) => e.type).sort())
+      .toEqual(["ADMIN_OVERRIDE_EXECUTED", "WORKFLOW_REVERSED"]);
+  });
+
+  it("the four UT-3B trigger emitters are now trigger-emitted, not app-layer", () => {
+    for (const t of ["HANDOFF_SENT", "HANDOFF_RECEIVED", "EXPENSE_AUTHORIZED",
+                     "DOCUMENT_SHARED_WITH_CLIENT", "CORRESPONDENCE_RECEIVED",
+                     "DOSSIER_POLICY_PINNED"]) {
+      expect(getEventType(t)?.emission, t).toBe("trigger");
+    }
+    // The ledger marker is the one exception: the statement IS the act, so a
+    // single RPC call is the whole transaction.
+    expect(getEventType("HISTORICAL_EVENTS_NOT_BACKFILLED")?.emission).toBe("rpc");
   });
 });
 
@@ -167,7 +187,10 @@ describe("WES-9C metadata contract", () => {
 
   it("rejects an unknown or reserved event type outright", () => {
     expect(validateEventMetadata("NOPE", {}).ok).toBe(false);
-    expect(validateEventMetadata("HANDOFF_SENT", {}).ok).toBe(false);
+    // HANDOFF_SENT was the reserved fixture until UT-3B gave it a trigger; a
+    // still-reserved type is used instead, so the assertion keeps testing what
+    // it claims rather than quietly becoming a test of an emitted type.
+    expect(validateEventMetadata("WORKFLOW_REVERSED", {}).ok).toBe(false);
   });
 
   it("treats absent metadata as empty, not as an error", () => {
@@ -659,9 +682,16 @@ describe("event sources", () => {
     // the assignment ones. A type declared emitted with nothing emitting it
     // would be a lie about coverage, which is what this guards.
     const all = migration() + atomicity() + sqlCode(ASSIGNMENT) + sqlCode(DOC_GOV)
-      + sqlCode(ARTIFACTS) + sqlCode(RECONCILE) + sqlCode(EC_TRIAGE) + sqlCode(COMMERCIAL);
+      + sqlCode(ARTIFACTS) + sqlCode(RECONCILE) + sqlCode(EC_TRIAGE) + sqlCode(COMMERCIAL)
+      + sqlCode(UT3_EMITTERS);
     for (const def of emittedEventTypes()) {
-      expect(all).toContain(`'${def.type}'`);
+      // The ledger marker is emitted from the application, by design: the
+      // statement IS the act, so there is no prior transaction to join.
+      if (def.type === "HISTORICAL_EVENTS_NOT_BACKFILLED") {
+        expect(read(LEDGER_MARKER)).toContain(`"${def.type}"`);
+        continue;
+      }
+      expect(all, def.type).toContain(`'${def.type}'`);
     }
   });
 

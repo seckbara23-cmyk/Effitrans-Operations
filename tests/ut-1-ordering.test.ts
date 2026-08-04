@@ -234,9 +234,10 @@ describe("migration 85 — the smallest additive change", () => {
   });
 
   it("sits last in the chain and touches nothing before it", () => {
+    // UT-1's OWN position, not "newest" — the recurring maintenance defect.
     const all = readdirSync(join(root, "supabase", "migrations")).filter((f) => f.endsWith(".sql")).sort();
-    expect(all[all.length - 1]).toBe("20260809000001_decision_plane_ordinal.sql");
-    expect(all[all.length - 2]).toBe("20260808000001_commercial_conversion.sql");
+    expect(all[84]).toBe("20260809000001_decision_plane_ordinal.sql");
+    expect(all[83]).toBe("20260808000001_commercial_conversion.sql");
   });
 });
 

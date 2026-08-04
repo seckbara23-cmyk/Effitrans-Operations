@@ -85,7 +85,7 @@ export const EVENT_TYPES: readonly EventTypeDef[] = [
   { type: "DOCUMENT_UPLOADED", domain: "document", version: 1, emission: "trigger", metadataKeys: ["type_code"], clientSafe: true, labelFr: "Document reçu" },
   { type: "DOCUMENT_VERIFIED", domain: "document", version: 1, emission: "rpc", metadataKeys: ["type_code", ...TRANSITION, "reason_code", "has_reason", "reason_reference_id", "is_override"], clientSafe: true, labelFr: "Document vérifié" },
   { type: "DOCUMENT_REJECTED", domain: "document", version: 1, emission: "rpc", metadataKeys: ["type_code", ...TRANSITION, "reason_code", "has_reason", "reason_reference_id", "is_override"], clientSafe: false, labelFr: "Document rejeté" },
-  { type: "DOCUMENT_SHARED_WITH_CLIENT", domain: "document", version: 1, emission: "reserved", metadataKeys: ["type_code"], clientSafe: true, labelFr: "Document partagé" },
+  { type: "DOCUMENT_SHARED_WITH_CLIENT", domain: "document", version: 1, emission: "trigger", metadataKeys: ["type_code"], clientSafe: true, labelFr: "Document partagé" },
   // WES-4 review transitions, emitted by review_document (the trigger no
   // longer emits them — one owner per fact).
   { type: "DOCUMENT_VERIFICATION_REQUESTED", domain: "document", version: 1, emission: "rpc", metadataKeys: ["type_code", ...TRANSITION, "reason_code", "has_reason", "reason_reference_id", "is_override"], clientSafe: false, labelFr: "Vérification demandée" },
@@ -139,13 +139,13 @@ export const EVENT_TYPES: readonly EventTypeDef[] = [
   { type: "OPERATIONAL_OWNER_REASSIGNED", domain: "dossier", version: 1, emission: "rpc", metadataKeys: ASSIGNMENT_KEYS, clientSafe: false, labelFr: "Responsable opérationnel changé" },
 
   // ------------------------------------------------------------------ handoff
-  { type: "HANDOFF_SENT", domain: "handoff", version: 1, emission: "reserved", metadataKeys: ["from_step", "to_step"], clientSafe: false, labelFr: "Transfert envoyé" },
-  { type: "HANDOFF_RECEIVED", domain: "handoff", version: 1, emission: "reserved", metadataKeys: ["from_step", "to_step"], clientSafe: false, labelFr: "Transfert reçu" },
+  { type: "HANDOFF_SENT", domain: "handoff", version: 1, emission: "trigger", metadataKeys: ["from_step", "to_step"], clientSafe: false, labelFr: "Transfert envoyé" },
+  { type: "HANDOFF_RECEIVED", domain: "handoff", version: 1, emission: "trigger", metadataKeys: ["from_step", "to_step"], clientSafe: false, labelFr: "Transfert reçu" },
 
   // ------------------------------------------------------------------ finance
   { type: "INVOICE_ISSUED", domain: "finance", version: 1, emission: "trigger", metadataKeys: [...TRANSITION], clientSafe: true, labelFr: "Facture émise" },
   { type: "PAYMENT_RECORDED", domain: "finance", version: 1, emission: "trigger", metadataKeys: ["method"], clientSafe: true, labelFr: "Paiement enregistré" },
-  { type: "EXPENSE_AUTHORIZED", domain: "finance", version: 1, emission: "reserved", metadataKeys: [...TRANSITION], clientSafe: false, labelFr: "Dépense autorisée" },
+  { type: "EXPENSE_AUTHORIZED", domain: "finance", version: 1, emission: "trigger", metadataKeys: [...TRANSITION], clientSafe: false, labelFr: "Dépense autorisée" },
 
   // ------------------------------------------------------------------ process
   // WES-5 — emitted by reconcile_step_completion, atomically with the step
@@ -166,7 +166,7 @@ export const EVENT_TYPES: readonly EventTypeDef[] = [
   // is a multi-step application sequence, not a single transaction, so nothing
   // may claim the trigger/rpc guarantee for it. Declaring it now fixes the name
   // so a later phase adds emission rather than a second vocabulary.
-  { type: "CORRESPONDENCE_RECEIVED", domain: "communication", version: 1, emission: "reserved", metadataKeys: ["triage_item_id", "message_id", "mailbox_id"], clientSafe: false, labelFr: "Correspondance reçue" },
+  { type: "CORRESPONDENCE_RECEIVED", domain: "communication", version: 1, emission: "trigger", metadataKeys: ["triage_item_id", "message_id", "mailbox_id"], clientSafe: false, labelFr: "Correspondance reçue" },
   { type: "CORRESPONDENCE_ASSIGNED", domain: "communication", version: 1, emission: "rpc", metadataKeys: ["triage_item_id", "message_id"], clientSafe: false, labelFr: "Correspondance attribuée" },
   { type: "CORRESPONDENCE_REASSIGNED", domain: "communication", version: 1, emission: "rpc", metadataKeys: ["triage_item_id", "message_id"], clientSafe: false, labelFr: "Correspondance réattribuée" },
   // The one event whose subject is the DOSSIER — this is what places a customer
@@ -200,14 +200,14 @@ export const EVENT_TYPES: readonly EventTypeDef[] = [
   // Reserved, not emitted: WES-7 pins a policy at process-instance creation but
   // nothing creates instances through that path yet, so there is no fact to
   // record. Emission lands with the phase that starts pinning for real.
-  { type: "DOSSIER_POLICY_PINNED", domain: "policy", version: 1, emission: "reserved", metadataKeys: ["provenance"], clientSafe: false, labelFr: "Politique rattachée au dossier" },
+  { type: "DOSSIER_POLICY_PINNED", domain: "policy", version: 1, emission: "trigger", metadataKeys: ["provenance"], clientSafe: false, labelFr: "Politique rattachée au dossier" },
 
   // ------------------------------------------------------------------- ledger
   {
     type: "HISTORICAL_EVENTS_NOT_BACKFILLED",
     domain: "ledger",
     version: 1,
-    emission: "reserved",
+    emission: "rpc",
     metadataKeys: ["ledger_started_at"],
     clientSafe: false,
     labelFr: "Historique antérieur non repris",

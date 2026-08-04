@@ -386,10 +386,10 @@ describe("UT3-ROAD (Option C) — road joins the Observation Plane", () => {
 
 // ---------------------------------------------------------------------------
 describe("UT-3B emitters remain UNIMPLEMENTED (migration blocked)", () => {
-  it("all nine reserved types still have no emitter", () => {
+  it("only the two acts-that-do-not-exist remain reserved", () => {
+    // Was nine while UT-3B was blocked; migration 86 emitted seven of them.
     const src = code("lib/workflow/events/types.ts");
-    const reserved = [...src.matchAll(/emission: "reserved"/g)];
-    expect(reserved).toHaveLength(9);
+    expect([...src.matchAll(/emission: "reserved"/g)]).toHaveLength(2);
   });
 
   it("the two acts-that-do-not-exist stay reserved by name", () => {
@@ -401,7 +401,7 @@ describe("UT-3B emitters remain UNIMPLEMENTED (migration blocked)", () => {
     }
   });
 
-  it("no emitter was smuggled into an application layer", () => {
+  it("the six trigger emitters live in SQL, never in an application layer", () => {
     for (const f of ["lib/ec/inbound/capture.ts", "lib/process/engine/actions.ts",
                      "lib/documents/actions.ts", "lib/workflow/policy/actions.ts"]) {
       // Quoted literals only: AuditActions.PROCESS_HANDOFF_SENT is an AUDIT
@@ -416,10 +416,12 @@ describe("UT-3B emitters remain UNIMPLEMENTED (migration blocked)", () => {
 
 // ---------------------------------------------------------------------------
 describe("scope: UT-2 only", () => {
-  it("adds NO migration — the chain is unchanged at 85", () => {
-    const all = readdirSync(join(root, "supabase", "migrations")).filter((f) => f.endsWith(".sql"));
-    expect(all).toHaveLength(85);
-    expect(all.sort()[84]).toBe("20260809000001_decision_plane_ordinal.sql");
+  it("UT-2 itself added no migration — its own position in the chain is fixed", () => {
+    // UT-3B legitimately added migration 86; what UT-2 claims is that IT added
+    // none, which is a statement about position 85, not about the newest file.
+    const all = readdirSync(join(root, "supabase", "migrations")).filter((f) => f.endsWith(".sql")).sort();
+    expect(all[84]).toBe("20260809000001_decision_plane_ordinal.sql");
+    expect(all.filter((f) => /unified|merged|observation/i.test(f))).toEqual([]);
   });
 
   it("creates no UI", () => {
@@ -433,9 +435,10 @@ describe("scope: UT-2 only", () => {
     expect(src).not.toMatch(/UT-2|unified-timeline/);
   });
 
-  it("UT-3 has not begun: the reserved types still have no emitter", () => {
-    const src = code("lib/workflow/events/types.ts");
-    expect(src).toMatch(/emission: "reserved"/);
+  it("UT-2 added no emitter of its own — the merged reader emits nothing", () => {
+    for (const f of readdirSync(join(root, "lib", "unified-timeline"))) {
+      expect(code(join("lib", "unified-timeline", f)), f).not.toMatch(/emit_business_event/);
+    }
   });
 
   it("UT-1's frozen contract is not aware of UT-2 — the dependency points one way", () => {
