@@ -31,18 +31,24 @@
 -- 1. CORRESPONDENCE_RECEIVED — "this correspondence now belongs to this
 --    tenant", NOT "an email arrived".
 --
---    Two triggers, ONE function, because first tenant attribution happens at
---    two moments and the event must fire at whichever comes first:
+--    ONE trigger, on INSERT with a tenant — and that is the WHOLE rule, because
+--    `ec_inbound_message` is APPEND-ONLY (EC-1 puts `prevent_mutation` on it)
+--    and no code path updates it. A quarantined row carries `tenant_id = NULL`
+--    permanently: quarantine is terminal, so a message is either attributed at
+--    capture or never.
 --
---      * INSERT with a tenant — normally-routed mail, attributed on capture;
---      * UPDATE NULL → tenant — a quarantined message later released to a
---        tenant. Quarantine carries `tenant_id = NULL` (EC-1), and
---        `business_event.tenant_id` is NOT NULL, so a captured-but-unattributed
---        message CANNOT be evented. That is not a limitation to work around: an
---        unattributed message belongs to no tenant's history, which is the truth.
+--    An earlier draft added a second trigger for `UPDATE NULL → tenant`, on the
+--    assumption that quarantined mail could later be released. CI proved that
+--    branch unreachable — the table refuses UPDATE outright — so it was removed
+--    rather than left as a trigger that can never fire. On an immutable capture
+--    table, "first tenant attribution" and "capture with a tenant" are the same
+--    instant, always.
 --
---    It therefore never fires on capture-without-tenant, on quarantine, on
---    discard, or on triage completion.
+--    `business_event.tenant_id` is NOT NULL, so an unattributed message cannot
+--    be evented at all. That is not a limitation to work around: a message
+--    belonging to no tenant belongs in no tenant's history.
+--
+--    It therefore never fires on quarantine, on discard, or on triage.
 -- ===========================================================================
 create or replace function public.emit_correspondence_received()
 returns trigger
@@ -67,13 +73,6 @@ create trigger trg_ec_message_received_insert
   after insert on public.ec_inbound_message
   for each row
   when (new.tenant_id is not null)
-  execute function public.emit_correspondence_received();
-
-drop trigger if exists trg_ec_message_received_attributed on public.ec_inbound_message;
-create trigger trg_ec_message_received_attributed
-  after update on public.ec_inbound_message
-  for each row
-  when (old.tenant_id is null and new.tenant_id is not null)
   execute function public.emit_correspondence_received();
 
 -- ===========================================================================

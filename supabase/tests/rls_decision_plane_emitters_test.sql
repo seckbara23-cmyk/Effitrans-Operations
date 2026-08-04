@@ -2,8 +2,9 @@
 --
 -- Proves in real PostgreSQL what no static reader can:
 --   * each emitter fires EXACTLY ONCE for its act;
---   * CORRESPONDENCE_RECEIVED fires on first tenant ATTRIBUTION — not on a
---     capture with no tenant, and not twice when that message is later updated;
+--   * CORRESPONDENCE_RECEIVED fires on first tenant ATTRIBUTION, which on an
+--     append-only capture table is capture-with-a-tenant and nothing else; a
+--     quarantined capture emits nothing and can never be released;
 --   * handoffs emit on ownership transfer only; a reassignment-shaped update
 --     (any other column, any other status) emits NOTHING;
 --   * document sharing emits on false→true only, never on un-share or re-save;
@@ -72,12 +73,18 @@ begin
   select count(*) into n_recv from public.business_event
    where event_type = 'CORRESPONDENCE_RECEIVED' and subject_id = msg;
 
-  -- (c) The quarantined message is later attributed ⇒ its FIRST attribution.
-  update public.ec_inbound_message
-     set tenant_id = '00000000-0000-0000-0000-000000000001'
-   where id = qmsg;
-  select count(*) into n_recv_after_update from public.business_event
-   where event_type = 'CORRESPONDENCE_RECEIVED' and subject_id = qmsg;
+  -- (c) A quarantined message can NEVER be attributed later: the capture table
+  --     is append-only (EC-1 `prevent_mutation`), so quarantine is terminal.
+  --     Asserted here because it is WHY one trigger suffices — an earlier draft
+  --     carried a second, unreachable trigger for a release path that the
+  --     schema forbids.
+  begin
+    -- EXPECT-FAIL: the capture table refuses UPDATE for every role.
+    update public.ec_inbound_message
+       set tenant_id = '00000000-0000-0000-0000-000000000001'
+     where id = qmsg;
+  exception when others then n_recv_after_update := 1;
+  end;
 
   -- =====================================================================
   -- 2 + 3. HANDOFFS — ownership transfers only.
@@ -172,7 +179,7 @@ begin
   insert into _r values
     ('quarantine_capture_silent', n_quarantine),
     ('routed_capture_emits_once', n_recv),
-    ('later_attribution_emits_once', n_recv_after_update),
+    ('quarantine_release_is_impossible', n_recv_after_update),
     ('handoff_sent_once', n_sent), ('handoff_sent_carries_dossier', sent_dossier),
     ('non_ownership_update_silent', n_reassign),
     ('handoff_received_once', n_received), ('handoff_received_carries_dossier', recv_dossier),
@@ -190,7 +197,7 @@ begin
      or n_expense_dossier<>1 or n_expense_orphan<>0
      or n_policy<>0
   then
-    raise exception 'UT-3B FAIL: quar=% recv=% attrib=% sent=% sentDoss=% reassign=% recvd=% recvDoss=% shared=% unshared=% resave=% expDoss=% expOrphan=% policy=%',
+    raise exception 'UT-3B FAIL: quar=% recv=% noRelease=% sent=% sentDoss=% reassign=% recvd=% recvDoss=% shared=% unshared=% resave=% expDoss=% expOrphan=% policy=%',
       n_quarantine, n_recv, n_recv_after_update, n_sent, sent_dossier, n_reassign,
       n_received, recv_dossier, n_shared, n_unshared, n_reshare,
       n_expense_dossier, n_expense_orphan, n_policy;
