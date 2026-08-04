@@ -151,6 +151,20 @@ such merges usually begin. UT-4 may reconcile the naming.
 
 **Local: 203 files / 5024 tests green · tsc 0.**
 
+**CI: GREEN — run `30912513643` (`8de40fb`), `rls-tests` 78 steps / 0 skipped / 0 failed,
+`build` 10 / 0 / 0.** `Run UT-1 decision plane ordering isolation test` — **success**, so the
+clean **1 → 85** chain is proven and migration 85 has never been applied anywhere while its
+suite was unproven.
+
+**The first run (`30810034218`) was red, and the numbers are worth recording**: every
+product assertion passed — `sameTime=1 incr=1 assigned=1 spoof=1 upd=1 del=1 legacyNull=1
+legacyTime=1 quote=1 mailCommercial=0 adminCommercial=0 adminPolicy=1 portal=0` — and the
+sole failure was `ops=0`, because the fixture created its dossier-reader actor with **no
+role**, so `can_read_file()` correctly refused it. A fixture that under-provisioned its own
+actor, not a policy defect: the dossier branch is unchanged by migration 85 and is already
+proven by the WES-9 suite. Fixed by granting the test actor `file:read` / `file:read:all`.
+**No policy was touched and no assertion was relaxed.**
+
 `tests/ut-1-ordering.test.ts` — 43 contracts. `rls_decision_plane_test.sql` — 15 checks in
 real PostgreSQL, including: three events in **one transaction** still share `occurred_at`
 **and** receive strictly increasing ordinals; a supplied `-999` is **discarded**; UPDATE and

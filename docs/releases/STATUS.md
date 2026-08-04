@@ -8,7 +8,7 @@ order; they previously shared `occurred_at` (which is transaction start time) wi
 random uuid to separate them. **No history was backfilled and no `occurred_at` rewritten:**
 pre-ordinal events keep `ordinal IS NULL` and are GROUPED, never ordered. The SELECT policy
 was corrected so prologue visibility follows the SUBJECT — SYSTEM_ADMIN NARROWS and no
-permission was minted. No UI, no cross-plane merge, no emitters: UT-2 has not begun. See
+permission was minted. **CI GREEN** — run `30912513643`, 78+10 steps, **0 skipped, 0 failed**, the UT-1 suite passing, so the clean 1→85 chain is proven. No UI, no cross-plane merge, no emitters: UT-2 has not begun. See
 `docs/tracking/ut-1-completion-report.md`. Previously: **EC-3D BUILT — migration 84 NOT YET
 APPLIED**. Customer
 acceptance and dossier conversion. Commercial **requests** a dossier and Operations creates
