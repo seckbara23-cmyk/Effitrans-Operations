@@ -36,6 +36,11 @@ insert into public.operational_file (id, tenant_id, file_number, type, client_id
   ('00000000-0000-0000-0000-00000000e3f1', '00000000-0000-0000-0000-000000000001',
    'UT3-TEST-0001', 'IMP', '00000000-0000-0000-0000-00000000e3c1', 'DRAFT')
 on conflict (id) do nothing;
+insert into public.operational_file (id, tenant_id, file_number, type, client_id, status) values
+  ('00000000-0000-0000-0000-00000000e3f2', '00000000-0000-0000-0000-000000000001',
+   'UT3-TEST-0002', 'IMP', '00000000-0000-0000-0000-00000000e3c1', 'DRAFT')
+on conflict (id) do nothing;
+
 insert into public.ec_mailbox (id, tenant_id, address, label_fr, purpose) values
   ('00000000-0000-0000-0000-00000000e3d1', '00000000-0000-0000-0000-000000000001',
    'ut3@test.example', 'UT3 (test)', 'OPERATIONS')
@@ -191,22 +196,31 @@ begin
   insert into public.workflow_policy_version
     (id, tenant_id, version, policy_schema_version, status, document, content_sha256,
      validation_status, activation_reason, activated_at)
-  values (gen_random_uuid(), '00000000-0000-0000-0000-000000000001', 99, 1, 'ACTIVE',
+  -- VALIDATED, not ACTIVE: `workflow_policy_version` permits one ACTIVE version
+  -- per tenant, and the emitter under test cares only that
+  -- `process_instance.policy_version_id` is non-null. Depending on no other
+  -- suite or migration having activated one would be a needless coupling.
+  values (gen_random_uuid(), '00000000-0000-0000-0000-000000000001', 99, 1, 'VALIDATED',
           '{"policySchemaVersion":1}'::jsonb, 'ut3b-policy-hash', 'PASSED', 'ut3b test', now())
   returning id into pv;
 
+  -- A SECOND dossier: `uq_process_instance_file_active` permits one
+  -- non-cancelled instance per dossier, and the handoff fixture already opened
+  -- one on e3f1. Using e3f2 here keeps BOTH proofs alive — e3f1 stays the
+  -- silent case (an instance with no pinned version) and e3f2 becomes the
+  -- firing case.
   insert into public.process_instance
     (id, tenant_id, file_id, policy_version_id, policy_provenance)
   values (gen_random_uuid(), '00000000-0000-0000-0000-000000000001',
-          '00000000-0000-0000-0000-00000000e3f1', pv, 'PINNED')
+          '00000000-0000-0000-0000-00000000e3f2', pv, 'PINNED')
   returning id into inst2;
 
   select count(*) into n_policy_pinned from public.business_event
    where event_type = 'DOSSIER_POLICY_PINNED'
-     and subject_id = '00000000-0000-0000-0000-00000000e3f1';
+     and subject_id = '00000000-0000-0000-0000-00000000e3f2';
   select count(*) into policy_dossier from public.business_event
    where event_type = 'DOSSIER_POLICY_PINNED'
-     and dossier_id = '00000000-0000-0000-0000-00000000e3f1';
+     and dossier_id = '00000000-0000-0000-0000-00000000e3f2';
   select count(*) into policy_meta from public.business_event
    where event_type = 'DOSSIER_POLICY_PINNED' and metadata->>'provenance' = 'PINNED';
 
