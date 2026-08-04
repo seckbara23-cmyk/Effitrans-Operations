@@ -124,10 +124,12 @@ begin
   -- =====================================================================
   -- 4. DOCUMENT_SHARED_WITH_CLIENT — false → true only.
   -- =====================================================================
-  insert into public.document (id, tenant_id, file_id, type_code, status, shared_with_client)
+  insert into public.document
+    (id, tenant_id, file_id, type_code, status, storage_path, shared_with_client)
   values (gen_random_uuid(), '00000000-0000-0000-0000-000000000001',
           '00000000-0000-0000-0000-00000000e3f1',
-          (select code from public.document_type limit 1), 'APPROVED', false)
+          (select code from public.document_type limit 1), 'APPROVED',
+          'ut3/test/doc.pdf', false)
   returning id into doc;
 
   update public.document set shared_with_client = true where id = doc;
