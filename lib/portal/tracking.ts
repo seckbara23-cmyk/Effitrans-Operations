@@ -29,13 +29,11 @@ import {
   deriveDelay,
   deriveNextStep,
   documentRequirements,
-  buildTimeline,
   departmentLabel,
   type PortalRoute,
   type PortalDelay,
   type PortalNextStep,
   type DocRequirement,
-  type CustomerTimelineEntry,
 } from "./tracking-derive";
 import { customerSafeRoleLabel, isGenericStaffIdentity, teamFallbackName } from "./officer-view";
 import { resolveTenantBranding } from "@/lib/branding/service";
@@ -80,7 +78,6 @@ export type PortalTracking = {
   eta: PortalEta;
   delay: PortalDelay;
   officer: PortalOfficer;
-  activity: CustomerTimelineEntry[];
   documents: { available: PortalDocument[]; requirements: DocRequirement[] };
   selfService: SelfServiceActions;
   transport: { statusLabel: string | null } | null;
@@ -226,13 +223,6 @@ export async function getPortalTracking(fileId: string): Promise<PortalTracking 
     now,
   });
   const nextStep = deriveNextStep(timeline.currentKey, { missingDocLabels: missingLabels });
-  const activity = buildTimeline({
-    createdAt: own.created_at,
-    createdLabel: "Dossier créé",
-    notifications: notifications
-      .filter((n) => n.fileId === fileId)
-      .map((n) => ({ id: n.id, title: n.title, category: n.category, createdAt: n.createdAt })),
-  });
   const mapPoints = buildMapPoints({ origin: route.origin || ship?.origin || null, destination: route.destination || ship?.destination || null, progressPercent: projection.progressPercent });
   const requirements = documentRequirements({ requiredCodes, bestStatusByCode, labelByCode });
 
@@ -269,7 +259,10 @@ export async function getPortalTracking(fileId: string): Promise<PortalTracking 
         isTeam: false,
       };
 
-  const lastActivityAt = activity[0]?.date ?? own.updated_at ?? null;
+  // UT-5: was the newest NOTIFICATION date, which made a dossier look idle
+  // whenever work happened without anyone being emailed about it. The
+  // dossier's own last modification is the honest answer to "last activity".
+  const lastActivityAt = own.updated_at ?? null;
   const podAvailable = availableDocs.some((d) => d.typeCode === "DELIVERY_NOTE");
 
   return {
@@ -287,7 +280,6 @@ export async function getPortalTracking(fileId: string): Promise<PortalTracking 
     eta,
     delay,
     officer,
-    activity,
     documents: { available: availableDocs, requirements },
     selfService,
     transport: tr ? { statusLabel: TRANSPORT_STATUS_LABEL[tr.status] ?? null } : null,

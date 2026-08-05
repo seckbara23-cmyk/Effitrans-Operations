@@ -18,9 +18,13 @@ import "server-only";
  * other: an entry appears only if its own plane admitted it.
  */
 import { getCurrentUser } from "@/lib/auth/current-user";
-import { clientSafeEventTypes } from "@/lib/workflow/events/types";
+import { getAdminSupabaseClient } from "@/lib/supabase/admin";
+import { requirePortalUser } from "@/lib/portal/auth";
+import { getPortalFileSummary } from "@/lib/portal/service";
+import { clientSafeEventTypes, isClientSafeEvent } from "@/lib/workflow/events/types";
+import { deriveProvenance, labelFor, projectMetadata } from "./contract";
 import { readDecisionPlane, MAX_PAGE, DEFAULT_PAGE } from "./decision-plane";
-import { readObservationPlane } from "./observation-plane";
+import { readObservationPlane, fetchObservations } from "./observation-plane";
 import {
   assignChronology, compareUnified, fromDecisionEntry, truncateAtGroupBoundary,
   encodeUnifiedCursor, decodeUnifiedCursor, isBeforeUnifiedCursor, toClientSafe,
@@ -118,7 +122,20 @@ export async function readUnifiedTimeline(query: UnifiedQuery): Promise<UnifiedP
     ? filtered.filter((e) => isBeforeUnifiedCursor(e, cursor))
     : filtered;
 
-  const { page, hasMore } = truncateAtGroupBoundary(afterCursor, limit);
+  return assemblePage(afterCursor, limit);
+}
+
+/**
+ * The shared assembly step: truncate on a group boundary, mint the cursor, and
+ * report what the page contains.
+ *
+ * Extracted at UT-5 so the customer projection cannot drift from the internal
+ * one. Ordering, grouping and page boundaries are the properties the whole
+ * programme is about; two copies of them would eventually disagree, and the
+ * customer would be the last to find out.
+ */
+function assemblePage(entries: UnifiedEntry[], limit: number): UnifiedPage {
+  const { page, hasMore } = truncateAtGroupBoundary(entries, limit);
   const last = page[page.length - 1];
 
   return {
@@ -135,26 +152,111 @@ export async function readUnifiedTimeline(query: UnifiedQuery): Promise<UnifiedP
 }
 
 /**
- * The customer-facing view of the same history.
+ * UT-5 — the CUSTOMER's view of the same history.
  *
- * UT-2 BUILDS this contract and nothing exposes it: no portal route consumes it
- * and no portal permission was created. Wiring it is UT-5, after RATIFY-UT-3
- * and RATIFY-UT-4 decide what a customer may see of positions and ETAs.
+ * WHY THIS IS NOT SIMPLY `readUnifiedTimeline` + a filter. That reader resolves a
+ * STAFF session (`getCurrentUser`) and authorizes through staff visibility. A
+ * portal user is a different identity system entirely — `client_user`, not
+ * `app_user` — and holds no staff permission, so the internal reader returns an
+ * empty page for them. Feeding the portal from it would have shipped a timeline
+ * that is always blank, or forced a bypass.
+ *
+ * So the customer path has its OWN gate and shares EVERYTHING else:
+ *
+ *   1. `requirePortalUser()` establishes the customer.
+ *   2. `getPortalFileSummary()` is the isolation boundary — it reads on the
+ *      RLS-bound client, so a dossier belonging to another client simply is not
+ *      there. Customer isolation is the database's answer, not a filter here.
+ *   3. Decision entries are taken through the `clientSafe` ALLOW-LIST, never a
+ *      deny-filter: a type nobody classified is omitted, so forgetting is a
+ *      missing row rather than a disclosure.
+ *   4. Observations reuse the SAME adapter as staff (`fetchObservations`),
+ *      behind the gate established in step 2.
+ *   5. Ordering, grouping, chronology-provability and page boundaries come from
+ *      the SAME `assignChronology` / `assemblePage` the internal timeline uses.
+ *
+ * The customer therefore sees fewer entries than staff — never a different
+ * history, and never a firmer one: `chronologyProvable` survives the projection,
+ * so where the platform cannot prove an order, it does not pretend to the
+ * customer either.
  */
 export async function readClientSafeTimeline(query: UnifiedQuery): Promise<UnifiedPage> {
-  const page = await readUnifiedTimeline(query);
-  const entries = toClientSafe(page.entries);
-  return {
-    entries,
-    nextCursor: page.nextCursor,
-    // Recomputed over what SURVIVES the filter: the customer's page must be
-    // truthful about ITS own chronology, not about rows they cannot see.
-    containsUnprovenOrder: entries.some((e) => !e.chronologyProvable),
-    planesPresent: [
-      ...(entries.some((e) => e.plane === "decision") ? (["decision"] as const) : []),
-      ...(entries.some((e) => e.plane === "observation") ? (["observation"] as const) : []),
-    ],
+  const empty: UnifiedPage = {
+    entries: [], nextCursor: null, containsUnprovenOrder: false, planesPresent: [],
   };
+
+  const portalUser = await requirePortalUser();
+  // THE customer-isolation gate. RLS-bound: another client's dossier is absent,
+  // not filtered, so there is nothing here to get wrong.
+  const summary = await getPortalFileSummary(query.dossierId);
+  if (!summary) return empty;
+
+  const limit = Math.min(Math.max(query.limit ?? DEFAULT_PAGE, 1), MAX_PAGE);
+  const cursor = query.cursor ? decodeUnifiedCursor(query.cursor) : null;
+
+  const safeTypes = new Set(clientSafeEventTypes().map((e) => e.type));
+  const admin = getAdminSupabaseClient();
+
+  const [decisionRows, observations] = await Promise.all([
+    admin
+      .from("business_event")
+      // The customer projection does not SELECT what it must not expose.
+      // Dropping actor, metadata and subject here rather than nulling them after
+      // the fact means the values never leave the database, so no later edit to
+      // the mapping can leak one by accident.
+      .select(
+        "id, tenant_id, dossier_id, event_type, event_domain, " +
+          "event_version, source, ordinal, occurred_at",
+      )
+      .eq("tenant_id", portalUser.tenantId)
+      .eq("dossier_id", query.dossierId)
+      .in("event_type", [...safeTypes])
+      .order("occurred_at", { ascending: false })
+      .limit(MAX_PAGE),
+    fetchObservations(portalUser.tenantId, query.dossierId),
+  ]);
+
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  const decisions: UnifiedEntry[] = ((decisionRows.data ?? []) as any[]).map((r) =>
+    fromDecisionEntry(
+      {
+        eventId: r.id, tenantId: r.tenant_id, dossierId: r.dossier_id,
+        // Not projected: the empty subject is what "withheld" looks like here.
+        subjectType: "", subjectId: null, eventType: r.event_type,
+        domain: r.event_domain, eventVersion: r.event_version,
+        occurredAt: r.occurred_at,
+        ordinal: r.ordinal === null || r.ordinal === undefined ? null : Number(r.ordinal),
+        // Staff identity never crosses into the customer's view.
+        actorId: null, actorName: null,
+        labelFr: labelFor(r.event_type),
+        provenance: deriveProvenance({ source: r.source, actorUserId: null }),
+        metadata: {},
+        orderingGroup: "", chronologyProvable: false,
+      },
+      // Re-checked against the registry per row rather than assumed from the
+      // query. The `.in()` filter above and `toClientSafe` below are then two
+      // independent barriers: if either is ever edited away, the other still
+      // refuses. Hardcoding `true` here would have made the second one blind.
+      isClientSafeEvent(r.event_type),
+    ),
+  );
+  /* eslint-enable @typescript-eslint/no-explicit-any */
+
+  const merged = [...decisions, ...observations].filter(
+    (e) => e.dossierId === query.dossierId && e.tenantId === portalUser.tenantId,
+  );
+
+  // Chronology BEFORE the client-safe narrowing, for the same reason UT-4 assigns
+  // it before filtering: hiding an internal entry that shared an instant must not
+  // make the customer's entry look individually ordered.
+  const withChronology = assignChronology(merged)
+    .map((e) => ({ ...e, paginationToken: `${e.occurredAt}|${e.entryId}` }))
+    .sort((a, b) => -compareUnified(a, b));
+
+  const safe = toClientSafe(withChronology);
+  const afterCursor = cursor ? safe.filter((e) => isBeforeUnifiedCursor(e, cursor)) : safe;
+
+  return assemblePage(afterCursor, limit);
 }
 
 export type { UnifiedEntry };

@@ -113,7 +113,25 @@ export type ObservationQuery = {
 export async function readObservationPlane(q: ObservationQuery): Promise<UnifiedEntry[]> {
   // GATE FIRST. The admin client below bypasses RLS entirely.
   if (!(await isFileVisible(q.userId, q.tenantId, q.dossierId))) return [];
+  return fetchObservations(q.tenantId, q.dossierId);
+}
 
+/**
+ * The ungated read, split out at UT-5 so the PORTAL can reuse this exact adapter
+ * behind its own gate instead of growing a second one.
+ *
+ * It is not exported beyond this module's siblings and is deliberately named for
+ * what it lacks: **every caller must have authorized the dossier already.**
+ * Staff do that with `isFileVisible` above; the portal does it with
+ * `getPortalFileSummary`, which is RLS-bound to the customer's own files. Two
+ * identity systems, one adapter — the alternative was a second copy of the
+ * mapping, and the copy is what drifts.
+ */
+export async function fetchObservations(
+  tenantId: string,
+  dossierId: string,
+): Promise<UnifiedEntry[]> {
+  const q = { tenantId, dossierId };
   const admin = getAdminSupabaseClient();
 
   // dossier → shipment, by key. Tenant-scoped explicitly. A dossier may have NO

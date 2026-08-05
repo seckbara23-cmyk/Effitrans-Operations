@@ -267,30 +267,33 @@ describe("WES-9K client-safe allow-list", () => {
   });
 
   it("projects by allow-list rather than filtering out internal rows", () => {
-    const src = code("lib/workflow/events/readers.ts");
+    const src = code("lib/unified-timeline/unified.ts");
     expect(src).toContain("clientSafeEventTypes()");
-    expect(src).toMatch(/\.in\("event_type", types\)/);
+    expect(src).toMatch(/\.in\("event_type", \[\.\.\.safeTypes\]\)/);
     // A negative filter would leak any type someone forgets to classify.
     expect(src).not.toMatch(/\.neq\("event_type"/);
     expect(src).not.toMatch(/clientSafe === false/);
   });
 
   it("re-checks clientSafe after the query as a second barrier", () => {
-    expect(code("lib/workflow/events/readers.ts")).toContain("!def.clientSafe");
+    expect(code("lib/unified-timeline/unified.ts")).toContain("isClientSafeEvent(r.event_type)");
   });
 
   it("gates the client feed on the EXISTING portal access boundary", () => {
-    const src = code("lib/workflow/events/readers.ts");
+    // UT-5: the projection moved to lib/unified-timeline; the ACCESS PATTERN
+    // this assertion protects moved with it, unchanged.
+    const src = code("lib/unified-timeline/unified.ts");
     expect(src).toContain("requirePortalUser");
     expect(src).toContain("getPortalFileSummary");
   });
 
   it("exposes no actor, metadata or policy to the customer", () => {
-    const src = code("lib/workflow/events/readers.ts");
-    const projection = src.slice(src.indexOf("readClientTimeline"));
-    expect(projection).toContain('.select("id, event_type, occurred_at")');
-    expect(projection).not.toContain("actor_user_id");
-    expect(projection).not.toContain("policy_version_id");
+    const src = code("lib/unified-timeline/unified.ts");
+    const projection = src.slice(src.indexOf("readClientSafeTimeline"));
+    const select = projection.slice(projection.indexOf(".select("), projection.indexOf('.eq("'));
+    expect(select).not.toContain("actor_user_id");
+    expect(select).not.toContain("metadata");
+    expect(projection.slice(0, projection.indexOf(".order("))).not.toContain("policy_version_id");
   });
 });
 

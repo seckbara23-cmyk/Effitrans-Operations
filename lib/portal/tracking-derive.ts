@@ -159,29 +159,19 @@ export function documentRequirements(input: {
   }));
 }
 
-// ------------------------------------------------------------ timeline (D4)
-export type CustomerTimelineEntry = { id: string; title: string; date: string; category: string };
-
-/**
- * Deduplicated, newest-first customer timeline. Always includes the creation
- * milestone so a real dossier is never empty; equivalent milestone/notification
- * events (same title) collapse to one.
+/* `CustomerTimelineEntry` / `buildTimeline` were RETIRED at UT-5.
+ *
+ * They assembled the customer's "history" from the dossier's creation date plus
+ * that customer's NOTIFICATION rows, de-duplicated by title. Two problems, and
+ * the second is the reason this is a deletion and not a refactor:
+ *
+ *   1. it recorded what we had TOLD the customer, not what had HAPPENED — a
+ *      step nobody notified them about was simply missing from their history;
+ *   2. it was derived from current module state, so it had no way to express a
+ *      pair of events whose relative order was never recorded. It always showed
+ *      a definite sequence, including where none existed.
+ *
+ * The customer history now comes from `readClientSafeTimeline` — the same
+ * projection, the same ordering rules and the same honesty about unprovable
+ * chronology as the internal timeline.
  */
-export function buildTimeline(input: {
-  createdAt: string;
-  createdLabel: string;
-  notifications: { id: string; title: string; category: string; createdAt: string }[];
-}): CustomerTimelineEntry[] {
-  const entries: CustomerTimelineEntry[] = [
-    { id: "created", title: input.createdLabel, date: input.createdAt, category: "CREATED" },
-    ...input.notifications.map((n) => ({ id: n.id, title: n.title, date: n.createdAt, category: n.category })),
-  ];
-  const seen = new Set<string>();
-  const deduped = entries.filter((e) => {
-    const key = e.title.trim().toLowerCase();
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-  return deduped.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
-}

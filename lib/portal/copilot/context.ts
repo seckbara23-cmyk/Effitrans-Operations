@@ -31,6 +31,7 @@
  */
 import "server-only";
 import { getCurrentPortalUser } from "../auth";
+import { readClientSafeTimeline } from "@/lib/unified-timeline/unified";
 import { getPortalTracking } from "../tracking";
 import { getPortalCarriage } from "../carriage";
 import { listPortalInvoices } from "../docs-service";
@@ -238,8 +239,22 @@ export async function getPortalShipmentContext(question = "", fileId?: string): 
   } else if (!fileId) unavailable.push("shipment");
 
   // ---- activity (customer timeline of the focused dossier) ----
+  // UT-5: this reads the SAME client-safe projection the customer sees, instead
+  // of the notification feed it used to summarise. Two reasons, and the second
+  // matters more than the first:
+  //   1. the assistant and the timeline can no longer describe the same dossier
+  //      differently — there is one history, projected once;
+  //   2. notification titles are FREE TEXT and could carry anything a colleague
+  //      typed; event labels are a closed vocabulary with no actor, metadata or
+  //      amount. Narrowing the prompt to that vocabulary shrinks what can reach
+  //      a model rather than trusting a review to catch it later.
   const activity = tracking
-    ? capTo(tracking.activity.map((a) => ({ title: a.title, date: a.date })), "notifications", ACTIVITY_CAP)
+    ? capTo(
+        (await readClientSafeTimeline({ dossierId: tracking.fileId, limit: ACTIVITY_CAP }))
+          .entries.map((e) => ({ title: e.label, date: e.occurredAt })),
+        "notifications",
+        ACTIVITY_CAP,
+      )
     : [];
 
   const consulted = uniq(sections);

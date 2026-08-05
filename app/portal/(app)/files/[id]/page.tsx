@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getPortalTracking } from "@/lib/portal/tracking";
 import { getPortalCarriage } from "@/lib/portal/carriage";
 import { listPortalInvoices } from "@/lib/portal/docs-service";
+import { readClientSafeTimeline } from "@/lib/unified-timeline/unified";
 import { stageToMapPhase } from "@/lib/portal/shipment-view";
 import { SummaryCard } from "@/components/portal/summary-card";
 import { NextStepCard } from "@/components/portal/next-step-card";
@@ -23,10 +24,13 @@ export const dynamic = "force-dynamic";
 
 export default async function PortalFileDetailPage({ params }: { params: { id: string } }) {
   const f = t.portal.files;
-  const [tracking, carriage, invoices] = await Promise.all([
+  const [tracking, carriage, invoices, history] = await Promise.all([
     getPortalTracking(params.id),
     getPortalCarriage(params.id),
     listPortalInvoices(params.id),
+    // UT-5: the customer-safe projection of the Unified Timeline. It carries its
+    // own portal gate, so it is safe to start before `tracking` resolves.
+    readClientSafeTimeline({ dossierId: params.id }),
   ]);
 
   if (!tracking) {
@@ -59,7 +63,7 @@ export default async function PortalFileDetailPage({ params }: { params: { id: s
           )}
           {carriage && <CarriagePanel carriage={carriage} />}
           <ActionsRequired fileId={tracking.fileId} selfService={tracking.selfService} />
-          <DossierTimeline entries={tracking.activity} />
+          <DossierTimeline entries={history.entries} />
           <DocumentCenter documents={tracking.documents.available} requirements={tracking.documents.requirements} />
           <div id="invoices" className="scroll-mt-20">
             <InvoiceCenter invoices={invoices} />

@@ -200,3 +200,54 @@ export function linkFor(entry: UnifiedEntry, permissions: readonly string[]): Ti
       return null;
   }
 }
+
+/* ------------------------------------------------------------------ UT-5
+ * CUSTOMER wording.
+ *
+ * It lives in this module, beside the internal wording, so the two cannot drift
+ * into describing the same event differently. What changes for a customer is
+ * VOCABULARY, never substance: no plane names, no provenance jargon, no internal
+ * actor. What does NOT change is honesty — a group whose order was never
+ * recorded is still declared as such, in plainer words.
+ */
+
+/** How the customer is told where an entry came from. */
+export const CUSTOMER_SOURCE_LABEL_FR: Record<"decision" | "observation", string> = {
+  decision: "Confirmé par Effitrans",
+  observation: "Information transmise par le transporteur",
+};
+
+/**
+ * The customer-facing statement for simultaneous entries.
+ *
+ * Deliberately plainer than the internal notice, and deliberately NOT softer:
+ * telling a customer a sequence we never recorded would be the one failure this
+ * whole programme exists to prevent.
+ */
+export const CUSTOMER_UNPROVABLE_NOTICE =
+  "Ces évènements ont été enregistrés au même moment. Leur ordre exact n'est pas connu.";
+
+/**
+ * An observation the platform did not confirm itself.
+ *
+ * ESTIMATED and INFERRED are both derivations, not sightings — the customer is
+ * told so plainly rather than shown the internal confidence vocabulary. MANUAL
+ * and CONFIRMED are omitted deliberately: a colleague who keyed a milestone in
+ * did observe it.
+ */
+export function isUnconfirmed(c: UnifiedEntry["confidence"]): boolean {
+  return c === "ESTIMATED" || c === "INFERRED";
+}
+
+/** Screen-reader sentence for a customer entry — no internal vocabulary. */
+export function describeCustomerEntry(e: UnifiedEntry): string {
+  const parts = [e.label, CUSTOMER_SOURCE_LABEL_FR[e.plane]];
+  if (e.locationName) parts.push(e.locationName);
+  if (e.plane === "observation" && isUnconfirmed(e.confidence)) {
+    parts.push("information non confirmée par Effitrans");
+  }
+  if (!e.chronologyProvable) {
+    parts.push("l'ordre de cet évènement par rapport aux autres du même instant n'est pas connu");
+  }
+  return parts.join(". ") + ".";
+}

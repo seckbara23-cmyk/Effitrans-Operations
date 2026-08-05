@@ -217,55 +217,17 @@ export async function readCommercialActivity(
     .filter((e): e is TimelineEvent => e !== null);
 }
 
-export type ClientTimelineEvent = {
-  id: string;
-  type: string;
-  labelFr: string;
-  occurredAt: string;
-};
-
-/**
- * The customer-facing feed. Three independent narrowings, all required:
- *   1. the portal user must actually have access to the shipment — established
- *      by `getPortalFileSummary`, which runs on the user-context client under
- *      the portal RLS policies and returns null otherwise. That existing
- *      boundary is reused rather than a second access rule being written here;
- *   2. only allow-listed types are requested (an IN filter, so a non-listed
- *      type never leaves the database);
- *   3. the projection drops actor, metadata, subject, source and policy —
- *      a customer sees WHAT happened and WHEN, never who did it internally.
+/* WES-9K's `ClientTimelineEvent` / `readClientTimeline` were RETIRED at UT-5.
+ *
+ * That was the first customer projection: Decision Plane only, allow-listed,
+ * unpaginated, and never wired to a surface. Its ACCESS PATTERN — portal user +
+ * `getPortalFileSummary` as the isolation gate + an `IN` filter on client-safe
+ * types so a non-listed type never leaves the database — was correct, and is
+ * preserved verbatim in `lib/unified-timeline/unified.ts#readClientSafeTimeline`,
+ * which additionally carries the Observation Plane, chronology grouping and a
+ * group-safe cursor.
+ *
+ * It is deleted rather than left in place because two customer projections of
+ * one history is exactly the duplication UT-5 exists to remove: on the day they
+ * disagreed, the customer is the one who would have been told two stories.
  */
-export async function readClientTimeline(
-  fileId: string,
-  limit = 50,
-): Promise<ClientTimelineEvent[]> {
-  const portalUser = await requirePortalUser();
-  const summary = await getPortalFileSummary(fileId);
-  if (!summary) return [];
-
-  const types = clientSafeEventTypes().map((e) => e.type);
-  const admin = getAdminSupabaseClient();
-  const { data, error } = await admin
-    .from("business_event")
-    .select("id, event_type, occurred_at")
-    .eq("tenant_id", portalUser.tenantId)
-    .eq("dossier_id", fileId)
-    .in("event_type", types)
-    .order("occurred_at", { ascending: false })
-    .limit(limit);
-
-  if (error || !data) return [];
-
-  return data
-    .map((row) => {
-      const def = getEventType(row.event_type as string);
-      if (!def || !def.clientSafe) return null;
-      return {
-        id: row.id as string,
-        type: row.event_type as string,
-        labelFr: def.labelFr,
-        occurredAt: row.occurred_at as string,
-      };
-    })
-    .filter((e): e is ClientTimelineEvent => e !== null);
-}

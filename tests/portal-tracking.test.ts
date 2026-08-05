@@ -5,7 +5,6 @@ import {
   deriveDelay,
   deriveNextStep,
   documentRequirements,
-  buildTimeline,
   departmentLabel,
 } from "@/lib/portal/tracking-derive";
 import { customerSafeRoleLabel, isGenericStaffIdentity, TEAM_FALLBACK_NAME } from "@/lib/portal/officer-view";
@@ -91,26 +90,11 @@ describe("documentRequirements — customer-safe states", () => {
   });
 });
 
-// ------------------------------------------------------------- timeline (D4)
-describe("buildTimeline — dated, deduped, newest-first, never empty", () => {
-  it("always includes the creation milestone", () => {
-    const tl = buildTimeline({ createdAt: "2026-06-01T08:00:00.000Z", createdLabel: "Dossier créé", notifications: [] });
-    expect(tl).toHaveLength(1);
-    expect(tl[0].title).toBe("Dossier créé");
-  });
-  it("dedupes equivalent milestone/notification events and sorts newest first", () => {
-    const tl = buildTimeline({
-      createdAt: "2026-06-01T08:00:00.000Z",
-      createdLabel: "Dossier créé",
-      notifications: [
-        { id: "a", title: "Marchandise dédouanée", category: "CUSTOMS", createdAt: "2026-06-05T10:00:00.000Z" },
-        { id: "b", title: "Marchandise dédouanée", category: "CUSTOMS", createdAt: "2026-06-05T11:00:00.000Z" }, // dup
-        { id: "c", title: "Livraison effectuée", category: "DELIVERY", createdAt: "2026-06-08T09:00:00.000Z" },
-      ],
-    });
-    expect(tl.map((e) => e.title)).toEqual(["Livraison effectuée", "Marchandise dédouanée", "Dossier créé"]);
-  });
-});
+/* The D4 `buildTimeline` contracts were RETIRED with the function at UT-5.
+ * They pinned a customer history assembled from notification rows; the customer
+ * history is now the client-safe projection of the ledger, and its contracts
+ * live in tests/ut-5-customer-timeline.test.ts.
+ */
 
 describe("departmentLabel — no internal codes", () => {
   it("maps to customer French names", () => {
