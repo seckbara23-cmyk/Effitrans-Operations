@@ -4,13 +4,14 @@
 **Migration: NONE — chain unchanged at 86 (test-pinned) · No new table · No RLS policy ·
 No event · No emitter · No write path · No outbound · No AI · No customer visibility**
 
-> **CI STATUS: NOT VERIFIED AT TIME OF WRITING.** GitHub has created **no workflow run** for
-> `4c01d61`, `b0009cd`, `04087c0` or `54a45b0` — all four report `total_count: 0` check-runs.
-> The workflow is `active`, its trigger is a plain `push` on `main` with no paths filter, and
-> `ci.yml` is unchanged since UT-3B. The repository is public, not archived, not disabled, and
-> `pushed_at` confirms the pushes landed. This is a GitHub-side condition, not a repository
-> change. **This phase is not to be treated as verified until a run appears and is green.**
-> Local evidence only: 209 files / 5245 tests green, `tsc` 0, `next build` compiled.
+> **CI STATUS: GREEN — verified after the fact.** Run **#363** on `54a45b0` completed
+> `success`: `rls-tests` 79 steps / 0 skipped / 0 failed, `build` 10 / 0 / 0.
+>
+> This report was first written during a **GitHub Actions platform outage** (incident opened
+> 2026-08-06T15:22:49Z, `Actions` component `major_outage`) which suppressed run CREATION for
+> ~30 minutes per push. Nothing in the repository was misconfigured; the full diagnosis is in
+> `docs/ops/ops-ci-1-actions-trigger-audit.md` (root cause `GITHUB_INCIDENT`). The earlier
+> "not verified" caveat is discharged. Local gate also green: 209 files / 5245 tests, tsc 0.
 
 ---
 
