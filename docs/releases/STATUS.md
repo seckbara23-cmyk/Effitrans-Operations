@@ -1,6 +1,21 @@
 # Release Status — standing table (updated at every release event)
 
-*Last updated: 2026-08-05 (**EMP-1 COMPLETE — nothing to deploy**. The Enterprise Mail
+*Last updated: 2026-08-05 (**EMP-2 BUILT — ⚠️ CI HAS NOT RUN**. Thread correlation over the
+existing capture: conversation identity is **derived, never stored**, because
+`ec_inbound_message` carries `prevent_mutation` — a `thread_id` backfill is not discouraged
+but IMPOSSIBLE, and the brief independently forbids rewriting historical messages. Union-find
+over Message-ID / In-Reply-To / References; **subject, sender and date are not inputs at all**;
+case is never folded and a msg-id must contain `@` — both because **splitting is safer than
+merging**, a false link being a confidentiality failure where a missed one is merely visible
+incompleteness. Repairs the gap in the stored `thread_key`, which split any conversation whose
+reply omitted References. No migration (chain 86), no table, no RLS, no event, no emitter, no
+write path. **⚠️ GOVERNANCE ISSUE, NOT A CODE ISSUE: GitHub has created NO workflow run for
+`4c01d61`, `b0009cd`, `04087c0` or `54a45b0` — all report zero check-runs.** The workflow is
+active, the trigger is unchanged since UT-3B, the repo is public/not-archived/not-disabled and
+the pushes landed. **EMP-1 and EMP-2 must not be treated as verified until a run appears
+green.** Local only: 209 files / 5245 tests, tsc 0, build compiled. See
+`docs/mail/emp-2-completion-report.md`. **EMP-3 has not begun.**
+Previously: (**EMP-1 COMPLETE — nothing to deploy**. The Enterprise Mail
 workspace now administers the mailboxes EC-1 created but never exposed — they had been
 operator-seeded, so a typo in an address sent real customer mail to quarantine with nobody
 able to see why. **No migration (chain stays 86), no new table, no event journal, no
