@@ -1,6 +1,23 @@
 # Release Status — standing table (updated at every release event)
 
-*Last updated: 2026-08-12 (**UT-4 COMPLETE — nothing to deploy**. The Unified Operational
+*Last updated: 2026-08-05 (**EMP-1 COMPLETE — nothing to deploy**. The Enterprise Mail
+workspace now administers the mailboxes EC-1 created but never exposed — they had been
+operator-seeded, so a typo in an address sent real customer mail to quarantine with nobody
+able to see why. **No migration (chain stays 86), no new table, no event journal, no
+timeline, no attachment system, no outbound, no permission.** Two findings shaped it:
+(1) **no `ec_*` table has a write policy**, so activation/deactivation goes through the
+admin client behind a `communication:manage` gate STRICTER than the read policy, tenant
+re-scoped and audited — chosen over a migration that would have widened the correspondence
+write boundary; (2) **the Quarantine view is unreachable BY CONSTRUCTION** —
+`ec_inbound_quarantine_shape` forces `tenant_id NULL` — so it states that fact and never
+issues the query, because an empty grid would have read as "no mail was rejected". The five
+views are filters over the triage queue that ALREADY existed, not a second inbox. Message
+detail gains routing/webhook history, the integrity hash and the correspondence events read
+through `readDecisionPlane`. The workspace stays DARK: `communication:inbound:read` is still
+granted to no role pending RATIFY-EC1-1. See `docs/mail/emp-1-completion-report.md` and the
+EMP-0 audit `docs/mail/emp-0-architecture-audit.md`. **EMP-2 has not begun.**
+Previously: **UT-5 COMPLETE** — the customer's history is the ledger, not their inbox.
+Previously: (**UT-4 COMPLETE — nothing to deploy**. The Unified Operational
 Timeline is live on the dossier page: both planes, ordered and grouped by the frozen
 chronology rules, with filters, group-safe paging and authorized links out to the owning
 workspaces. **No route was created** — a dossier timeline already existed and was ABSORBED,
