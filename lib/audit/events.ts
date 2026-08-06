@@ -124,6 +124,10 @@ export const AuditActions = {
   // classification ONLY — never a subject, body, address, filename or header.
   EC_INBOUND_RECEIVED: "ec.inbound.received", // machine (captured + routed)
   EC_INBOUND_QUARANTINED: "ec.inbound.quarantined", // machine (unroutable — kept, tenant-less)
+  // EMP-1 — the only human-initiated change to a mailbox. Creation and deletion
+  // deliberately have no action code because this platform offers neither.
+  EC_MAILBOX_ACTIVATED: "ec.mailbox.activated",
+  EC_MAILBOX_DEACTIVATED: "ec.mailbox.deactivated",
   EC_INBOUND_REJECTED: "ec.inbound.rejected", // machine (signature refused)
   // Phase 1.12 — Customer Portal
   PORTAL_USER_INVITED: "portal.user.invited",

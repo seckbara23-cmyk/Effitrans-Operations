@@ -14,6 +14,7 @@ import "server-only";
  * point: they belong to no tenant.
  */
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
+import { getServerSupabaseClient } from "@/lib/supabase/server";
 import type { TriageOutcome, TriageStatus } from "./model";
 
 export * from "./model";
@@ -51,7 +52,62 @@ export type TriageFilters = {
   sender?: string;
   from?: string; // ISO date, inclusive
   to?: string;   // ISO date, inclusive
+  // ---- EMP-1 additions. Each one narrows; none can widen what the tenant
+  // predicate already fixed, and every free-text term goes through the same
+  // sanitizer as `sender`.
+  /** Substring match on the subject line. */
+  subject?: string;
+  /** Substring match on any recipient (to/cc are jsonb arrays of addresses). */
+  recipient?: string;
+  /** Items resolved onto this dossier (the ATTACH_TO_DOSSIER outcome). */
+  fileId?: string;
+  /** Several statuses at once — what the workspace's "views" are built from. */
+  statuses?: TriageStatus[];
+  /** Assigned to anyone at all, as opposed to a named user. */
+  assignedAny?: boolean;
 };
+
+/**
+ * The five operational views EMP-1 names, expressed as filters over the queue
+ * that already existed. They are a VOCABULARY, not a second inbox: each one
+ * resolves to `TriageFilters` and goes through `listTriageQueue`.
+ *
+ * `quarantine` is present and always yields nothing — see
+ * QUARANTINE_VISIBILITY_NOTICE. It is listed here so the impossibility is
+ * explicit in the code rather than an unexplained omission.
+ */
+export const MAIL_VIEWS = ["inbox", "unassigned", "assigned", "processed", "quarantine"] as const;
+export type MailView = (typeof MAIL_VIEWS)[number];
+
+export const MAIL_VIEW_FR: Record<MailView, string> = {
+  inbox: "Boîte de réception",
+  unassigned: "Non attribués",
+  assigned: "Attribués",
+  processed: "Traités",
+  quarantine: "Quarantaine",
+};
+
+const OPEN: TriageStatus[] = ["NEW", "ASSIGNED", "IN_REVIEW"];
+
+export function filtersForView(view: MailView): TriageFilters {
+  switch (view) {
+    case "inbox":
+      return { statuses: OPEN };
+    case "unassigned":
+      return { statuses: OPEN, unassigned: true };
+    case "assigned":
+      return { statuses: OPEN, assignedAny: true };
+    case "processed":
+      return { statuses: ["RESOLVED"] };
+    case "quarantine":
+      // Unreachable by construction; never queried (the page short-circuits).
+      return { statuses: [] };
+  }
+}
+
+export function isMailView(v: string | undefined): v is MailView {
+  return Boolean(v) && (MAIL_VIEWS as readonly string[]).includes(v as string);
+}
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 function mapRow(r: any, attachments: Map<string, number>): TriageQueueItem {
@@ -83,6 +139,15 @@ function mapRow(r: any, attachments: Map<string, number>): TriageQueueItem {
 const SELECT =
   "id, message_id, status, assigned_to, assigned_at, outcome, outcome_file_id, discard_reason_code, resolved_at, created_at, ec_inbound_message!inner(from_address, from_name, subject, received_at, mailbox_id, ec_mailbox(address, purpose))";
 
+/**
+ * Strip PostgREST filter metacharacters. A search box is a search field, never a
+ * query language — EMP-1 added three more of them, so the rule lives in one
+ * place instead of being re-remembered at each call site.
+ */
+function searchTerm(raw: string): string {
+  return raw.replace(/[%,()*]/g, " ").trim().slice(0, 120);
+}
+
 /** The queue. Tenant-scoped, so quarantined captures are excluded by construction. */
 export async function listTriageQueue(
   tenantId: string,
@@ -93,15 +158,26 @@ export async function listTriageQueue(
   let q = s.from("ec_triage_item").select(SELECT).eq("tenant_id", tenantId);
 
   if (filters.status) q = q.eq("status", filters.status);
+  if (filters.statuses?.length) q = q.in("status", filters.statuses);
   if (filters.assignedTo) q = q.eq("assigned_to", filters.assignedTo);
   if (filters.unassigned) q = q.is("assigned_to", null);
+  if (filters.assignedAny) q = q.not("assigned_to", "is", null);
+  if (filters.fileId) q = q.eq("outcome_file_id", filters.fileId);
   if (filters.mailboxId) q = q.eq("ec_inbound_message.mailbox_id", filters.mailboxId);
   if (filters.purpose) q = q.eq("ec_inbound_message.ec_mailbox.purpose", filters.purpose);
   if (filters.sender) {
-    // Strip PostgREST filter metacharacters — a sender box is a search field,
-    // never a query language.
-    const term = filters.sender.replace(/[%,()*]/g, " ").trim().slice(0, 120);
+    const term = searchTerm(filters.sender);
     if (term) q = q.ilike("ec_inbound_message.from_address", `%${term}%`);
+  }
+  if (filters.subject) {
+    const term = searchTerm(filters.subject);
+    if (term) q = q.ilike("ec_inbound_message.subject", `%${term}%`);
+  }
+  if (filters.recipient) {
+    const term = searchTerm(filters.recipient);
+    // to_addresses is a jsonb array; the text cast is what makes a contains
+    // search possible without unnesting inside a PostgREST filter.
+    if (term) q = q.ilike("ec_inbound_message.to_addresses::text", `%${term}%`);
   }
   if (filters.from) q = q.gte("ec_inbound_message.received_at", filters.from);
   if (filters.to) q = q.lte("ec_inbound_message.received_at", `${filters.to}T23:59:59.999Z`);
@@ -251,4 +327,33 @@ export async function listMailboxes(tenantId: string) {
     .eq("tenant_id", tenantId).order("address");
   if (error) throw new Error(`[ec] mailbox read failed: ${error.message}`);
   return data ?? [];
+}
+
+/**
+ * EMP-1 — resolve what a user typed into the "dossier" box.
+ *
+ * They type a file NUMBER; the triage row stores a file ID. The lookup runs on
+ * the RLS-bound client, so a number belonging to a dossier the user may not
+ * read resolves to nothing — the search cannot be used to probe for the
+ * existence of dossiers outside their scope.
+ *
+ * Returns `null` when nothing matches, which the caller must treat as "no
+ * results" rather than "no filter". Dropping an unresolved filter would widen
+ * the result set, and a search that silently returns MORE than asked is the
+ * kind of bug nobody reports.
+ */
+export async function resolveDossierRef(tenantId: string, raw: string): Promise<string | null> {
+  const term = raw.trim();
+  if (!term) return null;
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(term)) return term;
+
+  const s = getServerSupabaseClient();
+  const { data } = await s
+    .from("operational_file")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .ilike("file_number", term)
+    .limit(1)
+    .maybeSingle();
+  return (data as { id?: string } | null)?.id ?? null;
 }

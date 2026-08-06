@@ -16,6 +16,9 @@ import { getUserRoleCodes } from "@/lib/workflow/access/roles";
 import { getTriageDetail } from "@/lib/ec/triage/service";
 import { listFiles } from "@/lib/files/service";
 import { TriageStudio } from "@/components/ec/triage-studio";
+import { MessageEvidence } from "@/components/ec/message-evidence";
+import { getCaptureEvidence } from "@/lib/ec/mailboxes/service";
+import { readDecisionPlane } from "@/lib/unified-timeline/decision-plane";
 
 export const metadata: Metadata = { title: "Message entrant — tri" };
 export const dynamic = "force-dynamic";
@@ -40,6 +43,15 @@ export default async function TriageDetailPage({ params }: { params: { id: strin
       }))
     : [];
 
+  // EMP-1 — the evidence panel. Both reads go through RLS: the capture journal
+  // under the EC policies, the ledger under the subject-based
+  // `business_event_select` policy added at UT-1. Neither needs a new gate, and
+  // adding one would have been a second copy of a rule that already exists.
+  const [evidence, ledgerPage] = await Promise.all([
+    getCaptureEvidence(user.tenantId, item.messageId),
+    readDecisionPlane({ subject: { type: "ec_triage_item", id: params.id }, limit: 40 }),
+  ]);
+
   return (
     <div className="animate-fade-in space-y-6">
       <PageHeader
@@ -57,6 +69,21 @@ export default async function TriageDetailPage({ params }: { params: { id: strin
         isSupervisor={roles.includes("OPS_SUPERVISOR")}
         currentUserId={user.id}
         dossiers={dossiers}
+      />
+
+      <MessageEvidence
+        evidence={evidence}
+        ledger={ledgerPage.entries.map((e) => ({
+          id: e.eventId,
+          eventType: e.eventType,
+          occurredAt: e.occurredAt,
+        }))}
+        linkedFileId={item.outcomeFileId}
+        linkedFileLabel={
+          item.outcomeFileId
+            ? (dossiers.find((d) => d.id === item.outcomeFileId)?.label ?? null)
+            : null
+        }
       />
     </div>
   );

@@ -14,7 +14,11 @@ import { StatCard } from "@/components/departments/stat-card";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { getUserRoleCodes } from "@/lib/workflow/access/roles";
-import { listTriageQueue, listMailboxes, triageCounts, type TriageFilters } from "@/lib/ec/triage/service";
+import {
+  listTriageQueue, listMailboxes, triageCounts, filtersForView, isMailView, resolveDossierRef,
+  MAIL_VIEWS, MAIL_VIEW_FR, type TriageFilters,
+} from "@/lib/ec/triage/service";
+import { QUARANTINE_VISIBILITY_NOTICE } from "@/lib/ec/mailboxes/service";
 import { TRIAGE_STATUS_FR, TRIAGE_OUTCOME_FR, type TriageStatus } from "@/lib/ec/triage/model";
 
 export const metadata: Metadata = { title: "Tri du courrier entrant" };
@@ -25,7 +29,11 @@ const STATUSES: TriageStatus[] = ["NEW", "ASSIGNED", "IN_REVIEW", "RESOLVED"];
 export default async function TriageQueuePage({
   searchParams,
 }: {
-  searchParams?: { status?: string; mailbox?: string; sender?: string; from?: string; to?: string; mine?: string; unassigned?: string };
+  searchParams?: {
+    status?: string; mailbox?: string; sender?: string; from?: string; to?: string;
+    mine?: string; unassigned?: string;
+    view?: string; subject?: string; recipient?: string; dossier?: string;
+  };
 }) {
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
     return (
@@ -42,18 +50,34 @@ export default async function TriageQueuePage({
   const roles = await getUserRoleCodes(user.id, user.tenantId);
   const isSupervisor = roles.includes("OPS_SUPERVISOR");
 
+  // EMP-1: the view supplies a BASE set of filters; anything the user typed is
+  // layered on top and wins. A view is a starting point, not a cage.
+  const view = isMailView(searchParams?.view) ? searchParams.view : "inbox";
+  // Resolved BEFORE the query, so an unmatched dossier number yields no rows
+  // rather than quietly dropping the filter.
+  const dossierRaw = searchParams?.dossier?.trim() || "";
+  const dossierFilter = dossierRaw ? await resolveDossierRef(user.tenantId, dossierRaw) : null;
+  const dossierUnmatched = Boolean(dossierRaw) && dossierFilter === null;
   const filters: TriageFilters = {
+    ...filtersForView(view),
     status: STATUSES.includes(searchParams?.status as TriageStatus) ? (searchParams?.status as TriageStatus) : undefined,
     mailboxId: searchParams?.mailbox || undefined,
     sender: searchParams?.sender || undefined,
+    subject: searchParams?.subject || undefined,
+    recipient: searchParams?.recipient || undefined,
+    fileId: dossierFilter ?? undefined,
     from: searchParams?.from || undefined,
     to: searchParams?.to || undefined,
     assignedTo: searchParams?.mine === "1" ? user.id : undefined,
-    unassigned: searchParams?.unassigned === "1" || undefined,
+    unassigned: searchParams?.unassigned === "1" || filtersForView(view).unassigned,
   };
 
+  // Quarantine is unreachable by construction (EC-1's CHECK constraint keeps
+  // tenant_id NULL), so the query is never issued rather than issued and
+  // guaranteed to return nothing.
+  const isQuarantine = view === "quarantine";
   const [items, mailboxes, counts] = await Promise.all([
-    listTriageQueue(user.tenantId, filters),
+    isQuarantine || dossierUnmatched ? Promise.resolve([]) : listTriageQueue(user.tenantId, filters),
     listMailboxes(user.tenantId),
     triageCounts(user.tenantId, user.id),
   ]);
@@ -77,6 +101,23 @@ export default async function TriageQueuePage({
         </p>
       )}
 
+      {/* EMP-1 views. A vocabulary over the queue that already existed — each is
+          a filter, not a separate inbox. */}
+      <nav aria-label="Vues du courrier" className="flex flex-wrap gap-1.5">
+        {MAIL_VIEWS.map((v) => (
+          <Link
+            key={v}
+            href={`/communications/triage?view=${v}`}
+            aria-current={view === v ? "page" : undefined}
+            className={`rounded-full px-3 py-1.5 text-xs font-medium transition ${
+              view === v ? "bg-navy-900 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+            }`}
+          >
+            {MAIL_VIEW_FR[v]}
+          </Link>
+        ))}
+      </nav>
+
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <StatCard label="Non attribués" value={counts.unassigned} tone="amber" href="/communications/triage?unassigned=1" />
         <StatCard label="Qui me sont attribués" value={counts.assignedToMe} tone="teal" href="/communications/triage?mine=1" />
@@ -90,6 +131,7 @@ export default async function TriageQueuePage({
 
       {/* Filters — a GET form, so every view is a shareable URL. */}
       <form className="surface grid gap-2 p-4 sm:grid-cols-6" method="get">
+        <input type="hidden" name="view" value={view} />
         <label className="sr-only" htmlFor="tstatus">Statut</label>
         <select id="tstatus" name="status" defaultValue={searchParams?.status ?? ""}
           className="rounded-md border border-slate-200 px-2 py-1.5 text-sm">
@@ -108,6 +150,18 @@ export default async function TriageQueuePage({
         <input id="tsender" name="sender" defaultValue={searchParams?.sender ?? ""} placeholder="Expéditeur"
           className="rounded-md border border-slate-200 px-2 py-1.5 text-sm" />
 
+        <label className="sr-only" htmlFor="tsubject">Objet</label>
+        <input id="tsubject" name="subject" defaultValue={searchParams?.subject ?? ""} placeholder="Objet"
+          className="rounded-md border border-slate-200 px-2 py-1.5 text-sm" />
+
+        <label className="sr-only" htmlFor="trecipient">Destinataire</label>
+        <input id="trecipient" name="recipient" defaultValue={searchParams?.recipient ?? ""} placeholder="Destinataire"
+          className="rounded-md border border-slate-200 px-2 py-1.5 text-sm" />
+
+        <label className="sr-only" htmlFor="tdossier">Dossier</label>
+        <input id="tdossier" name="dossier" defaultValue={searchParams?.dossier ?? ""} placeholder="N° de dossier"
+          className="rounded-md border border-slate-200 px-2 py-1.5 text-sm" />
+
         <label className="sr-only" htmlFor="tfrom">Reçu depuis</label>
         <input id="tfrom" type="date" name="from" defaultValue={searchParams?.from ?? ""}
           className="rounded-md border border-slate-200 px-2 py-1.5 text-sm" />
@@ -122,8 +176,21 @@ export default async function TriageQueuePage({
       </form>
 
       <section className="surface p-5">
-        <h2 className="mb-3 text-sm font-semibold text-navy-900">File de tri ({items.length})</h2>
-        {items.length === 0 ? (
+        <h2 className="mb-3 text-sm font-semibold text-navy-900">
+          {MAIL_VIEW_FR[view]} ({items.length})
+        </h2>
+        {dossierUnmatched ? (
+          <p className="rounded-lg bg-slate-50 p-4 text-sm text-slate-600">
+            Aucun dossier lisible ne porte le numéro « {dossierRaw} ». La recherche est limitée aux
+            dossiers que vous êtes autorisé à consulter.
+          </p>
+        ) : null}
+        {isQuarantine ? (
+          <p className="rounded-lg border-l-2 border-dashed border-amber-300 bg-amber-50/40 p-4 text-sm text-amber-900">
+            {QUARANTINE_VISIBILITY_NOTICE}
+          </p>
+        ) : null}
+        {isQuarantine ? null : items.length === 0 ? (
           <p className="text-sm text-slate-500">
             Aucun message ne correspond à ces critères. Les messages non routables restent en quarantaine
             et n&apos;apparaissent dans aucune file : ils n&apos;appartiennent à aucun tenant.
