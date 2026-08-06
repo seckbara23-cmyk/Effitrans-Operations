@@ -19,6 +19,8 @@ import {
   MAIL_VIEWS, MAIL_VIEW_FR, type TriageFilters,
 } from "@/lib/ec/triage/service";
 import { QUARANTINE_VISIBILITY_NOTICE } from "@/lib/ec/mailboxes/service";
+import { findByMessageId } from "@/lib/ec/threads/service";
+import { redirect } from "next/navigation";
 import { TRIAGE_STATUS_FR, TRIAGE_OUTCOME_FR, type TriageStatus } from "@/lib/ec/triage/model";
 
 export const metadata: Metadata = { title: "Tri du courrier entrant" };
@@ -32,7 +34,7 @@ export default async function TriageQueuePage({
   searchParams?: {
     status?: string; mailbox?: string; sender?: string; from?: string; to?: string;
     mine?: string; unassigned?: string;
-    view?: string; subject?: string; recipient?: string; dossier?: string;
+    view?: string; subject?: string; recipient?: string; dossier?: string; msgid?: string;
   };
 }) {
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
@@ -52,6 +54,15 @@ export default async function TriageQueuePage({
 
   // EMP-1: the view supplies a BASE set of filters; anything the user typed is
   // layered on top and wins. A view is a starting point, not a cage.
+  // EMP-2: a Message-ID identifies exactly one message, so searching for one is
+  // a lookup, not a filter — it goes straight to that conversation. Resolved
+  // through RLS, so an id from another tenant is simply not found.
+  const msgid = searchParams?.msgid?.trim();
+  if (msgid) {
+    const hit = await findByMessageId(user.tenantId, msgid);
+    if (hit) redirect(`/communications/threads/${hit}`);
+  }
+
   const view = isMailView(searchParams?.view) ? searchParams.view : "inbox";
   // Resolved BEFORE the query, so an unmatched dossier number yields no rows
   // rather than quietly dropping the filter.
@@ -158,6 +169,10 @@ export default async function TriageQueuePage({
         <input id="trecipient" name="recipient" defaultValue={searchParams?.recipient ?? ""} placeholder="Destinataire"
           className="rounded-md border border-slate-200 px-2 py-1.5 text-sm" />
 
+        <label className="sr-only" htmlFor="tmsgid">Message-ID</label>
+        <input id="tmsgid" name="msgid" defaultValue="" placeholder="Message-ID"
+          className="rounded-md border border-slate-200 px-2 py-1.5 text-sm" />
+
         <label className="sr-only" htmlFor="tdossier">Dossier</label>
         <input id="tdossier" name="dossier" defaultValue={searchParams?.dossier ?? ""} placeholder="N° de dossier"
           className="rounded-md border border-slate-200 px-2 py-1.5 text-sm" />
@@ -179,6 +194,11 @@ export default async function TriageQueuePage({
         <h2 className="mb-3 text-sm font-semibold text-navy-900">
           {MAIL_VIEW_FR[view]} ({items.length})
         </h2>
+        {msgid ? (
+          <p className="rounded-lg bg-slate-50 p-4 text-sm text-slate-600">
+            Aucun message lisible ne porte le Message-ID « {msgid} ».
+          </p>
+        ) : null}
         {dossierUnmatched ? (
           <p className="rounded-lg bg-slate-50 p-4 text-sm text-slate-600">
             Aucun dossier lisible ne porte le numéro « {dossierRaw} ». La recherche est limitée aux

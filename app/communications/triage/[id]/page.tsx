@@ -59,9 +59,16 @@ export default async function TriageDetailPage({ params }: { params: { id: strin
         title={item.subject ?? "(sans objet)"}
         subtitle={`Reçu le ${item.receivedAt.slice(0, 16).replace("T", " ")} — de ${item.fromName ?? item.fromAddress}`}
       />
-      <Link href="/communications/triage" className="inline-block text-sm text-teal-700 hover:underline">
-        ← File de tri
-      </Link>
+      <div className="flex flex-wrap gap-4">
+        <Link href="/communications/triage" className="text-sm text-teal-700 hover:underline">
+          ← File de tri
+        </Link>
+        {/* EMP-2 — the conversation this message belongs to. Keyed on the message
+            row, because the thread identity is derived rather than stored. */}
+        <Link href={`/communications/threads/${item.messageId}`} className="text-sm text-teal-700 hover:underline">
+          Voir la conversation →
+        </Link>
+      </div>
 
       <TriageStudio
         item={item}
