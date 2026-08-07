@@ -124,6 +124,24 @@ describe("delivery states claim only what can be proven", () => {
   it("requires provider evidence before a row may be SENT", () => {
     expect(sql(MIGRATION)).toContain("check (status <> 'SENT' or provider is not null)");
   });
+
+  it("grandfathers historical sends instead of aborting the migration", () => {
+    // Caught by CI, not locally: ADD CONSTRAINT validates existing rows, and
+    // every row sent before EMP-3 is SENT with no provider — the column did not
+    // exist. Without NOT VALID this migration fails on any database with
+    // history, which is every real one.
+    const s = sql(MIGRATION);
+    const c = s.slice(s.indexOf("communication_message_sent_evidence"));
+    expect(c.slice(0, 400)).toContain("not valid");
+  });
+
+  it("back-fills no provider onto historical rows", () => {
+    // We do not know which provider accepted them, and for much of that period
+    // the answer is "none — the stub did". A guess would manufacture exactly
+    // the false evidence RATIFY-EMP3-2 exists to prevent.
+    const s = sql(MIGRATION);
+    expect(s).not.toMatch(/update public\.communication_message\s+set provider/i);
+  });
 });
 
 // ---------------------------------------------------------------------------

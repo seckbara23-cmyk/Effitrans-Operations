@@ -96,6 +96,10 @@ begin
 
   -- The coupling that makes a fake template key unnecessary AND impossible to
   -- need: exactly the TEMPLATE rows carry a template_key.
+  --
+  -- Validated, not NOT VALID, and safe to validate: every pre-EMP-3 row has a
+  -- NOT NULL template_key and takes kind='TEMPLATE' from the column default, so
+  -- the equivalence already holds for all of them.
   if not exists (select 1 from pg_constraint where conname = 'communication_message_template_coupling') then
     alter table public.communication_message
       add constraint communication_message_template_coupling
@@ -116,6 +120,9 @@ end $$;
 --
 -- DELIVERED and READ are absent on purpose and must stay absent: this platform
 -- has no bounce or delivery webhook, so neither could be evidenced.
+-- Re-added rather than NOT VALID: this set only WIDENS (the four original
+-- values are all still present), so every historical row satisfies it and
+-- validation is free. Widening is safe; narrowing would not have been.
 alter table public.communication_message
   drop constraint if exists communication_message_status_check;
 alter table public.communication_message
@@ -123,12 +130,26 @@ alter table public.communication_message
   check (status in ('DRAFT', 'QUEUED', 'SENDING', 'SENT', 'FAILED', 'CANCELLED'));
 
 -- A message that reached SENT must carry the evidence that it did.
+--
+-- NOT VALID, and that word is load-bearing. `ADD CONSTRAINT` validates every
+-- existing row by default, and EVERY row sent before EMP-3 is SENT with no
+-- provider recorded — the column did not exist. Validating would therefore
+-- abort this migration on any database with history, which is every real one.
+--
+-- The alternative was to back-fill a provider onto historical rows. That is
+-- refused: we do not know which provider accepted them (for much of that period
+-- the answer is "none — the stub did"), and writing a guess would manufacture
+-- exactly the false evidence RATIFY-EMP3-2 exists to prevent.
+--
+-- NOT VALID enforces the rule on every future insert and update while leaving
+-- the past honestly unproven. New sends cannot reach SENT without a provider.
 do $$
 begin
   if not exists (select 1 from pg_constraint where conname = 'communication_message_sent_evidence') then
     alter table public.communication_message
       add constraint communication_message_sent_evidence
-      check (status <> 'SENT' or provider is not null);
+      check (status <> 'SENT' or provider is not null)
+      not valid;
   end if;
 end $$;
 

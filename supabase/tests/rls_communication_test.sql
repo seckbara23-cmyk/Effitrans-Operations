@@ -33,9 +33,13 @@ from (values
 join public.role r on r.code = u.code and r.tenant_id = '00000000-0000-0000-0000-000000000001'
 on conflict do nothing;
 
-insert into public.communication_message (id, tenant_id, recipient_email, template_key, subject, body_html, body_text, status) values
-  ('00000000-0000-0000-0000-00000000cc01', '00000000-0000-0000-0000-000000000001', 'a@test.local', 'invoice_issued', 'A', '<p>A</p>', 'A', 'SENT'),
-  ('00000000-0000-0000-0000-00000000cc02', '00000000-0000-0000-0000-0000000000b2', 'b@test.local', 'invoice_issued', 'B', '<p>B</p>', 'B', 'SENT')
+-- EMP-3: a row may only be SENT if it carries the provider that accepted it
+-- (communication_message_sent_evidence). These fixtures assert RLS visibility,
+-- so their status is incidental — but they are NEW inserts and the constraint
+-- applies to new writes, so they name a provider like any real send would.
+insert into public.communication_message (id, tenant_id, recipient_email, template_key, subject, body_html, body_text, status, provider) values
+  ('00000000-0000-0000-0000-00000000cc01', '00000000-0000-0000-0000-000000000001', 'a@test.local', 'invoice_issued', 'A', '<p>A</p>', 'A', 'SENT', 'resend'),
+  ('00000000-0000-0000-0000-00000000cc02', '00000000-0000-0000-0000-0000000000b2', 'b@test.local', 'invoice_issued', 'B', '<p>B</p>', 'B', 'SENT', 'resend')
 on conflict (id) do nothing;
 
 create temp table _r (check_name text, value int) on commit drop;
