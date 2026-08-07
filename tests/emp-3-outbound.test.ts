@@ -482,15 +482,75 @@ describe("authorization and rollout", () => {
     }
   });
 
+  it("revokes from PUBLIC, anon AND authenticated — all three grant paths", () => {
+    // The first attempt at migration 87 revoked from PUBLIC only. Postgres
+    // grants EXECUTE to PUBLIC by default, and a Supabase project ALSO writes
+    // explicit grants to anon/authenticated via ALTER DEFAULT PRIVILEGES;
+    // revoking PUBLIC leaves those explicit grants untouched. Its own assertion
+    // caught it and the migration rolled back.
+    const s = sql(MIGRATION);
+    const SIGS: Record<string, string> = {
+      comm_acquire_send: "uuid, uuid",
+      comm_record_send_accepted: "uuid, uuid, text, text, uuid",
+      comm_record_send_failed: "uuid, uuid, text",
+      comm_reconcile_stuck_send: "uuid, uuid, text, text",
+    };
+    for (const [fn, sig] of Object.entries(SIGS)) {
+      expect(s, fn).toContain(`revoke all on function public.${fn}(${sig}) from public, anon, authenticated;`);
+      expect(s, fn).toContain(`grant execute on function public.${fn}(${sig}) to service_role;`);
+    }
+    // Every revoke and grant names the EXACT identity signature, so a future
+    // overload cannot inherit or escape these privileges.
+    expect((s.match(/revoke all on function public\.comm_/g) ?? []).length).toBe(4);
+    expect((s.match(/grant execute on function public\.comm_/g) ?? []).length).toBe(4);
+  });
+
+  it("grants execute to service_role and to nobody else", () => {
+    const s = sql(MIGRATION);
+    const grants = s.match(/grant execute on function public\.comm_[a-z_]+\([^)]*\) to ([a-z_, ]+);/g) ?? [];
+    expect(grants).toHaveLength(4);
+    for (const g of grants) expect(g).toMatch(/to service_role;$/);
+  });
+
+  it("asserts the matrix through BOTH mechanisms, including PUBLIC", () => {
+    const s = sql(MIGRATION);
+    // has_function_privilege cannot see PUBLIC (it takes a role), so the ACL
+    // must be inspected too — that is the grantee the first attempt missed.
+    expect(s).toContain("aclexplode");
+    expect(s).toContain("a.grantee = 0");
+    expect(s).toContain("information_schema.routine_privileges");
+    expect(s).toContain("has_function_privilege('anon'");
+    expect(s).toContain("has_function_privilege('authenticated'");
+    // ALLOWED is asserted too: a matrix that denies everyone would "pass" while
+    // breaking sending.
+    expect(s).toContain("has_function_privilege('service_role'");
+  });
+
+  it("keeps the functions SECURITY DEFINER — privilege was fixed, not power", () => {
+    const s = sql(MIGRATION);
+    expect((s.match(/security definer/g) ?? []).length).toBe(4);
+  });
+
+  it("proves the 42501 in a SQL suite wired into CI", () => {
+    const suite = read("supabase/tests/rls_outbound_mail_test.sql");
+    expect(suite).toContain("set local role anon");
+    expect(suite).toContain("set local role authenticated");
+    expect(suite).toContain("when insufficient_privilege then");
+    const ci = read(".github/workflows/ci.yml");
+    expect(ci).toContain("supabase/tests/rls_outbound_mail_test.sql");
+  });
+
   it("denies dispatch functions to every browser role", () => {
     const s = sql(MIGRATION);
     for (const fn of ["comm_acquire_send", "comm_record_send_accepted",
       "comm_record_send_failed", "comm_reconcile_stuck_send"]) {
       expect(s).toContain(`revoke all on function public.${fn}`);
     }
-    expect(s).not.toMatch(/grant execute on function public\.comm_/i);
-    // And the migration asserts the resulting matrix rather than assuming it.
-    expect(s).toContain("privilege assertion FAILED (execute granted)");
+    // And the migration asserts the resulting matrix rather than assuming it,
+    // naming each denied grantee separately so a failure says WHICH one.
+    expect(s).toContain("PUBLIC holds EXECUTE on");
+    expect(s).toContain("anon can EXECUTE");
+    expect(s).toContain("authenticated can EXECUTE");
     expect(s).toContain("privilege assertion FAILED (table write granted)");
   });
 });

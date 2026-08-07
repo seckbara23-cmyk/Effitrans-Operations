@@ -182,9 +182,9 @@ create index if not exists idx_comm_thread
 -- Three functions, each doing exactly one thing, so the ordering the governance
 -- decision fixed cannot be rearranged by a caller.
 --
--- All are SECURITY DEFINER and revoked from public/anon/authenticated. They are
--- reachable only by the service role, i.e. only from a server action that has
--- already checked `communication:send`. A browser session cannot call them.
+-- All are SECURITY DEFINER. Their privileges are set in §4.5 as one explicit
+-- block rather than a revoke beside each definition, because getting this
+-- wrong is silent and the grouping makes the whole matrix reviewable at once.
 
 -- 4.1 ACQUIRE — the compare-and-set that makes concurrent sends impossible.
 --
@@ -217,7 +217,6 @@ begin
   return v_id is not null;
 end $$;
 
-revoke all on function public.comm_acquire_send(uuid, uuid) from public;
 
 -- 4.2 ACCEPTED — persist provider evidence AND emit, in ONE transaction.
 --
@@ -288,7 +287,6 @@ begin
   return true;
 end $$;
 
-revoke all on function public.comm_record_send_accepted(uuid, uuid, text, text, uuid) from public;
 
 -- 4.3 FAILED — leave the evidence, emit nothing.
 --
@@ -320,7 +318,6 @@ begin
   return v_id is not null;
 end $$;
 
-revoke all on function public.comm_record_send_failed(uuid, uuid, text) from public;
 
 -- 4.4 RECONCILE — the ONLY way out of a stuck SENDING row.
 --
@@ -360,32 +357,128 @@ begin
   return v_id is not null;
 end $$;
 
-revoke all on function public.comm_reconcile_stuck_send(uuid, uuid, text, text) from public;
+
+
+-- ===========================================================================
+-- 4.5 FUNCTION PRIVILEGES — the part that was wrong, and why.
+-- ===========================================================================
+-- FIRST ATTEMPT AT MIGRATION 87 FAILED HERE, and correctly so: its own
+-- assertion caught that `anon` and `authenticated` could EXECUTE all four
+-- functions. The migration rolled back and nothing was applied.
+--
+-- ROOT CAUSE — TWO independent grant paths, and the first attempt closed only
+-- one of them:
+--
+--   1. PostgreSQL grants EXECUTE on every new function to PUBLIC by default.
+--      Every role inherits from PUBLIC, so `anon` and `authenticated` can call
+--      a function nobody ever granted to them.
+--   2. A Supabase project additionally carries
+--      `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON FUNCTIONS
+--      TO anon, authenticated`, which writes EXPLICIT grants to those two roles
+--      at creation time. Revoking from PUBLIC does not touch an explicit grant.
+--
+-- The first attempt ran `revoke all ... from public` only. That removed path 1
+-- and left path 2 entirely intact — which is exactly what the assertion saw.
+-- Note this is also why the defect did not appear in a bare local Postgres:
+-- without Supabase's default-privilege configuration only path 1 exists, so
+-- revoking from PUBLIC looked sufficient. It was not.
+--
+-- The fix revokes from all three grantees explicitly, then grants EXECUTE to
+-- `service_role` alone — the identity the server actions already use, and the
+-- one PostgREST never adopts for a browser session. The functions keep their
+-- SECURITY DEFINER rights; what changes is who may invoke them.
+--
+-- Every REVOKE and GRANT names the function's EXACT identity signature, so a
+-- future overload cannot silently inherit or escape these privileges.
+revoke all on function public.comm_acquire_send(uuid, uuid) from public, anon, authenticated;
+revoke all on function public.comm_record_send_accepted(uuid, uuid, text, text, uuid) from public, anon, authenticated;
+revoke all on function public.comm_record_send_failed(uuid, uuid, text) from public, anon, authenticated;
+revoke all on function public.comm_reconcile_stuck_send(uuid, uuid, text, text) from public, anon, authenticated;
+
+grant execute on function public.comm_acquire_send(uuid, uuid) to service_role;
+grant execute on function public.comm_record_send_accepted(uuid, uuid, text, text, uuid) to service_role;
+grant execute on function public.comm_record_send_failed(uuid, uuid, text) to service_role;
+grant execute on function public.comm_reconcile_stuck_send(uuid, uuid, text, text) to service_role;
 
 -- ===========================================================================
 -- 5. PRIVILEGE ASSERTIONS — exercised at migration time.
 -- ===========================================================================
--- The audit brief requires the resulting matrix to be asserted rather than
--- assumed, and ALLOWED / DENIED / BROKEN classified separately.
+-- Asserted through BOTH mechanisms, because they answer different questions and
+-- the first attempt proved that trusting one is not enough:
+--
+--   * has_function_privilege() reports EFFECTIVE privilege — what a role can
+--     actually do, inheritance included. It is the ground truth for anon and
+--     authenticated.
+--   * information_schema.routine_privileges / pg_proc.proacl report the GRANTS
+--     that exist. Only these can see PUBLIC, which is not a role and therefore
+--     cannot be passed to has_function_privilege at all. PUBLIC is precisely
+--     the grantee the first attempt left in place.
+--
+-- ALLOWED, DENIED and BROKEN are classified separately, and every check names
+-- the exact identity signature.
 do $$
 declare
-  v_bad text;
+  v_bad   text;
+  v_sigs  text[] := array[
+    'public.comm_acquire_send(uuid, uuid)',
+    'public.comm_record_send_accepted(uuid, uuid, text, text, uuid)',
+    'public.comm_record_send_failed(uuid, uuid, text)',
+    'public.comm_reconcile_stuck_send(uuid, uuid, text, text)'
+  ];
+  v_sig   text;
 begin
-  -- DENIED: no browser role may execute any dispatch function.
-  select string_agg(p.proname || '/' || r.rolname, ', ')
+  -- ---- DENIED (1/3): PUBLIC holds no EXECUTE grant. -----------------------
+  -- aclexplode grantee = 0 IS the PUBLIC pseudo-grantee. This is the check
+  -- whose absence caused the first failure.
+  select string_agg(p.proname, ', ')
     into v_bad
     from pg_proc p
     join pg_namespace n on n.oid = p.pronamespace
-    cross join (values ('anon'), ('authenticated')) as r(rolname)
+    cross join lateral aclexplode(p.proacl) a
    where n.nspname = 'public'
      and p.proname in ('comm_acquire_send', 'comm_record_send_accepted',
                        'comm_record_send_failed', 'comm_reconcile_stuck_send')
-     and has_function_privilege(r.rolname, p.oid, 'EXECUTE');
+     and a.grantee = 0
+     and a.privilege_type = 'EXECUTE';
   if v_bad is not null then
-    raise exception 'EMP-3 privilege assertion FAILED (execute granted): %', v_bad;
+    raise exception 'EMP-3 privilege assertion FAILED — PUBLIC holds EXECUTE on: %', v_bad;
   end if;
 
-  -- DENIED: no browser role may write the outbound table directly.
+  -- ---- DENIED (2/3): no grant row for anon/authenticated. -----------------
+  select string_agg(routine_name || '/' || grantee, ', ')
+    into v_bad
+    from information_schema.routine_privileges
+   where specific_schema = 'public'
+     and routine_name in ('comm_acquire_send', 'comm_record_send_accepted',
+                          'comm_record_send_failed', 'comm_reconcile_stuck_send')
+     and grantee in ('anon', 'authenticated', 'PUBLIC')
+     and privilege_type = 'EXECUTE';
+  if v_bad is not null then
+    raise exception 'EMP-3 privilege assertion FAILED — grant rows present for: %', v_bad;
+  end if;
+
+  -- ---- DENIED (3/3): EFFECTIVE privilege, inheritance included. -----------
+  -- The authoritative check: whatever the grant tables say, these roles must
+  -- not be able to execute. Exact signatures, so an overload cannot slip past.
+  foreach v_sig in array v_sigs loop
+    if has_function_privilege('anon', v_sig, 'EXECUTE') then
+      raise exception 'EMP-3 privilege assertion FAILED — anon can EXECUTE %', v_sig;
+    end if;
+    if has_function_privilege('authenticated', v_sig, 'EXECUTE') then
+      raise exception 'EMP-3 privilege assertion FAILED — authenticated can EXECUTE %', v_sig;
+    end if;
+  end loop;
+
+  -- ---- ALLOWED: the sanctioned dispatch identity must still work. ---------
+  -- Without this the migration would "pass" by making the functions
+  -- unreachable to everyone, which breaks sending rather than securing it.
+  foreach v_sig in array v_sigs loop
+    if not has_function_privilege('service_role', v_sig, 'EXECUTE') then
+      raise exception 'EMP-3 privilege assertion FAILED — service_role cannot EXECUTE %', v_sig;
+    end if;
+  end loop;
+
+  -- ---- DENIED: no browser role may write the outbound table directly. -----
   select string_agg(r.rolname || '/' || priv, ', ')
     into v_bad
     from (values ('anon'), ('authenticated')) as r(rolname)
@@ -395,13 +488,15 @@ begin
     raise exception 'EMP-3 privilege assertion FAILED (table write granted): %', v_bad;
   end if;
 
-  -- ALLOWED: the read path that the workspace depends on must still exist.
+  -- ---- ALLOWED: the workspace's read path survives. -----------------------
   if not has_table_privilege('authenticated', 'public.communication_message', 'SELECT') then
     raise exception 'EMP-3 privilege assertion FAILED: authenticated lost SELECT on communication_message';
   end if;
 
-  -- BROKEN would be either of the above firing; reaching here means neither did.
-  raise notice 'EMP-3 privilege matrix OK: writes and dispatch denied to anon/authenticated, SELECT preserved.';
+  -- BROKEN would be any raise above; reaching here means the matrix is exactly
+  -- as intended. A PostgREST RPC call as anon or authenticated now receives
+  -- 42501 (insufficient_privilege), which is what the DENIED checks encode.
+  raise notice 'EMP-3 privilege matrix OK — PUBLIC/anon/authenticated: no EXECUTE; service_role: EXECUTE; table writes denied; SELECT preserved.';
 end $$;
 
 -- ===========================================================================
