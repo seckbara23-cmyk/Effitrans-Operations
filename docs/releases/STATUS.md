@@ -1,6 +1,26 @@
 # Release Status — standing table (updated at every release event)
 
-*Last updated: 2026-08-06 (**EMP-2 COMPLETE — CI GREEN, run #363 on `54a45b0`**: rls-tests
+*Last updated: 2026-08-07 (**EMP-3 COMPLETE — CI GREEN run #368 on `d32ea4c`**: rls-tests
+80/0/0, build 10/0/0. Governed outbound mail — compose, reply, reply-all, drafts and a
+CAS-protected send — entirely on the EXISTING `communication_message` queue. **⚠️ MIGRATION 87
+IS NOT APPLIED IN PRODUCTION**; apply via the sanctioned path and confirm the ledger reads
+87/87. Outbound stays dark until `EFFITRANS_EC_OUTBOUND_ENABLED=true` AND a real provider is
+configured. **Operator-visible behaviour change:** with no provider configured, template mail
+(invoices, quotations) now records FAILED instead of a false SENT — that is the correction, not
+a regression. THREE defects CI caught that local testing could not: (1) `ADD CONSTRAINT`
+validates existing rows, so the sent-evidence check would have ABORTED migration 87 on any
+database with history — fixed with `NOT VALID`, back-fill refused because we do not know which
+provider accepted historical sends; (2) revoking from PUBLIC does NOT remove Supabase's
+explicit default-privilege grants, so four SECURITY DEFINER functions were reachable by anon
+and authenticated — the migration's own assertion caught it and rolled back
+(`docs/ops/emp-3-privilege-incident.md`); (3) `business_event.source` is a closed set, so
+`comms_rpc` was added following the assignment_rpc/document_rpc/reconcile_rpc precedent. Also
+fixed the PRE-EXISTING duplicate-send defect in `deliver()`. **⚠️ NEW FINDING, reported not
+fixed: no migration in this repo revokes from anon/authenticated, so the pre-existing
+quotation/document/customs/reconciliation/policy RPCs are likely executable by authenticated
+sessions on hosted Supabase — recommend a dedicated OPS-SEC-1 phase.** See
+`docs/mail/emp-3-completion-report.md`. **EMP-4 has not begun.**
+Previously: (**EMP-2 COMPLETE — CI GREEN, run #363 on `54a45b0`**: rls-tests
 79/0/0, build 10/0/0. Thread correlation over the existing capture: conversation identity is
 **derived, never stored**, because `ec_inbound_message` carries `prevent_mutation` — a
 `thread_id` backfill is not discouraged but IMPOSSIBLE, and the brief independently forbids
