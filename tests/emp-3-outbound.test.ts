@@ -268,6 +268,27 @@ describe("CORRESPONDENCE_SENT is emitted exactly once, after acceptance", () => 
     expect(fn).toContain("if v_row.id is null then");
   });
 
+  it("declares its own ledger source rather than borrowing one", () => {
+    // business_event.source is a closed set with no outbound entry. Each domain
+    // that needed one added it (assignment_rpc, document_rpc, reconcile_rpc), so
+    // comms_rpc follows the pattern. Caught by CI: the first attempt passed a
+    // bare 'rpc', which the constraint rejected.
+    const s = sql(MIGRATION);
+    expect(s).toContain("'comms_rpc'");
+    expect(s).toContain("check (source in ('db_trigger', 'policy_rpc', 'app_action', 'assignment_rpc',");
+    // Widening only — every previously legal value survives, so the constraint
+    // validates against history for free.
+    for (const v of ["db_trigger", "policy_rpc", "app_action", "assignment_rpc",
+                     "document_rpc", "reconcile_rpc"]) {
+      expect(s, v).toContain(`'${v}'`);
+    }
+    // And the emitter actually uses it.
+    const fn = s.slice(s.indexOf("function public.comm_record_send_accepted"));
+    expect(fn).toContain("'comms_rpc',");
+    // The bare 'rpc' the constraint rejected must not linger anywhere.
+    expect(fn).not.toContain("    'rpc',");
+  });
+
   it("carries identifiers and codes only — never content", () => {
     const def = getEventType("CORRESPONDENCE_SENT");
     for (const k of def?.metadataKeys ?? []) {

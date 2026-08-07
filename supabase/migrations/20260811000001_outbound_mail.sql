@@ -177,6 +177,33 @@ create index if not exists idx_comm_thread
   where thread_id is not null;
 
 -- ===========================================================================
+-- 3.5 LEDGER SOURCE VOCABULARY
+-- ===========================================================================
+-- `business_event.source` is a closed set, and an outbound send has no entry in
+-- it. Each domain that needed one added its own — `assignment_rpc` (WES-3),
+-- `document_rpc` (WES-4), `reconcile_rpc` (WES-5) — so `comms_rpc` follows the
+-- established pattern rather than inventing one.
+--
+-- WHY NOT REUSE AN EXISTING VALUE. EC-2's correspondence RPCs pass
+-- `policy_rpc`, which would have avoided this widening entirely. It is declined:
+-- "a person sent an email" is not a policy act, and the ledger's own vocabulary
+-- is what a later reader uses to understand why an event exists.
+--
+-- Widening a CHECK is safe to validate: the previous six values are all still
+-- present, so every historical row satisfies the new constraint. (Contrast the
+-- sent-evidence check in §2, which had to be NOT VALID because it NARROWS what
+-- is acceptable.)
+--
+-- `deriveProvenance` (UT-1) treats every source except `db_trigger` as human
+-- when an actor is recorded, which is exactly right here: a send is always
+-- initiated by an authorized person.
+alter table public.business_event drop constraint if exists business_event_source_check;
+alter table public.business_event
+  add constraint business_event_source_check
+  check (source in ('db_trigger', 'policy_rpc', 'app_action', 'assignment_rpc',
+                    'document_rpc', 'reconcile_rpc', 'comms_rpc'));
+
+-- ===========================================================================
 -- 4. DISPATCH FUNCTIONS
 -- ===========================================================================
 -- Three functions, each doing exactly one thing, so the ordering the governance
@@ -271,7 +298,7 @@ begin
     v_row.tenant_id,
     'CORRESPONDENCE_SENT',
     'communication',
-    'rpc',
+    'comms_rpc',
     'communication_message',
     v_row.id,
     v_row.file_id,
