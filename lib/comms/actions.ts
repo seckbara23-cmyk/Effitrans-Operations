@@ -15,7 +15,7 @@ import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
 import { invoiceTotals } from "@/lib/finance/calc";
 import { queueAndSend } from "./queue";
-import { sendEmail } from "./provider";
+import { dispatchMessage } from "./dispatch";
 import type { ActionResult } from "./types";
 
 type Admin = ReturnType<typeof getAdminSupabaseClient>;
@@ -41,35 +41,26 @@ async function clientRecipients(
   return client?.email ? [{ email: client.email, name: client.name }] : [];
 }
 
-async function deliver(supabase: Admin, tenantId: string, actorId: string, id: string): Promise<ActionResult> {
-  const { data: m } = await supabase
-    .from("communication_message")
-    .select("id, status, recipient_email, recipient_name, subject, body_html, body_text, retry_count")
-    .eq("id", id)
-    .eq("tenant_id", tenantId)
-    .maybeSingle();
-  if (!m) return { ok: false, error: "not_found" };
-  if (m.status !== "QUEUED" && m.status !== "FAILED") return { ok: false, error: "invalid_status" };
-
-  const res = await sendEmail({
-    to: m.recipient_email,
-    toName: m.recipient_name,
-    subject: m.subject,
-    html: m.body_html,
-    text: m.body_text,
-  });
-  if (res.ok) {
-    await supabase.from("communication_message").update({ status: "SENT", sent_at: new Date().toISOString() }).eq("id", id);
-    await writeAudit({ action: AuditActions.COMMUNICATION_SENT, actorId, tenantId, entity: "communication_message", entityId: id });
-  } else {
-    await supabase
-      .from("communication_message")
-      .update({ status: "FAILED", last_error: res.error ?? "send_failed", retry_count: m.retry_count + 1 })
-      .eq("id", id);
-    await writeAudit({ action: AuditActions.COMMUNICATION_FAILED, actorId, tenantId, entity: "communication_message", entityId: id, after: { error: res.error ?? null } });
-  }
+/**
+ * EMP-3 / RATIFY-EMP3-1 — this now delegates to the CAS-protected dispatcher.
+ *
+ * It used to read the row's status, check it was sendable, and then call the
+ * provider with nothing in between. Two concurrent callers both read QUEUED,
+ * both passed the check, and BOTH sent the customer an email. Nothing in the UI
+ * issued concurrent sends, so it never fired — but EMP-3 adds a Send button,
+ * and a defect that needs only a double-click is not one to ship around.
+ *
+ * `dispatchMessage` acquires the send by compare-and-set before touching the
+ * provider, so the guarantee now holds for the template-mail callers too — they
+ * inherited the fix by losing their private copy of the logic.
+ */
+async function deliver(_supabase: Admin, tenantId: string, actorId: string, id: string): Promise<ActionResult> {
+  const outcome = await dispatchMessage(tenantId, actorId, id);
   revalidatePath("/communications");
-  return res.ok ? { ok: true, id } : { ok: false, error: "send_failed" };
+  if (outcome.ok) return { ok: true, id };
+  if (outcome.status === "NOT_FOUND") return { ok: false, error: "not_found" };
+  if (outcome.status === "NOT_ACQUIRED") return { ok: false, error: "invalid_status" };
+  return { ok: false, error: outcome.error };
 }
 
 export async function sendMessage(id: string): Promise<ActionResult> {

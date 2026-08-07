@@ -309,8 +309,10 @@ describe("UT-5 — one history, including for the assistant", () => {
 // ---------------------------------------------------------------------------
 describe("UT-5 — no new surface", () => {
   it("adds no migration", () => {
-    const files = readdirSync(join(root, "supabase/migrations")).filter((f) => f.endsWith(".sql"));
-    expect(files).toHaveLength(86);
+    const files = readdirSync(join(root, "supabase/migrations")).filter((f) => f.endsWith(".sql")).sort();
+    // Own position, not "newest" — see the UT-4 note.
+    expect(files.indexOf("20260810000001_decision_plane_emitters.sql")).toBe(85);
+    expect(files.length).toBeGreaterThanOrEqual(86);
   });
 
   it("adds no event store, emitter or permission", () => {

@@ -296,7 +296,14 @@ describe("Digital-LOS events", () => {
     expect(registryMetadataViolations()).toEqual([]);
     for (const def of EVENT_TYPES.filter((d) => d.domain === "communication")) {
       for (const k of def.metadataKeys) {
-        expect(["triage_item_id", "message_id", "mailbox_id", "outcome", "reason_code"], `${def.type}.${k}`)
+        // EMP-3 adds three to the communication domain, all still identifiers
+        // or closed codes: thread_id (identifier), kind (TEMPLATE|COMPOSE|REPLY)
+        // and provider (resend|smtp). No address, subject, body or filename.
+        expect(
+          ["triage_item_id", "message_id", "mailbox_id", "outcome", "reason_code",
+           "thread_id", "kind", "provider"],
+          `${def.type}.${k}`,
+        )
           .toContain(k);
       }
     }

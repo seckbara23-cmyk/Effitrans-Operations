@@ -2614,7 +2614,7 @@ export type Database = {
           recipient_email: string;
           recipient_name: string | null;
           channel: string;
-          template_key: string;
+          template_key: string | null;
           subject: string;
           body_html: string;
           body_text: string;
@@ -2630,14 +2630,14 @@ export type Database = {
           created_by: string | null;
           created_at: string;
           updated_at: string;
-        };
+          kind: string; mailbox_id: string | null; to_addresses: Json; cc_addresses: Json; bcc_addresses: Json; message_id_header: string | null; in_reply_to: string | null; references_header: string | null; reply_to_message_id: string | null; attachments: Json; provider: string | null; provider_message_id: string | null; idempotency_key: string | null; dispatched_at: string | null; thread_id: string | null; created_by_draft_at: string | null };
         Insert: {
           id?: string;
           tenant_id: string;
           recipient_email: string;
           recipient_name?: string | null;
           channel?: string;
-          template_key: string;
+          template_key: string | null;
           subject: string;
           body_html: string;
           body_text: string;
@@ -2653,7 +2653,7 @@ export type Database = {
           created_by?: string | null;
           created_at?: string;
           updated_at?: string;
-        };
+          kind?: string; mailbox_id?: string | null; to_addresses?: Json; cc_addresses?: Json; bcc_addresses?: Json; message_id_header?: string | null; in_reply_to?: string | null; references_header?: string | null; reply_to_message_id?: string | null; attachments?: Json; provider?: string | null; provider_message_id?: string | null; idempotency_key?: string | null; dispatched_at?: string | null; thread_id?: string | null; created_by_draft_at?: string | null };
         Update: {
           id?: string;
           tenant_id?: string;
@@ -2676,7 +2676,7 @@ export type Database = {
           created_by?: string | null;
           created_at?: string;
           updated_at?: string;
-        };
+          kind?: string; mailbox_id?: string | null; to_addresses?: Json; cc_addresses?: Json; bcc_addresses?: Json; message_id_header?: string | null; in_reply_to?: string | null; references_header?: string | null; reply_to_message_id?: string | null; attachments?: Json; provider?: string | null; provider_message_id?: string | null; idempotency_key?: string | null; dispatched_at?: string | null; thread_id?: string | null; created_by_draft_at?: string | null };
         Relationships: [];
       };
       client_user: {
@@ -4158,6 +4158,10 @@ export type Database = {
       quotation_cancel: { Args: { p_tenant: string; p_quotation: string; p_actor: string; p_reason_code: string }; Returns: string };
       quotation_record_conversion: { Args: { p_tenant: string; p_quotation: string; p_actor: string; p_file: string }; Returns: string };
       emit_business_event: { Args: { p_tenant_id: string; p_event_type: string; p_event_domain: string; p_source: string; p_subject_type: string; p_subject_id?: string | null; p_dossier_id?: string | null; p_actor_user_id?: string | null; p_metadata?: Json; p_causation_id?: string | null; p_event_version?: number }; Returns: string };
+      comm_acquire_send: { Args: { p_message_id: string; p_tenant_id: string }; Returns: boolean };
+      comm_record_send_accepted: { Args: { p_message_id: string; p_tenant_id: string; p_provider: string; p_provider_message_id: string | null; p_actor_user_id: string | null }; Returns: boolean };
+      comm_record_send_failed: { Args: { p_message_id: string; p_tenant_id: string; p_error: string }; Returns: boolean };
+      comm_reconcile_stuck_send: { Args: { p_message_id: string; p_tenant_id: string; p_outcome: string; p_note: string }; Returns: boolean };
       ec_assign_triage: {
         Args: { p_tenant: string; p_item: string; p_actor: string; p_assignee: string };
         Returns: string;

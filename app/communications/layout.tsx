@@ -32,6 +32,11 @@ export default async function CommunicationsLayout({ children }: { children: Rea
     if (hasPermission(permissions, "communication:manage")) {
       tabs.push({ href: "/communications/mailboxes", label: "Boîtes aux lettres" });
     }
+    // EMP-3 — drafting authority, not sending: a user who may compose but not
+    // send still needs the surface, and the Send button is gated separately.
+    if (hasPermission(permissions, "communication:read")) {
+      tabs.push({ href: "/communications/compose", label: "Nouveau message" });
+    }
   }
 
   return (

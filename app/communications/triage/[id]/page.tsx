@@ -68,6 +68,25 @@ export default async function TriageDetailPage({ params }: { params: { id: strin
         <Link href={`/communications/threads/${item.messageId}`} className="text-sm text-teal-700 hover:underline">
           Voir la conversation →
         </Link>
+        {/* EMP-3 — reply. The composer derives recipients and RFC headers from
+            the ORIGINAL message's stored evidence; nothing is passed through
+            the URL except which message is being answered. */}
+        {hasPermission(permissions, "communication:read") ? (
+          <>
+            <Link
+              href={`/communications/compose?reply=${item.messageId}`}
+              className="text-sm text-teal-700 hover:underline"
+            >
+              Répondre
+            </Link>
+            <Link
+              href={`/communications/compose?reply=${item.messageId}&all=1`}
+              className="text-sm text-teal-700 hover:underline"
+            >
+              Répondre à tous
+            </Link>
+          </>
+        ) : null}
       </div>
 
       <TriageStudio

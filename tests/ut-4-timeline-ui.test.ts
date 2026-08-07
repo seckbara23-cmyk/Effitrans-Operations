@@ -376,9 +376,12 @@ describe("honest empty and boundary states", () => {
 // ---------------------------------------------------------------------------
 describe("scope: UT-4 only", () => {
   it("adds no migration", () => {
-    const all = readdirSync(join(root, "supabase", "migrations")).filter((f) => f.endsWith(".sql"));
-    expect(all).toHaveLength(86);
-    expect(all.sort()[85]).toBe("20260810000001_decision_plane_emitters.sql");
+    const all = readdirSync(join(root, "supabase", "migrations")).filter((f) => f.endsWith(".sql")).sort();
+    // This phase's OWN position, not "the newest migration" — migrations are
+    // append-only and never renamed, so an index holds forever, whereas
+    // "newest" is a claim a finished phase does not own.
+    expect(all.indexOf("20260810000001_decision_plane_emitters.sql")).toBe(85);
+    expect(all.length).toBeGreaterThanOrEqual(86);
   });
 
   it("adds no emitter and no store", () => {

@@ -54,6 +54,9 @@ const EC_TRIAGE = "supabase/migrations/20260805000001_ec_triage_outcomes.sql";
 const COMMERCIAL = "supabase/migrations/20260806000001_commercial_quotation.sql";
 /** UT-3B — the six trigger emitters (migration 86). */
 const UT3_EMITTERS = "supabase/migrations/20260810000001_decision_plane_emitters.sql";
+// EMP-3 — the one OUTBOUND emitter, an RPC rather than a trigger: a trigger on
+// communication_message could not tell a real provider acceptance from a stub's.
+const EMP3_OUTBOUND = "supabase/migrations/20260811000001_outbound_mail.sql";
 const LEDGER_MARKER = "lib/workflow/events/ledger-marker.ts";
 const migration = () => sqlCode(MIGRATION);
 /** WES-9A: the emission functions as they stand today (62 replaced by 63). */
@@ -702,7 +705,7 @@ describe("event sources", () => {
     // would be a lie about coverage, which is what this guards.
     const all = migration() + atomicity() + sqlCode(ASSIGNMENT) + sqlCode(DOC_GOV)
       + sqlCode(ARTIFACTS) + sqlCode(RECONCILE) + sqlCode(EC_TRIAGE) + sqlCode(COMMERCIAL)
-      + sqlCode(UT3_EMITTERS);
+      + sqlCode(UT3_EMITTERS) + sqlCode(EMP3_OUTBOUND);
     for (const def of emittedEventTypes()) {
       // The ledger marker is emitted from the application, by design: the
       // statement IS the act, so there is no prior transaction to join.

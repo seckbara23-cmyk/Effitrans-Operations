@@ -162,10 +162,11 @@ export const EVENT_TYPES: readonly EventTypeDef[] = [
   // sender, a filename or a body. The discard COMMENT stays in ec_triage_item;
   // only its reason_code travels, exactly as WES-4 does for rejection reasons.
   //
-  // CORRESPONDENCE_RECEIVED is RESERVED, deliberately. EC-1's capture pipeline
-  // is a multi-step application sequence, not a single transaction, so nothing
-  // may claim the trigger/rpc guarantee for it. Declaring it now fixes the name
-  // so a later phase adds emission rather than a second vocabulary.
+  // CORRESPONDENCE_RECEIVED became a TRIGGER at UT-3B (migration 86,
+  // emit_correspondence_received on ec_inbound_message). It was reserved at
+  // EC-2 because capture is a multi-step application sequence; the trigger
+  // resolved that by emitting inside the insert's own transaction. EMP-3 does
+  // not touch it — the inbound emitter stays exactly as UT-3B left it.
   { type: "CORRESPONDENCE_RECEIVED", domain: "communication", version: 1, emission: "trigger", metadataKeys: ["triage_item_id", "message_id", "mailbox_id"], clientSafe: false, labelFr: "Correspondance reçue" },
   { type: "CORRESPONDENCE_ASSIGNED", domain: "communication", version: 1, emission: "rpc", metadataKeys: ["triage_item_id", "message_id"], clientSafe: false, labelFr: "Correspondance attribuée" },
   { type: "CORRESPONDENCE_REASSIGNED", domain: "communication", version: 1, emission: "rpc", metadataKeys: ["triage_item_id", "message_id"], clientSafe: false, labelFr: "Correspondance réattribuée" },
@@ -193,6 +194,14 @@ export const EVENT_TYPES: readonly EventTypeDef[] = [
   { type: "QUOTATION_CONVERTED_TO_DOSSIER", domain: "commercial", version: 1, emission: "rpc", metadataKeys: ["quotation_id", "request_id"], clientSafe: true, labelFr: "Dossier ouvert depuis la cotation" },
 
   { type: "CORRESPONDENCE_DISCARDED", domain: "communication", version: 1, emission: "rpc", metadataKeys: ["triage_item_id", "message_id", "reason_code"], clientSafe: false, labelFr: "Correspondance rejetée" },
+  // EMP-3 — the ONE outbound event. It means exactly: a REAL provider accepted
+  // this correspondence. It is not delivery (no bounce webhook exists, so
+  // delivery is unprovable and DELIVERED/READ deliberately do not exist), it is
+  // not a draft, and a rejected or stub-"accepted" send never produces it.
+  // Emitted only by comm_record_send_accepted, in the same transaction as the
+  // SENDING -> SENT transition, which is what makes it exactly-once.
+  // clientSafe stays FALSE: customers see no correspondence through EMP-3.
+  { type: "CORRESPONDENCE_SENT", domain: "communication", version: 1, emission: "rpc", metadataKeys: ["message_id", "mailbox_id", "thread_id", "kind", "provider"], clientSafe: false, labelFr: "Correspondance envoyée" },
 
   // ------------------------------------------------------------------- policy
   { type: "POLICY_ACTIVATED", domain: "policy", version: 1, emission: "rpc", metadataKeys: ["scope", "version"], clientSafe: false, labelFr: "Politique activée" },

@@ -128,6 +128,10 @@ export const AuditActions = {
   // deliberately have no action code because this platform offers neither.
   EC_MAILBOX_ACTIVATED: "ec.mailbox.activated",
   EC_MAILBOX_DEACTIVATED: "ec.mailbox.deactivated",
+  // EMP-3 — a human resolving a send stuck in SENDING. The platform refuses to
+  // guess whether the provider accepted, so the decision is a recorded act.
+  COMMUNICATION_RECONCILED: "communication.reconciled",
+  COMMUNICATION_DRAFTED: "communication.drafted",
   EC_INBOUND_REJECTED: "ec.inbound.rejected", // machine (signature refused)
   // Phase 1.12 — Customer Portal
   PORTAL_USER_INVITED: "portal.user.invited",

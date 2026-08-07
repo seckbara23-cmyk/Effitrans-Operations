@@ -37,10 +37,12 @@ describe("EMP-1 creates no parallel mail system", () => {
     const files = readdirSync(join(root, "supabase/migrations"))
       .filter((f) => f.endsWith(".sql"))
       .sort();
-    // EMP-1 is a workspace over tables that already exist. If this fails, a
-    // migration was added and the phase's central claim is void.
-    expect(files[files.length - 1]).toBe("20260810000001_decision_plane_emitters.sql");
-    expect(files).toHaveLength(86);
+    // Assert this phase's OWN position in the chain, not that it is the newest.
+    // Migrations are append-only and never renamed, so an index is stable
+    // forever; "the newest migration" is a claim no completed phase owns, and
+    // pinning it makes every later phase break this test.
+    expect(files.indexOf("20260810000001_decision_plane_emitters.sql")).toBe(85);
+    expect(files.length).toBeGreaterThanOrEqual(86);
   });
 
   it("does not create a second inbox route", () => {
@@ -84,11 +86,18 @@ describe("EMP-1 ships no outbound capability", () => {
     }
   });
 
-  it("declares no reply or compose surface", () => {
-    for (const f of surfaces) {
+  it("declares no reply or compose surface OF ITS OWN", () => {
+    // Scoped to the modules EMP-1 owns. The triage list and detail pages are
+    // SHARED surfaces that later phases extend — EMP-3 adds Reply to the detail
+    // page by design — so freezing their wording here would have made a
+    // legitimate later phase look like a regression. A phase asserts what it
+    // built, not that a shared file never changes again.
+    const owned = [SERVICE, ACTIONS, BOXES_PAGE, BOX_DETAIL,
+      "components/ec/mailbox-toggle.tsx", "components/ec/message-evidence.tsx"];
+    for (const f of owned) {
       const src = code(f).toLowerCase();
-      expect(src).not.toContain("répondre");
-      expect(src).not.toContain("rédiger");
+      expect(src, f).not.toContain("répondre");
+      expect(src, f).not.toContain("rédiger");
     }
   });
 });

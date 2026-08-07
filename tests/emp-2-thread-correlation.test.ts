@@ -243,9 +243,15 @@ describe("linkedIdentifiers", () => {
 // ---------------------------------------------------------------------------
 describe("EMP-2 extends EC and builds nothing parallel", () => {
   it("adds no migration — the chain still ends at 86", () => {
-    const files = readdirSync(join(root, "supabase/migrations")).filter((f) => f.endsWith(".sql")).sort();
-    expect(files[files.length - 1]).toBe("20260810000001_decision_plane_emitters.sql");
-    expect(files).toHaveLength(86);
+    const files = readdirSync(join(root, "supabase/migrations"))
+      .filter((f) => f.endsWith(".sql"))
+      .sort();
+    // Assert this phase's OWN position in the chain, not that it is the newest.
+    // Migrations are append-only and never renamed, so an index is stable
+    // forever; "the newest migration" is a claim no completed phase owns, and
+    // pinning it makes every later phase break this test.
+    expect(files.indexOf("20260810000001_decision_plane_emitters.sql")).toBe(85);
+    expect(files.length).toBeGreaterThanOrEqual(86);
   });
 
   it("stores nothing: the resolver and service never write", () => {

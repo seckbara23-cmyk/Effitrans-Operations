@@ -31,7 +31,19 @@ export type OutboundEmail = {
   attachments?: readonly { filename: string; contentBase64: string }[];
 };
 
-export type SendResult = { ok: boolean; error?: string };
+export type SendResult = {
+  ok: boolean;
+  error?: string;
+  /**
+   * WHICH provider accepted. EMP-3 (RATIFY-EMP3-2) turns on this field: only a
+   * real provider's acceptance may mark a message SENT or emit
+   * CORRESPONDENCE_SENT, so "did it succeed" is not enough — the caller has to
+   * know who said so. Absent on failure.
+   */
+  provider?: "resend" | "smtp";
+  /** The provider's own identifier for the message, when it returns one. */
+  providerMessageId?: string | null;
+};
 
 /** A real provider has been SELECTED (it may still be missing credentials). */
 export function isProviderConfigured(): boolean {
@@ -134,11 +146,20 @@ export async function sendEmail(email: OutboundEmail): Promise<SendResult> {
   const provider = process.env.COMMUNICATIONS_EMAIL_PROVIDER;
 
   if (provider !== "smtp" && provider !== "resend") {
-    // No-op: the message is treated as delivered to the stub for now.
+    // EMP-3 / RATIFY-EMP3-2 — FAIL CLOSED.
+    //
+    // This used to return { ok: true }: the stub "accepted" the message, the row
+    // was marked SENT, and nothing left the building. That was a lie told to
+    // every caller and, once EMP-3 added a ledger event, it would have become a
+    // lie told to the Decision Plane — the platform would have asserted it wrote
+    // to a customer who was never written to.
+    //
+    // An unconfigured provider is now an explicit failure. A message that did
+    // not go anywhere is FAILED, no event is emitted, and the user is told.
     if (process.env.COMMUNICATIONS_EMAIL_DEBUG === "true") {
-      console.info(`[comms] (no-op) would send "${email.subject}" -> ${email.to}`);
+      console.info(`[comms] (not configured) refused to send "${email.subject}"`);
     }
-    return { ok: true };
+    return { ok: false, error: "provider_not_configured" };
   }
 
   if (provider === "resend") {
@@ -177,7 +198,17 @@ export async function sendEmail(email: OutboundEmail): Promise<SendResult> {
         const body = await res.text().catch(() => "");
         return { ok: false, error: sanitizeResendError(res.status, body) };
       }
-      return { ok: true };
+      // Resend returns { id }. It is the only external handle we will ever have
+      // on this message, so it is captured as evidence. A parse failure does not
+      // undo an acceptance that already happened — the send still succeeded.
+      let providerMessageId: string | null = null;
+      try {
+        const body = (await res.json()) as { id?: unknown };
+        if (typeof body?.id === "string") providerMessageId = body.id;
+      } catch {
+        providerMessageId = null;
+      }
+      return { ok: true, provider: "resend", providerMessageId };
     } catch {
       return { ok: false, error: "resend_network_error" };
     }
