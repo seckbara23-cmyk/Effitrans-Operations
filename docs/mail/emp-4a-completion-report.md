@@ -1,6 +1,6 @@
 # EMP-4A — Completion Report
 
-**Date:** 2026-08-08 · **Commit `5fbaf5e`** · **No migration.** Migration 89 is unchanged.
+**Date:** 2026-08-08 · **Commits `5fbaf5e` + `fccb033`** · **No migration.** Migration 89 is unchanged.
 
 Closes the two partial items in `emp-4a-deployment-report.md` §6: frozen steps **7** (new-user
 onboarding integration) and **9** (existing-user and bulk workflows). Every other step was
@@ -86,6 +86,24 @@ decisions are never trusted — only its claim about *which* preview it saw, ver
 we just recomputed. A caller that never renders the page still cannot execute an unpreviewed
 batch, so this is a property of the action rather than a convention of the UI.
 
+**A defect in that guarantee, found in self-review after the first commit and fixed in
+`fccb033`.** The fingerprint hashed only `userId:outcome`. For a user with no existing membership
+the outcome is `GRANT_NEW` *whatever capabilities are requested*, so the fingerprint for "grant
+read to these 40 people" was byte-identical to "grant read, send and member-management to these
+40 people". A caller could confirm the harmless preview and submit the powerful one: the server
+recomputes with the capabilities it was handed, gets the same outcomes, finds a matching
+fingerprint, and agrees.
+
+This is **not** a privilege escalation across a trust boundary — only a holder of
+`communication:membership:manage` can call it, and they may grant those capabilities directly
+anyway. It is worse in a different way: the confirmation did not bind what was shown, while the
+UI told the administrator *« L'exécution rejoue exactement cet aperçu »*. A batch could apply
+capabilities nobody previewed, which is the one thing this design exists to prevent.
+
+The fingerprint now binds the **mailbox, the four capabilities and the eligibility filter**
+alongside the decisions. Two regression tests pin it — and they matter, because the defect passed
+all 35 existing tests: the outcomes were never wrong, merely insufficient to identify the batch.
+
 **No new permission, no new role, no migration.** Both surfaces reuse
 `communication:membership:manage`. SYSTEM_ADMIN holds neither correspondence nor membership
 authority and gained nothing here.
@@ -135,7 +153,7 @@ Preview emits nothing. An aperçu is not an event.
 
 ## 8. Test results
 
-**35 new tests**; suite total **5423 passing across 213 files**, `tsc --noEmit` clean,
+**37 new tests**; suite total **5425 passing across 213 files**, `tsc --noEmit` clean,
 `next build` clean with all three new routes emitted.
 
 The classifier is pure, so bulk semantics are tested **behaviourally** rather than by reading
@@ -148,9 +166,13 @@ Two failures during close-out were **my own test-authoring bugs**, not code defe
 `expect(...) || expect(...)` that cannot express a disjunction, and an assertion searching for a
 comment through a comment-stripping reader. Both were replaced with behavioural checks.
 
+The fingerprint defect in §5 was found by **reading the code after the tests passed**, not by the
+tests. Worth recording as a limitation of the approach: a suite that pins the outcomes cannot
+catch a fingerprint that is under-specified, because every outcome it asserts was correct.
+
 ## 9. CI
 
-Run and conclusion for `5fbaf5e` recorded in §11 below on completion of the verification poll.
+Verified on the final head `fccb033`, which contains both commits. Result recorded in §11.
 
 ## 10. Deployment implications
 
