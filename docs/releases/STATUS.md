@@ -1,6 +1,21 @@
 # Release Status — standing table (updated at every release event)
 
-*Last updated: 2026-08-08 (**EMP-4 COMPLETE — CI GREEN run #373 on `a5f939b`**: rls-tests
+*Last updated: 2026-08-08 (**IA RENAME SHIPPED — CI GREEN run #376 on `d509b55`**: rls-tests
+81/0/0, build 10/0/0. **The Communications workspace is now Enterprise Mail at `/mail`**
+(`/communications/*` → permanent 308 redirects in next.config.mjs; triage → inbox). No
+migration, no schema, no permission, no RLS change. "Communications" is now RESERVED for a
+future omnichannel workspace (SMS/WhatsApp/portal messaging/notifications). **Label kept in
+ENGLISH** — a French rendering was tried and rejected because "Messagerie d'entreprise" sits one
+word from "Messagerie" (Phase 8.7 chat at /messages) in the same nav section. **NOT renamed,
+because they are contracts, not labels:** `communication:*` permission codes (live grants,
+three-source rule), `communication_message` and `ec_*` tables, the `communication` event domain
+and `CORRESPONDENCE_*` types (**business_event is APPEND-ONLY — renaming a domain would orphan
+every existing row**), audit action codes and storage buckets. New `/mail/sent` and
+`/mail/drafts` are filtered views over the ONE outbound queue; **Archive and Attachments were
+NOT built** (no backing surface). **Administration → Users → Enterprise Mail was NOT built — it
+is EMP-4A**, a separate audit-first phase with a live STOP clause. See
+`docs/mail/ia-enterprise-mail-rename.md`. **EMP-5 and EMP-4A have not begun.**
+Previously: (**EMP-4 COMPLETE — CI GREEN run #373 on `a5f939b`**: rls-tests
 81/0/0, build 10/0/0, green on the FIRST attempt. Attachment → document ingestion.
 **⚠️ MIGRATION 88 IS NOT APPLIED IN PRODUCTION** — apply and confirm the ledger reads 88/88;
 there is no flag or permission to set, and the feature stays unreachable regardless because
