@@ -235,7 +235,8 @@ export async function getTriageDetail(tenantId: string, itemId: string): Promise
   if (!msg) return null;
 
   const { data: mb } = msg.mailbox_id
-    ? await s.from("ec_mailbox").select("address, purpose").eq("id", msg.mailbox_id).maybeSingle()
+    ? await s.from("ec_mailbox").select("address, purpose")
+        .eq("tenant_id", tenantId).eq("id", msg.mailbox_id).maybeSingle()
     : { data: null };
 
   const { data: atts } = await s.from("ec_inbound_attachment")

@@ -53,9 +53,16 @@ export default async function EnterpriseMailAdminPage({
 
   return (
     <div className="animate-fade-in space-y-6">
-      <Link href="/users" className="inline-block text-sm text-teal-700 hover:underline">
-        ← Utilisateurs
-      </Link>
+      <div className="flex flex-wrap gap-4">
+        <Link href="/users" className="text-sm text-teal-700 hover:underline">
+          ← Utilisateurs
+        </Link>
+        {canManageMembers ? (
+          <Link href="/users/enterprise-mail/bulk" className="text-sm text-teal-700 hover:underline">
+            Attribution en masse →
+          </Link>
+        ) : null}
+      </div>
 
       <PageHeader
         meta="Administration · Utilisateurs"

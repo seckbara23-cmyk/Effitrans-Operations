@@ -26,6 +26,13 @@
  * are still expected to filter it.
  */
 export const TENANT_SCOPED_TABLES = new Set<string>([
+  // Enterprise Communications / Enterprise Mail (EC-1 .. EMP-4A). All seven
+  // carry `tenant_id uuid references public.organization`. They were absent
+  // from this registry until EMP-4A, so service-role reads of the entire mail
+  // context were unguarded; registering them closed that gap.
+  "ec_mailbox", "ec_mailbox_alias", "ec_mailbox_member", "ec_inbound_message",
+  "ec_inbound_attachment", "ec_triage_item", "ec_webhook_event",
+
   // foundation / RBAC
   "app_user",
   "audit_log",

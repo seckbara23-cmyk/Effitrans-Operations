@@ -70,6 +70,15 @@ export default async function UserDetailsPage({ params }: { params: { id: string
       </Link>
 
       <section className="surface p-5">
+        {/* EMP-4A — Enterprise Mail access for this user. A link rather than an
+            inline panel: mailbox administration is its own authority, and most
+            people opening this page do not hold it. */}
+        <Link
+          href={`/users/${params.id}/enterprise-mail`}
+          className="mb-3 inline-block text-sm text-teal-700 hover:underline"
+        >
+          Enterprise Mail — accès aux boîtes →
+        </Link>
         <h2 className="text-sm font-semibold text-navy-900">{t.users.columns.roles}</h2>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <span

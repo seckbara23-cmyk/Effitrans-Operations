@@ -110,6 +110,14 @@ const KNOWN_UNSCOPED_READS: Record<string, string> = {
   "lib/portal/password-reset.ts::client_user": "self portal identity lookup by auth id",
   "lib/customer-notify/actions.ts::client_user": "self portal identity lookup by auth id (prefs)",
 
+  // 2026-08-08 (EMP-4A) — inbound capture's idempotency probe. This read runs
+  // BEFORE routing resolves a tenant, which is the whole point of EC-1: an
+  // inbound message is captured first and attributed second, so at this line
+  // there is no tenant to filter on. The key (provider, provider_event_id) is
+  // provider-global by construction, and the result is used only as a boolean
+  // "already captured" — no row data crosses a tenant boundary.
+  "lib/ec/inbound/capture.ts::ec_webhook_event": "replay dedup on (provider, event_id) BEFORE tenant routing; existence check only",
+
   // --- Child/related row fetched by unique id AFTER its parent was tenant-
   //     verified in the same action. Safe: the id is a UUID FK to a row already
   //     proven to belong to the caller's tenant.

@@ -1,0 +1,175 @@
+/**
+ * EMP-4A — bulk mailbox assignment. The CLASSIFIER is pure.
+ *
+ * The whole point of this module is that an administrator sees exactly what
+ * will change BEFORE anything changes. So the decision — what happens to each
+ * user — is a pure function of data already read, and the executor does nothing
+ * the preview did not predict.
+ *
+ * Every user lands in exactly one outcome. There is no "other": a user the
+ * classifier cannot place would be a user whose fate the preview does not show,
+ * which is the failure this design exists to prevent.
+ */
+import { eligibleMailboxes, type SharedMailboxPurpose } from "./eligibility";
+import { ROLE_CANONICAL_DEPARTMENT } from "@/lib/organization/departments";
+
+export type BulkCapabilities = {
+  canRead: boolean;
+  canSend: boolean;
+  canManageMembers: boolean;
+  isDefaultSender: boolean;
+};
+
+/** One candidate, as the classifier needs them. */
+export type BulkCandidate = {
+  userId: string;
+  name: string | null;
+  email: string;
+  tenantId: string;
+  roleCodes: string[];
+  /** Their existing membership on the TARGET mailbox, if any. */
+  existing: {
+    id: string;
+    canRead: boolean;
+    canSend: boolean;
+    canManageMembers: boolean;
+    isDefaultSender: boolean;
+    revokedAt: string | null;
+  } | null;
+  /** True when this user already has a default sender on ANOTHER mailbox. */
+  hasOtherDefaultSender: boolean;
+};
+
+export type BulkOutcome =
+  | "GRANT_NEW"          // no membership -> one will be created
+  | "REACTIVATE"         // revoked membership -> the SAME row is restored
+  | "UPDATE"             // active membership whose capabilities differ
+  | "UNCHANGED"          // active membership already matching
+  | "SKIPPED_NO_DEPARTMENT"  // no role maps to a department
+  | "SKIPPED_NOT_ELIGIBLE"   // department does not propose this mailbox
+  | "REJECTED_CROSS_TENANT"  // belongs to another tenant
+  | "CONFLICT_DEFAULT_SENDER"; // would be a second default sender
+
+export type BulkDecision = {
+  userId: string;
+  name: string | null;
+  email: string;
+  outcome: BulkOutcome;
+  /** Plain-language reason, shown in the preview. Never a code alone. */
+  reason: string;
+  /** True when executing this decision writes something. */
+  writes: boolean;
+};
+
+export const OUTCOME_FR: Record<BulkOutcome, string> = {
+  GRANT_NEW: "Nouvelle appartenance",
+  REACTIVATE: "Appartenance révoquée réactivée",
+  UPDATE: "Capacités modifiées",
+  UNCHANGED: "Inchangé",
+  SKIPPED_NO_DEPARTMENT: "Ignoré — aucun département dérivé du rôle",
+  SKIPPED_NOT_ELIGIBLE: "Ignoré — boîte non proposée pour ce département",
+  REJECTED_CROSS_TENANT: "Refusé — autre tenant",
+  CONFLICT_DEFAULT_SENDER: "Conflit — expéditeur par défaut déjà défini ailleurs",
+};
+
+function sameCapabilities(
+  e: NonNullable<BulkCandidate["existing"]>,
+  c: BulkCapabilities,
+): boolean {
+  return e.canRead === c.canRead
+    && e.canSend === c.canSend
+    && e.canManageMembers === c.canManageMembers
+    && e.isDefaultSender === c.isDefaultSender;
+}
+
+/**
+ * Decide what would happen to each candidate. PURE — no I/O, no clock.
+ *
+ * `requireEligibility` reflects how the administrator chose the audience: when
+ * they filtered by department, a user outside it is SKIPPED rather than
+ * silently granted; when they picked users by hand, their choice stands and
+ * eligibility is only advisory.
+ */
+export function previewBulkAssignment(input: {
+  tenantId: string;
+  mailboxPurpose: SharedMailboxPurpose | string;
+  capabilities: BulkCapabilities;
+  candidates: readonly BulkCandidate[];
+  requireEligibility: boolean;
+}): BulkDecision[] {
+  const { tenantId, mailboxPurpose, capabilities, candidates, requireEligibility } = input;
+
+  return candidates.map((u): BulkDecision => {
+    const base = { userId: u.userId, name: u.name, email: u.email };
+
+    // Tenant first: nothing else matters if the user is not ours.
+    if (u.tenantId !== tenantId) {
+      return { ...base, outcome: "REJECTED_CROSS_TENANT", writes: false,
+        reason: "Cet utilisateur appartient à un autre tenant." };
+    }
+
+    const departments = u.roleCodes.map((r) => ROLE_CANONICAL_DEPARTMENT[r]).filter(Boolean);
+    if (requireEligibility && departments.length === 0) {
+      return { ...base, outcome: "SKIPPED_NO_DEPARTMENT", writes: false,
+        reason: "Aucun de ses rôles n'est rattaché à un département." };
+    }
+    if (requireEligibility) {
+      const proposed = eligibleMailboxes(u.roleCodes).map((e) => e.purpose as string);
+      if (!proposed.includes(mailboxPurpose)) {
+        return { ...base, outcome: "SKIPPED_NOT_ELIGIBLE", writes: false,
+          reason: `Son département ne propose pas la boîte « ${mailboxPurpose} ».` };
+      }
+    }
+
+    // A second default sender is refused by a unique index, so the preview says
+    // so rather than letting execution surface a constraint error.
+    if (capabilities.isDefaultSender && u.hasOtherDefaultSender
+        && !(u.existing?.isDefaultSender && !u.existing.revokedAt)) {
+      return { ...base, outcome: "CONFLICT_DEFAULT_SENDER", writes: false,
+        reason: "Cet utilisateur a déjà un expéditeur par défaut sur une autre boîte." };
+    }
+
+    if (!u.existing) {
+      return { ...base, outcome: "GRANT_NEW", writes: true,
+        reason: "Aucune appartenance existante." };
+    }
+    if (u.existing.revokedAt) {
+      return { ...base, outcome: "REACTIVATE", writes: true,
+        reason: "Appartenance révoquée : la même ligne sera réactivée, son historique conservé." };
+    }
+    if (sameCapabilities(u.existing, capabilities)) {
+      return { ...base, outcome: "UNCHANGED", writes: false,
+        reason: "Les capacités demandées sont déjà en place." };
+    }
+    return { ...base, outcome: "UPDATE", writes: true,
+      reason: "Appartenance existante dont les capacités diffèrent." };
+  });
+}
+
+/** Counts for the confirmation summary. */
+export function summarize(decisions: readonly BulkDecision[]): Record<BulkOutcome, number> {
+  const out = Object.fromEntries(
+    (Object.keys(OUTCOME_FR) as BulkOutcome[]).map((k) => [k, 0]),
+  ) as Record<BulkOutcome, number>;
+  for (const d of decisions) out[d.outcome] += 1;
+  return out;
+}
+
+/** The decisions that actually write — what execution will touch, and only that. */
+export function writableDecisions(decisions: readonly BulkDecision[]): BulkDecision[] {
+  return decisions.filter((d) => d.writes);
+}
+
+/**
+ * A stable fingerprint of a preview.
+ *
+ * Execution carries the fingerprint it was shown; if the data moved underneath
+ * — someone else granted a membership in the meantime — it no longer matches
+ * and the batch is refused rather than performing writes nobody previewed.
+ */
+export function previewFingerprint(decisions: readonly BulkDecision[]): string {
+  return decisions
+    .map((d) => `${d.userId}:${d.outcome}`)
+    .sort()
+    .join("|");
+}

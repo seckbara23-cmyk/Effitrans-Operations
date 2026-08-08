@@ -224,7 +224,8 @@ describe("administration is gated and audited", () => {
   it("every write is audited", () => {
     const s = code(ADMIN_ACTIONS);
     const writes = ["grantMembership", "revokeMembership", "provisionMailbox",
-                    "recordSetupOutcome", "retryProvisioning", "setMailboxEnabled"];
+                    "recordSetupOutcome", "retryProvisioning", "setMailboxEnabled",
+                    "setMembershipCapabilities"];
     for (const w of writes) expect(s, w).toContain(`export async function ${w}`);
     expect((s.match(/writeAudit\(/g) ?? []).length).toBe(writes.length);
   });

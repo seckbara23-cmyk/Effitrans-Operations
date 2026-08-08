@@ -321,3 +321,57 @@ export async function setMailboxEnabled(
   revalidatePath(PATH);
   return { ok: true, id: mailboxId };
 }
+
+/**
+ * Change the capabilities of an ACTIVE membership.
+ *
+ * Separate from `grantMembership` because the intent differs: this adjusts an
+ * existing relationship rather than establishing one, and it refuses to touch a
+ * revoked row — reviving access must go through a grant, which records a new
+ * grantor.
+ */
+export async function setMembershipCapabilities(
+  memberId: string,
+  capabilities: Capabilities,
+): Promise<MailAdminResult> {
+  const g = await gate("communication:membership:manage");
+  if (!g.ok || !g.user) return { ok: false, error: "forbidden" };
+  const { user } = g;
+  const admin = getAdminSupabaseClient();
+
+  const patch: {
+    can_read?: boolean; can_send?: boolean;
+    can_manage_members?: boolean; is_default_sender?: boolean;
+  } = {};
+  if (capabilities.canRead !== undefined) patch.can_read = capabilities.canRead;
+  if (capabilities.canSend !== undefined) patch.can_send = capabilities.canSend;
+  if (capabilities.canManageMembers !== undefined) patch.can_manage_members = capabilities.canManageMembers;
+  if (capabilities.isDefaultSender !== undefined) patch.is_default_sender = capabilities.isDefaultSender;
+  if (Object.keys(patch).length === 0) return { ok: false, error: "nothing_to_change" };
+
+  const { data, error } = await admin
+    .from("ec_mailbox_member")
+    .update(patch)
+    .eq("id", memberId)
+    .eq("tenant_id", user.tenantId)
+    .is("revoked_at", null)
+    .select("id, user_id, mailbox_id")
+    .maybeSingle();
+
+  if (error) {
+    // A second default sender is refused by a partial unique index; report it
+    // as the conflict it is rather than as a generic failure.
+    return { ok: false, error: error.code === "23505" ? "default_sender_conflict" : "update_failed" };
+  }
+  if (!data) return { ok: false, error: "not_active" };
+
+  await writeAudit({
+    action: AuditActions.EC_MAILBOX_MEMBER_GRANTED,
+    actorId: user.id, tenantId: user.tenantId,
+    entity: "ec_mailbox_member", entityId: memberId,
+    after: { ...patch, ...(data as Record<string, unknown>) },
+  });
+  revalidatePath(PATH);
+  revalidatePath("/users");
+  return { ok: true, id: memberId };
+}

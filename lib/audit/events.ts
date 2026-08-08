@@ -145,6 +145,9 @@ export const AuditActions = {
   EC_MAILBOX_SETUP_CONFIRMED: "ec.mailbox.setup_confirmed",
   EC_MAILBOX_SETUP_FAILED: "ec.mailbox.setup_failed",
   EC_MAILBOX_SETUP_RETRIED: "ec.mailbox.setup_retried",
+  // EMP-4A — one row for the batch, beside one row per changed membership, so
+  // "what happened on Tuesday" and "who got access" are both answerable.
+  EC_MAILBOX_BULK_ASSIGNED: "ec.mailbox.bulk_assigned",
   EC_INBOUND_REJECTED: "ec.inbound.rejected", // machine (signature refused)
   // Phase 1.12 — Customer Portal
   PORTAL_USER_INVITED: "portal.user.invited",
