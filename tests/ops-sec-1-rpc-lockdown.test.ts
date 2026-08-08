@@ -1,0 +1,177 @@
+/**
+ * OPS-SEC-1 — P0 privilege-only remediation (migration 90).
+ *
+ * The migration proves its own effect in SQL, against a real PostgreSQL, when
+ * CI applies it. What SQL cannot pin is what the migration must NOT contain:
+ * that it changes no behaviour, and that its exclusion lists are the ones the
+ * ratification named. Those are the contracts here.
+ *
+ * One test earns its place above all the others: `signatures are type-only`.
+ * The first draft of this migration used pg_get_function_identity_arguments,
+ * which on PostgreSQL 17 includes PARAMETER NAMES. to_regprocedure() rejects
+ * that form and returns NULL — so the migration would have revoked nothing
+ * while all four of its assertions passed vacuously. A silent no-op that
+ * reports success is the worst possible outcome for a security migration.
+ */
+import { describe, expect, it } from "vitest";
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
+
+const root = join(__dirname, "..");
+const MIGRATIONS = join(root, "supabase/migrations");
+const NAME = "20260814000001_ops_sec_1_rpc_privilege_lockdown.sql";
+const sql = readFileSync(join(MIGRATIONS, NAME), "utf8");
+
+/** Every quoted `public.fn(...)` signature the migration acts on. */
+const signatures = [...sql.matchAll(/'(public\.[a-z_0-9]+\([^']*\))'/g)].map((m) => m[1]);
+
+/** The RLS helpers the ratification excluded from the revoke set. */
+const RLS_HELPERS = [
+  "auth_tenant_id", "has_permission", "can_read_file", "portal_can_read_file",
+  "portal_can_read_shipment", "user_can_read_mailbox", "auth_portal_client_id",
+  "messaging_staff_can_access_conversation", "auth_portal_tenant_id",
+  "portal_can_read_invoice", "messaging_portal_can_access_conversation",
+  "is_assigned_driver", "can_read_task",
+];
+
+/** Signatures inside the lockdown loop only — excludes the RLS-helper assertion. */
+const lockdownBlock = sql.slice(sql.indexOf("$ops_sec_1$"), sql.indexOf("$assert_rls$"));
+const revoked = [...lockdownBlock.matchAll(/'(public\.[a-z_0-9]+)\(/g)].map((m) => m[1]);
+
+describe("OPS-SEC-1 migration exists and is the only new one", () => {
+  it("is present in the chain", () => {
+    expect(readdirSync(MIGRATIONS)).toContain(NAME);
+  });
+
+  it("asserts its OWN effect, not its position in the chain", () => {
+    // A marker that claims to be newest breaks the next migration to land.
+    expect(sql).not.toMatch(/newest migration|runs LAST|is the last migration/i);
+  });
+});
+
+describe("it is privilege-only", () => {
+  it("changes no function body", () => {
+    expect(sql).not.toMatch(/create\s+(or\s+replace\s+)?function/i);
+    expect(sql).not.toMatch(/drop\s+function/i);
+    expect(sql).not.toMatch(/alter\s+function/i);
+  });
+
+  it("changes no table, policy, trigger or index", () => {
+    for (const forbidden of [
+      /create\s+table/i, /alter\s+table/i, /drop\s+table/i,
+      /create\s+policy/i, /alter\s+policy/i, /drop\s+policy/i,
+      /create\s+trigger/i, /drop\s+trigger/i, /create\s+index/i,
+    ]) {
+      expect(sql, String(forbidden)).not.toMatch(forbidden);
+    }
+  });
+
+  it("writes no data", () => {
+    // A privilege migration that INSERTs is not a privilege migration.
+    expect(sql).not.toMatch(/\binsert\s+into\b/i);
+    expect(sql).not.toMatch(/\bupdate\s+public\./i);
+    expect(sql).not.toMatch(/\bdelete\s+from\b/i);
+  });
+});
+
+describe("the revoke set is exactly what was ratified", () => {
+  it("names all three grantees, because PUBLIC alone is not enough", () => {
+    // Hosted Supabase adds EXPLICIT anon/authenticated grants on top of the
+    // implicit PUBLIC one. Revoking PUBLIC alone leaves them in force.
+    expect(sql).toContain("revoke execute on function %s from public");
+    expect(sql).toContain("revoke execute on function %s from anon");
+    expect(sql).toContain("revoke execute on function %s from authenticated");
+    expect(sql).toContain("grant execute on function %s to service_role");
+  });
+
+  it("covers 43 distinct functions", () => {
+    expect(new Set(revoked).size).toBe(43);
+  });
+
+  it("never revokes a function used by an RLS policy", () => {
+    // Policies evaluate as the CALLING role, so revoking authenticated from
+    // these would break every policy that calls them rather than harden it.
+    for (const helper of RLS_HELPERS) {
+      expect(revoked, helper).not.toContain(`public.${helper}`);
+    }
+  });
+
+  it("never revokes get_user_permissions — the browser calls it", () => {
+    expect(revoked).not.toContain("public.get_user_permissions");
+  });
+
+  it("asserts the RLS helpers KEEP execute", () => {
+    const rlsBlock = sql.slice(sql.indexOf("$assert_rls$"));
+    for (const helper of RLS_HELPERS) expect(rlsBlock, helper).toContain(helper);
+    expect(rlsBlock).toMatch(/OVER-REVOKED/);
+  });
+});
+
+describe("the migration cannot pass vacuously", () => {
+  it("signatures are type-only, so to_regprocedure() can resolve them", () => {
+    // THE bug this suite exists for. `public.f(p_tenant uuid)` returns NULL from
+    // to_regprocedure, which would make every revoke a no-op and every
+    // assertion below it trivially true.
+    expect(signatures.length).toBeGreaterThan(40);
+    for (const s of signatures) {
+      const args = s.slice(s.indexOf("(") + 1, -1);
+      if (args === "") continue;
+      for (const arg of args.split(",")) {
+        expect(arg.trim(), `parameter name leaked into ${s}`).not.toMatch(/\s/);
+      }
+    }
+  });
+
+  it("ABORTS on an unresolvable signature instead of skipping it", () => {
+    expect(sql).toMatch(/signature did not resolve/);
+    expect(sql).not.toMatch(/not present, skipped/);
+  });
+
+  it("verifies PUBLIC via the ACL, which is the only thing that sees it", () => {
+    // has_function_privilege cannot be asked about PUBLIC — it is not a login
+    // role — so the ACL check is not redundant with assertion 2.
+    expect(sql).toContain("aclexplode");
+    expect(sql).toContain("a.grantee = 0");
+    expect(sql).toContain("p.proacl is null");
+  });
+
+  it("asserts effective privilege for all three roles", () => {
+    expect(sql).toContain("has_function_privilege('anon'");
+    expect(sql).toContain("has_function_privilege('authenticated'");
+    expect(sql).toContain("has_function_privilege('service_role'");
+    expect(sql).toMatch(/service_role LOST execute/);
+  });
+
+  it("counts what it processed, so a partial run fails", () => {
+    expect(sql).toMatch(/expected 43 functions, processed/);
+  });
+});
+
+describe("the behavioural probe is real and zero-effect", () => {
+  it("probes as both anon and authenticated", () => {
+    expect(sql).toContain("array['anon','authenticated']");
+    expect(sql).toContain("set local role %I");
+    expect(sql).toContain("reset role");
+  });
+
+  it("treats reaching the function body as FAILURE, not success", () => {
+    // insufficient_privilege means refused before the body ran. Anything else
+    // means it executed — which is a failed lockdown.
+    expect(sql).toContain("when insufficient_privilege then");
+    expect(sql).toMatch(/lockdown FAILED/);
+  });
+
+  it("passes an invalid decision so the call is inert even if privileged", () => {
+    // quotation_validate raises on an unknown decision at its first statement,
+    // before any SELECT, UPDATE or emit_business_event.
+    expect(sql).toContain("__ops_sec_1_probe__");
+  });
+
+  it("raises only AFTER resetting the role", () => {
+    const probe = sql.slice(sql.indexOf("$probe$"));
+    const reset = probe.indexOf("reset role");
+    const raise = probe.indexOf("lockdown FAILED");
+    expect(reset).toBeGreaterThan(0);
+    expect(raise).toBeGreaterThan(reset);
+  });
+});
