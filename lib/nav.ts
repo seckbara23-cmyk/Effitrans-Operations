@@ -185,7 +185,26 @@ export const BASE_SECTIONS: NavigationSection[] = [
       // mailbox and deciding who may use it are different jobs held by
       // different people. Gated on provisioning, which MAIL_ADMIN holds and
       // SYSTEM_ADMIN deliberately does not.
-      { key: "enterprise-mail-admin", label: "Enterprise Mail", href: "/users/enterprise-mail", iconKey: "bell", permission: "communication:mailbox:provision" },
+      {
+        key: "enterprise-mail-admin",
+        label: "Enterprise Mail",
+        href: "/users/enterprise-mail",
+        iconKey: "bell",
+        // EMP-IA-1 — this entry now leads a four-surface workspace: mailbox
+        // identities, who may use them, the state of inbound capture, and the
+        // technical dispatch journal. Those are governed by three different
+        // permissions, so gating the entry on provisioning alone would hide the
+        // whole area from an operator who holds `communication:manage` and can
+        // legitimately open two of its four pages.
+        //
+        // ANY of the three, because each page still enforces its own gate — the
+        // entry only decides whether the door is visible, never what is behind it.
+        permissionsAnyOf: [
+          "communication:mailbox:provision",
+          "communication:membership:manage",
+          "communication:manage",
+        ],
+      },
       // DBC-1 — Digital Brand Center (tenant module). Gated by admin:config:manage.
       { key: "brand-center", label: "Centre de marque", href: "/brand-center", iconKey: "building", permission: "admin:config:manage" },
       { key: "audit", label: "Journal d'audit", href: "/settings/audit", iconKey: "stamp", permission: "audit:read:all" },

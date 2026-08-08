@@ -2,34 +2,39 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui/page-header";
-import { StatCard } from "@/components/departments/stat-card";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
-import {
-  listMailboxHealth, getWebhookHealth, getMailVolume, getProviderPosture,
-  isTenantInboundEnabled, QUARANTINE_VISIBILITY_NOTICE,
-} from "@/lib/ec/mailboxes/service";
-import { MailboxToggle } from "@/components/ec/mailbox-toggle";
+import { listUserMemberships } from "@/lib/ec/mailboxes/membership";
 
 export const metadata: Metadata = { title: "Boîtes aux lettres" };
 export const dynamic = "force-dynamic";
 
 /**
- * EMP-1 — mailbox administration and the mail operations dashboard.
+ * Enterprise Mail → Boîtes aux lettres (EMPLOYEE).
  *
- * Gate: `communication:manage`. That is stricter than the RLS policy on these
- * tables (`communication:inbound:read`), which is the right direction: reading
- * the queue and administering the addresses it depends on are different jobs.
+ * EMP-IA-1. This route previously rendered the company-wide mailbox
+ * administration and capture-health dashboard, gated on `communication:manage`
+ * — an operator's surface sitting inside the workspace employees use to do
+ * email. That content moved to Administration → Enterprise Mail; the route
+ * itself is kept, because it is linked and bookmarked, and now answers the
+ * question an employee is actually asking here:
  *
- * The dashboard is operational visibility only — volume, queue, webhook
- * posture, mailbox state. No analytics, no trends, no reporting.
+ *   "Which mailboxes may I use, and what may I do in them?"
+ *
+ * It is a READING of this user's own memberships (EMP-4A's `ec_mailbox_member`)
+ * — no second mailbox model, no new service, no new permission. Membership is
+ * the same record the administration surface writes; only the question differs.
+ *
+ * Gate: `communication:read`. A user who may use mail may see which mailboxes
+ * they hold. It deliberately does NOT require `communication:manage`, which is
+ * administrative authority and would put this back where it started.
  */
-export default async function MailboxesPage() {
+export default async function MyMailboxesPage() {
   const header = (
     <PageHeader
       meta="Enterprise Mail"
       title="Boîtes aux lettres"
-      subtitle="Adresses de réception, état opérationnel et santé de la capture."
+      subtitle="Les boîtes auxquelles vous avez accès, et ce que vous pouvez y faire."
     />
   );
 
@@ -44,132 +49,81 @@ export default async function MailboxesPage() {
 
   const user = await requireUser();
   const permissions = await getEffectivePermissions(user.id);
-  if (!hasPermission(permissions, "communication:manage")) notFound();
+  if (!hasPermission(permissions, "communication:read")) notFound();
 
-  const [boxes, webhook, volume, rolloutEnabled] = await Promise.all([
-    listMailboxHealth(user.tenantId),
-    getWebhookHealth(user.tenantId),
-    getMailVolume(user.tenantId),
-    isTenantInboundEnabled(user.tenantId),
-  ]);
-  const posture = getProviderPosture(rolloutEnabled);
+  // Administrators reach the company-wide surface from here; everyone else is
+  // not shown a link they cannot open.
+  const canAdminister = hasPermission(permissions, "communication:mailbox:provision")
+    || hasPermission(permissions, "communication:membership:manage");
+  const canOperate = hasPermission(permissions, "communication:manage");
 
-  const totalVolume = volume.reduce((n, d) => n + d.count, 0);
-  const openTotal = boxes.reduce((n, b) => n + b.openCount, 0);
-  const inactive = boxes.filter((b) => !b.isActive).length;
+  const memberships = (await listUserMemberships(user.tenantId, user.id))
+    .filter((m) => !m.revokedAt);
 
-  // The two-layer rollout rule: an unset ENV silently disables the module for
-  // every tenant, so both halves are shown rather than one summary word.
-  const captureLive = posture.inboundEnabled && posture.tenantRolloutEnabled;
+  const cap = (on: boolean, label: string) => (
+    <span
+      key={label}
+      className={on
+        ? "rounded-full bg-teal-50 px-2 py-0.5 text-[11px] font-medium text-teal-700"
+        : "rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-400"}
+    >
+      {label}
+    </span>
+  );
 
   return (
     <div className="space-y-6">
       {header}
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label={`Messages reçus (${webhook.windowDays} j)`} value={String(totalVolume)} />
-        <StatCard label="En attente de tri" value={String(openTotal)} />
-        <StatCard label="Boîtes configurées" value={String(boxes.length)} />
-        <StatCard label="Boîtes inactives" value={String(inactive)} />
-      </div>
+      {memberships.length === 0 ? (
+        <div className="surface p-6 text-sm text-slate-600">
+          Aucune boîte ne vous est attribuée. L&apos;accès à une boîte partagée est accordé par
+          un administrateur — il n&apos;est pas demandé depuis cette page.
+        </div>
+      ) : (
+        <ul className="surface divide-y divide-slate-100">
+          {memberships.map((m) => (
+            <li key={m.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-navy-900">{m.address}</p>
+                <p className="text-[11px] text-slate-500">
+                  {m.labelFr}
+                  {m.isDefaultSender ? " · expéditeur par défaut" : ""}
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {cap(m.canRead, "Lecture")}
+                {cap(m.canSend, "Envoi")}
+                {cap(m.canManageMembers, "Gestion des membres")}
+                {canOperate ? (
+                  <Link
+                    href={`/mail/mailboxes/${m.mailboxId}`}
+                    className="ml-1 text-[11px] text-teal-700 hover:underline"
+                  >
+                    Détail
+                  </Link>
+                ) : null}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
 
-      {/* Capture posture. Both flags, because either one alone stops mail. */}
-      <section className="surface p-4" aria-labelledby="emp1-posture">
-        <h2 id="emp1-posture" className="mb-3 text-sm font-semibold text-navy-900">
-          État de la capture
-        </h2>
-        <dl className="grid gap-3 text-xs sm:grid-cols-2 lg:grid-cols-4">
-          <Fact label="Capture entrante" value={captureLive ? "Active" : "Inactive"} tone={captureLive ? "ok" : "warn"} />
-          <Fact
-            label="Indicateur plateforme"
-            value={posture.inboundEnabled ? "Activé" : "Désactivé"}
-            tone={posture.inboundEnabled ? "ok" : "warn"}
-          />
-          <Fact
-            label="Déploiement du tenant"
-            value={posture.tenantRolloutEnabled ? "Activé" : "Désactivé"}
-            tone={posture.tenantRolloutEnabled ? "ok" : "warn"}
-          />
-          <Fact
-            label="Secret webhook"
-            value={posture.webhookSecretConfigured ? "Configuré" : "Absent"}
-            tone={posture.webhookSecretConfigured ? "ok" : "warn"}
-          />
-          <Fact
-            label="Dernier webhook reçu"
-            value={webhook.lastReceivedAt ? new Date(webhook.lastReceivedAt).toLocaleString("fr-FR") : "Aucun"}
-            tone={webhook.lastReceivedAt ? "ok" : "muted"}
-          />
-          <Fact
-            label="Signatures invalides"
-            value={String(webhook.invalidSignatures)}
-            tone={webhook.invalidSignatures > 0 ? "warn" : "ok"}
-          />
-          <Fact label="Captures enregistrées" value={String(webhook.byOutcome.CAPTURED ?? 0)} tone="muted" />
-          <Fact label="Doublons ignorés" value={String(webhook.byOutcome.DUPLICATE ?? 0)} tone="muted" />
-        </dl>
-        <p className="mt-3 border-t border-slate-100 pt-3 text-[11px] text-slate-500">
-          {QUARANTINE_VISIBILITY_NOTICE}
+      {/* The honesty line. Sender identity is EMP-4B's subject, not this one. */}
+      <p className="surface p-4 text-[11px] text-slate-600">
+        La capacité « envoi » autorise à initier une correspondance rattachée à une boîte dans
+        Effitrans. Elle ne modifie pas l&apos;expéditeur vu par le destinataire : les messages
+        sortants utilisent l&apos;expéditeur configuré de façon centrale.
+      </p>
+
+      {canAdminister ? (
+        <p className="text-xs text-slate-500">
+          Administration des boîtes de l&apos;entreprise :{" "}
+          <Link href="/users/enterprise-mail" className="text-teal-700 hover:underline">
+            Administration → Enterprise Mail
+          </Link>
         </p>
-      </section>
-
-      <section className="surface overflow-hidden" aria-labelledby="emp1-boxes">
-        <h2 id="emp1-boxes" className="border-b border-slate-100 px-4 py-3 text-sm font-semibold text-navy-900">
-          Adresses de réception
-        </h2>
-        {boxes.length === 0 ? (
-          <p className="p-6 text-sm text-slate-500">
-            Aucune boîte configurée pour ce tenant. La création d&apos;une adresse est une opération
-            d&apos;exploitation : les adresses sont uniques sur toute la plateforme, et cet écran
-            administre celles qui existent sans pouvoir en créer.
-          </p>
-        ) : (
-          <ul className="divide-y divide-slate-100">
-            {boxes.map((b) => (
-              <li key={b.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-                <div className="min-w-0">
-                  <p className="flex flex-wrap items-center gap-2 text-sm font-medium text-navy-900">
-                    <Link href={`/mail/mailboxes/${b.id}`} className="hover:underline">
-                      {b.address}
-                    </Link>
-                    <span
-                      className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
-                        b.isActive ? "bg-teal-50 text-teal-700" : "bg-slate-100 text-slate-600"
-                      }`}
-                    >
-                      {b.isActive ? "Active" : "Inactive"}
-                    </span>
-                  </p>
-                  <p className="mt-0.5 text-[11px] text-slate-500">
-                    {b.labelFr} · {b.purpose} · {b.messageCount} message{b.messageCount > 1 ? "s" : ""}
-                    {b.openCount > 0 ? ` · ${b.openCount} en attente` : ""}
-                    {b.lastReceivedAt
-                      ? ` · dernier le ${new Date(b.lastReceivedAt).toLocaleDateString("fr-FR")}`
-                      : " · jamais utilisée"}
-                  </p>
-                </div>
-                <MailboxToggle mailboxId={b.id} address={b.address} isActive={b.isActive} />
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-    </div>
-  );
-}
-
-function Fact({ label, value, tone }: { label: string; value: string; tone: "ok" | "warn" | "muted" }) {
-  return (
-    <div>
-      <dt className="text-slate-500">{label}</dt>
-      {/* The tone repeats in the words themselves, so nothing depends on colour. */}
-      <dd
-        className={
-          tone === "warn" ? "font-medium text-amber-700" : tone === "ok" ? "font-medium text-teal-700" : "text-slate-700"
-        }
-      >
-        {value}
-      </dd>
+      ) : null}
     </div>
   );
 }

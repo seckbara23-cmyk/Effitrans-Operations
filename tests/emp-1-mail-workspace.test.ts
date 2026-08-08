@@ -293,7 +293,16 @@ describe("every mail surface is reachable", () => {
     const src = code(LAYOUT);
     expect(src).toContain('hasPermission(permissions, "communication:read")');
     expect(src).toContain('hasPermission(permissions, "communication:inbound:read")');
-    expect(src).toContain('hasPermission(permissions, "communication:manage")');
+    // `communication:manage` was asserted here until EMP-IA-1, because the
+    // mailbox tab in this workspace was the company-wide administration
+    // dashboard. That surface moved to Administration → Enterprise Mail, and
+    // the employee tab of the same name now reads the user's own memberships
+    // under `communication:read`. The intent of this test — a tab appears only
+    // behind the permission its page enforces — is unchanged; the
+    // administrative half of it now lives in the administrative layout.
+    expect(src).not.toContain('hasPermission(permissions, "communication:manage")');
+    expect(code("app/users/enterprise-mail/layout.tsx"))
+      .toContain('hasPermission(permissions, "communication:manage")');
   });
 });
 

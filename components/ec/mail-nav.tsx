@@ -24,12 +24,17 @@ export function MailNav({ tabs }: { tabs: MailTab[] }) {
   return (
     <nav aria-label="Sections du courrier" className="mb-4 flex flex-wrap gap-1.5 border-b border-slate-200 pb-2">
       {tabs.map((tab) => {
-        // The outbound log lives at the root, so it must match exactly or it
-        // would light up on every child route.
-        const active =
-          tab.href === "/mail"
-            ? pathname === tab.href
-            : pathname === tab.href || pathname.startsWith(`${tab.href}/`);
+        // A tab whose href is a PREFIX of another tab's href must not light up
+        // on that other tab's route. This used to be special-cased for "/mail";
+        // EMP-IA-1 added Administration → Enterprise Mail, where
+        // /users/enterprise-mail is the parent of /bulk, /capture and /journal,
+        // so the rule is now general: the longest matching tab wins.
+        const matches = (href: string) =>
+          pathname === href || pathname.startsWith(`${href}/`);
+        const best = tabs
+          .filter((t) => matches(t.href))
+          .reduce((a, b) => (b.href.length > a.href.length ? b : a), { href: "" } as MailTab);
+        const active = best.href === tab.href;
         return (
           <Link
             key={tab.href}

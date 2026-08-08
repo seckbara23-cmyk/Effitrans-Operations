@@ -53,19 +53,15 @@ export default async function EnterpriseMailAdminPage({
 
   return (
     <div className="animate-fade-in space-y-6">
-      <div className="flex flex-wrap gap-4">
-        <Link href="/users" className="text-sm text-teal-700 hover:underline">
-          ← Utilisateurs
-        </Link>
-        {canManageMembers ? (
-          <Link href="/users/enterprise-mail/bulk" className="text-sm text-teal-700 hover:underline">
-            Attribution en masse →
-          </Link>
-        ) : null}
-      </div>
+      {/* EMP-IA-1 — bulk assignment is now the « Utilisateurs et accès » tab in
+          this workspace's own nav, so the inline link that used to live here
+          would be a second route to the same page one line above it. */}
+      <Link href="/users" className="text-sm text-teal-700 hover:underline">
+        ← Utilisateurs
+      </Link>
 
       <PageHeader
-        meta="Administration · Utilisateurs"
+        meta="Administration · Enterprise Mail"
         title="Enterprise Mail"
         subtitle="Identités de boîtes, cycle de vie et appartenances."
       />

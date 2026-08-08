@@ -47,11 +47,17 @@ function toMessage(r: Row): CommunicationMessage {
   };
 }
 
-async function query(filters: { status?: string; fileId?: string; clientId?: string }): Promise<CommunicationMessage[]> {
+async function query(filters: {
+  status?: string;
+  notStatus?: string;
+  fileId?: string;
+  clientId?: string;
+}): Promise<CommunicationMessage[]> {
   const user = await assertPermission("communication:read");
   const supabase = getAdminSupabaseClient();
   let q = supabase.from("communication_message").select(COLS).eq("tenant_id", user.tenantId);
   if (filters.status) q = q.eq("status", filters.status);
+  if (filters.notStatus) q = q.neq("status", filters.notStatus);
   if (filters.fileId) q = q.eq("file_id", filters.fileId);
   if (filters.clientId) q = q.eq("client_id", filters.clientId);
   const { data, error } = await q.order("created_at", { ascending: false }).returns<Row[]>();
@@ -61,6 +67,24 @@ async function query(filters: { status?: string; fileId?: string; clientId?: str
 
 export function listCommunications(opts?: { status?: string }): Promise<CommunicationMessage[]> {
   return query({ status: opts?.status });
+}
+
+/**
+ * Everything that has LEFT the drafting stage — the Sent folder's contents.
+ *
+ * EMP-IA-1. « Envoyés » previously showed `status = SENT` only, so a message
+ * that was queued, failed or cancelled appeared in no employee-facing surface
+ * at all: the only place to see it was the outbound journal, which is now
+ * administrative. A Sent folder that hides your failed sends is not a Sent
+ * folder, so this returns every non-draft outbound message and the list renders
+ * each one's state.
+ *
+ * Same table, same tenant scope, same `communication:read` gate as the journal.
+ * The difference between the two surfaces is framing and audience, never a
+ * second store: the journal adds queue mechanics, retries and provider errors.
+ */
+export function listOutboundCommunications(): Promise<CommunicationMessage[]> {
+  return query({ notStatus: "DRAFT" });
 }
 
 /**
