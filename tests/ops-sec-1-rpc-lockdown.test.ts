@@ -22,6 +22,9 @@ const MIGRATIONS = join(root, "supabase/migrations");
 const NAME = "20260814000001_ops_sec_1_rpc_privilege_lockdown.sql";
 const sql = readFileSync(join(MIGRATIONS, NAME), "utf8");
 
+const ADDENDUM = "20260814000002_ops_sec_1_lockdown_addendum.sql";
+const add = readFileSync(join(MIGRATIONS, ADDENDUM), "utf8");
+
 /** Every quoted `public.fn(...)` signature the migration acts on. */
 const signatures = [...sql.matchAll(/'(public\.[a-z_0-9]+\([^']*\))'/g)].map((m) => m[1]);
 
@@ -173,5 +176,71 @@ describe("the behavioural probe is real and zero-effect", () => {
     const raise = probe.indexOf("lockdown FAILED");
     expect(reset).toBeGreaterThan(0);
     expect(raise).toBeGreaterThan(reset);
+  });
+});
+
+/**
+ * The addendum (migration 91).
+ *
+ * Migration 90 was already applied in production when the two extra functions
+ * were ratified, so they land forward-only here rather than by editing an
+ * applied migration. Production proved the need: after 90, an anonymous call to
+ * next_quotation_number ENTERED THE BODY and attempted an INSERT, stopped only
+ * by a foreign key on a nonexistent tenant.
+ */
+describe("OPS-SEC-1 addendum — the two ratified additions", () => {
+  it("does not edit the already-applied migration 90", () => {
+    // 90 must still describe exactly what production ran.
+    expect(sql).toContain("expected 43 functions, processed");
+    expect(sql).not.toContain("next_quotation_number");
+    expect(sql).not.toContain("supersede_document");
+  });
+
+  it("locks down exactly the two ratified functions", () => {
+    expect(add).toContain("'public.next_quotation_number(uuid)'");
+    expect(add).toContain("'public.supersede_document(uuid,uuid,uuid,uuid)'");
+    expect(add).toContain("expected 2 functions, processed");
+  });
+
+  it("is privilege-only, like 90", () => {
+    for (const forbidden of [
+      /create\s+(or\s+replace\s+)?function/i, /drop\s+function/i, /alter\s+function/i,
+      /create\s+table/i, /alter\s+table/i, /create\s+policy/i, /drop\s+policy/i,
+      /create\s+trigger/i, /create\s+index/i, /insert\s+into/i, /delete\s+from/i,
+    ]) {
+      expect(add, String(forbidden)).not.toMatch(forbidden);
+    }
+  });
+
+  it("names all three grantees and preserves service_role", () => {
+    expect(add).toContain("revoke execute on function %s from public");
+    expect(add).toContain("revoke execute on function %s from anon");
+    expect(add).toContain("revoke execute on function %s from authenticated");
+    expect(add).toContain("grant execute on function %s to service_role");
+  });
+
+  it("uses type-only signatures and aborts on an unresolved one", () => {
+    const sigs = [...add.matchAll(/'(public\.[a-z_0-9]+\([^']*\))'/g)].map((m) => m[1]);
+    for (const s of sigs) {
+      const args = s.slice(s.indexOf("(") + 1, -1);
+      if (args === "") continue;
+      for (const a of args.split(",")) expect(a.trim(), s).not.toMatch(/\s/);
+    }
+    expect(add).toMatch(/signature did not resolve/);
+  });
+
+  it("re-asserts that it narrowed nothing else", () => {
+    // quotation_send is the only caller of next_quotation_number.
+    expect(add).toContain("public.quotation_send(uuid,uuid,uuid)");
+    expect(add).toContain("public.get_user_permissions(uuid)");
+    expect(add).toMatch(/OVER-REVOKED/);
+  });
+
+  it("states why its probe is inert, since this one WRITES", () => {
+    // Unlike quotation_validate, next_quotation_number has no early guard, so
+    // inertness rests on the sentinel tenant AND on the migration aborting.
+    expect(add).toMatch(/rolled back with it|aborts the whole transaction/);
+    expect(add).toContain("when insufficient_privilege then");
+    expect(add).toMatch(/lockdown FAILED/);
   });
 });
