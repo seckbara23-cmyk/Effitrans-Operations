@@ -1,6 +1,24 @@
 # Release Status — standing table (updated at every release event)
 
-*Last updated: 2026-08-08 (**IA RENAME SHIPPED — CI GREEN run #376 on `d509b55`**: rls-tests
+*Last updated: 2026-08-08 (**EMP-4A DEPLOYED, NOT COMPLETE — CI GREEN run #387 on `3af379a`**:
+rls-tests 82/0/0, build 10/0/0. **MIGRATION 89 IS APPLIED IN PRODUCTION** (via SQL Editor) —
+⚠️ **the ledger still needs `supabase migration repair --status applied 20260813000001` and
+`...20260812000001`; NOT db push, do NOT re-run 89.** Read-only verification pack:
+`docs/ops/emp-4a-production-verification.md`. Mailbox membership is now an RLS GATE: effective
+access = tenant AND communication:inbound:read AND membership. Membership NARROWS — every
+rewritten policy keeps the correspondence term, so it can never be an alternative authorization
+path. **Live blast radius is ZERO because communication:inbound:read is granted to no role
+(RATIFY-EC1-1); grant memberships BEFORE that permission, not after.** `can_send_as` and
+`can_reply_as` are absent by ratification (EMP-4B owns sender identity). FOUR defects found and
+fixed: column shadowing (uuid=text at CREATE POLICY); a ratification violation I introduced
+(MAIL_ADMIN carrying inbound:read — caught by EC-1's perm_grants=0 pin); **illegal DELETE of
+append-only evidence in the migration probe, which CI structurally could not reproduce because
+its organization table is empty at migration time — redesigned to persist nothing via a
+rolled-back subtransaction**; and a privileged write inside a role switch. **⚠️ NOT COMPLETE:
+frozen steps 7 (onboarding surface on /users/[id]) and 9 (previewed bulk assignment) are PARTIAL
+— ergonomics only, everything shipped is gated, audited and CI-verified.** See
+`docs/mail/emp-4a-deployment-report.md`. **EMP-4B and EMP-5 have not begun.**
+Previously: (**IA RENAME SHIPPED — CI GREEN run #376 on `d509b55`**: rls-tests
 81/0/0, build 10/0/0. **The Communications workspace is now Enterprise Mail at `/mail`**
 (`/communications/*` → permanent 308 redirects in next.config.mjs; triage → inbox). No
 migration, no schema, no permission, no RLS change. "Communications" is now RESERVED for a
