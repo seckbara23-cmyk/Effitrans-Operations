@@ -132,6 +132,10 @@ export const AuditActions = {
   // guess whether the provider accepted, so the decision is a recorded act.
   COMMUNICATION_RECONCILED: "communication.reconciled",
   COMMUNICATION_DRAFTED: "communication.drafted",
+  // EMP-4 — an inbound attachment promoted into a dossier document. The
+  // TIMELINE entry for that document comes from the DOCUMENT_UPLOADED trigger;
+  // this records the ingestion decision, which is a different fact.
+  EC_ATTACHMENT_INGESTED: "ec.attachment.ingested",
   EC_INBOUND_REJECTED: "ec.inbound.rejected", // machine (signature refused)
   // Phase 1.12 — Customer Portal
   PORTAL_USER_INVITED: "portal.user.invited",

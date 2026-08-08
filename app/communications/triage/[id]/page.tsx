@@ -19,6 +19,9 @@ import { TriageStudio } from "@/components/ec/triage-studio";
 import { MessageEvidence } from "@/components/ec/message-evidence";
 import { getCaptureEvidence } from "@/lib/ec/mailboxes/service";
 import { readDecisionPlane } from "@/lib/unified-timeline/decision-plane";
+import { AttachmentIngest } from "@/components/ec/attachment-ingest";
+import { lookupIngestedDocument } from "@/lib/ec/ingest/actions";
+import { listDocumentTypes } from "@/lib/documents/service";
 
 export const metadata: Metadata = { title: "Message entrant — tri" };
 export const dynamic = "force-dynamic";
@@ -47,10 +50,26 @@ export default async function TriageDetailPage({ params }: { params: { id: strin
   // under the EC policies, the ledger under the subject-based
   // `business_event_select` policy added at UT-1. Neither needs a new gate, and
   // adding one would have been a second copy of a rule that already exists.
-  const [evidence, ledgerPage] = await Promise.all([
+  const [evidence, ledgerPage, documentTypes] = await Promise.all([
     getCaptureEvidence(user.tenantId, item.messageId),
     readDecisionPlane({ subject: { type: "ec_triage_item", id: params.id }, limit: 40 }),
+    // EMP-4 — the type must be chosen by a person; an email attachment has none.
+    hasPermission(permissions, "document:create") ? listDocumentTypes() : Promise.resolve([]),
   ]);
+
+  // EMP-4 — ingestion needs BOTH authorities, and the dossier list is already
+  // scoped to what this user may read (the picker above uses resolveFileScope).
+  const canIngest =
+    hasPermission(permissions, "document:create") && hasPermission(permissions, "communication:inbound:read");
+  const ingestState = canIngest
+    ? await Promise.all(
+        item.attachments.map(async (a) => ({
+          id: a.id,
+          ingested: await lookupIngestedDocument(a.id),
+        })),
+      )
+    : [];
+  const ingestedByAttachment = new Map(ingestState.map((s) => [s.id, s.ingested]));
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -96,6 +115,39 @@ export default async function TriageDetailPage({ params }: { params: { id: strin
         currentUserId={user.id}
         dossiers={dossiers}
       />
+
+      {/* EMP-4 — attachment ingestion. Rendered here rather than inside the
+          triage studio: EC-2 guarantees its own surfaces create nothing
+          automatically, and that guarantee is worth more than the convenience
+          of co-locating the control. */}
+      {canIngest && item.attachments.length > 0 ? (
+        <section className="surface p-4" aria-labelledby="emp4-ingest">
+          <h2 id="emp4-ingest" className="mb-3 text-sm font-semibold text-navy-900">
+            Pièces jointes — rattachement au dossier
+          </h2>
+          <ul className="space-y-3">
+            {item.attachments.map((a) => (
+              <li key={a.id} className="border-b border-slate-100 pb-3 last:border-0 last:pb-0">
+                <p className="text-sm text-navy-900">{a.filename}</p>
+                <AttachmentIngest
+                  attachmentId={a.id}
+                  filename={a.filename}
+                  stored={a.stored}
+                  alreadyIngested={ingestedByAttachment.get(a.id) ?? null}
+                  dossiers={dossiers}
+                  documentTypes={documentTypes.map((t) => ({ code: t.code, label: t.labelFr ?? t.code }))}
+                  canIngest={canIngest}
+                />
+              </li>
+            ))}
+          </ul>
+          <p className="mt-3 border-t border-slate-100 pt-3 text-[11px] text-slate-500">
+            Le rattachement copie la pièce jointe dans le dossier. Le message capturé reste
+            inchangé : il est la preuve de ce qui a été reçu. Aucune analyse automatique
+            n&apos;est déclenchée.
+          </p>
+        </section>
+      ) : null}
 
       <MessageEvidence
         evidence={evidence}

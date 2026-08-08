@@ -1217,6 +1217,7 @@ export type Database = {
           artifact_provenance: string | null;
           /** UAT-2B — set ONLY on OFFICIAL_INVOICE artifacts. */
           invoice_id: string | null;
+          source_attachment_id: string | null;
         };
         Insert: {
           id?: string;
@@ -1250,6 +1251,7 @@ export type Database = {
           artifact_code?: string | null;
           source_snapshot?: Json | null;
           artifact_provenance?: string | null;
+          source_attachment_id?: string | null;
         };
         Update: {
           id?: string;
@@ -1271,6 +1273,7 @@ export type Database = {
           deleted_at?: string | null;
           created_at?: string;
           updated_at?: string;
+          source_attachment_id?: string | null;
         };
         Relationships: [
           {
