@@ -7,7 +7,7 @@ import { getClient } from "@/lib/clients/service";
 import { ClientForm } from "@/components/clients/client-form";
 import { PortalUsersPanel } from "@/components/portal/portal-users-panel";
 import { listClientPortalUsers } from "@/lib/portal/admin";
-import { CommunicationsTimeline } from "@/components/communications/communications-timeline";
+import { MailTimeline } from "@/components/mail/mail-timeline";
 import { listCommunicationsForClient } from "@/lib/comms/service";
 import { t } from "@/lib/i18n";
 
@@ -62,7 +62,7 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
         canDelete={hasPermission(permissions, "client:delete")}
       />
       {canManagePortal && <PortalUsersPanel clientId={client.id} users={portalUsers} />}
-      {canReadComms && <CommunicationsTimeline messages={communications} />}
+      {canReadComms && <MailTimeline messages={communications} />}
     </div>
   );
 }

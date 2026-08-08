@@ -16,7 +16,7 @@ import {
   setDocumentShared,
 } from "@/lib/documents/actions";
 import { canReview } from "@/lib/documents/status";
-import { EmailTriggerButton } from "@/components/communications/email-trigger-button";
+import { EmailTriggerButton } from "@/components/mail/email-trigger-button";
 import type { ActionResult, DocumentItem } from "@/lib/documents/types";
 
 const STATUS_STYLE: Record<string, string> = {

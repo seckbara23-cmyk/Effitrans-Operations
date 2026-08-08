@@ -27,7 +27,7 @@ export function MailNav({ tabs }: { tabs: MailTab[] }) {
         // The outbound log lives at the root, so it must match exactly or it
         // would light up on every child route.
         const active =
-          tab.href === "/communications"
+          tab.href === "/mail"
             ? pathname === tab.href
             : pathname === tab.href || pathname.startsWith(`${tab.href}/`);
         return (

@@ -86,7 +86,7 @@ describe("the sidebar is exactly the five agreed sections", () => {
       full.sections.map((s) => [s.key, s.items.map((i) => i.label)]),
     );
     expect(byKey.pilotage).toEqual(["Mon Travail", "Centre d'opérations", "Parcours des dossiers"]);
-    expect(byKey.files).toEqual(["Dossiers", "Clients", "Communications"]);
+    expect(byKey.files).toEqual(["Dossiers", "Clients", "Enterprise Mail"]);
     // Sidebar Départements now mirror the canonical operational departments.
     // Documentation (Operations) and Douane/Transport (Transit) are workspaces
     // inside their hubs, not top-level entries.
@@ -103,7 +103,7 @@ describe("the sidebar is exactly the five agreed sections", () => {
       "/journeys": "../app/journeys/page.tsx",
       "/files": "../app/files/page.tsx",
       "/clients": "../app/clients/page.tsx",
-      "/communications": "../app/communications/page.tsx",
+      "/mail": "../app/mail/page.tsx",
       "/departments/operations": "../app/departments/operations/page.tsx",
       "/departments/transit": "../app/departments/transit/page.tsx",
       "/departments/finance": "../app/departments/finance/page.tsx",
@@ -328,7 +328,7 @@ describe("role examples (Deliverable 15)", () => {
     expect(h).toContain("/my-work");
     expect(h).toContain("/files");
     expect(h).toContain("/clients");
-    expect(h).toContain("/communications");
+    expect(h).toContain("/mail");
     expect(h).not.toContain("/departments/finance");
     expect(h).not.toContain("/departments/customs");
     // ...and the portfolio is one click away, in Mon Travail.

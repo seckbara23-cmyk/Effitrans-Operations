@@ -22,7 +22,7 @@ const code = (p: string) =>
 const RESOLVE = "lib/ec/threads/resolve.ts";
 const SERVICE = "lib/ec/threads/service.ts";
 const VIEW = "components/ec/thread-view.tsx";
-const PAGE = "app/communications/threads/[messageId]/page.tsx";
+const PAGE = "app/mail/threads/[messageId]/page.tsx";
 
 const msg = (p: Partial<ThreadInput> & { rowId: string }): ThreadInput => ({
   messageId: null, inReplyTo: null, referencesHeader: null, ...p,
@@ -393,7 +393,7 @@ describe("the view explains rather than asserts", () => {
   });
 
   it("routes by message row id, since a derived thread id is not a stable URL", () => {
-    expect(existsSync(join(root, "app/communications/threads/[messageId]/page.tsx"))).toBe(true);
-    expect(existsSync(join(root, "app/communications/threads/[threadId]"))).toBe(false);
+    expect(existsSync(join(root, "app/mail/threads/[messageId]/page.tsx"))).toBe(true);
+    expect(existsSync(join(root, "app/mail/threads/[threadId]"))).toBe(false);
   });
 });

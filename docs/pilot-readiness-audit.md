@@ -39,7 +39,7 @@ Only `/analytics` had a Suspense skeleton at audit time; no `loading.tsx` files 
 |---|---|---|---|
 | `/files/[id]` | Heavy fan-out (file + tasks + documents + customs + transport + finance + communications) with no loading indicator → blank screen on slow loads. | High | **Fixed** (added `loading.tsx`) |
 | `/finance/reconciliation` | Multi-table aggregation with no loading indicator. | High | **Fixed** (added `loading.tsx`) |
-| `/files`, `/clients`, `/communications` | List queries with no loading state; acceptable for small datasets, may feel janky at scale. | Low | Open (monitor) |
+| `/files`, `/clients`, `/mail` | List queries with no loading state; acceptable for small datasets, may feel janky at scale. | Low | Open (monitor) |
 
 ### C. Error States — IMPROVED
 
@@ -78,7 +78,7 @@ KPI grids (`grid-cols-2 … lg:grid-cols-4`) and the login page are properly res
 - **Server actions:** every mutating action in `lib/*/actions.ts` calls `assertPermission(...)` at the top. **No ungated mutations found.** ✅
 - **API:** `app/api/payments/webhook/[provider]/route.ts` authenticates by HMAC signature (machine-to-machine). ✅
 - **Auth gate:** `lib/supabase/middleware.ts` redirects **all** unauthenticated requests on non-public paths to the correct login (the comment in `middleware.ts` is stale — the behaviour is correct). So no page is anonymous-reachable. ✅ *(Initial finder flagged these as anonymous-access blockers; verified false against `lib/supabase/middleware.ts:64-68`.)*
-- **Real module pages:** `/clients`, `/files`, `/finance`, `/customs`, `/transport`, `/tasks`, `/communications`, `/analytics`, `/users`, `/settings/audit` all call `requireUser()` + a permission check. ✅
+- **Real module pages:** `/clients`, `/files`, `/finance`, `/customs`, `/transport`, `/tasks`, `/mail`, `/analytics`, `/users`, `/settings/audit` all call `requireUser()` + a permission check. ✅
 
 | Location | Finding | Severity |
 |---|---|---|

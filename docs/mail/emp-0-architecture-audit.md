@@ -125,7 +125,7 @@ happens to record the business fact.
 | Ledger vocabulary — inbound | **Yes** (8 events, 1 trigger + 6 rpc + registry) | as-is | — |
 | Ledger vocabulary — outbound | **No** | registry pattern | `CORRESPONDENCE_SENT` (+ possibly `REPLIED`) — registry rows + emitters |
 | Mailbox administration UI | **No** (rows operator-seeded) | `communication:manage` gate, existing admin UI idioms | mailbox CRUD (retire-not-delete) |
-| Mail workspace (read, search, thread view) | **Partial** (`/communications` triage only) | `/communications` shell, triage service | the workspace itself |
+| Mail workspace (read, search, thread view) | **Partial** (`/mail` triage only) | `/mail` shell, triage service | the workspace itself |
 | Thread correlation | **No** (headers captured, unused — the reserved "EC-4") | `in_reply_to`/`references_header`, thread index | correlation logic; possibly additive thread key |
 | Reply / free compose | **No** (`template_key` NOT NULL) | provider seam, `communication_message` | compose path + authority model (ratification) |
 | Outbound↔inbound thread unification | **No** | both tables + correlation | read-model join (no sync engine) |
@@ -160,7 +160,7 @@ happens to record the business fact.
 
 | Phase | Purpose | Dependencies | Migration impact | Principal risk |
 |---|---|---|---|---|
-| **EMP-1** | **Mail workspace consolidation** — mailbox administration (CRUD, retire-not-delete), correspondence list/search/detail over existing `ec_*` + triage, `/communications` becomes the mail workspace; fix the stale registry comment | RATIFY-EMP-1/2 | **likely none** (read + existing tables; mailbox INSERT policy may need adding — STOP rule applies if so) | scope creep into compose |
+| **EMP-1** | **Mail workspace consolidation** — mailbox administration (CRUD, retire-not-delete), correspondence list/search/detail over existing `ec_*` + triage, `/mail` becomes the mail workspace; fix the stale registry comment | RATIFY-EMP-1/2 | **likely none** (read + existing tables; mailbox INSERT policy may need adding — STOP rule applies if so) | scope creep into compose |
 | **EMP-2** | **Thread correlation** (the reserved "EC-4") — correlate on `in_reply_to`/`references_header`, thread read model | EMP-1, RATIFY-EMP-5 | additive (thread key or correlation table) | retro-correlation must never rewrite envelopes |
 | **EMP-3** | **Outbound: reply & compose** — reply from a thread via the existing provider seam; `CORRESPONDENCE_SENT` registry row + RPC emitter; link outbound rows to threads | EMP-2, RATIFY-EMP-6/7, provider live | additive (outbound linkage + emitter migration) | double-emission trap; authority model |
 | **EMP-4** | **Attachment → document ingestion** — explicit staff action creates `document` rows through the existing pipeline (`DOCUMENT_UPLOADED` emits by trigger, free) | EMP-1, RATIFY-EMP-8 | none expected | duplicate document identity (hash reuse exists) |

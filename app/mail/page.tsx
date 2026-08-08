@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { listCommunications } from "@/lib/comms/service";
-import { CommunicationRow } from "@/components/communications/communication-row";
+import { CommunicationRow } from "@/components/mail/communication-row";
 import { t } from "@/lib/i18n";
 
 export const metadata: Metadata = { title: t.communications.title };
@@ -40,7 +40,7 @@ export default async function CommunicationsPage({ searchParams }: { searchParam
     return (
       <Link
         key={label}
-        href={value ? `/communications?status=${value}` : "/communications"}
+        href={value ? `/mail?status=${value}` : "/mail"}
         className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${active ? "border-teal-500 bg-teal-50 text-teal-700" : "border-slate-200 bg-white text-slate-600 hover:border-teal-300"}`}
       >
         {label}

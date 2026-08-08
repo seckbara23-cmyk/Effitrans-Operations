@@ -50,12 +50,12 @@ export default async function ThreadPage({ params }: { params: { messageId: stri
 
   return (
     <div className="animate-fade-in space-y-6">
-      <Link href="/communications/triage" className="inline-block text-sm text-teal-700 hover:underline">
+      <Link href="/mail/inbox" className="inline-block text-sm text-teal-700 hover:underline">
         ← Courrier entrant
       </Link>
 
       <PageHeader
-        meta="Communications · Conversation"
+        meta="Enterprise Mail · Conversation"
         title={thread.messages[0]?.subject ?? "(sans objet)"}
         subtitle={`${thread.messages.length} message${thread.messages.length > 1 ? "s" : ""} corrélé${
           thread.messages.length > 1 ? "s" : ""

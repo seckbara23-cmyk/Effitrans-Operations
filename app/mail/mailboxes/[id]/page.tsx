@@ -37,12 +37,12 @@ export default async function MailboxDetailPage({ params }: { params: { id: stri
 
   return (
     <div className="space-y-6">
-      <Link href="/communications/mailboxes" className="text-sm text-teal-700 hover:underline">
+      <Link href="/mail/mailboxes" className="text-sm text-teal-700 hover:underline">
         ← Boîtes aux lettres
       </Link>
 
       <PageHeader
-        meta="Communications"
+        meta="Enterprise Mail"
         title={box.address}
         subtitle={`${box.labelFr} · ${box.purpose}`}
       />
@@ -89,7 +89,7 @@ export default async function MailboxDetailPage({ params }: { params: { id: stri
           <ul className="divide-y divide-slate-100">
             {recent.map((m) => (
               <li key={m.id} className="px-4 py-3">
-                <Link href={`/communications/triage/${m.id}`} className="text-sm text-navy-900 hover:underline">
+                <Link href={`/mail/inbox/${m.id}`} className="text-sm text-navy-900 hover:underline">
                   {m.subject ?? "(sans objet)"}
                 </Link>
                 <p className="mt-0.5 text-[11px] text-slate-500">

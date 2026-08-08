@@ -10,7 +10,7 @@ No timeline · No attachment system · No outbound · No permission created**
 
 | Question the brief required | Finding |
 |---|---|
-| Does a duplicate inbox already exist? | **Yes, in substance.** EC-2's triage queue (`/communications/triage`) already had status filters, `mine`/`unassigned` filters, mailbox/sender/date search, a detail view and queue counts. EMP-1's "views" are that queue renamed, not a second one. |
+| Does a duplicate inbox already exist? | **Yes, in substance.** EC-2's triage queue (`/mail/inbox`) already had status filters, `mine`/`unassigned` filters, mailbox/sender/date search, a detail view and queue counts. EMP-1's "views" are that queue renamed, not a second one. |
 | Duplicate mailbox UI? | **No** — `ec_mailbox` had no surface at all; rows were operator-seeded. This was the real gap. |
 | Duplicate admin tooling? | **No.** `/platform/operations` is a platform-wide console and covers no mail. |
 | Existing operational dashboard? | **Partly** — `triageCounts` fed four stat cards. Reused as-is; mailbox/webhook posture was missing and is new. |
@@ -69,14 +69,14 @@ engineer to "fix" the blank view by weakening the constraint.
 ## 4. Files
 
 **New:** `lib/ec/mailboxes/service.ts` (reads + capture evidence) ·
-`lib/ec/mailboxes/actions.ts` (the one write) · `app/communications/layout.tsx` ·
-`app/communications/mailboxes/page.tsx` · `app/communications/mailboxes/[id]/page.tsx` ·
+`lib/ec/mailboxes/actions.ts` (the one write) · `app/mail/layout.tsx` ·
+`app/mail/mailboxes/page.tsx` · `app/mail/mailboxes/[id]/page.tsx` ·
 `components/ec/mail-nav.tsx` · `components/ec/mailbox-toggle.tsx` ·
 `components/ec/message-evidence.tsx` · `tests/emp-1-mail-workspace.test.ts`.
 
 **Modified:** `lib/ec/triage/service.ts` (additive filters + view vocabulary + one shared
-search sanitizer replacing an inline one) · `app/communications/triage/page.tsx` (views,
-subject/recipient/dossier search) · `app/communications/triage/[id]/page.tsx` (evidence
+search sanitizer replacing an inline one) · `app/mail/inbox/page.tsx` (views,
+subject/recipient/dossier search) · `app/mail/inbox/[id]/page.tsx` (evidence
 panel) · `lib/audit/events.ts` (two action codes).
 
 ## 5. Why each reuse decision
@@ -115,7 +115,7 @@ reachability via the shared layout · permission-gated tabs · every capture out
 no emoji · deactivation warns it quarantines future mail.
 
 **Local: 208 files / 5200 tests green · tsc 0 · build compiled** (all five
-`/communications/*` routes present).
+`/mail/*` routes present).
 
 ## 8. Security review
 

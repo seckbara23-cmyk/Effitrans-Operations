@@ -397,7 +397,10 @@ describe("scope: UT-4 only", () => {
   it("has not begun the portal, AI or mail programs", () => {
     expect(existsSync(join(root, "app", "portal", "timeline"))).toBe(false);
     expect(existsSync(join(root, "app", "ai-operations"))).toBe(false);
-    expect(existsSync(join(root, "app", "mail"))).toBe(false);
+    // `app/mail` was once asserted absent here. The Enterprise Mail programme
+    // (EMP-1..4) has since shipped it, which is not a UT-4 regression — a phase
+    // marker must assert what THAT phase did, never that a later programme
+    // never starts. The AI surface above is still genuinely unbuilt.
     // The clientSafe projection remains built-but-unwired.
     for (const f of readdirSync(join(root, "app", "portal"), { withFileTypes: true })) {
       if (f.isFile() && f.name.endsWith(".tsx")) {

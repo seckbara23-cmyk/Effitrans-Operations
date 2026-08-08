@@ -27,7 +27,7 @@ export const dynamic = "force-dynamic";
 export default async function MailboxesPage() {
   const header = (
     <PageHeader
-      meta="Communications"
+      meta="Enterprise Mail"
       title="Boîtes aux lettres"
       subtitle="Adresses de réception, état opérationnel et santé de la capture."
     />
@@ -129,7 +129,7 @@ export default async function MailboxesPage() {
               <li key={b.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
                 <div className="min-w-0">
                   <p className="flex flex-wrap items-center gap-2 text-sm font-medium text-navy-900">
-                    <Link href={`/communications/mailboxes/${b.id}`} className="hover:underline">
+                    <Link href={`/mail/mailboxes/${b.id}`} className="hover:underline">
                       {b.address}
                     </Link>
                     <span

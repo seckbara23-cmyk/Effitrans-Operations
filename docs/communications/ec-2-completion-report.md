@@ -126,7 +126,7 @@ sender, body, filename or comment.
 ## 9. Files created and modified
 
 **Created:** migration 81 · `lib/ec/triage/{model,service,actions}.ts` ·
-`app/communications/triage/page.tsx` · `app/communications/triage/[id]/page.tsx` ·
+`app/mail/inbox/page.tsx` · `app/mail/inbox/[id]/page.tsx` ·
 `components/ec/triage-studio.tsx` · `supabase/tests/rls_ec_triage_test.sql` ·
 `tests/ec-2-triage.test.ts` · this report.
 **Modified:** `lib/workflow/events/types.ts` (+domain, +7 types) ·
@@ -235,7 +235,7 @@ permission and no quotation workflow.
   attachment promotion into `public.document` remains a separate human act.
 * **Production is DEPLOYED and DARK:** migrations 80–81 applied (ledger 81/81), both
   permissions granted to nobody, inbound flag unset, tenant rollout table empty,
-  `ec_mailbox` empty, `/communications/triage` 404s for every user. Applying these
+  `ec_mailbox` empty, `/mail/inbox` 404s for every user. Applying these
   migrations changed nothing observable — the intent.
 * **No sequencing deviation:** unlike DEV-HR6-01, application followed a green run with a
   per-step zero-skipped check.

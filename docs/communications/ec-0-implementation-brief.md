@@ -60,7 +60,7 @@ Nothing else.
   DEC-EC-D3 (the consequential-authority precedent). Reads stay `communication:read`.
 * Sender→client matching by exact email against client contacts — assistive display
   only, never auto-attach.
-* Workspace at `/communications` (extends the existing log page — one canonical route,
+* Workspace at `/mail` (extends the existing log page — one canonical route,
   the HR-5A rule). Attention items live-computed (untriaged count, oldest age) — no
   scheduler.
 * Ledger: `business_event` emissions (`ec.message_received` at EC-1,

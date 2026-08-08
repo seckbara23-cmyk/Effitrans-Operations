@@ -181,7 +181,7 @@ export function linkFor(entry: UnifiedEntry, permissions: readonly string[]): Ti
         : null;
     case "communication":
       return has("communication:read")
-        ? { href: "/communications", label: "Ouvrir les communications" }
+        ? { href: "/mail", label: "Ouvrir les communications" }
         : null;
     case "commercial": {
       const q = entry.summary.quotation_id;

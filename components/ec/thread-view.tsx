@@ -127,7 +127,7 @@ export function ThreadView({
 
               <div className="mt-3 flex flex-wrap gap-3 text-xs">
                 {t ? (
-                  <Link href={`/communications/triage/${t.triageId}`} className="text-teal-700 hover:underline">
+                  <Link href={`/mail/inbox/${t.triageId}`} className="text-teal-700 hover:underline">
                     Ouvrir le tri
                   </Link>
                 ) : null}

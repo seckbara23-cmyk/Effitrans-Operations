@@ -40,7 +40,7 @@ without outcome columns for exactly this phase. EC-2 adds, additively and nullab
   transactional RPCs where a state change and an event must commit together.
 * Signed-URL access to raw evidence and attachments — reusing the private-bucket idiom;
   **short TTL, server-minted, never a public URL**.
-* Route: extends `/communications` (one canonical route — the HR-5A rule), a triage tab
+* Route: extends `/mail` (one canonical route — the HR-5A rule), a triage tab
   gated on `communication:inbound:read`; actions gated on `communication:triage`;
   reassignment additionally on OPS_SUPERVISOR membership.
 * Attention items computed live (untriaged count, oldest age) — **no scheduler**, the

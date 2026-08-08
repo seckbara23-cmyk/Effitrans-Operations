@@ -56,7 +56,7 @@ suffices.
 | Audit log | append-only, no purge (DB-enforced) | retention period + legal basis |
 | Portal/staff accounts | disabled status (no erasure flow) | right-to-erasure procedure for identity data vs. retained business records |
 | Tracking events | retained | coordinate retention period |
-| Notifications/communications | retained | " |
+| Notifications/mail | retained | " |
 | Backups | per Supabase plan (gate C2 documents) | backup retention alignment |
 
 There is currently **no automated deletion/anonymization job** — a policy decision then an

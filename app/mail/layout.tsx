@@ -3,10 +3,10 @@ import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { MailNav, type MailTab } from "@/components/ec/mail-nav";
 
 /**
- * EMP-1 — the mail workspace shell.
+ * Enterprise Mail — the workspace shell.
  *
- * Before this phase, `/communications` (the outbound log) and
- * `/communications/triage` (the inbound queue) were two unlinked pages that
+ * Before this phase, `/mail` (the outbound log) and
+ * `/mail/inbox` (the inbound queue) were two unlinked pages that
  * happened to share a URL prefix. This layout makes them one workspace and adds
  * mailbox administration beside them.
  *
@@ -23,19 +23,23 @@ export default async function CommunicationsLayout({ children }: { children: Rea
     const user = await requireUser();
     const permissions = await getEffectivePermissions(user.id);
 
-    if (hasPermission(permissions, "communication:read")) {
-      tabs.push({ href: "/communications", label: "Envois" });
-    }
+    // Ordered as the workspace reads: what arrived, what we wrote, where it
+    // comes from. Archive and Attachments are named in the target IA but have
+    // no surface yet — an empty tab promising a page that does not exist is
+    // worse than its absence, so they are added when they are built.
     if (hasPermission(permissions, "communication:inbound:read")) {
-      tabs.push({ href: "/communications/triage", label: "Courrier entrant" });
+      tabs.push({ href: "/mail/inbox", label: "Boîte de réception" });
+    }
+    if (hasPermission(permissions, "communication:read")) {
+      // EMP-3 — drafting authority, not sending: a user who may compose but
+      // not send still needs the surface, and Send is gated separately.
+      tabs.push({ href: "/mail/compose", label: "Nouveau message" });
+      tabs.push({ href: "/mail/drafts", label: "Brouillons" });
+      tabs.push({ href: "/mail/sent", label: "Envoyés" });
+      tabs.push({ href: "/mail", label: "Journal des envois" });
     }
     if (hasPermission(permissions, "communication:manage")) {
-      tabs.push({ href: "/communications/mailboxes", label: "Boîtes aux lettres" });
-    }
-    // EMP-3 — drafting authority, not sending: a user who may compose but not
-    // send still needs the surface, and the Send button is gated separately.
-    if (hasPermission(permissions, "communication:read")) {
-      tabs.push({ href: "/communications/compose", label: "Nouveau message" });
+      tabs.push({ href: "/mail/mailboxes", label: "Boîtes aux lettres" });
     }
   }
 

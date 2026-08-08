@@ -44,7 +44,7 @@ const mapRpc = (e: { code?: string; message?: string } | null) => ({
   detail: e?.message,
 });
 
-const PATH = "/communications/triage";
+const PATH = "/mail/inbox";
 const SUPERVISORY_ROLE = "OPS_SUPERVISOR";
 
 /** Claim an unassigned item, or assign it to oneself. */

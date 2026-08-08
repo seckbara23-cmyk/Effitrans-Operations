@@ -39,7 +39,7 @@ const WORKSPACES: HubTile[] = [
   { label: "Clients", href: "/clients", permission: "client:read", desc: "Sociétés clientes, contacts et historique des opérations." },
   { label: "Documentation", href: "/departments/documentation", permission: "document:read", desc: "Pièces des dossiers : commerciales, transport, douane, certificats." },
   { label: "Tâches & affectations", href: "/tasks", permission: "task:read", desc: "Actions à mener, échéances et dossiers bloqués." },
-  { label: "Communications", href: "/communications", permission: "communication:read", desc: "Communications opérationnelles avec les clients." },
+  { label: "Enterprise Mail", href: "/mail", permission: "communication:read", desc: "Courrier entrant et sortant avec les clients." },
   // EC-3C — the Commercial workspace. `permissionsAnyOf` because the agents
   // (quotation:create) and the validating supervisors (quotation:validate) hold
   // DIFFERENT permissions and both must reach it; DEC-C32 refuses to give the

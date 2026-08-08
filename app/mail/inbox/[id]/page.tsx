@@ -74,17 +74,17 @@ export default async function TriageDetailPage({ params }: { params: { id: strin
   return (
     <div className="animate-fade-in space-y-6">
       <PageHeader
-        meta="Communications · Tri"
+        meta="Enterprise Mail · Tri"
         title={item.subject ?? "(sans objet)"}
         subtitle={`Reçu le ${item.receivedAt.slice(0, 16).replace("T", " ")} — de ${item.fromName ?? item.fromAddress}`}
       />
       <div className="flex flex-wrap gap-4">
-        <Link href="/communications/triage" className="text-sm text-teal-700 hover:underline">
+        <Link href="/mail/inbox" className="text-sm text-teal-700 hover:underline">
           ← File de tri
         </Link>
         {/* EMP-2 — the conversation this message belongs to. Keyed on the message
             row, because the thread identity is derived rather than stored. */}
-        <Link href={`/communications/threads/${item.messageId}`} className="text-sm text-teal-700 hover:underline">
+        <Link href={`/mail/threads/${item.messageId}`} className="text-sm text-teal-700 hover:underline">
           Voir la conversation →
         </Link>
         {/* EMP-3 — reply. The composer derives recipients and RFC headers from
@@ -93,13 +93,13 @@ export default async function TriageDetailPage({ params }: { params: { id: strin
         {hasPermission(permissions, "communication:read") ? (
           <>
             <Link
-              href={`/communications/compose?reply=${item.messageId}`}
+              href={`/mail/compose?reply=${item.messageId}`}
               className="text-sm text-teal-700 hover:underline"
             >
               Répondre
             </Link>
             <Link
-              href={`/communications/compose?reply=${item.messageId}&all=1`}
+              href={`/mail/compose?reply=${item.messageId}&all=1`}
               className="text-sm text-teal-700 hover:underline"
             >
               Répondre à tous

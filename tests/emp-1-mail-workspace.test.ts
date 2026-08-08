@@ -23,11 +23,11 @@ const code = (p: string) =>
 const SERVICE = "lib/ec/mailboxes/service.ts";
 const ACTIONS = "lib/ec/mailboxes/actions.ts";
 const TRIAGE_SERVICE = "lib/ec/triage/service.ts";
-const LIST_PAGE = "app/communications/triage/page.tsx";
-const DETAIL_PAGE = "app/communications/triage/[id]/page.tsx";
-const BOXES_PAGE = "app/communications/mailboxes/page.tsx";
-const BOX_DETAIL = "app/communications/mailboxes/[id]/page.tsx";
-const LAYOUT = "app/communications/layout.tsx";
+const LIST_PAGE = "app/mail/inbox/page.tsx";
+const DETAIL_PAGE = "app/mail/inbox/[id]/page.tsx";
+const BOXES_PAGE = "app/mail/mailboxes/page.tsx";
+const BOX_DETAIL = "app/mail/mailboxes/[id]/page.tsx";
+const LAYOUT = "app/mail/layout.tsx";
 
 // ---------------------------------------------------------------------------
 // 1. No duplicate architecture — the phase's central constraint
@@ -46,11 +46,13 @@ describe("EMP-1 creates no parallel mail system", () => {
   });
 
   it("does not create a second inbox route", () => {
-    for (const p of [
-      "app/mail", "app/communications/inbox", "app/communications/mail",
-      "app/communications/messages", "app/inbox",
-    ]) {
-      expect(existsSync(join(root, p))).toBe(false);
+    // The queue lives at exactly one place. These are the plausible second
+    // inboxes — a competing top-level route, or a duplicate inside the
+    // workspace. `app/mail/inbox` is the canonical one and must EXIST.
+    expect(existsSync(join(root, "app/mail/inbox/page.tsx"))).toBe(true);
+    for (const p of ["app/inbox", "app/triage", "app/mail/triage",
+                     "app/mail/messages", "app/communications"]) {
+      expect(existsSync(join(root, p)), p).toBe(false);
     }
   });
 
@@ -282,7 +284,7 @@ describe("every mail surface is reachable", () => {
     expect(existsSync(join(root, LAYOUT))).toBe(true);
     const src = code(LAYOUT);
     expect(src).toContain("MailNav");
-    for (const href of ["/communications", "/communications/triage", "/communications/mailboxes"]) {
+    for (const href of ["/mail", "/mail/inbox", "/mail/mailboxes"]) {
       expect(src).toContain(href);
     }
   });

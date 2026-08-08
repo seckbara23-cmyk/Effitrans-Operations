@@ -13,7 +13,7 @@ import { commandCenterAdapter } from "./command-center";
 import { financeRequestsAdapter } from "./finance-requests";
 import { reconciliationAdapter } from "./reconciliation";
 import { receivablesAdapter } from "./receivables";
-import { communicationsAdapter } from "./communications";
+import { communicationsAdapter } from "./mail";
 import { messagingAdapter } from "./messaging";
 
 export const ALERT_ADAPTERS: readonly OperationalAlertAdapter[] = [

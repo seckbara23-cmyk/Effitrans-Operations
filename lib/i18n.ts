@@ -32,7 +32,7 @@ export const t = {
     finance: "Finance",
     reconciliation: "Rapprochement",
     analytics: "Analytique",
-    communications: "Communications",
+    communications: "Enterprise Mail",
     reports: "Rapports",
     executive: "Tableau exécutif",
     users: "Utilisateurs",
@@ -1421,7 +1421,7 @@ export const t = {
     },
   },
   communications: {
-    title: "Communications",
+    title: "Enterprise Mail",
     subtitle: "Journal des emails sortants (file d'attente, envoi, échecs).",
     forbidden: "Vous n'avez pas l'autorisation de consulter les communications.",
     notConfigured: "Le module communications nécessite la configuration Supabase.",

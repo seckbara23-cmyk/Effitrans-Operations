@@ -39,7 +39,7 @@ Every producing source, with shape/owner/gate/destination/classification (paths 
 | 9 | Overdue receivables (`creances_retard` KPI path — `getFinanceQueue` + `overdueRowsAtTenantDay`, 10.0D-3) | per-currency amounts + count | n/a | tenant; `finance:read` | `/collections` | KPI strip | **Authoritative as-is** (KPI) — alert = threshold presence, same source |
 | 10 | `process_blocker` rows (`structures-actions.ts:314` — 10 categories, severity column, OPEN/ACKNOWLEDGED) | per-file rows | own severity | tenant; engine flags; `process:blocker:manage` writes | fileId | per-file panels only — **no tenant-wide reader** (verified: all `.from("process_blocker")` sites are per-file/action) | **Reusable through adapter — requires new bounded reader**; flag-gated |
 | 11 | Document expiry (`lib/documents/expiry.ts:25` — `classifyExpiry` → expired/expiring/valid/none) | per-document state | state enum | per-file reads; `document:read` | `/files/{id}/documents` | file document lists | **Reusable through adapter — requires new bounded reader** (no tenant-wide expired/expiring query exists — verified) |
-| 12 | Failed communications (`lib/comms/service.ts:62` — `listCommunications({status:"FAILED"})`; rows carry status/retry_count/last_error/sent_at) | full rows | status | tenant; `communication:read` | `/communications` | comms hub | **Reusable through adapter** (a head-count/bounded variant is the perf-clean addition; `last_error` must be redacted, §24) |
+| 12 | Failed communications (`lib/comms/service.ts:62` — `listCommunications({status:"FAILED"})`; rows carry status/retry_count/last_error/sent_at) | full rows | status | tenant; `communication:read` | `/mail` | comms hub | **Reusable through adapter** (a head-count/bounded variant is the perf-clean addition; `last_error` must be redacted, §24) |
 | 13 | Messaging summary (`getMessagingDashboardSummary` — waitingEffitrans/urgentOpen) | counts | priority normal/urgent | tenant; `messaging:manage` | `/messages` | cockpit messaging card | **Reusable through adapter** (tenant-operational: urgent + waiting-us). `unreadStaffMessagingCount` = **personal — not suitable** for the tenant alert list (§12) |
 | 14 | Deposit custody blockers (`lib/deposit/service.ts:79` — `blocker`, `ageHours`, `proofStatus`) | derived per row | none | tenant; `admin_service:manage`/`collections:manage` + flag | `/deposits` | deposits/courier pages | Reusable through adapter — **10.0E-2-later** (narrow audience) |
 | 15 | KPI data-quality (`OperationsKpi.status partial/unavailable`, 10.0D) | typed statuses | n/a | per KPI gates | n/a | KPI strip | **Not suitable as operational alerts** — technical diagnostics; belongs in Administration surfaces (§4 platform/system) |
@@ -135,7 +135,7 @@ Today nothing stores alert state — all attention surfaces are computed per req
 
 ## 13–15. Destinations, ordering, limits
 
-**Destinations** (D-0 §16 route-filter audit reused): exact — `/files?status=…` (limited), `/collections` (rich), `/customs/intelligence?status=…`, `/transport?status=…`, `/finance?status=…`; general — `/finance/reconciliation`, `/messages`, `/communications`, `/deposits`, `/files/{id}` (per-dossier alerts — the best destination of all). No credible destination ⇒ **no href** (precedent: `dossiers_intervention`). No fabricated query params.
+**Destinations** (D-0 §16 route-filter audit reused): exact — `/files?status=…` (limited), `/collections` (rich), `/customs/intelligence?status=…`, `/transport?status=…`, `/finance?status=…`; general — `/finance/reconciliation`, `/messages`, `/mail`, `/deposits`, `/files/{id}` (per-dossier alerts — the best destination of all). No credible destination ⇒ **no href** (precedent: `dossiers_intervention`). No fabricated query params.
 
 **Ordering (deterministic, explainable):** severity rank (critical→low) → oldest `occurredAt` first within a level (existing engine rule) → domain stability (fixed domain order as final tie-break: operations, customs, transport, shipping, air, finance, documents, messaging). No opaque scoring — the risk engine already did the scoring where scoring belongs.
 
@@ -175,7 +175,7 @@ Performance: E-2 adds **zero heavy reads** — risk findings and Command Center 
 3. Finance requests — pending review / approved-not-disbursed / evidence owed (counts + top items; href `/finance`)
 4. Reconciliation — pending / missing-reference / failed intents (count-style; href `/finance/reconciliation`)
 5. Overdue receivables — presence alert from the `creances_retard` source (href `/collections`)
-6. Failed communications — bounded count/top-N (href `/communications`; `last_error` NEVER copied into the alert)
+6. Failed communications — bounded count/top-N (href `/mail`; `last_error` NEVER copied into the alert)
 7. Messaging — urgent + waiting-us (count-style; href `/messages`)
 
 **10.0E-2-later (need a new bounded reader):** document expired/expiring; missing-required documents; `process_blocker` aggregate (flag-gated); unassigned active dossiers; delayed pickups; deposit custody. **Deferred — missing data:** GAINDE sync, messaging SLA/escalations, stale-dossier, ETA-confidence thresholds beyond existing codes.

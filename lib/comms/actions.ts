@@ -56,7 +56,7 @@ async function clientRecipients(
  */
 async function deliver(_supabase: Admin, tenantId: string, actorId: string, id: string): Promise<ActionResult> {
   const outcome = await dispatchMessage(tenantId, actorId, id);
-  revalidatePath("/communications");
+  revalidatePath("/mail");
   if (outcome.ok) return { ok: true, id };
   if (outcome.status === "NOT_FOUND") return { ok: false, error: "not_found" };
   if (outcome.status === "NOT_ACQUIRED") return { ok: false, error: "invalid_status" };
@@ -103,7 +103,7 @@ export async function cancelMessage(id: string): Promise<ActionResult> {
   const { error } = await supabase.from("communication_message").update({ status: "CANCELLED" }).eq("id", id).eq("tenant_id", user.tenantId);
   if (error) return { ok: false, error: error.message };
   await writeAudit({ action: AuditActions.COMMUNICATION_CANCELLED, actorId: user.id, tenantId: user.tenantId, entity: "communication_message", entityId: id });
-  revalidatePath("/communications");
+  revalidatePath("/mail");
   return { ok: true, id };
 }
 
@@ -155,7 +155,7 @@ export async function emailInvoiceIssued(invoiceId: string): Promise<ActionResul
     count += 1;
   }
   if (inv.file_id) revalidatePath(`/files/${inv.file_id}`);
-  revalidatePath("/communications");
+  revalidatePath("/mail");
   return { ok: true, count };
 }
 
@@ -202,7 +202,7 @@ export async function emailDocumentShared(documentId: string): Promise<ActionRes
     count += 1;
   }
   revalidatePath(`/files/${doc.file_id}`);
-  revalidatePath("/communications");
+  revalidatePath("/mail");
   return { ok: true, count };
 }
 
@@ -238,6 +238,6 @@ export async function emailPortalInvite(clientUserId: string): Promise<ActionRes
     vars: { clientName: client?.name ?? cu.name ?? "", inviterName: user.email, inviteLink },
   });
   revalidatePath(`/clients/${cu.client_id}`);
-  revalidatePath("/communications");
+  revalidatePath("/mail");
   return res.id ? { ok: true, id: res.id } : { ok: false, error: "queue_failed" };
 }

@@ -30,7 +30,7 @@ import { DriverAssign } from "@/components/transport/driver-assign";
 import { listAssignableDrivers } from "@/lib/transport/drivers";
 import { FinancePanel } from "@/components/finance/finance-panel";
 import { getFinanceForFile } from "@/lib/finance/service";
-import { CommunicationsTimeline } from "@/components/communications/communications-timeline";
+import { MailTimeline } from "@/components/mail/mail-timeline";
 import { listCommunicationsForFile } from "@/lib/comms/service";
 import { LifecycleTracker } from "@/components/files/lifecycle-tracker";
 import { getDossierLifecycle } from "@/lib/files/lifecycle";
@@ -352,7 +352,7 @@ export default async function FileDetailPage({ params }: { params: { id: string 
           canGenerate={canGenerateArtifacts}
         />
       )}
-      {canReadComms && <CommunicationsTimeline messages={communications} />}
+      {canReadComms && <MailTimeline messages={communications} />}
       {/* WES-9: canonical operational history. No permission gate here — the
           RLS policy on business_event is the boundary, and it defers to the
           dossier's own visibility rule rather than inventing a second one. */}

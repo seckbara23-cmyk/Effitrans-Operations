@@ -21,7 +21,7 @@ export const communicationsAdapter: OperationalAlertAdapter = {
     return [
       alertFrom({
         code: "messaging.communication.failed", domain: "messaging", level: "medium",
-        reason: `${failed} notification(s) non délivrée(s)`, href: "/communications",
+        reason: `${failed} notification(s) non délivrée(s)`, href: "/mail",
       }),
     ];
   },

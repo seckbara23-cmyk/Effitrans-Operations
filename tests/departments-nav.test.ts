@@ -67,7 +67,7 @@ describe("Phase 2.0 — department navigation", () => {
 
   it("preserves the core direct routes in nav", () => {
     expect(hrefs).toEqual(
-      expect.arrayContaining(["/dashboard", "/files", "/clients", "/communications", "/users", "/settings/audit"]),
+      expect.arrayContaining(["/dashboard", "/files", "/clients", "/mail", "/users", "/settings/audit"]),
     );
   });
 

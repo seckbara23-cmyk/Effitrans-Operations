@@ -132,15 +132,15 @@ PostgREST level by a suite that calls them as `anon`/`authenticated` and require
 
 **New:** `supabase/migrations/20260811000001_outbound_mail.sql` · `lib/comms/compose.ts` (pure) ·
 `lib/comms/dispatch.ts` · `lib/comms/outbound-actions.ts` · `components/ec/composer.tsx` ·
-`app/communications/compose/page.tsx` · `supabase/tests/rls_outbound_mail_test.sql` ·
+`app/mail/compose/page.tsx` · `supabase/tests/rls_outbound_mail_test.sql` ·
 `tests/emp-3-outbound.test.ts` · `docs/mail/emp-3-audit.md` ·
 `docs/ops/emp-3-privilege-incident.md`.
 
 **Modified:** `lib/comms/provider.ts` (fails closed; returns provider identity + message id) ·
 `lib/comms/actions.ts` (`deliver()` delegates to the CAS dispatcher) ·
 `lib/workflow/events/types.ts` · `lib/audit/events.ts` · `lib/db/types.ts` ·
-`lib/platform/ops/build-info.ts` · `app/communications/layout.tsx` ·
-`app/communications/triage/[id]/page.tsx` · `.github/workflows/ci.yml` ·
+`lib/platform/ops/build-info.ts` · `app/mail/layout.tsx` ·
+`app/mail/inbox/[id]/page.tsx` · `.github/workflows/ci.yml` ·
 `supabase/tests/rls_communication_test.sql` · six test files re-aimed.
 
 ## 17. Schema changes

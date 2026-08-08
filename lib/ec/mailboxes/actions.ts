@@ -85,7 +85,7 @@ export async function setMailboxActive(
     after: { is_active: active, address: (box as { address: string }).address },
   });
 
-  revalidatePath("/communications/mailboxes");
-  revalidatePath(`/communications/mailboxes/${mailboxId}`);
+  revalidatePath("/mail/mailboxes");
+  revalidatePath(`/mail/mailboxes/${mailboxId}`);
   return { ok: true };
 }

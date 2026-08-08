@@ -24,7 +24,7 @@ import {
   voidInvoice,
 } from "@/lib/finance/actions";
 import { PAYMENT_METHODS } from "@/lib/finance/calc";
-import { EmailTriggerButton } from "@/components/communications/email-trigger-button";
+import { EmailTriggerButton } from "@/components/mail/email-trigger-button";
 import { InvoiceIntents } from "./invoice-intents";
 import type { ActionResult, InvoiceDetail, PaymentIntentView } from "@/lib/finance/types";
 import type { ProviderName } from "@/lib/finance/payment-intent";

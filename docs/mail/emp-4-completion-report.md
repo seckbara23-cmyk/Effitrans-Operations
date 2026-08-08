@@ -100,7 +100,7 @@ so EC-2's guarantee remains true rather than re-scoped.
 `components/ec/attachment-ingest.tsx` · `supabase/tests/rls_document_ingest_test.sql` ·
 `tests/emp-4-ingest.test.ts` · `docs/mail/emp-4-audit.md`.
 
-**Modified:** `app/communications/triage/[id]/page.tsx` (mounts the control) ·
+**Modified:** `app/mail/inbox/[id]/page.tsx` (mounts the control) ·
 `lib/audit/events.ts` (`EC_ATTACHMENT_INGESTED`) · `lib/db/types.ts` ·
 `lib/platform/ops/build-info.ts` · `.github/workflows/ci.yml` ·
 `tests/fin-aging-schema.test.ts` (ordering pin moved to the newest suite).

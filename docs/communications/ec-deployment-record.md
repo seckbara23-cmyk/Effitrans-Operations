@@ -110,7 +110,7 @@ before deployment.
 | `EFFITRANS_EC_INBOUND_ENABLED` | unset → webhook returns 503 |
 | `tenant_ec_inbound_rollout` | empty → fail-closed for every tenant |
 | `ec_mailbox` | empty → nothing could route even if the flag were set |
-| `/communications/triage` | 404 for every user |
+| `/mail/inbox` | 404 for every user |
 
 Applying these migrations changed nothing observable, which was the intent.
 

@@ -93,7 +93,7 @@ export async function ingestAttachmentToDossier(input: {
     },
   });
 
-  revalidatePath("/communications/triage");
+  revalidatePath("/mail/inbox");
   revalidatePath(`/files/${input.fileId}`);
   return { ok: true, documentId: outcome.documentId };
 }

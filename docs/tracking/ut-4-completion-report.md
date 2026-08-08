@@ -93,7 +93,7 @@ missing, so an unauthorized link is absent rather than rendered-and-refused:
 | Domain | Link | Never |
 |---|---|---|
 | Document | dossier document workspace | storage path |
-| Communication | `/communications` | body, subject |
+| Communication | `/mail` | body, subject |
 | Commercial | the quotation, behind the DEC-C32 read pair | pricing |
 | Finance | the dossier | balances, invoice or payment amounts |
 | Observation | **existing `/transport`** | second map engine, coordinates |

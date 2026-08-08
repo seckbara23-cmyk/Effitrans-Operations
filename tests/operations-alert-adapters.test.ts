@@ -22,7 +22,11 @@ const CC = code(dir + "command-center.ts");
 const FINREQ = code(dir + "finance-requests.ts");
 const RECON = code(dir + "reconciliation.ts");
 const RECV = code(dir + "receivables.ts");
-const COMMS = code(dir + "communications.ts");
+// The adapter file moved with the workspace rename; its exported symbol
+// (`communicationsAdapter`) and its alert-source key are internal
+// identifiers and deliberately unchanged — renaming them would churn a
+// contract for no user-visible gain.
+const COMMS = code(dir + "mail.ts");
 const MSG = code(dir + "messaging.ts");
 const READER = code(dir + "../reader.ts");
 const ALL = [RISK, CC, FINREQ, RECON, RECV, COMMS, MSG];

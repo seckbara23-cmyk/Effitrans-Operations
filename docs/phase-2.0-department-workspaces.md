@@ -19,7 +19,7 @@
 
 Each page = **dashboard cards + a filtered queue + per-row "next action / hand-off" link** into the existing dossier action surfaces (`/files/[id]` panels) and module views. They are pure server components (no new mutation paths).
 
-All existing direct routes are **preserved** (`/files`, `/clients`, `/customs`, `/transport`, `/finance`, `/finance/reconciliation`, `/analytics`, `/communications`, `/users`, `/settings/audit`).
+All existing direct routes are **preserved** (`/files`, `/clients`, `/customs`, `/transport`, `/finance`, `/finance/reconciliation`, `/analytics`, `/mail`, `/users`, `/settings/audit`).
 
 ## 2. Navigation changes
 
@@ -102,7 +102,7 @@ Per the phase's preferred path, automatic cross-department task creation is **no
 5. **Transport** — cards (dispatch/assigned/in-transit/POD required/delivered); "Téléverser le POD / Livré → Finance" indicators.
 6. **Finance** — cards (pending/outstanding/overdue/revenue month/to-verify); "Paiements à vérifier" links to reconciliation; **FINANCE_OFFICER can open a dossier from the queue and author a charge → issue → record payment** (the A1 fix).
 7. **Direction** — read-only executive cards from analytics; links to /files, dept pages, /analytics; no mutation controls.
-8. **Regression** — existing /files, /clients, /finance, /customs, /transport, /analytics, /communications, /users, /settings/audit still work; portal unchanged.
+8. **Regression** — existing /files, /clients, /finance, /customs, /transport, /analytics, /mail, /users, /settings/audit still work; portal unchanged.
 
 ## 9b. Addendum — Dossier Lifecycle Tracker
 

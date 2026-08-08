@@ -94,10 +94,10 @@ introduced.**
 ## 5. Files
 
 **New:** `lib/ec/threads/resolve.ts` (pure) · `lib/ec/threads/service.ts` (reads) ·
-`app/communications/threads/[messageId]/page.tsx` · `components/ec/thread-view.tsx` ·
+`app/mail/threads/[messageId]/page.tsx` · `components/ec/thread-view.tsx` ·
 `tests/emp-2-thread-correlation.test.ts`.
-**Modified:** `app/communications/triage/page.tsx` (Message-ID lookup) ·
-`app/communications/triage/[id]/page.tsx` (link to the conversation).
+**Modified:** `app/mail/inbox/page.tsx` (Message-ID lookup) ·
+`app/mail/inbox/[id]/page.tsx` (link to the conversation).
 
 The route is keyed on the **message row id**, not a thread id: a derived identity is only
 meaningful relative to the messages currently captured, so it must not become a URL.

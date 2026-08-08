@@ -66,9 +66,21 @@ export const BASE_SECTIONS: NavigationSection[] = [
       { key: "files", label: "Dossiers", href: "/files", iconKey: "container", permission: "file:read" },
       { key: "clients", label: "Clients", href: "/clients", iconKey: "users", permission: "client:read" },
       {
-        key: "communications",
-        label: "Communications",
-        href: "/communications",
+        key: "enterprise-mail",
+        // Enterprise Mail, not "Communications": this workspace IS the mail
+        // platform (inbound capture, triage, threads, compose, ingestion).
+        // "Communications" is reserved for a future omnichannel workspace —
+        // SMS, WhatsApp, portal messaging, notifications — which must not be
+        // forced in here.
+        //
+        // Kept in English, unlike every sibling label. A French rendering was
+        // tried and rejected: "Messagerie d'entreprise" sits one word away from
+        // "Messagerie" (Phase 8.7, staff/portal chat at /messages) in THIS SAME
+        // section, and two adjacent entries differing by one word for two
+        // unrelated systems is precisely the confusion this rename exists to
+        // end. "Enterprise Mail" is a product name and collides with nothing.
+        label: "Enterprise Mail",
+        href: "/mail",
         iconKey: "bell",
         permission: "communication:read",
       },

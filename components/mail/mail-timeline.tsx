@@ -12,7 +12,7 @@ const STATUS_STYLE: Record<string, string> = {
   CANCELLED: "bg-slate-100 text-slate-400",
 };
 
-export function CommunicationsTimeline({ messages }: { messages: CommunicationMessage[] }) {
+export function MailTimeline({ messages }: { messages: CommunicationMessage[] }) {
   const c = t.communications;
   if (messages.length === 0) return null;
   return (

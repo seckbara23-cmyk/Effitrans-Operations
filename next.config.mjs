@@ -46,6 +46,36 @@ const nextConfig = {
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
+
+  /**
+   * Enterprise Mail moved from /communications to /mail.
+   *
+   * The workspace implements the Enterprise Mail Platform, not a general
+   * communications centre; "Communications" is reserved for a future
+   * omnichannel workspace (SMS, WhatsApp, portal messaging, notifications).
+   * `/mail` matches the platform's existing single-word route convention
+   * (/files, /clients, /finance, /air, /commercial).
+   *
+   * PERMANENT redirects, because the old paths are retired rather than
+   * temporarily unavailable — a 308 lets browsers and any bookmarked link
+   * settle on the new address instead of re-asking forever.
+   *
+   * The order matters: the most specific path first, so /communications/triage
+   * lands on /mail/inbox rather than being swallowed by the catch-all.
+   */
+  async redirects() {
+    return [
+      { source: "/communications/triage", destination: "/mail/inbox", permanent: true },
+      { source: "/communications/triage/:id", destination: "/mail/inbox/:id", permanent: true },
+      { source: "/communications/mailboxes", destination: "/mail/mailboxes", permanent: true },
+      { source: "/communications/mailboxes/:id", destination: "/mail/mailboxes/:id", permanent: true },
+      { source: "/communications/compose", destination: "/mail/compose", permanent: true },
+      { source: "/communications/threads/:messageId", destination: "/mail/threads/:messageId", permanent: true },
+      { source: "/communications", destination: "/mail", permanent: true },
+      // Anything else that lived under the old prefix.
+      { source: "/communications/:path*", destination: "/mail/:path*", permanent: true },
+    ];
+  },
 };
 
 export default nextConfig;

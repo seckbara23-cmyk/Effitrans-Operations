@@ -35,7 +35,7 @@ export type OutboundResult =
   | { ok: true; id: string; status?: string }
   | { ok: false; error: string; detail?: string };
 
-const PATH = "/communications";
+const PATH = "/mail";
 
 export type ComposeInput = {
   mailboxId: string;

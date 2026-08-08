@@ -35,7 +35,7 @@ email pipeline already exists and is one env var away from live delivery:
 * Template registry + renderer + tenant branding merge.
 * Permission family **`communication:read` / `communication:send` /
   `communication:manage`** — catalogued *and granted* since Phase 1.14.
-* UI: `/communications` log; rows surface on the dossier timeline and client history;
+* UI: `/mail` log; rows surface on the dossier timeline and client history;
   `countCommunications` already feeds the alert center.
 
 **Messaging Center** — conversations typed `direct_staff | department | dossier |

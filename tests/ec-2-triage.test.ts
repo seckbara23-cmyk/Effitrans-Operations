@@ -23,8 +23,8 @@ const MIG = "supabase/migrations/20260805000001_ec_triage_outcomes.sql";
 const EC1_MIG = "supabase/migrations/20260804000001_ec_inbound_foundation.sql";
 const ACTIONS = "lib/ec/triage/actions.ts";
 const STUDIO = "components/ec/triage-studio.tsx";
-const QUEUE = "app/communications/triage/page.tsx";
-const DETAIL = "app/communications/triage/[id]/page.tsx";
+const QUEUE = "app/mail/inbox/page.tsx";
+const DETAIL = "app/mail/inbox/[id]/page.tsx";
 
 // ---------------------------------------------------------------------------
 describe("migration chain", () => {
@@ -333,9 +333,13 @@ describe("Digital-LOS events", () => {
 
 // ---------------------------------------------------------------------------
 describe("workspace", () => {
-  it("extends /communications — one canonical route, no second inbox", () => {
-    expect(existsSync(join(root, "app", "communications", "triage", "page.tsx"))).toBe(true);
-    expect(existsSync(join(root, "app", "communications", "triage", "[id]", "page.tsx"))).toBe(true);
+  it("extends /mail — one canonical route, no second inbox", () => {
+    // The workspace moved to /mail and the queue to /mail/inbox when
+    // "Communications" was reserved for a future omnichannel workspace.
+    expect(existsSync(join(root, "app", "mail", "inbox", "page.tsx"))).toBe(true);
+    expect(existsSync(join(root, "app", "mail", "inbox", "[id]", "page.tsx"))).toBe(true);
+    // The old prefix is gone, redirected in next.config.mjs rather than kept.
+    expect(existsSync(join(root, "app", "communications"))).toBe(false);
     // No competing top-level route.
     expect(existsSync(join(root, "app", "triage"))).toBe(false);
     expect(existsSync(join(root, "app", "inbox"))).toBe(false);

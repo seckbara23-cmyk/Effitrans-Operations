@@ -40,7 +40,7 @@ export default async function TriageQueuePage({
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
     return (
       <div className="animate-fade-in space-y-6">
-        <PageHeader meta="Communications" title="Tri du courrier entrant" subtitle="Configuration requise." />
+        <PageHeader meta="Enterprise Mail" title="Tri du courrier entrant" subtitle="Configuration requise." />
       </div>
     );
   }
@@ -60,7 +60,7 @@ export default async function TriageQueuePage({
   const msgid = searchParams?.msgid?.trim();
   if (msgid) {
     const hit = await findByMessageId(user.tenantId, msgid);
-    if (hit) redirect(`/communications/threads/${hit}`);
+    if (hit) redirect(`/mail/threads/${hit}`);
   }
 
   const view = isMailView(searchParams?.view) ? searchParams.view : "inbox";
@@ -96,11 +96,11 @@ export default async function TriageQueuePage({
   return (
     <div className="animate-fade-in space-y-6">
       <PageHeader
-        meta="Communications"
+        meta="Enterprise Mail"
         title="Tri du courrier entrant"
         subtitle="Chaque message capturé reçoit une décision — rattachement, cotation, correspondance ou rejet motivé."
       />
-      <Link href="/communications" className="inline-block text-sm text-teal-700 hover:underline">
+      <Link href="/mail" className="inline-block text-sm text-teal-700 hover:underline">
         ← Journal des communications
       </Link>
 
@@ -118,7 +118,7 @@ export default async function TriageQueuePage({
         {MAIL_VIEWS.map((v) => (
           <Link
             key={v}
-            href={`/communications/triage?view=${v}`}
+            href={`/mail/inbox?view=${v}`}
             aria-current={view === v ? "page" : undefined}
             className={`rounded-full px-3 py-1.5 text-xs font-medium transition ${
               view === v ? "bg-navy-900 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"
@@ -130,9 +130,9 @@ export default async function TriageQueuePage({
       </nav>
 
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-        <StatCard label="Non attribués" value={counts.unassigned} tone="amber" href="/communications/triage?unassigned=1" />
-        <StatCard label="Qui me sont attribués" value={counts.assignedToMe} tone="teal" href="/communications/triage?mine=1" />
-        <StatCard label="En cours d'examen" value={counts.inReview} tone="navy" href="/communications/triage?status=IN_REVIEW" />
+        <StatCard label="Non attribués" value={counts.unassigned} tone="amber" href="/mail/inbox?unassigned=1" />
+        <StatCard label="Qui me sont attribués" value={counts.assignedToMe} tone="teal" href="/mail/inbox?mine=1" />
+        <StatCard label="En cours d'examen" value={counts.inReview} tone="navy" href="/mail/inbox?status=IN_REVIEW" />
         <StatCard
           label="Plus ancien en attente"
           value={counts.oldestOpenDays === null ? "—" : `${counts.oldestOpenDays} j`}
@@ -237,7 +237,7 @@ export default async function TriageQueuePage({
                       {i.attachmentCount > 0 && <span className="ml-1 text-slate-400">· {i.attachmentCount} PJ</span>}
                     </td>
                     <td className="py-2 text-right">
-                      <Link href={`/communications/triage/${i.id}`}
+                      <Link href={`/mail/inbox/${i.id}`}
                         className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:border-teal-300">
                         Ouvrir
                       </Link>

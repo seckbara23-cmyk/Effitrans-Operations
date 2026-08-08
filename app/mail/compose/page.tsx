@@ -48,7 +48,7 @@ export default async function ComposePage({
   return (
     <div className="space-y-6">
       <PageHeader
-        meta="Communications"
+        meta="Enterprise Mail"
         title={searchParams?.reply ? "Répondre" : "Nouveau message"}
         subtitle="La rédaction et l'envoi sont deux actes distincts."
       />
