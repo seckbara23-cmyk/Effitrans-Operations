@@ -426,183 +426,196 @@ begin
 end $$;
 
 -- ===========================================================================
--- 9. BEHAVIOURAL ASSERTIONS — six personas against the rewritten policies
+-- 9. BEHAVIOURAL ASSERTIONS — six personas, inside a subtransaction
 -- ===========================================================================
--- Ratified requirement: every rewritten policy exercised at migration time, with
--- ALLOWED / DENIED / BROKEN distinguished. Fixtures are created, exercised as
--- `authenticated` with a forged JWT subject, then deleted.
+-- Ratified requirement: every rewritten policy exercised at migration time,
+-- with ALLOWED / DENIED / BROKEN distinguished.
+--
+-- WHY THIS IS WRAPPED IN A SUBTRANSACTION, AND WHY THE FIRST VERSION WAS WRONG.
+-- The first version created an `ec_inbound_message` fixture and DELETED it
+-- during cleanup. That table is append-only — `prevent_mutation` refuses UPDATE
+-- *and DELETE* — so the migration aborted in production. CI never saw it: at
+-- migration time CI's `organization` table is empty (seed runs afterwards), so
+-- this block returned early there and only ever executed where data exists.
+--
+-- The fix is not to delete more carefully. It is to persist nothing:
+--
+--   * a PL/pgSQL block with an EXCEPTION handler IS a subtransaction. Raising a
+--     sentinel at the end rolls back every row it inserted — message, mailbox,
+--     users, probe role — without a single DELETE, and therefore without ever
+--     attempting a forbidden operation on an append-only table;
+--   * PL/pgSQL VARIABLES are not transactional, so the measurements survive the
+--     rollback and are judged afterwards, outside the subtransaction.
+--
+-- The result: the probe leaves NO synthetic correspondence evidence behind,
+-- which is the requirement — not merely that it tidies up after itself.
 do $$
 declare
-  v_tenant uuid; v_other uuid; v_mb uuid; v_msg uuid;
-  v_member uuid; v_nomember uuid; v_noread uuid; v_admin uuid; v_cross uuid; v_norights uuid;
-  v_role_mail uuid; v_role_probe uuid;
-  n int;
+  v_tenant uuid; v_other uuid;
+  -- Measurements. -1 means "never taken", which is itself a failure: a probe
+  -- that silently skipped its own assertions must not read as success.
+  m_norights      int := -1;
+  m_member_msg    int := -1;
+  m_member_mbx    int := -1;
+  m_noread        int := -1;
+  m_bootstrap     int := -1;
+  m_cross         int := -1;   -- stays -1 when the tenant is the only one
+  m_alias_blocked boolean := false;
+  v_completed     boolean := false;
 begin
   select id into v_tenant from public.organization limit 1;
-  select id into v_other  from public.organization offset 1 limit 1;
   if v_tenant is null then
     raise notice 'EMP-4A: no organization present, skipping behavioural assertions.';
     return;
   end if;
+  select id into v_other from public.organization where id <> v_tenant limit 1;
 
-  -- Fixture mailbox + message.
-  insert into public.ec_mailbox (tenant_id, address, label_fr, provisioning_status)
-  values (v_tenant, 'emp4a-assert@test.local', 'EMP-4A', 'ACTIVE') returning id into v_mb;
-
-  insert into public.ec_inbound_message
-    (tenant_id, mailbox_id, provider, provider_event_id, from_address,
-     raw_sha256, raw_storage_path, raw_size_bytes, received_at, capture_status)
-  values (v_tenant, v_mb, 'GENERIC', 'emp4a-evt', 's@test.local', 'aa',
-          'ec/emp4a.eml', 1, now(), 'RECEIVED') returning id into v_msg;
-
-  -- Six personas. The ones that need correspondence rights get an EPHEMERAL
-  -- probe role carrying `communication:inbound:read`.
-  --
-  -- Why a throwaway role and not MAIL_ADMIN: RATIFY-EC1-1 keeps
-  -- `communication:inbound:read` granted to NO role, and MAIL_ADMIN deliberately
-  -- does not carry it — administering who may read correspondence is not the
-  -- same authority as reading it. So there is no real role that can play the
-  -- "authorized reader" persona, and inventing one permanently would break the
-  -- very guarantee EC-1's suite pins. The probe role exists only inside this
-  -- transaction and is deleted below. EC-1's own suite uses the same device.
-  select id into v_role_mail from public.role where code = 'MAIL_ADMIN' and tenant_id = v_tenant;
-
-  insert into public.role (tenant_id, code, label_fr, label_en, is_provisional)
-  values (v_tenant, '__EMP4A_PROBE', 'Sonde EMP-4A', 'EMP-4A probe', true)
-  returning id into v_role_probe;
-
-  insert into public.role_permission (role_id, permission_id)
-  select v_role_probe, p.id from public.permission p
-   where p.code = 'communication:inbound:read';
-
-  -- app_user.id references auth.users, so the identity must exist there first.
-  v_member := gen_random_uuid(); v_nomember := gen_random_uuid();
-  v_noread := gen_random_uuid(); v_admin := gen_random_uuid();
-  v_norights := gen_random_uuid();
-
-  insert into auth.users (id, email) values
-    (v_member,   'emp4a-member@test.local'),
-    (v_nomember, 'emp4a-nomember@test.local'),
-    (v_noread,   'emp4a-noread@test.local'),
-    (v_admin,    'emp4a-admin@test.local'),
-    (v_norights, 'emp4a-norights@test.local');
-
-  insert into public.app_user (id, tenant_id, email, name, status) values
-    (v_member,   v_tenant, 'emp4a-member@test.local',   'M', 'active'),
-    (v_nomember, v_tenant, 'emp4a-nomember@test.local', 'N', 'active'),
-    (v_noread,   v_tenant, 'emp4a-noread@test.local',   'R', 'active'),
-    (v_admin,    v_tenant, 'emp4a-admin@test.local',    'A', 'active'),
-    (v_norights, v_tenant, 'emp4a-norights@test.local', 'X', 'active');
-
-  -- Memberships.
-  insert into public.ec_mailbox_member (tenant_id, mailbox_id, user_id, can_read)
-  values (v_tenant, v_mb, v_member, true), (v_tenant, v_mb, v_noread, false);
-
-  -- The three personas that must hold communication:inbound:read get MAIL_ADMIN
-  -- for the fixture's purposes; the admin persona additionally exercises the
-  -- bootstrap path, since MAIL_ADMIN carries membership:manage.
-  -- The three personas that must hold the correspondence authority.
-  insert into public.user_role (user_id, role_id, tenant_id)
-  values (v_member, v_role_probe, v_tenant),
-         (v_noread, v_role_probe, v_tenant),
-         (v_admin,  v_role_probe, v_tenant)
-  on conflict do nothing;
-
-  -- The administrator additionally holds membership:manage, which is what the
-  -- bootstrap persona exercises.
-  if v_role_mail is not null then
-    insert into public.user_role (user_id, role_id, tenant_id)
-    values (v_admin, v_role_mail, v_tenant)
-    on conflict do nothing;
-  end if;
-
-  -- ---- exercise ---------------------------------------------------------
-  perform set_config('role', 'authenticated', true);
-
-  -- DENIED: a user with no rights at all.
-  perform set_config('request.jwt.claims',
-    json_build_object('sub', v_norights::text, 'role', 'authenticated')::text, true);
-  select count(*) into n from public.ec_inbound_message where id = v_msg;
-  if n <> 0 then
-    perform set_config('role', 'postgres', true);
-    raise exception 'EMP-4A BROKEN: a user without correspondence rights read a message';
-  end if;
-
-  -- ALLOWED: a member with can_read AND the correspondence permission.
-  perform set_config('request.jwt.claims',
-    json_build_object('sub', v_member::text, 'role', 'authenticated')::text, true);
-  select count(*) into n from public.ec_inbound_message where id = v_msg;
-  if n <> 1 then
-    perform set_config('role', 'postgres', true);
-    raise exception 'EMP-4A BROKEN: a can_read member could not read the message (got %)', n;
-  end if;
-  select count(*) into n from public.ec_mailbox where id = v_mb;
-  if n <> 1 then
-    perform set_config('role', 'postgres', true);
-    raise exception 'EMP-4A BROKEN: a member could not read the mailbox';
-  end if;
-
-  -- DENIED: a member whose can_read is false.
-  perform set_config('request.jwt.claims',
-    json_build_object('sub', v_noread::text, 'role', 'authenticated')::text, true);
-  select count(*) into n from public.ec_inbound_message where id = v_msg;
-  if n <> 0 then
-    perform set_config('role', 'postgres', true);
-    raise exception 'EMP-4A BROKEN: can_read=false still read the message';
-  end if;
-
-  -- ALLOWED (bootstrap): the mail administrator sees the mailbox without a
-  -- membership row, so the first membership can be granted.
-  perform set_config('request.jwt.claims',
-    json_build_object('sub', v_admin::text, 'role', 'authenticated')::text, true);
-  select count(*) into n from public.ec_mailbox where id = v_mb;
-  if n <> 1 then
-    perform set_config('role', 'postgres', true);
-    raise exception 'EMP-4A BROKEN: the bootstrap path failed — no first membership could ever be granted';
-  end if;
-
-  -- DENIED: cross-tenant. Only meaningful when a second organization exists.
-  if v_other is not null then
-    v_cross := gen_random_uuid();
-    insert into auth.users (id, email) values (v_cross, 'emp4a-cross@test.local');
-    insert into public.app_user (id, tenant_id, email, name, status)
-    values (v_cross, v_other, 'emp4a-cross@test.local', 'C', 'active');
-    perform set_config('request.jwt.claims',
-      json_build_object('sub', v_cross::text, 'role', 'authenticated')::text, true);
-    select count(*) into n from public.ec_inbound_message where id = v_msg;
-    if n <> 0 then
-      perform set_config('role', 'postgres', true);
-      raise exception 'EMP-4A BROKEN: a cross-tenant user read the message';
-    end if;
-  end if;
-
-  perform set_config('role', 'postgres', true);
-  perform set_config('request.jwt.claims', null, true);
-
-  -- ---- cross-table address uniqueness bites -----------------------------
+  -- ---- SUBTRANSACTION: everything inside is rolled back -------------------
   begin
-    insert into public.ec_mailbox_alias (tenant_id, mailbox_id, address)
-    values (v_tenant, v_mb, 'emp4a-assert@test.local');
-    raise exception 'EMP-4A BROKEN: an alias took an existing mailbox address';
+    declare
+      v_mb uuid; v_msg uuid; v_role_probe uuid; v_role_mail uuid;
+      v_member uuid; v_noread uuid; v_admin uuid; v_norights uuid; v_cross uuid;
+    begin
+      insert into public.ec_mailbox (tenant_id, address, label_fr, provisioning_status)
+      values (v_tenant, 'emp4a-probe@invalid.test', 'EMP-4A probe', 'ACTIVE')
+      returning id into v_mb;
+
+      insert into public.ec_inbound_message
+        (tenant_id, mailbox_id, provider, provider_event_id, from_address,
+         raw_sha256, raw_storage_path, raw_size_bytes, received_at, capture_status)
+      values (v_tenant, v_mb, 'GENERIC', 'emp4a-probe-evt', 'probe@invalid.test',
+              'aa', 'ec/emp4a-probe.eml', 1, now(), 'RECEIVED')
+      returning id into v_msg;
+
+      -- An ephemeral role carrying the correspondence authority. No real role
+      -- holds `communication:inbound:read` (RATIFY-EC1-1) and MAIL_ADMIN
+      -- deliberately does not, so the "authorized reader" persona has to be
+      -- constructed — and, like everything else here, is rolled back.
+      select id into v_role_mail from public.role
+       where code = 'MAIL_ADMIN' and tenant_id = v_tenant;
+
+      insert into public.role (tenant_id, code, label_fr, label_en, is_provisional)
+      values (v_tenant, '__EMP4A_PROBE', 'Sonde EMP-4A', 'EMP-4A probe', true)
+      returning id into v_role_probe;
+
+      insert into public.role_permission (role_id, permission_id)
+      select v_role_probe, p.id from public.permission p
+       where p.code = 'communication:inbound:read';
+
+      v_member := gen_random_uuid(); v_noread := gen_random_uuid();
+      v_admin  := gen_random_uuid(); v_norights := gen_random_uuid();
+
+      insert into auth.users (id, email) values
+        (v_member,   'emp4a-probe-member@invalid.test'),
+        (v_noread,   'emp4a-probe-noread@invalid.test'),
+        (v_admin,    'emp4a-probe-admin@invalid.test'),
+        (v_norights, 'emp4a-probe-norights@invalid.test');
+
+      insert into public.app_user (id, tenant_id, email, name, status) values
+        (v_member,   v_tenant, 'emp4a-probe-member@invalid.test',   'probe', 'active'),
+        (v_noread,   v_tenant, 'emp4a-probe-noread@invalid.test',   'probe', 'active'),
+        (v_admin,    v_tenant, 'emp4a-probe-admin@invalid.test',    'probe', 'active'),
+        (v_norights, v_tenant, 'emp4a-probe-norights@invalid.test', 'probe', 'active');
+
+      insert into public.ec_mailbox_member (tenant_id, mailbox_id, user_id, can_read)
+      values (v_tenant, v_mb, v_member, true),
+             (v_tenant, v_mb, v_noread, false);
+
+      insert into public.user_role (user_id, role_id, tenant_id) values
+        (v_member,   v_role_probe, v_tenant),
+        (v_noread,   v_role_probe, v_tenant),
+        (v_admin,    v_role_probe, v_tenant);
+      if v_role_mail is not null then
+        insert into public.user_role (user_id, role_id, tenant_id)
+        values (v_admin, v_role_mail, v_tenant);
+      end if;
+
+      -- ---- exercise -------------------------------------------------------
+      perform set_config('role', 'authenticated', true);
+
+      perform set_config('request.jwt.claims',
+        json_build_object('sub', v_norights::text, 'role', 'authenticated')::text, true);
+      select count(*) into m_norights from public.ec_inbound_message where id = v_msg;
+
+      perform set_config('request.jwt.claims',
+        json_build_object('sub', v_member::text, 'role', 'authenticated')::text, true);
+      select count(*) into m_member_msg from public.ec_inbound_message where id = v_msg;
+      select count(*) into m_member_mbx from public.ec_mailbox where id = v_mb;
+
+      perform set_config('request.jwt.claims',
+        json_build_object('sub', v_noread::text, 'role', 'authenticated')::text, true);
+      select count(*) into m_noread from public.ec_inbound_message where id = v_msg;
+
+      perform set_config('request.jwt.claims',
+        json_build_object('sub', v_admin::text, 'role', 'authenticated')::text, true);
+      select count(*) into m_bootstrap from public.ec_mailbox where id = v_mb;
+
+      if v_other is not null then
+        perform set_config('role', 'postgres', true);
+        v_cross := gen_random_uuid();
+        insert into auth.users (id, email)
+        values (v_cross, 'emp4a-probe-cross@invalid.test');
+        insert into public.app_user (id, tenant_id, email, name, status)
+        values (v_cross, v_other, 'emp4a-probe-cross@invalid.test', 'probe', 'active');
+        perform set_config('role', 'authenticated', true);
+        perform set_config('request.jwt.claims',
+          json_build_object('sub', v_cross::text, 'role', 'authenticated')::text, true);
+        select count(*) into m_cross from public.ec_inbound_message where id = v_msg;
+      end if;
+
+      perform set_config('role', 'postgres', true);
+      perform set_config('request.jwt.claims', '', true);
+
+      -- Cross-table address uniqueness: an alias may not take a mailbox address.
+      begin
+        insert into public.ec_mailbox_alias (tenant_id, mailbox_id, address)
+        values (v_tenant, v_mb, 'emp4a-probe@invalid.test');
+      exception
+        when unique_violation then m_alias_blocked := true;
+      end;
+
+      v_completed := true;
+
+      -- THE SENTINEL. Rolls back every insert above. The measurements survive,
+      -- because PL/pgSQL variables are not transactional.
+      raise exception 'EMP4A_PROBE_ROLLBACK';
+    end;
   exception
-    when unique_violation then null;
+    when others then
+      perform set_config('role', 'postgres', true);
+      perform set_config('request.jwt.claims', '', true);
+      -- Anything other than our own sentinel is a real error and must surface.
+      if sqlerrm <> 'EMP4A_PROBE_ROLLBACK' then raise; end if;
   end;
 
-  -- ---- cleanup -----------------------------------------------------------
-  delete from public.ec_mailbox_alias  where mailbox_id = v_mb;
-  delete from public.ec_mailbox_member where mailbox_id = v_mb;
-  delete from public.ec_triage_item    where message_id = v_msg;
-  delete from public.ec_inbound_message where id = v_msg;
-  delete from public.ec_mailbox        where id = v_mb;
-  delete from public.user_role where user_id in (v_member, v_noread, v_admin);
-  delete from public.role_permission where role_id = v_role_probe;
-  delete from public.role where id = v_role_probe;
-  delete from public.app_user where id in (v_member, v_nomember, v_noread, v_admin, v_norights)
-     or (v_cross is not null and id = v_cross);
-  -- Cascades from auth.users would remove app_user too, but both are deleted
-  -- explicitly so the intent is visible rather than relying on a cascade.
-  delete from auth.users where id in (v_member, v_nomember, v_noread, v_admin, v_norights)
-     or (v_cross is not null and id = v_cross);
+  -- ---- judge, outside the subtransaction ----------------------------------
+  if not v_completed then
+    raise exception 'EMP-4A BROKEN: the probe did not reach its sentinel';
+  end if;
+  if m_norights <> 0 then
+    raise exception 'EMP-4A BROKEN: a user without correspondence rights read a message (got %)', m_norights;
+  end if;
+  if m_member_msg <> 1 then
+    raise exception 'EMP-4A BROKEN: a can_read member could not read the message (got %)', m_member_msg;
+  end if;
+  if m_member_mbx <> 1 then
+    raise exception 'EMP-4A BROKEN: a member could not read the mailbox (got %)', m_member_mbx;
+  end if;
+  if m_noread <> 0 then
+    raise exception 'EMP-4A BROKEN: can_read=false still read the message (got %)', m_noread;
+  end if;
+  if m_bootstrap <> 1 then
+    raise exception 'EMP-4A BROKEN: the bootstrap path failed, so no first membership could ever be granted';
+  end if;
+  -- m_cross = -1 means the tenant is the only one and cross-tenant was NOT
+  -- exercised. Reported honestly below rather than counted as a silent pass.
+  if m_cross > 0 then
+    raise exception 'EMP-4A BROKEN: a cross-tenant user read the message (got %)', m_cross;
+  end if;
+  if not m_alias_blocked then
+    raise exception 'EMP-4A BROKEN: an alias took an existing mailbox address';
+  end if;
 
-  raise notice 'EMP-4A behavioural assertions OK: no-rights DENIED, member ALLOWED, can_read=false DENIED, admin bootstrap ALLOWED, cross-tenant DENIED, alias collision DENIED.';
+  raise notice 'EMP-4A behavioural assertions OK (probe rolled back, nothing persisted): no-rights DENIED, member ALLOWED, can_read=false DENIED, bootstrap ALLOWED, alias collision DENIED, cross-tenant %.',
+    case when m_cross = -1 then 'NOT EXERCISED (single tenant)' else 'DENIED' end;
 end $$;

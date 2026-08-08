@@ -279,6 +279,61 @@ describe("eligibility is a suggestion", () => {
 });
 
 // ---------------------------------------------------------------------------
+// 6B. The production-only path — regression for the append-only cleanup defect
+// ---------------------------------------------------------------------------
+describe("the migration-time probe persists nothing", () => {
+  // CI cannot reach this path: at migration time its `organization` table is
+  // empty (seed runs afterwards), so the probe returns early and only ever
+  // executes on a database that already has data. The defect it guards against
+  // was found in production, not by CI, so the guard is structural.
+
+  it("deletes nothing at all — the probe rolls back instead of cleaning up", () => {
+    const s = sql(MIGRATION);
+    expect(s).not.toMatch(/delete\s+from/i);
+  });
+
+  it("never attempts a forbidden operation on an append-only EC table", () => {
+    // prevent_mutation refuses UPDATE *and DELETE* on these three.
+    const s = sql(MIGRATION);
+    for (const t of ["ec_inbound_message", "ec_inbound_attachment", "ec_webhook_event"]) {
+      expect(s, `delete ${t}`).not.toMatch(new RegExp(`delete\s+from\s+public\.${t}`, "i"));
+      expect(s, `update ${t}`).not.toMatch(new RegExp(`update\s+public\.${t}\s+set`, "i"));
+    }
+  });
+
+  it("uses a subtransaction with a sentinel, and judges outside it", () => {
+    const s = sql(MIGRATION);
+    expect(s).toContain("raise exception 'EMP4A_PROBE_ROLLBACK'");
+    expect(s).toContain("if sqlerrm <> 'EMP4A_PROBE_ROLLBACK' then raise; end if;");
+    // Measurements are judged after the rollback, so they must be variables
+    // initialised to a value that cannot be mistaken for a pass.
+    expect(s).toContain("m_norights      int := -1;");
+    expect(s).toContain("v_completed     boolean := false;");
+    expect(s).toContain("if not v_completed then");
+  });
+
+  it("re-raises anything that is not its own sentinel", () => {
+    // Otherwise a genuine error inside the probe would be swallowed and the
+    // migration would report success having proven nothing.
+    const s = sql(MIGRATION);
+    const handler = s.slice(s.indexOf("when others then", s.indexOf("EMP4A_PROBE_ROLLBACK")));
+    expect(handler.slice(0, 400)).toContain("raise;");
+  });
+
+  it("still exercises all six personas", () => {
+    const s = sql(MIGRATION);
+    for (const m of ["m_norights", "m_member_msg", "m_member_mbx", "m_noread",
+                     "m_bootstrap", "m_cross", "m_alias_blocked"]) {
+      expect(s, m).toContain(m);
+    }
+  });
+
+  it("reports an unexercised cross-tenant check instead of passing silently", () => {
+    expect(sql(MIGRATION)).toContain("NOT EXERCISED (single tenant)");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 7. Scope
 // ---------------------------------------------------------------------------
 describe("EMP-4A stays inside its scope", () => {
