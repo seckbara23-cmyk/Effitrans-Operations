@@ -1,4 +1,8 @@
-# EMP-3 — Migration 87 privilege defect: rollback verification and correction
+# EMP-3 — Migration 87 privilege defects: rollback verification and correction
+
+> **Addendum (2026-08-08) — the second failure was the ASSERTION, not the privileges.**
+> A third attempt failed on `table write granted: anon/INSERT, authenticated/INSERT, …`.
+> That check was wrong and has been replaced. See §7.
 
 **Date:** 2026-08-07 · **Status: migration 87 remains UNAPPLIED. EMP-3 remains open.**
 Migration 87's own privilege assertion refused the migration and it rolled back. Nothing was
@@ -158,3 +162,55 @@ ALLOWED / DENIED / BROKEN are classified separately, and `service_role`'s access
   SHA with zero skipped and zero failed, and the operator has applied and verified 87.
 * **EMP-4 has not begun.**
 * Nothing was patched manually in any database.
+
+
+---
+
+## 7. The table-write assertion was testing the wrong property
+
+**A third attempt at migration 87 refused itself over `INSERT/UPDATE/DELETE` grants on
+`communication_message` for `anon` and `authenticated`. Those grants are inert, and revoking
+them was declined.**
+
+### What the audit established
+
+| Question | Answer |
+|---|---|
+| Does this repo grant DML to browser roles anywhere? | **No.** `20260613000004_grant_table_privileges.sql` says so explicitly: *"READS ONLY: no INSERT/UPDATE/DELETE granted to `authenticated`… writes run via the service role."* A search across all 87 migrations finds no such grant. |
+| Where do the grants come from, then? | A **Supabase project's default privileges** (`ALTER DEFAULT PRIVILEGES … GRANT ALL ON TABLES TO anon, authenticated`) — the same mechanism behind the function-EXECUTE defect in §2, and why a bare local stack does not show them. |
+| Are there write RLS policies on `communication_message`? | **No.** It has RLS enabled and exactly one policy, `communication_message_select`. |
+| Are there write policies anywhere in the platform? | **None.** All 37 `for update` occurrences in the migrations are SQL row locks (`SELECT … FOR UPDATE`), not policies. `create policy … for insert/update/delete` appears **zero** times. |
+| Can `anon`/`authenticated` actually mutate rows? | **No.** With RLS enabled and no policy for a command, PostgreSQL denies that command to every non-owner role **regardless of the GRANT**. |
+| Does the service-role architecture depend on these grants? | **No.** Writes use the service role, which has its own privileges and bypasses RLS. |
+
+### The distinction that matters — and why §2's revoke was still right
+
+The two cases look alike and are not:
+
+* **A function has no RLS.** An `EXECUTE` grant on a `SECURITY DEFINER` function **is** the
+  entire control: if `authenticated` may call it, it runs with the definer's rights and nothing
+  else intervenes. The §2 revoke was correct and necessary.
+* **A table under RLS is protected by policy, not by grant.** With no write policy, the grant
+  can never be exercised. It is inert.
+
+Conflating them is what produced the failed assertion.
+
+### Decision: fix the assertion, not the privileges
+
+Revoking table DML on `communication_message` would not improve security — RLS already denies
+the write — and would single this table out from every other table in a platform-wide, deployed
+posture. Per the governing instruction (*"only revoke if truly unnecessary and doing so does not
+change the deployed security model"*), the privileges stand.
+
+The assertion now proves **effective immutability**:
+
+1. RLS is **enabled** on the table (without it, the grants would be live);
+2. **no policy** exists for `ALL`/`INSERT`/`UPDATE`/`DELETE`;
+3. behaviourally, in `rls_outbound_mail_test.sql`: as `authenticated`, an `INSERT` is refused
+   and `UPDATE`/`DELETE` change nothing — with the sent row asserted **unchanged and still
+   present** afterwards.
+
+Point 3 accepts **either** denial mechanism, because the two environments differ: on a hosted
+project (grant present, no policy) `UPDATE`/`DELETE` match **0 rows**; on a bare local stack (no
+grant) they raise **42501**. The test asserts the outcome — the evidence is untouched — rather
+than the mechanism, which is the only formulation true in both.

@@ -127,6 +127,132 @@ begin
 end $$;
 
 -- ===========================================================================
+-- 2B. EFFECTIVE IMMUTABILITY OF THE OUTBOUND TABLE
+-- ===========================================================================
+-- The property that actually protects sent evidence is that a browser session
+-- cannot MUTATE a row — not that no DML grant exists. Those are different
+-- things, and this platform relies on the first:
+--
+--   * every table has RLS enabled and SELECT policies only. There is no
+--     INSERT/UPDATE/DELETE policy on ANY table in this repository;
+--   * therefore every write by anon/authenticated is denied by RLS, whether or
+--     not a grant exists;
+--   * the DML grants that DO appear on a hosted project come from Supabase's
+--     default privileges, not from this repository, which grants no DML to
+--     browser roles anywhere.
+--
+-- TWO ENVIRONMENTS DENY IT BY DIFFERENT MECHANISMS, so this test accepts both
+-- and asserts only the outcome:
+--   * hosted (grant present, no policy)  -> UPDATE/DELETE match 0 rows;
+--   * bare local (no grant at all)       -> 42501 insufficient_privilege.
+-- Either way the row is unchanged, which is the whole claim.
+do $$
+declare
+  v_tenant uuid;
+  v_id     uuid;
+  v_n      int;
+  v_state  text;
+begin
+  select id into v_tenant from public.organization limit 1;
+  if v_tenant is null then
+    insert into _r values ('effective_immutability', 'skipped_no_tenant');
+    return;
+  end if;
+
+  insert into public.communication_message
+    (tenant_id, recipient_email, subject, body_html, body_text, kind, status, provider)
+  values (v_tenant, 'immutable@test.local', 'before', 'h', 't', 'COMPOSE', 'SENT', 'resend')
+  returning id into v_id;
+
+  -- INSERT as authenticated: RLS with no INSERT policy raises 42501, and so
+  -- does a missing grant. Either is a refusal.
+  begin
+    set local role authenticated;
+    insert into public.communication_message
+      (tenant_id, recipient_email, subject, body_html, body_text, kind, status)
+    values (v_tenant, 'evil@test.local', 's', 'h', 't', 'COMPOSE', 'DRAFT');
+    reset role;
+    raise exception 'EMP-3 RLS FAIL: authenticated inserted into communication_message';
+  exception
+    when insufficient_privilege then
+      reset role;
+      insert into _r values ('authenticated_cannot_insert', 'ok');
+    when others then
+      v_state := sqlstate;
+      reset role;
+      if v_state = 'P0001' then raise; end if;
+      raise exception 'EMP-3 RLS FAIL: unexpected % on authenticated insert', v_state;
+  end;
+
+  -- UPDATE as authenticated: no UPDATE policy means no row is updatable, so
+  -- this matches zero rows rather than erroring. A missing grant errors.
+  begin
+    set local role authenticated;
+    update public.communication_message set subject = 'tampered' where id = v_id;
+    get diagnostics v_n = row_count;
+    reset role;
+    if v_n <> 0 then
+      raise exception 'EMP-3 RLS FAIL: authenticated updated % row(s)', v_n;
+    end if;
+    insert into _r values ('authenticated_cannot_update', 'ok');
+  exception
+    when insufficient_privilege then
+      reset role;
+      insert into _r values ('authenticated_cannot_update', 'ok');
+    when others then
+      v_state := sqlstate;
+      reset role;
+      if v_state = 'P0001' then raise; end if;
+      raise exception 'EMP-3 RLS FAIL: unexpected % on authenticated update', v_state;
+  end;
+
+  begin
+    set local role authenticated;
+    delete from public.communication_message where id = v_id;
+    get diagnostics v_n = row_count;
+    reset role;
+    if v_n <> 0 then
+      raise exception 'EMP-3 RLS FAIL: authenticated deleted % row(s)', v_n;
+    end if;
+    insert into _r values ('authenticated_cannot_delete', 'ok');
+  exception
+    when insufficient_privilege then
+      reset role;
+      insert into _r values ('authenticated_cannot_delete', 'ok');
+    when others then
+      v_state := sqlstate;
+      reset role;
+      if v_state = 'P0001' then raise; end if;
+      raise exception 'EMP-3 RLS FAIL: unexpected % on authenticated delete', v_state;
+  end;
+
+  -- The decisive check: the evidence is untouched, by whichever mechanism.
+  if (select subject from public.communication_message where id = v_id) <> 'before' then
+    raise exception 'EMP-3 RLS FAIL: sent evidence was mutated';
+  end if;
+  if not exists (select 1 from public.communication_message where id = v_id) then
+    raise exception 'EMP-3 RLS FAIL: sent evidence was deleted';
+  end if;
+  insert into _r values ('sent_evidence_unchanged', 'ok');
+
+  -- And RLS is what does it: enabled, with no write policy of any kind.
+  if not exists (
+    select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
+     where n.nspname = 'public' and c.relname = 'communication_message' and c.relrowsecurity
+  ) then
+    raise exception 'EMP-3 RLS FAIL: RLS not enabled on communication_message';
+  end if;
+  if exists (
+    select 1 from pg_policies
+     where schemaname = 'public' and tablename = 'communication_message'
+       and cmd in ('ALL', 'INSERT', 'UPDATE', 'DELETE')
+  ) then
+    raise exception 'EMP-3 RLS FAIL: a write policy exists on communication_message';
+  end if;
+  insert into _r values ('rls_on_no_write_policy', 'ok');
+end $$;
+
+-- ===========================================================================
 -- 3. DISPATCH INVARIANTS
 -- ===========================================================================
 do $$

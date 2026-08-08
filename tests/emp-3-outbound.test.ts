@@ -561,6 +561,40 @@ describe("authorization and rollout", () => {
     expect(ci).toContain("supabase/tests/rls_outbound_mail_test.sql");
   });
 
+  it("asserts the TABLE property as effective immutability, not absent grants", () => {
+    // Functions and tables need different assertions, and conflating them cost
+    // two failed migration attempts:
+    //   * a function has no RLS, so an EXECUTE grant IS the whole control;
+    //   * a table under RLS with no write policy denies the write regardless of
+    //     the grant, so the grant is inert.
+    // The DML grants on a hosted project come from Supabase's default
+    // privileges, not from this repo — which grants no DML to browser roles
+    // anywhere — so revoking them would single this table out from every other
+    // table for no security gain.
+    const s = sql(MIGRATION);
+    expect(s).toContain("c.relrowsecurity");
+    expect(s).toContain("cmd in ('ALL', 'INSERT', 'UPDATE', 'DELETE')");
+    // The old, wrong assertion must not come back.
+    expect(s).not.toContain("has_table_privilege(r.rolname, 'public.communication_message', p.priv)");
+  });
+
+  it("does not revoke table DML — that would change a platform-wide posture", () => {
+    const s = sql(MIGRATION);
+    expect(s).not.toMatch(/revoke[^;]*on\s+(table\s+)?public\.communication_message/i);
+  });
+
+  it("proves effective immutability behaviourally, in both environments", () => {
+    const suite = read("supabase/tests/rls_outbound_mail_test.sql");
+    expect(suite).toContain("authenticated_cannot_insert");
+    expect(suite).toContain("authenticated_cannot_update");
+    expect(suite).toContain("authenticated_cannot_delete");
+    // The decisive assertion is the row itself, not the mechanism that stopped
+    // the write — hosted denies with 0 rows, bare local with 42501.
+    expect(suite).toContain("sent_evidence_unchanged");
+    expect(suite).toContain("get diagnostics v_n = row_count");
+    expect(suite).toContain("when insufficient_privilege then");
+  });
+
   it("denies dispatch functions to every browser role", () => {
     const s = sql(MIGRATION);
     for (const fn of ["comm_acquire_send", "comm_record_send_accepted",
@@ -572,7 +606,6 @@ describe("authorization and rollout", () => {
     expect(s).toContain("PUBLIC holds EXECUTE on");
     expect(s).toContain("anon can EXECUTE");
     expect(s).toContain("authenticated can EXECUTE");
-    expect(s).toContain("privilege assertion FAILED (table write granted)");
   });
 });
 

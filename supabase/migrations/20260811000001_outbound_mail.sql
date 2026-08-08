@@ -505,14 +505,53 @@ begin
     end if;
   end loop;
 
-  -- ---- DENIED: no browser role may write the outbound table directly. -----
-  select string_agg(r.rolname || '/' || priv, ', ')
+  -- ---- DENIED: no browser role can MUTATE the outbound table. ------------
+  --
+  -- This check was WRONG in the first two attempts. It asserted the absence of
+  -- INSERT/UPDATE/DELETE *grants*, and refused the migration when it found
+  -- them. That is the wrong property, and the distinction matters:
+  --
+  --   * A FUNCTION has no RLS. A grant on a SECURITY DEFINER function IS the
+  --     entire control — if `authenticated` may EXECUTE it, it runs with the
+  --     definer's rights and nothing else stands in the way. Hence the strict
+  --     revoke above, which is correct and necessary.
+  --   * A TABLE under RLS is different. With RLS enabled and NO policy for a
+  --     command, PostgreSQL denies that command to every non-owner role
+  --     regardless of the GRANT. The grant is inert.
+  --
+  -- Those DML grants are not declared by this repository — it grants no DML to
+  -- browser roles anywhere. They come from a Supabase project's default
+  -- privileges (`ALTER DEFAULT PRIVILEGES ... GRANT ALL ON TABLES TO anon,
+  -- authenticated`), which is why they appear on a hosted project and not in a
+  -- bare local stack.
+  --
+  -- Revoking them here was declined. It would not improve security (RLS already
+  -- denies the write), it would single this table out from every other table in
+  -- the platform, and it would change a deployed, uniform posture for no gain.
+  --
+  -- So the assertion now proves EFFECTIVE IMMUTABILITY — the property that
+  -- actually protects the evidence — in two parts.
+
+  -- Part 1: RLS is ON. Without it, the grants above would be live.
+  if not exists (
+    select 1 from pg_class c
+     join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = 'communication_message'
+      and c.relrowsecurity
+  ) then
+    raise exception 'EMP-3 privilege assertion FAILED: RLS is not enabled on communication_message';
+  end if;
+
+  -- Part 2: there is NO policy admitting a write. `ALL` counts, because an
+  -- ALL policy would supply USING/WITH CHECK for every command at once.
+  select string_agg(policyname || '/' || cmd, ', ')
     into v_bad
-    from (values ('anon'), ('authenticated')) as r(rolname)
-    cross join (values ('INSERT'), ('UPDATE'), ('DELETE')) as p(priv)
-   where has_table_privilege(r.rolname, 'public.communication_message', p.priv);
+    from pg_policies
+   where schemaname = 'public'
+     and tablename = 'communication_message'
+     and cmd in ('ALL', 'INSERT', 'UPDATE', 'DELETE');
   if v_bad is not null then
-    raise exception 'EMP-3 privilege assertion FAILED (table write granted): %', v_bad;
+    raise exception 'EMP-3 privilege assertion FAILED: a write policy exists on communication_message: %', v_bad;
   end if;
 
   -- ---- ALLOWED: the workspace's read path survives. -----------------------
@@ -523,7 +562,7 @@ begin
   -- BROKEN would be any raise above; reaching here means the matrix is exactly
   -- as intended. A PostgREST RPC call as anon or authenticated now receives
   -- 42501 (insufficient_privilege), which is what the DENIED checks encode.
-  raise notice 'EMP-3 privilege matrix OK — PUBLIC/anon/authenticated: no EXECUTE; service_role: EXECUTE; table writes denied; SELECT preserved.';
+  raise notice 'EMP-3 privilege matrix OK — functions: no EXECUTE for PUBLIC/anon/authenticated, EXECUTE for service_role. Table: RLS on, no write policy (writes effectively impossible for browser roles), SELECT preserved.';
 end $$;
 
 -- ===========================================================================
