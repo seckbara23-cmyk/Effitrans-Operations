@@ -25,6 +25,9 @@ const sql = readFileSync(join(MIGRATIONS, NAME), "utf8");
 const ADDENDUM = "20260814000002_ops_sec_1_lockdown_addendum.sql";
 const add = readFileSync(join(MIGRATIONS, ADDENDUM), "utf8");
 
+const HOTFIX = "20260814000003_ops_sec_1_restore_policy_dependency.sql";
+const fix = readFileSync(join(MIGRATIONS, HOTFIX), "utf8");
+
 /** Every quoted `public.fn(...)` signature the migration acts on. */
 const signatures = [...sql.matchAll(/'(public\.[a-z_0-9]+\([^']*\))'/g)].map((m) => m[1]);
 
@@ -242,5 +245,60 @@ describe("OPS-SEC-1 addendum — the two ratified additions", () => {
     expect(add).toMatch(/rolled back with it|aborts the whole transaction/);
     expect(add).toContain("when insufficient_privilege then");
     expect(add).toMatch(/lockdown FAILED/);
+  });
+});
+
+/**
+ * The hotfix (migration 92) — a regression I caused and the lesson from it.
+ *
+ * Migration 90 revoked user_readable_file_ids from authenticated. can_read_file
+ * is SECURITY INVOKER and calls it, so its inner call needed the CALLER to hold
+ * EXECUTE; 21 policies across 21 tables started raising 42501 in production.
+ *
+ * The audit preserved the 13 functions named directly in policy EXPRESSIONS and
+ * never followed the call graph one level deeper. Metadata assertions could not
+ * catch it, because the 13 were all genuinely fine — what broke was underneath
+ * them. Only a behavioural check finds this class of defect.
+ */
+describe("OPS-SEC-1 hotfix — the transitive policy dependency", () => {
+  it("restores the grant to authenticated only", () => {
+    expect(fix).toContain(
+      "grant execute on function public.user_readable_file_ids(uuid, uuid) to authenticated");
+  });
+
+  it("does NOT reopen the anonymous path", () => {
+    // The whole point of OPS-SEC-1. anon and PUBLIC must stay revoked.
+    expect(fix).not.toMatch(/to\s+anon/);
+    expect(fix).toMatch(/anon regained EXECUTE/);
+    expect(fix).toMatch(/PUBLIC holds EXECUTE/);
+  });
+
+  it("proves the helper evaluates again, rather than trusting metadata", () => {
+    // Metadata said the 13 named helpers were fine, and they were. The
+    // behavioural probe is what actually catches this class of break.
+    expect(fix).toContain("perform public.can_read_file(");
+    expect(fix).toMatch(/RLS remains broken/);
+  });
+
+  it("generalises the mistake instead of fixing only this instance", () => {
+    // Any invoker function calling a denied function is broken the same way.
+    expect(fix).toMatch(/SECURITY INVOKER functions still call denied functions/);
+    expect(fix).toContain("not p.prosecdef");
+  });
+
+  it("raises only AFTER resetting the role", () => {
+    const probe = fix.slice(fix.indexOf("$probe$"));
+    expect(probe.indexOf("lockdown|RLS remains broken".split("|")[1]))
+      .toBeGreaterThan(probe.indexOf("reset role"));
+  });
+
+  it("changes no function body, table or policy", () => {
+    for (const forbidden of [
+      /create\s+(or\s+replace\s+)?function/i, /alter\s+function/i,
+      /create\s+table/i, /alter\s+table/i, /create\s+policy/i,
+      /insert\s+into/i, /delete\s+from/i,
+    ]) {
+      expect(fix, String(forbidden)).not.toMatch(forbidden);
+    }
   });
 });
