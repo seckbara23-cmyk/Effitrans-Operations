@@ -1,6 +1,6 @@
 # EMP-4A — Completion Report
 
-**Date:** 2026-08-08 · **Commits `5fbaf5e` + `fccb033`** · **No migration.** Migration 89 is unchanged.
+**Date:** 2026-08-08 · **Commits `5fbaf5e` → `fccb033` → `779ab5f` → `66e56d0`** · **No migration.** Migration 89 is unchanged.
 
 Closes the two partial items in `emp-4a-deployment-report.md` §6: frozen steps **7** (new-user
 onboarding integration) and **9** (existing-user and bulk workflows). Every other step was
@@ -20,7 +20,7 @@ already done and is untouched.
 | `components/ec/bulk-assign-panel.tsx` | new, 174 | Preview-then-confirm surface. |
 | `app/users/[id]/enterprise-mail/page.tsx` | new, 104 | Per-user surface. |
 | `app/users/enterprise-mail/bulk/page.tsx` | new, 54 | Bulk surface. |
-| `tests/emp-4a-onboarding-bulk.test.ts` | new, ~380 | 39 tests. |
+| `tests/emp-4a-onboarding-bulk.test.ts` | new, ~415 | 41 tests. |
 | `lib/ec/mailboxes/admin-actions.ts` | +54 | `setMembershipCapabilities`. |
 | `app/users/[id]/page.tsx` | +9 | Link into the per-user surface. |
 | `app/users/enterprise-mail/page.tsx` | +13 | Link into bulk. |
@@ -153,7 +153,7 @@ Preview emits nothing. An aperçu is not an event.
 
 ## 8. Test results
 
-**39 new tests**; suite total **5427 passing across 213 files**, `tsc --noEmit` clean,
+**41 new tests**; suite total **5429 passing across 213 files**, `tsc --noEmit` clean,
 `next build` clean with all three new routes emitted.
 
 The classifier is pure, so bulk semantics are tested **behaviourally** rather than by reading
@@ -172,17 +172,24 @@ catch a fingerprint that is under-specified, because every outcome it asserts wa
 
 ## 9. CI
 
-**CI run `31274712918` (#392) on `79457d2` — GREEN.**
+**Verified head: `66e56d0` — CI run `31275167965` (#394), GREEN.**
 
 ```
 job rls-tests   success   steps ok=82  skipped=0  failed=0
 job build       success   steps ok=10  skipped=0  failed=0
 ```
 
-Zero skipped, zero failed, as required. `79457d2` contains the close-out (`5fbaf5e`) and the
-fingerprint fix (`fccb033`). Two later commits (`779ab5f` error handling, plus this report and
-`STATUS.md`) were verified locally under the same gate — 213 files / 5427 tests, `tsc` clean,
-build clean — and re-verified in CI on the final head.
+Zero skipped, zero failed, as required. `66e56d0` contains every code commit of the close-out:
+`5fbaf5e` (surfaces + classifier), `fccb033` (fingerprint fix), `779ab5f` (error reporting),
+`66e56d0` (write-side tests).
+
+An earlier run, `31274712918` (#392) on `79457d2`, was also green with the same 82/0/0 + 10/0/0
+tally; it covered the first two commits.
+
+**Honest limitation:** the commit that adds *this paragraph* is documentation-only and is
+therefore not itself covered by #394 — citing a run inside the artefact the run verifies is not
+possible. It changes no source, no test, no migration and no configuration. Every line of code
+and every test in EMP-4A is inside `66e56d0`.
 
 ## 10. Deployment implications
 
