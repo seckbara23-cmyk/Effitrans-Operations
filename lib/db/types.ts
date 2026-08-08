@@ -2574,10 +2574,22 @@ export type Database = {
         Update: { next_seq?: number };
         Relationships: [];
       };
+      ec_mailbox_member: {
+        Row: { id: string; tenant_id: string; mailbox_id: string; user_id: string; can_read: boolean; can_send: boolean; can_manage_members: boolean; is_default_sender: boolean; granted_by: string | null; granted_at: string; revoked_at: string | null; revoked_by: string | null; revoke_reason: string | null };
+        Insert: { id?: string; tenant_id: string; mailbox_id: string; user_id: string; can_read?: boolean; can_send?: boolean; can_manage_members?: boolean; is_default_sender?: boolean; granted_by?: string | null; granted_at?: string; revoked_at?: string | null; revoked_by?: string | null; revoke_reason?: string | null };
+        Update: { can_read?: boolean; can_send?: boolean; can_manage_members?: boolean; is_default_sender?: boolean; granted_by?: string | null; granted_at?: string; revoked_at?: string | null; revoked_by?: string | null; revoke_reason?: string | null };
+        Relationships: [];
+      };
+      ec_mailbox_alias: {
+        Row: { id: string; tenant_id: string; mailbox_id: string; address: string; is_active: boolean; created_by: string | null; created_at: string };
+        Insert: { id?: string; tenant_id: string; mailbox_id: string; address: string; is_active?: boolean; created_by?: string | null };
+        Update: { address?: string; is_active?: boolean };
+        Relationships: [];
+      };
       ec_mailbox: {
-        Row: { id: string; tenant_id: string; address: string; label_fr: string; purpose: string; is_active: boolean; note: string | null; created_by: string | null; created_at: string; updated_at: string };
-        Insert: { id?: string; tenant_id: string; address: string; label_fr: string; purpose?: string; is_active?: boolean; note?: string | null; created_by?: string | null };
-        Update: { label_fr?: string; purpose?: string; is_active?: boolean; note?: string | null };
+        Row: { id: string; tenant_id: string; address: string; label_fr: string; purpose: string; is_active: boolean; note: string | null; created_by: string | null; created_at: string; updated_at: string; mailbox_type: string; provisioning_status: string; owner_user_id: string | null; provisioning_note: string | null; provisioning_attempts: number; provisioned_at: string | null; provisioned_by: string | null };
+        Insert: { id?: string; tenant_id: string; address: string; label_fr: string; purpose?: string; is_active?: boolean; note?: string | null; created_by?: string | null; mailbox_type?: string; provisioning_status?: string; owner_user_id?: string | null; provisioning_note?: string | null; provisioning_attempts?: number; provisioned_at?: string | null; provisioned_by?: string | null };
+        Update: { label_fr?: string; purpose?: string; is_active?: boolean; note?: string | null; mailbox_type?: string; provisioning_status?: string; owner_user_id?: string | null; provisioning_note?: string | null; provisioning_attempts?: number; provisioned_at?: string | null; provisioned_by?: string | null };
         Relationships: [];
       };
       ec_webhook_event: {

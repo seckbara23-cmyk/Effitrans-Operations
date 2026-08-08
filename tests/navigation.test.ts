@@ -86,9 +86,23 @@ describe("flag off — the sidebar is EXACTLY today's sidebar", () => {
   it("returns the legacy sections, in order, when workspaces are dark", () => {
     const nav = buildNavigation(ctx({ roleCodes: ["SYSTEM_ADMIN"], featureFlags: FLAGS_OFF }));
     expect(nav.sections.map((s) => s.key)).toEqual(LEGACY_SECTIONS.map((s) => s.key));
-    expect(hrefs(ctx({ roleCodes: ["SYSTEM_ADMIN"], featureFlags: FLAGS_OFF }))).toEqual(
-      LEGACY_SECTIONS.flatMap((s) => s.items.map((i) => i.href)),
-    );
+
+    // EMP-4A — the Enterprise Mail administration entry is the FIRST legacy nav
+    // item SYSTEM_ADMIN cannot see, and that is the design: it is gated on
+    // `communication:mailbox:provision`, which belongs to MAIL_ADMIN and which
+    // SYSTEM_ADMIN is ratified out of. So the expectation is the legacy list
+    // MINUS that entry, and its absence is asserted directly below rather than
+    // quietly subtracted.
+    const expected = LEGACY_SECTIONS.flatMap((s) => s.items.map((i) => i.href))
+      .filter((h) => h !== "/users/enterprise-mail");
+    expect(hrefs(ctx({ roleCodes: ["SYSTEM_ADMIN"], featureFlags: FLAGS_OFF }))).toEqual(expected);
+  });
+
+  it("SYSTEM_ADMIN cannot reach Enterprise Mail administration", () => {
+    // Not a nav preference — SYSTEM_ADMIN holds none of the mailbox
+    // permissions, and the page 404s for it. The sidebar simply agrees.
+    const h = hrefs(ctx({ roleCodes: ["SYSTEM_ADMIN"], featureFlags: FLAGS_OFF }));
+    expect(h).not.toContain("/users/enterprise-mail");
   });
 
   it("emits no process route at all when the flag is off", () => {

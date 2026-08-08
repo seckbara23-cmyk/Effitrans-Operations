@@ -136,6 +136,15 @@ export const AuditActions = {
   // TIMELINE entry for that document comes from the DOCUMENT_UPLOADED trigger;
   // this records the ingestion decision, which is a different fact.
   EC_ATTACHMENT_INGESTED: "ec.attachment.ingested",
+  // EMP-4A — mailbox membership and operator-assisted provisioning. Each records
+  // a decision a person made; the platform performs no external provisioning and
+  // so never reports one of its own.
+  EC_MAILBOX_MEMBER_GRANTED: "ec.mailbox.member_granted",
+  EC_MAILBOX_MEMBER_REVOKED: "ec.mailbox.member_revoked",
+  EC_MAILBOX_PROVISIONED: "ec.mailbox.provisioned",
+  EC_MAILBOX_SETUP_CONFIRMED: "ec.mailbox.setup_confirmed",
+  EC_MAILBOX_SETUP_FAILED: "ec.mailbox.setup_failed",
+  EC_MAILBOX_SETUP_RETRIED: "ec.mailbox.setup_retried",
   EC_INBOUND_REJECTED: "ec.inbound.rejected", // machine (signature refused)
   // Phase 1.12 — Customer Portal
   PORTAL_USER_INVITED: "portal.user.invited",

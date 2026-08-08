@@ -180,6 +180,12 @@ export const BASE_SECTIONS: NavigationSection[] = [
     label: "Administration",
     items: [
       { key: "users", label: "Utilisateurs", href: "/users", iconKey: "users", permission: "admin:users:manage" },
+      // EMP-4A — mailbox identity and access administration. Placed under
+      // Administration → Utilisateurs, NOT in the /mail workspace: using a
+      // mailbox and deciding who may use it are different jobs held by
+      // different people. Gated on provisioning, which MAIL_ADMIN holds and
+      // SYSTEM_ADMIN deliberately does not.
+      { key: "enterprise-mail-admin", label: "Enterprise Mail", href: "/users/enterprise-mail", iconKey: "bell", permission: "communication:mailbox:provision" },
       // DBC-1 — Digital Brand Center (tenant module). Gated by admin:config:manage.
       { key: "brand-center", label: "Centre de marque", href: "/brand-center", iconKey: "building", permission: "admin:config:manage" },
       { key: "audit", label: "Journal d'audit", href: "/settings/audit", iconKey: "stamp", permission: "audit:read:all" },
