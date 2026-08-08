@@ -72,7 +72,12 @@ describe("Phase 5.0B-1 — the seven missing roles now exist", () => {
     }
     // 23 through 5.0B + CASHIER (9.3A) + HR_OFFICER (HR-1) + ACCOUNTANT/TREASURER/
     // DAF/DGA (11.0B Finance Expense Documents) = 29.
-    expect(TENANT_ROLE_KEYS).toHaveLength(29);
+    // A phase test asserts ITS OWN roles, not the size of the whole catalogue:
+    // a global count goes stale every time any later phase adds a role, and the
+    // exact catalogue is already pinned authoritatively by
+    // tests/role-templates.test.ts (parity with seed.sql). This keeps the
+    // guarantee that matters here — nothing was REMOVED.
+    expect(TENANT_ROLE_KEYS.length).toBeGreaterThanOrEqual(29);
   });
 
   it("keeps every previously-mapped role unchanged in name (no rename)", () => {

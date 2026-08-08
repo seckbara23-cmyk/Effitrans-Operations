@@ -143,7 +143,11 @@ export const ROLE_DEPARTMENTS: readonly RoleDepartment[] = [
     key: "IT",
     labelFr: "Informatique",
     labelEn: "IT",
-    roleCodes: ["SYSTEM_ADMIN"],
+    // MAIL_ADMIN sits here because it administers a technical subsystem's
+    // identities and holds no operational, finance or HR authority. It is NOT
+    // grouped with SYSTEM_ADMIN's powers — the two share a department, not a
+    // permission set: SYSTEM_ADMIN is ratified OUT of correspondence access.
+    roleCodes: ["SYSTEM_ADMIN", "MAIL_ADMIN"],
   },
   {
     key: "PARTNERS",

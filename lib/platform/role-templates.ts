@@ -632,6 +632,26 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       ...BASE, "finance:read", "finance:expense:read", "finance:expense:export",
     ],
   },
+  {
+    key: "MAIL_ADMIN",
+    labelFr: "Administrateur messagerie",
+    labelEn: "Mail Administrator",
+    genericName: "MAIL_ADMIN",
+    description:
+      "Administers Enterprise Mail: mailbox identities, per-mailbox membership, and the inbound webhook journal. EMP-4A ratified a dedicated role because the only holders of communication:manage were SYSTEM_ADMIN — excluded from correspondence by EC-1's own requirement — and OPS_SUPERVISOR, and granting provisioning to every supervisor would widen a role several people hold.",
+    requiredForEveryTenant: false,
+    permissions: [
+      // Mailbox administration, and nothing else. Deliberately absent: admin:*,
+      // role/permission administration, finance:*, document:delete, security
+      // configuration, and any unrelated operations authority.
+      "communication:mailbox:provision",
+      "communication:membership:manage",
+      "communication:diagnostics:read",
+      // The existing minimum required to USE the administration surface.
+      "communication:read", "communication:manage", "communication:inbound:read",
+      ...BASE,
+    ],
+  },
 ];
 
 export const TENANT_ROLE_KEYS = TENANT_ROLE_TEMPLATES.map((t) => t.key);

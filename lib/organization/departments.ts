@@ -127,6 +127,11 @@ export const ROLE_CANONICAL_DEPARTMENT: Readonly<Record<string, CanonicalDepartm
 
   // ---- No single department --------------------------------------------------
   SYSTEM_ADMIN: null, // cross-cutting IT/config administration
+  // EMP-4A — administers Enterprise Mail identities and per-mailbox membership.
+  // NULL because mailbox administration is cross-cutting infrastructure, exactly
+  // like SYSTEM_ADMIN: every department has a shared mailbox, so belonging to one
+  // of them would misdescribe the role. It carries no operational authority.
+  MAIL_ADMIN: null,
   CEO: null, // Direction = governance, not a department
   COMPLIANCE_HSSE: null, // cross-company audit/compliance
   CLIENT_USER: null, // external portal label — never staff

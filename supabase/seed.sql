@@ -1299,3 +1299,45 @@ join public.permission p on p.code = 'finance:aging:template_manage'
 where r.tenant_id = '00000000-0000-0000-0000-000000000001'
   and r.code = 'DAF'
 on conflict do nothing;
+
+-- ===========================================================================
+-- EMP-4A — Enterprise Mail administration.
+--
+-- MAIL_ADMIN exists because the only holders of `communication:manage` today
+-- are SYSTEM_ADMIN — ratified OUT of correspondence access — and
+-- OPS_SUPERVISOR, and granting mailbox provisioning to every operations
+-- supervisor would widen a role several people hold.
+--
+-- It receives mailbox administration and NOTHING ELSE: no admin:*, no
+-- finance:*, no document:delete, no role/permission administration, no
+-- security configuration. A person holds MAIL_ADMIN and an operational role
+-- only by explicit assignment.
+--
+-- SYSTEM_ADMIN receives NONE of the three new permissions (RATIFY-EMP4A-5),
+-- exactly as it receives no hr:* above.
+-- ===========================================================================
+insert into public.permission (code, module, action, data_scope, description) values
+  ('communication:mailbox:provision', 'communication', 'provision', 'all',
+   'Réserver une identité de boîte et enregistrer le résultat de la configuration externe'),
+  ('communication:membership:manage', 'communication', 'manage', 'all',
+   'Attribuer et révoquer les appartenances et capacités par boîte'),
+  ('communication:diagnostics:read', 'communication', 'read', 'all',
+   'Consulter le journal des webhooks entrants (diagnostic opérateur)')
+on conflict (code) do nothing;
+
+insert into public.role (tenant_id, code, label_fr, label_en, is_provisional) values
+  ('00000000-0000-0000-0000-000000000001', 'MAIL_ADMIN', 'Administrateur messagerie', 'Mail Administrator', true)
+on conflict (tenant_id, code) do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p
+  on p.code in ('profile:read:self', 'profile:update:self',
+                'communication:mailbox:provision',
+                'communication:membership:manage',
+                'communication:diagnostics:read',
+                -- the existing minimum needed to USE the surface
+                'communication:read', 'communication:manage', 'communication:inbound:read')
+where r.tenant_id = '00000000-0000-0000-0000-000000000001' and r.code = 'MAIL_ADMIN'
+on conflict do nothing;

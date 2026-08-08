@@ -43,7 +43,12 @@ describe("CASHIER role", () => {
   const cashier = () => getTenantRoleTemplate("CASHIER")!;
 
   it("1 — is a tenant role (29 total after 11.0B added ACCOUNTANT/TREASURER/DAF/DGA)", () => {
-    expect(TENANT_ROLE_KEYS).toHaveLength(29);
+    // A phase test asserts ITS OWN roles, not the size of the whole catalogue:
+    // a global count goes stale every time any later phase adds a role, and the
+    // exact catalogue is already pinned authoritatively by
+    // tests/role-templates.test.ts (parity with seed.sql). This keeps the
+    // guarantee that matters here — nothing was REMOVED.
+    expect(TENANT_ROLE_KEYS.length).toBeGreaterThanOrEqual(29);
     expect(TENANT_ROLE_KEYS).toContain("CASHIER");
   });
 
