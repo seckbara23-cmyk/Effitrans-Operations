@@ -319,6 +319,41 @@ describe("security and scope", () => {
     expect(u).toContain("notFound()");
   });
 
+  it("the WRITE stamps the caller's own tenant, never one supplied by the caller", () => {
+    // The reads being scoped is not sufficient on its own: if the upsert took a
+    // tenant from the request body, a caller could still place a membership row
+    // in another tenant. It takes it from the resolved session.
+    const s = code(BULK_ACTIONS);
+    const upsert = s.slice(s.indexOf(".upsert({"), s.indexOf("{ onConflict"));
+    expect(upsert).toContain("tenant_id: user.tenantId");
+    expect(upsert).not.toContain("input.tenantId");
+    // And the action takes no tenant from its caller at all.
+    expect(s.slice(s.indexOf("export async function executeBulkAssignment"),
+                   s.indexOf("const user = await gate()", s.indexOf("executeBulkAssignment"))))
+      .not.toContain("tenantId");
+  });
+
+  it("only writable decisions are ever applied", () => {
+    // REJECTED_CROSS_TENANT, both SKIPPED outcomes, CONFLICT and UNCHANGED all
+    // carry writes:false. Execution iterates writableDecisions and nothing
+    // else, so a non-writing outcome cannot reach the upsert.
+    const s = code(BULK_ACTIONS);
+    expect(s).toContain("const todo = writableDecisions(preview.decisions)");
+    expect(s).toContain("for (const d of todo)");
+    // Sanity: the classifier really does mark every non-applying outcome.
+    const nonWriting = ["REJECTED_CROSS_TENANT", "SKIPPED_NO_DEPARTMENT",
+                        "SKIPPED_NOT_ELIGIBLE", "CONFLICT_DEFAULT_SENDER", "UNCHANGED"];
+    const all = [
+      ...run([cand({ userId: "x", tenantId: "OTHER" })]),
+      ...run([cand({ userId: "y", roleCodes: ["SYSTEM_ADMIN"] })]),
+      ...run([cand({ userId: "z", roleCodes: ["FINANCE_OFFICER"] })]),
+    ];
+    for (const d of all) {
+      if (nonWriting.includes(d.outcome)) expect(d.writes, d.outcome).toBe(false);
+    }
+    expect(writableDecisions(all)).toHaveLength(0);
+  });
+
   it("every read is tenant-scoped", () => {
     expect(code(USER_PAGE)).toContain('.eq("tenant_id", actor.tenantId)');
     expect(code(BULK_ACTIONS)).toContain('.eq("tenant_id", user.tenantId)');
