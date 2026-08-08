@@ -22,6 +22,7 @@ const BULK = "lib/ec/mailboxes/bulk.ts";
 const BULK_ACTIONS = "lib/ec/mailboxes/bulk-actions.ts";
 const USER_PANEL = "components/ec/user-mailbox-panel.tsx";
 const BULK_PANEL = "components/ec/bulk-assign-panel.tsx";
+const ADMIN_ACTIONS = "lib/ec/mailboxes/admin-actions.ts";
 const USER_PAGE = "app/users/[id]/enterprise-mail/page.tsx";
 const BULK_PAGE = "app/users/enterprise-mail/bulk/page.tsx";
 
@@ -39,6 +40,35 @@ const run = (candidates: BulkCandidate[], opts: Partial<{ requireEligibility: bo
     capabilities: opts.caps ?? CAPS, candidates,
     requireEligibility: opts.requireEligibility ?? true,
   });
+
+// ---------------------------------------------------------------------------
+// 0. Errors reach the administrator as sentences
+// ---------------------------------------------------------------------------
+describe("every action error is a sentence, not a code", () => {
+  it("maps every error string the admin actions can return", () => {
+    // The panel falls back to `Échec : <code>`, so an unmapped code does not
+    // crash -- it just shows an administrator a raw identifier and no idea what
+    // to do about it. Two of these were added when the default-sender CHECK was
+    // given its own error, which is exactly when this drifts.
+    const codes = new Set(
+      [...read(ADMIN_ACTIONS).matchAll(/error:\s*"([a-z_]+)"/g)].map((m) => m[1]),
+    );
+    const mapped = new Set(
+      [...read(USER_PANEL).matchAll(/^ {2}([a-z_]+):\s*"/gm)].map((m) => m[1]),
+    );
+    expect(codes.size).toBeGreaterThan(10);
+    expect([...codes].filter((c) => !mapped.has(c))).toEqual([]);
+  });
+
+  it("distinguishes the two default-sender constraints", () => {
+    // 23505 (a second default sender) and 23514 (default sender without send
+    // authority) are different mistakes with different fixes.
+    const s = code(ADMIN_ACTIONS);
+    expect(s).toContain('"23505"');
+    expect(s).toContain('"23514"');
+    expect(s).toContain("default_sender_requires_send");
+  });
+});
 
 // ---------------------------------------------------------------------------
 // 1. Onboarding suggestions

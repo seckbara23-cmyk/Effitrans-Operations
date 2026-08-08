@@ -359,9 +359,15 @@ export async function setMembershipCapabilities(
     .maybeSingle();
 
   if (error) {
-    // A second default sender is refused by a partial unique index; report it
-    // as the conflict it is rather than as a generic failure.
-    return { ok: false, error: error.code === "23505" ? "default_sender_conflict" : "update_failed" };
+    // Two schema rules can reject this, and an administrator can act on both —
+    // so neither is allowed to arrive as a generic failure.
+    //   23505 — the partial unique index: someone is already the default
+    //           sender, and only one person can be.
+    //   23514 — the CHECK (not is_default_sender or can_send): default sender
+    //           without send authority is not a state the mailbox can hold.
+    if (error.code === "23505") return { ok: false, error: "default_sender_conflict" };
+    if (error.code === "23514") return { ok: false, error: "default_sender_requires_send" };
+    return { ok: false, error: "update_failed" };
   }
   if (!data) return { ok: false, error: "not_active" };
 

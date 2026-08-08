@@ -44,6 +44,9 @@ const STATUS_FR: Record<string, string> = {
 const ERRORS_FR: Record<string, string> = {
   forbidden: "Autorisation insuffisante.",
   default_sender_conflict: "Cet utilisateur a déjà un expéditeur par défaut sur une autre boîte.",
+  default_sender_requires_send: "Un expéditeur par défaut doit aussi avoir le droit d'envoi.",
+  nothing_to_change: "Aucune modification demandée.",
+  update_failed: "La modification a échoué.",
   not_active: "Cette appartenance n'est pas active.",
   not_revocable: "Cette appartenance est déjà révoquée.",
   address_taken: "Adresse déjà utilisée par une boîte ou un alias.",
@@ -51,6 +54,12 @@ const ERRORS_FR: Record<string, string> = {
   owner_required: "Une boîte personnelle doit désigner son titulaire.",
   not_pending: "Cette boîte n'attend pas de configuration.",
   not_failed: "Cette boîte n'est pas en échec.",
+  mailbox_not_found: "Boîte introuvable.",
+  user_not_found: "Utilisateur introuvable.",
+  owner_not_allowed: "Une boîte partagée ne désigne pas de titulaire.",
+  invalid_state: "État de configuration invalide.",
+  grant_failed: "L'attribution a échoué.",
+  retry_failed: "La relance a échoué.",
 };
 
 export function UserMailboxPanel({
