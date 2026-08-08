@@ -2,7 +2,8 @@
 
 **Date:** 2026-08-08 · **CI GREEN — run #387 on `3af379a`: `rls-tests` 82/0/0, `build` 10/0/0**
 **Migration 89 `20260813000001_mailbox_membership.sql` — APPLIED IN PRODUCTION** (SQL Editor)
-**Status: NOT COMPLETE.** Steps 7 and 9 of the frozen order are partial — see §6.
+**Status: SUPERSEDED — EMP-4A IS COMPLETE.** Steps 7 and 9 were partial when this was
+written; they were closed in commit `5fbaf5e`. See `emp-4a-completion-report.md`.
 
 ---
 
@@ -16,9 +17,9 @@
 | 4. MAIL_ADMIN + conservative seed | **done** — three sources agree |
 | 5. Membership service | **done** |
 | 6. Operator-assisted provisioning lifecycle | **done** |
-| 7. New-user onboarding integration | **PARTIAL** — §6 |
+| 7. New-user onboarding integration | **done** — `5fbaf5e` |
 | 8. Administration → Users → Enterprise Mail | **done** |
-| 9. Existing-user and bulk workflows | **PARTIAL** — §6 |
+| 9. Existing-user and bulk workflows | **done** — `5fbaf5e` |
 | 10. Tests | **done** — 39 TS contracts + a new SQL suite |
 | 11. CI | **done** — run #387 green |
 | 12. Deployment report | this document |
