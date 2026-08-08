@@ -50,6 +50,17 @@ insert into public.ec_mailbox (id, tenant_id, address, label_fr, purpose) values
    'operations@ec2-test.example', 'Opérations (test)', 'OPERATIONS')
 on conflict (id) do nothing;
 
+-- EMP-4A — effective access is now tenant + communication:inbound:read + MEMBERSHIP.
+-- The reader (ec2a1) holds the permission via its own test role above; without a
+-- membership row the rewritten ec_triage_item policy correctly denies it. Only
+-- ec2a1 gets one: ec2a3 (admin) and ec2a4 (portal) are asserted to see NOTHING,
+-- and granting them membership would destroy what those personas prove.
+insert into public.ec_mailbox_member (tenant_id, mailbox_id, user_id, can_read)
+values ('00000000-0000-0000-0000-000000000001',
+        '00000000-0000-0000-0000-0000000ec2d1',
+        '00000000-0000-0000-0000-0000000ec2a1', true)
+on conflict (mailbox_id, user_id) do nothing;
+
 -- A dossier in THIS tenant, and one in ANOTHER tenant (cross-tenant control).
 insert into public.operational_file (id, tenant_id, file_number, type, client_id, status) values
   ('00000000-0000-0000-0000-0000000ec2e1', '00000000-0000-0000-0000-000000000001',
