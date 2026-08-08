@@ -135,7 +135,11 @@ export async function previewBulkAssignmentAction(input: {
   return {
     ok: true,
     decisions,
-    fingerprint: previewFingerprint(decisions),
+    fingerprint: previewFingerprint(decisions, {
+      mailboxId: input.mailboxId,
+      capabilities: input.capabilities,
+      requireEligibility: input.requireEligibility,
+    }),
     mailboxAddress: (mailbox as { address: string }).address,
   };
 }

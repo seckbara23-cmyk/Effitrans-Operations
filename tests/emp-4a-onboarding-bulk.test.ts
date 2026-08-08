@@ -169,11 +169,43 @@ describe("bulk preview classifies every candidate", () => {
   });
 
   it("fingerprints stably and changes when a decision changes", () => {
+    const ctx = { mailboxId: "mb1", capabilities: CAPS, requireEligibility: true };
     const a = run([cand({ userId: "a" }), cand({ userId: "b" })]);
     const b = run([cand({ userId: "b" }), cand({ userId: "a" })]);
-    expect(previewFingerprint(a)).toBe(previewFingerprint(b));
-    const c = run([cand({ userId: "a" }), cand({ userId: "b", tenantId: "OTHER" })]);
-    expect(previewFingerprint(c)).not.toBe(previewFingerprint(a));
+    expect(previewFingerprint(a, ctx)).toBe(previewFingerprint(b, ctx));
+
+    const changed = run([cand({ userId: "a" }), cand({ userId: "b", tenantId: "OTHER" })]);
+    expect(previewFingerprint(changed, ctx)).not.toBe(previewFingerprint(a, ctx));
+  });
+
+  it("fingerprints the CAPABILITIES, not just the outcomes", () => {
+    // The defect this pins: for a user with no membership the outcome is
+    // GRANT_NEW whatever capabilities are asked for. A decisions-only
+    // fingerprint is therefore identical for "grant read" and "grant read,
+    // send and member-management" — so a caller could confirm the harmless
+    // preview and execute the powerful one with a fingerprint that still
+    // matches. Binding the capabilities is what closes that.
+    const decisions = run([cand({ userId: "a" }), cand({ userId: "b" })]);
+    expect(decisions.every((d) => d.outcome === "GRANT_NEW")).toBe(true);
+
+    const readOnly = previewFingerprint(decisions, {
+      mailboxId: "mb1", requireEligibility: true,
+      capabilities: { canRead: true, canSend: false, canManageMembers: false, isDefaultSender: false },
+    });
+    const powerful = previewFingerprint(decisions, {
+      mailboxId: "mb1", requireEligibility: true,
+      capabilities: { canRead: true, canSend: true, canManageMembers: true, isDefaultSender: false },
+    });
+    expect(powerful).not.toBe(readOnly);
+  });
+
+  it("fingerprints the target mailbox and the eligibility filter too", () => {
+    const decisions = run([cand({ userId: "a" })]);
+    const base = { mailboxId: "mb1", capabilities: CAPS, requireEligibility: true };
+    expect(previewFingerprint(decisions, { ...base, mailboxId: "mb2" }))
+      .not.toBe(previewFingerprint(decisions, base));
+    expect(previewFingerprint(decisions, { ...base, requireEligibility: false }))
+      .not.toBe(previewFingerprint(decisions, base));
   });
 
   it("is pure — no I/O of any kind", () => {

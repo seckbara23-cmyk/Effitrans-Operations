@@ -160,16 +160,45 @@ export function writableDecisions(decisions: readonly BulkDecision[]): BulkDecis
   return decisions.filter((d) => d.writes);
 }
 
+/** What the batch was previewed AGAINST, not just what it decided. */
+export type PreviewContext = {
+  mailboxId: string;
+  capabilities: BulkCapabilities;
+  requireEligibility: boolean;
+};
+
 /**
  * A stable fingerprint of a preview.
  *
  * Execution carries the fingerprint it was shown; if the data moved underneath
  * — someone else granted a membership in the meantime — it no longer matches
  * and the batch is refused rather than performing writes nobody previewed.
+ *
+ * It binds the CONTEXT as well as the decisions, and that is not decoration.
+ * For a user with no existing membership the outcome is `GRANT_NEW` whatever
+ * capabilities are requested, so a decisions-only fingerprint would be
+ * identical for "grant read to these 40 people" and "grant read, send and
+ * member-management to these 40 people". A caller could then confirm the
+ * harmless preview while executing the powerful one, and the server would see
+ * a matching fingerprint and agree. Binding the mailbox, the capabilities and
+ * the eligibility filter is what makes "execution replays exactly this
+ * preview" true rather than merely claimed in the UI.
  */
-export function previewFingerprint(decisions: readonly BulkDecision[]): string {
-  return decisions
+export function previewFingerprint(
+  decisions: readonly BulkDecision[],
+  context: PreviewContext,
+): string {
+  const c = context.capabilities;
+  const head = [
+    `mailbox=${context.mailboxId}`,
+    `caps=${[c.canRead, c.canSend, c.canManageMembers, c.isDefaultSender].map(Number).join("")}`,
+    `eligibility=${context.requireEligibility ? 1 : 0}`,
+  ].join(";");
+
+  const body = decisions
     .map((d) => `${d.userId}:${d.outcome}`)
     .sort()
     .join("|");
+
+  return `${head}#${body}`;
 }
