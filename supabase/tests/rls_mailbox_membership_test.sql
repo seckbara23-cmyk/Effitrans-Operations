@@ -22,7 +22,8 @@ declare
   v_mb uuid; v_msg uuid; v_att uuid; v_tri uuid;
   v_role_probe uuid; v_role_mail uuid;
   v_member uuid; v_noread uuid; v_admin uuid; v_norights uuid; v_revoked uuid;
-  n int;
+  m_norights int; m_mbx int; m_msg int; m_att int; m_tri int; m_hook int;
+  m_noread_msg int; m_noread_att int; m_revoked int; m_bootstrap int; n int;
 begin
   -- ---- fixtures ----------------------------------------------------------
   insert into public.ec_mailbox (tenant_id, address, label_fr, provisioning_status)
@@ -88,72 +89,75 @@ begin
   end if;
 
   -- ---- exercise ----------------------------------------------------------
+  -- Measurements go into VARIABLES while the session is `authenticated`, and
+  -- are recorded into _r only after the role is reset. `authenticated` holds no
+  -- privilege on a temp table owned by postgres, so writing results mid-exercise
+  -- fails with "permission denied for table _r" — which is what the first
+  -- version of this suite did. The other RLS suites collect the same way.
   perform set_config('role', 'authenticated', true);
 
-  -- DENIED: no correspondence authority at all.
   perform set_config('request.jwt.claims',
     json_build_object('sub', v_norights::text, 'role', 'authenticated')::text, true);
-  select count(*) into n from public.ec_inbound_message where id = v_msg;
-  if n <> 0 then perform set_config('role','postgres',true);
-    raise exception 'EMP-4A RLS FAIL: no-rights user read a message'; end if;
-  insert into _r values ('no_rights_denied', 'ok');
+  select count(*) into m_norights from public.ec_inbound_message where id = v_msg;
 
-  -- ALLOWED: permission AND membership, across all four rewritten policies.
   perform set_config('request.jwt.claims',
     json_build_object('sub', v_member::text, 'role', 'authenticated')::text, true);
-  select count(*) into n from public.ec_mailbox where id = v_mb;
-  if n <> 1 then perform set_config('role','postgres',true);
-    raise exception 'EMP-4A RLS FAIL: member could not read the mailbox'; end if;
-  select count(*) into n from public.ec_inbound_message where id = v_msg;
-  if n <> 1 then perform set_config('role','postgres',true);
-    raise exception 'EMP-4A RLS FAIL: member could not read the message'; end if;
-  select count(*) into n from public.ec_inbound_attachment where id = v_att;
-  if n <> 1 then perform set_config('role','postgres',true);
-    raise exception 'EMP-4A RLS FAIL: member could not read the attachment'; end if;
-  select count(*) into n from public.ec_triage_item where id = v_tri;
-  if n <> 1 then perform set_config('role','postgres',true);
-    raise exception 'EMP-4A RLS FAIL: member could not read the triage item'; end if;
-  insert into _r values ('member_allowed_all_four', 'ok');
+  select count(*) into m_mbx      from public.ec_mailbox            where id = v_mb;
+  select count(*) into m_msg      from public.ec_inbound_message    where id = v_msg;
+  select count(*) into m_att      from public.ec_inbound_attachment where id = v_att;
+  select count(*) into m_tri      from public.ec_triage_item        where id = v_tri;
+  select count(*) into m_hook     from public.ec_webhook_event      where tenant_id = v_tenant;
 
-  -- DENIED: membership with can_read = false.
   perform set_config('request.jwt.claims',
     json_build_object('sub', v_noread::text, 'role', 'authenticated')::text, true);
-  select count(*) into n from public.ec_inbound_message where id = v_msg;
-  if n <> 0 then perform set_config('role','postgres',true);
-    raise exception 'EMP-4A RLS FAIL: can_read=false read the message'; end if;
-  select count(*) into n from public.ec_inbound_attachment where id = v_att;
-  if n <> 0 then perform set_config('role','postgres',true);
-    raise exception 'EMP-4A RLS FAIL: can_read=false read the attachment'; end if;
-  insert into _r values ('can_read_false_denied', 'ok');
+  select count(*) into m_noread_msg from public.ec_inbound_message    where id = v_msg;
+  select count(*) into m_noread_att from public.ec_inbound_attachment where id = v_att;
 
-  -- DENIED: a REVOKED membership grants nothing.
   perform set_config('request.jwt.claims',
     json_build_object('sub', v_revoked::text, 'role', 'authenticated')::text, true);
-  select count(*) into n from public.ec_inbound_message where id = v_msg;
-  if n <> 0 then perform set_config('role','postgres',true);
-    raise exception 'EMP-4A RLS FAIL: a revoked member still read the message'; end if;
-  insert into _r values ('revoked_member_denied', 'ok');
+  select count(*) into m_revoked from public.ec_inbound_message where id = v_msg;
 
-  -- ALLOWED (bootstrap): the mail administrator sees the mailbox with no
-  -- membership row, so the first membership can be granted.
   perform set_config('request.jwt.claims',
     json_build_object('sub', v_admin::text, 'role', 'authenticated')::text, true);
-  select count(*) into n from public.ec_mailbox where id = v_mb;
-  if n <> 1 then perform set_config('role','postgres',true);
-    raise exception 'EMP-4A RLS FAIL: bootstrap failed, no first membership could be granted'; end if;
+  select count(*) into m_bootstrap from public.ec_mailbox where id = v_mb;
+
+  perform set_config('role', 'postgres', true);
+  perform set_config('request.jwt.claims', '', true);
+
+  -- ---- judge, back as postgres so _r is writable --------------------------
+  if m_norights <> 0 then
+    raise exception 'EMP-4A RLS FAIL: no-rights user read a message (got %)', m_norights;
+  end if;
+  insert into _r values ('no_rights_denied', 'ok');
+
+  if m_mbx <> 1 or m_msg <> 1 or m_att <> 1 or m_tri <> 1 then
+    raise exception 'EMP-4A RLS FAIL: member denied on one of the four policies (mbx=% msg=% att=% tri=%)',
+      m_mbx, m_msg, m_att, m_tri;
+  end if;
+  insert into _r values ('member_allowed_all_four', 'ok');
+
+  if m_noread_msg <> 0 or m_noread_att <> 0 then
+    raise exception 'EMP-4A RLS FAIL: can_read=false read something (msg=% att=%)', m_noread_msg, m_noread_att;
+  end if;
+  insert into _r values ('can_read_false_denied', 'ok');
+
+  if m_revoked <> 0 then
+    raise exception 'EMP-4A RLS FAIL: a revoked member still read the message (got %)', m_revoked;
+  end if;
+  insert into _r values ('revoked_member_denied', 'ok');
+
+  if m_bootstrap <> 1 then
+    raise exception 'EMP-4A RLS FAIL: bootstrap failed, no first membership could be granted';
+  end if;
   insert into _r values ('admin_bootstrap_allowed', 'ok');
 
   -- The webhook journal is diagnostics-only: membership does not open it, and
   -- the probe role does not hold communication:diagnostics:read.
-  perform set_config('request.jwt.claims',
-    json_build_object('sub', v_member::text, 'role', 'authenticated')::text, true);
-  select count(*) into n from public.ec_webhook_event where tenant_id = v_tenant;
-  if n <> 0 then perform set_config('role','postgres',true);
-    raise exception 'EMP-4A RLS FAIL: a mailbox member read the webhook journal'; end if;
+  if m_hook <> 0 then
+    raise exception 'EMP-4A RLS FAIL: a mailbox member read the webhook journal (got %)', m_hook;
+  end if;
   insert into _r values ('webhook_journal_not_membership_scoped', 'ok');
 
-  perform set_config('role', 'postgres', true);
-  perform set_config('request.jwt.claims', '', true);
 
   -- ---- constraints bite ---------------------------------------------------
   begin
