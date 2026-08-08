@@ -1,7 +1,7 @@
 # EMP-3 — Enterprise Mail Reply, Compose and Outbound Delivery: Completion Report
 
-**Date:** 2026-08-07 · **Implementation SHA:** `d32ea4c`
-**CI GREEN — run #368: `rls-tests` 80 steps / 0 skipped / 0 failed · `build` 10 / 0 / 0**
+**Date:** 2026-08-08 · **Implementation SHA:** `ad8da34`
+**CI GREEN — run #370: `rls-tests` 80 steps / 0 skipped / 0 failed · `build` 10 / 0 / 0**
 **Migration 87 `20260811000001_outbound_mail.sql` — APPLIED IN CI, UNAPPLIED IN PRODUCTION**
 
 ---
@@ -165,7 +165,15 @@ policy, no permission.**
    `PUBLIC` does not remove Supabase's *explicit* default-privilege grants to `anon` and
    `authenticated`. A bare local Postgres cannot reproduce this. Full analysis in
    `docs/ops/emp-3-privilege-incident.md`.
-3. **An invalid ledger source.** `business_event.source` is a closed set and `'rpc'` is not in
+3. **My own assertion testing the wrong property.** A later attempt refused the migration over
+   `INSERT/UPDATE/DELETE` grants on `communication_message`. Those grants are **inert**: the
+   table has RLS enabled and no write policy — and no table in this platform has one — so
+   PostgreSQL denies the write regardless of the grant. A **function** has no RLS, which is why
+   the EXECUTE revoke was right; conflating the two produced a false alarm. The privileges were
+   **not** revoked (that would single one table out of a uniform deployed posture for no gain);
+   the assertion was replaced with a proof of **effective immutability**. Full reasoning in
+   `docs/ops/emp-3-privilege-incident.md` §7.
+4. **An invalid ledger source.** `business_event.source` is a closed set and `'rpc'` is not in
    it. Added `'comms_rpc'`, following the `assignment_rpc`/`document_rpc`/`reconcile_rpc`
    precedent rather than borrowing EC-2's `policy_rpc` — sending an email is not a policy act.
 
@@ -174,7 +182,7 @@ the logic so the template-mail callers inherited the CAS guarantee.
 
 ## 19. CI and deployment status
 
-**CI GREEN — run #368 on `d32ea4c`: `rls-tests` 80/0/0, `build` 10/0/0.** The rls step count
+**CI GREEN — run #370 on `ad8da34`: `rls-tests` 80/0/0, `build` 10/0/0.** The rls step count
 rose 79 → 80 because EMP-3 added exactly one suite.
 
 **Migration 87 is NOT applied in production.** Provider integration remains dark:

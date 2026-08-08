@@ -1,6 +1,6 @@
 # Release Status — standing table (updated at every release event)
 
-*Last updated: 2026-08-07 (**EMP-3 COMPLETE — CI GREEN run #368 on `d32ea4c`**: rls-tests
+*Last updated: 2026-08-08 (**EMP-3 COMPLETE — CI GREEN run #370 on `ad8da34`**: rls-tests
 80/0/0, build 10/0/0. Governed outbound mail — compose, reply, reply-all, drafts and a
 CAS-protected send — entirely on the EXISTING `communication_message` queue. **⚠️ MIGRATION 87
 IS NOT APPLIED IN PRODUCTION**; apply via the sanctioned path and confirm the ledger reads
@@ -14,7 +14,10 @@ provider accepted historical sends; (2) revoking from PUBLIC does NOT remove Sup
 explicit default-privilege grants, so four SECURITY DEFINER functions were reachable by anon
 and authenticated — the migration's own assertion caught it and rolled back
 (`docs/ops/emp-3-privilege-incident.md`); (3) `business_event.source` is a closed set, so
-`comms_rpc` was added following the assignment_rpc/document_rpc/reconcile_rpc precedent. Also
+`comms_rpc` was added following the assignment_rpc/document_rpc/reconcile_rpc precedent; (4) my own
+table-write assertion tested the WRONG property — DML grants on `communication_message` are
+INERT because RLS is on with no write policy (no table in this platform has one), so the
+privileges were left alone and the assertion replaced with a proof of effective immutability. Also
 fixed the PRE-EXISTING duplicate-send defect in `deliver()`. **⚠️ NEW FINDING, reported not
 fixed: no migration in this repo revokes from anon/authenticated, so the pre-existing
 quotation/document/customs/reconciliation/policy RPCs are likely executable by authenticated
