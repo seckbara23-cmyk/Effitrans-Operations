@@ -54,6 +54,16 @@ insert into public.ec_mailbox (id, tenant_id, address, label_fr, purpose) values
    'quotation@ec-test.example', 'Cotation (test)', 'QUOTATION')
 on conflict (id) do nothing;
 
+-- EMP-4A — effective access is now tenant + communication:inbound:read + MEMBERSHIP.
+-- The reader holds the permission (below); without a membership row it would
+-- correctly see nothing, so the fixture grants it. This is the narrowing landing:
+-- the permission alone is no longer sufficient, by ratification.
+insert into public.ec_mailbox_member (tenant_id, mailbox_id, user_id, can_read)
+values ('00000000-0000-0000-0000-000000000001',
+        '00000000-0000-0000-0000-0000000ecb01',
+        '00000000-0000-0000-0000-0000000ec001', true)
+on conflict (mailbox_id, user_id) do nothing;
+
 -- A routed message and a quarantined one.
 insert into public.ec_inbound_message
   (id, tenant_id, mailbox_id, provider, provider_event_id, from_address,

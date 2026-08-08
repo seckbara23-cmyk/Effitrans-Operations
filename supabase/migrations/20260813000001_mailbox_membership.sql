@@ -218,11 +218,15 @@ select r.id, p.id
     'communication:mailbox:provision',
     'communication:membership:manage',
     'communication:diagnostics:read',
-    -- The existing minimum required to USE the administration surface: see the
-    -- mailboxes and the correspondence they hold. Nothing beyond it.
+    -- The existing minimum required to USE the administration surface.
+    --
+    -- `communication:inbound:read` is DELIBERATELY ABSENT. RATIFY-EMP4A-8 keeps
+    -- it granted to no role, and EC-1's suite pins that at zero. MAIL_ADMIN
+    -- therefore administers mailboxes and membership WITHOUT being able to read
+    -- correspondence — which is the correct shape anyway: granting access is not
+    -- the same authority as having it.
     'communication:read',
-    'communication:manage',
-    'communication:inbound:read'
+    'communication:manage'
   )
  where r.code = 'MAIL_ADMIN'
 on conflict do nothing;
@@ -431,7 +435,7 @@ do $$
 declare
   v_tenant uuid; v_other uuid; v_mb uuid; v_msg uuid;
   v_member uuid; v_nomember uuid; v_noread uuid; v_admin uuid; v_cross uuid; v_norights uuid;
-  v_role_mail uuid;
+  v_role_mail uuid; v_role_probe uuid;
   n int;
 begin
   select id into v_tenant from public.organization limit 1;
@@ -451,9 +455,25 @@ begin
   values (v_tenant, v_mb, 'GENERIC', 'emp4a-evt', 's@test.local', 'aa',
           'ec/emp4a.eml', 1, now(), 'RECEIVED') returning id into v_msg;
 
-  -- Six personas. Each is an app_user; the ones that need correspondence rights
-  -- get a role carrying communication:inbound:read.
+  -- Six personas. The ones that need correspondence rights get an EPHEMERAL
+  -- probe role carrying `communication:inbound:read`.
+  --
+  -- Why a throwaway role and not MAIL_ADMIN: RATIFY-EC1-1 keeps
+  -- `communication:inbound:read` granted to NO role, and MAIL_ADMIN deliberately
+  -- does not carry it — administering who may read correspondence is not the
+  -- same authority as reading it. So there is no real role that can play the
+  -- "authorized reader" persona, and inventing one permanently would break the
+  -- very guarantee EC-1's suite pins. The probe role exists only inside this
+  -- transaction and is deleted below. EC-1's own suite uses the same device.
   select id into v_role_mail from public.role where code = 'MAIL_ADMIN' and tenant_id = v_tenant;
+
+  insert into public.role (tenant_id, code, label_fr, label_en, is_provisional)
+  values (v_tenant, '__EMP4A_PROBE', 'Sonde EMP-4A', 'EMP-4A probe', true)
+  returning id into v_role_probe;
+
+  insert into public.role_permission (role_id, permission_id)
+  select v_role_probe, p.id from public.permission p
+   where p.code = 'communication:inbound:read';
 
   -- app_user.id references auth.users, so the identity must exist there first.
   v_member := gen_random_uuid(); v_nomember := gen_random_uuid();
@@ -481,11 +501,18 @@ begin
   -- The three personas that must hold communication:inbound:read get MAIL_ADMIN
   -- for the fixture's purposes; the admin persona additionally exercises the
   -- bootstrap path, since MAIL_ADMIN carries membership:manage.
+  -- The three personas that must hold the correspondence authority.
+  insert into public.user_role (user_id, role_id, tenant_id)
+  values (v_member, v_role_probe, v_tenant),
+         (v_noread, v_role_probe, v_tenant),
+         (v_admin,  v_role_probe, v_tenant)
+  on conflict do nothing;
+
+  -- The administrator additionally holds membership:manage, which is what the
+  -- bootstrap persona exercises.
   if v_role_mail is not null then
     insert into public.user_role (user_id, role_id, tenant_id)
-    values (v_member, v_role_mail, v_tenant),
-           (v_noread, v_role_mail, v_tenant),
-           (v_admin,  v_role_mail, v_tenant)
+    values (v_admin, v_role_mail, v_tenant)
     on conflict do nothing;
   end if;
 
@@ -568,6 +595,8 @@ begin
   delete from public.ec_inbound_message where id = v_msg;
   delete from public.ec_mailbox        where id = v_mb;
   delete from public.user_role where user_id in (v_member, v_noread, v_admin);
+  delete from public.role_permission where role_id = v_role_probe;
+  delete from public.role where id = v_role_probe;
   delete from public.app_user where id in (v_member, v_nomember, v_noread, v_admin, v_norights)
      or (v_cross is not null and id = v_cross);
   -- Cascades from auth.users would remove app_user too, but both are deleted

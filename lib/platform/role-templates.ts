@@ -648,7 +648,10 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "communication:membership:manage",
       "communication:diagnostics:read",
       // The existing minimum required to USE the administration surface.
-      "communication:read", "communication:manage", "communication:inbound:read",
+      // `communication:inbound:read` is DELIBERATELY ABSENT (RATIFY-EC1-1 /
+      // RATIFY-EMP4A-8): it is granted to no role, and administering who may
+      // read correspondence is not the same authority as reading it.
+      "communication:read", "communication:manage",
       ...BASE,
     ],
   },

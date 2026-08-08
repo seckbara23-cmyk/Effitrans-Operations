@@ -1337,7 +1337,10 @@ join public.permission p
                 'communication:mailbox:provision',
                 'communication:membership:manage',
                 'communication:diagnostics:read',
-                -- the existing minimum needed to USE the surface
-                'communication:read', 'communication:manage', 'communication:inbound:read')
+                -- The existing minimum needed to USE the surface.
+                -- communication:inbound:read is DELIBERATELY ABSENT: RATIFY-EC1-1
+                -- keeps it granted to no role, and administering access is not
+                -- the same authority as having it.
+                'communication:read', 'communication:manage')
 where r.tenant_id = '00000000-0000-0000-0000-000000000001' and r.code = 'MAIL_ADMIN'
 on conflict do nothing;
