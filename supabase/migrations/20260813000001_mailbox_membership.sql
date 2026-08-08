@@ -332,9 +332,13 @@ create policy ec_inbound_attachment_select on public.ec_inbound_attachment
   for select to authenticated
   using (tenant_id = public.auth_tenant_id()
      and public.has_permission('communication:inbound:read')
+     -- QUALIFIED, and it must be. `ec_inbound_message` has its own
+     -- `message_id` column — the RFC 5322 header, a text field — so an
+     -- unqualified `message_id` inside this subquery binds to the INNER table
+     -- and compares uuid to text. The outer table is named explicitly.
      and exists (
        select 1 from public.ec_inbound_message m
-        where m.id = message_id
+        where m.id = ec_inbound_attachment.message_id
           and (m.mailbox_id is null or public.user_can_read_mailbox(m.mailbox_id))));
 
 drop policy if exists ec_triage_item_select on public.ec_triage_item;
@@ -342,9 +346,10 @@ create policy ec_triage_item_select on public.ec_triage_item
   for select to authenticated
   using (tenant_id = public.auth_tenant_id()
      and public.has_permission('communication:inbound:read')
+     -- Qualified for the same reason as the attachment policy above.
      and exists (
        select 1 from public.ec_inbound_message m
-        where m.id = message_id
+        where m.id = ec_triage_item.message_id
           and (m.mailbox_id is null or public.user_can_read_mailbox(m.mailbox_id))));
 
 -- RATIFY-EMP4A-3 — the webhook journal becomes operator diagnostics.
