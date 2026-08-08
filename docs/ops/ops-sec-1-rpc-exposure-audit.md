@@ -3,8 +3,10 @@
 **Date:** 2026-08-08 · **Documentation only.** No migration, no privilege change, no function
 change, no policy change, no application change was made in this phase.
 
-**Verdict: NO-GO for silent remediation — GO for an expedited P0 fix on ratification.**
-Rationale and the exact ratification needed are in §9.
+**Original verdict: NO-GO for silent remediation — GO for an expedited P0 fix on ratification.**
+Both ratifications were granted. **OPS-SEC-1 is now CLOSED** — migrations 90–92 applied and
+verified; see `ops-sec-1-incident-report.md`, which also records five process failures that
+occurred during the remediation. §9 is kept as written for the record.
 
 ---
 
@@ -23,8 +25,13 @@ The withheld material exists in full and is available privately. It contains:
 - the zero-effect probe and its result;
 - 47 exact `REVOKE`/`GRANT` statements, ready to become a migration.
 
-**This document will be completed with that material as soon as remediation is deployed.**
-If the repository is made private first, it can be completed immediately instead.
+**RESOLVED 2026-08-08.** Remediation is deployed and independently verified (migrations 90–92;
+CI run `31280066280` #399, 82/0/0 + 10/0/0). The exact signatures now live in those migration
+files, so the withheld list is no longer withheld — it describes a **closed** defect.
+
+Exposure window, recorded honestly: commit `01ac1bc` published the exact target list while the
+repository was still public **and the hole was still open**. See
+`ops-sec-1-incident-report.md` §3. The repository remained public at the time of writing.
 
 What is *not* withheld: the function bodies themselves are **already public** in
 `supabase/migrations/`. Anyone can read them and see that they take an actor as a parameter and
@@ -52,9 +59,15 @@ is why this audit was run against the **hosted** database rather than a local on
 **Live verification was performed** against the linked production project, read-only, via the
 Management API. Every statement below is measured, not inferred from migration text.
 
-Behavioural probing was limited to **zero-effect** calls — a call whose first statement raises
-before any read, any write and any event emission. Nothing was mutated. No business record was
-touched. No probe was run that could have succeeded.
+Behavioural probing during **this audit** was limited to **zero-effect** calls — a call whose
+first statement raises before any read, any write and any event emission. Nothing was mutated and
+no business record was touched.
+
+Correction, added at closure: a **later** probe run during remediation (not during this audit) hit
+`next_quotation_number`, which has no such early guard and does write. It was stopped by a
+foreign-key violation on a nonexistent sentinel tenant. No data was modified, but its inertness
+came from a different mechanism than the one claimed here. Recorded in
+`ops-sec-1-incident-report.md` §7.
 
 ## 2. Inventory summary
 
