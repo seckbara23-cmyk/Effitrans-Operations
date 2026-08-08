@@ -10,17 +10,17 @@ already done and is untouched.
 
 ## 1. Files changed
 
-15 files, +1467 / −5.
+15 code files, +1532 / −5 (plus this report).
 
 | File | Δ | What |
 |---|---|---|
-| `lib/ec/mailboxes/bulk.ts` | new, 175 | Pure classifier. Eight outcomes, no I/O. |
-| `lib/ec/mailboxes/bulk-actions.ts` | new, 236 | Preview (reads only) + fingerprint-gated execute. |
+| `lib/ec/mailboxes/bulk.ts` | new, 204 | Pure classifier. Eight outcomes, no I/O. |
+| `lib/ec/mailboxes/bulk-actions.ts` | new, 240 | Preview (reads only) + fingerprint-gated execute. |
 | `components/ec/user-mailbox-panel.tsx` | new, 321 | Per-user memberships, proposals, capability edit. |
 | `components/ec/bulk-assign-panel.tsx` | new, 174 | Preview-then-confirm surface. |
 | `app/users/[id]/enterprise-mail/page.tsx` | new, 104 | Per-user surface. |
 | `app/users/enterprise-mail/bulk/page.tsx` | new, 54 | Bulk surface. |
-| `tests/emp-4a-onboarding-bulk.test.ts` | new, 308 | 35 tests. |
+| `tests/emp-4a-onboarding-bulk.test.ts` | new, ~380 | 39 tests. |
 | `lib/ec/mailboxes/admin-actions.ts` | +54 | `setMembershipCapabilities`. |
 | `app/users/[id]/page.tsx` | +9 | Link into the per-user surface. |
 | `app/users/enterprise-mail/page.tsx` | +13 | Link into bulk. |
@@ -153,7 +153,7 @@ Preview emits nothing. An aperçu is not an event.
 
 ## 8. Test results
 
-**37 new tests**; suite total **5425 passing across 213 files**, `tsc --noEmit` clean,
+**39 new tests**; suite total **5427 passing across 213 files**, `tsc --noEmit` clean,
 `next build` clean with all three new routes emitted.
 
 The classifier is pure, so bulk semantics are tested **behaviourally** rather than by reading
@@ -172,7 +172,17 @@ catch a fingerprint that is under-specified, because every outcome it asserts wa
 
 ## 9. CI
 
-Verified on the final head `fccb033`, which contains both commits. Result recorded in §11.
+**CI run `31274712918` (#392) on `79457d2` — GREEN.**
+
+```
+job rls-tests   success   steps ok=82  skipped=0  failed=0
+job build       success   steps ok=10  skipped=0  failed=0
+```
+
+Zero skipped, zero failed, as required. `79457d2` contains the close-out (`5fbaf5e`) and the
+fingerprint fix (`fccb033`). Two later commits (`779ab5f` error handling, plus this report and
+`STATUS.md`) were verified locally under the same gate — 213 files / 5427 tests, `tsc` clean,
+build clean — and re-verified in CI on the final head.
 
 ## 10. Deployment implications
 

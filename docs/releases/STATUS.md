@@ -1,23 +1,32 @@
 # Release Status — standing table (updated at every release event)
 
-*Last updated: 2026-08-08 (**EMP-4A DEPLOYED, NOT COMPLETE — CI GREEN run #387 on `3af379a`**:
-rls-tests 82/0/0, build 10/0/0. **MIGRATION 89 IS APPLIED IN PRODUCTION** (via SQL Editor) —
-⚠️ **the ledger still needs `supabase migration repair --status applied 20260813000001` and
-`...20260812000001`; NOT db push, do NOT re-run 89.** Read-only verification pack:
-`docs/ops/emp-4a-production-verification.md`. Mailbox membership is now an RLS GATE: effective
-access = tenant AND communication:inbound:read AND membership. Membership NARROWS — every
-rewritten policy keeps the correspondence term, so it can never be an alternative authorization
-path. **Live blast radius is ZERO because communication:inbound:read is granted to no role
-(RATIFY-EC1-1); grant memberships BEFORE that permission, not after.** `can_send_as` and
-`can_reply_as` are absent by ratification (EMP-4B owns sender identity). FOUR defects found and
-fixed: column shadowing (uuid=text at CREATE POLICY); a ratification violation I introduced
-(MAIL_ADMIN carrying inbound:read — caught by EC-1's perm_grants=0 pin); **illegal DELETE of
-append-only evidence in the migration probe, which CI structurally could not reproduce because
-its organization table is empty at migration time — redesigned to persist nothing via a
-rolled-back subtransaction**; and a privileged write inside a role switch. **⚠️ NOT COMPLETE:
-frozen steps 7 (onboarding surface on /users/[id]) and 9 (previewed bulk assignment) are PARTIAL
-— ergonomics only, everything shipped is gated, audited and CI-verified.** See
-`docs/mail/emp-4a-deployment-report.md`. **EMP-4B and EMP-5 have not begun.**
+*Last updated: 2026-08-08 (**EMP-4A COMPLETE — CI GREEN, see the deployment-history row**.
+**MIGRATION 89 IS APPLIED IN PRODUCTION** (via SQL Editor) — ⚠️ **the ledger still needs
+`supabase migration repair --status applied 20260813000001` and `...20260812000001`; NOT db push,
+do NOT re-run 89.** Read-only verification pack: `docs/ops/emp-4a-production-verification.md`.
+Mailbox membership is an RLS GATE: effective access = tenant AND communication:inbound:read AND
+membership. Membership NARROWS — every rewritten policy keeps the correspondence term, so it can
+never be an alternative authorization path. **Live blast radius is ZERO because
+communication:inbound:read is granted to no role (RATIFY-EC1-1); grant memberships BEFORE that
+permission, not after.** `can_send_as` and `can_reply_as` are absent by ratification (EMP-4B owns
+sender identity). **The close-out (frozen steps 7 + 9) added NO migration, permission, role, flag
+or schema** — three new routes behind the existing `communication:membership:manage`, so there is
+**nothing for an operator to deploy**. Bulk assignment is preview-first *as a property*:
+`executeBulkAssignment` recomputes the preview server-side and refuses on fingerprint mismatch.
+SIX defects found and fixed across the phase: column shadowing (uuid=text at CREATE POLICY); a
+ratification violation I introduced (MAIL_ADMIN carrying inbound:read — caught by EC-1's
+perm_grants=0 pin); **illegal DELETE of append-only evidence in the migration probe, which CI
+structurally could not reproduce because its organization table is empty at migration time —
+redesigned to persist nothing via a rolled-back subtransaction**; a privileged write inside a
+role switch; **an under-specified preview fingerprint that hashed only userId:outcome, making
+"grant read" and "grant read+send+manage" byte-identical for new members — found by reading the
+code AFTER 35 tests passed, since every outcome it asserted was correct**; and an unscoped
+service-role read caught by the tenant-scope guard. That last one exposed a standing gap:
+**none of the seven `ec_*` tables were in `TENANT_SCOPED_TABLES`**, so admin-client reads across
+the whole mail context had never been guarded — a sync omission dating to EC-1. All seven are now
+registered; 2 of 59 reads were unscoped (one fixed, one a reviewed exception that cannot be
+scoped because it runs before routing resolves a tenant). See
+`docs/mail/emp-4a-completion-report.md`. **EMP-4B and EMP-5 have not begun.**
 Previously: (**IA RENAME SHIPPED — CI GREEN run #376 on `d509b55`**: rls-tests
 81/0/0, build 10/0/0. **The Communications workspace is now Enterprise Mail at `/mail`**
 (`/communications/*` → permanent 308 redirects in next.config.mjs; triage → inbox). No
@@ -310,6 +319,7 @@ only) · **HRQ-P4** the competency framework (catalogue ships empty by design).
 | **R1.0** (reconciliation + validation) | 2026-07-31 → **2026-08-01 RELEASED** | `c29b7cf` at completion (post-sanitation head) | none — validation only. Side products shipped during UAT: invoice-renderer geometry fix `733c116` (`uat2b-2`, immutable artifacts untouched) + history sanitation (5 SHAs remapped) | A1–A3, B1–B4 **all PASS** (B2 with stated limitation) · **§4 signed 2026-08-01** (Bara Seck, all seats; provenance note in the sign-off) |
 | **HR-1** (Dashboard & Organization Foundation) | 2026-08-01 **DEPLOYED** | `43bf42e` (migration) / `c47f95b` (repo at deploy) | **73** applied in production by the operator after the `scope`→`data_scope` correction; ledger repaired → **73/73**; prod verification: 2 permission rows · **0 grants** (B1 pause) · all tables present | operator deployment PASS · CI 67/67 RLS steps ×2 · business gates open (B1/B2/B3) |
 | **EC-1 + EC-2** (Enterprise Communications: inbound capture + triage) | 2026-08-05 **CLOSED** | `aa50fd9` (EC-1) / `91ad948` (EC-2, CI green; **no migration file differs** from `fc88633`) | **80–81** applied; ledger **81/81**. Independent verification: ledger zero-mismatched · **6/6 EC tables** · **11/11 EC indexes** (9 from 80, 2 from 81) | deployment **PASS** · CI run `30758769202` **green, 74+10 steps, 0 skipped, 0 failed**, both EC suites executed by name · **no sequencing deviation** (applied after green, unlike DEV-HR6-01) · open: grants + mailbox + provider/DPA + rate limiting (**management/ops, not operator**) |
+| **EMP-4A** (Mailbox membership & user provisioning) | 2026-08-08 **CLOSED** | `79457d2` (CI-verified) → `779ab5f` final | **89** `20260813000001_mailbox_membership.sql` — **APPLIED** in production via SQL Editor; ⚠️ **CLI ledger still needs `migration repair --status applied` for 20260812000001 + 20260813000001** (NOT db push, do NOT re-run 89). The close-out adds **no migration, permission, role, flag or schema** | gates: 213 files / 5427 tests green, tsc 0, build clean · CI run `31274712918` (#392) **rls-tests 82/0/0, build 10/0/0 — zero skipped, zero failed** · membership NARROWS (never an alternative auth path) · preview-first enforced by a server-recomputed fingerprint that binds mailbox + capabilities + eligibility · all seven `ec_*` tables registered with the tenant-scope guard (standing gap since EC-1) |
 | **UT-4** (Unified Operational Timeline UI) | 2026-08-12 **COMPLETE — nothing to deploy** | `849af88` | **none** — no migration, schema, permission, flag or route (pinned) | gates: 205 files / 5138 tests green, tsc 0, build clean · CI `30953710749` 79+10 steps, 0 skipped · UI queries no module table · `audit_log` excluded · clientSafe projection still unwired (UT-5) |
 | **UT-3B** (Decision Plane emitters) | 2026-08-11 **CLOSED** | `fe6a9ff` | **86** `20260810000001_decision_plane_emitters.sql` — **APPLIED** 2026-08-11, ledger 86/86. Six trigger functions + six triggers; no RPC edited, no table, permission or policy | gates: 204 files / 5077 tests green, tsc 0 · CI `30935590218` 79+10 steps, 0 skipped · emitters proven in real PostgreSQL incl. **nothing survives ROLLBACK** · no backfill: events appear for NEW acts only |
 | **UT-2** (Unified Tracking: merged two-plane read model) | 2026-08-10 **BUILT — nothing to deploy** | `031d9db` | **none** — UT-2 adds no migration, no schema, no permission and no flag (pinned by test) | gates: 204 files / 5064 tests green, tsc 0, build clean · no UI, no emitter, no store · `audit_log` excluded · new blocker **UT3-ROAD** (road store has no `confidence`) |
