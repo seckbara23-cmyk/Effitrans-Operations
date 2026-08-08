@@ -1,6 +1,24 @@
 # Release Status — standing table (updated at every release event)
 
-*Last updated: 2026-08-08 (**EMP-3 COMPLETE — CI GREEN run #370 on `ad8da34`**: rls-tests
+*Last updated: 2026-08-08 (**EMP-4 COMPLETE — CI GREEN run #373 on `a5f939b`**: rls-tests
+81/0/0, build 10/0/0, green on the FIRST attempt. Attachment → document ingestion.
+**⚠️ MIGRATION 88 IS NOT APPLIED IN PRODUCTION** — apply and confirm the ledger reads 88/88;
+there is no flag or permission to set, and the feature stays unreachable regardless because
+`communication:inbound:read` is granted to no role (RATIFY-EC1-1, untouched as ratified).
+Migration 88 is ONE nullable FK + ONE partial unique index: no table, bucket, policy,
+permission, emitter, trigger, RPC or background job. Both provenance signals are kept — the SHA
+proves CONTENT identity, the FK proves BUSINESS provenance, because two customers can send the
+same PDF. Idempotency is the unique index rather than a service check (a read-then-insert loses
+a race); soft-delete deliberately does NOT reopen ingestion, and a lost race does NOT delete the
+stored object. Bytes are hashed once and stored once, and the copy is REFUSED if it disagrees
+with the hash EC-1 recorded. Ingestion lives in its own module, NOT in EC-2's triage actions, so
+EC-2's anti-auto-promotion guard stays true. New SQL suite proves exactly-once DOCUMENT_UPLOADED
+from the db trigger only, no extra event, inbound evidence unchanged. See
+`docs/mail/emp-4-completion-report.md` and the audit `docs/mail/emp-4-audit.md`.
+**EMP-4A (mailbox membership + user provisioning) is REGISTERED but NOT STARTED** —
+`docs/mail/emp-4a-mailbox-provisioning-brief.md`; its STOP clause is live because per-mailbox
+ACL is the new security boundary EMP-0 deferred as RATIFY-EMP-2. **EMP-5 has not begun.**
+Previously: (**EMP-3 COMPLETE — CI GREEN run #370 on `ad8da34`**: rls-tests
 80/0/0, build 10/0/0. Governed outbound mail — compose, reply, reply-all, drafts and a
 CAS-protected send — entirely on the EXISTING `communication_message` queue. **⚠️ MIGRATION 87
 IS NOT APPLIED IN PRODUCTION**; apply via the sanctioned path and confirm the ledger reads
