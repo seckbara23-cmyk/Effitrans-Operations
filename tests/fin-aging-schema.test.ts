@@ -477,7 +477,12 @@ describe("the DB suite is wired into CI, last, with a readable failure", () => {
     // Each phase appends its suite after the last (the standing rule: newest
     // runs last), so this pin moves to whichever suite is currently newest.
     // EMP-3 appended its suite, so the pin moves to it (the standing rule).
-    const mine = ci.indexOf("rls_mailbox_membership_test.sql");
+    // OPS-SEC-2A appended two; the pin moves to the later of them.
+    //
+    // The property being defended is append-only ordering: a new suite inserted
+    // BEFORE the established ones would, on failure, abort and skip every suite
+    // after it — which is how one failure hid seventy skips during OPS-SEC-1.
+    const mine = ci.indexOf("ops_sec_2a_catalog_invariants_test.sql");
     const others = [...ci.matchAll(/-f supabase\/tests\/(\w+)\.sql/g)]
       .map((m) => ci.indexOf(`${m[1]}.sql`))
       .filter((i) => i !== mine);
