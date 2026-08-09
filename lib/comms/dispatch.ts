@@ -36,6 +36,9 @@ import "server-only";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { sendEmail, isProviderConfigured } from "./provider";
 import { resolveReplyTo, type MailboxOfRecord } from "./reply-to";
+import {
+  mailboxRuntimeEligibility, type LifecycleFacts,
+} from "@/lib/ec/mailboxes/lifecycle";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
 import { reportError } from "@/lib/observability/report";
@@ -62,6 +65,54 @@ const SEND_SELECT =
 
 function addresses(v: unknown): string[] {
   return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+}
+
+/**
+ * EMP-5G — the mailbox of record, as lifecycle facts, tenant-scoped.
+ *
+ * One read feeding both the readiness decision and the Reply-To, so the two
+ * cannot disagree about the same mailbox within one send.
+ */
+export async function loadMailboxFacts(
+  admin: Admin, tenantId: string, mailboxId: string,
+): Promise<LifecycleFacts | null> {
+  const { data } = await admin
+    .from("ec_mailbox")
+    .select(
+      "id, tenant_id, address, mailbox_type, owner_user_id, provisioning_status, "
+      + "provisioning_note, ownership, external_provider, external_mailbox_id, "
+      + "corporate_identity_confirmed_at, corporate_identity_confirmed_by, "
+      + "outbound_verified_at, outbound_verified_by, outbound_verification_ref, "
+      + "inbound_verified_at, inbound_verified_by, inbound_verification_ref, "
+      + "activated_at, activated_by",
+    )
+    .eq("id", mailboxId)
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+  if (!data) return null;
+  const r = data as unknown as Record<string, unknown>;
+  return {
+    id: r.id as string,
+    tenantId: r.tenant_id as string,
+    address: (r.address as string | null) ?? "",
+    mailboxType: (r.mailbox_type as string) ?? "SHARED",
+    ownerUserId: (r.owner_user_id as string | null) ?? null,
+    provisioningStatus: (r.provisioning_status as string) ?? "",
+    provisioningNote: (r.provisioning_note as string | null) ?? null,
+    ownership: (r.ownership as string | null) ?? "UNKNOWN",
+    externalProvider: (r.external_provider as string | null) ?? null,
+    externalMailboxId: (r.external_mailbox_id as string | null) ?? null,
+    corporateIdentityConfirmedAt: (r.corporate_identity_confirmed_at as string | null) ?? null,
+    corporateIdentityConfirmedBy: (r.corporate_identity_confirmed_by as string | null) ?? null,
+    outboundVerifiedAt: (r.outbound_verified_at as string | null) ?? null,
+    outboundVerifiedBy: (r.outbound_verified_by as string | null) ?? null,
+    outboundVerificationRef: (r.outbound_verification_ref as string | null) ?? null,
+    inboundVerifiedAt: (r.inbound_verified_at as string | null) ?? null,
+    inboundVerifiedBy: (r.inbound_verified_by as string | null) ?? null,
+    inboundVerificationRef: (r.inbound_verification_ref as string | null) ?? null,
+    activatedAt: (r.activated_at as string | null) ?? null,
+    activatedBy: (r.activated_by as string | null) ?? null,
+  };
 }
 
 /**
@@ -97,6 +148,37 @@ export async function dispatchMessage(
 
   const m = row as unknown as Record<string, unknown>;
 
+  // EMP-5G — MAILBOX RUNTIME READINESS, and it runs BEFORE the compare-and-set
+  // for the same reason `isProviderConfigured` does (RATIFY-EMP3-2): an
+  // unverified mailbox is a condition that persists until someone fixes it, so
+  // the message must keep its sendable state rather than burn it on an attempt
+  // that could never have reached a customer. It stays QUEUED and sends itself
+  // once the mailbox is verified.
+  //
+  // ONLY messages that HAVE a mailbox of record are gated. Invoice
+  // notifications, portal invitations, quotation mail, welcome mail, tenant
+  // provisioning — every template and system path — carry no `mailbox_id`,
+  // never reach this branch, and are byte-for-byte unaffected. Blocking them
+  // because they lack a mailbox they were never designed to have would be a
+  // self-inflicted outage.
+  let mailboxOfRecord: MailboxOfRecord | null = null;
+  if (m.mailbox_id) {
+    const facts = await loadMailboxFacts(admin, tenantId, m.mailbox_id as string);
+    const decision = mailboxRuntimeEligibility({
+      tenantId, mailbox: facts, direction: "OUTBOUND", now: new Date().toISOString(),
+    });
+    if (!decision.eligible) {
+      return { ok: false, status: "SKIPPED", error: `mailbox_${decision.reason}` };
+    }
+    mailboxOfRecord = {
+      id: facts!.id,
+      tenantId: facts!.tenantId,
+      address: facts!.address,
+      isActive: true,
+      provisioningStatus: facts!.provisioningStatus,
+    };
+  }
+
   // THE compare-and-set. Everything after this point is owned by exactly one
   // caller; everything before it is safe to run concurrently.
   const { data: acquired, error: acquireError } = await admin.rpc("comm_acquire_send", {
@@ -119,30 +201,12 @@ export async function dispatchMessage(
   const to = addresses(m.to_addresses);
   const primary = (to[0] as string | undefined) ?? (m.recipient_email as string | null) ?? "";
 
-  // EMP-5D — Reply-To from the MAILBOX OF RECORD, resolved here rather than
-  // accepted from anywhere. The lookup is tenant-scoped, so a mailbox_id
+  // EMP-5D — Reply-To from the MAILBOX OF RECORD, resolved AFTER the acquire so
+  // exactly one sender owns the decision, from the facts read above rather than
+  // accepted from anywhere. The lookup was tenant-scoped, so a mailbox_id
   // belonging to another tenant cannot become a Reply-To even if one were
   // stored on the row. Deterministic from the row, so a retry of the same
   // message resolves the identical value and the idempotency contract holds.
-  let mailboxOfRecord: MailboxOfRecord | null = null;
-  if (m.mailbox_id) {
-    const { data: mb } = await admin
-      .from("ec_mailbox")
-      .select("id, tenant_id, address, is_active, provisioning_status")
-      .eq("id", m.mailbox_id as string)
-      .eq("tenant_id", tenantId)
-      .maybeSingle();
-    if (mb) {
-      const b = mb as unknown as Record<string, unknown>;
-      mailboxOfRecord = {
-        id: b.id as string,
-        tenantId: b.tenant_id as string,
-        address: (b.address as string | null) ?? null,
-        isActive: Boolean(b.is_active),
-        provisioningStatus: (b.provisioning_status as string) ?? "",
-      };
-    }
-  }
   const replyTo = resolveReplyTo(tenantId, mailboxOfRecord).replyTo;
 
   let result;

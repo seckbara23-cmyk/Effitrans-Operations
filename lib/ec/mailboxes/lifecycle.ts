@@ -139,26 +139,36 @@ export type LifecycleFacts = {
 };
 
 /**
- * Evidence freshness.
- *
- * NO WINDOW IS IMPOSED BY DEFAULT, and that is deliberate rather than an
- * oversight. "Evidence older than N days is stale" is a policy Effitrans must
- * choose; picking a number here would be inventing one and then enforcing it on
- * a live system. The MECHANISM exists and is tested; the VALUE is RATIFY-EMP5F-1.
+ * Evidence freshness — RATIFY-EMP5F-1, ANSWERED.
  *
  * Corporate identity and capability evidence are separate because they decay
- * differently: an address existing is not the kind of fact that expires on a
- * timer, whereas "sending worked" plausibly is.
+ * differently, and the ratification says so explicitly: an address existing in
+ * the corporate mail system is a DURABLE fact that does not stop being true
+ * because ninety days passed, whereas "sending worked" is an OPERATIONAL
+ * observation about a system that changes underneath us.
+ *
+ *   identityMaxAgeDays   = null   provenance and identity do not expire
+ *   capabilityMaxAgeDays = 90     outbound/inbound proof goes stale
+ *
+ * The schema already represented this distinction, so the ratification required
+ * no model change: EMP-5C gave identity its own `corporate_identity_confirmed_at`
+ * separate from `outbound_verified_at` / `inbound_verified_at`. Had the three
+ * shared one timestamp, ninety days would have silently expired provenance too,
+ * and the honest answer would have been to report that before implementing.
  */
 export type EvidencePolicy = {
   identityMaxAgeDays: number | null;
   capabilityMaxAgeDays: number | null;
 };
 
-export const DEFAULT_EVIDENCE_POLICY: EvidencePolicy = {
+/** The ratified policy. Named separately from the default so a caller can state
+ *  that it is applying the RATIFIED rule rather than whatever the default is. */
+export const RATIFIED_EVIDENCE_POLICY: EvidencePolicy = {
   identityMaxAgeDays: null,
-  capabilityMaxAgeDays: null,
+  capabilityMaxAgeDays: 90,
 };
+
+export const DEFAULT_EVIDENCE_POLICY: EvidencePolicy = RATIFIED_EVIDENCE_POLICY;
 
 function ageInDays(at: string | null, now: string): number | null {
   if (!at) return null;
@@ -296,6 +306,107 @@ export function capabilityReadiness(
       && Boolean(m.inboundVerifiedAt && m.inboundVerificationRef)
       && !isStale(m.inboundVerifiedAt, now, policy.capabilityMaxAgeDays),
   };
+}
+
+// ---------------------------------------------------------------------------
+// 4b. EMP-5G — THE RUNTIME ELIGIBILITY DECISION. One authority, both directions.
+// ---------------------------------------------------------------------------
+
+/**
+ * May REAL TRAFFIC use this mailbox right now?
+ *
+ * Distinct from `activationGuard`, and the distinction matters. The guard asks
+ * "may this administrator put this mailbox into service?" — a question about a
+ * person and a decision. This asks "may a message actually leave through, or
+ * arrive at, this mailbox?" — a question about the mailbox alone, asked at the
+ * moment traffic touches it, with no actor involved.
+ *
+ * WHY IT IS SEPARATE FROM ACTIVATION. Activation is a point in time; eligibility
+ * is a running condition. A mailbox activated legitimately in March whose
+ * outbound proof has since gone stale is still ACTIVE and still correctly
+ * activated — it is simply no longer something to hand a customer's message to.
+ *
+ * FAIL-CLOSED. Every unknown resolves to ineligible: a missing mailbox, an
+ * unreadable state, absent evidence, a tenant that does not match. The caller
+ * gets a reason, never a silent false.
+ *
+ * IT IS NOT THE FLAG. Whether outbound or inbound is enabled at all is a rollout
+ * question this function deliberately knows nothing about — the flags stay where
+ * they are, and this narrows on top of them. Enabling a flag can therefore never
+ * make an unverified mailbox operational, which is the whole point of EMP-5G.
+ */
+export type RuntimeDirection = "OUTBOUND" | "INBOUND";
+
+export type RuntimeRefusal =
+  | "mailbox_not_found"
+  | "tenant_mismatch"
+  | "not_operational"
+  | "legacy_unverified"
+  | "ownership_unknown"
+  | "identity_unconfirmed"
+  | "identity_evidence_stale"
+  | "capability_unverified"
+  | "capability_evidence_stale";
+
+export type RuntimeDecision =
+  | { eligible: true; reason: "verified" }
+  | { eligible: false; reason: RuntimeRefusal };
+
+export const RUNTIME_REFUSAL_FR: Record<RuntimeRefusal, string> = {
+  mailbox_not_found: "Boîte introuvable dans ce tenant.",
+  tenant_mismatch: "Cette boîte appartient à un autre tenant.",
+  not_operational: "Cette boîte n'est pas en service.",
+  legacy_unverified: "Boîte active sans preuve de vérification : mise en service héritée.",
+  ownership_unknown: "Provenance de la boîte non établie.",
+  identity_unconfirmed: "Identité d'entreprise non confirmée.",
+  identity_evidence_stale: "La confirmation d'identité a expiré.",
+  capability_unverified: "Aucune preuve de fonctionnement enregistrée pour ce sens.",
+  capability_evidence_stale: "La preuve de fonctionnement a expiré.",
+};
+
+export function mailboxRuntimeEligibility(input: {
+  /** The tenant of the TRAFFIC — the message or the capture, not the mailbox. */
+  tenantId: string;
+  mailbox: LifecycleFacts | null | undefined;
+  direction: RuntimeDirection;
+  now: string;
+  policy?: EvidencePolicy;
+}): RuntimeDecision {
+  const { tenantId, mailbox: m, direction, now } = input;
+  const policy = input.policy ?? DEFAULT_EVIDENCE_POLICY;
+
+  if (!m) return { eligible: false, reason: "mailbox_not_found" };
+  if (m.tenantId !== tenantId) return { eligible: false, reason: "tenant_mismatch" };
+
+  // In service, per the ONE definition of that — the same `canonicalState` the
+  // administration surface and the database trigger agree on.
+  if (!isOperational(canonicalState(m.provisioningStatus))) {
+    return { eligible: false, reason: "not_operational" };
+  }
+
+  // ACTIVE but never activated by anybody: the nineteen-second mailbox. It is
+  // surfaced rather than deactivated (EMP-5F), which means runtime is where it
+  // must be refused, or "surfaced" would amount to "tolerated".
+  if (isLegacyActive(m)) return { eligible: false, reason: "legacy_unverified" };
+
+  if (m.ownership === "UNKNOWN") return { eligible: false, reason: "ownership_unknown" };
+
+  if (!m.corporateIdentityConfirmedAt) {
+    return { eligible: false, reason: "identity_unconfirmed" };
+  }
+  if (isStale(m.corporateIdentityConfirmedAt, now, policy.identityMaxAgeDays)) {
+    return { eligible: false, reason: "identity_evidence_stale" };
+  }
+
+  // Per-direction, because outbound and inbound are verified independently.
+  const at = direction === "OUTBOUND" ? m.outboundVerifiedAt : m.inboundVerifiedAt;
+  const ref = direction === "OUTBOUND" ? m.outboundVerificationRef : m.inboundVerificationRef;
+  if (!at || !ref) return { eligible: false, reason: "capability_unverified" };
+  if (isStale(at, now, policy.capabilityMaxAgeDays)) {
+    return { eligible: false, reason: "capability_evidence_stale" };
+  }
+
+  return { eligible: true, reason: "verified" };
 }
 
 // ---------------------------------------------------------------------------

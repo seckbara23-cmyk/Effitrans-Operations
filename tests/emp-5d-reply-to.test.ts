@@ -164,8 +164,11 @@ describe("dispatch resolves Reply-To server-side", () => {
 
   it("takes Reply-To from the stored mailbox_id, never from input", () => {
     // The browser supplies no address here; it supplies at most a mailbox
-    // choice, which the server then re-reads and validates.
-    expect(dispatch).toContain('.eq("id", m.mailbox_id as string)');
+    // choice, which the server then re-reads and validates. EMP-5G moved that
+    // read into `loadMailboxFacts` so the readiness gate and the Reply-To share
+    // one tenant-scoped lookup — the id still comes from the stored row.
+    expect(dispatch).toContain("loadMailboxFacts(admin, tenantId, m.mailbox_id as string)");
+    expect(dispatch).toContain('.eq("tenant_id", tenantId)');
     expect(dispatch).not.toMatch(/replyTo:\s*(input|payload|body)\./);
   });
 

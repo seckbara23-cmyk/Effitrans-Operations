@@ -482,8 +482,8 @@ describe("the DB suite is wired into CI, last, with a readable failure", () => {
     // The property being defended is append-only ordering: a new suite inserted
     // BEFORE the established ones would, on failure, abort and skip every suite
     // after it — which is how one failure hid seventy skips during OPS-SEC-1.
-    // EMP-5F appended its lifecycle suite; the pin moves to it.
-    const mine = ci.indexOf("emp_5f_verified_lifecycle_test.sql");
+    // EMP-5G appended its readiness suite; the pin moves to it.
+    const mine = ci.indexOf("emp_5g_runtime_readiness_test.sql");
     const others = [...ci.matchAll(/-f supabase\/tests\/(\w+)\.sql/g)]
       .map((m) => ci.indexOf(`${m[1]}.sql`))
       .filter((i) => i !== mine);

@@ -5,7 +5,14 @@
  * Everything here is a decision that must be provably correct BEFORE it touches
  * a tenant's data: which address a message was sent to, whether the routing is
  * unambiguous, whether a filename is safe, whether a payload is oversized.
+ *
+ * EMP-5G adds one import, and it is to a module that is equally pure: the
+ * mailbox runtime authority. Re-deciding "may this mailbox receive?" here would
+ * have made a second copy of a rule that already exists.
  */
+import {
+  mailboxRuntimeEligibility, type LifecycleFacts,
+} from "@/lib/ec/mailboxes/lifecycle";
 
 /** Hard ceiling on a single webhook body. Refused before any parsing work. */
 export const MAX_WEBHOOK_BYTES = 26_214_400; // 25 MiB — matches the bucket limit
@@ -101,17 +108,24 @@ export function deriveThreadKey(input: {
   return first || input.inReplyTo || input.messageId || null;
 }
 
-/** A mailbox as the resolver sees it. */
+/**
+ * A mailbox as the resolver sees it.
+ *
+ * EMP-5G carries the full lifecycle facts rather than a lone boolean, because
+ * "may this mailbox receive real customer mail?" is decided by the one runtime
+ * authority and that authority needs the evidence, not a summary of it.
+ */
 export type MailboxRow = {
   id: string;
   tenantId: string;
   address: string;
   isActive: boolean;
+  facts: LifecycleFacts;
 };
 
 export type RoutingResult =
   | { routed: true; tenantId: string; mailboxId: string }
-  | { routed: false; reason: "no_matching_mailbox" | "ambiguous_routing" | "mailbox_inactive" };
+  | { routed: false; reason: "no_matching_mailbox" | "ambiguous_routing" | "mailbox_inactive" | "mailbox_not_verified" };
 
 /**
  * THE routing decision (rule 3). Given the recipients of a message and the
@@ -121,6 +135,13 @@ export type RoutingResult =
  *   * nothing matched                       → no_matching_mailbox
  *   * more than one DISTINCT mailbox matched → ambiguous_routing
  *   * the single match is inactive           → mailbox_inactive
+ *   * the single match is not runtime-ready  → mailbox_not_verified  (EMP-5G)
+ *
+ * EMP-5G — A REFUSAL IS NOT A LOSS. Every refusal quarantines: the message is
+ * captured, stored and evidenced with `tenant_id NULL`, exactly as an unmatched
+ * message always was. Routing customer mail into an unverified mailbox would be
+ * the disruptive outcome; keeping it out of one is the safe one, and nothing is
+ * discarded either way.
  *
  * Two recipients resolving to the SAME mailbox is not ambiguous — that is one
  * destination named twice (To and Cc, say), and refusing it would be pedantry.
@@ -130,7 +151,11 @@ export type RoutingResult =
  * Tenant ownership is NEVER inferred from the sender, the content, or anything
  * else — only from an explicitly configured recipient address.
  */
-export function resolveRouting(matches: readonly MailboxRow[]): RoutingResult {
+export function resolveRouting(
+  matches: readonly MailboxRow[],
+  /** EMP-5G — passed in, never read from a clock here: this stays pure. */
+  now: string,
+): RoutingResult {
   if (matches.length === 0) return { routed: false, reason: "no_matching_mailbox" };
 
   const distinct = new Map<string, MailboxRow>();
@@ -140,6 +165,25 @@ export function resolveRouting(matches: readonly MailboxRow[]): RoutingResult {
 
   const only = [...distinct.values()][0];
   if (!only.isActive) return { routed: false, reason: "mailbox_inactive" };
+
+  // EMP-5G — the ONE runtime authority, asked the inbound question. Enabling
+  // inbound at the flag can therefore never make an unverified mailbox start
+  // receiving: the flag opens the door, this decides whether the mailbox is
+  // somewhere mail may be put.
+  //
+  // `not_operational` is reported as `mailbox_inactive`, the reason EC-1 already
+  // defined for it — a new spelling for an existing condition would fragment the
+  // quarantine vocabulary rather than sharpen it.
+  const decision = mailboxRuntimeEligibility({
+    tenantId: only.tenantId, mailbox: only.facts, direction: "INBOUND", now,
+  });
+  if (!decision.eligible) {
+    return {
+      routed: false,
+      reason: decision.reason === "not_operational" ? "mailbox_inactive" : "mailbox_not_verified",
+    };
+  }
+
   return { routed: true, tenantId: only.tenantId, mailboxId: only.id };
 }
 

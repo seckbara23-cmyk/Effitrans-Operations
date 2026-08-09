@@ -243,31 +243,49 @@ describe("data protection — no prose escapes", () => {
 
 // ---------------------------------------------------------------------------
 describe("routing — explicit or quarantine, never a guess", () => {
-  const mb = (id: string, tenantId: string, isActive = true): MailboxRow =>
-    ({ id, tenantId, address: `${id}@x.test`, isActive });
+  // EMP-5G — routing now also asks whether the mailbox is runtime-VERIFIED for
+  // inbound. These EC-1 cases are about the routing arithmetic (how many
+  // matched, are they the same, is it switched on), so the fixture is a fully
+  // verified mailbox: otherwise every case below would refuse for the new
+  // reason and stop testing the old property. The unverified cases are proved
+  // in tests/emp-5g-runtime-readiness.test.ts.
+  const NOW = "2026-08-09T12:00:00.000Z";
+  const mb = (id: string, tenantId: string, isActive = true): MailboxRow => ({
+    id, tenantId, address: `${id}@x.test`, isActive,
+    facts: {
+      id, tenantId, address: `${id}@x.test`, mailboxType: "SHARED", ownerUserId: null,
+      provisioningStatus: isActive ? "ACTIVE" : "DISABLED", provisioningNote: null,
+      ownership: "CORPORATE_EXISTING", externalProvider: "p", externalMailboxId: "e",
+      corporateIdentityConfirmedAt: "2026-08-01T00:00:00.000Z", corporateIdentityConfirmedBy: "u1",
+      outboundVerifiedAt: null, outboundVerifiedBy: null, outboundVerificationRef: null,
+      inboundVerifiedAt: "2026-08-01T00:00:00.000Z", inboundVerifiedBy: "u1",
+      inboundVerificationRef: "evt-1",
+      activatedAt: "2026-08-01T00:00:00.000Z", activatedBy: "u2",
+    },
+  });
 
   it("one matching mailbox routes", () => {
-    expect(resolveRouting([mb("m1", "t1")])).toEqual({ routed: true, tenantId: "t1", mailboxId: "m1" });
+    expect(resolveRouting([mb("m1", "t1")], NOW)).toEqual({ routed: true, tenantId: "t1", mailboxId: "m1" });
   });
 
   it("no match quarantines", () => {
-    expect(resolveRouting([])).toEqual({ routed: false, reason: "no_matching_mailbox" });
+    expect(resolveRouting([], NOW)).toEqual({ routed: false, reason: "no_matching_mailbox" });
   });
 
   it("two DIFFERENT mailboxes refuse — even inside one tenant", () => {
-    expect(resolveRouting([mb("m1", "t1"), mb("m2", "t1")]))
+    expect(resolveRouting([mb("m1", "t1"), mb("m2", "t1")], NOW))
       .toEqual({ routed: false, reason: "ambiguous_routing" });
-    expect(resolveRouting([mb("m1", "t1"), mb("m2", "t2")]))
+    expect(resolveRouting([mb("m1", "t1"), mb("m2", "t2")], NOW))
       .toEqual({ routed: false, reason: "ambiguous_routing" });
   });
 
   it("the SAME mailbox named twice (To and Cc) is not ambiguous", () => {
-    expect(resolveRouting([mb("m1", "t1"), mb("m1", "t1")]))
+    expect(resolveRouting([mb("m1", "t1"), mb("m1", "t1")], NOW))
       .toEqual({ routed: true, tenantId: "t1", mailboxId: "m1" });
   });
 
   it("an inactive sole match refuses rather than routing", () => {
-    expect(resolveRouting([mb("m1", "t1", false)]))
+    expect(resolveRouting([mb("m1", "t1", false)], NOW))
       .toEqual({ routed: false, reason: "mailbox_inactive" });
   });
 

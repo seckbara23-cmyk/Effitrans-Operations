@@ -24,7 +24,10 @@ import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
 import { isProviderConfigured } from "./provider";
-import { dispatchMessage, reconcileStuckSend, outboundEnabled } from "./dispatch";
+import { dispatchMessage, reconcileStuckSend, outboundEnabled, loadMailboxFacts } from "./dispatch";
+import {
+  mailboxRuntimeEligibility, canonicalState, isOperational,
+} from "@/lib/ec/mailboxes/lifecycle";
 import {
   validateRecipients, buildReplyHeaders, buildReplyAudience, validateAttachmentRefs,
   idempotencyKeyFor, replySubject, MAX_SUBJECT, MAX_BODY,
@@ -69,14 +72,27 @@ async function resolveMailbox(
   const admin = getAdminSupabaseClient();
   const { data } = await admin
     .from("ec_mailbox")
-    .select("id, address, label_fr, is_active")
+    .select("id, address, label_fr, is_active, provisioning_status")
     .eq("id", mailboxId)
     .eq("tenant_id", tenantId)
     .maybeSingle();
 
   if (!data) return { ok: false, error: "mailbox_not_found" };
-  const m = data as unknown as { address: string; label_fr: string; is_active: boolean };
-  if (!m.is_active) return { ok: false, error: "mailbox_inactive" };
+  const m = data as unknown as {
+    address: string; label_fr: string; is_active: boolean; provisioning_status: string;
+  };
+  // EMP-5G — "in service" has ONE definition, and it is the lifecycle's.
+  // `is_active` is derived from `provisioning_status` by a database trigger, so
+  // this is behaviourally identical to the boolean it replaces — but it is no
+  // longer a second, independently-maintained notion of the same thing.
+  //
+  // THIS IS COMPOSITION TIME, NOT RUNTIME. Drafting against a mailbox that is
+  // in service but not yet verified is legitimate preparation; it emits no
+  // event and reaches no provider. Runtime readiness is enforced at the send
+  // boundary, where a message would actually leave.
+  if (!isOperational(canonicalState(m.provisioning_status))) {
+    return { ok: false, error: "mailbox_inactive" };
+  }
   return { ok: true, address: m.address, label: m.label_fr };
 }
 
@@ -251,6 +267,18 @@ export async function sendComposed(messageId: string): Promise<OutboundResult> {
   if (m.mailbox_id) {
     const mailbox = await resolveMailbox(user.tenantId, m.mailbox_id);
     if (!mailbox.ok) return { ok: false, error: mailbox.error };
+
+    // EMP-5G — and it must be RUNTIME-READY, not merely in service. Asked here
+    // as well as inside `dispatchMessage` so the draft is not promoted to
+    // QUEUED for a send that will refuse anyway, and so the administrator sees
+    // the precise reason. Same authority, called twice — not a second rule.
+    const decision = mailboxRuntimeEligibility({
+      tenantId: user.tenantId,
+      mailbox: await loadMailboxFacts(admin, user.tenantId, m.mailbox_id),
+      direction: "OUTBOUND",
+      now: new Date().toISOString(),
+    });
+    if (!decision.eligible) return { ok: false, error: `mailbox_${decision.reason}` };
   }
 
   if (m.status === "SENT") return { ok: false, error: "already_sent" };

@@ -86,6 +86,11 @@ export type QuarantineReason =
   | "ambiguous_routing"
   | "tenant_not_enabled"
   | "mailbox_inactive"
+  /** EMP-5G — matched an in-service mailbox that is not runtime-verified for
+   *  inbound: unproven, stale, legacy-active or of unestablished provenance.
+   *  Kept distinct from `mailbox_inactive` because the two need different
+   *  fixes, and an administrator reading quarantine deserves to know which. */
+  | "mailbox_not_verified"
   | "payload_too_large"
   | "malformed_envelope";
 

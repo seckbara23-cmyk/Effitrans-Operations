@@ -171,10 +171,15 @@ describe("activation requires evidence", () => {
 // 2. Freshness — the mechanism exists; the value is not invented
 // ---------------------------------------------------------------------------
 describe("evidence freshness", () => {
-  it("imposes NO window by default — the number is a ratification, not a guess", () => {
+  it("expires operational proof but never identity — RATIFY-EMP5F-1, answered", () => {
+    // EMP-5F shipped with no window at all, because inventing one and enforcing
+    // it on a live system is not a schema decision. EMP-5G's ratification
+    // supplied the number: 90 days for operational/provider evidence, and
+    // durable provenance facts do not expire.
     expect(DEFAULT_EVIDENCE_POLICY.identityMaxAgeDays).toBeNull();
-    expect(DEFAULT_EVIDENCE_POLICY.capabilityMaxAgeDays).toBeNull();
-    // Two-year-old evidence therefore does not block activation today.
+    expect(DEFAULT_EVIDENCE_POLICY.capabilityMaxAgeDays).toBe(90);
+    // Two-year-old IDENTITY evidence therefore still does not block activation:
+    // an address existing does not stop being true because time passed.
     expect(activationGuard({
       actor: actor(),
       mailbox: verified({ corporateIdentityConfirmedAt: "2024-01-01T00:00:00.000Z" }),

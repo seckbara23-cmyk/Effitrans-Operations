@@ -80,17 +80,54 @@ async function logEvent(
   return { duplicate: false };
 }
 
-/** Look up every configured mailbox matching any recipient of this message. */
+/**
+ * Look up every configured mailbox matching any recipient of this message.
+ *
+ * EMP-5G reads the full lifecycle facts, not just `is_active`: the routing
+ * decision now asks the mailbox runtime authority whether this address may
+ * receive real customer mail, and that authority needs the evidence itself.
+ */
 async function matchMailboxes(admin: Admin, recipients: string[]): Promise<MailboxRow[]> {
   if (recipients.length === 0) return [];
   const { data, error } = await admin
     .from("ec_mailbox")
-    .select("id, tenant_id, address, is_active")
+    .select(
+      "id, tenant_id, address, is_active, mailbox_type, owner_user_id, "
+      + "provisioning_status, provisioning_note, ownership, external_provider, "
+      + "external_mailbox_id, corporate_identity_confirmed_at, "
+      + "corporate_identity_confirmed_by, outbound_verified_at, outbound_verified_by, "
+      + "outbound_verification_ref, inbound_verified_at, inbound_verified_by, "
+      + "inbound_verification_ref, activated_at, activated_by",
+    )
     .in("address", recipients);
   if (error) throw new Error(`[ec] mailbox lookup failed: ${error.message}`);
-  return (data ?? []).map((m) => ({
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  return ((data ?? []) as any[]).map((m) => ({
     id: m.id, tenantId: m.tenant_id, address: m.address, isActive: m.is_active,
+    facts: {
+      id: m.id,
+      tenantId: m.tenant_id,
+      address: m.address ?? "",
+      mailboxType: m.mailbox_type ?? "SHARED",
+      ownerUserId: m.owner_user_id ?? null,
+      provisioningStatus: m.provisioning_status ?? "",
+      provisioningNote: m.provisioning_note ?? null,
+      ownership: m.ownership ?? "UNKNOWN",
+      externalProvider: m.external_provider ?? null,
+      externalMailboxId: m.external_mailbox_id ?? null,
+      corporateIdentityConfirmedAt: m.corporate_identity_confirmed_at ?? null,
+      corporateIdentityConfirmedBy: m.corporate_identity_confirmed_by ?? null,
+      outboundVerifiedAt: m.outbound_verified_at ?? null,
+      outboundVerifiedBy: m.outbound_verified_by ?? null,
+      outboundVerificationRef: m.outbound_verification_ref ?? null,
+      inboundVerifiedAt: m.inbound_verified_at ?? null,
+      inboundVerifiedBy: m.inbound_verified_by ?? null,
+      inboundVerificationRef: m.inbound_verification_ref ?? null,
+      activatedAt: m.activated_at ?? null,
+      activatedBy: m.activated_by ?? null,
+    },
   }));
+  /* eslint-enable @typescript-eslint/no-explicit-any */
 }
 
 /** Layer two of the flag: the tenant's own rollout row. Missing row = OFF. */
@@ -301,7 +338,10 @@ export async function captureInbound(
     const recipients = [...new Set([...email.toAddresses, ...email.ccAddresses])]
       .map((a) => normalizeAddress(a))
       .filter((a): a is string => a !== null);
-    const routing = resolveRouting(await matchMailboxes(admin, recipients));
+    const routing = resolveRouting(
+      await matchMailboxes(admin, recipients),
+      new Date().toISOString(),
+    );
 
     let routed: { tenantId: string; mailboxId: string } | null = null;
     let quarantine: QuarantineReason | null = null;
