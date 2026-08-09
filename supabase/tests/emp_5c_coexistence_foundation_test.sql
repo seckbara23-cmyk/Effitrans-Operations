@@ -22,12 +22,12 @@ declare
   r_provider_nullable    boolean;
   r_extid_absent         boolean;
   r_evidence_unverified  boolean;
-  r_bad_purpose_rejected boolean;
+  r_legacy_vocab_ok      boolean;
   r_good_purpose_ok      boolean;
+  r_default_purpose_ok   boolean;
   r_functional_ok        boolean;
   r_alias_default        boolean;
   r_bad_alias_rejected   boolean;
-  r_update_bad_purpose   boolean;
   r_integration_shape    boolean;
 begin
   ---------------------------------------------------------------------------
@@ -87,15 +87,21 @@ begin
   end;
 
   ---------------------------------------------------------------------------
-  -- H. purpose integrity BITES on new rows, even though the constraint is
-  --    NOT VALID for the pre-existing one.
+  -- H. PURPOSE: no constraint was added, and that is deliberate (migration §6).
+  --    EC-1 designed `purpose` as free tenant vocabulary with default 'GENERAL'
+  --    and uses 'QUOTATION'; EMP-4A later defined a narrower ELIGIBILITY set.
+  --    Constraining to the narrow set would invalidate the column's own default
+  --    and outlaw a value EC-1 designed for, so it awaits RATIFY-EMP5C-1.
+  --
+  --    What is proven here is that both vocabularies still insert -- i.e. the
+  --    phase did NOT quietly settle the question -- and that the mismatch is
+  --    detectable by query.
   ---------------------------------------------------------------------------
   begin
     insert into public.ec_mailbox (tenant_id, address, label_fr, purpose, mailbox_type)
-    values (v_tenant, 'emp5c-bad-purpose@test.local', 'bad', 'GENERAL', 'SHARED');
-    r_bad_purpose_rejected := false;   -- accepted => the constraint is inert
-  exception when check_violation then r_bad_purpose_rejected := true;
-       when others then r_bad_purpose_rejected := false;
+    values (v_tenant, 'emp5c-legacy-vocab@test.local', 'legacy', 'QUOTATION', 'SHARED');
+    r_legacy_vocab_ok := true;
+  exception when others then r_legacy_vocab_ok := false;
   end;
 
   begin
@@ -105,12 +111,13 @@ begin
   exception when others then r_good_purpose_ok := false;
   end;
 
-  -- ...and an UPDATE cannot smuggle a bad value in either.
+  -- the column default must remain insertable; a constraint that invalidates
+  -- its own default is incoherent, and this is what would have caught that.
   begin
-    update public.ec_mailbox set purpose = 'GENERAL' where id = v_id;
-    r_update_bad_purpose := false;
-  exception when check_violation then r_update_bad_purpose := true;
-       when others then r_update_bad_purpose := false;
+    insert into public.ec_mailbox (tenant_id, address, label_fr, mailbox_type)
+    values (v_tenant, 'emp5c-default-purpose@test.local', 'defaulted', 'SHARED');
+    r_default_purpose_ok := true;
+  exception when others then r_default_purpose_ok := false;
   end;
 
   ---------------------------------------------------------------------------
@@ -158,9 +165,9 @@ begin
     ('provider may remain unknown',                  r_provider_nullable, '-'),
     ('external mailbox id may be absent',            r_extid_absent, '-'),
     ('evidence can represent unverified',            r_evidence_unverified, '-'),
-    ('non-canonical purpose REJECTED on insert',     r_bad_purpose_rejected, '-'),
-    ('canonical purpose accepted',                   r_good_purpose_ok, '-'),
-    ('non-canonical purpose REJECTED on update',     r_update_bad_purpose, '-'),
+    ('EC-1 tenant vocabulary still accepted',        r_legacy_vocab_ok, 'QUOTATION'),
+    ('EMP-4A eligibility vocabulary accepted',       r_good_purpose_ok, 'COMMERCIAL'),
+    ('column default remains insertable',            r_default_purpose_ok, 'GENERAL'),
     ('FUNCTIONAL mailbox type accepted',             r_functional_ok, '-'),
     ('alias_type defaults to ALIAS',                 r_alias_default, '-'),
     ('invented alias_type rejected',                 r_bad_alias_rejected, '-'),

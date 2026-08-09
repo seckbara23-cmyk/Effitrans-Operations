@@ -188,36 +188,38 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------------
--- 6. PURPOSE INTEGRITY — constrained with NOT VALID, deliberately.
+-- 6. PURPOSE INTEGRITY — NOT DONE IN THIS PHASE, AND THE REASON MATTERS.
 --
--- Eligibility keys on purpose, so a non-canonical value produces a mailbox the
--- suggestion engine silently never offers. Production contains exactly one such
--- row: aminata@effitrans.com with purpose 'GENERAL'.
+-- EMP-5B.1 recommended constraining `purpose` to the canonical eligibility set.
+-- Implementing it revealed that recommendation was wrong, because TWO
+-- VOCABULARIES EXIST AND WERE NEVER RECONCILED:
 --
--- NOT VALID is the whole point. A plain ADD CONSTRAINT validates history and
--- would ABORT this migration on that row; the alternatives would be to rewrite
--- production data silently or to skip the constraint entirely. NOT VALID takes
--- neither: existing rows are left exactly as they are, while every INSERT and
--- every UPDATE from now on is enforced.
+--   * EC-1 defined `purpose` as TENANT VOCABULARY -- its own migration says
+--     "(quotation, operations, finance, transit, ...)" -- with
+--     `default 'GENERAL'`. The EC-1 suite legitimately uses 'QUOTATION'.
+--   * EMP-4A later defined SHARED_MAILBOX_PURPOSES -- six values -- for
+--     ELIGIBILITY, which is a narrower question layered on top.
 --
--- So the inconsistency becomes DETECTABLE and cannot spread, and remediating
--- the one row stays an explicit operator decision -- which is what EMP-5C was
--- told to leave alone.
+-- Constraining to the EMP-4A set therefore does three unacceptable things: it
+-- invalidates the column's OWN DEFAULT, so any insert omitting `purpose` fails;
+-- it retroactively outlaws 'QUOTATION', a value EC-1 designed for; and it
+-- settles by migration a vocabulary question that belongs to ratification.
 --
--- To validate it later, after that row is corrected:
---   alter table public.ec_mailbox validate constraint ec_mailbox_purpose_check;
+-- A constraint whose own default violates it is incoherent, and widening the
+-- list until CI passed would have been inventing a vocabulary nobody agreed.
+-- So this phase adds NO purpose constraint and reports the conflict instead.
+--
+-- The inconsistency remains DETECTABLE without a constraint:
+--   select address, purpose from public.ec_mailbox
+--    where purpose not in ('OPERATIONS','TRANSIT','CUSTOMS','FINANCE',
+--                          'COMMERCIAL','SUPPORT');
+-- Today that returns aminata@effitrans.com ('GENERAL') -- a mailbox the
+-- eligibility engine silently never offers.
+--
+-- RATIFY-EMP5C-1 must decide whether the two vocabularies merge, whether
+-- eligibility keys on something other than `purpose`, and what the default
+-- becomes. Only then can integrity be enforced safely.
 -- ---------------------------------------------------------------------------
-do $$
-begin
-  if not exists (select 1 from pg_constraint
-                  where conrelid = 'public.ec_mailbox'::regclass
-                    and conname = 'ec_mailbox_purpose_check') then
-    alter table public.ec_mailbox
-      add constraint ec_mailbox_purpose_check
-      check (purpose in ('OPERATIONS','TRANSIT','CUSTOMS','FINANCE','COMMERCIAL','SUPPORT'))
-      not valid;
-  end if;
-end $$;
 
 -- ---------------------------------------------------------------------------
 -- 7. ASSERTIONS — data-independent, so they cannot pass vacuously on CI's
@@ -255,12 +257,13 @@ begin
     raise exception 'EMP-5C: ownership must default to UNKNOWN';
   end if;
 
-  -- (c) the purpose constraint exists AND is NOT VALID, so the one existing
-  --     non-canonical row was neither rewritten nor allowed to abort the apply.
-  if not exists (select 1 from pg_constraint
-                  where conrelid='public.ec_mailbox'::regclass
-                    and conname='ec_mailbox_purpose_check' and not convalidated) then
-    raise exception 'EMP-5C: ec_mailbox_purpose_check must exist and be NOT VALID';
+  -- (c) NO purpose constraint was added (see section 6). Asserting its ABSENCE
+  --     keeps the decision visible: if a later phase adds one without settling
+  --     RATIFY-EMP5C-1, this fails and forces the conversation.
+  if exists (select 1 from pg_constraint
+              where conrelid='public.ec_mailbox'::regclass
+                and conname='ec_mailbox_purpose_check') then
+    raise exception 'EMP-5C: a purpose constraint was added without RATIFY-EMP5C-1';
   end if;
 
   -- (d) FUNCTIONAL is now representable
