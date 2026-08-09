@@ -164,11 +164,17 @@ where to_regprocedure(sig) is null
 -- 50 was the audited figure; the two pilot overloads are verified, so 50
 -- remains the unverified count until 2B converts more.
 -- ---------------------------------------------------------------------------
+-- THE PRIMITIVE ITSELF IS EXCLUDED, and the reason is not a convenience.
+-- assert_actor_authority takes p_actor and p_tenant, and a PL/pgSQL body never
+-- names itself, so the "does it call the primitive?" test matches it and counts
+-- it as unverified. It IS the trust contract; it cannot be a consumer of one.
+-- CI #404 failed on exactly this: 50 pre-existing + 1 primitive = 51.
 with unverified as (
   select regexp_replace(p.oid::regprocedure::text,'^[^(]*','public.'||p.proname) as sig
   from pg_proc p join pg_namespace n on n.oid=p.pronamespace and n.nspname='public'
   where p.prokind='f'
     and pg_get_function_result(p.oid) <> 'trigger'
+    and p.proname <> 'assert_actor_authority'
     and pg_get_function_identity_arguments(p.oid) ~* '(p_actor|p_tenant|p_user|organization)'
     and p.prosrc !~ 'assert_actor_authority'
 )
