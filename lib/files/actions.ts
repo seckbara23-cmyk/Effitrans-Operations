@@ -57,9 +57,18 @@ export async function createFile(input: FileInput): Promise<ActionResult> {
   const supabase = getAdminSupabaseClient();
 
   // Atomic, concurrency-safe number (per tenant x type x year).
+  //
+  // OPS-SEC-2B — the TRUSTED overload. `admin` is the CurrentUser returned by
+  // assertPermission above, so the actor and tenant are both derived from the
+  // authenticated session; neither appears in `input`, and neither can be
+  // chosen by the browser. The service role carries the call but no longer
+  // vouches for it: the database re-proves that this actor exists, is active,
+  // belongs to this tenant and holds `file:create` BEFORE allocating a number,
+  // so a refusal cannot burn one.
   const { data: fileNumber, error: numErr } = await supabase.rpc("next_file_number", {
     p_tenant: admin.tenantId,
     p_type: input.type,
+    p_actor: admin.id,
   });
   if (numErr || !fileNumber) return { ok: false, error: numErr?.message ?? "numbering_failed" };
 

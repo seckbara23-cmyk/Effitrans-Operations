@@ -58,6 +58,26 @@ select '00000000-0000-0000-0000-00000000ac04', r.id, r.tenant_id
  limit 1
 on conflict do nothing;
 
+-- OPS-SEC-2B — a second actor holding hr:manage, so the employee-numbering
+-- pilot is proven by a real permission holder rather than by the file:create one.
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-00000000ac05', 'ops2a.hr@test.local')
+on conflict (id) do nothing;
+
+insert into public.app_user (id, tenant_id, email, status) values
+  ('00000000-0000-0000-0000-00000000ac05', '00000000-0000-0000-0000-000000000001', 'ops2a.hr@test.local', 'active')
+on conflict (id) do nothing;
+
+insert into public.user_role (user_id, role_id, tenant_id)
+select '00000000-0000-0000-0000-00000000ac05', r.id, r.tenant_id
+  from public.role r
+  join public.role_permission rp on rp.role_id = r.id
+  join public.permission p on p.id = rp.permission_id
+ where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+   and p.code = 'hr:manage'
+ limit 1
+on conflict do nothing;
+
 create temp table _r (check_name text, ok boolean, detail text) on commit drop;
 
 -- ---------------------------------------------------------------------------
@@ -81,6 +101,8 @@ declare
   r_auth_xtenant text; r_svc_ok text; r_svc_forged text; r_svc_wrong_tenant text;
   r_svc_no_perm text; r_svc_inactive text; r_svc_from_session text;
   r_system text; r_human_as_system text; r_pilot_ok text; r_pilot_forged text;
+  v_hr uuid := '00000000-0000-0000-0000-00000000ac05';
+  r_emp_ok text; r_emp_no_perm text; r_emp_xtenant text;
 begin
   ---------------------------------------------------------------------------
   -- SERVICE lane: no session. auth.uid() is NULL for the service-role key.
@@ -149,6 +171,33 @@ begin
   exception when others then
     get stacked diagnostics v_state = returned_sqlstate;
     r_pilot_forged := 'REFUSED:' || v_state;
+  end;
+
+  -- 7b. EMPLOYEE numbering pilot (OPS-SEC-2B): an hr:manage holder succeeds...
+  begin
+    perform public.next_employee_number(v_tenant_a, v_hr);
+    r_emp_ok := 'ACCEPTED';
+  exception when others then
+    get stacked diagnostics v_state = returned_sqlstate;
+    r_emp_ok := 'REFUSED:' || v_state;
+  end;
+
+  -- ...the file:create holder does NOT (right tenant, wrong permission)...
+  begin
+    perform public.next_employee_number(v_tenant_a, v_permitted);
+    r_emp_no_perm := 'ACCEPTED';
+  exception when others then
+    get stacked diagnostics v_state = returned_sqlstate;
+    r_emp_no_perm := 'REFUSED:' || v_state;
+  end;
+
+  -- ...and neither does the right actor against the wrong tenant.
+  begin
+    perform public.next_employee_number(v_tenant_b, v_hr);
+    r_emp_xtenant := 'ACCEPTED';
+  exception when others then
+    get stacked diagnostics v_state = returned_sqlstate;
+    r_emp_xtenant := 'REFUSED:' || v_state;
   end;
 
   -- 8. SYSTEM lane is closed, and a human actor cannot be used as automation
@@ -241,6 +290,9 @@ begin
     ('service_inactive_actor_refused',     r_svc_inactive = 'REFUSED:EFA14', r_svc_inactive),
     ('pilot_valid_nomination_accepted',    r_pilot_ok = 'ACCEPTED', r_pilot_ok),
     ('pilot_forged_nomination_refused',    r_pilot_forged = 'REFUSED:EFA12', r_pilot_forged),
+    ('employee_pilot_hr_actor_accepted',   r_emp_ok = 'ACCEPTED', r_emp_ok),
+    ('employee_pilot_wrong_permission_refused', r_emp_no_perm = 'REFUSED:EFA15', r_emp_no_perm),
+    ('employee_pilot_cross_tenant_refused', r_emp_xtenant = 'REFUSED:EFA13', r_emp_xtenant),
     ('system_lane_closed',                 r_system = 'REFUSED:EFA16', r_system),
     ('human_cannot_be_automation',         r_human_as_system = 'REFUSED:EFA16', r_human_as_system),
     ('interactive_self_accepted',          r_auth_yes = 'ACCEPTED', r_auth_yes),
@@ -274,6 +326,27 @@ begin
     v_before || ' -> ' || v_after);
 end
 $no_side_effect$;
+
+-- ---------------------------------------------------------------------------
+-- OPS-SEC-2B — the employee sequence must not advance on a refusal either, and
+-- two valid allocations either side of it must stay consecutive.
+-- ---------------------------------------------------------------------------
+do $emp_no_side_effect$
+declare v_before text; v_after text;
+begin
+  v_before := public.next_employee_number('00000000-0000-0000-0000-000000000001');
+  begin
+    perform public.next_employee_number('00000000-0000-0000-0000-000000000001',
+                                        '00000000-0000-4000-8000-0000000000ee'::uuid);
+  exception when others then null;
+  end;
+  v_after := public.next_employee_number('00000000-0000-0000-0000-000000000001');
+  insert into _r values ('forged_employee_call_allocated_nothing',
+    (regexp_replace(v_after,  '\D', '', 'g')::bigint
+   - regexp_replace(v_before, '\D', '', 'g')::bigint) = 1,
+    v_before || ' -> ' || v_after);
+end
+$emp_no_side_effect$;
 
 -- ---------------------------------------------------------------------------
 -- Report. Any false fails the suite with ON_ERROR_STOP.

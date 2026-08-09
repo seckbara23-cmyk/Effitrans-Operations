@@ -4253,8 +4253,14 @@ export type Database = {
         Args: { p_user: string };
         Returns: { code: string }[];
       };
+      // OPS-SEC-2B — the TRUSTED overload. p_actor is resolved from the
+      // authenticated session by the server action, never from request input;
+      // the database verifies it holds `file:create` in that tenant before any
+      // number is allocated. The two-argument original still exists in the
+      // database because the overload delegates to it, but no application code
+      // calls it any more.
       next_file_number: {
-        Args: { p_tenant: string; p_type: string };
+        Args: { p_tenant: string; p_type: string; p_actor: string };
         Returns: string;
       };
       provision_tenant: {
@@ -4392,8 +4398,9 @@ export type Database = {
         Args: { p_tenant: string };
         Returns: string;
       };
+      // OPS-SEC-2B — the TRUSTED overload; p_actor must hold `hr:manage`.
       next_employee_number: {
-        Args: { p_tenant: string };
+        Args: { p_tenant: string; p_actor: string };
         Returns: string;
       };
       next_expense_authorization_number: {

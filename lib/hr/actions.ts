@@ -123,7 +123,14 @@ export async function createEmployee(input: CreateEmployeeInput): Promise<HrActi
     if (!mgr) return fail("invalid_input", ["Le responsable indiqué est introuvable."]);
   }
 
-  const { data: numData, error: numErr } = await admin.rpc("next_employee_number", { p_tenant: ctx.tenantId });
+  // OPS-SEC-2B — the TRUSTED overload. `ctx` comes from guard(), which is
+  // assertPermission("hr:manage"), so actor and tenant are session-derived and
+  // absent from `input`. The database re-proves the actor holds `hr:manage` in
+  // this tenant before allocating, so a refusal advances no sequence.
+  const { data: numData, error: numErr } = await admin.rpc("next_employee_number", {
+    p_tenant: ctx.tenantId,
+    p_actor: ctx.userId,
+  });
   if (numErr || !numData) return fail("write_failed");
 
   const row: Tbl["employee"]["Insert"] = {

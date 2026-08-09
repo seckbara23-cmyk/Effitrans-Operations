@@ -165,17 +165,68 @@ describe("scope exclusions hold", () => {
     expect(sql).not.toMatch(/\bdelete\s+from\b/i);
   });
 
-  it("leaves the application call sites unchanged, so applying it cannot break a deploy", () => {
-    // The pilot overloads are dark until OPS-SEC-2B switches the callers. A
-    // migration and a deploy land separately here, so a call site that needs a
-    // not-yet-applied function is an outage waiting for the gap.
-    // Both still call the ORIGINAL signatures — no p_actor is passed anywhere.
+  it("OPS-SEC-2B activated both call sites onto the trusted overloads", () => {
+    // 2A deliberately left these dark, because a migration and a deploy land
+    // separately here and a caller needing a not-yet-applied function is an
+    // outage waiting for the gap. 2B flipped them only after migration 93 was
+    // confirmed applied in production.
     const files = read("lib/files/actions.ts");
-    expect(files).toContain('.rpc("next_file_number"');
-    expect(files).not.toContain("p_actor");
     const hr = read("lib/hr/actions.ts");
-    expect(hr).toContain('.rpc("next_employee_number"');
-    expect(hr).not.toContain("p_actor");
+    expect(files).toContain("p_actor: admin.id");
+    expect(hr).toContain("p_actor: ctx.userId");
+  });
+
+  it("neither call site takes actor or tenant from request input", () => {
+    // The property the whole framework rests on: a browser cannot choose who
+    // it is acting as. Both values come from the CurrentUser that
+    // assertPermission returned, never from `input`.
+    for (const [file, actor, tenant] of [
+      ["lib/files/actions.ts", "p_actor: admin.id", "p_tenant: admin.tenantId"],
+      ["lib/hr/actions.ts", "p_actor: ctx.userId", "p_tenant: ctx.tenantId"],
+    ] as const) {
+      const src = read(file);
+      expect(src, file).toContain(actor);
+      expect(src, file).toContain(tenant);
+      expect(src, file).not.toMatch(/p_actor:\s*input\./);
+      expect(src, file).not.toMatch(/p_tenant:\s*input\./);
+    }
+  });
+
+  it("no call site selects its own execution context", () => {
+    // 'SERVICE' is hard-coded inside the database overload. If the application
+    // could pass a context, declaring SYSTEM or INTERACTIVE would be a choice
+    // the caller makes about its own trust level.
+    for (const f of ["lib/files/actions.ts", "lib/hr/actions.ts"]) {
+      const src = read(f);
+      expect(src, f).not.toContain("p_context");
+      // A lane literal, not the substring: "SYSTEM_ADMIN" appears in these
+      // files as a role name in prose and is unrelated to the execution lane.
+      expect(src, f).not.toMatch(/["']SYSTEM["']/);
+      expect(src, f).not.toMatch(/["']INTERACTIVE["']/);
+    }
+  });
+
+  it("the gate and the database assertion name the SAME permission", () => {
+    // If these drifted, the database would verify a different authority than
+    // the server action checked — which looks verified and is not.
+    const files = read("lib/files/actions.ts");
+    expect(files).toContain('assertPermission("file:create")');
+    expect(sql).toContain("'file:create', 'SERVICE'");
+
+    const hr = read("lib/hr/actions.ts");
+    expect(hr).toContain('assertPermission("hr:manage")');
+    expect(sql).toContain("'hr:manage', 'SERVICE'");
+  });
+
+  it("no application caller uses the untrusted overloads for these workflows", () => {
+    // The originals still exist — the trusted overloads delegate to them — but
+    // nothing in the app may call them directly any more.
+    for (const f of ["lib/files/actions.ts", "lib/hr/actions.ts"]) {
+      const src = read(f);
+      for (const m of src.matchAll(/\.rpc\(\s*"(next_file_number|next_employee_number)"[^)]*\)/gs)) {
+        expect(m[0], `${f}: ${m[1]} called without p_actor`).toContain("p_actor");
+      }
+    }
   });
 });
 

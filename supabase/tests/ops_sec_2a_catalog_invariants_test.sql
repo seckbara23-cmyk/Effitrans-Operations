@@ -186,6 +186,43 @@ select 'INV-7 unverified caller-declared identity count has not grown',
 from unverified;
 
 -- ---------------------------------------------------------------------------
+-- INV-8 (OPS-SEC-2B) — the pilot permission mappings are exactly the ones the
+-- application gates on. If either drifted, the database would assert a
+-- DIFFERENT authority than the server action checked, which is worse than
+-- asserting none: it would look verified.
+-- ---------------------------------------------------------------------------
+insert into _inv
+select 'INV-8 pilot permission mappings unchanged',
+       count(*) = 0,
+       coalesce(string_agg(detail, ', '), 'none')
+from (
+  select 'next_file_number should assert file:create' as detail
+  where coalesce((select p.prosrc from pg_proc p
+                   where p.oid = to_regprocedure('public.next_file_number(uuid,text,uuid)')), '')
+        !~ 'file:create'
+  union all
+  select 'next_employee_number should assert hr:manage'
+  where coalesce((select p.prosrc from pg_proc p
+                   where p.oid = to_regprocedure('public.next_employee_number(uuid,uuid)')), '')
+        !~ 'hr:manage'
+) q;
+
+-- ---------------------------------------------------------------------------
+-- INV-9 (OPS-SEC-2B) — nothing invokes the SYSTEM lane. It is fail-closed and
+-- unratified (RATIFY-OPSSEC2-2A); code written against a lane that must not be
+-- enabled without governance is a commitment nobody agreed to.
+-- ---------------------------------------------------------------------------
+insert into _inv
+select 'INV-9 no SYSTEM lane invocation exists',
+       count(*) = 0,
+       coalesce(string_agg(p.proname, ', '), 'none')
+from pg_proc p join pg_namespace n on n.oid = p.pronamespace and n.nspname = 'public'
+where p.prokind = 'f'
+  and p.proname <> 'assert_actor_authority'
+  and p.prosrc ~ 'assert_actor_authority'
+  and p.prosrc ~ 'SYSTEM';
+
+-- ---------------------------------------------------------------------------
 -- Verdict.
 -- ---------------------------------------------------------------------------
 select id, ok, detail from _inv order by id;
