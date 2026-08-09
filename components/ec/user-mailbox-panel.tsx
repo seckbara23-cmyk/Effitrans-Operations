@@ -6,6 +6,7 @@ import {
   provisionMailbox, recordSetupOutcome, retryProvisioning,
 } from "@/lib/ec/mailboxes/admin-actions";
 import type { MailboxSummary } from "@/lib/ec/mailboxes/membership";
+import { eligibilityLabelFr, MAILBOX_TYPE_FR } from "@/lib/ec/mailboxes/vocabulary";
 import { cn } from "@/lib/cn";
 
 /**
@@ -30,7 +31,8 @@ export type UserMembership = {
 };
 
 export type Suggestion = {
-  purpose: string; reason: string; mailboxId: string; address: string; status: string;
+  /** EMP-5E — the department-eligibility bucket, not the mailbox's display label. */
+  eligibility: string; reason: string; mailboxId: string; address: string; status: string;
 };
 
 const STATUS_FR: Record<string, string> = {
@@ -60,6 +62,9 @@ const ERRORS_FR: Record<string, string> = {
   invalid_state: "État de configuration invalide.",
   grant_failed: "L'attribution a échoué.",
   retry_failed: "La relance a échoué.",
+  invalid_eligibility: "Département éligible inconnu.",
+  personal_not_departmental:
+    "Une boîte personnelle ne peut pas porter d'éligibilité départementale.",
 };
 
 export function UserMailboxPanel({
@@ -158,7 +163,10 @@ export function UserMailboxPanel({
               className="rounded-md border border-slate-200 px-2 py-1 text-xs"
             >
               {allMailboxes.map((m) => (
-                <option key={m.id} value={m.id}>{m.address}</option>
+                <option key={m.id} value={m.id}>
+                  {m.address} — {MAILBOX_TYPE_FR[m.mailboxType] ?? m.mailboxType}
+                  {m.departmentEligibility ? ` · ${eligibilityLabelFr(m.departmentEligibility)}` : ""}
+                </option>
               ))}
             </select>
             <button
@@ -170,6 +178,13 @@ export function UserMailboxPanel({
             >
               Accorder l&apos;accès
             </button>
+            {/* EMP-5E — the eligibility key governs PROPOSALS only. An
+                administrator may always grant any mailbox by hand, including one
+                with no département éligible at all. */}
+            <p className="w-full text-[11px] text-slate-500">
+              L&apos;attribution manuelle reste possible sur toute boîte, qu&apos;elle porte un
+              département éligible ou non.
+            </p>
           </div>
         ) : null}
       </section>
@@ -180,13 +195,17 @@ export function UserMailboxPanel({
           Boîtes proposées
         </h2>
         <p className="mb-3 text-[11px] text-slate-500">
-          Déduites du département dérivé de ses rôles. Ce sont des propositions : rien
-          n&apos;est attribué sans une action explicite.
+          Déduites du département dérivé de ses rôles, et rapprochées du{" "}
+          <strong>département éligible</strong> de chaque boîte — jamais de son usage déclaré.
+          Ce sont des propositions :
+          rien n&apos;est attribué sans une action explicite.
         </p>
         {suggestions.length === 0 ? (
           <p className="text-sm text-slate-500">
-            Aucune proposition — soit ses rôles ne sont rattachés à aucun département, soit il
-            possède déjà les boîtes proposées.
+            Aucune proposition — soit ses rôles ne sont rattachés à aucun département, soit
+            aucune boîte ne porte le département éligible correspondant, soit il possède déjà
+            les boîtes proposées. Une boîte sans département éligible s&apos;attribue
+            manuellement ci-dessus.
           </p>
         ) : (
           <ul className="divide-y divide-slate-100">
@@ -195,7 +214,8 @@ export function UserMailboxPanel({
                 <div className="min-w-0">
                   <p className="text-sm text-navy-900">{s.address}</p>
                   <p className="text-[11px] text-slate-500">
-                    {s.reason} · {STATUS_FR[s.status] ?? s.status}
+                    {s.reason} · Département éligible : {eligibilityLabelFr(s.eligibility)} ·{" "}
+                    {STATUS_FR[s.status] ?? s.status}
                   </p>
                 </div>
                 {canManageMembers ? (

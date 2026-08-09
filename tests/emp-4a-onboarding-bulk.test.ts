@@ -34,12 +34,18 @@ const cand = (p: Partial<BulkCandidate> & { userId: string }): BulkCandidate => 
   existing: null, hasOtherDefaultSender: false, ...p,
 });
 
+// EMP-5E — the classifier keys on `department_eligibility`, not on `purpose`.
 const run = (candidates: BulkCandidate[], opts: Partial<{ requireEligibility: boolean; caps: BulkCapabilities }> = {}) =>
   previewBulkAssignment({
-    tenantId: TENANT, mailboxPurpose: "OPERATIONS",
+    tenantId: TENANT, mailboxEligibility: "OPERATIONS", mailboxType: "SHARED",
     capabilities: opts.caps ?? CAPS, candidates,
     requireEligibility: opts.requireEligibility ?? true,
   });
+
+/** The preview context EMP-4A's fingerprint tests use, now carrying the
+ *  classification EMP-5E binds into the head. */
+const CTX = { mailboxId: "mb1", capabilities: CAPS, requireEligibility: true,
+              mailboxEligibility: "OPERATIONS" as string | null, mailboxType: "SHARED" };
 
 // ---------------------------------------------------------------------------
 // 0. Errors reach the administrator as sentences
@@ -199,7 +205,7 @@ describe("bulk preview classifies every candidate", () => {
   });
 
   it("fingerprints stably and changes when a decision changes", () => {
-    const ctx = { mailboxId: "mb1", capabilities: CAPS, requireEligibility: true };
+    const ctx = CTX;
     const a = run([cand({ userId: "a" }), cand({ userId: "b" })]);
     const b = run([cand({ userId: "b" }), cand({ userId: "a" })]);
     expect(previewFingerprint(a, ctx)).toBe(previewFingerprint(b, ctx));
@@ -219,11 +225,11 @@ describe("bulk preview classifies every candidate", () => {
     expect(decisions.every((d) => d.outcome === "GRANT_NEW")).toBe(true);
 
     const readOnly = previewFingerprint(decisions, {
-      mailboxId: "mb1", requireEligibility: true,
+      ...CTX,
       capabilities: { canRead: true, canSend: false, canManageMembers: false, isDefaultSender: false },
     });
     const powerful = previewFingerprint(decisions, {
-      mailboxId: "mb1", requireEligibility: true,
+      ...CTX,
       capabilities: { canRead: true, canSend: true, canManageMembers: true, isDefaultSender: false },
     });
     expect(powerful).not.toBe(readOnly);
@@ -231,7 +237,7 @@ describe("bulk preview classifies every candidate", () => {
 
   it("fingerprints the target mailbox and the eligibility filter too", () => {
     const decisions = run([cand({ userId: "a" })]);
-    const base = { mailboxId: "mb1", capabilities: CAPS, requireEligibility: true };
+    const base = CTX;
     expect(previewFingerprint(decisions, { ...base, mailboxId: "mb2" }))
       .not.toBe(previewFingerprint(decisions, base));
     expect(previewFingerprint(decisions, { ...base, requireEligibility: false }))
@@ -342,7 +348,8 @@ describe("security and scope", () => {
     expect(s).toContain("for (const d of todo)");
     // Sanity: the classifier really does mark every non-applying outcome.
     const nonWriting = ["REJECTED_CROSS_TENANT", "SKIPPED_NO_DEPARTMENT",
-                        "SKIPPED_NOT_ELIGIBLE", "CONFLICT_DEFAULT_SENDER", "UNCHANGED"];
+                        "SKIPPED_NOT_ELIGIBLE", "SKIPPED_MAILBOX_NOT_DEPARTMENTAL",
+                        "CONFLICT_DEFAULT_SENDER", "UNCHANGED"];
     const all = [
       ...run([cand({ userId: "x", tenantId: "OTHER" })]),
       ...run([cand({ userId: "y", roleCodes: ["SYSTEM_ADMIN"] })]),

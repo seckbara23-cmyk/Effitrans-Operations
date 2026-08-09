@@ -2581,15 +2581,21 @@ export type Database = {
         Relationships: [];
       };
       ec_mailbox_alias: {
-        Row: { id: string; tenant_id: string; mailbox_id: string; address: string; is_active: boolean; created_by: string | null; created_at: string };
-        Insert: { id?: string; tenant_id: string; mailbox_id: string; address: string; is_active?: boolean; created_by?: string | null };
-        Update: { address?: string; is_active?: boolean };
+        // EMP-5C added alias_type: an alias, a distribution list and a forward are
+        // materially different things to attach correspondence to.
+        Row: { id: string; tenant_id: string; mailbox_id: string; address: string; alias_type: string; is_active: boolean; created_by: string | null; created_at: string };
+        Insert: { id?: string; tenant_id: string; mailbox_id: string; address: string; alias_type?: string; is_active?: boolean; created_by?: string | null };
+        Update: { address?: string; alias_type?: string; is_active?: boolean };
         Relationships: [];
       };
       ec_mailbox: {
-        Row: { id: string; tenant_id: string; address: string; label_fr: string; purpose: string; is_active: boolean; note: string | null; created_by: string | null; created_at: string; updated_at: string; mailbox_type: string; provisioning_status: string; owner_user_id: string | null; provisioning_note: string | null; provisioning_attempts: number; provisioned_at: string | null; provisioned_by: string | null };
-        Insert: { id?: string; tenant_id: string; address: string; label_fr: string; purpose?: string; is_active?: boolean; note?: string | null; created_by?: string | null; mailbox_type?: string; provisioning_status?: string; owner_user_id?: string | null; provisioning_note?: string | null; provisioning_attempts?: number; provisioned_at?: string | null; provisioned_by?: string | null };
-        Update: { label_fr?: string; purpose?: string; is_active?: boolean; note?: string | null; mailbox_type?: string; provisioning_status?: string; owner_user_id?: string | null; provisioning_note?: string | null; provisioning_attempts?: number; provisioned_at?: string | null; provisioned_by?: string | null };
+        // EMP-5C (migration 20260817000001) added ownership, external identity and
+        // verification evidence; EMP-5D (20260818000001) added department_eligibility.
+        // `purpose` stays free tenant vocabulary; `department_eligibility` is the
+        // constrained key, nullable because "not a departmental mailbox" is a real answer.
+        Row: { id: string; tenant_id: string; address: string; label_fr: string; purpose: string; department_eligibility: string | null; is_active: boolean; note: string | null; created_by: string | null; created_at: string; updated_at: string; mailbox_type: string; provisioning_status: string; owner_user_id: string | null; provisioning_note: string | null; provisioning_attempts: number; provisioned_at: string | null; provisioned_by: string | null; ownership: string; external_provider: string | null; external_mailbox_id: string | null; integration_address: string | null; corporate_identity_confirmed_at: string | null; corporate_identity_confirmed_by: string | null; outbound_verified_at: string | null; outbound_verification_ref: string | null; inbound_verified_at: string | null; inbound_verification_ref: string | null };
+        Insert: { id?: string; tenant_id: string; address: string; label_fr: string; purpose?: string; department_eligibility?: string | null; is_active?: boolean; note?: string | null; created_by?: string | null; mailbox_type?: string; provisioning_status?: string; owner_user_id?: string | null; provisioning_note?: string | null; provisioning_attempts?: number; provisioned_at?: string | null; provisioned_by?: string | null; ownership?: string; external_provider?: string | null; external_mailbox_id?: string | null; integration_address?: string | null; corporate_identity_confirmed_at?: string | null; corporate_identity_confirmed_by?: string | null; outbound_verified_at?: string | null; outbound_verification_ref?: string | null; inbound_verified_at?: string | null; inbound_verification_ref?: string | null };
+        Update: { label_fr?: string; purpose?: string; department_eligibility?: string | null; is_active?: boolean; note?: string | null; mailbox_type?: string; provisioning_status?: string; owner_user_id?: string | null; provisioning_note?: string | null; provisioning_attempts?: number; provisioned_at?: string | null; provisioned_by?: string | null; ownership?: string; external_provider?: string | null; external_mailbox_id?: string | null; integration_address?: string | null; corporate_identity_confirmed_at?: string | null; corporate_identity_confirmed_by?: string | null; outbound_verified_at?: string | null; outbound_verification_ref?: string | null; inbound_verified_at?: string | null; inbound_verification_ref?: string | null };
         Relationships: [];
       };
       ec_webhook_event: {

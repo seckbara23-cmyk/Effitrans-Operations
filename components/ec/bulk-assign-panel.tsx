@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { previewBulkAssignmentAction, executeBulkAssignment } from "@/lib/ec/mailboxes/bulk-actions";
 import { OUTCOME_FR, type BulkDecision } from "@/lib/ec/mailboxes/bulk";
 import type { MailboxSummary } from "@/lib/ec/mailboxes/membership";
+import { eligibilityLabelFr, MAILBOX_TYPE_FR } from "@/lib/ec/mailboxes/vocabulary";
 import { cn } from "@/lib/cn";
 
 /**
@@ -25,6 +26,7 @@ const TONE: Record<string, string> = {
   UNCHANGED: "text-slate-400",
   SKIPPED_NO_DEPARTMENT: "text-slate-500",
   SKIPPED_NOT_ELIGIBLE: "text-slate-500",
+  SKIPPED_MAILBOX_NOT_DEPARTMENTAL: "text-amber-700",
   REJECTED_CROSS_TENANT: "text-red-700",
   CONFLICT_DEFAULT_SENDER: "text-amber-700",
 };
@@ -38,6 +40,9 @@ export function BulkAssignPanel({ mailboxes }: { mailboxes: MailboxSummary[] }) 
   const [decisions, setDecisions] = useState<BulkDecision[] | null>(null);
   const [fingerprint, setFingerprint] = useState<string | null>(null);
   const [address, setAddress] = useState("");
+  /** The classification the preview was computed under, echoed back by the
+   *  server — so the administrator sees the BASIS, not just the outcome. */
+  const [basis, setBasis] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
@@ -52,6 +57,10 @@ export function BulkAssignPanel({ mailboxes }: { mailboxes: MailboxSummary[] }) 
       setDecisions(res.decisions);
       setFingerprint(res.fingerprint);
       setAddress(res.mailboxAddress);
+      setBasis(
+        `${MAILBOX_TYPE_FR[res.mailboxType] ?? res.mailboxType}`
+        + ` · Département éligible : ${eligibilityLabelFr(res.mailboxEligibility)}`,
+      );
     });
   };
 
@@ -88,8 +97,13 @@ export function BulkAssignPanel({ mailboxes }: { mailboxes: MailboxSummary[] }) 
             onChange={(e) => { setMailboxId(e.target.value); setDecisions(null); setFingerprint(null); }}
             className="mt-1 w-full rounded-md border border-slate-200 px-2 py-1.5 text-sm"
           >
+            {/* EMP-5E — the option shows the ELIGIBILITY, because that is what
+                decides who this batch can reach. Showing `purpose` here implied
+                the label was doing the work. */}
             {mailboxes.map((m) => (
-              <option key={m.id} value={m.id}>{m.address} ({m.purpose})</option>
+              <option key={m.id} value={m.id}>
+                {m.address} — {eligibilityLabelFr(m.departmentEligibility)}
+              </option>
             ))}
           </select>
         </label>
@@ -117,6 +131,11 @@ export function BulkAssignPanel({ mailboxes }: { mailboxes: MailboxSummary[] }) 
           />
           Limiter aux utilisateurs dont le département dérivé propose cette boîte
         </label>
+        <p className="text-[11px] text-slate-500">
+          Le rapprochement se fait sur le <strong>département éligible</strong> de la boîte.
+          Une boîte sans département éligible, ou une boîte personnelle, n&apos;est proposée à
+          personne — elle reste attribuable individuellement.
+        </p>
 
         <button
           type="button" onClick={preview} disabled={pending || !mailboxId}
@@ -132,6 +151,7 @@ export function BulkAssignPanel({ mailboxes }: { mailboxes: MailboxSummary[] }) 
             <h2 id="bulk-preview" className="text-sm font-semibold text-navy-900">
               Aperçu — {address}
             </h2>
+            {basis ? <p className="mt-0.5 text-[11px] text-slate-500">{basis}</p> : null}
             <p className="mt-0.5 text-[11px] text-slate-500">
               {decisions.length} utilisateur(s) examiné(s) · <strong>{willWrite}</strong> modification(s)
               à appliquer. Rien n&apos;a encore été écrit.

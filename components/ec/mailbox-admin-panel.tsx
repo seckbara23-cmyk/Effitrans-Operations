@@ -4,19 +4,33 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import {
   provisionMailbox, recordSetupOutcome, retryProvisioning,
-  setMailboxEnabled, revokeMembership,
+  setMailboxEnabled, revokeMembership, setDepartmentEligibility,
 } from "@/lib/ec/mailboxes/admin-actions";
 import type { MailboxSummary, MailboxMember } from "@/lib/ec/mailboxes/membership";
+import {
+  MAILBOX_PURPOSE_OPTIONS, purposeLabelFr, eligibilityLabelFr, ELIGIBILITY_OPTIONS,
+  MAILBOX_TYPE_FR, MAILBOX_TYPE_MEANING_FR, OWNERSHIP_FR,
+} from "@/lib/ec/mailboxes/vocabulary";
+import { mailboxReadiness, readinessTone } from "@/lib/ec/mailboxes/readiness";
 import { cn } from "@/lib/cn";
 
 /**
- * EMP-4A — the mailbox administration panel.
+ * EMP-4A / EMP-5E — the mailbox administration panel.
+ *
+ * EMP-5E's job on this surface is to make ONE distinction impossible to miss,
+ * because conflating the two is what made mailboxes invisible:
+ *
+ *   « Usage de la boîte »      — what it is FOR. A label. Proposes nobody.
+ *   « Département éligible »   — which employees are PROPOSED automatically.
+ *
+ * Setting an eligibility grants NOTHING. Clearing it revokes NOTHING. Every
+ * membership is an explicit, audited administrator decision, and this panel says
+ * so where the control is rather than in documentation nobody reads.
  *
  * Two things it deliberately does NOT show:
  *   * any "Send As" / "Envoyer en tant que" control. The provider envelope
  *     always uses the central configured sender, so a control by that name
- *     would claim an identity the recipient never sees. It arrives in EMP-4B,
- *     when the provider honours it.
+ *     would claim an identity the recipient never sees.
  *   * any suggestion that provisioning contacts a provider. Every state here
  *     records what a person did or reported.
  *
@@ -36,12 +50,18 @@ const ERRORS_FR: Record<string, string> = {
   address_taken: "Cette adresse est déjà utilisée par une boîte ou un alias.",
   invalid_address: "Adresse invalide.",
   owner_required: "Une boîte personnelle doit désigner son titulaire.",
-  owner_not_allowed: "Une boîte partagée n'a pas de titulaire.",
+  owner_not_allowed: "Une boîte partagée ou fonctionnelle n'a pas de titulaire.",
   not_pending: "Cette boîte n'attend pas de configuration.",
   not_failed: "Cette boîte n'est pas en échec.",
   invalid_state: "Changement d'état impossible depuis l'état actuel.",
   not_revocable: "Cette appartenance est déjà révoquée.",
   provision_failed: "La réservation a échoué.",
+  mailbox_not_found: "Boîte introuvable.",
+  invalid_eligibility: "Département éligible inconnu.",
+  personal_not_departmental:
+    "Une boîte personnelle ne peut pas porter d'éligibilité départementale : "
+    + "elle appartient à une personne, pas à un département.",
+  update_failed: "La modification a échoué.",
 };
 
 export function MailboxAdminPanel({
@@ -62,7 +82,9 @@ export function MailboxAdminPanel({
   const [note, setNote] = useState("");
   const [newAddress, setNewAddress] = useState("");
   const [newLabel, setNewLabel] = useState("");
-  const [newPurpose, setNewPurpose] = useState("OPERATIONS");
+  const [newPurpose, setNewPurpose] = useState("GENERAL");
+  const [newType, setNewType] = useState<"SHARED" | "FUNCTIONAL">("SHARED");
+  const [newEligibility, setNewEligibility] = useState("");
 
   const run = (fn: () => Promise<{ ok: boolean; error?: string }>) => {
     setError(null);
@@ -73,6 +95,7 @@ export function MailboxAdminPanel({
   };
 
   const selected = mailboxes.find((m) => m.id === selectedId) ?? null;
+  const notes = selected ? mailboxReadiness(selected) : [];
 
   return (
     <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
@@ -85,24 +108,35 @@ export function MailboxAdminPanel({
           <p className="p-4 text-sm text-slate-500">Aucune boîte réservée.</p>
         ) : (
           <ul className="divide-y divide-slate-100">
-            {mailboxes.map((m) => (
-              <li key={m.id}>
-                <Link
-                  href={`/admin/enterprise-mail/mailboxes?mailbox=${m.id}`}
-                  className={cn(
-                    "block px-4 py-3 hover:bg-slate-50",
-                    m.id === selectedId && "bg-slate-50",
-                  )}
-                >
-                  <p className="truncate text-sm font-medium text-navy-900">{m.address}</p>
-                  <p className="mt-0.5 text-[11px] text-slate-500">
-                    {m.mailboxType === "PERSONAL" ? "Personnelle" : "Partagée"} ·{" "}
-                    {STATUS_FR[m.provisioningStatus] ?? m.provisioningStatus} ·{" "}
-                    {m.activeMembers} membre{m.activeMembers > 1 ? "s" : ""}
-                  </p>
-                </Link>
-              </li>
-            ))}
+            {mailboxes.map((m) => {
+              const tone = readinessTone(mailboxReadiness(m));
+              return (
+                <li key={m.id}>
+                  <Link
+                    href={`/admin/enterprise-mail/mailboxes?mailbox=${m.id}`}
+                    className={cn(
+                      "block px-4 py-3 hover:bg-slate-50",
+                      m.id === selectedId && "bg-slate-50",
+                    )}
+                  >
+                    <p className="truncate text-sm font-medium text-navy-900">
+                      {tone === "warning" ? (
+                        <span className="mr-1 text-amber-700" aria-label="À vérifier">▲</span>
+                      ) : null}
+                      {m.address}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-slate-500">
+                      {MAILBOX_TYPE_FR[m.mailboxType] ?? m.mailboxType} ·{" "}
+                      {STATUS_FR[m.provisioningStatus] ?? m.provisioningStatus} ·{" "}
+                      {m.activeMembers} membre{m.activeMembers > 1 ? "s" : ""}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-slate-400">
+                      Éligible : {eligibilityLabelFr(m.departmentEligibility)}
+                    </p>
+                  </Link>
+                </li>
+              );
+            })}
           </ul>
         )}
 
@@ -119,19 +153,60 @@ export function MailboxAdminPanel({
               placeholder="Libellé"
               className="w-full rounded-md border border-slate-200 px-2 py-1.5 text-sm"
             />
-            <select
-              value={newPurpose} onChange={(e) => setNewPurpose(e.target.value)}
-              className="w-full rounded-md border border-slate-200 px-2 py-1.5 text-sm"
-            >
-              {["OPERATIONS", "TRANSIT", "CUSTOMS", "FINANCE", "COMMERCIAL", "SUPPORT", "GENERAL"].map((p) => (
-                <option key={p} value={p}>{p}</option>
-              ))}
-            </select>
+
+            <label className="block text-[11px] text-slate-600">
+              Type de boîte
+              <select
+                value={newType}
+                onChange={(e) => setNewType(e.target.value as "SHARED" | "FUNCTIONAL")}
+                className="mt-1 w-full rounded-md border border-slate-200 px-2 py-1.5 text-sm"
+              >
+                <option value="SHARED">{MAILBOX_TYPE_FR.SHARED}</option>
+                <option value="FUNCTIONAL">{MAILBOX_TYPE_FR.FUNCTIONAL}</option>
+              </select>
+            </label>
+            {/* PERSONAL is absent on purpose: it must name its titulaire, and
+                that choice belongs on the user's own Enterprise Mail page. */}
+            <p className="text-[11px] text-slate-500">{MAILBOX_TYPE_MEANING_FR[newType]}</p>
+
+            <label className="block text-[11px] text-slate-600">
+              Usage de la boîte
+              <select
+                value={newPurpose} onChange={(e) => setNewPurpose(e.target.value)}
+                className="mt-1 w-full rounded-md border border-slate-200 px-2 py-1.5 text-sm"
+              >
+                {MAILBOX_PURPOSE_OPTIONS.map((p) => (
+                  <option key={p} value={p}>{purposeLabelFr(p)}</option>
+                ))}
+              </select>
+            </label>
+            <p className="text-[11px] text-slate-500">
+              Étiquette descriptive : décrit à quoi sert la boîte. Sans effet sur les
+              propositions automatiques.
+            </p>
+
+            <label className="block text-[11px] text-slate-600">
+              Département éligible
+              <select
+                value={newEligibility} onChange={(e) => setNewEligibility(e.target.value)}
+                className="mt-1 w-full rounded-md border border-slate-200 px-2 py-1.5 text-sm"
+              >
+                {ELIGIBILITY_OPTIONS.map((o) => (
+                  <option key={o.value || "none"} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </label>
+            <p className="text-[11px] text-slate-500">
+              Détermine quels employés sont <strong>proposés automatiquement</strong>.
+              N&apos;accorde aucun accès par lui-même.
+            </p>
+
             <button
               type="button"
               disabled={pending || !newAddress.trim()}
               onClick={() => run(() => provisionMailbox({
-                address: newAddress, labelFr: newLabel, purpose: newPurpose, mailboxType: "SHARED",
+                address: newAddress, labelFr: newLabel, purpose: newPurpose,
+                mailboxType: newType, departmentEligibility: newEligibility || null,
               }))}
               className="w-full rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-700 disabled:opacity-50"
             >
@@ -151,11 +226,64 @@ export function MailboxAdminPanel({
           <>
             <dl className="grid gap-2 text-xs sm:grid-cols-3">
               <Fact label="État" value={STATUS_FR[selected.provisioningStatus] ?? selected.provisioningStatus} />
-              <Fact label="Type" value={selected.mailboxType === "PERSONAL" ? "Personnelle" : "Partagée"} />
+              <Fact label="Type" value={MAILBOX_TYPE_FR[selected.mailboxType] ?? selected.mailboxType} />
+              <Fact label="Provenance" value={OWNERSHIP_FR[selected.ownership] ?? selected.ownership} />
+              <Fact label="Usage de la boîte" value={purposeLabelFr(selected.purpose)} />
+              <Fact label="Département éligible" value={eligibilityLabelFr(selected.departmentEligibility)} />
               <Fact label="Tentatives" value={String(selected.provisioningAttempts)} />
             </dl>
+            <p className="mt-2 text-[11px] text-slate-500">
+              {MAILBOX_TYPE_MEANING_FR[selected.mailboxType] ?? ""}
+            </p>
             {selected.provisioningNote ? (
               <p className="mt-2 text-[11px] text-amber-800">{selected.provisioningNote}</p>
+            ) : null}
+
+            {/* ---- readiness ---- */}
+            {notes.length > 0 ? (
+              <div className="mt-3 border-t border-slate-100 pt-3">
+                <h3 className="text-xs font-semibold text-navy-900">État de préparation</h3>
+                <ul className="mt-1 space-y-1">
+                  {notes.map((n) => (
+                    <li
+                      key={n.code}
+                      className={cn(
+                        "text-[11px]",
+                        n.severity === "warning" ? "text-amber-800" : "text-slate-500",
+                      )}
+                    >
+                      {n.severity === "warning" ? "▲ " : "• "}{n.messageFr}
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-1 text-[11px] text-slate-400">
+                  Ces constats sont descriptifs : aucun n&apos;a désactivé, modifié ou
+                  reclassé cette boîte.
+                </p>
+              </div>
+            ) : null}
+
+            {/* ---- classification ---- */}
+            {canProvision ? (
+              <div className="mt-3 space-y-2 border-t border-slate-100 pt-3">
+                <h3 className="text-xs font-semibold text-navy-900">Département éligible</h3>
+                <select
+                  value={selected.departmentEligibility ?? ""}
+                  disabled={pending}
+                  onChange={(e) => run(() => setDepartmentEligibility(selected.id, e.target.value || null))}
+                  className="w-full max-w-sm rounded-md border border-slate-200 px-2 py-1.5 text-sm"
+                >
+                  {ELIGIBILITY_OPTIONS.map((o) => (
+                    <option key={o.value || "none"} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-slate-500">
+                  Détermine uniquement quels employés sont <strong>proposés
+                  automatiquement</strong> pour cette boîte. Choisir « Aucun » ne retire
+                  aucun accès existant : les appartenances restent explicites, nominatives et
+                  auditées, et seules une attribution ou une révocation les modifient.
+                </p>
+              </div>
             ) : null}
 
             {canProvision ? (

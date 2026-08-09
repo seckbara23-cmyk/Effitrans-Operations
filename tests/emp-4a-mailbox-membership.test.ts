@@ -9,7 +9,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { eligibleMailboxes, suggestPersonalAddress, SHARED_MAILBOX_PURPOSES } from "@/lib/ec/mailboxes/eligibility";
+import { eligibleMailboxes, suggestPersonalAddress, DEPARTMENT_ELIGIBILITY_VALUES } from "@/lib/ec/mailboxes/eligibility";
 import { TENANT_ROLE_TEMPLATES } from "@/lib/platform/role-templates";
 import { ROLE_CANONICAL_DEPARTMENT } from "@/lib/organization/departments";
 
@@ -225,9 +225,11 @@ describe("administration is gated and audited", () => {
 
   it("every write is audited", () => {
     const s = code(ADMIN_ACTIONS);
+    // EMP-5E added `setDepartmentEligibility`: a mailbox-level change that
+    // grants and revokes nothing, and is audited under its own action.
     const writes = ["grantMembership", "revokeMembership", "provisionMailbox",
                     "recordSetupOutcome", "retryProvisioning", "setMailboxEnabled",
-                    "setMembershipCapabilities"];
+                    "setMembershipCapabilities", "setDepartmentEligibility"];
     for (const w of writes) expect(s, w).toContain(`export async function ${w}`);
     expect((s.match(/writeAudit\(/g) ?? []).length).toBe(writes.length);
   });
@@ -249,7 +251,7 @@ describe("administration is gated and audited", () => {
 describe("eligibility is a suggestion", () => {
   it("derives from the role-derived department, since users have no department column", () => {
     const ops = eligibleMailboxes(["COORDINATOR"]);
-    expect(ops.map((e) => e.purpose)).toContain("OPERATIONS");
+    expect(ops.map((e) => e.eligibility)).toContain("OPERATIONS");
     expect(ops.every((e) => e.reason.includes("rôle"))).toBe(true);
   });
 
@@ -261,15 +263,15 @@ describe("eligibility is a suggestion", () => {
   });
 
   it("never implies COMMERCIAL from OPERATIONS — quoting is a distinct authority", () => {
-    expect(eligibleMailboxes(["COORDINATOR"]).map((e) => e.purpose)).not.toContain("COMMERCIAL");
+    expect(eligibleMailboxes(["COORDINATOR"]).map((e) => e.eligibility)).not.toContain("COMMERCIAL");
   });
 
   it("is stable and de-duplicated across several roles", () => {
     const a = eligibleMailboxes(["COORDINATOR", "CHIEF_OF_TRANSIT"]);
     const b = eligibleMailboxes(["CHIEF_OF_TRANSIT", "COORDINATOR"]);
     expect(a).toEqual(b);
-    expect(new Set(a.map((e) => e.purpose)).size).toBe(a.length);
-    for (const e of a) expect(SHARED_MAILBOX_PURPOSES).toContain(e.purpose);
+    expect(new Set(a.map((e) => e.eligibility)).size).toBe(a.length);
+    for (const e of a) expect(DEPARTMENT_ELIGIBILITY_VALUES).toContain(e.eligibility);
   });
 
   it("suggests no personal address without a configured domain", () => {

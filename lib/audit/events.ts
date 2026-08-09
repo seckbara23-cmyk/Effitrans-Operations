@@ -145,6 +145,10 @@ export const AuditActions = {
   EC_MAILBOX_SETUP_CONFIRMED: "ec.mailbox.setup_confirmed",
   EC_MAILBOX_SETUP_FAILED: "ec.mailbox.setup_failed",
   EC_MAILBOX_SETUP_RETRIED: "ec.mailbox.setup_retried",
+  // EMP-5E — a mailbox's department eligibility changed: which department is
+  // PROPOSED this mailbox. It grants and revokes nothing, so it is deliberately
+  // a separate action from the membership events above.
+  EC_MAILBOX_CLASSIFIED: "ec.mailbox.classified",
   // EMP-4A — one row for the batch, beside one row per changed membership, so
   // "what happened on Tuesday" and "who got access" are both answerable.
   EC_MAILBOX_BULK_ASSIGNED: "ec.mailbox.bulk_assigned",

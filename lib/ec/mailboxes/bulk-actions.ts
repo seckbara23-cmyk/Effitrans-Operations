@@ -25,7 +25,12 @@ import {
 } from "./bulk";
 
 export type PreviewResult =
-  | { ok: true; decisions: BulkDecision[]; fingerprint: string; mailboxAddress: string }
+  | {
+      ok: true; decisions: BulkDecision[]; fingerprint: string; mailboxAddress: string;
+      /** EMP-5E — the basis the preview used, so the administrator can see it. */
+      mailboxEligibility: string | null;
+      mailboxType: string;
+    }
   | { ok: false; error: string };
 
 export type ExecuteResult =
@@ -118,15 +123,25 @@ export async function previewBulkAssignmentAction(input: {
   if (!user) return { ok: false, error: "forbidden" };
 
   const admin = getAdminSupabaseClient();
+  // EMP-5E — `department_eligibility` and `mailbox_type` decide who is proposed.
+  // `purpose` is deliberately NOT read here: it is a display label, and reading
+  // it in this function is what made eligibility depend on spelling.
   const { data: mailbox } = await admin
-    .from("ec_mailbox").select("id, address, purpose")
+    .from("ec_mailbox").select("id, address, department_eligibility, mailbox_type")
     .eq("id", input.mailboxId).eq("tenant_id", user.tenantId).maybeSingle();
   if (!mailbox) return { ok: false, error: "mailbox_not_found" };
+
+  const mb = mailbox as unknown as {
+    address: string; department_eligibility: string | null; mailbox_type: string;
+  };
+  const mailboxEligibility = mb.department_eligibility ?? null;
+  const mailboxType = mb.mailbox_type;
 
   const candidates = await loadCandidates(user.tenantId, input.mailboxId, input.userIds ?? null);
   const decisions = previewBulkAssignment({
     tenantId: user.tenantId,
-    mailboxPurpose: (mailbox as { purpose: string }).purpose,
+    mailboxEligibility,
+    mailboxType,
     capabilities: input.capabilities,
     candidates,
     requireEligibility: input.requireEligibility,
@@ -139,8 +154,12 @@ export async function previewBulkAssignmentAction(input: {
       mailboxId: input.mailboxId,
       capabilities: input.capabilities,
       requireEligibility: input.requireEligibility,
+      mailboxEligibility,
+      mailboxType,
     }),
-    mailboxAddress: (mailbox as { address: string }).address,
+    mailboxAddress: mb.address,
+    mailboxEligibility,
+    mailboxType,
   };
 }
 

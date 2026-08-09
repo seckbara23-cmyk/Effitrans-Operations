@@ -23,6 +23,7 @@ import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
+import { isDepartmentEligibility, canHoldDepartmentEligibility } from "./eligibility";
 
 export type MailAdminResult = { ok: true; id?: string } | { ok: false; error: string };
 
@@ -158,9 +159,12 @@ export async function revokeMembership(
 export async function provisionMailbox(input: {
   address: string;
   labelFr: string;
+  /** DISPLAY LABEL. Free tenant vocabulary; proposes nobody to anybody. */
   purpose: string;
-  mailboxType: "SHARED" | "PERSONAL";
+  mailboxType: "SHARED" | "PERSONAL" | "FUNCTIONAL";
   ownerUserId?: string | null;
+  /** EMP-5E — the controlled eligibility key. Omit or null for manual-only. */
+  departmentEligibility?: string | null;
 }): Promise<MailAdminResult> {
   const g = await gate("communication:mailbox:provision");
   if (!g.ok || !g.user) return { ok: false, error: "forbidden" };
@@ -173,8 +177,16 @@ export async function provisionMailbox(input: {
   if (input.mailboxType === "PERSONAL" && !input.ownerUserId) {
     return { ok: false, error: "owner_required" };
   }
-  if (input.mailboxType === "SHARED" && input.ownerUserId) {
+  // SHARED and FUNCTIONAL both represent something other than one person, and
+  // the schema's owner-shape rule refuses an owner on either.
+  if (input.mailboxType !== "PERSONAL" && input.ownerUserId) {
     return { ok: false, error: "owner_not_allowed" };
+  }
+
+  const eligibility = normalizeEligibility(input.departmentEligibility);
+  if (eligibility === INVALID) return { ok: false, error: "invalid_eligibility" };
+  if (eligibility && !canHoldDepartmentEligibility(input.mailboxType)) {
+    return { ok: false, error: "personal_not_departmental" };
   }
 
   const admin = getAdminSupabaseClient();
@@ -185,6 +197,7 @@ export async function provisionMailbox(input: {
       address,
       label_fr: input.labelFr.trim() || address,
       purpose: input.purpose,
+      department_eligibility: eligibility,
       mailbox_type: input.mailboxType,
       owner_user_id: input.ownerUserId ?? null,
       provisioning_status: "PENDING_EXTERNAL_SETUP",
@@ -204,10 +217,94 @@ export async function provisionMailbox(input: {
     action: AuditActions.EC_MAILBOX_PROVISIONED,
     actorId: user.id, tenantId: user.tenantId,
     entity: "ec_mailbox", entityId: (data as { id: string }).id,
-    after: { address, mailbox_type: input.mailboxType, status: "PENDING_EXTERNAL_SETUP" },
+    after: { address, mailbox_type: input.mailboxType, status: "PENDING_EXTERNAL_SETUP",
+             department_eligibility: eligibility },
   });
   revalidatePath(PATH);
   return { ok: true, id: (data as { id: string }).id };
+}
+
+// ---------------------------------------------------------------------------
+// EMP-5E — classification. Which department is PROPOSED this mailbox.
+// ---------------------------------------------------------------------------
+
+/** Sentinel for "the caller sent something the vocabulary does not contain",
+ *  kept distinct from the legitimate NULL. */
+const INVALID = Symbol("invalid_eligibility");
+
+function normalizeEligibility(v: string | null | undefined): string | null | typeof INVALID {
+  if (v === null || v === undefined) return null;
+  const t = v.trim();
+  // An empty string is how a `<select>` renders "Aucun". It is a real answer.
+  if (t === "") return null;
+  return isDepartmentEligibility(t) ? t : INVALID;
+}
+
+/**
+ * Set or clear a mailbox's department eligibility.
+ *
+ * IT CHANGES EXACTLY ONE COLUMN. This is the whole safety property of the
+ * action and the reason it is worth having its own function: eligibility
+ * decides who is PROPOSED, and proposing is not granting. No membership is
+ * created, none is revoked, no capability moves, no default sender changes, and
+ * no historical row is touched — before or after. Someone who already holds
+ * access keeps it when eligibility is cleared, because their access came from
+ * an administrator's decision recorded on a membership row, not from this
+ * column.
+ *
+ * Gated on `communication:mailbox:provision`: this is a property of the mailbox
+ * identity, not of anyone's membership, and MAIL_ADMIN holds it. SYSTEM_ADMIN
+ * holds neither mail permission and therefore cannot reach this.
+ *
+ * A PERSONAL mailbox is REFUSED rather than warned. Silently accepting it would
+ * store a value that the classifier then has to ignore, and a stored fact the
+ * engine overrules is worse than an error message.
+ */
+export async function setDepartmentEligibility(
+  mailboxId: string,
+  value: string | null,
+): Promise<MailAdminResult> {
+  const g = await gate("communication:mailbox:provision");
+  if (!g.ok || !g.user) return { ok: false, error: "forbidden" };
+  const { user } = g;
+
+  const eligibility = normalizeEligibility(value);
+  if (eligibility === INVALID) return { ok: false, error: "invalid_eligibility" };
+
+  const admin = getAdminSupabaseClient();
+  const { data: current } = await admin
+    .from("ec_mailbox")
+    .select("id, address, mailbox_type, department_eligibility")
+    .eq("id", mailboxId).eq("tenant_id", user.tenantId)
+    .maybeSingle();
+  if (!current) return { ok: false, error: "mailbox_not_found" };
+
+  const mb = current as unknown as {
+    address: string; mailbox_type: string; department_eligibility: string | null;
+  };
+  if (eligibility && !canHoldDepartmentEligibility(mb.mailbox_type)) {
+    return { ok: false, error: "personal_not_departmental" };
+  }
+  if ((mb.department_eligibility ?? null) === eligibility) {
+    return { ok: true, id: mailboxId };
+  }
+
+  const { error } = await admin
+    .from("ec_mailbox")
+    .update({ department_eligibility: eligibility })
+    .eq("id", mailboxId).eq("tenant_id", user.tenantId);
+  if (error) return { ok: false, error: "update_failed" };
+
+  await writeAudit({
+    action: AuditActions.EC_MAILBOX_CLASSIFIED,
+    actorId: user.id, tenantId: user.tenantId,
+    entity: "ec_mailbox", entityId: mailboxId,
+    before: { department_eligibility: mb.department_eligibility ?? null },
+    after: { department_eligibility: eligibility, address: mb.address },
+  });
+  revalidatePath(PATH);
+  revalidatePath("/users");
+  return { ok: true, id: mailboxId };
 }
 
 /**

@@ -36,13 +36,23 @@ export type MailboxSummary = {
   id: string;
   address: string;
   labelFr: string;
+  /** EMP-5E — DISPLAY ONLY. Free tenant vocabulary; decides nothing about who
+   *  is proposed. See `departmentEligibility` for that. */
   purpose: string;
+  /** EMP-5E — the controlled eligibility key. NULL = manual assignment only. */
+  departmentEligibility: string | null;
   mailboxType: string;
   provisioningStatus: string;
   provisioningNote: string | null;
   provisioningAttempts: number;
   ownerUserId: string | null;
   activeMembers: number;
+  /** EMP-5C evidence, carried so readiness can be assessed without re-reading. */
+  isActive: boolean;
+  ownership: string;
+  corporateIdentityConfirmedAt: string | null;
+  outboundVerifiedAt: string | null;
+  inboundVerifiedAt: string | null;
 };
 
 const MEMBER_SELECT =
@@ -71,7 +81,12 @@ export async function listMailboxSummaries(tenantId: string): Promise<MailboxSum
   const [{ data: boxes }, { data: members }] = await Promise.all([
     admin
       .from("ec_mailbox")
-      .select("id, address, label_fr, purpose, mailbox_type, provisioning_status, provisioning_note, provisioning_attempts, owner_user_id")
+      .select(
+        "id, address, label_fr, purpose, department_eligibility, mailbox_type, "
+        + "provisioning_status, provisioning_note, provisioning_attempts, owner_user_id, "
+        + "is_active, ownership, corporate_identity_confirmed_at, "
+        + "outbound_verified_at, inbound_verified_at",
+      )
       .eq("tenant_id", tenantId)
       .order("address"),
     admin
@@ -91,12 +106,18 @@ export async function listMailboxSummaries(tenantId: string): Promise<MailboxSum
     address: b.address as string,
     labelFr: b.label_fr as string,
     purpose: b.purpose as string,
+    departmentEligibility: (b.department_eligibility as string | null) ?? null,
     mailboxType: b.mailbox_type as string,
     provisioningStatus: b.provisioning_status as string,
     provisioningNote: (b.provisioning_note as string | null) ?? null,
     provisioningAttempts: Number(b.provisioning_attempts ?? 0),
     ownerUserId: (b.owner_user_id as string | null) ?? null,
     activeMembers: counts.get(b.id as string) ?? 0,
+    isActive: Boolean(b.is_active),
+    ownership: (b.ownership as string | null) ?? "UNKNOWN",
+    corporateIdentityConfirmedAt: (b.corporate_identity_confirmed_at as string | null) ?? null,
+    outboundVerifiedAt: (b.outbound_verified_at as string | null) ?? null,
+    inboundVerifiedAt: (b.inbound_verified_at as string | null) ?? null,
   }));
 }
 

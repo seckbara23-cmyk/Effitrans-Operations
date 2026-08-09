@@ -10,7 +10,9 @@
  * classifier cannot place would be a user whose fate the preview does not show,
  * which is the failure this design exists to prevent.
  */
-import { eligibleMailboxes, type SharedMailboxPurpose } from "./eligibility";
+import {
+  eligibleMailboxes, canHoldDepartmentEligibility, type DepartmentEligibility,
+} from "./eligibility";
 import { ROLE_CANONICAL_DEPARTMENT } from "@/lib/organization/departments";
 
 export type BulkCapabilities = {
@@ -47,6 +49,7 @@ export type BulkOutcome =
   | "UNCHANGED"          // active membership already matching
   | "SKIPPED_NO_DEPARTMENT"  // no role maps to a department
   | "SKIPPED_NOT_ELIGIBLE"   // department does not propose this mailbox
+  | "SKIPPED_MAILBOX_NOT_DEPARTMENTAL" // the MAILBOX proposes to nobody
   | "REJECTED_CROSS_TENANT"  // belongs to another tenant
   | "CONFLICT_DEFAULT_SENDER"; // would be a second default sender
 
@@ -68,6 +71,7 @@ export const OUTCOME_FR: Record<BulkOutcome, string> = {
   UNCHANGED: "Inchangé",
   SKIPPED_NO_DEPARTMENT: "Ignoré — aucun département dérivé du rôle",
   SKIPPED_NOT_ELIGIBLE: "Ignoré — boîte non proposée pour ce département",
+  SKIPPED_MAILBOX_NOT_DEPARTMENTAL: "Ignoré — boîte sans éligibilité départementale",
   REJECTED_CROSS_TENANT: "Refusé — autre tenant",
   CONFLICT_DEFAULT_SENDER: "Conflit — expéditeur par défaut déjà défini ailleurs",
 };
@@ -89,15 +93,41 @@ function sameCapabilities(
  * they filtered by department, a user outside it is SKIPPED rather than
  * silently granted; when they picked users by hand, their choice stands and
  * eligibility is only advisory.
+ *
+ * EMP-5E — THE KEY IS `mailboxEligibility`, NOT `purpose`.
+ * Until this phase the classifier compared the mailbox's free-text `purpose`
+ * against the department vocabulary by string equality, so a mailbox typed
+ * `Operations` or `OPERATIONS ` was proposed to nobody while looking healthy.
+ * The controlled column decides now, and `purpose` is not an input here at all
+ * — which is why its spelling can no longer change who is proposed.
+ *
+ * NULL eligibility means the mailbox is not departmental. It does NOT mean
+ * GENERAL, and it does NOT mean every department: nobody is proposed for it,
+ * and it is assigned by hand.
  */
 export function previewBulkAssignment(input: {
   tenantId: string;
-  mailboxPurpose: SharedMailboxPurpose | string;
+  /** `ec_mailbox.department_eligibility`. NULL = not a departmental mailbox. */
+  mailboxEligibility: DepartmentEligibility | string | null;
+  /** `ec_mailbox.mailbox_type`. PERSONAL is never department-proposed. */
+  mailboxType: string;
   capabilities: BulkCapabilities;
   candidates: readonly BulkCandidate[];
   requireEligibility: boolean;
 }): BulkDecision[] {
-  const { tenantId, mailboxPurpose, capabilities, candidates, requireEligibility } = input;
+  const {
+    tenantId, mailboxEligibility, mailboxType,
+    capabilities, candidates, requireEligibility,
+  } = input;
+
+  // A mailbox-level fact, decided once: it applies to every candidate
+  // identically, and saying so is more useful to an administrator than forty
+  // rows claiming each individual department is at fault.
+  const mailboxProposesNobody = !canHoldDepartmentEligibility(mailboxType)
+    ? "Cette boîte est personnelle : elle n'est jamais proposée à un département."
+    : !mailboxEligibility
+      ? "Cette boîte n'a aucun département éligible : elle s'attribue manuellement."
+      : null;
 
   return candidates.map((u): BulkDecision => {
     const base = { userId: u.userId, name: u.name, email: u.email };
@@ -108,16 +138,21 @@ export function previewBulkAssignment(input: {
         reason: "Cet utilisateur appartient à un autre tenant." };
     }
 
+    if (requireEligibility && mailboxProposesNobody) {
+      return { ...base, outcome: "SKIPPED_MAILBOX_NOT_DEPARTMENTAL", writes: false,
+        reason: mailboxProposesNobody };
+    }
+
     const departments = u.roleCodes.map((r) => ROLE_CANONICAL_DEPARTMENT[r]).filter(Boolean);
     if (requireEligibility && departments.length === 0) {
       return { ...base, outcome: "SKIPPED_NO_DEPARTMENT", writes: false,
         reason: "Aucun de ses rôles n'est rattaché à un département." };
     }
     if (requireEligibility) {
-      const proposed = eligibleMailboxes(u.roleCodes).map((e) => e.purpose as string);
-      if (!proposed.includes(mailboxPurpose)) {
+      const proposed = eligibleMailboxes(u.roleCodes).map((e) => e.eligibility as string);
+      if (!proposed.includes(mailboxEligibility as string)) {
         return { ...base, outcome: "SKIPPED_NOT_ELIGIBLE", writes: false,
-          reason: `Son département ne propose pas la boîte « ${mailboxPurpose} ».` };
+          reason: `Son département ne propose pas les boîtes « ${mailboxEligibility} ».` };
       }
     }
 
@@ -165,6 +200,9 @@ export type PreviewContext = {
   mailboxId: string;
   capabilities: BulkCapabilities;
   requireEligibility: boolean;
+  /** EMP-5E — the classification the preview was computed under. */
+  mailboxEligibility: string | null;
+  mailboxType: string;
 };
 
 /**
@@ -183,6 +221,14 @@ export type PreviewContext = {
  * a matching fingerprint and agree. Binding the mailbox, the capabilities and
  * the eligibility filter is what makes "execution replays exactly this
  * preview" true rather than merely claimed in the UI.
+ *
+ * EMP-5E binds the mailbox's CLASSIFICATION for the same reason. Usually a
+ * changed eligibility also changes the decisions, so the body would move — but
+ * not always: an empty candidate list, or a set of users eligible for both the
+ * old and the new value, yields byte-identical decisions on a different
+ * authorization basis. Reclassifying a mailbox between preview and confirmation
+ * must invalidate the preview, so it is bound in the head where it cannot be
+ * masked by the decisions.
  */
 export function previewFingerprint(
   decisions: readonly BulkDecision[],
@@ -193,6 +239,8 @@ export function previewFingerprint(
     `mailbox=${context.mailboxId}`,
     `caps=${[c.canRead, c.canSend, c.canManageMembers, c.isDefaultSender].map(Number).join("")}`,
     `eligibility=${context.requireEligibility ? 1 : 0}`,
+    `dept=${context.mailboxEligibility ?? "-"}`,
+    `type=${context.mailboxType}`,
   ].join(";");
 
   const body = decisions

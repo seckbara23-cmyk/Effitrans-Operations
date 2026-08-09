@@ -57,11 +57,22 @@ export default async function UserEnterpriseMailPage({ params }: { params: { id:
   ]);
 
   // Suggestions, minus what they already have.
+  //
+  // EMP-5E — matched on `department_eligibility`, the controlled key, NOT on
+  // `purpose`. This was the SECOND place a free-text label decided who was
+  // offered a mailbox, and it failed the same way: a mailbox labelled
+  // `Operations` was proposed to nobody while looking perfectly healthy.
+  //
+  // PERSONAL is excluded because a personal mailbox belongs primarily to one
+  // person; SHARED and FUNCTIONAL are both legitimately staffed by a department.
+  // A mailbox with NULL eligibility matches nothing here — it is assigned by
+  // hand, which the manual picker below still allows.
   const held = new Set(memberships.filter((m) => !m.revokedAt).map((m) => m.mailboxId));
+  const assignable = mailboxes.filter((m) => m.mailboxType !== "PERSONAL");
   const suggestions = eligibleMailboxes(roleCodes)
     .map((e) => {
-      const mailbox = mailboxes.find(
-        (m) => m.purpose === e.purpose && m.mailboxType === "SHARED" && !held.has(m.id),
+      const mailbox = assignable.find(
+        (m) => m.departmentEligibility === e.eligibility && !held.has(m.id),
       );
       return mailbox ? { ...e, mailboxId: mailbox.id, address: mailbox.address,
                          status: mailbox.provisioningStatus } : null;
@@ -95,7 +106,7 @@ export default async function UserEnterpriseMailPage({ params }: { params: { id:
         memberships={memberships}
         suggestions={suggestions}
         personal={personal}
-        allMailboxes={mailboxes.filter((m) => m.mailboxType === "SHARED")}
+        allMailboxes={assignable}
         canManageMembers={canManageMembers}
         canProvision={canProvision}
       />

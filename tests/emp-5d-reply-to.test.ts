@@ -217,11 +217,16 @@ describe("purpose stays free vocabulary; eligibility gets its own field", () => 
     expect(migrationCode).not.toContain("HUMAN_RESOURCES");
   });
 
-  it("is DARK — eligibility still keys on purpose, unchanged", () => {
-    // Switching the comparison is a behaviour change and belongs to its own
-    // phase. Today's eligibility output must be byte-identical.
-    expect(code("lib/ec/mailboxes/bulk.ts")).not.toContain("department_eligibility");
+  it("shipped DARK, and EMP-5E is the phase that lit it", () => {
+    // EMP-5D deliberately added the column without reading it, and said so.
+    // That claim is historical and stays true of the migration; asserting that
+    // the classifier STILL ignores the column would now be asserting the
+    // opposite of what EMP-5E was for — so what is pinned here is the honest
+    // successor: `purpose` is no longer an input to eligibility anywhere.
     expect(migration).toContain("DARK");
+    const bulk = code("lib/ec/mailboxes/bulk.ts");
+    expect(bulk).toContain("mailboxEligibility");
+    expect(bulk).not.toContain("mailboxPurpose");
   });
 
   it("modifies no existing row", () => {
