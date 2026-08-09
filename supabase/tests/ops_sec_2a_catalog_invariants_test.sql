@@ -144,7 +144,10 @@ where not has_function_privilege('authenticated', oid, 'EXECUTE');
 -- ---------------------------------------------------------------------------
 with pilot(sig) as (values
   ('public.next_file_number(uuid,text,uuid)'),
-  ('public.next_employee_number(uuid,uuid)')
+  ('public.next_employee_number(uuid,uuid)'),
+  -- OPS-SEC-2C
+  ('public.next_expense_authorization_number(uuid,uuid)'),
+  ('public.next_expense_voucher_number(uuid,uuid)')
 )
 insert into _inv
 select 'INV-6 pilot RPCs call assert_actor_authority',
@@ -161,8 +164,24 @@ where to_regprocedure(sig) is null
 -- does NOT call the primitive counts here. The number may only go DOWN, and a
 -- new one pushes it up and fails CI naming itself.
 --
--- 50 was the audited figure; the two pilot overloads are verified, so 50
--- remains the unverified count until 2B converts more.
+-- WHY THE CEILING IS STILL 50 AFTER OPS-SEC-2A AND 2C.
+--
+-- This was measured, not assumed. Converting a function under the
+-- overload-then-activate pattern ADDS a trusted signature; it does not remove
+-- the untrusted original, because the overload delegates to it and the deployed
+-- application still calls it until activation. So each conversion leaves the
+-- unverified COUNT unchanged: +1 trusted (excluded here) and +0 removed.
+--
+-- Production confirmed exactly this: 50 before migration 93, and still 50 after
+-- it was applied with two overloads live.
+--
+-- Lowering the number now would therefore not record progress -- it would
+-- record a fiction, and the first honest re-count would fail CI. The ceiling
+-- drops when the ORIGINAL signatures are retired, which is the contract step of
+-- expand -> activate -> contract and belongs to a later phase.
+--
+-- Progress is instead made provable by INV-10 below, which counts the trusted
+-- surface and can only grow.
 -- ---------------------------------------------------------------------------
 -- THE PRIMITIVE ITSELF IS EXCLUDED, and the reason is not a convenience.
 -- assert_actor_authority takes p_actor and p_tenant, and a PL/pgSQL body never
@@ -205,6 +224,16 @@ from (
   where coalesce((select p.prosrc from pg_proc p
                    where p.oid = to_regprocedure('public.next_employee_number(uuid,uuid)')), '')
         !~ 'hr:manage'
+  union all
+  select 'next_expense_authorization_number should assert finance:expense:submit'
+  where coalesce((select p.prosrc from pg_proc p
+                   where p.oid = to_regprocedure('public.next_expense_authorization_number(uuid,uuid)')), '')
+        !~ 'finance:expense:submit'
+  union all
+  select 'next_expense_voucher_number should assert finance:expense:submit'
+  where coalesce((select p.prosrc from pg_proc p
+                   where p.oid = to_regprocedure('public.next_expense_voucher_number(uuid,uuid)')), '')
+        !~ 'finance:expense:submit'
 ) q;
 
 -- ---------------------------------------------------------------------------
@@ -221,6 +250,22 @@ where p.prokind = 'f'
   and p.proname <> 'assert_actor_authority'
   and p.prosrc ~ 'assert_actor_authority'
   and p.prosrc ~ 'SYSTEM';
+
+-- ---------------------------------------------------------------------------
+-- INV-10 (OPS-SEC-2C) — the TRUSTED surface only grows.
+-- INV-7 cannot show progress while originals survive (see its note), so this
+-- is the invariant that does: the number of functions whose body asserts
+-- authority through the canonical primitive. Four after 2C. A regression that
+-- silently dropped a guard would fail here even though INV-7 stayed at 50.
+-- ---------------------------------------------------------------------------
+insert into _inv
+select 'INV-10 trusted (guarded) function count has not regressed',
+       count(*) >= 4,
+       count(*)::text || ' guarded: ' || coalesce(string_agg(p.proname, ', '), 'none')
+from pg_proc p join pg_namespace n on n.oid = p.pronamespace and n.nspname = 'public'
+where p.prokind = 'f'
+  and p.proname <> 'assert_actor_authority'
+  and p.prosrc ~ 'assert_actor_authority';
 
 -- ---------------------------------------------------------------------------
 -- Verdict.

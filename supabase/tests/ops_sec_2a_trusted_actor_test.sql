@@ -78,6 +78,26 @@ select '00000000-0000-0000-0000-00000000ac05', r.id, r.tenant_id
  limit 1
 on conflict do nothing;
 
+-- OPS-SEC-2C — an actor holding finance:expense:submit, so the expense pilots
+-- are proven by a real holder rather than by one of the other permissions.
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-00000000ac06', 'ops2c.finance@test.local')
+on conflict (id) do nothing;
+
+insert into public.app_user (id, tenant_id, email, status) values
+  ('00000000-0000-0000-0000-00000000ac06', '00000000-0000-0000-0000-000000000001', 'ops2c.finance@test.local', 'active')
+on conflict (id) do nothing;
+
+insert into public.user_role (user_id, role_id, tenant_id)
+select '00000000-0000-0000-0000-00000000ac06', r.id, r.tenant_id
+  from public.role r
+  join public.role_permission rp on rp.role_id = r.id
+  join public.permission p on p.id = rp.permission_id
+ where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+   and p.code = 'finance:expense:submit'
+ limit 1
+on conflict do nothing;
+
 create temp table _r (check_name text, ok boolean, detail text) on commit drop;
 
 -- ---------------------------------------------------------------------------
@@ -102,6 +122,9 @@ declare
   r_svc_no_perm text; r_svc_inactive text; r_svc_from_session text;
   r_system text; r_human_as_system text; r_pilot_ok text; r_pilot_forged text;
   v_hr uuid := '00000000-0000-0000-0000-00000000ac05';
+  v_fin uuid := '00000000-0000-0000-0000-00000000ac06';
+  r_aut_ok text; r_aut_no_perm text; r_aut_xtenant text; r_aut_forged text;
+  r_bon_ok text; r_bon_inactive text;
   r_emp_ok text; r_emp_no_perm text; r_emp_xtenant text;
 begin
   ---------------------------------------------------------------------------
@@ -200,6 +223,60 @@ begin
     r_emp_xtenant := 'REFUSED:' || v_state;
   end;
 
+  -- 7c. EXPENSE counters (OPS-SEC-2C). Acceptance first: without it, a suite
+  --     where everything refuses cannot tell "secure" from "broken".
+  begin
+    perform public.next_expense_authorization_number(v_tenant_a, v_fin);
+    r_aut_ok := 'ACCEPTED';
+  exception when others then
+    get stacked diagnostics v_state = returned_sqlstate;
+    r_aut_ok := 'REFUSED:' || v_state;
+  end;
+
+  begin
+    perform public.next_expense_voucher_number(v_tenant_a, v_fin);
+    r_bon_ok := 'ACCEPTED';
+  exception when others then
+    get stacked diagnostics v_state = returned_sqlstate;
+    r_bon_ok := 'REFUSED:' || v_state;
+  end;
+
+  -- wrong permission: a real, active, same-tenant actor without expense authority
+  begin
+    perform public.next_expense_authorization_number(v_tenant_a, v_permitted);
+    r_aut_no_perm := 'ACCEPTED';
+  exception when others then
+    get stacked diagnostics v_state = returned_sqlstate;
+    r_aut_no_perm := 'REFUSED:' || v_state;
+  end;
+
+  -- cross-tenant
+  begin
+    perform public.next_expense_authorization_number(v_tenant_b, v_fin);
+    r_aut_xtenant := 'ACCEPTED';
+  exception when others then
+    get stacked diagnostics v_state = returned_sqlstate;
+    r_aut_xtenant := 'REFUSED:' || v_state;
+  end;
+
+  -- forged actor
+  begin
+    perform public.next_expense_authorization_number(v_tenant_a, v_ghost);
+    r_aut_forged := 'ACCEPTED';
+  exception when others then
+    get stacked diagnostics v_state = returned_sqlstate;
+    r_aut_forged := 'REFUSED:' || v_state;
+  end;
+
+  -- inactive actor, on the voucher counter
+  begin
+    perform public.next_expense_voucher_number(v_tenant_a, v_inactive);
+    r_bon_inactive := 'ACCEPTED';
+  exception when others then
+    get stacked diagnostics v_state = returned_sqlstate;
+    r_bon_inactive := 'REFUSED:' || v_state;
+  end;
+
   -- 8. SYSTEM lane is closed, and a human actor cannot be used as automation
   begin
     perform public.assert_actor_authority(null, v_tenant_a, 'file:create', 'SYSTEM');
@@ -293,6 +370,12 @@ begin
     ('employee_pilot_hr_actor_accepted',   r_emp_ok = 'ACCEPTED', r_emp_ok),
     ('employee_pilot_wrong_permission_refused', r_emp_no_perm = 'REFUSED:EFA15', r_emp_no_perm),
     ('employee_pilot_cross_tenant_refused', r_emp_xtenant = 'REFUSED:EFA13', r_emp_xtenant),
+    ('expense_authorization_accepted',      r_aut_ok = 'ACCEPTED', r_aut_ok),
+    ('expense_voucher_accepted',            r_bon_ok = 'ACCEPTED', r_bon_ok),
+    ('expense_wrong_permission_refused',    r_aut_no_perm = 'REFUSED:EFA15', r_aut_no_perm),
+    ('expense_cross_tenant_refused',        r_aut_xtenant = 'REFUSED:EFA13', r_aut_xtenant),
+    ('expense_forged_actor_refused',        r_aut_forged = 'REFUSED:EFA12', r_aut_forged),
+    ('expense_inactive_actor_refused',      r_bon_inactive = 'REFUSED:EFA14', r_bon_inactive),
     ('system_lane_closed',                 r_system = 'REFUSED:EFA16', r_system),
     ('human_cannot_be_automation',         r_human_as_system = 'REFUSED:EFA16', r_human_as_system),
     ('interactive_self_accepted',          r_auth_yes = 'ACCEPTED', r_auth_yes),
@@ -347,6 +430,42 @@ begin
     v_before || ' -> ' || v_after);
 end
 $emp_no_side_effect$;
+
+-- ---------------------------------------------------------------------------
+-- OPS-SEC-2C — a rejected expense request consumes no number, and the existing
+-- formats are unchanged. Two valid allocations either side of one refusal must
+-- be consecutive; a gap would mean the refusal burned a sequence value.
+-- ---------------------------------------------------------------------------
+do $expense_no_side_effect$
+declare v_b text; v_a text; v_vb text; v_va text;
+begin
+  v_b := public.next_expense_authorization_number('00000000-0000-0000-0000-000000000001');
+  begin
+    perform public.next_expense_authorization_number(
+      '00000000-0000-0000-0000-000000000001',
+      '00000000-0000-4000-8000-0000000000ee'::uuid);
+  exception when others then null;
+  end;
+  v_a := public.next_expense_authorization_number('00000000-0000-0000-0000-000000000001');
+
+  v_vb := public.next_expense_voucher_number('00000000-0000-0000-0000-000000000001');
+  begin
+    perform public.next_expense_voucher_number(
+      '00000000-0000-0000-0000-000000000001',
+      '00000000-0000-4000-8000-0000000000ee'::uuid);
+  exception when others then null;
+  end;
+  v_va := public.next_expense_voucher_number('00000000-0000-0000-0000-000000000001');
+
+  insert into _r values
+    ('rejected_authorization_consumed_no_number',
+     (right(v_a, 5)::int - right(v_b, 5)::int) = 1, v_b || ' -> ' || v_a),
+    ('rejected_voucher_consumed_no_number',
+     (right(v_va, 5)::int - right(v_vb, 5)::int) = 1, v_vb || ' -> ' || v_va),
+    ('authorization_format_unchanged', v_a ~ '^EFT-AUT-[0-9]{4}-[0-9]{5}$', v_a),
+    ('voucher_format_unchanged',       v_va ~ '^EFT-BON-[0-9]{4}-[0-9]{5}$', v_va);
+end
+$expense_no_side_effect$;
 
 -- ---------------------------------------------------------------------------
 -- Report. Any false fails the suite with ON_ERROR_STOP.
