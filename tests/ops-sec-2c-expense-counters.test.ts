@@ -84,18 +84,58 @@ describe("the trusted expense overloads", () => {
   });
 });
 
-describe("the overloads stay DARK until the migration is applied", () => {
-  it("no application caller passes p_actor to an expense counter yet", () => {
-    const src = read("lib/finance/expense/actions.ts");
-    for (const m of src.matchAll(/\.rpc\(\s*"next_expense_\w+"[^)]*\)/g)) {
-      expect(m[0], "activation belongs to a later step").not.toContain("p_actor");
+describe("OPS-SEC-2D — the call sites are ACTIVATED onto the trusted overloads", () => {
+  const src = read("lib/finance/expense/actions.ts");
+
+  it("both expense counters are invoked with an actor", () => {
+    // 2C shipped these dark on purpose: a caller needing a not-yet-applied
+    // function is an outage waiting for the gap between migration and deploy.
+    // 2D flips them only after migration 94 was confirmed physically present
+    // in production.
+    const calls = [...src.matchAll(/\.rpc\(\s*"(next_expense_\w+)"[^)]*\)/g)];
+    expect(calls.length).toBe(2);
+    for (const m of calls) {
+      expect(m[0], `${m[1]} still calls the untrusted one-argument signature`)
+        .toContain("p_actor");
     }
+  });
+
+  it("the actor is session-derived, never taken from request input", () => {
+    // ctx comes from guard() -> assertPermission, so userId/tenantId are the
+    // authenticated identity. Neither appears in either action's arguments.
+    expect(src).toContain("p_actor: ctx.userId");
+    expect(src).toContain("p_tenant: ctx.tenantId");
+    expect(src).not.toMatch(/p_actor:\s*(input|id|payload)/);
+    expect(src).not.toMatch(/p_tenant:\s*(input|id|payload)/);
+  });
+
+  it("the TypeScript guard and the database assert the SAME permission", () => {
+    // Drift here would have the database verify a different authority than the
+    // server action checked — which looks verified and is not.
+    expect(src).toContain('guard("finance:expense:submit")');
+    expect(sql).toContain("'finance:expense:submit', 'SERVICE'");
+  });
+
+  it("no call site selects its own execution context", () => {
+    // 'SERVICE' is hard-coded inside the database overload. A caller that could
+    // pass a context would be choosing its own trust level.
+    expect(src).not.toContain("p_context");
+    expect(src).not.toMatch(/["']SYSTEM["']/);
+    expect(src).not.toMatch(/["']INTERACTIVE["']/);
   });
 
   it("the numbering contract module stays pure", () => {
     const n = read("lib/finance/expense/numbering.ts");
     expect(n).not.toContain(".rpc(");
     expect(n).toContain("AUTHORIZATION_NUMBER_PATTERN");
+  });
+
+  it("the original one-argument functions are NOT dropped", () => {
+    // Out of scope, and the overloads delegate to them. Retiring them is the
+    // contract step of expand -> activate -> contract, and it is the only thing
+    // that can actually lower INV-7.
+    expect(sql).not.toMatch(/drop\s+function/i);
+    expect(sql).toContain("an original counter signature disappeared");
   });
 });
 

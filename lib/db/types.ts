@@ -4403,12 +4403,17 @@ export type Database = {
         Args: { p_tenant: string; p_actor: string };
         Returns: string;
       };
+      // OPS-SEC-2D — the TRUSTED overload. p_actor is resolved from the
+      // authenticated session by the server action, never from request input;
+      // the database verifies it holds `finance:expense:submit` in that tenant
+      // BEFORE any number is allocated, so a refusal consumes no sequence value.
       next_expense_authorization_number: {
-        Args: { p_tenant: string };
+        Args: { p_tenant: string; p_actor: string };
         Returns: string;
       };
+      // OPS-SEC-2D — the TRUSTED overload; same permission, same guarantee.
       next_expense_voucher_number: {
-        Args: { p_tenant: string };
+        Args: { p_tenant: string; p_actor: string };
         Returns: string;
       };
       auth_tenant_id: { Args: Record<string, never>; Returns: string };

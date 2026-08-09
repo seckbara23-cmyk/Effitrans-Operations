@@ -276,8 +276,15 @@ export async function submitExpenseAuthorization(id: string): Promise<ExpenseAct
   // Mint the number once (at first submission), via the atomic per-tenant RPC.
   let authorizationNumber = row.authorization_number as string | null;
   if (!authorizationNumber) {
+    // OPS-SEC-2D — the TRUSTED overload. `ctx` comes from guard(), which is
+    // assertPermission("finance:expense:submit"), so actor and tenant are both
+    // session-derived and neither appears in this action's input. The service
+    // role still carries the call but no longer vouches for it: the database
+    // re-proves the actor exists, is active, belongs to this tenant and holds
+    // that permission before allocating, so a refusal burns no number.
     const { data: minted, error: rpcErr } = await admin.rpc("next_expense_authorization_number", {
       p_tenant: ctx.tenantId,
+      p_actor: ctx.userId,
     });
     if (rpcErr || !minted) return fail("invalid_state");
     authorizationNumber = minted as string;
@@ -715,7 +722,10 @@ export async function submitExpenseVoucher(id: string): Promise<ExpenseActionRes
 
   let voucherNumber = row.voucher_number as string | null;
   if (!voucherNumber) {
-    const { data: minted, error: rpcErr } = await admin.rpc("next_expense_voucher_number", { p_tenant: ctx.tenantId });
+    const { data: minted, error: rpcErr } = await admin.rpc("next_expense_voucher_number", {
+      p_tenant: ctx.tenantId,
+      p_actor: ctx.userId,
+    });
     if (rpcErr || !minted) return fail("invalid_state");
     voucherNumber = minted as string;
   }
