@@ -24,7 +24,7 @@ const USER_PANEL = "components/ec/user-mailbox-panel.tsx";
 const BULK_PANEL = "components/ec/bulk-assign-panel.tsx";
 const ADMIN_ACTIONS = "lib/ec/mailboxes/admin-actions.ts";
 const USER_PAGE = "app/users/[id]/enterprise-mail/page.tsx";
-const BULK_PAGE = "app/users/enterprise-mail/bulk/page.tsx";
+const BULK_PAGE = "app/admin/enterprise-mail/access/page.tsx";
 
 const TENANT = "t1";
 const CAPS: BulkCapabilities = { canRead: true, canSend: false, canManageMembers: false, isDefaultSender: false };

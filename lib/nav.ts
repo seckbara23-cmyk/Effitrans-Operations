@@ -187,22 +187,42 @@ export const BASE_SECTIONS: NavigationSection[] = [
       // SYSTEM_ADMIN deliberately does not.
       {
         key: "enterprise-mail-admin",
-        label: "Enterprise Mail",
-        href: "/users/enterprise-mail",
-        iconKey: "bell",
-        // EMP-IA-1 — this entry now leads a four-surface workspace: mailbox
-        // identities, who may use them, the state of inbound capture, and the
-        // technical dispatch journal. Those are governed by three different
-        // permissions, so gating the entry on provisioning alone would hide the
-        // whole area from an operator who holds `communication:manage` and can
-        // legitimately open two of its four pages.
+        // ADMIN-MAIL-ROUTING — "Administration Mail", not a second entry called
+        // "Enterprise Mail". Two identically-named entries in different sections
+        // is what made the reported screenshot ambiguous before the double
+        // highlight was even noticed.
+        label: "Administration Mail",
+        // Canonical home is /admin/enterprise-mail, NOT a child of /users. As a
+        // child it was structurally a sub-page of the user-management module,
+        // which is why the sidebar lit « Utilisateurs » and this entry at once.
         //
-        // ANY of the three, because each page still enforces its own gate — the
-        // entry only decides whether the door is visible, never what is behind it.
+        // The href is the module ROUTER, not one of its pages. Pointing it at
+        // the mailbox page is what produced the production 404: the entry is
+        // visible to any of three permissions, but that page accepts only two of
+        // them, so a `communication:manage` holder saw the entry and hit
+        // notFound(). The router sends each holder to a surface they can open.
+        href: "/admin/enterprise-mail",
+        iconKey: "bell",
+        // EITHER mailbox-administration authority — and deliberately NOT
+        // `communication:manage`.
+        //
+        // EMP-IA-1 added `communication:manage` here so that holders of it
+        // (OPS_SUPERVISOR, SYSTEM_ADMIN) could reach the capture and journal
+        // tabs. That had two consequences it should not have had: it produced
+        // the production 404, because those holders could open neither of the
+        // two surfaces this entry led to; and it silently overturned EMP-4A's
+        // ratified position that SYSTEM_ADMIN stays out of mail administration.
+        // A navigation phase must not move a governance boundary, so the
+        // ratified gate is restored here.
+        //
+        // The router at /admin/enterprise-mail still resolves a
+        // `communication:manage` holder who arrives by direct URL to the
+        // capture surface, so nothing they are entitled to read became
+        // unreachable — only unadvertised. Whether they should have a nav path
+        // is a governance question, raised rather than answered.
         permissionsAnyOf: [
           "communication:mailbox:provision",
           "communication:membership:manage",
-          "communication:manage",
         ],
       },
       // DBC-1 — Digital Brand Center (tenant module). Gated by admin:config:manage.

@@ -88,7 +88,7 @@ export function MailboxAdminPanel({
             {mailboxes.map((m) => (
               <li key={m.id}>
                 <Link
-                  href={`/users/enterprise-mail?mailbox=${m.id}`}
+                  href={`/admin/enterprise-mail/mailboxes?mailbox=${m.id}`}
                   className={cn(
                     "block px-4 py-3 hover:bg-slate-50",
                     m.id === selectedId && "bg-slate-50",

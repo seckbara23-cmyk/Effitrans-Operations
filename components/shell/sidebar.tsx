@@ -84,11 +84,30 @@ function NavLinks({
           </p>
           <ul className="space-y-0.5">
             {section.items.map((item) => {
-              // /dashboard is a prefix of /dashboard/executive, so it must match
-              // exactly; every other entry highlights across its subtree.
-              const active =
-                pathname === item.href ||
-                (item.href !== "/dashboard" && pathname.startsWith(`${item.href}/`));
+              // LONGEST MATCH WINS, across the whole sidebar.
+              //
+              // The previous rule highlighted every entry whose href was a
+              // prefix of the current path, so /users/enterprise-mail lit up
+              // BOTH « Utilisateurs » (/users) and itself — two sections
+              // claiming the same page. It was special-cased for /dashboard,
+              // which only hid the general problem behind its first instance.
+              //
+              // Comparing against every item means a parent entry yields to its
+              // own child, and no future nesting can reintroduce the defect.
+              // MailNav carries the same rule for the same reason.
+              const active = (() => {
+                const matches = (href: string) =>
+                  pathname === href || pathname.startsWith(`${href}/`);
+                if (!matches(item.href)) return false;
+                // `visible`, not `sections`: only entries actually rendered may
+                // compete, or an item this user cannot see could win the match
+                // and leave nothing highlighted at all.
+                const all = visible.flatMap((s) => s.items.map((i) => i.href));
+                const longest = all
+                  .filter(matches)
+                  .reduce((a, b) => (b.length > a.length ? b : a), "");
+                return longest === item.href;
+              })();
               const Icon = ICONS[item.iconKey];
               return (
                 <li key={item.key}>

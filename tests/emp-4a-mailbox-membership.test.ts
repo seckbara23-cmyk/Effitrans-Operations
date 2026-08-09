@@ -22,7 +22,9 @@ const MIGRATION = "supabase/migrations/20260813000001_mailbox_membership.sql";
 const ADMIN_ACTIONS = "lib/ec/mailboxes/admin-actions.ts";
 const MEMBERSHIP = "lib/ec/mailboxes/membership.ts";
 const PANEL = "components/ec/mailbox-admin-panel.tsx";
-const PAGE = "app/users/enterprise-mail/page.tsx";
+// ADMIN-MAIL-ROUTING moved the module to its own administrative route;
+// /users/enterprise-mail is now a permanent redirect to it.
+const PAGE = "app/admin/enterprise-mail/mailboxes/page.tsx";
 
 // ---------------------------------------------------------------------------
 // 1. can_send_as does not exist anywhere
@@ -231,7 +233,12 @@ describe("administration is gated and audited", () => {
   });
 
   it("the admin surface lives under Administration, not in the mail workspace", () => {
-    expect(read("lib/nav.ts")).toContain('href: "/users/enterprise-mail"');
+    // ADMIN-MAIL-ROUTING moved the module out of /users, where being a child
+    // of the user-management route made the sidebar highlight two entries at
+    // once. The EMP-4A property this asserts — administration lives under
+    // Administration, not in the mail workspace — is strengthened, not weakened.
+    expect(read("lib/nav.ts")).toContain('href: "/admin/enterprise-mail"');
+    expect(read("lib/nav.ts")).not.toContain('href: "/users/enterprise-mail"');
     expect(code("app/mail/layout.tsx")).not.toContain("enterprise-mail");
   });
 });

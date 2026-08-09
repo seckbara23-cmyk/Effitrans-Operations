@@ -76,7 +76,7 @@ export default async function UserEnterpriseMailPage({ params }: { params: { id:
         <Link href={`/users/${params.id}`} className="text-sm text-teal-700 hover:underline">
           ← Fiche utilisateur
         </Link>
-        <Link href="/users/enterprise-mail" className="text-sm text-teal-700 hover:underline">
+        <Link href="/admin/enterprise-mail/access" className="text-sm text-teal-700 hover:underline">
           Administration Enterprise Mail
         </Link>
       </div>

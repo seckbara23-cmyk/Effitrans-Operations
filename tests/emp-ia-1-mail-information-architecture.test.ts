@@ -25,10 +25,10 @@ const MAIL_LAYOUT = "app/mail/layout.tsx";
 const MAIL_ROOT = "app/mail/page.tsx";
 const MAIL_SENT = "app/mail/sent/page.tsx";
 const MAIL_BOXES = "app/mail/mailboxes/page.tsx";
-const ADMIN_LAYOUT = "app/users/enterprise-mail/layout.tsx";
-const ADMIN_JOURNAL = "app/users/enterprise-mail/journal/page.tsx";
-const ADMIN_CAPTURE = "app/users/enterprise-mail/capture/page.tsx";
-const ADMIN_HOME = "app/users/enterprise-mail/page.tsx";
+const ADMIN_LAYOUT = "app/admin/enterprise-mail/layout.tsx";
+const ADMIN_JOURNAL = "app/admin/enterprise-mail/journal/page.tsx";
+const ADMIN_CAPTURE = "app/admin/enterprise-mail/capture/page.tsx";
+const ADMIN_HOME = "app/admin/enterprise-mail/mailboxes/page.tsx";
 const NAV = "lib/nav.ts";
 const MAIL_NAV = "components/ec/mail-nav.tsx";
 
@@ -69,7 +69,7 @@ describe("the employee Enterprise Mail bar is the frozen five", () => {
     const s = code(MAIL_LAYOUT);
     expect(s).not.toContain("Journal");
     expect(hrefsOf(MAIL_LAYOUT)).not.toContain("/mail");
-    expect(hrefsOf(MAIL_LAYOUT)).not.toContain("/users/enterprise-mail/journal");
+    expect(hrefsOf(MAIL_LAYOUT)).not.toContain("/admin/enterprise-mail/journal");
   });
 
   it("offers no administrative mail surface", () => {
@@ -287,7 +287,7 @@ describe("existing deep links keep working", () => {
   });
 
   it("the tab highlighter picks the longest match, not the first prefix", () => {
-    // /users/enterprise-mail is a prefix of its own children, so a naive
+    // /admin/enterprise-mail is a prefix of its own children, so a naive
     // startsWith would light the parent tab on every child route.
     const s = code(MAIL_NAV);
     expect(s).toContain("b.href.length > a.href.length");

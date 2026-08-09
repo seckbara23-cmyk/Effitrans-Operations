@@ -148,10 +148,19 @@ describe("EMP-1 security envelope", () => {
   });
 
   it("gates mailbox administration more strictly than the read policy", () => {
-    // RLS admits communication:inbound:read; these pages demand manage.
-    for (const f of [BOXES_PAGE, BOX_DETAIL]) {
-      expect(code(f)).toContain('hasPermission(permissions, "communication:manage")');
-    }
+    // RLS admits communication:inbound:read; the ADMINISTRATIVE surface demands
+    // manage. BOXES_PAGE was in this list until EMP-IA-1 turned it into the
+    // employee "which mailboxes may I use" view on communication:read — and it
+    // kept passing only because the word `communication:manage` still appears
+    // there, guarding a link. A security assertion that passes for the wrong
+    // reason is worse than none, so it now checks the gate rather than the file.
+    expect(code(BOX_DETAIL)).toContain('hasPermission(permissions, "communication:manage")');
+
+    const boxes = code(BOXES_PAGE);
+    const gate = boxes.slice(boxes.indexOf("getEffectivePermissions"),
+                             boxes.indexOf("notFound()") + 12);
+    expect(gate).toContain('hasPermission(permissions, "communication:read")');
+    expect(gate).not.toContain("communication:manage");
   });
 
   it("audits every mailbox state change", () => {
@@ -301,7 +310,7 @@ describe("every mail surface is reachable", () => {
     // behind the permission its page enforces — is unchanged; the
     // administrative half of it now lives in the administrative layout.
     expect(src).not.toContain('hasPermission(permissions, "communication:manage")');
-    expect(code("app/users/enterprise-mail/layout.tsx"))
+    expect(code("app/admin/enterprise-mail/layout.tsx"))
       .toContain('hasPermission(permissions, "communication:manage")');
   });
 });

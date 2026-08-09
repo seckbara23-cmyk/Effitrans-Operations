@@ -3,7 +3,7 @@ import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { MailNav, type MailTab } from "@/components/ec/mail-nav";
 
 /**
- * Administration → Enterprise Mail — the GOVERNANCE workspace shell.
+ * Administration → Administration Mail — the GOVERNANCE workspace shell.
  *
  * EMP-IA-1. The counterpart to /mail: employees use Enterprise Mail to do
  * email; administrators come here to operate and govern the mail system.
@@ -19,7 +19,7 @@ import { MailNav, type MailTab } from "@/components/ec/mail-nav";
  * permission its page enforces, so nothing is offered that would 404 on
  * arrival — and no tab makes a route reachable that was not already.
  */
-export default async function EnterpriseMailAdminLayout({
+export default async function AdministrationMailLayout({
   children,
 }: {
   children: React.ReactNode;
@@ -32,18 +32,18 @@ export default async function EnterpriseMailAdminLayout({
 
     // Who may use which mailbox. EMP-4A's authority, unchanged.
     if (hasPermission(permissions, "communication:membership:manage")) {
-      tabs.push({ href: "/users/enterprise-mail/bulk", label: "Utilisateurs et accès" });
+      tabs.push({ href: "/admin/enterprise-mail/access", label: "Utilisateurs et accès" });
     }
     // Mailbox identities and lifecycle. Either administrative authority opens it,
     // matching the page's own gate.
     if (hasPermission(permissions, "communication:mailbox:provision")
         || hasPermission(permissions, "communication:membership:manage")) {
-      tabs.push({ href: "/users/enterprise-mail", label: "Boîtes aux lettres" });
+      tabs.push({ href: "/admin/enterprise-mail/mailboxes", label: "Boîtes aux lettres" });
     }
     // Operational state of inbound capture, and the outbound dispatch journal.
     if (hasPermission(permissions, "communication:manage")) {
-      tabs.push({ href: "/users/enterprise-mail/capture", label: "État de la capture" });
-      tabs.push({ href: "/users/enterprise-mail/journal", label: "Journal technique des envois" });
+      tabs.push({ href: "/admin/enterprise-mail/capture", label: "État de la capture" });
+      tabs.push({ href: "/admin/enterprise-mail/journal", label: "Journal technique des envois" });
     }
   }
 

@@ -26,7 +26,7 @@ import { AuditActions } from "@/lib/audit/events";
 
 export type MailAdminResult = { ok: true; id?: string } | { ok: false; error: string };
 
-const PATH = "/users/enterprise-mail";
+const PATH = "/admin/enterprise-mail/mailboxes";
 
 /** Capabilities an administrator may set. `can_send_as` does not exist (EMP-4B). */
 export type Capabilities = {

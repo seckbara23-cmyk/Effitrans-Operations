@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
  * EMP-IA-1. This route previously rendered the company-wide mailbox
  * administration and capture-health dashboard, gated on `communication:manage`
  * — an operator's surface sitting inside the workspace employees use to do
- * email. That content moved to Administration → Enterprise Mail; the route
+ * email. That content moved to Administration → Administration Mail; the route
  * itself is kept, because it is linked and bookmarked, and now answers the
  * question an employee is actually asking here:
  *
@@ -119,8 +119,8 @@ export default async function MyMailboxesPage() {
       {canAdminister ? (
         <p className="text-xs text-slate-500">
           Administration des boîtes de l&apos;entreprise :{" "}
-          <Link href="/users/enterprise-mail" className="text-teal-700 hover:underline">
-            Administration → Enterprise Mail
+          <Link href="/admin/enterprise-mail" className="text-teal-700 hover:underline">
+            Administration → Administration Mail
           </Link>
         </p>
       ) : null}

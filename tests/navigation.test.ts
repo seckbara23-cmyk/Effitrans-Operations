@@ -94,7 +94,7 @@ describe("flag off — the sidebar is EXACTLY today's sidebar", () => {
     // MINUS that entry, and its absence is asserted directly below rather than
     // quietly subtracted.
     const expected = LEGACY_SECTIONS.flatMap((s) => s.items.map((i) => i.href))
-      .filter((h) => h !== "/users/enterprise-mail");
+      .filter((h) => h !== "/admin/enterprise-mail");
     expect(hrefs(ctx({ roleCodes: ["SYSTEM_ADMIN"], featureFlags: FLAGS_OFF }))).toEqual(expected);
   });
 
@@ -102,7 +102,7 @@ describe("flag off — the sidebar is EXACTLY today's sidebar", () => {
     // Not a nav preference — SYSTEM_ADMIN holds none of the mailbox
     // permissions, and the page 404s for it. The sidebar simply agrees.
     const h = hrefs(ctx({ roleCodes: ["SYSTEM_ADMIN"], featureFlags: FLAGS_OFF }));
-    expect(h).not.toContain("/users/enterprise-mail");
+    expect(h).not.toContain("/admin/enterprise-mail");
   });
 
   it("emits no process route at all when the flag is off", () => {

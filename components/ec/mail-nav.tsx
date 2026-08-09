@@ -27,7 +27,7 @@ export function MailNav({ tabs }: { tabs: MailTab[] }) {
         // A tab whose href is a PREFIX of another tab's href must not light up
         // on that other tab's route. This used to be special-cased for "/mail";
         // EMP-IA-1 added Administration → Enterprise Mail, where
-        // /users/enterprise-mail is the parent of /bulk, /capture and /journal,
+        // /admin/enterprise-mail is the parent of /access, /capture and /journal,
         // so the rule is now general: the longest matching tab wins.
         const matches = (href: string) =>
           pathname === href || pathname.startsWith(`${href}/`);

@@ -238,7 +238,11 @@ describe("PILOTAGE puts Mon Travail first", () => {
     // exact-match rule already covers them. This pins that: the sidebar must not start
     // comparing full URLs, or every tab would un-highlight the link that opened it.
     const src = read("../components/shell/sidebar.tsx");
-    expect(src).toContain("pathname === item.href");
+    // ADMIN-MAIL-ROUTING generalised the rule to longest-match-wins, so the
+    // comparison now reads `pathname === href` inside a helper rather than
+    // naming `item` directly. The property this test defends is unchanged:
+    // matching is on the PATH only, never the query string.
+    expect(src).toContain("pathname === href");
     expect(src).not.toContain("searchParams");
     expect(src).not.toContain("window.location");
   });

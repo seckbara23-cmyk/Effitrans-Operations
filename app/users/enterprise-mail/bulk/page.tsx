@@ -1,54 +1,21 @@
-import type { Metadata } from "next";
-import Link from "next/link";
-import { notFound } from "next/navigation";
-import { PageHeader } from "@/components/ui/page-header";
-import { requireUser } from "@/lib/auth/require-user";
-import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
-import { listMailboxSummaries } from "@/lib/ec/mailboxes/membership";
-import { BulkAssignPanel } from "@/components/ec/bulk-assign-panel";
-
-export const metadata: Metadata = { title: "Attribution en masse" };
-export const dynamic = "force-dynamic";
+import { permanentRedirect } from "next/navigation";
 
 /**
- * Administration → Utilisateurs → Enterprise Mail → Attribution en masse.
+ * Legacy route — bulk mailbox assignment.
  *
- * Preview-first by construction. The page renders no execute control until a
- * preview exists, and the server refuses execution whose fingerprint does not
- * match a preview it just recomputed — so the guarantee holds even for a caller
- * that never renders this page.
+ * ADMIN-MAIL-ROUTING moved mail administration out of /users, where it had been
+ * a child of the general user-management module and was therefore highlighting
+ * « Utilisateurs » in the sidebar at the same time as itself. Its canonical home
+ * is now /admin/enterprise-mail/*.
  *
- * Gated on `communication:membership:manage` alone: bulk assignment grants
- * access, it does not create mailboxes.
+ * This redirect exists because /users/enterprise-mail shipped in EMP-4A and is
+ * linked from operator documentation and deployment notes. Breaking it silently
+ * would turn a bookmark into the same 404 this phase was opened to fix.
+ *
+ * `permanentRedirect` (308) rather than a temporary one: the move is permanent,
+ * and it lets clients and crawlers stop asking. No loop is possible — the target
+ * is a different path prefix and never redirects back here.
  */
-export default async function BulkAssignPage() {
-  const user = await requireUser();
-  const permissions = await getEffectivePermissions(user.id);
-  if (!hasPermission(permissions, "communication:membership:manage")) notFound();
-
-  const mailboxes = (await listMailboxSummaries(user.tenantId))
-    .filter((m) => m.mailboxType === "SHARED");
-
-  return (
-    <div className="animate-fade-in space-y-6">
-      <Link href="/users/enterprise-mail" className="inline-block text-sm text-teal-700 hover:underline">
-        ← Enterprise Mail
-      </Link>
-
-      <PageHeader
-        meta="Administration · Enterprise Mail"
-        title="Attribution en masse"
-        subtitle="Aperçu obligatoire avant toute écriture."
-      />
-
-      {mailboxes.length === 0 ? (
-        <p className="surface p-6 text-sm text-slate-500">
-          Aucune boîte partagée n&apos;est réservée. Réservez-en une avant d&apos;attribuer des
-          accès.
-        </p>
-      ) : (
-        <BulkAssignPanel mailboxes={mailboxes} />
-      )}
-    </div>
-  );
+export default function LegacyMailAdminRedirect(): never {
+  permanentRedirect("/admin/enterprise-mail/access");
 }

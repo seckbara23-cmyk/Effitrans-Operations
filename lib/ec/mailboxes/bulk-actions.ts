@@ -32,7 +32,7 @@ export type ExecuteResult =
   | { ok: true; applied: BulkDecision[]; batchId: string }
   | { ok: false; error: string };
 
-const PATH = "/users/enterprise-mail";
+const PATH = "/admin/enterprise-mail/access";
 
 async function gate() {
   const user = await requireUser();
