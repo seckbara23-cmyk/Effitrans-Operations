@@ -308,13 +308,32 @@ export function MailboxAdminPanel({
                   ? new Date(selected.corporateIdentityConfirmedAt).toLocaleDateString("fr-FR")
                   : "—"}
               />
-              <Fact label="Vérificateur" value={selected.corporateIdentityConfirmedBy ? "Enregistré" : "—"} />
+              <Fact
+                label="Séparation des tâches"
+                value={
+                  !view.makerChecker.makerRecorded ? "Aucun vérificateur enregistré"
+                    : !view.makerChecker.checkerAvailable ? "Second administrateur requis"
+                    : view.makerChecker.actorIsMaker ? "Un autre administrateur doit activer"
+                    : "Vous pouvez activer"
+                }
+              />
               <Fact
                 label="Preuve"
                 value={selected.outboundVerificationRef ?? selected.inboundVerificationRef ?? "—"}
               />
             </dl>
             <p className="mt-2 text-[11px] text-slate-500">{view.meaningFr}</p>
+            {/* EMP-5H — « Active » must never be read as a provider or DNS
+                attestation. The capabilities above carry their own evidence,
+                and an active mailbox may legitimately have none. */}
+            {view.state === "ACTIVE" ? (
+              <p className="mt-1 text-[11px] text-slate-500">
+                « Active » décrit le cycle de vie de la boîte dans Effitrans. Cela
+                n&apos;atteste ni la configuration DNS, ni le fournisseur, ni la capacité
+                d&apos;envoi ou de réception : chacune dispose de sa propre preuve ci-dessus,
+                et peut être absente.
+              </p>
+            ) : null}
             {selected.provisioningNote ? (
               <p className="mt-2 text-[11px] text-amber-800">{selected.provisioningNote}</p>
             ) : null}

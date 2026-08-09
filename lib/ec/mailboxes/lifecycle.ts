@@ -608,6 +608,75 @@ export function permittedActions(input: {
  * client component reading its own clock at render would disagree with the
  * server that will actually run the action.
  */
+/**
+ * EMP-5H — how old each piece of evidence is, and whether that matters.
+ *
+ * `null` days means there is no evidence at all, which is a different statement
+ * from "old evidence" and must not be rendered as `0`.
+ */
+export type EvidenceFreshness = {
+  identityDays: number | null;
+  outboundDays: number | null;
+  inboundDays: number | null;
+  outboundStale: boolean;
+  inboundStale: boolean;
+  /** The window in force, so a surface can say WHY something is stale. */
+  capabilityMaxAgeDays: number | null;
+};
+
+export function evidenceFreshness(
+  m: LifecycleFacts, now: string, policy: EvidencePolicy = DEFAULT_EVIDENCE_POLICY,
+): EvidenceFreshness {
+  const round = (d: number | null) => (d === null ? null : Math.max(0, Math.floor(d)));
+  return {
+    identityDays: round(ageInDays(m.corporateIdentityConfirmedAt, now)),
+    outboundDays: round(ageInDays(m.outboundVerifiedAt, now)),
+    inboundDays: round(ageInDays(m.inboundVerifiedAt, now)),
+    outboundStale: isStale(m.outboundVerifiedAt, now, policy.capabilityMaxAgeDays),
+    inboundStale: isStale(m.inboundVerifiedAt, now, policy.capabilityMaxAgeDays),
+    capabilityMaxAgeDays: policy.capabilityMaxAgeDays,
+  };
+}
+
+/**
+ * EMP-5H — where this mailbox stands on separation of duties.
+ *
+ * `checkerAvailable` answers the question an administrator actually has when
+ * activation is refused for MAKER_CHECKER_SAME_ACTOR: "is there anybody else who
+ * could do it?" Counting the holders is the difference between a refusal that
+ * explains itself and one that reads as a dead end.
+ *
+ * FAIL-CLOSED on an unknown count: zero eligible administrators means no checker
+ * is available, never "probably fine".
+ */
+export type MakerCheckerStatus = {
+  makerRecorded: boolean;
+  actorIsMaker: boolean;
+  checkerAvailable: boolean;
+  /** A different person could complete the activation right now. */
+  satisfiable: boolean;
+};
+
+export function makerCheckerStatus(input: {
+  mailbox: LifecycleFacts;
+  actorId: string | null;
+  /** Active holders of `communication:mailbox:provision` in this tenant. */
+  eligibleAdministrators: number;
+}): MakerCheckerStatus {
+  const makerRecorded = Boolean(input.mailbox.corporateIdentityConfirmedBy);
+  const actorIsMaker = Boolean(
+    input.actorId && input.actorId === input.mailbox.corporateIdentityConfirmedBy,
+  );
+  // Two DISTINCT people are needed: the maker, and somebody who is not them.
+  const checkerAvailable = input.eligibleAdministrators >= 2;
+  return {
+    makerRecorded,
+    actorIsMaker,
+    checkerAvailable,
+    satisfiable: makerRecorded && checkerAvailable,
+  };
+}
+
 export type MailboxLifecycleView = {
   mailboxId: string;
   state: MailboxState;
@@ -618,6 +687,8 @@ export type MailboxLifecycleView = {
   blockers: ActivationBlocker[];
   checks: ReadinessCheck[];
   capability: CapabilityReadiness;
+  freshness: EvidenceFreshness;
+  makerChecker: MakerCheckerStatus;
 };
 
 export function buildLifecycleView(input: {
@@ -625,6 +696,8 @@ export function buildLifecycleView(input: {
   mailbox: LifecycleFacts;
   now: string;
   policy?: EvidencePolicy;
+  /** EMP-5H — active holders of `communication:mailbox:provision` in the tenant. */
+  eligibleAdministrators?: number;
 }): MailboxLifecycleView {
   const { mailbox: m, now } = input;
   const policy = input.policy ?? DEFAULT_EVIDENCE_POLICY;
@@ -639,6 +712,12 @@ export function buildLifecycleView(input: {
     blockers: activationGuard({ ...input, policy }).blockers,
     checks: readinessChecks(m, input.actor?.tenantId ?? m.tenantId, now, policy),
     capability: capabilityReadiness(m, now, policy),
+    freshness: evidenceFreshness(m, now, policy),
+    makerChecker: makerCheckerStatus({
+      mailbox: m,
+      actorId: input.actor?.id ?? null,
+      eligibleAdministrators: input.eligibleAdministrators ?? 0,
+    }),
   };
 }
 

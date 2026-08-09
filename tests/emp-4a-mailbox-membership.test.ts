@@ -156,12 +156,21 @@ describe("membership is ANDed with the correspondence authority", () => {
 // ---------------------------------------------------------------------------
 describe("provisioning is operator-assisted and says so", () => {
   it("contacts no provider, domain, IMAP, POP3 or Exchange", () => {
-    for (const f of [ADMIN_ACTIONS, MEMBERSHIP, PANEL, PAGE]) {
+    for (const f of [ADMIN_ACTIONS, MEMBERSHIP, PAGE]) {
       const s = code(f).toLowerCase();
       for (const forbidden of ["imap", "pop3", "exchange", "resend", "createmailbox", "dns", "fetch("]) {
         expect(s, `${f}:${forbidden}`).not.toContain(forbidden);
       }
     }
+    // EMP-5H — the PANEL now states that « Active » attests nothing about DNS,
+    // which is a sentence denying the capability rather than exercising it.
+    // The same treatment the migration already gets: check for CALLS, not for
+    // the word.
+    const panel = code(PANEL).toLowerCase();
+    for (const forbidden of ["imap", "pop3", "exchange", "resend", "createmailbox", "fetch("]) {
+      expect(panel, `panel:${forbidden}`).not.toContain(forbidden);
+    }
+    expect(read(PANEL)).toMatch(/n&apos;atteste ni la configuration DNS/);
     // The migration names IMAP/POP3/Exchange only to say it integrates none of
     // them, so it is checked for CALLS rather than for the words.
     const m = sql(MIGRATION).toLowerCase();

@@ -206,6 +206,52 @@ export function lifecycleFacts(m: MailboxSummary, tenantId: string): LifecycleFa
   };
 }
 
+/**
+ * EMP-5H — how many ACTIVE people in this tenant may administer mailboxes.
+ *
+ * Maker-checker needs two distinct holders of `communication:mailbox:provision`:
+ * one records the verification, another puts the mailbox into service. This
+ * counts them so the surface can say whether that is possible at all, rather
+ * than leaving an administrator to discover it when activation refuses.
+ *
+ * Counts DISTINCT users, because one person holding the permission through two
+ * roles is still one person — and a separation of duties satisfied by counting
+ * role rows instead of people would be no separation at all.
+ *
+ * Fail-closed: any read failure returns 0, which reads as "no checker
+ * available" rather than as permission to proceed.
+ */
+export async function countProvisioningAdministrators(tenantId: string): Promise<number> {
+  const admin = getAdminSupabaseClient();
+
+  const { data: perm } = await admin
+    .from("permission").select("id").eq("code", "communication:mailbox:provision").maybeSingle();
+  if (!perm) return 0;
+
+  const { data: rolePerms } = await admin
+    .from("role_permission").select("role_id")
+    .eq("permission_id", (perm as { id: string }).id);
+  const roleIds = ((rolePerms ?? []) as unknown as { role_id: string }[]).map((r) => r.role_id);
+  if (roleIds.length === 0) return 0;
+
+  const { data: holders } = await admin
+    .from("user_role").select("user_id, app_user!inner(status)")
+    .eq("tenant_id", tenantId)
+    .in("role_id", roleIds);
+
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  const distinct = new Set(
+    ((holders ?? []) as any[])
+      .filter((h) => {
+        const u = Array.isArray(h.app_user) ? h.app_user[0] : h.app_user;
+        return u?.status === "active";
+      })
+      .map((h) => h.user_id as string),
+  );
+  /* eslint-enable @typescript-eslint/no-explicit-any */
+  return distinct.size;
+}
+
 /** Members of one mailbox, revoked rows included and labelled. */
 export async function listMailboxMembers(
   tenantId: string,

@@ -5,9 +5,13 @@ import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/departments/stat-card";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
-import { listMailboxSummaries, listMailboxMembers, lifecycleFacts } from "@/lib/ec/mailboxes/membership";
+import {
+  listMailboxSummaries, listMailboxMembers, lifecycleFacts,
+  countProvisioningAdministrators,
+} from "@/lib/ec/mailboxes/membership";
 import { buildLifecycleView, type MailboxLifecycleView } from "@/lib/ec/mailboxes/lifecycle";
 import { MailboxAdminPanel } from "@/components/ec/mailbox-admin-panel";
+import { MailboxReadinessTable } from "@/components/ec/mailbox-readiness-table";
 
 export const metadata: Metadata = { title: "Enterprise Mail — administration" };
 export const dynamic = "force-dynamic";
@@ -53,10 +57,15 @@ export default async function EnterpriseMailAdminPage({
   // there is no second copy of the activation rules to drift.
   const now = new Date().toISOString();
   const actor = { id: user.id, tenantId: user.tenantId, canProvision };
+  // EMP-5H — maker-checker needs two DISTINCT holders of the provisioning
+  // permission. Counting them here lets the surface answer "is there anybody
+  // else who could activate this?" instead of leaving it to be discovered when
+  // activation refuses.
+  const eligibleAdministrators = await countProvisioningAdministrators(user.tenantId);
   const views: Record<string, MailboxLifecycleView> = {};
   for (const m of mailboxes) {
     views[m.id] = buildLifecycleView({
-      actor, mailbox: lifecycleFacts(m, user.tenantId), now,
+      actor, mailbox: lifecycleFacts(m, user.tenantId), now, eligibleAdministrators,
     });
   }
 
@@ -102,6 +111,12 @@ export default async function EnterpriseMailAdminPage({
         en service</em>, jamais « un opérateur a cliqué sur succès » : la personne qui
         enregistre la vérification ne peut pas être celle qui active.
       </p>
+
+      <MailboxReadinessTable
+        mailboxes={mailboxes}
+        views={views}
+        eligibleAdministrators={eligibleAdministrators}
+      />
 
       <MailboxAdminPanel
         mailboxes={mailboxes}
