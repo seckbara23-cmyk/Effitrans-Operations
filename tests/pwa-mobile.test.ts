@@ -97,7 +97,13 @@ describe("offline fallback — public, honest, static", () => {
     expect(src).toContain("Reconnectez-vous");
   });
   it("reads no data and requires no auth (static + middleware-public)", () => {
-    expect(code("../app/offline/page.tsx")).not.toMatch(/supabase|getCurrentUser|require|fetch\(/);
+    // Since the 2026-08-09 false-offline incident the page carries ONE fetch: the
+    // reachability probe to the public, secret-free version endpoint. It remains
+    // the ONLY network call — anything else here would be a data read.
+    const c = code("../app/offline/page.tsx");
+    expect(c).not.toMatch(/supabase|getCurrentUser|require/);
+    const fetchTargets = [...c.matchAll(/fetch\(\s*"([^"]+)"/g)].map((m) => m[1]);
+    expect(fetchTargets).toEqual(["/api/version"]);
     expect(read("../lib/supabase/middleware.ts")).toContain('pathname === "/offline"');
   });
   it("the PWA static surface bypasses the middleware entirely (live 307 found by the sweep)", () => {

@@ -20,8 +20,14 @@
  */
 
 /* The cache version is bumped by content: any change to this file re-installs. */
-const STATIC_CACHE = "effitrans-static-v1";
+const STATIC_CACHE = "effitrans-static-v2";
 const OFFLINE_URL = "/offline";
+
+/* Incident 2026-08-09 (false « hors ligne »): a SINGLE rejected navigation fetch is NOT
+   proof the device is offline. Sleep/wake races, network switches and connection resets
+   reject one fetch while the machine is online. One short retry absorbs that class;
+   only a second network-layer failure serves the offline fallback. */
+const NAV_RETRY_DELAY_MS = 400;
 
 /* Small, fixed precache: the offline fallback + icons. Nothing else. */
 const PRECACHE = [OFFLINE_URL, "/icons/icon-192.png", "/icons/icon-512.png", "/icons/apple-touch-icon.png"];
@@ -63,13 +69,22 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
 
   /* Navigations: NETWORK ONLY. A successful page is served and FORGOTTEN (never cached —
-     authenticated HTML must not be replayable offline). Offline -> the public fallback. */
+     authenticated HTML must not be replayable offline). An HTTP error (4xx/5xx) RESOLVES
+     and passes through untouched — only a network-layer rejection reaches the catch.
+     One rejection -> short pause -> ONE retry; only a second rejection is treated as
+     "unreachable" and answered with the public fallback (which then probes its own way
+     back — see app/offline/page.tsx). */
   if (request.mode === "navigate") {
     event.respondWith(
       fetch(request).catch(async () => {
-        const cache = await caches.open(STATIC_CACHE);
-        const fallback = await cache.match(OFFLINE_URL);
-        return fallback ?? Response.error();
+        await new Promise((resolve) => setTimeout(resolve, NAV_RETRY_DELAY_MS));
+        try {
+          return await fetch(request);
+        } catch {
+          const cache = await caches.open(STATIC_CACHE);
+          const fallback = await cache.match(OFFLINE_URL);
+          return fallback ?? Response.error();
+        }
       }),
     );
     return;
