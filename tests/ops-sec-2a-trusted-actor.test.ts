@@ -223,7 +223,11 @@ describe("scope exclusions hold", () => {
     // nothing in the app may call them directly any more.
     for (const f of ["lib/files/actions.ts", "lib/hr/actions.ts"]) {
       const src = read(f);
-      for (const m of src.matchAll(/\.rpc\(\s*"(next_file_number|next_employee_number)"[^)]*\)/gs)) {
+      // No /s flag here: `[^)]` already spans newlines, and dotAll requires an
+      // ES2018 target this project does not use — tsc catches that, vitest does
+      // not, which is why both have to run before a push.
+      const calls = /\.rpc\(\s*"(next_file_number|next_employee_number)"[^)]*\)/g;
+      for (const m of src.matchAll(calls)) {
         expect(m[0], `${f}: ${m[1]} called without p_actor`).toContain("p_actor");
       }
     }
