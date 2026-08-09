@@ -19,6 +19,10 @@ import {
 } from "@/lib/hr/organization-actions";
 import { UNIT_KINDS, UNIT_KIND_LABEL_FR, type UnitKind, type HrOrgUnit } from "@/lib/hr/org-tree";
 import type { HrConfiguration, HrPosition, HrWorkLocation } from "@/lib/hr/organization";
+// THE canonical department registry (Phase 9.0A) — reused, never re-declared:
+// the platform correspondence select must offer exactly the platform's four
+// departments, labeled, without this file keeping its own copy of the list.
+import { CANONICAL_DEPARTMENTS } from "@/lib/organization/departments";
 
 const ERR: Record<string, string> = {
   forbidden: "Action non autorisée (hr:config:manage requis).",
@@ -96,7 +100,7 @@ export function HrConfigurationStudio({
 
       <Panel
         title="Numérotation & vocabulaires"
-        subtitle={`État : ${config?.status === "ACTIVE" ? "Active" : config ? "Brouillon" : "Non configurée"} · les matricules existants sont immuables (le moteur existe déjà).`}
+        subtitle={`État : ${config?.status === "ACTIVE" ? "Active" : config ? "Brouillon" : "Non configurée"} · format ratifié : EMP-0001 (séquence continue, sans année ; préfixe par défaut EMP) · les matricules existants sont immuables.`}
       >
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="flex items-center gap-2 text-sm text-slate-600">
@@ -141,6 +145,13 @@ export function HrConfigurationStudio({
       </Panel>
 
       <Panel title="Unités d'organisation" subtitle="Direction/Pôle → Département → Section → Équipe — l'ordre descend, la profondeur est bornée. Désactivation, jamais suppression.">
+        <p className="rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
+          Structure de départ : les départements canoniques de la plateforme —{" "}
+          {CANONICAL_DEPARTMENTS.map((d) => d.labelFr).join(", ")}. Créez une unité «
+          Département » par département réel et liez sa correspondance plateforme.
+          La correspondance est une métadonnée d&apos;organisation : elle n&apos;accorde
+          jamais aucun droit d&apos;accès.
+        </p>
         <div className="grid gap-2 sm:grid-cols-4">
           <input value={unitName} onChange={(e) => setUnitName(e.target.value)} placeholder="Nom de l'unité"
             className="rounded-md border border-slate-200 px-2 py-1.5 text-sm" />
@@ -158,7 +169,7 @@ export function HrConfigurationStudio({
           <select value={unitDept} onChange={(e) => setUnitDept(e.target.value)}
             className="rounded-md border border-slate-200 px-2 py-1.5 text-sm" title="Correspondance plateforme (optionnelle)">
             <option value="">— Sans correspondance plateforme —</option>
-            {["OPERATIONS", "TRANSIT", "FINANCE", "HUMAN_RESOURCES"].map((d) => <option key={d} value={d}>{d}</option>)}
+            {CANONICAL_DEPARTMENTS.map((d) => <option key={d.code} value={d.code}>{d.labelFr}</option>)}
           </select>
         </div>
         <button disabled={pending}

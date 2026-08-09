@@ -483,7 +483,8 @@ describe("the DB suite is wired into CI, last, with a readable failure", () => {
     // BEFORE the established ones would, on failure, abort and skip every suite
     // after it — which is how one failure hid seventy skips during OPS-SEC-1.
     // EMP-5G appended its readiness suite; the pin moves to it.
-    const mine = ci.indexOf("emp_5g_runtime_readiness_test.sql");
+    // HR-A1 appended its foundation activation suite; the pin moves to it.
+    const mine = ci.indexOf("hr_a1_foundation_activation_test.sql");
     const others = [...ci.matchAll(/-f supabase\/tests\/(\w+)\.sql/g)]
       .map((m) => ci.indexOf(`${m[1]}.sql`))
       .filter((i) => i !== mine);

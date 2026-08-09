@@ -556,6 +556,12 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     requiredForEveryTenant: false,
     permissions: [
       ...BASE, "hr:read", "hr:manage", "messaging:read", "messaging:send",
+      // HR-A1 (HRQ-D2 = Option A, ratified 2026-08-09) — the configuration
+      // center: org structure, positions, work locations, matricule scheme,
+      // competency catalog. Structure only — the three OTHER parked
+      // authorities (hr:sensitive:read, hr:leave:approve,
+      // hr:performance:finalize) stay granted to NOBODY.
+      "hr:config:manage",
     ],
   },
   // =========================================================================

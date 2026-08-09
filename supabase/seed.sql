@@ -1058,12 +1058,17 @@ on conflict (tenant_id, code) do nothing;
 -- and staff messaging (messaging:read + messaging:send). Grant hr:read/hr:manage
 -- by explicit p.code (module-based expansion would over-grant). NOT admin:*,
 -- finance:*, process:*, or any :delete authority.
+-- HR-A1 (HRQ-D2 = Option A, ratified 2026-08-09): + hr:config:manage — the
+-- configuration center (structure, postes, sites, numérotation, catalogue de
+-- compétences). Mirrors migration 20260821000001. The three OTHER parked
+-- authorities (hr:sensitive:read, hr:leave:approve, hr:performance:finalize)
+-- remain granted to NOBODY.
 insert into public.role_permission (role_id, permission_id)
 select r.id, p.id
 from public.role r
 join public.permission p
   on p.code in ('profile:read:self', 'profile:update:self', 'hr:read', 'hr:manage',
-                'messaging:read', 'messaging:send')
+                'hr:config:manage', 'messaging:read', 'messaging:send')
 where r.tenant_id = '00000000-0000-0000-0000-000000000001' and r.code = 'HR_OFFICER'
 on conflict do nothing;
 

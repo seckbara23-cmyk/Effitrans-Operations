@@ -359,11 +359,16 @@ describe("the activation readiness view", () => {
 // ---------------------------------------------------------------------------
 describe("scope", () => {
   it("adds no migration", () => {
+    // At EMP-5H's close the ledger stood at 98 with the EMP-5G quarantine
+    // migration newest. Pinning THAT was a moment-in-time proxy that broke the
+    // instant the next phase (HR-A1) legitimately shipped migration 99. The
+    // durable property is that EMP-5H itself shipped nothing: the EMP-5G
+    // migration still exists, and no migration belongs to EMP-5H.
     const migrations = readdirSync(join(root, "supabase/migrations"))
       .filter((f) => f.endsWith(".sql")).sort();
-    expect(migrations[migrations.length - 1])
-      .toBe("20260820000001_quarantine_reason_unverified_mailbox.sql");
-    expect(migrations).toHaveLength(98);
+    expect(migrations).toContain("20260820000001_quarantine_reason_unverified_mailbox.sql");
+    expect(migrations.filter((f) => /emp[_-]?5h|activation[_-]?readiness/i.test(f))).toEqual([]);
+    expect(migrations.length).toBeGreaterThanOrEqual(98);
   });
 
   it("grants no role and adds no new mailbox-creation path", () => {

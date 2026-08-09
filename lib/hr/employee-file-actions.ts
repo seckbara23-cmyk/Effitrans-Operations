@@ -67,8 +67,14 @@ export async function getEmployeeDocumentUrl(documentId: string): Promise<HrActi
   const { data: doc } = await s.from("hr_document").select("id, storage_path, document_type_id")
     .eq("id", documentId).eq("tenant_id", admin.tenantId).is("deleted_at", null).maybeSingle();
   if (!doc) return { ok: false, error: "not_found" };
-  const { data: type } = await s.from("hr_document_type").select("data_class").eq("id", doc.document_type_id).maybeSingle();
-  if (type?.data_class === "C3") {
+  // HR-A1 (guard finding): tenant-scoped, and FAIL CLOSED. The type id is a
+  // NOT NULL FK from the tenant-verified document row, so a missing result
+  // here can only mean a cross-tenant reference — refuse rather than treat
+  // the document as non-C3 and mint the URL anyway.
+  const { data: type } = await s.from("hr_document_type").select("data_class")
+    .eq("id", doc.document_type_id).eq("tenant_id", admin.tenantId).maybeSingle();
+  if (!type) return { ok: false, error: "not_found" };
+  if (type.data_class === "C3") {
     try { await assertPermission("hr:sensitive:read"); } catch { return { ok: false, error: "forbidden" }; }
   }
   const { data, error } = await s.storage.from(BUCKET).createSignedUrl(doc.storage_path, 60);

@@ -285,7 +285,10 @@ describe("pages and pins", () => {
     // the HR migration + its permission remain untouched, which is what this
     // test actually guards. Asserted against the directory so that a later phase
     // shipping a migration is not, by itself, a failure of the HR contract.
-    expect(LATEST_MIGRATION).not.toContain("hr");
+    // (Until HR-A1 this asserted not.toContain("hr") — a proxy that broke the
+    // moment a NEW HR migration legitimately became the newest. The guarded
+    // property was always only that the pin is no longer HR-1's migration.)
+    expect(LATEST_MIGRATION).not.toBe("20260724000002_hr_employee_registry");
     expect(MIGRATION_PROBE.permissionCode).toBe("finance:expense:read");
     expect(migrationRaw).toContain("'hr:read'");
   });

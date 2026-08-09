@@ -104,6 +104,54 @@ export const TENANT_SCOPED_TABLES = new Set<string>([
   // human resources (Phase HR-1)
   "employee",
   "employee_counter",
+  // human resources — full registration (HR-A1, closing HR-0P finding F1).
+  // Every table below carries `tenant_id uuid not null references
+  // public.organization` (migrations 73–79); only the two rows above were
+  // registered when they shipped, which made the other 34 INVISIBLE to the
+  // leak guard — a guard cannot flag a read on a table it does not know
+  // about. Registration is the fix; RLS was always present and is unchanged.
+  // HR-1B organization foundation (migration 73)
+  "hr_configuration",
+  "hr_org_unit",
+  "hr_position",
+  "hr_work_location",
+  "employee_assignment",
+  "hr_employee_event",
+  "hr_import_batch",
+  "hr_import_staging_row",
+  "hr_import_error",
+  // HR-3 documents & contracts (migration 75). NOTE: hr_document_type is
+  // PER-TENANT (unlike the global document_type catalog) — it belongs here,
+  // not in GLOBAL_TABLES.
+  "hr_document_type",
+  "hr_document",
+  "employment_contract",
+  "hr_template_version",
+  // HR-4 onboarding & equipment (migration 76)
+  "hr_checklist_template",
+  "hr_checklist_item_template",
+  "hr_onboarding_case",
+  "hr_onboarding_item",
+  "hr_provisioning_request",
+  "hr_equipment_type",
+  "hr_equipment",
+  "hr_equipment_assignment",
+  // HR-5 leave & attendance (migration 77)
+  "hr_leave_category",
+  "hr_leave_entitlement",
+  "hr_leave_request",
+  "hr_attendance_day",
+  // HR-6 performance (migration 78)
+  "hr_performance_cycle",
+  "hr_competency",
+  "hr_competency_expectation",
+  "hr_evaluation",
+  "hr_objective",
+  "hr_competency_assessment",
+  // HR-6 training (migration 79)
+  "hr_training_course",
+  "hr_training_plan",
+  "hr_training_enrollment",
   // finance expense documents (Phase 11.0B)
   "expense_authorization",
   "expense_authorization_version",
