@@ -23,6 +23,12 @@ export type MailboxHealth = {
   labelFr: string;
   purpose: string;
   isActive: boolean;
+  /** EMP-5F — the governed lifecycle state. `isActive` is DERIVED from this by
+   *  a database trigger, so this is the fact and that is its shadow. */
+  provisioningStatus: string;
+  /** EMP-5F — NULL on a mailbox that reached ACTIVE before the governed
+   *  lifecycle existed. That is how legacy-unverified is detected. */
+  activatedBy: string | null;
   note: string | null;
   createdAt: string;
   updatedAt: string;
@@ -69,12 +75,28 @@ export async function listMailboxHealth(tenantId: string): Promise<MailboxHealth
 
   const { data: boxes } = await s
     .from("ec_mailbox")
-    .select("id, address, label_fr, purpose, is_active, note, created_at, updated_at")
+    .select("id, address, label_fr, purpose, is_active, provisioning_status, note, created_at, updated_at")
     .eq("tenant_id", tenantId)
     .order("address");
 
   const rows = boxes ?? [];
   if (rows.length === 0) return [];
+
+  // EMP-5F — `activated_by` arrives with migration 20260819000001. Read it
+  // SEPARATELY and fail open: application code must never depend on an
+  // unapplied migration, and a missing column here must degrade to "we cannot
+  // tell who activated it" rather than break the whole mailbox list. Absent
+  // evidence reads as legacy-unverified, which is the safe direction.
+  const activatedBy = new Map<string, string | null>();
+  try {
+    const { data } = await s
+      .from("ec_mailbox").select("id, activated_by").eq("tenant_id", tenantId);
+    for (const r of (data ?? []) as unknown as { id: string; activated_by: string | null }[]) {
+      activatedBy.set(r.id, r.activated_by ?? null);
+    }
+  } catch {
+    /* column not present yet — every mailbox stays "activator unknown" */
+  }
 
   // One read of the tenant's captures, folded in memory. A per-mailbox query
   // would be N round trips for a list that is inherently small (a tenant has a
@@ -109,6 +131,8 @@ export async function listMailboxHealth(tenantId: string): Promise<MailboxHealth
       labelFr: b.label_fr as string,
       purpose: b.purpose as string,
       isActive: b.is_active as boolean,
+      provisioningStatus: (b.provisioning_status as string | null) ?? "RESERVED",
+      activatedBy: activatedBy.get(b.id as string) ?? null,
       note: (b.note as string | null) ?? null,
       createdAt: b.created_at as string,
       updatedAt: b.updated_at as string,

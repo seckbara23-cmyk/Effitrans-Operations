@@ -9,7 +9,7 @@ import {
   listMailboxHealth, getWebhookHealth, getMailVolume, getProviderPosture,
   isTenantInboundEnabled, QUARANTINE_VISIBILITY_NOTICE,
 } from "@/lib/ec/mailboxes/service";
-import { MailboxToggle } from "@/components/ec/mailbox-toggle";
+import { MailboxLifecycleBadge } from "@/components/ec/mailbox-lifecycle-badge";
 
 export const metadata: Metadata = { title: "État de la capture" };
 export const dynamic = "force-dynamic";
@@ -137,13 +137,6 @@ export default async function CaptureStatePage() {
                     <Link href={`/mail/mailboxes/${b.id}`} className="hover:underline">
                       {b.address}
                     </Link>
-                    <span
-                      className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
-                        b.isActive ? "bg-teal-50 text-teal-700" : "bg-slate-100 text-slate-600"
-                      }`}
-                    >
-                      {b.isActive ? "Active" : "Inactive"}
-                    </span>
                   </p>
                   <p className="mt-0.5 text-[11px] text-slate-500">
                     {b.labelFr} · {b.purpose} · {b.messageCount} message{b.messageCount > 1 ? "s" : ""}
@@ -153,7 +146,11 @@ export default async function CaptureStatePage() {
                       : " · jamais utilisée"}
                   </p>
                 </div>
-                <MailboxToggle mailboxId={b.id} address={b.address} isActive={b.isActive} />
+                <MailboxLifecycleBadge
+                  mailboxId={b.id}
+                  provisioningStatus={b.provisioningStatus}
+                  activatedBy={b.activatedBy}
+                />
               </li>
             ))}
           </ul>

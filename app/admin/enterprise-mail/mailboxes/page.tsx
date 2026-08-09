@@ -5,7 +5,8 @@ import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/departments/stat-card";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
-import { listMailboxSummaries, listMailboxMembers } from "@/lib/ec/mailboxes/membership";
+import { listMailboxSummaries, listMailboxMembers, lifecycleFacts } from "@/lib/ec/mailboxes/membership";
+import { buildLifecycleView, type MailboxLifecycleView } from "@/lib/ec/mailboxes/lifecycle";
 import { MailboxAdminPanel } from "@/components/ec/mailbox-admin-panel";
 
 export const metadata: Metadata = { title: "Enterprise Mail — administration" };
@@ -47,9 +48,22 @@ export default async function EnterpriseMailAdminPage({
     ? await listMailboxMembers(user.tenantId, selected.id)
     : [];
 
-  const pending = mailboxes.filter((m) => m.provisioningStatus === "PENDING_EXTERNAL_SETUP").length;
-  const failed = mailboxes.filter((m) => m.provisioningStatus === "SETUP_FAILED").length;
-  const active = mailboxes.filter((m) => m.provisioningStatus === "ACTIVE").length;
+  // EMP-5F — every lifecycle judgement is made HERE, on the server, with one
+  // `now`. The panel renders the answer; it evaluates no rule of its own, so
+  // there is no second copy of the activation rules to drift.
+  const now = new Date().toISOString();
+  const actor = { id: user.id, tenantId: user.tenantId, canProvision };
+  const views: Record<string, MailboxLifecycleView> = {};
+  for (const m of mailboxes) {
+    views[m.id] = buildLifecycleView({
+      actor, mailbox: lifecycleFacts(m, user.tenantId), now,
+    });
+  }
+
+  const pending = mailboxes.filter((m) => views[m.id].state === "CONFIGURATION_REQUIRED").length;
+  const failed = mailboxes.filter((m) => views[m.id].state === "FAILED").length;
+  const active = mailboxes.filter((m) => views[m.id].state === "ACTIVE").length;
+  const legacy = mailboxes.filter((m) => views[m.id].legacyActive).length;
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -69,8 +83,12 @@ export default async function EnterpriseMailAdminPage({
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="Boîtes actives" value={String(active)} />
         <StatCard label="En attente de configuration" value={String(pending)} tone={pending > 0 ? "amber" : "slate"} />
-        <StatCard label="Configuration échouée" value={String(failed)} tone={failed > 0 ? "red" : "slate"} />
-        <StatCard label="Boîtes au total" value={String(mailboxes.length)} />
+        <StatCard label="Échec" value={String(failed)} tone={failed > 0 ? "red" : "slate"} />
+        <StatCard
+          label="Actives sans vérification"
+          value={String(legacy)}
+          tone={legacy > 0 ? "amber" : "slate"}
+        />
       </div>
 
       {/* The honesty line. Everything on this page reserves an identity and
@@ -78,14 +96,16 @@ export default async function EnterpriseMailAdminPage({
           mailbox at a provider, because no such integration exists. */}
       <p className="surface p-4 text-[11px] text-slate-600">
         La création de la boîte chez le fournisseur reste une opération manuelle : cette
-        plateforme n&apos;intègre aucun fournisseur de messagerie. « Provisionner » réserve
-        l&apos;identité interne et l&apos;adresse ; un opérateur crée la boîte puis enregistre ici
-        le résultat. Un nouvel essai relance la demande à l&apos;opérateur — il n&apos;appelle
-        aucun service externe.
+        plateforme n&apos;intègre aucun fournisseur de messagerie. Le cycle de vie —{" "}
+        <strong>Réserver → Configurer → Vérifier → Activer</strong> — enregistre ce que des
+        personnes identifiées ont fait et constaté. « Active » signifie <em>vérifiée puis mise
+        en service</em>, jamais « un opérateur a cliqué sur succès » : la personne qui
+        enregistre la vérification ne peut pas être celle qui active.
       </p>
 
       <MailboxAdminPanel
         mailboxes={mailboxes}
+        views={views}
         selectedId={selected?.id ?? null}
         members={members}
         canProvision={canProvision}

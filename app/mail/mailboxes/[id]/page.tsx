@@ -7,7 +7,7 @@ import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { getMailboxHealth } from "@/lib/ec/mailboxes/service";
 import { listTriageQueue } from "@/lib/ec/triage/service";
 import { TRIAGE_STATUS_FR, type TriageStatus } from "@/lib/ec/triage/model";
-import { MailboxToggle } from "@/components/ec/mailbox-toggle";
+import { MailboxLifecycleBadge } from "@/components/ec/mailbox-lifecycle-badge";
 
 export const metadata: Metadata = { title: "Boîte aux lettres" };
 export const dynamic = "force-dynamic";
@@ -54,7 +54,7 @@ export default async function MailboxDetailPage({ params }: { params: { id: stri
               État
             </h2>
             <dl className="grid gap-3 text-xs sm:grid-cols-2 lg:grid-cols-4">
-              <Fact label="Statut" value={box.isActive ? "Active" : "Inactive"} />
+              <Fact label="Routage" value={box.isActive ? "Actif" : "Inactif"} />
               <Fact label="Messages reçus" value={String(box.messageCount)} />
               <Fact label="En attente de tri" value={String(box.openCount)} />
               <Fact
@@ -66,7 +66,11 @@ export default async function MailboxDetailPage({ params }: { params: { id: stri
             </dl>
             {box.note ? <p className="mt-3 text-xs text-slate-600">{box.note}</p> : null}
           </div>
-          <MailboxToggle mailboxId={box.id} address={box.address} isActive={box.isActive} />
+          <MailboxLifecycleBadge
+            mailboxId={box.id}
+            provisioningStatus={box.provisioningStatus}
+            activatedBy={box.activatedBy}
+          />
         </div>
         <p className="mt-4 border-t border-slate-100 pt-3 text-[11px] text-slate-500">
           L&apos;adresse et l&apos;objet de la boîte ne sont pas modifiables ici. Les adresses sont

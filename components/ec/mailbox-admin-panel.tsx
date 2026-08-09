@@ -3,10 +3,13 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import {
-  provisionMailbox, recordSetupOutcome, retryProvisioning,
-  setMailboxEnabled, revokeMembership, setDepartmentEligibility,
+  provisionMailbox, retryProvisioning, setMailboxEnabled, revokeMembership,
+  setDepartmentEligibility, recordMailboxConfiguration, submitMailboxForVerification,
+  recordVerificationOutcome, activateMailbox, recordLegacyActiveDecision,
 } from "@/lib/ec/mailboxes/admin-actions";
 import type { MailboxSummary, MailboxMember } from "@/lib/ec/mailboxes/membership";
+import type { MailboxLifecycleView } from "@/lib/ec/mailboxes/lifecycle";
+import { ACTION_FR, STATE_FR } from "@/lib/ec/mailboxes/lifecycle";
 import {
   MAILBOX_PURPOSE_OPTIONS, purposeLabelFr, eligibilityLabelFr, ELIGIBILITY_OPTIONS,
   MAILBOX_TYPE_FR, MAILBOX_TYPE_MEANING_FR, OWNERSHIP_FR,
@@ -15,45 +18,31 @@ import { mailboxReadiness, readinessTone } from "@/lib/ec/mailboxes/readiness";
 import { cn } from "@/lib/cn";
 
 /**
- * EMP-4A / EMP-5E — the mailbox administration panel.
+ * EMP-4A / EMP-5E / EMP-5F — the mailbox administration panel.
  *
- * EMP-5E's job on this surface is to make ONE distinction impossible to miss,
- * because conflating the two is what made mailboxes invisible:
+ * IT DECIDES NOTHING. Every lifecycle judgement — which actions are permitted,
+ * what blocks activation, which readiness checks pass — is made on the server by
+ * `lib/ec/mailboxes/lifecycle.ts` and arrives as a `MailboxLifecycleView`. A
+ * component that re-derived those rules would be a second copy of them, and a
+ * second copy is one that goes stale; it would also have to read its own clock,
+ * and disagree with the server that runs the action.
  *
- *   « Usage de la boîte »      — what it is FOR. A label. Proposes nobody.
- *   « Département éligible »   — which employees are PROPOSED automatically.
+ * « Activer » IS ABSENT WHENEVER ACTIVATION WOULD FAIL, and the reasons are
+ * shown in its place. A button that exists only to produce an error teaches
+ * administrators that the rules are arbitrary.
  *
- * Setting an eligibility grants NOTHING. Clearing it revokes NOTHING. Every
- * membership is an explicit, audited administrator decision, and this panel says
- * so where the control is rather than in documentation nobody reads.
- *
- * Two things it deliberately does NOT show:
- *   * any "Send As" / "Envoyer en tant que" control. The provider envelope
- *     always uses the central configured sender, so a control by that name
- *     would claim an identity the recipient never sees.
- *   * any suggestion that provisioning contacts a provider. Every state here
- *     records what a person did or reported.
- *
- * Revoked memberships are shown, struck through, with their reason. "Who had
- * access in March" is a question this surface exists to answer.
+ * Two things it still deliberately does NOT show: any "Send As" control, and
+ * any suggestion that provisioning contacts a provider. Every state here records
+ * what a person did or reported, and says which evidence is manual.
  */
-const STATUS_FR: Record<string, string> = {
-  DRAFT: "Brouillon",
-  PENDING_EXTERNAL_SETUP: "En attente de configuration externe",
-  ACTIVE: "Active",
-  DISABLED: "Désactivée",
-  SETUP_FAILED: "Échec de configuration",
-};
-
 const ERRORS_FR: Record<string, string> = {
   forbidden: "Autorisation insuffisante.",
   address_taken: "Cette adresse est déjà utilisée par une boîte ou un alias.",
   invalid_address: "Adresse invalide.",
   owner_required: "Une boîte personnelle doit désigner son titulaire.",
   owner_not_allowed: "Une boîte partagée ou fonctionnelle n'a pas de titulaire.",
-  not_pending: "Cette boîte n'attend pas de configuration.",
   not_failed: "Cette boîte n'est pas en échec.",
-  invalid_state: "Changement d'état impossible depuis l'état actuel.",
+  invalid_state: "Cette étape n'est pas possible depuis l'état actuel.",
   not_revocable: "Cette appartenance est déjà révoquée.",
   provision_failed: "La réservation a échoué.",
   mailbox_not_found: "Boîte introuvable.",
@@ -62,16 +51,42 @@ const ERRORS_FR: Record<string, string> = {
     "Une boîte personnelle ne peut pas porter d'éligibilité départementale : "
     + "elle appartient à une personne, pas à un département.",
   update_failed: "La modification a échoué.",
+  retry_failed: "La relance a échoué.",
+  invalid_ownership: "Provenance invalide.",
+  external_reference_required:
+    "Indiquez le fournisseur ou l'identifiant externe : sans référence, « configurée » "
+    + "ne désigne rien de vérifiable.",
+  invalid_integration_address: "Adresse d'intégration invalide.",
+  evidence_reference_required:
+    "Une preuve doit pointer vers quelque chose de vérifiable (identifiant de message "
+    + "fournisseur, événement de capture).",
+  activation_requires_verification:
+    "La mise en service passe par la vérification : utilisez « Activer » une fois la "
+    + "boîte vérifiée.",
+  activation_refused: "Mise en service refusée — voir les motifs ci-dessous.",
+  not_legacy_active: "Cette boîte n'est pas en mise en service héritée.",
+  reason_required: "Un motif est obligatoire.",
 };
+
+const LEGACY_DECISIONS: { value: string; label: string }[] = [
+  { value: "CONFIRM_PERSONAL", label: "A — confirmer comme boîte personnelle d'entreprise" },
+  { value: "CONFIRM_SHARED", label: "B — confirmer comme boîte partagée" },
+  { value: "RECLASSIFY_FUNCTIONAL", label: "C — reclasser comme boîte fonctionnelle" },
+  { value: "DISABLE_PENDING_VERIFICATION", label: "D — désactiver en attendant vérification" },
+  { value: "KEEP_RESTRICTED", label: "E — conserver temporairement, en accès restreint" },
+];
 
 export function MailboxAdminPanel({
   mailboxes,
+  views,
   selectedId,
   members,
   canProvision,
   canManageMembers,
 }: {
   mailboxes: MailboxSummary[];
+  /** Server-decided lifecycle view per mailbox id. */
+  views: Record<string, MailboxLifecycleView>;
   selectedId: string | null;
   members: MailboxMember[];
   canProvision: boolean;
@@ -85,6 +100,17 @@ export function MailboxAdminPanel({
   const [newPurpose, setNewPurpose] = useState("GENERAL");
   const [newType, setNewType] = useState<"SHARED" | "FUNCTIONAL">("SHARED");
   const [newEligibility, setNewEligibility] = useState("");
+  // Configurer
+  const [cfgOwnership, setCfgOwnership] = useState<"CORPORATE_EXISTING" | "PLATFORM_MANAGED">("CORPORATE_EXISTING");
+  const [cfgProvider, setCfgProvider] = useState("");
+  const [cfgExternalId, setCfgExternalId] = useState("");
+  const [cfgIntegration, setCfgIntegration] = useState("");
+  // Vérifier
+  const [verCapability, setVerCapability] = useState<"IDENTITY" | "OUTBOUND" | "INBOUND">("IDENTITY");
+  const [verRef, setVerRef] = useState("");
+  // Legacy remediation
+  const [legacyDecision, setLegacyDecision] = useState(LEGACY_DECISIONS[0].value);
+  const [legacyReason, setLegacyReason] = useState("");
 
   const run = (fn: () => Promise<{ ok: boolean; error?: string }>) => {
     setError(null);
@@ -95,7 +121,9 @@ export function MailboxAdminPanel({
   };
 
   const selected = mailboxes.find((m) => m.id === selectedId) ?? null;
+  const view = selected ? views[selected.id] : undefined;
   const notes = selected ? mailboxReadiness(selected) : [];
+  const may = (a: string) => Boolean(view?.actions.includes(a as never));
 
   return (
     <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
@@ -110,6 +138,7 @@ export function MailboxAdminPanel({
           <ul className="divide-y divide-slate-100">
             {mailboxes.map((m) => {
               const tone = readinessTone(mailboxReadiness(m));
+              const v = views[m.id];
               return (
                 <li key={m.id}>
                   <Link
@@ -127,12 +156,17 @@ export function MailboxAdminPanel({
                     </p>
                     <p className="mt-0.5 text-[11px] text-slate-500">
                       {MAILBOX_TYPE_FR[m.mailboxType] ?? m.mailboxType} ·{" "}
-                      {STATUS_FR[m.provisioningStatus] ?? m.provisioningStatus} ·{" "}
+                      {v?.stateFr ?? STATE_FR.RESERVED} ·{" "}
                       {m.activeMembers} membre{m.activeMembers > 1 ? "s" : ""}
                     </p>
                     <p className="mt-0.5 text-[11px] text-slate-400">
                       Éligible : {eligibilityLabelFr(m.departmentEligibility)}
                     </p>
+                    {v?.legacyActive ? (
+                      <p className="mt-0.5 text-[11px] font-medium text-amber-800">
+                        ▲ Active sans preuve de vérification
+                      </p>
+                    ) : null}
                   </Link>
                 </li>
               );
@@ -142,7 +176,7 @@ export function MailboxAdminPanel({
 
         {canProvision ? (
           <div className="space-y-2 border-t border-slate-100 p-4">
-            <h3 className="text-xs font-semibold text-navy-900">Réserver une boîte</h3>
+            <h3 className="text-xs font-semibold text-navy-900">1. Réserver une boîte</h3>
             <input
               value={newAddress} onChange={(e) => setNewAddress(e.target.value)}
               placeholder="operations@exemple.sn"
@@ -165,8 +199,6 @@ export function MailboxAdminPanel({
                 <option value="FUNCTIONAL">{MAILBOX_TYPE_FR.FUNCTIONAL}</option>
               </select>
             </label>
-            {/* PERSONAL is absent on purpose: it must name its titulaire, and
-                that choice belongs on the user's own Enterprise Mail page. */}
             <p className="text-[11px] text-slate-500">{MAILBOX_TYPE_MEANING_FR[newType]}</p>
 
             <label className="block text-[11px] text-slate-600">
@@ -210,8 +242,12 @@ export function MailboxAdminPanel({
               }))}
               className="w-full rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-700 disabled:opacity-50"
             >
-              {pending ? "…" : "Réserver (configuration externe à suivre)"}
+              {pending ? "…" : "Réserver l'identité interne"}
             </button>
+            <p className="text-[11px] text-slate-500">
+              La boîte est créée à l&apos;état <strong>Réservée</strong> : aucune affirmation
+              n&apos;est faite sur l&apos;existence d&apos;une boîte chez le fournisseur.
+            </p>
           </div>
         ) : null}
       </section>
@@ -222,24 +258,133 @@ export function MailboxAdminPanel({
           {selected ? selected.address : "Aucune boîte sélectionnée"}
         </h2>
 
-        {selected ? (
+        {selected && view ? (
           <>
+            {/* ---- lifecycle stepper ---- */}
+            <ol className="mb-4 flex flex-wrap gap-1 text-[11px]" aria-label="Cycle de vie">
+              {([
+                ["Réserver", ["RESERVED"]],
+                ["Configurer", ["CONFIGURATION_REQUIRED", "CONFIGURED"]],
+                ["Vérifier", ["PENDING_VERIFICATION", "VERIFIED"]],
+                ["Activer", ["ACTIVE"]],
+              ] as const).map(([label, states], i) => {
+                const reached = states.includes(view.state as never)
+                  || (["ACTIVE"].includes(view.state) && i < 3)
+                  || (["VERIFIED", "PENDING_VERIFICATION"].includes(view.state) && i < 2)
+                  || (["CONFIGURED", "CONFIGURATION_REQUIRED"].includes(view.state) && i < 1);
+                const current = states.includes(view.state as never);
+                return (
+                  <li
+                    key={label}
+                    className={cn(
+                      "rounded-full px-2.5 py-1",
+                      current ? "bg-teal-600 font-semibold text-white"
+                        : reached ? "bg-teal-50 text-teal-700"
+                        : "bg-slate-100 text-slate-500",
+                    )}
+                  >
+                    {i + 1}. {label}
+                  </li>
+                );
+              })}
+            </ol>
+
             <dl className="grid gap-2 text-xs sm:grid-cols-3">
-              <Fact label="État" value={STATUS_FR[selected.provisioningStatus] ?? selected.provisioningStatus} />
+              <Fact label="État" value={view.stateFr} />
               <Fact label="Type" value={MAILBOX_TYPE_FR[selected.mailboxType] ?? selected.mailboxType} />
               <Fact label="Provenance" value={OWNERSHIP_FR[selected.ownership] ?? selected.ownership} />
               <Fact label="Usage de la boîte" value={purposeLabelFr(selected.purpose)} />
               <Fact label="Département éligible" value={eligibilityLabelFr(selected.departmentEligibility)} />
               <Fact label="Tentatives" value={String(selected.provisioningAttempts)} />
+              <Fact
+                label="Identité d'entreprise"
+                value={view.capability.identityConfirmed ? "Confirmée" : "Non confirmée"}
+              />
+              <Fact label="Envoi" value={view.capability.outboundReady ? "Prêt" : "Non vérifié"} />
+              <Fact label="Réception" value={view.capability.inboundReady ? "Prêt" : "Non vérifié"} />
+              <Fact
+                label="Dernière vérification"
+                value={selected.corporateIdentityConfirmedAt
+                  ? new Date(selected.corporateIdentityConfirmedAt).toLocaleDateString("fr-FR")
+                  : "—"}
+              />
+              <Fact label="Vérificateur" value={selected.corporateIdentityConfirmedBy ? "Enregistré" : "—"} />
+              <Fact
+                label="Preuve"
+                value={selected.outboundVerificationRef ?? selected.inboundVerificationRef ?? "—"}
+              />
             </dl>
-            <p className="mt-2 text-[11px] text-slate-500">
-              {MAILBOX_TYPE_MEANING_FR[selected.mailboxType] ?? ""}
-            </p>
+            <p className="mt-2 text-[11px] text-slate-500">{view.meaningFr}</p>
             {selected.provisioningNote ? (
               <p className="mt-2 text-[11px] text-amber-800">{selected.provisioningNote}</p>
             ) : null}
 
-            {/* ---- readiness ---- */}
+            {/* ---- legacy-active remediation ---- */}
+            {view.legacyActive ? (
+              <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                <h3 className="text-xs font-semibold text-amber-900">
+                  Mise en service héritée — classification à confirmer
+                </h3>
+                <p className="mt-1 text-[11px] text-amber-900">
+                  Cette boîte est active mais n&apos;a jamais été vérifiée ni mise en service par
+                  une personne identifiée. Elle n&apos;a été ni reclassée, ni désactivée, ni
+                  modifiée : la plateforme enregistre une décision, elle ne la prend pas. Les
+                  capacités qui exigent une preuve restent indisponibles.
+                </p>
+                {canProvision ? (
+                  <div className="mt-2 space-y-2">
+                    <select
+                      value={legacyDecision} onChange={(e) => setLegacyDecision(e.target.value)}
+                      className="w-full rounded-md border border-amber-200 px-2 py-1.5 text-xs"
+                    >
+                      {LEGACY_DECISIONS.map((d) => (
+                        <option key={d.value} value={d.value}>{d.label}</option>
+                      ))}
+                    </select>
+                    <input
+                      value={legacyReason} onChange={(e) => setLegacyReason(e.target.value)}
+                      placeholder="Motif (obligatoire) — sur quel fait externe repose cette décision ?"
+                      className="w-full rounded-md border border-amber-200 px-2 py-1.5 text-xs"
+                    />
+                    <button
+                      type="button" disabled={pending || !legacyReason.trim()}
+                      onClick={() => run(() => recordLegacyActiveDecision(
+                        selected.id,
+                        legacyDecision as "CONFIRM_PERSONAL",
+                        legacyReason,
+                      ))}
+                      className="rounded-lg bg-amber-700 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                    >
+                      Enregistrer la décision (sans modifier la boîte)
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {/* ---- readiness checks ---- */}
+            <div className="mt-3 border-t border-slate-100 pt-3">
+              <h3 className="text-xs font-semibold text-navy-900">Contrôles de disponibilité</h3>
+              <ul className="mt-1 space-y-1">
+                {view.checks.map((c) => (
+                  <li key={c.code} className="text-[11px]">
+                    <span className={c.passed ? "text-teal-700" : "text-slate-500"}>
+                      {c.passed ? "✓" : "○"} {c.labelFr}
+                    </span>
+                    <span className="ml-1 rounded bg-slate-100 px-1 text-[10px] text-slate-600">
+                      {c.kind === "automated" ? "preuve automatique" : "preuve manuelle"}
+                    </span>
+                    <span className="block text-slate-400">{c.detailFr}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1 text-[11px] text-slate-400">
+                Aucune intégration avec un fournisseur de messagerie n&apos;existe : la plateforme ne
+                teste rien à distance et n&apos;affirme jamais l&apos;avoir fait.
+              </p>
+            </div>
+
+            {/* ---- readiness notes ---- */}
             {notes.length > 0 ? (
               <div className="mt-3 border-t border-slate-100 pt-3">
                 <h3 className="text-xs font-semibold text-navy-900">État de préparation</h3>
@@ -247,10 +392,8 @@ export function MailboxAdminPanel({
                   {notes.map((n) => (
                     <li
                       key={n.code}
-                      className={cn(
-                        "text-[11px]",
-                        n.severity === "warning" ? "text-amber-800" : "text-slate-500",
-                      )}
+                      className={cn("text-[11px]",
+                        n.severity === "warning" ? "text-amber-800" : "text-slate-500")}
                     >
                       {n.severity === "warning" ? "▲ " : "• "}{n.messageFr}
                     </li>
@@ -263,7 +406,7 @@ export function MailboxAdminPanel({
               </div>
             ) : null}
 
-            {/* ---- classification ---- */}
+            {/* ---- classification (EMP-5E) ---- */}
             {canProvision ? (
               <div className="mt-3 space-y-2 border-t border-slate-100 pt-3">
                 <h3 className="text-xs font-semibold text-navy-900">Département éligible</h3>
@@ -286,44 +429,170 @@ export function MailboxAdminPanel({
               </div>
             ) : null}
 
+            {/* ---- lifecycle actions ---- */}
             {canProvision ? (
-              <div className="mt-3 space-y-2 border-t border-slate-100 pt-3">
-                {selected.provisioningStatus === "PENDING_EXTERNAL_SETUP" ? (
-                  <>
+              <div className="mt-3 space-y-3 border-t border-slate-100 pt-3">
+                <h3 className="text-xs font-semibold text-navy-900">Cycle de vie</h3>
+
+                {may("CONFIGURE") ? (
+                  <div className="space-y-2 rounded-lg bg-slate-50 p-3">
+                    <p className="text-[11px] font-semibold text-navy-900">
+                      2. {ACTION_FR.CONFIGURE}
+                    </p>
+                    <select
+                      value={cfgOwnership}
+                      onChange={(e) => setCfgOwnership(e.target.value as "CORPORATE_EXISTING")}
+                      className="w-full rounded-md border border-slate-200 px-2 py-1.5 text-xs"
+                    >
+                      <option value="CORPORATE_EXISTING">{OWNERSHIP_FR.CORPORATE_EXISTING}</option>
+                      <option value="PLATFORM_MANAGED">{OWNERSHIP_FR.PLATFORM_MANAGED}</option>
+                    </select>
+                    <input
+                      value={cfgProvider} onChange={(e) => setCfgProvider(e.target.value)}
+                      placeholder="Fournisseur réel (ex. celui confirmé par l'informatique)"
+                      className="w-full rounded-md border border-slate-200 px-2 py-1.5 text-xs"
+                    />
+                    <input
+                      value={cfgExternalId} onChange={(e) => setCfgExternalId(e.target.value)}
+                      placeholder="Identifiant de la boîte chez le fournisseur (jamais un secret)"
+                      className="w-full rounded-md border border-slate-200 px-2 py-1.5 text-xs"
+                    />
+                    <input
+                      value={cfgIntegration} onChange={(e) => setCfgIntegration(e.target.value)}
+                      placeholder="Adresse d'intégration (copie), si la capture passe par une règle"
+                      className="w-full rounded-md border border-slate-200 px-2 py-1.5 text-xs"
+                    />
+                    <button
+                      type="button" disabled={pending}
+                      onClick={() => run(() => recordMailboxConfiguration(selected.id, {
+                        ownership: cfgOwnership,
+                        externalProvider: cfgProvider,
+                        externalMailboxId: cfgExternalId,
+                        integrationAddress: cfgIntegration,
+                        note,
+                      }))}
+                      className="rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-medium text-navy-900 disabled:opacity-50"
+                    >
+                      {ACTION_FR.CONFIGURE}
+                    </button>
+                    <p className="text-[11px] text-slate-500">
+                      Enregistre la relation fournisseur. Ne prouve pas que la boîte fonctionne,
+                      et ne confirme pas son existence — c&apos;est l&apos;étape de vérification
+                      qui le fait, et une autre personne devra ensuite l&apos;activer.
+                    </p>
+                  </div>
+                ) : null}
+
+                {may("SUBMIT_VERIFICATION") ? (
+                  <button
+                    type="button" disabled={pending}
+                    onClick={() => run(() => submitMailboxForVerification(selected.id))}
+                    className="rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-medium text-navy-900 disabled:opacity-50"
+                  >
+                    3. {ACTION_FR.SUBMIT_VERIFICATION}
+                  </button>
+                ) : null}
+
+                {may("RECORD_VERIFICATION") ? (
+                  <div className="space-y-2 rounded-lg bg-slate-50 p-3">
+                    <p className="text-[11px] font-semibold text-navy-900">
+                      3. {ACTION_FR.RECORD_VERIFICATION}
+                    </p>
+                    <select
+                      value={verCapability}
+                      onChange={(e) => setVerCapability(e.target.value as "IDENTITY")}
+                      className="w-full rounded-md border border-slate-200 px-2 py-1.5 text-xs"
+                    >
+                      <option value="IDENTITY">Identité d&apos;entreprise (conditionne la mise en service)</option>
+                      <option value="OUTBOUND">Envoi (capacité indépendante)</option>
+                      <option value="INBOUND">Réception (capacité indépendante)</option>
+                    </select>
+                    <input
+                      value={verRef} onChange={(e) => setVerRef(e.target.value)}
+                      placeholder="Référence de preuve (identifiant de message, événement de capture)"
+                      className="w-full rounded-md border border-slate-200 px-2 py-1.5 text-xs"
+                    />
                     <input
                       value={note} onChange={(e) => setNote(e.target.value)}
-                      placeholder="Note (obligatoire en cas d'échec)"
-                      className="w-full rounded-md border border-slate-200 px-2 py-1.5 text-sm"
+                      placeholder="Note / motif"
+                      className="w-full rounded-md border border-slate-200 px-2 py-1.5 text-xs"
                     />
                     <div className="flex flex-wrap gap-2">
-                      <button type="button" disabled={pending}
-                        onClick={() => run(() => recordSetupOutcome(selected.id, "ACTIVE", note))}
-                        className="rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">
-                        Configuration externe confirmée
+                      <button
+                        type="button" disabled={pending}
+                        onClick={() => run(() => recordVerificationOutcome(selected.id, {
+                          capability: verCapability, passed: true, evidenceRef: verRef, note,
+                        }))}
+                        className="rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                      >
+                        Vérification réussie
                       </button>
-                      <button type="button" disabled={pending || !note.trim()}
-                        onClick={() => run(() => recordSetupOutcome(selected.id, "SETUP_FAILED", note))}
-                        className="rounded-lg bg-amber-700 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">
+                      <button
+                        type="button" disabled={pending || !note.trim()}
+                        onClick={() => run(() => recordVerificationOutcome(selected.id, {
+                          capability: verCapability, passed: false, evidenceRef: verRef, note,
+                        }))}
+                        className="rounded-lg bg-amber-700 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                      >
                         Signaler un échec
                       </button>
                     </div>
-                  </>
+                    <p className="text-[11px] text-slate-500">
+                      Preuve manuelle : la plateforme n&apos;observe rien chez le fournisseur.
+                      La référence doit pointer vers un élément déjà enregistré ailleurs.
+                    </p>
+                  </div>
                 ) : null}
 
-                {selected.provisioningStatus === "SETUP_FAILED" ? (
-                  <button type="button" disabled={pending}
+                {may("ACTIVATE") ? (
+                  <button
+                    type="button" disabled={pending}
+                    onClick={() => run(() => activateMailbox(selected.id))}
+                    className="rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                  >
+                    4. {ACTION_FR.ACTIVATE}
+                  </button>
+                ) : view.blockers.length > 0 && view.state !== "ACTIVE" ? (
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-[11px] font-semibold text-navy-900">
+                      Mise en service impossible pour l&apos;instant
+                    </p>
+                    <ul className="mt-1 space-y-0.5">
+                      {view.blockers.map((b) => (
+                        <li key={b.code} className="text-[11px] text-slate-600">• {b.messageFr}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+
+                {may("RETRY") ? (
+                  <button
+                    type="button" disabled={pending}
                     onClick={() => run(() => retryProvisioning(selected.id))}
-                    className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-navy-900 disabled:opacity-50">
-                    Relancer la demande à l&apos;opérateur
+                    className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-navy-900 disabled:opacity-50"
+                  >
+                    {ACTION_FR.RETRY}
                   </button>
                 ) : null}
 
-                {selected.provisioningStatus === "ACTIVE" || selected.provisioningStatus === "DISABLED" ? (
-                  <button type="button" disabled={pending}
-                    onClick={() => run(() => setMailboxEnabled(selected.id, selected.provisioningStatus !== "ACTIVE"))}
-                    className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-navy-900 disabled:opacity-50">
-                    {selected.provisioningStatus === "ACTIVE" ? "Désactiver" : "Activer"}
-                  </button>
+                {may("DEACTIVATE") ? (
+                  <div className="space-y-1">
+                    <button
+                      type="button" disabled={pending}
+                      onClick={() => run(() => setMailboxEnabled(selected.id, false))}
+                      className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-navy-900 disabled:opacity-50"
+                    >
+                      {ACTION_FR.DEACTIVATE}
+                    </button>
+                    {/* The consequence, stated where the button is rather than
+                        left to be discovered. */}
+                    <p className="text-[11px] text-amber-800">
+                      Les messages reçus ensuite seront mis en quarantaine : ils
+                      n&apos;appartiendront à aucun tenant et ne seront visibles ni dans la
+                      boîte ni dans le tri. L&apos;historique et les preuves de vérification
+                      sont conservés.
+                    </p>
+                  </div>
                 ) : null}
               </div>
             ) : null}

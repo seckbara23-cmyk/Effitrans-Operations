@@ -174,15 +174,21 @@ describe("provisioning is operator-assisted and says so", () => {
     const s = code(ADMIN_ACTIONS);
     const fn = s.slice(s.indexOf("export async function retryProvisioning"));
     expect(fn).toContain("provisioning_attempts");
-    expect(fn).toContain("PENDING_EXTERNAL_SETUP");
+    // EMP-5F renamed the target state; a retry still returns the mailbox to the
+    // step that needs an operator, and still calls nothing.
+    expect(fn).toContain("CONFIGURATION_REQUIRED");
     expect(fn).not.toContain("fetch(");
   });
 
-  it("SETUP_FAILED is only ever recorded by a human", () => {
+  it("failure is only ever recorded by a human", () => {
+    // EMP-5F replaced `recordSetupOutcome` with the governed steps. The
+    // property is unchanged and stronger: the outcome is still a PARAMETER,
+    // never derived from an observation the platform cannot make.
     const s = code(ADMIN_ACTIONS);
-    expect(s).toContain("recordSetupOutcome");
-    // The outcome is a parameter, never derived from an observation.
-    expect(s).toContain('outcome: "ACTIVE" | "SETUP_FAILED"');
+    expect(s).toContain("recordVerificationOutcome");
+    expect(s).toContain("passed: boolean");
+    expect(s).toContain('capability: "IDENTITY" | "OUTBOUND" | "INBOUND"');
+    expect(s).toContain('evidence_kind: "manual"');
   });
 
   it("the UI states that provider creation stays manual", () => {
@@ -225,11 +231,16 @@ describe("administration is gated and audited", () => {
 
   it("every write is audited", () => {
     const s = code(ADMIN_ACTIONS);
-    // EMP-5E added `setDepartmentEligibility`: a mailbox-level change that
-    // grants and revokes nothing, and is audited under its own action.
+    // EMP-5E added `setDepartmentEligibility`; EMP-5F replaced
+    // `recordSetupOutcome` with the four governed steps, each of which is its
+    // own audited act because each is performed by a person who must be
+    // nameable afterwards.
     const writes = ["grantMembership", "revokeMembership", "provisionMailbox",
-                    "recordSetupOutcome", "retryProvisioning", "setMailboxEnabled",
-                    "setMembershipCapabilities", "setDepartmentEligibility"];
+                    "retryProvisioning", "setMailboxEnabled",
+                    "setMembershipCapabilities", "setDepartmentEligibility",
+                    "recordMailboxConfiguration", "submitMailboxForVerification",
+                    "recordVerificationOutcome", "activateMailbox",
+                    "recordLegacyActiveDecision"];
     for (const w of writes) expect(s, w).toContain(`export async function ${w}`);
     expect((s.match(/writeAudit\(/g) ?? []).length).toBe(writes.length);
   });

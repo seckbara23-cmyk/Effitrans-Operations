@@ -206,7 +206,11 @@ describe("the two Boîtes aux lettres are different questions", () => {
   });
 
   it("the administrative one keeps the operational dashboard", () => {
-    expect(code(ADMIN_CAPTURE)).toContain("MailboxToggle");
+    // EMP-5F replaced the toggle with a read-only lifecycle badge: the control
+    // it offered could not actually change anything (EMP-4A's trigger derives
+    // `is_active` from the status), and the lifecycle now lives on the
+    // Mailboxes tab. The operational dashboard itself is unchanged.
+    expect(code(ADMIN_CAPTURE)).toContain("MailboxLifecycleBadge");
     expect(code(ADMIN_CAPTURE)).toContain("listMailboxHealth");
   });
 

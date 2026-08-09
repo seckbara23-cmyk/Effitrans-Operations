@@ -1,91 +1,36 @@
 "use server";
 
 /**
- * EMP-1 — mailbox administration, WRITE SIDE. Exactly one mutation exists:
- * flipping `ec_mailbox.is_active`.
+ * EMP-1 → EMP-5F — mailbox administration, WRITE SIDE. Now empty, on purpose.
  *
- * WHY THE ADMIN CLIENT, AND WHY THAT IS NOT A BYPASS
- * --------------------------------------------------
- * EC-1 gave every `ec_*` table a SELECT policy and NO insert/update/delete
- * policy. Under RLS that makes the table read-only to every session, so this
- * write cannot go through the user-context client.
+ * WHAT WAS HERE, AND WHY IT HAD TO GO
+ * -----------------------------------
+ * `setMailboxActive` wrote `ec_mailbox.is_active` directly. It worked when
+ * EMP-1 shipped it. Then EMP-4A made `provisioning_status` the administrative
+ * lifecycle and added a BEFORE INSERT OR UPDATE trigger:
  *
- * The alternative was a migration adding an UPDATE policy. That would have
- * introduced a new write boundary into the correspondence schema — a governance
- * change — to support one boolean. EMP-1's brief says to stop rather than widen
- * RLS without approval, so this takes the narrower path already established in
- * this codebase (EC-3C): reach past RLS with the admin client ONLY behind an
- * explicit application gate.
+ *     new.is_active := (new.provisioning_status = 'ACTIVE');
  *
- * The gate here is deliberately stricter than the read policy: reading these
- * tables needs `communication:inbound:read`; changing a mailbox needs
- * `communication:manage`. Tenant ownership is re-checked in the WHERE clause, so
- * a forged id cannot reach another tenant's mailbox even with the gate passed.
+ * From that moment an UPDATE that set only `is_active` was silently reverted by
+ * the trigger — `new.provisioning_status` still held the old value, so the
+ * derived boolean snapped straight back. The action changed NOTHING, reported
+ * success, and wrote an `ec.mailbox.activated` / `ec.mailbox.deactivated` audit
+ * row for a change that never happened, under the same action codes the real
+ * lifecycle uses. An administrator clicking « Désactiver » saw the mailbox stay
+ * active and the audit trail claim it had been disabled.
  *
- * WHAT THIS FILE DELIBERATELY CANNOT DO: create a mailbox, delete one, or edit
- * an address. EC-1 made addresses globally unique because two tenants claiming
- * one address makes routing a guess; creation stays an operator act, and this
- * surface administers only what already exists. Deactivation is the reversible
- * control — retire, never delete.
+ * That is worse than a dead control: it is a SECOND, IMPOTENT LIFECYCLE that
+ * lies in the one record meant to settle disputes. EMP-5F removes it rather
+ * than repairing it, because repairing it would mean pointing a
+ * `communication:manage` gate at the lifecycle, and lifecycle changes require
+ * `communication:mailbox:provision` — repair would have been a privilege
+ * widening dressed as a bug fix.
+ *
+ * Deactivation lives in `admin-actions.ts::setMailboxEnabled`, activation in
+ * `admin-actions.ts::activateMailbox` behind the activation guard, and routing
+ * follows `provisioning_status` through the trigger. One lifecycle, one writer.
+ *
+ * This module is kept as the record of that, and exports nothing.
  */
-import { revalidatePath } from "next/cache";
-import { requireUser } from "@/lib/auth/require-user";
-import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
-import { getAdminSupabaseClient } from "@/lib/supabase/admin";
-import { writeAudit } from "@/lib/audit/log";
-import { AuditActions } from "@/lib/audit/events";
-import { reportError } from "@/lib/observability/report";
 
-export type MailboxActionResult = { ok: true } | { ok: false; error: string };
-
-export async function setMailboxActive(
-  mailboxId: string,
-  active: boolean,
-): Promise<MailboxActionResult> {
-  const user = await requireUser();
-  const permissions = await getEffectivePermissions(user.id);
-  if (!hasPermission(permissions, "communication:manage")) {
-    return { ok: false, error: "forbidden" };
-  }
-
-  const admin = getAdminSupabaseClient();
-
-  // Read-back under the tenant predicate first: this is what stops a mailbox id
-  // from another tenant being flipped by a caller who holds the permission in
-  // their own tenant.
-  const { data: box } = await admin
-    .from("ec_mailbox")
-    .select("id, address, is_active")
-    .eq("id", mailboxId)
-    .eq("tenant_id", user.tenantId)
-    .maybeSingle();
-  if (!box) return { ok: false, error: "not_found" };
-  if ((box as { is_active: boolean }).is_active === active) return { ok: true };
-
-  const { error } = await admin
-    .from("ec_mailbox")
-    .update({ is_active: active })
-    .eq("id", mailboxId)
-    .eq("tenant_id", user.tenantId);
-
-  if (error) {
-    reportError(error, { scope: "action", event: "ec.mailbox.set_active" });
-    return { ok: false, error: "update_failed" };
-  }
-
-  // The address is an identifier, and identifying WHICH mailbox changed is the
-  // whole value of the record. No message content is involved.
-  await writeAudit({
-    action: active ? AuditActions.EC_MAILBOX_ACTIVATED : AuditActions.EC_MAILBOX_DEACTIVATED,
-    actorId: user.id,
-    tenantId: user.tenantId,
-    entity: "ec_mailbox",
-    entityId: mailboxId,
-    before: { is_active: !active },
-    after: { is_active: active, address: (box as { address: string }).address },
-  });
-
-  revalidatePath("/mail/mailboxes");
-  revalidatePath(`/mail/mailboxes/${mailboxId}`);
-  return { ok: true };
-}
+export {};

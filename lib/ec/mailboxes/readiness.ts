@@ -15,10 +15,12 @@
  * common arrangement — so it is `info`, never `warning`.
  */
 import { canHoldDepartmentEligibility } from "./eligibility";
+import { isLegacyActive } from "./lifecycle";
 
 export type ReadinessSeverity = "info" | "warning";
 
 export type ReadinessCode =
+  | "LEGACY_ACTIVE_UNVERIFIED"
   | "OWNERSHIP_UNKNOWN"
   | "CORPORATE_IDENTITY_UNCONFIRMED"
   | "ACTIVE_WITHOUT_VERIFICATION"
@@ -48,6 +50,11 @@ export type ReadinessInput = {
   outboundVerifiedAt: string | null;
   inboundVerifiedAt: string | null;
   activeMembers: number;
+  /** EMP-5F — who put this mailbox into service through the governed lifecycle.
+   *  NULL means nobody did, which is what legacy-unverified means. Optional so
+   *  a caller reading a database that predates migration 20260819000001 still
+   *  type-checks; absent reads as NULL, the safe direction. */
+  activatedBy?: string | null;
 };
 
 /**
@@ -90,6 +97,21 @@ export function mailboxReadiness(m: ReadinessInput): ReadinessNote[] {
   const verified = Boolean(m.outboundVerifiedAt) || Boolean(m.inboundVerifiedAt);
   const eligible = Boolean(m.departmentEligibility);
   const usable = m.provisioningStatus === "ACTIVE" && m.isActive;
+
+  // 0. LEGACY-UNVERIFIED ACTIVE — first, because it is the strongest claim on
+  //    the reader's attention: this mailbox is in operational use and never
+  //    passed through the governed lifecycle at all. Distinct from the two
+  //    notes below, which are about provenance and evidence: this one is about
+  //    GOVERNANCE, and it is why the others cannot simply be assumed away.
+  //
+  //    DESCRIPTIVE, like everything here. Producing this note reclassified
+  //    nothing, disabled nothing, and changed no field.
+  if (isLegacyActive({ provisioningStatus: m.provisioningStatus, activatedBy: m.activatedBy ?? null })) {
+    add("LEGACY_ACTIVE_UNVERIFIED", "warning",
+      "Mise en service antérieure au cycle de vie gouverné : aucune personne "
+      + "identifiée n'a activé cette boîte après vérification. Une décision "
+      + "explicite est requise ; rien n'a été modifié automatiquement.");
+  }
 
   // 1. Provenance. The one fact coexistence depends on, and the one EMP-5C
   //    refused to guess: UNKNOWN is the honest default, not a data error.

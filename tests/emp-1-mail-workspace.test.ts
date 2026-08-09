@@ -77,7 +77,7 @@ describe("EMP-1 creates no parallel mail system", () => {
 // ---------------------------------------------------------------------------
 describe("EMP-1 ships no outbound capability", () => {
   const surfaces = [SERVICE, ACTIONS, BOXES_PAGE, BOX_DETAIL, LIST_PAGE, DETAIL_PAGE,
-    "components/ec/message-evidence.tsx", "components/ec/mailbox-toggle.tsx"];
+    "components/ec/message-evidence.tsx", "components/ec/mailbox-lifecycle-badge.tsx"];
 
   it("never sends, queues or composes", () => {
     for (const f of surfaces) {
@@ -95,7 +95,7 @@ describe("EMP-1 ships no outbound capability", () => {
     // legitimate later phase look like a regression. A phase asserts what it
     // built, not that a shared file never changes again.
     const owned = [SERVICE, ACTIONS, BOXES_PAGE, BOX_DETAIL,
-      "components/ec/mailbox-toggle.tsx", "components/ec/message-evidence.tsx"];
+      "components/ec/mailbox-lifecycle-badge.tsx", "components/ec/message-evidence.tsx"];
     for (const f of owned) {
       const src = code(f).toLowerCase();
       expect(src, f).not.toContain("répondre");
@@ -114,16 +114,23 @@ describe("EMP-1 security envelope", () => {
     expect(src).not.toContain("getAdminSupabaseClient");
   });
 
-  it("uses the admin client for exactly one write, behind communication:manage", () => {
+  it("no longer writes at all — EMP-5F removed its one mutation", () => {
+    // EMP-1's write set `is_active` directly. EMP-4A then made
+    // `provisioning_status` the lifecycle and derived `is_active` from it with a
+    // BEFORE trigger, which silently reverted this write: it changed nothing,
+    // reported success, and audited a state change that never happened.
+    //
+    // It was not repaired, because repairing it meant pointing a
+    // `communication:manage` gate at the lifecycle, and lifecycle changes
+    // require `communication:mailbox:provision` — that would have been a
+    // privilege widening dressed as a bug fix. The module is now empty and says
+    // so; the governed lifecycle lives in `admin-actions.ts`.
     const src = code(ACTIONS);
-    expect(src).toContain("getAdminSupabaseClient");
-    expect(src).toContain('hasPermission(permissions, "communication:manage")');
-    // The tenant predicate is re-applied on the write itself, so a forged id
-    // cannot reach another tenant's mailbox.
-    expect(src).toContain('.eq("tenant_id", user.tenantId)');
-    // One mutation, and it is the boolean.
-    expect(src).toContain(".update({ is_active: active })");
-    expect(src.match(/\.update\(/g) ?? []).toHaveLength(1);
+    expect(src.match(/\.update\(/g) ?? []).toHaveLength(0);
+    expect(src).not.toContain("getAdminSupabaseClient");
+    expect(src).not.toContain("setMailboxActive");
+    // And the tenant predicate that protected it now protects its successor.
+    expect(code("lib/ec/mailboxes/admin-actions.ts")).toContain('.eq("tenant_id", user.tenantId)');
   });
 
   it("cannot create or delete a mailbox", () => {
@@ -163,11 +170,15 @@ describe("EMP-1 security envelope", () => {
     expect(gate).not.toContain("communication:manage");
   });
 
-  it("audits every mailbox state change", () => {
-    const src = code(ACTIONS);
+  it("audits every mailbox state change — now from the governed lifecycle", () => {
+    // The auditing moved with the write (EMP-5F), and gained the prior and next
+    // state that EMP-1's version could not record.
+    const src = code("lib/ec/mailboxes/admin-actions.ts");
     expect(src).toContain("writeAudit");
     expect(src).toContain("EC_MAILBOX_ACTIVATED");
     expect(src).toContain("EC_MAILBOX_DEACTIVATED");
+    expect(src).toContain("prior_state");
+    expect(src).toContain("next_state");
   });
 
   it("never reads a message body anywhere in the workspace", () => {
@@ -326,14 +337,17 @@ describe("presentation", () => {
   });
 
   it("uses no emoji in the mail workspace", () => {
-    for (const f of ["components/ec/message-evidence.tsx", "components/ec/mailbox-toggle.tsx",
+    for (const f of ["components/ec/message-evidence.tsx", "components/ec/mailbox-lifecycle-badge.tsx",
       "components/ec/mail-nav.tsx", BOXES_PAGE, BOX_DETAIL]) {
       expect(read(f)).not.toMatch(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u);
     }
   });
 
   it("warns that deactivation quarantines future mail", () => {
-    expect(read("components/ec/mailbox-toggle.tsx")).toMatch(/quarantaine/i);
+    // The warning moved with the control (EMP-5F): deactivation now lives in
+    // Administration, beside the rest of the lifecycle, and the consequence is
+    // still stated where the button is rather than left to be discovered.
+    expect(read("components/ec/mailbox-admin-panel.tsx")).toMatch(/quarantaine/i);
   });
 
   it("states that ledger visibility follows the subject", () => {

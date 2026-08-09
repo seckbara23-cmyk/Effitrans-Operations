@@ -108,6 +108,10 @@ const readyRow = (over: Partial<ReadinessInput> = {}): ReadinessInput => ({
   outboundVerifiedAt: "2026-08-01T00:00:00Z",
   inboundVerifiedAt: null,
   activeMembers: 3,
+  // EMP-5F — a mailbox activated through the governed lifecycle records WHO did
+  // it. Without that, an ACTIVE mailbox is legacy-unverified, which is a
+  // separate finding these EMP-5E cases are not about.
+  activatedBy: "admin-1",
   ...over,
 });
 
@@ -538,11 +542,16 @@ describe("administration shows usage and eligibility separately", () => {
 // 9. Scope — everything this phase must NOT have done
 // ---------------------------------------------------------------------------
 describe("scope", () => {
-  it("adds no migration", () => {
+  it("is backed by exactly one migration, and it is EMP-5D's", () => {
+    // EMP-5E itself added none: the column and its CHECK already existed. The
+    // property worth defending is not "nothing came after" — EMP-5F legitimately
+    // did — but that the eligibility key is introduced ONCE and never
+    // re-shaped afterwards.
     const migrations = readdirSync(join(root, "supabase/migrations"))
       .filter((f) => f.endsWith(".sql")).sort();
-    expect(migrations[migrations.length - 1])
-      .toBe("20260818000001_mailbox_department_eligibility.sql");
+    const touching = migrations.filter((f) =>
+      read(`supabase/migrations/${f}`).includes("department_eligibility"));
+    expect(touching).toEqual(["20260818000001_mailbox_department_eligibility.sql"]);
   });
 
   it("modifies no existing mailbox automatically", () => {

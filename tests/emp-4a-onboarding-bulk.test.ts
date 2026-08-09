@@ -59,9 +59,16 @@ describe("every action error is a sentence, not a code", () => {
     const codes = new Set(
       [...read(ADMIN_ACTIONS).matchAll(/error:\s*"([a-z_]+)"/g)].map((m) => m[1]),
     );
-    const mapped = new Set(
-      [...read(USER_PANEL).matchAll(/^ {2}([a-z_]+):\s*"/gm)].map((m) => m[1]),
-    );
+    // EMP-5F split the callers: the lifecycle errors surface on the
+    // administration panel, the membership ones on the user panel. What must
+    // hold is that NO code reaches a human as a raw identifier — so the union
+    // of the two maps has to cover every code the actions can return.
+    const mapped = new Set([
+      ...[...read(USER_PANEL).matchAll(/^ {2}([a-z_]+):\s*$|^ {2}([a-z_]+):\s*"/gm)]
+        .map((m) => m[1] ?? m[2]),
+      ...[...read("components/ec/mailbox-admin-panel.tsx")
+        .matchAll(/^ {2}([a-z_]+):\s*$|^ {2}([a-z_]+):\s*"/gm)].map((m) => m[1] ?? m[2]),
+    ]);
     expect(codes.size).toBeGreaterThan(10);
     expect([...codes].filter((c) => !mapped.has(c))).toEqual([]);
   });

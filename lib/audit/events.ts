@@ -149,6 +149,17 @@ export const AuditActions = {
   // PROPOSED this mailbox. It grants and revokes nothing, so it is deliberately
   // a separate action from the membership events above.
   EC_MAILBOX_CLASSIFIED: "ec.mailbox.classified",
+  // EMP-5F — the governed lifecycle. Each step is its own act because each is
+  // done by a person who must be nameable afterwards: the one who recorded the
+  // configuration, the one who submitted it, the one who verified it, and the
+  // one who put it into service — who must not be the one who verified it.
+  EC_MAILBOX_CONFIGURED: "ec.mailbox.configured",
+  EC_MAILBOX_VERIFICATION_SUBMITTED: "ec.mailbox.verification_submitted",
+  EC_MAILBOX_VERIFICATION_PASSED: "ec.mailbox.verification_passed",
+  EC_MAILBOX_VERIFICATION_FAILED: "ec.mailbox.verification_failed",
+  // A decision ABOUT a legacy-unverified ACTIVE mailbox. Records the intention
+  // and its reason; changes nothing about the mailbox.
+  EC_MAILBOX_LEGACY_DECISION: "ec.mailbox.legacy_decision",
   // EMP-4A — one row for the batch, beside one row per changed membership, so
   // "what happened on Tuesday" and "who got access" are both answerable.
   EC_MAILBOX_BULK_ASSIGNED: "ec.mailbox.bulk_assigned",

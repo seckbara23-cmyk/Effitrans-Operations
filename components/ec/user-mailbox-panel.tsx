@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import {
-  grantMembership, revokeMembership, setMembershipCapabilities,
-  provisionMailbox, recordSetupOutcome, retryProvisioning,
+  grantMembership, revokeMembership, setMembershipCapabilities, provisionMailbox,
 } from "@/lib/ec/mailboxes/admin-actions";
 import type { MailboxSummary } from "@/lib/ec/mailboxes/membership";
 import { eligibilityLabelFr, MAILBOX_TYPE_FR } from "@/lib/ec/mailboxes/vocabulary";
@@ -251,37 +251,17 @@ export function UserMailboxPanel({
               <p className="mt-1 text-[11px] text-amber-800">{personal.provisioningNote}</p>
             ) : null}
 
+            {/* EMP-5F — the lifecycle has ONE home. Configuration, verification
+                and activation used to be duplicated here, which meant two places
+                could move a mailbox into service and only one of them could be
+                kept correct. This surface shows the state and links to it. */}
             {canProvision ? (
-              <div className="mt-3 space-y-2">
-                <input
-                  value={note} onChange={(e) => setNote(e.target.value)}
-                  placeholder="Note (obligatoire en cas d'échec)"
-                  className="w-full rounded-md border border-slate-200 px-2 py-1.5 text-sm"
-                />
-                <div className="flex flex-wrap gap-2">
-                  {personal.provisioningStatus === "PENDING_EXTERNAL_SETUP" ? (
-                    <>
-                      <button type="button" disabled={pending}
-                        onClick={() => run(() => recordSetupOutcome(personal.id, "ACTIVE", note))}
-                        className="rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">
-                        Configuration externe confirmée
-                      </button>
-                      <button type="button" disabled={pending || !note.trim()}
-                        onClick={() => run(() => recordSetupOutcome(personal.id, "SETUP_FAILED", note))}
-                        className="rounded-lg bg-amber-700 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">
-                        Signaler un échec
-                      </button>
-                    </>
-                  ) : null}
-                  {personal.provisioningStatus === "SETUP_FAILED" ? (
-                    <button type="button" disabled={pending}
-                      onClick={() => run(() => retryProvisioning(personal.id))}
-                      className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-navy-900 disabled:opacity-50">
-                      Relancer la demande à l&apos;opérateur
-                    </button>
-                  ) : null}
-                </div>
-              </div>
+              <Link
+                href={`/admin/enterprise-mail/mailboxes?mailbox=${personal.id}`}
+                className="mt-2 inline-block text-[11px] text-teal-700 hover:underline"
+              >
+                Cycle de vie de la boîte (Réserver → Configurer → Vérifier → Activer)
+              </Link>
             ) : null}
           </>
         ) : canProvision ? (

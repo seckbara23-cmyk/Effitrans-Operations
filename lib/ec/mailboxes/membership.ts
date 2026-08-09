@@ -15,6 +15,7 @@ import "server-only";
  * rather than filtered away.
  */
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
+import type { LifecycleFacts } from "./lifecycle";
 
 export type MailboxMember = {
   id: string;
@@ -53,6 +54,20 @@ export type MailboxSummary = {
   corporateIdentityConfirmedAt: string | null;
   outboundVerifiedAt: string | null;
   inboundVerifiedAt: string | null;
+  /** EMP-5C — the checkable pointers behind the capability claims. */
+  externalProvider: string | null;
+  externalMailboxId: string | null;
+  outboundVerificationRef: string | null;
+  inboundVerificationRef: string | null;
+  corporateIdentityConfirmedBy: string | null;
+  /** EMP-5F accountability. NULL until migration 20260819000001 is applied,
+   *  which reads as "activator unknown" — the safe direction. */
+  activatedAt: string | null;
+  activatedBy: string | null;
+  verificationSubmittedAt: string | null;
+  verificationSubmittedBy: string | null;
+  outboundVerifiedBy: string | null;
+  inboundVerifiedBy: string | null;
 };
 
 const MEMBER_SELECT =
@@ -84,8 +99,10 @@ export async function listMailboxSummaries(tenantId: string): Promise<MailboxSum
       .select(
         "id, address, label_fr, purpose, department_eligibility, mailbox_type, "
         + "provisioning_status, provisioning_note, provisioning_attempts, owner_user_id, "
-        + "is_active, ownership, corporate_identity_confirmed_at, "
-        + "outbound_verified_at, inbound_verified_at",
+        + "is_active, ownership, corporate_identity_confirmed_at, corporate_identity_confirmed_by, "
+        + "external_provider, external_mailbox_id, "
+        + "outbound_verified_at, outbound_verification_ref, "
+        + "inbound_verified_at, inbound_verification_ref",
       )
       .eq("tenant_id", tenantId)
       .order("address"),
@@ -99,6 +116,28 @@ export async function listMailboxSummaries(tenantId: string): Promise<MailboxSum
   const counts = new Map<string, number>();
   for (const m of (members ?? []) as unknown as { mailbox_id: string }[]) {
     counts.set(m.mailbox_id, (counts.get(m.mailbox_id) ?? 0) + 1);
+  }
+
+  // EMP-5F — the accountability columns arrive with migration 20260819000001.
+  // Read them SEPARATELY and fail open, so this surface works identically
+  // before and after the migration is applied. Absent values read as "we do not
+  // know who did this", which makes an ACTIVE mailbox look LEGACY-UNVERIFIED —
+  // the safe direction, and true until the evidence exists.
+  type Accountability = {
+    id: string; activated_at: string | null; activated_by: string | null;
+    verification_submitted_at: string | null; verification_submitted_by: string | null;
+    outbound_verified_by: string | null; inbound_verified_by: string | null;
+  };
+  const accountability = new Map<string, Accountability>();
+  try {
+    const { data } = await admin
+      .from("ec_mailbox")
+      .select("id, activated_at, activated_by, verification_submitted_at, "
+              + "verification_submitted_by, outbound_verified_by, inbound_verified_by")
+      .eq("tenant_id", tenantId);
+    for (const r of (data ?? []) as unknown as Accountability[]) accountability.set(r.id, r);
+  } catch {
+    /* migration not applied yet — every mailbox stays "accountability unknown" */
   }
 
   return ((boxes ?? []) as unknown as Record<string, unknown>[]).map((b) => ({
@@ -116,9 +155,55 @@ export async function listMailboxSummaries(tenantId: string): Promise<MailboxSum
     isActive: Boolean(b.is_active),
     ownership: (b.ownership as string | null) ?? "UNKNOWN",
     corporateIdentityConfirmedAt: (b.corporate_identity_confirmed_at as string | null) ?? null,
+    corporateIdentityConfirmedBy: (b.corporate_identity_confirmed_by as string | null) ?? null,
+    externalProvider: (b.external_provider as string | null) ?? null,
+    externalMailboxId: (b.external_mailbox_id as string | null) ?? null,
     outboundVerifiedAt: (b.outbound_verified_at as string | null) ?? null,
+    outboundVerificationRef: (b.outbound_verification_ref as string | null) ?? null,
     inboundVerifiedAt: (b.inbound_verified_at as string | null) ?? null,
+    inboundVerificationRef: (b.inbound_verification_ref as string | null) ?? null,
+    activatedAt: accountability.get(b.id as string)?.activated_at ?? null,
+    activatedBy: accountability.get(b.id as string)?.activated_by ?? null,
+    verificationSubmittedAt: accountability.get(b.id as string)?.verification_submitted_at ?? null,
+    verificationSubmittedBy: accountability.get(b.id as string)?.verification_submitted_by ?? null,
+    outboundVerifiedBy: accountability.get(b.id as string)?.outbound_verified_by ?? null,
+    inboundVerifiedBy: accountability.get(b.id as string)?.inbound_verified_by ?? null,
   }));
+}
+
+/**
+ * EMP-5F — a summary, viewed as lifecycle facts.
+ *
+ * One mapping, so a surface cannot accidentally judge a mailbox on a subset of
+ * its evidence: everything the guard reads comes from here, and a field this
+ * function forgets is a field no caller can compensate for.
+ *
+ * `tenantId` is supplied by the caller because the summary list is already
+ * tenant-scoped and carrying the value per row would invite it being trusted.
+ */
+export function lifecycleFacts(m: MailboxSummary, tenantId: string): LifecycleFacts {
+  return {
+    id: m.id,
+    tenantId,
+    address: m.address,
+    mailboxType: m.mailboxType,
+    ownerUserId: m.ownerUserId,
+    provisioningStatus: m.provisioningStatus,
+    provisioningNote: m.provisioningNote,
+    ownership: m.ownership,
+    externalProvider: m.externalProvider,
+    externalMailboxId: m.externalMailboxId,
+    corporateIdentityConfirmedAt: m.corporateIdentityConfirmedAt,
+    corporateIdentityConfirmedBy: m.corporateIdentityConfirmedBy,
+    outboundVerifiedAt: m.outboundVerifiedAt,
+    outboundVerifiedBy: m.outboundVerifiedBy,
+    outboundVerificationRef: m.outboundVerificationRef,
+    inboundVerifiedAt: m.inboundVerifiedAt,
+    inboundVerifiedBy: m.inboundVerifiedBy,
+    inboundVerificationRef: m.inboundVerificationRef,
+    activatedAt: m.activatedAt,
+    activatedBy: m.activatedBy,
+  };
 }
 
 /** Members of one mailbox, revoked rows included and labelled. */

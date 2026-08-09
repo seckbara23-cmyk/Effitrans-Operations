@@ -24,6 +24,10 @@ import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
 import { isDepartmentEligibility, canHoldDepartmentEligibility } from "./eligibility";
+import {
+  activationGuard, canonicalState, canTransition, isLegacyActive,
+  type LifecycleFacts, type MailboxState,
+} from "./lifecycle";
 
 export type MailAdminResult = { ok: true; id?: string } | { ok: false; error: string };
 
@@ -149,12 +153,15 @@ export async function revokeMembership(
 // ---------------------------------------------------------------------------
 
 /**
- * Reserve an internal mailbox identity.
+ * RÉSERVER — step 1. Reserve an internal mailbox identity.
  *
- * It lands in PENDING_EXTERNAL_SETUP, not ACTIVE: the address exists in this
- * platform and is reserved against the global unique index, but no mailbox
- * exists at any provider yet. Routing stays off (is_active is derived from the
- * status) until a human confirms the external setup.
+ * It lands in RESERVED, not ACTIVE: the address exists in this platform and is
+ * reserved against the global unique index, but nothing is claimed about the
+ * world outside. Routing stays off (is_active is derived from the status) until
+ * the mailbox has been configured, verified and explicitly activated.
+ *
+ * EMP-5F set the column default to RESERVED too, so even an insert that omits
+ * the status cannot produce an operational mailbox.
  */
 export async function provisionMailbox(input: {
   address: string;
@@ -200,7 +207,7 @@ export async function provisionMailbox(input: {
       department_eligibility: eligibility,
       mailbox_type: input.mailboxType,
       owner_user_id: input.ownerUserId ?? null,
-      provisioning_status: "PENDING_EXTERNAL_SETUP",
+      provisioning_status: "RESERVED",
       provisioned_by: user.id,
     })
     .select("id")
@@ -217,7 +224,7 @@ export async function provisionMailbox(input: {
     action: AuditActions.EC_MAILBOX_PROVISIONED,
     actorId: user.id, tenantId: user.tenantId,
     entity: "ec_mailbox", entityId: (data as { id: string }).id,
-    after: { address, mailbox_type: input.mailboxType, status: "PENDING_EXTERNAL_SETUP",
+    after: { address, mailbox_type: input.mailboxType, prior_state: null, next_state: "RESERVED",
              department_eligibility: eligibility },
   });
   revalidatePath(PATH);
@@ -307,55 +314,344 @@ export async function setDepartmentEligibility(
   return { ok: true, id: mailboxId };
 }
 
-/**
- * Record what an operator did outside the platform.
- *
- * ACTIVE means a human confirmed the external mailbox exists and works.
- * SETUP_FAILED means a human reported it did not. The platform performs no
- * external provisioning and therefore cannot observe either — it records a
- * statement, and the audit trail names who made it.
- */
-export async function recordSetupOutcome(
+// ---------------------------------------------------------------------------
+// EMP-5F — the governed lifecycle: RÉSERVER → CONFIGURER → VÉRIFIER → ACTIVER.
+//
+// Every function below reads the mailbox first, decides with the PURE lifecycle
+// module, and only then writes. None of them contains an activation rule of its
+// own: `activationGuard` is the single authority, and a rule that lives in two
+// places is a rule that will be enforced in one.
+// ---------------------------------------------------------------------------
+
+/** The columns a lifecycle decision needs, in one place so no reader drifts. */
+const LIFECYCLE_SELECT =
+  "id, tenant_id, address, mailbox_type, owner_user_id, provisioning_status, "
+  + "provisioning_note, provisioning_attempts, ownership, external_provider, "
+  + "external_mailbox_id, corporate_identity_confirmed_at, corporate_identity_confirmed_by, "
+  + "outbound_verified_at, outbound_verified_by, outbound_verification_ref, "
+  + "inbound_verified_at, inbound_verified_by, inbound_verification_ref, "
+  + "activated_at, activated_by";
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+function toFacts(r: any): LifecycleFacts {
+  return {
+    id: r.id, tenantId: r.tenant_id, address: r.address,
+    mailboxType: r.mailbox_type, ownerUserId: r.owner_user_id ?? null,
+    provisioningStatus: r.provisioning_status,
+    provisioningNote: r.provisioning_note ?? null,
+    ownership: r.ownership ?? "UNKNOWN",
+    externalProvider: r.external_provider ?? null,
+    externalMailboxId: r.external_mailbox_id ?? null,
+    corporateIdentityConfirmedAt: r.corporate_identity_confirmed_at ?? null,
+    corporateIdentityConfirmedBy: r.corporate_identity_confirmed_by ?? null,
+    outboundVerifiedAt: r.outbound_verified_at ?? null,
+    outboundVerifiedBy: r.outbound_verified_by ?? null,
+    outboundVerificationRef: r.outbound_verification_ref ?? null,
+    inboundVerifiedAt: r.inbound_verified_at ?? null,
+    inboundVerifiedBy: r.inbound_verified_by ?? null,
+    inboundVerificationRef: r.inbound_verification_ref ?? null,
+    activatedAt: r.activated_at ?? null,
+    activatedBy: r.activated_by ?? null,
+  };
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
+/** Read one mailbox's lifecycle facts, tenant-scoped. */
+async function loadFacts(
   mailboxId: string,
-  outcome: "ACTIVE" | "SETUP_FAILED",
-  note: string,
+  tenantId: string,
+): Promise<LifecycleFacts | null> {
+  const admin = getAdminSupabaseClient();
+  const { data } = await admin
+    .from("ec_mailbox").select(LIFECYCLE_SELECT)
+    .eq("id", mailboxId).eq("tenant_id", tenantId).maybeSingle();
+  return data ? toFacts(data) : null;
+}
+
+/**
+ * CONFIGURER — step 2. Record the provider relationship.
+ *
+ * This records WHO IS AUTHORITATIVE and WHERE the mailbox lives. It proves
+ * nothing about the mailbox working, and deliberately cannot: the platform
+ * integrates with no provider, so everything here is a person's statement and
+ * is stored as one.
+ *
+ * It never confirms the corporate identity — that is a VERIFICATION act, and
+ * keeping it separate is what leaves room for a different person to check it.
+ */
+export async function recordMailboxConfiguration(
+  mailboxId: string,
+  input: {
+    ownership: "PLATFORM_MANAGED" | "CORPORATE_EXISTING";
+    externalProvider?: string | null;
+    externalMailboxId?: string | null;
+    integrationAddress?: string | null;
+    note?: string;
+  },
 ): Promise<MailAdminResult> {
   const g = await gate("communication:mailbox:provision");
   if (!g.ok || !g.user) return { ok: false, error: "forbidden" };
   const { user } = g;
-  const admin = getAdminSupabaseClient();
 
-  const { data, error } = await admin
+  if (input.ownership !== "PLATFORM_MANAGED" && input.ownership !== "CORPORATE_EXISTING") {
+    return { ok: false, error: "invalid_ownership" };
+  }
+  if (!input.externalProvider?.trim() && !input.externalMailboxId?.trim()) {
+    // Without either, "configured" would mean nothing that could later be checked.
+    return { ok: false, error: "external_reference_required" };
+  }
+  const integration = input.integrationAddress?.trim().toLowerCase() || null;
+  if (integration && (!integration.includes("@") || integration.length > 320)) {
+    return { ok: false, error: "invalid_integration_address" };
+  }
+
+  const facts = await loadFacts(mailboxId, user.tenantId);
+  if (!facts) return { ok: false, error: "mailbox_not_found" };
+
+  const from = canonicalState(facts.provisioningStatus);
+  if (!canTransition(from, "CONFIGURED")) return { ok: false, error: "invalid_state" };
+
+  const admin = getAdminSupabaseClient();
+  const { error } = await admin
     .from("ec_mailbox")
     .update({
-      provisioning_status: outcome,
-      provisioning_note: note.slice(0, 500),
-      provisioned_at: outcome === "ACTIVE" ? new Date().toISOString() : null,
+      provisioning_status: "CONFIGURED",
+      ownership: input.ownership,
+      external_provider: input.externalProvider?.trim() || null,
+      external_mailbox_id: input.externalMailboxId?.trim() || null,
+      integration_address: integration,
+      provisioning_note: input.note?.slice(0, 500) ?? null,
+      provisioned_at: null,
       provisioned_by: user.id,
     })
-    .eq("id", mailboxId)
-    .eq("tenant_id", user.tenantId)
-    .in("provisioning_status", ["PENDING_EXTERNAL_SETUP", "SETUP_FAILED"])
-    .select("id, address")
-    .maybeSingle();
-  if (error || !data) return { ok: false, error: "not_pending" };
+    .eq("id", mailboxId).eq("tenant_id", user.tenantId);
+  if (error) return { ok: false, error: "update_failed" };
 
   await writeAudit({
-    action: outcome === "ACTIVE" ? AuditActions.EC_MAILBOX_SETUP_CONFIRMED : AuditActions.EC_MAILBOX_SETUP_FAILED,
+    action: AuditActions.EC_MAILBOX_CONFIGURED,
     actorId: user.id, tenantId: user.tenantId,
     entity: "ec_mailbox", entityId: mailboxId,
-    after: { outcome, note: note.slice(0, 500), address: (data as { address: string }).address },
+    before: { prior_state: from, ownership: facts.ownership },
+    after: {
+      next_state: "CONFIGURED", address: facts.address, ownership: input.ownership,
+      external_provider: input.externalProvider?.trim() || null,
+      // The identifier is a reconciliation key, never a credential.
+      external_mailbox_id: input.externalMailboxId?.trim() || null,
+      reason: input.note?.slice(0, 500) ?? null,
+    },
+  });
+  revalidatePath(PATH);
+  return { ok: true, id: mailboxId };
+}
+
+/** VÉRIFIER — step 3a. Put the mailbox forward for checking. */
+export async function submitMailboxForVerification(mailboxId: string): Promise<MailAdminResult> {
+  const g = await gate("communication:mailbox:provision");
+  if (!g.ok || !g.user) return { ok: false, error: "forbidden" };
+  const { user } = g;
+
+  const facts = await loadFacts(mailboxId, user.tenantId);
+  if (!facts) return { ok: false, error: "mailbox_not_found" };
+  const from = canonicalState(facts.provisioningStatus);
+  if (!canTransition(from, "PENDING_VERIFICATION")) return { ok: false, error: "invalid_state" };
+
+  const admin = getAdminSupabaseClient();
+  const { error } = await admin
+    .from("ec_mailbox")
+    .update({
+      provisioning_status: "PENDING_VERIFICATION",
+      verification_submitted_at: new Date().toISOString(),
+      verification_submitted_by: user.id,
+    })
+    .eq("id", mailboxId).eq("tenant_id", user.tenantId);
+  if (error) return { ok: false, error: "update_failed" };
+
+  await writeAudit({
+    action: AuditActions.EC_MAILBOX_VERIFICATION_SUBMITTED,
+    actorId: user.id, tenantId: user.tenantId,
+    entity: "ec_mailbox", entityId: mailboxId,
+    before: { prior_state: from },
+    after: { next_state: "PENDING_VERIFICATION", address: facts.address },
   });
   revalidatePath(PATH);
   return { ok: true, id: mailboxId };
 }
 
 /**
- * Retry a failed setup.
+ * VÉRIFIER — step 3b. Record a verification result.
  *
- * It returns the mailbox to PENDING_EXTERNAL_SETUP and increments the attempt
+ * THREE INDEPENDENT CAPABILITIES (EMP-5F Option B). Identity is what ACTIVE
+ * depends on; outbound and inbound are separate readiness facts, because
+ * requiring inbound proof to permit outbound use would block a legitimate
+ * outbound-only arrangement — and coexistence with Effitrans's corporate mail
+ * may well be exactly that.
+ *
+ * `evidenceRef` points at something already stored elsewhere (a provider
+ * message id, an `ec_webhook_event` id) so the claim is CHECKABLE rather than
+ * self-asserted. It is required for the capability checks and is never a secret.
+ */
+export async function recordVerificationOutcome(
+  mailboxId: string,
+  input: {
+    capability: "IDENTITY" | "OUTBOUND" | "INBOUND";
+    passed: boolean;
+    evidenceRef?: string | null;
+    note?: string;
+  },
+): Promise<MailAdminResult> {
+  const g = await gate("communication:mailbox:provision");
+  if (!g.ok || !g.user) return { ok: false, error: "forbidden" };
+  const { user } = g;
+
+  const facts = await loadFacts(mailboxId, user.tenantId);
+  if (!facts) return { ok: false, error: "mailbox_not_found" };
+  const from = canonicalState(facts.provisioningStatus);
+
+  const ref = input.evidenceRef?.trim() || null;
+  if (input.passed && input.capability !== "IDENTITY" && !ref) {
+    // A capability that "works" with nothing to point at is an assertion
+    // wearing the word evidence.
+    return { ok: false, error: "evidence_reference_required" };
+  }
+
+  const now = new Date().toISOString();
+  // Typed rather than `Record<string, unknown>`: the point of this function is
+  // that it writes evidence columns and nothing else, and a loose type would
+  // let a stray key through the one place that must not have one.
+  const patch: {
+    provisioning_status?: string;
+    provisioning_note?: string | null;
+    corporate_identity_confirmed_at?: string | null;
+    corporate_identity_confirmed_by?: string | null;
+    outbound_verified_at?: string | null;
+    outbound_verified_by?: string | null;
+    outbound_verification_ref?: string | null;
+    inbound_verified_at?: string | null;
+    inbound_verified_by?: string | null;
+    inbound_verification_ref?: string | null;
+  } = {};
+  let nextState: MailboxState = from;
+
+  if (!input.passed) {
+    if (!canTransition(from, "FAILED")) return { ok: false, error: "invalid_state" };
+    nextState = "FAILED";
+    patch.provisioning_status = "FAILED";
+    patch.provisioning_note = (input.note ?? "").slice(0, 500);
+  } else if (input.capability === "IDENTITY") {
+    if (!canTransition(from, "VERIFIED")) return { ok: false, error: "invalid_state" };
+    nextState = "VERIFIED";
+    patch.provisioning_status = "VERIFIED";
+    patch.corporate_identity_confirmed_at = now;
+    patch.corporate_identity_confirmed_by = user.id;
+    patch.provisioning_note = input.note?.slice(0, 500) ?? null;
+  } else if (input.capability === "OUTBOUND") {
+    patch.outbound_verified_at = now;
+    patch.outbound_verified_by = user.id;
+    patch.outbound_verification_ref = ref;
+  } else {
+    patch.inbound_verified_at = now;
+    patch.inbound_verified_by = user.id;
+    patch.inbound_verification_ref = ref;
+  }
+
+  const admin = getAdminSupabaseClient();
+  const { error } = await admin
+    .from("ec_mailbox").update(patch)
+    .eq("id", mailboxId).eq("tenant_id", user.tenantId);
+  if (error) return { ok: false, error: "update_failed" };
+
+  await writeAudit({
+    action: input.passed
+      ? AuditActions.EC_MAILBOX_VERIFICATION_PASSED
+      : AuditActions.EC_MAILBOX_VERIFICATION_FAILED,
+    actorId: user.id, tenantId: user.tenantId,
+    entity: "ec_mailbox", entityId: mailboxId,
+    before: { prior_state: from },
+    after: {
+      next_state: nextState, address: facts.address, capability: input.capability,
+      evidence_ref: ref, evidence_kind: "manual",
+      reason: input.note?.slice(0, 500) ?? null,
+    },
+  });
+  revalidatePath(PATH);
+  return { ok: true, id: mailboxId };
+}
+
+/**
+ * ACTIVER — step 4. Put a VERIFIED mailbox into operational use.
+ *
+ * THE ONLY WAY TO REACH ACTIVE. Every rule is `activationGuard`'s, evaluated
+ * against facts this function re-read from the database rather than anything a
+ * caller supplied, and the blockers are returned so the administrator learns
+ * what is missing instead of being told "no".
+ *
+ * The actor is `requireUser()`'s. There is no SYSTEM lane (RATIFY-OPSSEC2-2A),
+ * and the guard refuses a null actor anyway.
+ */
+export type ActivationResult =
+  | { ok: true; id: string }
+  | { ok: false; error: string; blockers?: { code: string; messageFr: string }[] };
+
+export async function activateMailbox(mailboxId: string): Promise<ActivationResult> {
+  const user = await requireUser();
+  const permissions = await getEffectivePermissions(user.id);
+  const canProvision = hasPermission(permissions, "communication:mailbox:provision");
+
+  const facts = await loadFacts(mailboxId, user.tenantId);
+  if (!facts) return { ok: false, error: "mailbox_not_found" };
+
+  const now = new Date().toISOString();
+  const decision = activationGuard({
+    actor: { id: user.id, tenantId: user.tenantId, canProvision },
+    mailbox: facts,
+    now,
+  });
+  if (!decision.allowed) {
+    return { ok: false, error: "activation_refused", blockers: decision.blockers };
+  }
+
+  const from = canonicalState(facts.provisioningStatus);
+  const admin = getAdminSupabaseClient();
+  const { error } = await admin
+    .from("ec_mailbox")
+    .update({
+      provisioning_status: "ACTIVE",
+      activated_at: now,
+      activated_by: user.id,
+      provisioned_at: now,
+    })
+    .eq("id", mailboxId).eq("tenant_id", user.tenantId)
+    // Compare-and-set on the state the guard actually judged: another
+    // administrator may have moved this mailbox while the page was open.
+    .eq("provisioning_status", facts.provisioningStatus);
+  if (error) return { ok: false, error: "update_failed" };
+
+  await writeAudit({
+    action: AuditActions.EC_MAILBOX_ACTIVATED,
+    actorId: user.id, tenantId: user.tenantId,
+    entity: "ec_mailbox", entityId: mailboxId,
+    before: { prior_state: from },
+    after: {
+      next_state: "ACTIVE", address: facts.address,
+      verified_by: facts.corporateIdentityConfirmedBy,
+      evidence_ref: facts.outboundVerificationRef ?? facts.inboundVerificationRef ?? null,
+      reason: "verified evidence accepted",
+    },
+  });
+  revalidatePath(PATH);
+  return { ok: true, id: mailboxId };
+}
+
+/**
+ * Retry after a failure.
+ *
+ * It returns the mailbox to CONFIGURATION_REQUIRED and increments the attempt
  * count. It calls nothing — there is no external system to call — so "retry"
- * here means "ask the operator again", and the count is how many times we have.
+ * means "ask the operator again", and the count is how many times we have.
+ *
+ * IT DOES NOT ERASE THE FAILURE EVIDENCE. The note that recorded why it failed
+ * is carried into the audit entry before the column is cleared, so the history
+ * survives a retry that resets the working state.
  */
 export async function retryProvisioning(mailboxId: string): Promise<MailAdminResult> {
   const g = await gate("communication:mailbox:provision");
@@ -363,19 +659,20 @@ export async function retryProvisioning(mailboxId: string): Promise<MailAdminRes
   const { user } = g;
   const admin = getAdminSupabaseClient();
 
+  const facts = await loadFacts(mailboxId, user.tenantId);
+  if (!facts) return { ok: false, error: "mailbox_not_found" };
+  const from = canonicalState(facts.provisioningStatus);
+  if (from !== "FAILED") return { ok: false, error: "not_failed" };
+
   const { data: current } = await admin
-    .from("ec_mailbox")
-    .select("id, provisioning_attempts")
-    .eq("id", mailboxId).eq("tenant_id", user.tenantId)
-    .eq("provisioning_status", "SETUP_FAILED")
-    .maybeSingle();
-  if (!current) return { ok: false, error: "not_failed" };
+    .from("ec_mailbox").select("provisioning_attempts")
+    .eq("id", mailboxId).eq("tenant_id", user.tenantId).maybeSingle();
 
   const { error } = await admin
     .from("ec_mailbox")
     .update({
-      provisioning_status: "PENDING_EXTERNAL_SETUP",
-      provisioning_attempts: Number((current as { provisioning_attempts: number }).provisioning_attempts ?? 0) + 1,
+      provisioning_status: "CONFIGURATION_REQUIRED",
+      provisioning_attempts: Number((current as { provisioning_attempts: number } | null)?.provisioning_attempts ?? 0) + 1,
       provisioning_note: null,
     })
     .eq("id", mailboxId).eq("tenant_id", user.tenantId);
@@ -385,35 +682,103 @@ export async function retryProvisioning(mailboxId: string): Promise<MailAdminRes
     action: AuditActions.EC_MAILBOX_SETUP_RETRIED,
     actorId: user.id, tenantId: user.tenantId,
     entity: "ec_mailbox", entityId: mailboxId,
+    before: { prior_state: from, reason: facts.provisioningNote },
+    after: { next_state: "CONFIGURATION_REQUIRED", address: facts.address },
   });
   revalidatePath(PATH);
   return { ok: true, id: mailboxId };
 }
 
-/** Enable or disable an existing mailbox. Routing follows immediately. */
+/**
+ * Take a mailbox out of service.
+ *
+ * DEACTIVATION ONLY. Re-enabling used to live here and flipped straight to
+ * ACTIVE from DISABLED with no evidence examined at all — a second, ungoverned
+ * door into the operational state. Activation now has exactly one door,
+ * `activateMailbox`, and it is guarded.
+ *
+ * The history is preserved: nothing is deleted, `activated_by` and the
+ * verification evidence stay on the row, and the audit records both states.
+ */
 export async function setMailboxEnabled(
   mailboxId: string,
   enabled: boolean,
 ): Promise<MailAdminResult> {
+  if (enabled) {
+    // Not an oversight, and not silently redirected either: activation must go
+    // through the guard, and saying so is more useful than pretending.
+    return { ok: false, error: "activation_requires_verification" };
+  }
+
   const g = await gate("communication:mailbox:provision");
   if (!g.ok || !g.user) return { ok: false, error: "forbidden" };
   const { user } = g;
   const admin = getAdminSupabaseClient();
 
-  const { data, error } = await admin
+  const facts = await loadFacts(mailboxId, user.tenantId);
+  if (!facts) return { ok: false, error: "mailbox_not_found" };
+  const from = canonicalState(facts.provisioningStatus);
+  if (from !== "ACTIVE") return { ok: false, error: "invalid_state" };
+
+  const { error } = await admin
     .from("ec_mailbox")
-    .update({ provisioning_status: enabled ? "ACTIVE" : "DISABLED" })
+    .update({ provisioning_status: "DISABLED" })
     .eq("id", mailboxId).eq("tenant_id", user.tenantId)
-    .in("provisioning_status", enabled ? ["DISABLED"] : ["ACTIVE"])
-    .select("id, address")
-    .maybeSingle();
-  if (error || !data) return { ok: false, error: "invalid_state" };
+    .eq("provisioning_status", facts.provisioningStatus);
+  if (error) return { ok: false, error: "invalid_state" };
 
   await writeAudit({
-    action: enabled ? AuditActions.EC_MAILBOX_ACTIVATED : AuditActions.EC_MAILBOX_DEACTIVATED,
+    action: AuditActions.EC_MAILBOX_DEACTIVATED,
     actorId: user.id, tenantId: user.tenantId,
     entity: "ec_mailbox", entityId: mailboxId,
-    after: { address: (data as { address: string }).address },
+    before: { prior_state: from, activated_by: facts.activatedBy },
+    after: { next_state: "DISABLED", address: facts.address },
+  });
+  revalidatePath(PATH);
+  return { ok: true, id: mailboxId };
+}
+
+/**
+ * Record a decision about a LEGACY-UNVERIFIED ACTIVE mailbox.
+ *
+ * A row that reached ACTIVE before this lifecycle existed cannot be verified
+ * retroactively, and must not be silently deactivated: the company may be using
+ * it. So the platform records the DECISION and the reason, changes nothing
+ * about the mailbox, and leaves the remediation itself to the ordinary
+ * lifecycle actions an administrator then takes deliberately.
+ *
+ * This is the audit entry that makes "we looked at it and chose to wait" a
+ * recorded act rather than an absence.
+ */
+export async function recordLegacyActiveDecision(
+  mailboxId: string,
+  decision: "CONFIRM_PERSONAL" | "CONFIRM_SHARED" | "RECLASSIFY_FUNCTIONAL"
+          | "DISABLE_PENDING_VERIFICATION" | "KEEP_RESTRICTED",
+  reason: string,
+): Promise<MailAdminResult> {
+  const g = await gate("communication:mailbox:provision");
+  if (!g.ok || !g.user) return { ok: false, error: "forbidden" };
+  const { user } = g;
+
+  if (!reason.trim()) return { ok: false, error: "reason_required" };
+
+  const facts = await loadFacts(mailboxId, user.tenantId);
+  if (!facts) return { ok: false, error: "mailbox_not_found" };
+  if (!isLegacyActive(facts)) return { ok: false, error: "not_legacy_active" };
+
+  // DELIBERATELY NO MAILBOX WRITE. Recording an intention is not carrying it
+  // out, and a decision that quietly retyped or disabled a live corporate
+  // address would be exactly the disruption this programme forbids.
+  await writeAudit({
+    action: AuditActions.EC_MAILBOX_LEGACY_DECISION,
+    actorId: user.id, tenantId: user.tenantId,
+    entity: "ec_mailbox", entityId: mailboxId,
+    before: { prior_state: canonicalState(facts.provisioningStatus), activated_by: null },
+    after: {
+      next_state: canonicalState(facts.provisioningStatus),
+      address: facts.address, decision, reason: reason.slice(0, 500),
+      note: "decision recorded only — no mailbox field was changed",
+    },
   });
   revalidatePath(PATH);
   return { ok: true, id: mailboxId };
