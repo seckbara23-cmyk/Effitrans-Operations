@@ -9,8 +9,11 @@
 --   * hr_employee_event is append-only (UPDATE raises via prevent_mutation)
 --   * employee_number is immutable (UPDATE raises)
 --   * the import maker-checker CHECK rejects approver = submitter
---   * hr:config:manage / hr:sensitive:read exist in the catalog and are
---     granted to NO role (the B1 pause, provable)
+--   * hr:config:manage / hr:sensitive:read exist in the catalog; since HR-A1
+--     (HRQ-D2 = Option A) hr:config:manage is granted to HR_OFFICER and ONLY
+--     HR_OFFICER, while hr:sensitive:read remains granted to NO role (DEC-B63
+--     legal gates still open). Until HR-A1 this suite pinned the full B1
+--     pause (zero grants on both) — the ratification retired that semantic.
 --
 -- Requires all migrations + seed applied. Run like the other RLS tests.
 
@@ -78,7 +81,7 @@ declare
   ledger_update_rejected int := 0;
   number_update_rejected int := 0;
   self_approve_rejected int := 0;
-  cfg_perm_rows int; cfg_perm_grants int;
+  cfg_perm_rows int; cfg_officer_grants int; cfg_other_grants int; sensitive_grants int;
 begin
   perform set_config('role', 'authenticated', true);
 
@@ -144,12 +147,21 @@ begin
     self_approve_rejected := 1;
   end;
 
-  -- The B1 pause, provable: both codes exist, zero role holds either.
+  -- Post-HRQ-D2 grant state: both codes still exist; hr:config:manage is held
+  -- by HR_OFFICER and NO other role; hr:sensitive:read is held by NOBODY.
   select count(*) into cfg_perm_rows from public.permission
    where code in ('hr:config:manage', 'hr:sensitive:read');
-  select count(*) into cfg_perm_grants from public.role_permission rp
+  select count(*) into cfg_officer_grants from public.role_permission rp
    join public.permission p on p.id = rp.permission_id
-   where p.code in ('hr:config:manage', 'hr:sensitive:read');
+   join public.role r on r.id = rp.role_id
+   where p.code = 'hr:config:manage' and r.code = 'HR_OFFICER';
+  select count(*) into cfg_other_grants from public.role_permission rp
+   join public.permission p on p.id = rp.permission_id
+   join public.role r on r.id = rp.role_id
+   where p.code = 'hr:config:manage' and r.code <> 'HR_OFFICER';
+  select count(*) into sensitive_grants from public.role_permission rp
+   join public.permission p on p.id = rp.permission_id
+   where p.code = 'hr:sensitive:read';
 
   insert into _r values
     ('e1_hr_read_units', e1_units),
@@ -162,18 +174,22 @@ begin
     ('ledger_update_rejected', ledger_update_rejected),
     ('employee_number_update_rejected', number_update_rejected),
     ('self_approve_rejected', self_approve_rejected),
-    ('b1_permission_rows', cfg_perm_rows),
-    ('b1_permission_grants', cfg_perm_grants);
+    ('permission_rows', cfg_perm_rows),
+    ('config_officer_grants', cfg_officer_grants),
+    ('config_other_role_grants', cfg_other_grants),
+    ('sensitive_grants', sensitive_grants);
 
   if e1_units<>2 or e1_batches<>1 or e2_units<>0 or e2_batches<>0 or e3_units<>0
      or bad_parent_rejected<>1 or cross_tenant_parent_rejected<>1
      or ledger_update_rejected<>1 or number_update_rejected<>1
-     or self_approve_rejected<>1 or cfg_perm_rows<>2 or cfg_perm_grants<>0
+     or self_approve_rejected<>1 or cfg_perm_rows<>2
+     or cfg_officer_grants<>1 or cfg_other_grants<>0 or sensitive_grants<>0
   then
-    raise exception 'HR-1 ORG FAIL: e1u=% e1b=% e2u=% e2b=% e3u=% kind=% xparent=% ledger=% num=% visa=% permrows=% permgrants=%',
+    raise exception 'HR-1 ORG FAIL: e1u=% e1b=% e2u=% e2b=% e3u=% kind=% xparent=% ledger=% num=% visa=% permrows=% cfgofficer=% cfgother=% sensitive=%',
       e1_units, e1_batches, e2_units, e2_batches, e3_units,
       bad_parent_rejected, cross_tenant_parent_rejected, ledger_update_rejected,
-      number_update_rejected, self_approve_rejected, cfg_perm_rows, cfg_perm_grants;
+      number_update_rejected, self_approve_rejected, cfg_perm_rows,
+      cfg_officer_grants, cfg_other_grants, sensitive_grants;
   end if;
 end $$;
 
