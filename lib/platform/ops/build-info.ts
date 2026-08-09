@@ -13,10 +13,10 @@
  */
 
 /** The latest migration shipped in this build (pinned to the directory by test). */
-export const LATEST_MIGRATION = "20260817000001_mailbox_coexistence_foundation";
+export const LATEST_MIGRATION = "20260818000001_mailbox_department_eligibility";
 
 /** Total migrations shipped in this build (pinned by test). */
-export const MIGRATION_COUNT = 95;
+export const MIGRATION_COUNT = 96;
 
 /** Newest DATA-probeable migration marker: this permission row proves migrations ≥ this point. */
 export const MIGRATION_PROBE = {

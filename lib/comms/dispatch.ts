@@ -35,6 +35,7 @@ import "server-only";
  */
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { sendEmail, isProviderConfigured } from "./provider";
+import { resolveReplyTo, type MailboxOfRecord } from "./reply-to";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
 import { reportError } from "@/lib/observability/report";
@@ -118,6 +119,32 @@ export async function dispatchMessage(
   const to = addresses(m.to_addresses);
   const primary = (to[0] as string | undefined) ?? (m.recipient_email as string | null) ?? "";
 
+  // EMP-5D — Reply-To from the MAILBOX OF RECORD, resolved here rather than
+  // accepted from anywhere. The lookup is tenant-scoped, so a mailbox_id
+  // belonging to another tenant cannot become a Reply-To even if one were
+  // stored on the row. Deterministic from the row, so a retry of the same
+  // message resolves the identical value and the idempotency contract holds.
+  let mailboxOfRecord: MailboxOfRecord | null = null;
+  if (m.mailbox_id) {
+    const { data: mb } = await admin
+      .from("ec_mailbox")
+      .select("id, tenant_id, address, is_active, provisioning_status")
+      .eq("id", m.mailbox_id as string)
+      .eq("tenant_id", tenantId)
+      .maybeSingle();
+    if (mb) {
+      const b = mb as unknown as Record<string, unknown>;
+      mailboxOfRecord = {
+        id: b.id as string,
+        tenantId: b.tenant_id as string,
+        address: (b.address as string | null) ?? null,
+        isActive: Boolean(b.is_active),
+        provisioningStatus: (b.provisioning_status as string) ?? "",
+      };
+    }
+  }
+  const replyTo = resolveReplyTo(tenantId, mailboxOfRecord).replyTo;
+
   let result;
   try {
     result = await sendEmail({
@@ -126,6 +153,7 @@ export async function dispatchMessage(
       subject: (m.subject as string) ?? "",
       html: (m.body_html as string) ?? "",
       text: (m.body_text as string) ?? "",
+      replyTo,
     });
   } catch (e) {
     // A thrown provider call is indistinguishable from a timeout: the message

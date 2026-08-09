@@ -21,6 +21,17 @@ export type OutboundEmail = {
   html: string;
   text: string;
   /**
+   * EMP-5D — where a human's reply should land. Resolved SERVER-SIDE from the
+   * message's mailbox of record (see lib/comms/reply-to.ts); never taken from
+   * request input. Omitted when there is no trustworthy mailbox, which
+   * reproduces the previous behaviour exactly.
+   *
+   * This does NOT change the visible From, the envelope From / Return-Path, or
+   * the DKIM signing domain. Those are four different things and only this one
+   * moves in this phase.
+   */
+  replyTo?: string | null;
+  /**
    * UAT-2B — optional file attachments. Added for the official invoice, which
    * customers expect to receive as a PDF rather than a link. Optional and
    * additive: every existing caller is unaffected.
@@ -134,6 +145,9 @@ export function buildResendPayload(
     subject: email.subject,
     html: email.html,
     text: email.text,
+    // Omitted entirely when absent, so the payload stays byte-identical to
+    // before for every caller that has no mailbox of record.
+    ...(email.replyTo ? { reply_to: email.replyTo } : {}),
     // Omitted entirely when there are none, so the payload is byte-identical
     // to before for every existing caller.
     ...(email.attachments && email.attachments.length > 0
