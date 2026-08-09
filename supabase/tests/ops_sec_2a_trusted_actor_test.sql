@@ -36,13 +36,24 @@ on conflict (id) do nothing;
 
 -- Roles are resolved BY PERMISSION rather than by name, so a role-template
 -- rename cannot silently turn this suite into a no-op.
+-- A SINGLE-PURPOSE actor: holds file:create and NEITHER of the other permissions
+-- this suite tests against. Without that exclusion the pick is ambiguous --
+-- SYSTEM_ADMIN holds both file:create and finance:expense:submit, so an
+-- unordered `limit 1` could hand back an actor that legitimately passes the
+-- "wrong permission" case. CI #408 failed on exactly that.
+-- Ordered as well as filtered, so the choice is deterministic run to run.
 insert into public.user_role (user_id, role_id, tenant_id)
 select '00000000-0000-0000-0000-00000000ac01', r.id, r.tenant_id
   from public.role r
-  join public.role_permission rp on rp.role_id = r.id
-  join public.permission p on p.id = rp.permission_id
  where r.tenant_id = '00000000-0000-0000-0000-000000000001'
-   and p.code = 'file:create'
+   and exists (select 1 from public.role_permission rp
+                 join public.permission p on p.id = rp.permission_id
+                where rp.role_id = r.id and p.code = 'file:create')
+   and not exists (select 1 from public.role_permission rp
+                     join public.permission p on p.id = rp.permission_id
+                    where rp.role_id = r.id
+                      and p.code in ('finance:expense:submit', 'hr:manage'))
+ order by r.code
  limit 1
 on conflict do nothing;
 
@@ -51,10 +62,11 @@ on conflict do nothing;
 insert into public.user_role (user_id, role_id, tenant_id)
 select '00000000-0000-0000-0000-00000000ac04', r.id, r.tenant_id
   from public.role r
-  join public.role_permission rp on rp.role_id = r.id
-  join public.permission p on p.id = rp.permission_id
  where r.tenant_id = '00000000-0000-0000-0000-000000000001'
-   and p.code = 'file:create'
+   and exists (select 1 from public.role_permission rp
+                 join public.permission p on p.id = rp.permission_id
+                where rp.role_id = r.id and p.code = 'file:create')
+ order by r.code
  limit 1
 on conflict do nothing;
 
@@ -75,6 +87,7 @@ select '00000000-0000-0000-0000-00000000ac05', r.id, r.tenant_id
   join public.permission p on p.id = rp.permission_id
  where r.tenant_id = '00000000-0000-0000-0000-000000000001'
    and p.code = 'hr:manage'
+ order by r.code
  limit 1
 on conflict do nothing;
 
@@ -95,10 +108,39 @@ select '00000000-0000-0000-0000-00000000ac06', r.id, r.tenant_id
   join public.permission p on p.id = rp.permission_id
  where r.tenant_id = '00000000-0000-0000-0000-000000000001'
    and p.code = 'finance:expense:submit'
+ order by r.code
  limit 1
 on conflict do nothing;
 
 create temp table _r (check_name text, ok boolean, detail text) on commit drop;
+
+-- ---------------------------------------------------------------------------
+-- FIXTURE SELF-CHECK. Every persona below is only meaningful if it holds
+-- exactly what it is supposed to hold. Without this, a permission rename would
+-- leave an actor with no role at all and every refusal would still "pass" --
+-- for the wrong reason, which is indistinguishable from working security.
+-- ---------------------------------------------------------------------------
+insert into _r
+select 'fixture: file:create actor holds it', bool_or(code = 'file:create'), string_agg(code, ',')
+from public.get_user_permissions('00000000-0000-0000-0000-00000000ac01')
+union all
+select 'fixture: file:create actor lacks expense authority',
+       not bool_or(code = 'finance:expense:submit'), 'checked'
+from public.get_user_permissions('00000000-0000-0000-0000-00000000ac01')
+union all
+select 'fixture: file:create actor lacks hr:manage',
+       not bool_or(code = 'hr:manage'), 'checked'
+from public.get_user_permissions('00000000-0000-0000-0000-00000000ac01')
+union all
+select 'fixture: hr actor holds hr:manage', bool_or(code = 'hr:manage'), 'checked'
+from public.get_user_permissions('00000000-0000-0000-0000-00000000ac05')
+union all
+select 'fixture: finance actor holds expense submit',
+       bool_or(code = 'finance:expense:submit'), 'checked'
+from public.get_user_permissions('00000000-0000-0000-0000-00000000ac06')
+union all
+select 'fixture: unprivileged actor holds nothing', count(*) = 0, count(*)::text
+from public.get_user_permissions('00000000-0000-0000-0000-00000000ac02');
 
 -- ---------------------------------------------------------------------------
 -- Helper: run one assertion and capture its SQLSTATE.
