@@ -21,6 +21,7 @@ import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
 import { writeAudit } from "@/lib/audit/log";
 import { emitHrEvent } from "./ledger";
+import { validateAssignmentTargets } from "./assignment-core";
 
 export type AssignmentChangeKind = "PROMOTION" | "TRANSFER" | "CHANGE";
 export type HrActionResult = { ok: true; id?: string } | { ok: false; error: string };
@@ -54,6 +55,17 @@ export async function setEmployeeAssignment(
     .maybeSingle();
   if (!employee) return { ok: false, error: "not_found" };
   if (employee.status === "ARCHIVED") return { ok: false, error: "employee_archived" };
+
+  // HR-A2 — every referenced target must belong to THIS tenant and be active.
+  // The FK alone accepts a cross-tenant id; this action is the write path, so
+  // this check is the boundary (see assignment-core.ts).
+  const targetError = await validateAssignmentTargets(admin.tenantId, {
+    orgUnitId: input.orgUnitId,
+    positionId: input.positionId,
+    workLocationId: input.workLocationId,
+    managerEmployeeId: input.managerEmployeeId,
+  });
+  if (targetError) return { ok: false, error: targetError };
 
   // The open PRIMARY row, if any — closed, never edited beyond its end date.
   const { data: open } = await supabase

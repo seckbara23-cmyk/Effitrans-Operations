@@ -18,7 +18,9 @@ import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { employeeStats, listEmployees, type EmployeeFilters } from "@/lib/hr/read";
 import { employeeStatusLabelFr, EMPLOYEE_STATUSES } from "@/lib/hr/lifecycle";
 import { CANONICAL_DEPARTMENTS, departmentLabelFr, isCanonicalDepartment } from "@/lib/organization/departments";
-import { EmployeeCreateForm } from "@/components/hr/employee-create-form";
+import { EmployeeCreateForm, type CreateFormUnit } from "@/components/hr/employee-create-form";
+import { listOrgUnits } from "@/lib/hr/organization";
+import { UNIT_KIND_LABEL_FR, type UnitKind } from "@/lib/hr/org-tree";
 
 export const metadata: Metadata = { title: "Ressources humaines" };
 export const dynamic = "force-dynamic";
@@ -72,6 +74,14 @@ export default async function HrRegistryPage({
 
   const [stats, rows] = await Promise.all([employeeStats(user.tenantId), listEmployees(user.tenantId, filters)]);
 
+  // HR-A2 — ACTIVE units for the creation form's optional initial placement.
+  // Honestly empty until the operator configures the structure (never invented).
+  const formUnits: CreateFormUnit[] = canManage
+    ? (await listOrgUnits(user.tenantId))
+        .filter((u) => u.is_active)
+        .map((u) => ({ id: u.id, name: u.name, kindLabel: UNIT_KIND_LABEL_FR[u.unit_kind as UnitKind] ?? u.unit_kind }))
+    : [];
+
   // HR-5A fix: these links pointed at /departments/hr, which became the HR
   // Operations Center in HR-1 — every filter click left the registry and lost
   // the filter. They belong to /registre, the registry's canonical route.
@@ -97,7 +107,7 @@ export default async function HrRegistryPage({
         <StatCard label="Nouveaux ce mois" value={stats.newThisMonth} tone="slate" />
       </div>
 
-      {canManage && <EmployeeCreateForm />}
+      {canManage && <EmployeeCreateForm units={formUnits} />}
 
       {/* Filters */}
       {/* HR-5A — a filter over the columns this table already shows. Not a
@@ -148,8 +158,10 @@ export default async function HrRegistryPage({
                 <tr className="border-b border-slate-100 text-left text-xs text-slate-500">
                   <th className="px-4 py-2 font-medium">Matricule</th>
                   <th className="px-4 py-2 font-medium">Nom</th>
+                  <th className="px-4 py-2 font-medium">Unité</th>
                   <th className="px-4 py-2 font-medium">Département</th>
                   <th className="px-4 py-2 font-medium">Fonction</th>
+                  <th className="px-4 py-2 font-medium">Embauche</th>
                   <th className="px-4 py-2 font-medium">Statut</th>
                   <th className="px-4 py-2 font-medium">Compte</th>
                 </tr>
@@ -165,8 +177,10 @@ export default async function HrRegistryPage({
                         {r.preferred_name?.trim() || r.first_name} {r.last_name}
                       </Link>
                     </td>
+                    <td className="px-4 py-2 text-slate-600">{r.org_unit_name || "—"}</td>
                     <td className="px-4 py-2 text-slate-600">{isCanonicalDepartment(r.department) ? departmentLabelFr(r.department) : r.department}</td>
                     <td className="px-4 py-2 text-slate-600">{r.job_title || "—"}</td>
+                    <td className="px-4 py-2 tabular text-xs text-slate-500">{r.hire_date || "—"}</td>
                     <td className="px-4 py-2"><StatusBadge status={r.status} /></td>
                     <td className="px-4 py-2 text-center">{r.has_account ? <span className="text-teal-600" title="Compte lié">✓</span> : <span className="text-slate-300" title="Sans compte">—</span>}</td>
                   </tr>

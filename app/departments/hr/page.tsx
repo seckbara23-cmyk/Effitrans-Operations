@@ -21,7 +21,7 @@ import { StatCard } from "@/components/departments/stat-card";
 import { DeptAttentionCard } from "@/components/departments/dept-attention-card";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
-import { employeeStats } from "@/lib/hr/read";
+import { employeeStats, countHrOfficers } from "@/lib/hr/read";
 import { hrDashboardCounts, getHrConfiguration } from "@/lib/hr/organization";
 import { hrOperationsCounts } from "@/lib/hr/onboarding";
 import { leaveCounts } from "@/lib/hr/leave";
@@ -77,13 +77,14 @@ export default async function HrOperationsCenterPage() {
   const canConfigure = hasPermission(permissions, "hr:config:manage");
   const canManage = hasPermission(permissions, "hr:manage");
 
-  const [stats, counts, config, ops, leave, center] = await Promise.all([
+  const [stats, counts, config, ops, leave, center, hrOfficers] = await Promise.all([
     employeeStats(user.tenantId),
     hrDashboardCounts(user.tenantId),
     getHrConfiguration(user.tenantId),
     hrOperationsCounts(user.tenantId),
     leaveCounts(user.tenantId),
     getHrCenterData(user.tenantId),
+    countHrOfficers(user.tenantId),
   ]);
 
   const UNAVAILABLE = "indisponible";
@@ -128,6 +129,19 @@ export default async function HrOperationsCenterPage() {
           La structure RH n&apos;est pas encore configurée{canConfigure
             ? " — le centre de configuration est accessible ci-dessous."
             : " ; le centre de configuration requiert « hr:config:manage », autorisation en attente de ratification (HRQ-D2)."}
+        </div>
+      )}
+
+      {/* HR-A2 — governance fact (F2): four-eyes flows need TWO distinct
+          officers. Counted from production, fail-closed to 0 — never assumed.
+          The second seat is granted through Administration (a role assignment),
+          never from here. */}
+      {hrOfficers < 2 && (
+        <div className="surface p-4 text-sm text-slate-600">
+          <span className="font-medium text-navy-900">Chargés RH actifs : {hrOfficers}.</span>{" "}
+          Les visas à quatre yeux (vérification de contrat, approbation d&apos;import) exigent
+          deux personnes distinctes — un second Chargé RH doit être désigné via
+          Administration → Utilisateurs avant ces étapes. Rien n&apos;est assoupli en attendant.
         </div>
       )}
 

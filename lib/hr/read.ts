@@ -16,8 +16,12 @@ export type EmployeeRow = Tbl["employee"]["Row"];
 
 export type EmployeeListItem = Pick<
   EmployeeRow,
-  "id" | "employee_number" | "first_name" | "last_name" | "preferred_name" | "department" | "job_title" | "status"
-> & { has_account: boolean };
+  "id" | "employee_number" | "first_name" | "last_name" | "preferred_name" | "department" | "job_title" | "status" | "hire_date"
+> & {
+  has_account: boolean;
+  /** HR-A2 — the open PRIMARY assignment's unit name (authoritative placement), or null. */
+  org_unit_name: string | null;
+};
 
 export type EmployeeFilters = {
   status?: string;
@@ -37,7 +41,7 @@ export async function listEmployees(tenantId: string, filters: EmployeeFilters =
   const admin = getAdminSupabaseClient();
   let q = admin
     .from("employee")
-    .select("id, employee_number, first_name, last_name, preferred_name, department, job_title, status, linked_app_user_id")
+    .select("id, employee_number, first_name, last_name, preferred_name, department, job_title, status, hire_date, linked_app_user_id")
     .eq("tenant_id", tenantId)
     .order("created_at", { ascending: false });
   if (filters.status) q = q.eq("status", filters.status);
@@ -50,7 +54,30 @@ export async function listEmployees(tenantId: string, filters: EmployeeFilters =
     );
   }
   const { data } = await q;
-  return (data ?? []).map((r) => ({
+  const rows = data ?? [];
+
+  // HR-A2 — resolve the authoritative placement (open PRIMARY assignment →
+  // unit name) in two batched tenant-scoped reads, never per row.
+  const unitByEmployee = new Map<string, string>();
+  if (rows.length > 0) {
+    const [{ data: opens }, { data: unitRows }] = await Promise.all([
+      admin
+        .from("employee_assignment")
+        .select("employee_id, org_unit_id")
+        .eq("tenant_id", tenantId)
+        .eq("assignment_kind", "PRIMARY")
+        .is("effective_to", null),
+      admin.from("hr_org_unit").select("id, name").eq("tenant_id", tenantId),
+    ]);
+    const unitName = new Map((unitRows ?? []).map((u) => [u.id, u.name]));
+    for (const a of opens ?? []) {
+      if (a.org_unit_id && unitName.has(a.org_unit_id)) {
+        unitByEmployee.set(a.employee_id, unitName.get(a.org_unit_id)!);
+      }
+    }
+  }
+
+  return rows.map((r) => ({
     id: r.id,
     employee_number: r.employee_number,
     first_name: r.first_name,
@@ -59,7 +86,9 @@ export async function listEmployees(tenantId: string, filters: EmployeeFilters =
     department: r.department,
     job_title: r.job_title,
     status: r.status,
+    hire_date: r.hire_date,
     has_account: r.linked_app_user_id !== null,
+    org_unit_name: unitByEmployee.get(r.id) ?? null,
   }));
 }
 
@@ -117,6 +146,35 @@ export async function employeeStats(tenantId: string): Promise<EmployeeStats> {
     withoutAccount: rows.filter((r) => r.linked_app_user_id === null && r.status !== "ARCHIVED").length,
     newThisMonth: rows.filter((r) => r.created_at >= monthStart).length,
   };
+}
+
+/**
+ * HR-A2 — DISTINCT active accounts holding HR_OFFICER in this tenant.
+ * Fail-closed: any read failure reports 0, never "probably enough". Used by the
+ * Operations Center to state honestly whether four-eyes HR workflows (contract
+ * verification, import approval) can complete — they need TWO distinct people.
+ */
+export async function countHrOfficers(tenantId: string): Promise<number> {
+  const admin = getAdminSupabaseClient();
+  const { data: roles, error: rolesErr } = await admin
+    .from("role")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .eq("code", "HR_OFFICER");
+  if (rolesErr || !roles || roles.length === 0) return 0;
+
+  const { data: holders, error: holdersErr } = await admin
+    .from("user_role")
+    .select("user_id, app_user!inner(status)")
+    .eq("tenant_id", tenantId)
+    .in("role_id", roles.map((r) => r.id));
+  if (holdersErr || !holders) return 0;
+
+  const active = new Set<string>();
+  for (const h of holders as unknown as { user_id: string; app_user: { status: string } }[]) {
+    if (h.app_user?.status === "active") active.add(h.user_id);
+  }
+  return active.size;
 }
 
 export type LinkableAccount = { id: string; name: string | null; email: string };

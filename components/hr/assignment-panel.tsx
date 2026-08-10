@@ -30,6 +30,15 @@ const ERR: Record<string, string> = {
   employee_archived: "Employé archivé — restaurez-le d'abord.",
   event_failed: "L'événement de journal n'a pas pu être écrit — l'affectation a été annulée.",
   save_failed: "Échec de l'enregistrement.",
+  // HR-A2 — server-side target validation (tenant + active); the selects only
+  // OFFER legitimate targets, but the server is the authority.
+  invalid_unit: "L'unité indiquée est introuvable.",
+  inactive_unit: "L'unité indiquée est désactivée — réactivez-la ou choisissez-en une autre.",
+  invalid_position: "Le poste indiqué est introuvable.",
+  inactive_position: "Le poste indiqué est désactivé.",
+  invalid_location: "Le site indiqué est introuvable.",
+  inactive_location: "Le site indiqué est désactivé.",
+  invalid_manager: "Le responsable indiqué est introuvable.",
 };
 
 export function AssignmentPanel({

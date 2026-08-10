@@ -35,6 +35,7 @@ import {
   type EmployeeStatus,
 } from "./lifecycle";
 import { validateEmployeeInput } from "./validate";
+import { validateAssignmentTargets, ASSIGNMENT_TARGET_ERROR_FR } from "./assignment-core";
 
 type Tbl = Database["public"]["Tables"];
 type Ctx = { userId: string; tenantId: string };
@@ -48,6 +49,11 @@ export type HrActionError =
   | "reason_required"
   | "account_not_eligible"
   | "account_already_linked"
+  // HR-A2 — warning-first duplicate guard: an ACTIVE-side employee with the
+  // same name exists. Never destructive: the caller may confirm with
+  // allowDuplicateName (human identity is legitimately ambiguous — homonyms
+  // are real people, not errors).
+  | "duplicate_name"
   | "write_failed";
 
 export type HrActionResult<T = { id: string }> =
@@ -84,6 +90,13 @@ export type CreateEmployeeInput = {
   personalPhone?: string | null;
   emergencyContactName?: string | null;
   emergencyContactPhone?: string | null;
+  // HR-A2 — OPTIONAL initial organizational placement (employee_assignment →
+  // hr_org_unit, the authoritative model). Tenant + active validated BEFORE
+  // the matricule is allocated; absent when the structure is not configured
+  // yet. NEVER an authorization input.
+  orgUnitId?: string | null;
+  // HR-A2 — explicit operator confirmation past the duplicate-name warning.
+  allowDuplicateName?: boolean;
 };
 
 const clean = (v: string | null | undefined): string | null => {
@@ -123,6 +136,38 @@ export async function createEmployee(input: CreateEmployeeInput): Promise<HrActi
     if (!mgr) return fail("invalid_input", ["Le responsable indiqué est introuvable."]);
   }
 
+  // HR-A2 — duplicate guard, WARNING-FIRST (§11): an exact same-name employee
+  // in a non-terminal status refuses once; the operator confirms explicitly
+  // with allowDuplicateName (homonyms are legitimate people). Exact
+  // case-insensitive match only — never fuzzy, never a unique constraint on
+  // names. Runs BEFORE allocation, so a refusal consumes no matricule; it also
+  // absorbs an accidental double-submit of the same person.
+  if (!input.allowDuplicateName) {
+    const esc = (s: string) => s.trim().replace(/[%_\\]/g, "\\$&");
+    const { data: dupe } = await admin
+      .from("employee")
+      .select("id, employee_number")
+      .eq("tenant_id", ctx.tenantId)
+      .ilike("first_name", esc(input.firstName))
+      .ilike("last_name", esc(input.lastName))
+      .not("status", "in", "(TERMINATED,ARCHIVED)")
+      .limit(1)
+      .maybeSingle();
+    if (dupe) {
+      return fail("duplicate_name", [
+        `Un employé en cours porte déjà ce nom (${dupe.employee_number}). S'il s'agit d'une autre personne, confirmez la création.`,
+      ]);
+    }
+  }
+
+  // HR-A2 — initial placement target validated BEFORE the matricule is
+  // allocated: a refused creation must never consume a number (§4).
+  const orgUnitId = clean(input.orgUnitId);
+  if (orgUnitId) {
+    const targetError = await validateAssignmentTargets(ctx.tenantId, { orgUnitId });
+    if (targetError) return fail("invalid_input", [ASSIGNMENT_TARGET_ERROR_FR[targetError]]);
+  }
+
   // OPS-SEC-2B — the TRUSTED overload. `ctx` comes from guard(), which is
   // assertPermission("hr:manage"), so actor and tenant are session-derived and
   // absent from `input`. The database re-proves the actor holds `hr:manage` in
@@ -159,12 +204,46 @@ export async function createEmployee(input: CreateEmployeeInput): Promise<HrActi
   const { data, error } = await admin.from("employee").insert(row).select("id").single();
   if (error || !data) return fail("write_failed");
 
-  // HR-2 — MANDATORY ledger emission; compensation: the fresh row is removed.
+  // HR-A2 — initial placement, INSIDE the compensable window: the assignment
+  // row is inserted BEFORE the 'created' event, so any failure below unwinds
+  // cleanly (the append-only ledger cannot be deleted, so nothing may fail
+  // after it is written). Initial placement travels in the 'created' payload —
+  // there is no separate assignment_changed event for a person who had no
+  // previous assignment; employee_assignment itself is the placement history.
+  let assignmentId: string | null = null;
+  if (orgUnitId) {
+    const { data: assignment, error: assignErr } = await admin
+      .from("employee_assignment")
+      .insert({
+        tenant_id: ctx.tenantId,
+        employee_id: data.id,
+        org_unit_id: orgUnitId,
+        assignment_kind: "PRIMARY",
+        effective_from: new Date().toISOString().slice(0, 10),
+        created_by: ctx.userId,
+      })
+      .select("id")
+      .single();
+    if (assignErr || !assignment) {
+      await admin.from("employee").delete().eq("id", data.id).eq("tenant_id", ctx.tenantId);
+      return fail("write_failed");
+    }
+    assignmentId = assignment.id;
+  }
+
+  // HR-2 — MANDATORY ledger emission; compensation: assignment + fresh row removed.
   const createdEmitted = await emitHrEvent({
     tenantId: ctx.tenantId, employeeId: data.id, kind: "created", actorId: ctx.userId,
-    payload: { employee_number: numData, department: input.department },
+    payload: {
+      employee_number: numData,
+      department: input.department,
+      ...(orgUnitId ? { org_unit_id: orgUnitId } : {}),
+    },
   });
   if (!createdEmitted) {
+    if (assignmentId) {
+      await admin.from("employee_assignment").delete().eq("id", assignmentId).eq("tenant_id", ctx.tenantId);
+    }
     await admin.from("employee").delete().eq("id", data.id).eq("tenant_id", ctx.tenantId);
     return fail("write_failed");
   }
@@ -176,13 +255,22 @@ export async function createEmployee(input: CreateEmployeeInput): Promise<HrActi
     entity: "employee",
     entityId: data.id,
     // Safe metadata only — no contact values.
-    after: { employee_number: numData, department: input.department, status: "DRAFT" },
+    after: {
+      employee_number: numData,
+      department: input.department,
+      status: "DRAFT",
+      ...(orgUnitId ? { org_unit_id: orgUnitId } : {}),
+    },
   });
   return { ok: true, id: data.id };
 }
 
-/** Editable employment/contact fields. Employment_number and status are NOT here. */
-export type UpdateEmployeeInput = Partial<CreateEmployeeInput>;
+/**
+ * Editable employment/contact fields. Employee_number and status are NOT here;
+ * neither are the creation-only inputs (orgUnitId — placement changes go
+ * through the assignment engine; allowDuplicateName — a creation confirmation).
+ */
+export type UpdateEmployeeInput = Partial<Omit<CreateEmployeeInput, "orgUnitId" | "allowDuplicateName">>;
 
 const FIELD_MAP: Record<keyof UpdateEmployeeInput, keyof Tbl["employee"]["Update"]> = {
   firstName: "first_name",
