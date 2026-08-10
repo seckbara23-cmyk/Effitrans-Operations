@@ -66,6 +66,11 @@ const ERRORS_FR: Record<string, string> = {
   activation_refused: "Mise en service refusée — voir les motifs ci-dessous.",
   not_legacy_active: "Cette boîte n'est pas en mise en service héritée.",
   reason_required: "Un motif est obligatoire.",
+  // EMP-5H.1 — the duplicate guard: an identical repeat records nothing new.
+  duplicate_decision:
+    "Cette décision identique est déjà enregistrée — elle est affichée dans "
+    + "l'encadré « Décision enregistrée ». Modifiez la décision ou le motif si "
+    + "le contexte a changé.",
 };
 
 const LEGACY_DECISIONS: { value: string; label: string }[] = [
@@ -76,6 +81,13 @@ const LEGACY_DECISIONS: { value: string; label: string }[] = [
   { value: "KEEP_RESTRICTED", label: "E — conserver temporairement, en accès restreint" },
 ];
 
+export type LegacyDecisionDisplay = {
+  decision: string;
+  reason: string;
+  occurredAt: string;
+  actorEmail: string | null;
+};
+
 export function MailboxAdminPanel({
   mailboxes,
   views,
@@ -83,6 +95,7 @@ export function MailboxAdminPanel({
   members,
   canProvision,
   canManageMembers,
+  legacyDecisions = {},
 }: {
   mailboxes: MailboxSummary[];
   /** Server-decided lifecycle view per mailbox id. */
@@ -91,9 +104,16 @@ export function MailboxAdminPanel({
   members: MailboxMember[];
   canProvision: boolean;
   canManageMembers: boolean;
+  /**
+   * EMP-5H.1 — latest recorded legacy decision per mailbox id, read
+   * server-side FROM THE AUDIT TRAIL. Display only: nothing here feeds the
+   * lifecycle view, and rendering a decision changes no state.
+   */
+  legacyDecisions?: Record<string, LegacyDecisionDisplay>;
 }) {
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const [newAddress, setNewAddress] = useState("");
   const [newLabel, setNewLabel] = useState("");
@@ -112,11 +132,17 @@ export function MailboxAdminPanel({
   const [legacyDecision, setLegacyDecision] = useState(LEGACY_DECISIONS[0].value);
   const [legacyReason, setLegacyReason] = useState("");
 
-  const run = (fn: () => Promise<{ ok: boolean; error?: string }>) => {
+  // EMP-5H.1 — success used to look identical to failure on this surface (the
+  // legacy decision was recorded three times in one sitting because the screen
+  // did not change). Actions that persist something invisible on this panel
+  // pass a success message; it renders where errors do.
+  const run = (fn: () => Promise<{ ok: boolean; error?: string }>, successMsg?: string) => {
     setError(null);
+    setSuccess(null);
     start(async () => {
       const res = await fn();
       if (!res.ok) setError(ERRORS_FR[res.error ?? ""] ?? `Échec : ${res.error}`);
+      else if (successMsg) setSuccess(successMsg);
     });
   };
 
@@ -350,6 +376,35 @@ export function MailboxAdminPanel({
                   modifiée : la plateforme enregistre une décision, elle ne la prend pas. Les
                   capacités qui exigent une preuve restent indisponibles.
                 </p>
+                {/* EMP-5H.1 — the recorded decision, visible WHERE it was taken.
+                    Read from the audit trail; rendering it changes nothing. */}
+                {legacyDecisions[selected.id] ? (
+                  <div className="mt-2 rounded-lg border border-teal-200 bg-teal-50 p-2.5">
+                    <p className="text-xs font-semibold text-teal-900">
+                      Décision enregistrée — aucune modification de la boîte
+                    </p>
+                    <p className="mt-1 text-[11px] text-teal-900">
+                      <strong>
+                        {LEGACY_DECISIONS.find((d) => d.value === legacyDecisions[selected.id].decision)?.label
+                          ?? legacyDecisions[selected.id].decision}
+                      </strong>
+                      {" — le "}
+                      {new Date(legacyDecisions[selected.id].occurredAt).toLocaleString("fr-FR")}
+                      {legacyDecisions[selected.id].actorEmail
+                        ? ` par ${legacyDecisions[selected.id].actorEmail}`
+                        : ""}
+                    </p>
+                    <p className="mt-1 text-[11px] italic text-teal-800">
+                      « {legacyDecisions[selected.id].reason} »
+                    </p>
+                    <p className="mt-1 text-[10px] text-teal-700">
+                      Conservée dans le journal d&apos;audit. Cette décision ne vérifie pas la
+                      boîte, n&apos;établit pas la provenance, n&apos;active ni ne désactive rien, et
+                      ne modifie pas la boîte réelle chez le fournisseur — la mise en
+                      conformité passe par le cycle de vie ordinaire.
+                    </p>
+                  </div>
+                ) : null}
                 {canProvision ? (
                   <div className="mt-2 space-y-2">
                     <select
@@ -367,11 +422,15 @@ export function MailboxAdminPanel({
                     />
                     <button
                       type="button" disabled={pending || !legacyReason.trim()}
-                      onClick={() => run(() => recordLegacyActiveDecision(
-                        selected.id,
-                        legacyDecision as "CONFIRM_PERSONAL",
-                        legacyReason,
-                      ))}
+                      onClick={() => run(
+                        () => recordLegacyActiveDecision(
+                          selected.id,
+                          legacyDecision as "CONFIRM_PERSONAL",
+                          legacyReason,
+                        ).then((r) => { if (r.ok) setLegacyReason(""); return r; }),
+                        "Décision enregistrée — elle apparaît dans l'encadré « Décision "
+                        + "enregistrée » et dans le journal d'audit. La boîte n'a pas été modifiée.",
+                      )}
                       className="rounded-lg bg-amber-700 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
                     >
                       Enregistrer la décision (sans modifier la boîte)
@@ -658,6 +717,7 @@ export function MailboxAdminPanel({
         )}
 
         {error ? <p className="mt-3 text-xs text-red-700" role="alert">{error}</p> : null}
+        {success ? <p className="mt-3 text-xs text-teal-700" role="status">{success}</p> : null}
       </section>
     </div>
   );

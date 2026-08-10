@@ -252,6 +252,67 @@ export async function countProvisioningAdministrators(tenantId: string): Promise
   return distinct.size;
 }
 
+/**
+ * EMP-5H.1 — the latest recorded legacy governance decision per mailbox, read
+ * FROM THE AUDIT TRAIL (the one place recordLegacyActiveDecision persists to;
+ * no second decision table exists, deliberately). Display-only: any read
+ * failure yields an empty map, and NOTHING in the lifecycle or readiness model
+ * consumes this — a visible decision changes no state.
+ */
+export type LegacyDecisionRecord = {
+  decision: string;
+  reason: string;
+  occurredAt: string;
+  actorEmail: string | null;
+};
+
+export async function latestLegacyDecisions(
+  tenantId: string,
+  mailboxIds: string[],
+): Promise<Record<string, LegacyDecisionRecord>> {
+  if (mailboxIds.length === 0) return {};
+  const admin = getAdminSupabaseClient();
+
+  const { data, error } = await admin
+    .from("audit_log")
+    .select("entity_id, occurred_at, actor_id, after")
+    .eq("tenant_id", tenantId)
+    .eq("action", "ec.mailbox.legacy_decision")
+    .eq("entity", "ec_mailbox")
+    .in("entity_id", mailboxIds)
+    .order("occurred_at", { ascending: false });
+  if (error || !data) return {};
+
+  const latest: Record<string, { occurred_at: string; actor_id: string | null; after: unknown }> = {};
+  for (const row of data as { entity_id: string | null; occurred_at: string; actor_id: string | null; after: unknown }[]) {
+    if (row.entity_id && !latest[row.entity_id]) latest[row.entity_id] = row;
+  }
+
+  const actorIds = [...new Set(Object.values(latest).map((r) => r.actor_id).filter(Boolean))] as string[];
+  const emails = new Map<string, string>();
+  if (actorIds.length > 0) {
+    const { data: actors } = await admin
+      .from("app_user")
+      .select("id, email")
+      .eq("tenant_id", tenantId)
+      .in("id", actorIds);
+    for (const a of actors ?? []) emails.set(a.id, a.email);
+  }
+
+  const out: Record<string, LegacyDecisionRecord> = {};
+  for (const [mailboxId, row] of Object.entries(latest)) {
+    const after = (row.after ?? {}) as { decision?: unknown; reason?: unknown };
+    if (typeof after.decision !== "string") continue;
+    out[mailboxId] = {
+      decision: after.decision,
+      reason: typeof after.reason === "string" ? after.reason : "",
+      occurredAt: row.occurred_at,
+      actorEmail: row.actor_id ? emails.get(row.actor_id) ?? null : null,
+    };
+  }
+  return out;
+}
+
 /** Members of one mailbox, revoked rows included and labelled. */
 export async function listMailboxMembers(
   tenantId: string,

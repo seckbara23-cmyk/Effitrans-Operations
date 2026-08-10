@@ -7,7 +7,7 @@ import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import {
   listMailboxSummaries, listMailboxMembers, lifecycleFacts,
-  countProvisioningAdministrators,
+  countProvisioningAdministrators, latestLegacyDecisions,
 } from "@/lib/ec/mailboxes/membership";
 import { buildLifecycleView, type MailboxLifecycleView } from "@/lib/ec/mailboxes/lifecycle";
 import { MailboxAdminPanel } from "@/components/ec/mailbox-admin-panel";
@@ -69,6 +69,12 @@ export default async function EnterpriseMailAdminPage({
     });
   }
 
+  // EMP-5H.1 — the latest recorded governance decision for each legacy-active
+  // mailbox, read from the audit trail so a recorded act is visible where it
+  // was taken. Display-only: it feeds no view and changes no state.
+  const legacyIds = mailboxes.filter((m) => views[m.id].legacyActive).map((m) => m.id);
+  const legacyDecisions = await latestLegacyDecisions(user.tenantId, legacyIds);
+
   const pending = mailboxes.filter((m) => views[m.id].state === "CONFIGURATION_REQUIRED").length;
   const failed = mailboxes.filter((m) => views[m.id].state === "FAILED").length;
   const active = mailboxes.filter((m) => views[m.id].state === "ACTIVE").length;
@@ -125,6 +131,7 @@ export default async function EnterpriseMailAdminPage({
         members={members}
         canProvision={canProvision}
         canManageMembers={canManageMembers}
+        legacyDecisions={legacyDecisions}
       />
     </div>
   );

@@ -766,6 +766,29 @@ export async function recordLegacyActiveDecision(
   if (!facts) return { ok: false, error: "mailbox_not_found" };
   if (!isLegacyActive(facts)) return { ok: false, error: "not_legacy_active" };
 
+  // EMP-5H.1 — duplicate guard. Success used to look identical to failure on
+  // this surface, and the SAME decision was recorded three times in one
+  // sitting. An IDENTICAL repeat (same decision, same reason) adds no
+  // information to the trail and is refused with a pointer to the visible
+  // record; a changed decision or reason is a NEW governance act and still
+  // records. Append-only semantics untouched — nothing is deleted or rewritten,
+  // including the historical duplicates.
+  const gAdmin = getAdminSupabaseClient();
+  const { data: prior } = await gAdmin
+    .from("audit_log")
+    .select("after")
+    .eq("tenant_id", user.tenantId)
+    .eq("action", AuditActions.EC_MAILBOX_LEGACY_DECISION)
+    .eq("entity", "ec_mailbox")
+    .eq("entity_id", mailboxId)
+    .order("occurred_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const priorAfter = (prior?.after ?? null) as { decision?: unknown; reason?: unknown } | null;
+  if (priorAfter && priorAfter.decision === decision && priorAfter.reason === reason.slice(0, 500)) {
+    return { ok: false, error: "duplicate_decision" };
+  }
+
   // DELIBERATELY NO MAILBOX WRITE. Recording an intention is not carrying it
   // out, and a decision that quietly retyped or disabled a live corporate
   // address would be exactly the disruption this programme forbids.
