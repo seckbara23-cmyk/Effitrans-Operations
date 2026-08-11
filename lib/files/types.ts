@@ -57,6 +57,24 @@ export type FileListItem = {
   transportMode: TransportMode | null;
   status: FileStatus;
   priority: Priority;
+  /**
+   * MAYA-P0.6-B — the MAYA-compatible business name, DERIVED server-side from
+   * direction × mode × cargo form × regime and stored nowhere.
+   *
+   * `null` means "no MAYA name applies here", and it means that for two
+   * different reasons the surface must treat identically: the four dimensions
+   * match no MAYA type, OR the viewer lacks `customs:read` and the regime
+   * dimension is therefore unreadable. Both fall back to the generic label —
+   * never to a partial name, which would silently assert a non-suspensive
+   * regime the viewer is not entitled to know.
+   */
+  mayaLabel: string | null;
+  /** The customer's own reference (« Réf. Client »). */
+  clientReference: string | null;
+  /** PLATFORM_NATIVE | MAYA_IMPORT — the dossier's origin. */
+  provenance: string;
+  /** The original MAYA dossier number. OPAQUE: displayed, never parsed. */
+  legacyReference: string | null;
 };
 
 /** Sort keys for the dossier work queue (Phase 1.4). */

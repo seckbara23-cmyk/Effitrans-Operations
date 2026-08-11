@@ -54,12 +54,28 @@ export function FilesTable({ files, canCreate }: { files: FileListItem[]; canCre
               {files.map((f) => (
                 <tr key={f.id} className="hover:bg-slate-50/60">
                   <td className="px-4 py-3">
+                    {/* The NATIVE Effitrans reference is the identity: it is what
+                        links, sorts and is quoted. A migrated dossier shows its
+                        original MAYA number underneath as a secondary reference —
+                        opaque text, never parsed, never a key. */}
                     <Link href={`/files/${f.id}`} className="tabular font-medium text-navy-900 hover:text-teal-700">
                       {f.fileNumber}
                     </Link>
+                    {f.legacyReference && (
+                      <span className="block text-[11px] text-slate-400">
+                        Réf. MAYA {f.legacyReference}
+                      </span>
+                    )}
                   </td>
-                  <td className="px-4 py-3 text-slate-600">{t.files.types[f.type]}</td>
-                  <td className="px-4 py-3 text-slate-600">{f.clientName ?? t.common.none}</td>
+                  {/* MAYA-compatible business name when it can be derived in
+                      full; otherwise the generic label. Never a partial name. */}
+                  <td className="px-4 py-3 text-slate-600">{f.mayaLabel ?? t.files.types[f.type]}</td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {f.clientName ?? t.common.none}
+                    {f.clientReference && (
+                      <span className="block text-[11px] text-slate-400">Réf. {f.clientReference}</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-slate-600">{f.transportMode ? t.files.modes[f.transportMode] : t.common.none}</td>
                   <td className="px-4 py-3">
                     <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${PRIORITY_STYLE[f.priority] ?? "bg-slate-100 text-slate-500"}`}>

@@ -233,7 +233,20 @@ export default async function FileDetailPage({ params }: { params: { id: string 
 
   return (
     <div className="animate-fade-in space-y-6">
-      {header(`${file.fileNumber}`)}
+      {/* MAYA-P0.6-B — naming consistency: the header carries the same derived
+          business name the list shows, so a dossier does not change identity
+          between the two surfaces. Falls back to the generic label when the
+          name cannot be derived in full (including for a viewer without
+          customs:read). */}
+      <PageHeader
+        meta="Opérations"
+        title={file.fileNumber}
+        subtitle={[
+          mayaLabel?.labelFr ?? t.files.types[file.type],
+          file.legacyReference ? `Réf. MAYA ${file.legacyReference}` : null,
+          file.clientReference ? `Réf. client ${file.clientReference}` : null,
+        ].filter(Boolean).join(" · ")}
+      />
       <Link href="/files" className="text-sm text-teal-700 hover:underline">
         ← {t.files.backToList}
       </Link>

@@ -13,6 +13,8 @@ import "server-only";
 import { getServerSupabaseClient } from "@/lib/supabase/server";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
+import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
+import { deriveMayaLabelFromRow } from "./taxonomy";
 import { resolveFileScope } from "@/lib/authz/visibility";
 import { staffDisplayName } from "@/lib/users/lifecycle";
 import { applyFileFilters, sortFiles, type FileSearchRow } from "./filter";
@@ -39,6 +41,9 @@ type FileListRow = {
   account_manager_id: string | null;
   client_id: string | null;
   client: { name: string } | null;
+  client_reference: string | null;
+  provenance: string;
+  legacy_reference: string | null;
   shipment:
     | {
         transport_mode: string | null;
@@ -47,6 +52,7 @@ type FileListRow = {
         bl_awb_ref: string | null;
         container_ref: string | null;
         eta: string | null;
+        cargo_form: string | null;
       }[]
     | null;
 };
@@ -62,7 +68,7 @@ export async function listFiles(criteria: FileFilterCriteria = {}): Promise<File
   let query = supabase
     .from("operational_file")
     .select(
-      "id, file_number, type, status, priority, created_at, account_manager_id, client_id, client:client_id(name), shipment(transport_mode, origin, destination, bl_awb_ref, container_ref, eta)",
+      "id, file_number, type, status, priority, created_at, account_manager_id, client_id, client_reference, provenance, legacy_reference, client:client_id(name), shipment(transport_mode, origin, destination, bl_awb_ref, container_ref, eta, cargo_form)",
     )
     .eq("tenant_id", user.tenantId);
   if (!scope.all) query = query.in("id", scope.ids);
@@ -94,15 +100,52 @@ export async function listFiles(criteria: FileFilterCriteria = {}): Promise<File
   const filtered = applyFileFilters(rows, { ...criteria, currentUserId: user.id }, new Date());
   const sorted = sortFiles(filtered, criteria.sort);
 
-  return sorted.map((f) => ({
-    id: f.id,
-    fileNumber: f.fileNumber,
-    type: f.type as FileType,
-    clientName: f.clientName,
-    transportMode: f.transportMode as TransportMode | null,
-    status: f.status as FileStatus,
-    priority: f.priority as Priority,
-  }));
+  // MAYA-P0.6-B — the regime dimension of the derived name.
+  //
+  // PERMISSION: read ONLY when the viewer holds `customs:read` — the same gate
+  // P0.5-B applied on the dossier page. Without it this query does not run at
+  // all, so there is nothing to leak and nothing to pay for.
+  //
+  // PERFORMANCE: ONE query for the whole page, never one per row. Only dossiers
+  // that actually carry a regime are fetched (`regime is not null`), which is a
+  // small minority, so the map stays cheap however long the list is.
+  const regimes = new Map<string, string>();
+  const permissions = await getEffectivePermissions(user.id);
+  if (hasPermission(permissions, "customs:read")) {
+    const { data: customs } = await supabase
+      .from("customs_record")
+      .select("file_id, regime")
+      .eq("tenant_id", user.tenantId)
+      .not("regime", "is", null);
+    for (const c of customs ?? []) regimes.set(c.file_id as string, String(c.regime));
+  }
+
+  const byId = new Map(((data ?? []) as FileListRow[]).map((f) => [f.id, f]));
+
+  return sorted.map((f) => {
+    const raw = byId.get(f.id);
+    const shipment = raw?.shipment?.[0] ?? null;
+    return {
+      id: f.id,
+      fileNumber: f.fileNumber,
+      type: f.type as FileType,
+      clientName: f.clientName,
+      transportMode: f.transportMode as TransportMode | null,
+      status: f.status as FileStatus,
+      priority: f.priority as Priority,
+      // Derived in memory from facts already read. `deriveMayaLabelFromRow` is
+      // THE taxonomy authority; nothing here re-implements a naming rule.
+      mayaLabel: deriveMayaLabelFromRow({
+        type: f.type as FileType,
+        transportMode: f.transportMode as TransportMode | null,
+        cargoForm: shipment?.cargo_form ?? null,
+        regime: regimes.get(f.id) ?? null,
+      })?.labelFr ?? null,
+      clientReference: raw?.client_reference ?? null,
+      provenance: raw?.provenance ?? "PLATFORM_NATIVE",
+      legacyReference: raw?.legacy_reference ?? null,
+    };
+  });
 }
 
 /**
