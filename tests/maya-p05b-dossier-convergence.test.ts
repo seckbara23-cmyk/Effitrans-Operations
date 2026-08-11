@@ -303,11 +303,13 @@ describe("migration lineage — durable, minimal, and not an import pipeline", (
     expect(m).not.toContain("file_counter");
   });
 
-  it("NO import pipeline exists in this phase (P0.5-C)", () => {
+  it("THIS migration builds no import pipeline (that is P0.5-C's job)", () => {
+    // Pinning "no MAYA staging migration exists anywhere" was a moment-in-time
+    // proxy that broke the instant P0.5-C legitimately shipped one. The durable
+    // property is about THIS phase's migration: it creates no table at all, so
+    // it cannot have built a pipeline.
     const m = sqlCode(MIGRATION);
     expect(m).not.toMatch(/create table/i);
-    const migrations = readdirSync(fileURLToPath(new URL("../supabase/migrations", import.meta.url)));
-    expect(migrations.filter((f) => /maya.*(import|staging)/i.test(f))).toEqual([]);
     // No action writes provenance/legacy_reference: only a future import will.
     const actions = code("lib/files/actions.ts");
     expect(actions).not.toContain("provenance:");
@@ -372,12 +374,14 @@ describe("untouched — the invariants this phase promised not to move", () => {
 
 // ===========================================================================
 describe("housekeeping", () => {
-  it("build-info points at this migration and counts it", () => {
-    const b = read("lib/platform/ops/build-info.ts");
-    expect(b).toContain('LATEST_MIGRATION = "20260822000001_dossier_fact_convergence"');
-    const count = readdirSync(fileURLToPath(new URL("../supabase/migrations", import.meta.url)))
-      .filter((f) => f.endsWith(".sql")).length;
-    expect(b).toContain(`MIGRATION_COUNT = ${count}`);
+  it("this migration ships and is counted", () => {
+    // LATEST_MIGRATION legitimately moves on with every later phase, so pinning
+    // it here was a proxy. What must stay true is that THIS migration is on
+    // disk and inside the count build-info reports.
+    const migrations = readdirSync(fileURLToPath(new URL("../supabase/migrations", import.meta.url)))
+      .filter((f) => f.endsWith(".sql"));
+    expect(migrations).toContain("20260822000001_dossier_fact_convergence.sql");
+    expect(read("lib/platform/ops/build-info.ts")).toContain(`MIGRATION_COUNT = ${migrations.length}`);
   });
 
   it("the DB suite is wired into CI", () => {

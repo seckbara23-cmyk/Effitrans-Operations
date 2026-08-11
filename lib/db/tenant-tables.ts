@@ -181,6 +181,13 @@ export const TENANT_SCOPED_TABLES = new Set<string>([
   "document_review",
   // append-only evidence consumption (Phase WES-5D).
   "evidence_consumption",
+  // MAYA migration staging (MAYA-P0.5-C). All three carry tenant_id and are
+  // read by the admin client, so they must be visible to the leak guard from
+  // the day they ship — the HR-0P F1 lesson, applied at birth rather than
+  // retrofitted.
+  "maya_import_batch",
+  "maya_import_row",
+  "maya_import_issue",
 ]);
 
 /**

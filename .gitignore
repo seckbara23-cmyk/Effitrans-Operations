@@ -49,3 +49,25 @@ next-env.d.ts
 *.docx
 *.pptx
 docs/Logistic Pack/
+
+# MAYA legacy migration artifacts. The MAYA analysis workspace lives OUTSIDE this
+# repository (C:\Projects\MAYA Analysis) and nothing from it belongs here: these are
+# WINDEV/HFSQL program, data and connection formats carrying real client, dossier and
+# credential material, and this repository is PUBLIC. Extension-scoped on purpose —
+# a blanket rule would hide legitimate sources elsewhere in the tree. Only synthetic
+# structure-only fixtures under tests/fixtures/ may ever be committed.
+*.wx
+*.WX
+*.wdd
+*.WDD
+*.wdk
+*.WDK
+*.fic
+*.FIC
+*.ndx
+*.NDX
+*.mmo
+*.MMO
+*.dpl
+*.DPL
+/maya-extracts/

@@ -549,6 +549,99 @@ export type Database = {
           },
         ];
       };
+      maya_import_batch: {
+        Row: {
+          id: string; tenant_id: string; batch_number: string; source_system: string;
+          source_artifact: string | null; source_artifact_sha256: string | null;
+          source_extracted_at: string | null; status: string; row_count: number;
+          valid_count: number; warning_count: number; rejected_count: number;
+          duplicate_count: number; unresolved_count: number;
+          prepared_by: string | null; prepared_at: string;
+          reviewed_by: string | null; reviewed_at: string | null; review_note: string | null;
+          created_at: string; updated_at: string;
+        };
+        Insert: {
+          id?: string; tenant_id: string; batch_number: string; source_system?: string;
+          source_artifact?: string | null; source_artifact_sha256?: string | null;
+          source_extracted_at?: string | null; status?: string; row_count?: number;
+          valid_count?: number; warning_count?: number; rejected_count?: number;
+          duplicate_count?: number; unresolved_count?: number;
+          prepared_by?: string | null; prepared_at?: string;
+          reviewed_by?: string | null; reviewed_at?: string | null; review_note?: string | null;
+          created_at?: string; updated_at?: string;
+        };
+        Update: {
+          status?: string; row_count?: number; valid_count?: number; warning_count?: number;
+          rejected_count?: number; duplicate_count?: number; unresolved_count?: number;
+          reviewed_by?: string | null; reviewed_at?: string | null; review_note?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      maya_import_row: {
+        Row: {
+          id: string; tenant_id: string; batch_id: string; source_row_number: number;
+          source_table: string; source_record_id: string | null;
+          source_dossier_reference: string | null; source_parent_reference: string | null;
+          source_row_hash: string; raw: unknown;
+          source_type_label: string | null; normalized_direction: string | null;
+          normalized_mode: string | null; normalized_cargo_form: string | null;
+          normalized_regime: string | null; taxonomy_resolution: string;
+          client_reference_raw: string | null; client_name_raw: string | null;
+          matched_client_id: string | null; opening_date: string | null;
+          vessel_or_flight: string | null; bl_awb_ref: string | null;
+          origin_raw: string | null; destination_raw: string | null;
+          goods_description: string | null; goods_nature: string | null;
+          supplier_name: string | null; cargo_quantity: number | null;
+          cargo_quantity_unit: string | null; net_weight_kg: number | null;
+          gross_weight_kg: number | null; volume_m3: number | null;
+          package_count: number | null; container_count: number | null;
+          container_numbers: unknown; declaration_reference: string | null;
+          warehouse_entry_date: string | null; processing_due_date: string | null;
+          delivery_reference: string | null; parent_resolution: string;
+          status: string; created_at: string;
+        };
+        Insert: {
+          id?: string; tenant_id: string; batch_id: string; source_row_number: number;
+          source_table: string; source_record_id?: string | null;
+          source_dossier_reference?: string | null; source_parent_reference?: string | null;
+          source_row_hash: string; raw: unknown;
+          source_type_label?: string | null; normalized_direction?: string | null;
+          normalized_mode?: string | null; normalized_cargo_form?: string | null;
+          normalized_regime?: string | null; taxonomy_resolution?: string;
+          client_reference_raw?: string | null; client_name_raw?: string | null;
+          matched_client_id?: string | null; opening_date?: string | null;
+          vessel_or_flight?: string | null; bl_awb_ref?: string | null;
+          origin_raw?: string | null; destination_raw?: string | null;
+          goods_description?: string | null; goods_nature?: string | null;
+          supplier_name?: string | null; cargo_quantity?: number | null;
+          cargo_quantity_unit?: string | null; net_weight_kg?: number | null;
+          gross_weight_kg?: number | null; volume_m3?: number | null;
+          package_count?: number | null; container_count?: number | null;
+          container_numbers?: unknown; declaration_reference?: string | null;
+          warehouse_entry_date?: string | null; processing_due_date?: string | null;
+          delivery_reference?: string | null; parent_resolution?: string;
+          status?: string; created_at?: string;
+        };
+        Update: {
+          status?: string; parent_resolution?: string; matched_client_id?: string | null;
+        };
+        Relationships: [];
+      };
+      maya_import_issue: {
+        Row: {
+          id: string; tenant_id: string; batch_id: string; row_id: string | null;
+          severity: string; code: string; field: string | null; message_fr: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string; tenant_id: string; batch_id: string; row_id?: string | null;
+          severity: string; code: string; field?: string | null; message_fr: string;
+          created_at?: string;
+        };
+        Update: { severity?: string; code?: string; field?: string | null; message_fr?: string };
+        Relationships: [];
+      };
       operational_file: {
         Row: {
           id: string;
