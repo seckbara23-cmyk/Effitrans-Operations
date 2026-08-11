@@ -566,6 +566,12 @@ export type Database = {
           created_by: string | null;
           created_at: string;
           updated_at: string;
+          parent_file_id: string | null;
+          client_reference: string | null;
+          on_behalf_of: string | null;
+          processing_due_date: string | null;
+          provenance: string;
+          legacy_reference: string | null;
         };
         Insert: {
           id?: string;
@@ -583,6 +589,12 @@ export type Database = {
           created_by?: string | null;
           created_at?: string;
           updated_at?: string;
+          parent_file_id?: string | null;
+          client_reference?: string | null;
+          on_behalf_of?: string | null;
+          processing_due_date?: string | null;
+          provenance?: string;
+          legacy_reference?: string | null;
         };
         Update: {
           id?: string;
@@ -600,6 +612,12 @@ export type Database = {
           created_by?: string | null;
           created_at?: string;
           updated_at?: string;
+          parent_file_id?: string | null;
+          client_reference?: string | null;
+          on_behalf_of?: string | null;
+          processing_due_date?: string | null;
+          provenance?: string;
+          legacy_reference?: string | null;
         };
         Relationships: [
           {
@@ -664,6 +682,16 @@ export type Database = {
           air_tracking_version: number;
           created_at: string;
           updated_at: string;
+          cargo_form: string | null;
+          quantity: number | null;
+          quantity_unit: string | null;
+          net_weight_kg: number | null;
+          gross_weight_kg: number | null;
+          volume_m3: number | null;
+          package_count: number | null;
+          goods_description: string | null;
+          supplier_name: string | null;
+          warehouse_entry_date: string | null;
         };
         Insert: {
           id?: string;
@@ -705,6 +733,16 @@ export type Database = {
           air_tracking_version?: number;
           created_at?: string;
           updated_at?: string;
+          cargo_form?: string | null;
+          quantity?: number | null;
+          quantity_unit?: string | null;
+          net_weight_kg?: number | null;
+          gross_weight_kg?: number | null;
+          volume_m3?: number | null;
+          package_count?: number | null;
+          goods_description?: string | null;
+          supplier_name?: string | null;
+          warehouse_entry_date?: string | null;
         };
         Update: {
           id?: string;
@@ -746,6 +784,16 @@ export type Database = {
           air_tracking_version?: number;
           created_at?: string;
           updated_at?: string;
+          cargo_form?: string | null;
+          quantity?: number | null;
+          quantity_unit?: string | null;
+          net_weight_kg?: number | null;
+          gross_weight_kg?: number | null;
+          volume_m3?: number | null;
+          package_count?: number | null;
+          goods_description?: string | null;
+          supplier_name?: string | null;
+          warehouse_entry_date?: string | null;
         };
         Relationships: [
           {

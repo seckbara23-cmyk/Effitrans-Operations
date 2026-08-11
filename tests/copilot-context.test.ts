@@ -26,6 +26,15 @@ const FILE: FileDetail = {
   assignedToUserId: null,
   assigneeName: null,
   assigneeEmail: null,
+  // MAYA-P0.5-B dossier facts — present on the projection, absent on this
+  // fixture's dossier. The copilot must be unaffected by them.
+  parentFileId: null,
+  parentFileNumber: null,
+  clientReference: null,
+  onBehalfOf: null,
+  processingDueDate: null,
+  provenance: "PLATFORM_NATIVE",
+  legacyReference: null,
   shipment: {
     transportMode: "SEA",
     incoterm: "CIF",
@@ -36,6 +45,16 @@ const FILE: FileDetail = {
     vesselOrFlight: "Vessel X",
     blAwbRef: "BL123",
     containerRef: "CONT456",
+    cargoForm: null,
+    quantity: null,
+    quantityUnit: null,
+    netWeightKg: null,
+    grossWeightKg: null,
+    volumeM3: null,
+    packageCount: null,
+    goodsDescription: null,
+    supplierName: null,
+    warehouseEntryDate: null,
   },
   history: [],
 };

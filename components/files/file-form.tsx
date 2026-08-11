@@ -7,6 +7,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { t } from "@/lib/i18n";
+import { CARGO_FORMS, CARGO_FORM_LABELS_FR } from "@/lib/files/taxonomy";
 import { createFile, updateFile } from "@/lib/files/actions";
 import type {
   ActionResult,
@@ -25,6 +26,14 @@ function errorMessage(code: string): string {
 const input =
   "w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-navy-900 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20";
 
+/** An empty field means "not recorded" — never 0. */
+function numberOrNull(v: string): number | null {
+  const t = v.trim();
+  if (!t) return null;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
+}
+
 const FILE_TYPES: FileType[] = ["IMP", "EXP", "TRP", "HND"];
 const MODES: TransportMode[] = ["SEA", "AIR", "ROAD", "MULTIMODAL"];
 const PRIORITIES: Priority[] = ["low", "normal", "high", "critical"];
@@ -34,12 +43,20 @@ export function FileForm({
   fileId,
   initial,
   clients,
+  parents = [],
   canUpdate = true,
 }: {
   mode: "create" | "edit";
   fileId?: string;
   initial?: FileDetail;
   clients: { id: string; name: string }[];
+  /**
+   * MAYA-P0.5-B — dossiers this one may be attached to (« Dossier mère »).
+   * Optional: with none supplied the picker is simply absent. Choosing a
+   * parent records a LINK and nothing else — no groupage, no cascade, no
+   * shared lifecycle (Q5 unanswered).
+   */
+  parents?: { id: string; fileNumber: string }[];
   canUpdate?: boolean;
 }) {
   const router = useRouter();
@@ -59,6 +76,21 @@ export function FileForm({
   const [vesselOrFlight, setVesselOrFlight] = useState(s?.vesselOrFlight ?? "");
   const [blAwbRef, setBlAwbRef] = useState(s?.blAwbRef ?? "");
   const [containerRef, setContainerRef] = useState(s?.containerRef ?? "");
+  // MAYA-P0.5-B — cargo declaration + dossier facts. Optional throughout.
+  const [cargoForm, setCargoForm] = useState(s?.cargoForm ?? "");
+  const [quantity, setQuantity] = useState(s?.quantity != null ? String(s.quantity) : "");
+  const [quantityUnit, setQuantityUnit] = useState(s?.quantityUnit ?? "");
+  const [netWeightKg, setNetWeightKg] = useState(s?.netWeightKg != null ? String(s.netWeightKg) : "");
+  const [grossWeightKg, setGrossWeightKg] = useState(s?.grossWeightKg != null ? String(s.grossWeightKg) : "");
+  const [volumeM3, setVolumeM3] = useState(s?.volumeM3 != null ? String(s.volumeM3) : "");
+  const [packageCount, setPackageCount] = useState(s?.packageCount != null ? String(s.packageCount) : "");
+  const [goodsDescription, setGoodsDescription] = useState(s?.goodsDescription ?? "");
+  const [supplierName, setSupplierName] = useState(s?.supplierName ?? "");
+  const [warehouseEntryDate, setWarehouseEntryDate] = useState(s?.warehouseEntryDate ?? "");
+  const [parentFileId, setParentFileId] = useState(initial?.parentFileId ?? "");
+  const [clientReference, setClientReference] = useState(initial?.clientReference ?? "");
+  const [onBehalfOf, setOnBehalfOf] = useState(initial?.onBehalfOf ?? "");
+  const [processingDueDate, setProcessingDueDate] = useState(initial?.processingDueDate ?? "");
 
   const editable = mode === "create" || canUpdate;
 
@@ -77,7 +109,21 @@ export function FileForm({
         vesselOrFlight,
         blAwbRef,
         containerRef,
+        cargoForm: cargoForm || null,
+        quantity: numberOrNull(quantity),
+        quantityUnit,
+        netWeightKg: numberOrNull(netWeightKg),
+        grossWeightKg: numberOrNull(grossWeightKg),
+        volumeM3: numberOrNull(volumeM3),
+        packageCount: numberOrNull(packageCount),
+        goodsDescription,
+        supplierName,
+        warehouseEntryDate: warehouseEntryDate || null,
       },
+      parentFileId: parentFileId || null,
+      clientReference,
+      onBehalfOf,
+      processingDueDate: processingDueDate || null,
     };
   }
 
@@ -178,6 +224,77 @@ export function FileForm({
             <Field label={t.files.form.container}>
               <input className={input} value={containerRef} disabled={!editable} onChange={(e) => setContainerRef(e.target.value)} />
             </Field>
+          </div>
+        </div>
+
+        {/* MAYA-P0.5-B — the cargo declaration. Every dossier can describe what
+            it carries, whatever its mode: a bulk export and a road-only file
+            had nowhere to record this before. All fields optional. */}
+        <div>
+          <p className="mb-2 text-sm font-semibold text-navy-900">Marchandise</p>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Field label="Forme">
+              <select className={input} value={cargoForm} disabled={!editable} onChange={(e) => setCargoForm(e.target.value)}>
+                <option value="">{t.common.none}</option>
+                {CARGO_FORMS.map((f) => (
+                  <option key={f} value={f}>{CARGO_FORM_LABELS_FR[f]}</option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Désignation">
+              <input className={input} value={goodsDescription} disabled={!editable} onChange={(e) => setGoodsDescription(e.target.value)} />
+            </Field>
+            <Field label="Fournisseur">
+              <input className={input} value={supplierName} disabled={!editable} onChange={(e) => setSupplierName(e.target.value)} />
+            </Field>
+            <Field label="Quantité">
+              <input className={input} inputMode="decimal" value={quantity} disabled={!editable} onChange={(e) => setQuantity(e.target.value)} />
+            </Field>
+            <Field label="Unité">
+              <input className={input} value={quantityUnit} disabled={!editable} onChange={(e) => setQuantityUnit(e.target.value)} />
+            </Field>
+            <Field label="Nombre de colis">
+              <input className={input} inputMode="numeric" value={packageCount} disabled={!editable} onChange={(e) => setPackageCount(e.target.value)} />
+            </Field>
+            <Field label="Poids net (kg)">
+              <input className={input} inputMode="decimal" value={netWeightKg} disabled={!editable} onChange={(e) => setNetWeightKg(e.target.value)} />
+            </Field>
+            <Field label="Poids brut (kg)">
+              <input className={input} inputMode="decimal" value={grossWeightKg} disabled={!editable} onChange={(e) => setGrossWeightKg(e.target.value)} />
+            </Field>
+            <Field label="Volume (m³)">
+              <input className={input} inputMode="decimal" value={volumeM3} disabled={!editable} onChange={(e) => setVolumeM3(e.target.value)} />
+            </Field>
+          </div>
+        </div>
+
+        {/* MAYA-P0.5-B — dossier facts. References and dates only: none of
+            them gates, routes or advances anything. */}
+        <div>
+          <p className="mb-2 text-sm font-semibold text-navy-900">Références & échéances</p>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Field label="Référence client">
+              <input className={input} value={clientReference} disabled={!editable} onChange={(e) => setClientReference(e.target.value)} />
+            </Field>
+            <Field label="Pour le compte de">
+              <input className={input} value={onBehalfOf} disabled={!editable} onChange={(e) => setOnBehalfOf(e.target.value)} />
+            </Field>
+            <Field label="Entrée en magasin">
+              <input type="date" className={input} value={warehouseEntryDate} disabled={!editable} onChange={(e) => setWarehouseEntryDate(e.target.value)} />
+            </Field>
+            <Field label="Échéance de traitement">
+              <input type="date" className={input} value={processingDueDate} disabled={!editable} onChange={(e) => setProcessingDueDate(e.target.value)} />
+            </Field>
+            {parents.length > 0 && (
+              <Field label="Dossier mère">
+                <select className={input} value={parentFileId} disabled={!editable} onChange={(e) => setParentFileId(e.target.value)}>
+                  <option value="">{t.common.none}</option>
+                  {parents.filter((p) => p.id !== fileId).map((p) => (
+                    <option key={p.id} value={p.id}>{p.fileNumber}</option>
+                  ))}
+                </select>
+              </Field>
+            )}
           </div>
         </div>
 

@@ -27,6 +27,10 @@ import type { ActionResult, FileInput, FileStatus, ShipmentInput } from "./types
 
 type Admin = ReturnType<typeof getAdminSupabaseClient>;
 
+/** Optional numbers: undefined and "" both mean "not recorded", never zero. */
+const num = (v: number | null | undefined): number | null =>
+  v === null || v === undefined || !Number.isFinite(v) ? null : v;
+
 function shipmentRow(tenantId: string, fileId: string, s: ShipmentInput | undefined) {
   return {
     tenant_id: tenantId,
@@ -40,6 +44,31 @@ function shipmentRow(tenantId: string, fileId: string, s: ShipmentInput | undefi
     vessel_or_flight: s?.vesselOrFlight?.trim() || null,
     bl_awb_ref: s?.blAwbRef?.trim() || null,
     container_ref: s?.containerRef?.trim() || null,
+    // MAYA-P0.5-B — the cargo declaration. Facts only.
+    cargo_form: s?.cargoForm?.trim() || null,
+    quantity: num(s?.quantity),
+    quantity_unit: s?.quantityUnit?.trim() || null,
+    net_weight_kg: num(s?.netWeightKg),
+    gross_weight_kg: num(s?.grossWeightKg),
+    volume_m3: num(s?.volumeM3),
+    package_count: num(s?.packageCount),
+    goods_description: s?.goodsDescription?.trim() || null,
+    supplier_name: s?.supplierName?.trim() || null,
+    warehouse_entry_date: s?.warehouseEntryDate?.trim() || null,
+  };
+}
+
+/**
+ * MAYA-P0.5-B dossier facts. `provenance` and `legacy_reference` are
+ * DELIBERATELY absent: they are written by a migration import (P0.5-C, not
+ * built), never by an operator creating a dossier here.
+ */
+function fileFacts(input: FileInput) {
+  return {
+    parent_file_id: input.parentFileId?.trim() || null,
+    client_reference: input.clientReference?.trim() || null,
+    on_behalf_of: input.onBehalfOf?.trim() || null,
+    processing_due_date: input.processingDueDate?.trim() || null,
   };
 }
 
@@ -83,10 +112,16 @@ export async function createFile(input: FileInput): Promise<ActionResult> {
       status: "DRAFT",
       priority: input.priority ?? "normal",
       created_by: admin.id,
+      ...fileFacts(input),
     })
     .select("id")
     .single();
-  if (error || !data) return { ok: false, error: error?.message ?? "create_failed" };
+  if (error || !data) {
+    // The parent guard raises in the database (other tenant, self, cycle);
+    // surface it as a refusal the form can name rather than a generic failure.
+    const msg = error?.message ?? "create_failed";
+    return { ok: false, error: /parent dossier/i.test(msg) ? "invalid_parent" : msg };
+  }
 
   // 1:1 shipment detail (always created; carries transport data when relevant).
   const { error: shipErr } = await supabase
@@ -126,12 +161,23 @@ export async function updateFile(id: string, input: FileInput): Promise<ActionRe
     .maybeSingle();
   if (!existing || existing.tenant_id !== admin.tenantId) return { ok: false, error: "not_found" };
 
+  // A dossier may never be its own parent; the database also proves it, but
+  // refusing here keeps the message specific.
+  if (input.parentFileId && input.parentFileId === id) return { ok: false, error: "invalid_parent" };
+
   const { error } = await supabase
     .from("operational_file")
-    .update({ type: input.type, client_id: input.clientId, priority: input.priority ?? "normal" })
+    .update({
+      type: input.type,
+      client_id: input.clientId,
+      priority: input.priority ?? "normal",
+      ...fileFacts(input),
+    })
     .eq("id", id)
     .eq("tenant_id", admin.tenantId);
-  if (error) return { ok: false, error: error.message };
+  if (error) {
+    return { ok: false, error: /parent dossier/i.test(error.message) ? "invalid_parent" : error.message };
+  }
 
   // Upsert the 1:1 shipment row.
   const { error: shipErr } = await supabase

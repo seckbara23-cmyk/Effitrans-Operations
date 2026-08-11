@@ -19,6 +19,22 @@ export type ShipmentInput = {
   vesselOrFlight?: string | null;
   blAwbRef?: string | null;
   containerRef?: string | null;
+  /**
+   * MAYA-P0.5-B — the cargo declaration every dossier type can carry. Before
+   * this, weight and volume existed only inside ocean_container /
+   * air_cargo_piece, so a bulk or road-only dossier could not describe its
+   * cargo at all. All optional; none is a workflow prerequisite.
+   */
+  cargoForm?: string | null;
+  quantity?: number | null;
+  quantityUnit?: string | null;
+  netWeightKg?: number | null;
+  grossWeightKg?: number | null;
+  volumeM3?: number | null;
+  packageCount?: number | null;
+  goodsDescription?: string | null;
+  supplierName?: string | null;
+  warehouseEntryDate?: string | null;
 };
 
 export type FileInput = {
@@ -26,6 +42,11 @@ export type FileInput = {
   clientId: string;
   priority?: Priority | null;
   shipment?: ShipmentInput;
+  /** MAYA-P0.5-B — dossier facts. Optional, never a prerequisite. */
+  parentFileId?: string | null;
+  clientReference?: string | null;
+  onBehalfOf?: string | null;
+  processingDueDate?: string | null;
 };
 
 export type FileListItem = {
@@ -95,6 +116,14 @@ export type FileDetail = {
   assignedToUserId: string | null;
   assigneeName: string | null;
   assigneeEmail: string | null;
+  /** MAYA-P0.5-B — dossier facts (display only; no workflow meaning). */
+  parentFileId: string | null;
+  parentFileNumber: string | null;
+  clientReference: string | null;
+  onBehalfOf: string | null;
+  processingDueDate: string | null;
+  provenance: string;
+  legacyReference: string | null;
   shipment: {
     transportMode: TransportMode | null;
     incoterm: string | null;
@@ -105,6 +134,16 @@ export type FileDetail = {
     vesselOrFlight: string | null;
     blAwbRef: string | null;
     containerRef: string | null;
+    cargoForm: string | null;
+    quantity: number | null;
+    quantityUnit: string | null;
+    netWeightKg: number | null;
+    grossWeightKg: number | null;
+    volumeM3: number | null;
+    packageCount: number | null;
+    goodsDescription: string | null;
+    supplierName: string | null;
+    warehouseEntryDate: string | null;
   } | null;
   history: FileTransition[];
 };

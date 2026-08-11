@@ -198,11 +198,24 @@ export async function getFile(id: string): Promise<FileDetail | null> {
   const { data: file } = await supabase
     .from("operational_file")
     .select(
-      "id, tenant_id, file_number, type, client_id, status, priority, opened_at, created_at, assigned_to_user_id, client:client_id(name)",
+      "id, tenant_id, file_number, type, client_id, status, priority, opened_at, created_at, assigned_to_user_id, parent_file_id, client_reference, on_behalf_of, processing_due_date, provenance, legacy_reference, client:client_id(name)",
     )
     .eq("id", id)
     .maybeSingle();
   if (!file) return null;
+
+  // MAYA-P0.5-B — the parent's HUMAN key for display. Same RLS-enforced client:
+  // a parent in another tenant is unreadable here exactly as it is unlinkable
+  // in the database.
+  let parentFileNumber: string | null = null;
+  if (file.parent_file_id) {
+    const { data: parent } = await supabase
+      .from("operational_file")
+      .select("file_number")
+      .eq("id", file.parent_file_id)
+      .maybeSingle();
+    parentFileNumber = parent?.file_number ?? null;
+  }
 
   // Assignee display name (Phase 3.2A). app_user is self-only under RLS, so a
   // user-context embed can't read another staff member's row — resolve the label
@@ -227,7 +240,7 @@ export async function getFile(id: string): Promise<FileDetail | null> {
   const { data: shipment } = await supabase
     .from("shipment")
     .select(
-      "transport_mode, incoterm, origin, destination, cargo_type, carrier_name, vessel_or_flight, bl_awb_ref, container_ref",
+      "transport_mode, incoterm, origin, destination, cargo_type, carrier_name, vessel_or_flight, bl_awb_ref, container_ref, cargo_form, quantity, quantity_unit, net_weight_kg, gross_weight_kg, volume_m3, package_count, goods_description, supplier_name, warehouse_entry_date",
     )
     .eq("file_id", id)
     .maybeSingle();
@@ -263,6 +276,13 @@ export async function getFile(id: string): Promise<FileDetail | null> {
     assignedToUserId: file.assigned_to_user_id,
     assigneeName,
     assigneeEmail,
+    parentFileId: file.parent_file_id,
+    parentFileNumber,
+    clientReference: file.client_reference,
+    onBehalfOf: file.on_behalf_of,
+    processingDueDate: file.processing_due_date,
+    provenance: file.provenance,
+    legacyReference: file.legacy_reference,
     shipment: shipment
       ? {
           transportMode: shipment.transport_mode as TransportMode | null,
@@ -274,6 +294,16 @@ export async function getFile(id: string): Promise<FileDetail | null> {
           vesselOrFlight: shipment.vessel_or_flight,
           blAwbRef: shipment.bl_awb_ref,
           containerRef: shipment.container_ref,
+          cargoForm: shipment.cargo_form,
+          quantity: shipment.quantity,
+          quantityUnit: shipment.quantity_unit,
+          netWeightKg: shipment.net_weight_kg,
+          grossWeightKg: shipment.gross_weight_kg,
+          volumeM3: shipment.volume_m3,
+          packageCount: shipment.package_count,
+          goodsDescription: shipment.goods_description,
+          supplierName: shipment.supplier_name,
+          warehouseEntryDate: shipment.warehouse_entry_date,
         }
       : null,
     history: (history ?? []).map((h) => ({

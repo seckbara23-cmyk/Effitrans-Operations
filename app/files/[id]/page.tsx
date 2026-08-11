@@ -5,7 +5,8 @@ import { PageHeader } from "@/components/ui/page-header";
 import { ProcessJourneyPanel } from "@/components/process/process-journey";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
-import { getFile, listAssignableStaff } from "@/lib/files/service";
+import { getFile, listAssignableStaff, listFiles } from "@/lib/files/service";
+import { deriveMayaLabelFromRow, isCargoForm, CARGO_FORM_LABELS_FR } from "@/lib/files/taxonomy";
 import { canCancel } from "@/lib/files/status";
 import { listClients } from "@/lib/clients/service";
 import { FileForm } from "@/components/files/file-form";
@@ -86,6 +87,13 @@ export default async function FileDetailPage({ params }: { params: { id: string 
       ? [{ id: file.clientId, name: file.clientName ?? file.clientId }]
       : [];
 
+  // MAYA-P0.5-B — candidate parents for « Dossier mère » and the derived MAYA
+  // compatibility label. listFiles is already scoped by file:read + visibility,
+  // so a dossier the user cannot see can never be offered as a parent — and the
+  // database refuses a cross-tenant parent regardless.
+  const parentOptions = canUpdate
+    ? (await listFiles()).filter((f) => f.id !== file.id).map((f) => ({ id: f.id, fileNumber: f.fileNumber }))
+    : [];
   // Phase 3.2A — assignment + delete/cancel controls (permission-gated).
   const canAssign = hasPermission(permissions, "file:assign");
   const canManageLifecycle = hasPermission(permissions, "file:delete");
@@ -119,6 +127,19 @@ export default async function FileDetailPage({ params }: { params: { id: string 
   const [customsRecord, missingCustomsDocs] = canReadCustoms
     ? await Promise.all([getCustomsRecord(file.id), getMissingCustomsDocuments(file.id)])
     : [null, []];
+
+  // MAYA-P0.5-B — the derived compatibility label. Only computed when the
+  // customs regime is READABLE by this user: deriving « TC » for someone who
+  // cannot see that the regime is suspensive would state a half-truth as a
+  // fact. Without customs:read the dossier simply has no MAYA label here.
+  const mayaLabel = canReadCustoms
+    ? deriveMayaLabelFromRow({
+        type: file.type,
+        transportMode: file.shipment?.transportMode ?? null,
+        cargoForm: file.shipment?.cargoForm ?? null,
+        regime: customsRecord?.regime ?? null,
+      })
+    : null;
 
   // Embedded transport (only if the user can read transport).
   const canReadTransport = hasPermission(permissions, "transport:read");
@@ -242,7 +263,56 @@ export default async function FileDetailPage({ params }: { params: { id: string 
       )}
       <RiskPanel risk={risk} />
       {sla && <SlaPanel sla={sla} department={lifecycle.currentDepartment} />}
-      <FileForm mode="edit" fileId={file.id} initial={file} clients={clients} canUpdate={canUpdate} />
+      {/* MAYA-P0.5-B — the dossier's own facts, and the MAYA-compatibility
+          label DERIVED from them. The label is computed on read and stored
+          nowhere; when the four dimensions match no MAYA type it is simply
+          absent, never guessed. */}
+      <section className="surface p-5">
+        <h2 className="mb-3 text-sm font-semibold text-navy-900">Identification du dossier</h2>
+        <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <Fact label="Référence client" value={file.clientReference} />
+          <Fact label="Pour le compte de" value={file.onBehalfOf} />
+          <Fact label="Dossier mère" value={file.parentFileNumber} />
+          <Fact label="Échéance de traitement" value={file.processingDueDate} />
+          <Fact label="Entrée en magasin" value={file.shipment?.warehouseEntryDate ?? null} />
+          <Fact
+            label="Marchandise"
+            value={[
+              file.shipment?.goodsDescription,
+              file.shipment?.cargoForm && isCargoForm(file.shipment.cargoForm)
+                ? CARGO_FORM_LABELS_FR[file.shipment.cargoForm]
+                : null,
+            ].filter(Boolean).join(" · ") || null}
+          />
+          <Fact
+            label="Quantité"
+            value={file.shipment?.quantity != null
+              ? `${file.shipment.quantity}${file.shipment.quantityUnit ? ` ${file.shipment.quantityUnit}` : ""}`
+              : null}
+          />
+          <Fact
+            label="Poids / volume"
+            value={[
+              file.shipment?.netWeightKg != null ? `${file.shipment.netWeightKg} kg net` : null,
+              file.shipment?.grossWeightKg != null ? `${file.shipment.grossWeightKg} kg brut` : null,
+              file.shipment?.volumeM3 != null ? `${file.shipment.volumeM3} m³` : null,
+            ].filter(Boolean).join(" · ") || null}
+          />
+        </dl>
+        {mayaLabel && (
+          <p className="mt-3 text-[11px] text-slate-500">
+            Correspondance MAYA : <strong className="text-navy-800">{mayaLabel.labelFr}</strong> — libellé
+            déduit du sens, du mode, de la forme et du régime. Il n&apos;est pas enregistré et ne
+            détermine aucun traitement.
+          </p>
+        )}
+        {file.provenance !== "PLATFORM_NATIVE" && (
+          <p className="mt-2 text-[11px] text-amber-800">
+            Dossier repris de MAYA — référence d&apos;origine {file.legacyReference}.
+          </p>
+        )}
+      </section>
+      <FileForm mode="edit" fileId={file.id} initial={file} clients={clients} parents={parentOptions} canUpdate={canUpdate} />
       {canReadTasks && (
         <TaskPanel
           currentUserId={user.id}
@@ -363,6 +433,16 @@ export default async function FileDetailPage({ params }: { params: { id: string 
         cancellable={canCancel(file.status)}
       />
       <CopilotPanel fileId={file.id} />
+    </div>
+  );
+}
+
+/** MAYA-P0.5-B — one dossier fact. Absent facts read as « — », never as 0. */
+function Fact({ label, value }: { label: string; value: string | null | undefined }) {
+  return (
+    <div>
+      <dt className="text-xs text-slate-400">{label}</dt>
+      <dd className="text-sm text-navy-900">{value?.toString().trim() ? value : "—"}</dd>
     </div>
   );
 }
