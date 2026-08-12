@@ -8,6 +8,8 @@ import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { getDossierCarriage, getFile, getTenantTimezone, listAssignableStaff, listFiles } from "@/lib/files/service";
 import { CarriagePanel } from "@/components/files/carriage-panel";
 import { QC2Panel } from "@/components/files/qc2-panel";
+import { QC4Panel } from "@/components/files/qc4-panel";
+import { deriveQC4 } from "@/lib/files/qc4";
 import { deriveQC2 } from "@/lib/files/qc2";
 import { deriveMayaLabelFromRow, isCargoForm, CARGO_FORM_LABELS_FR } from "@/lib/files/taxonomy";
 import { canCancel } from "@/lib/files/status";
@@ -130,6 +132,8 @@ export default async function FileDetailPage({ params }: { params: { id: string 
   // rendered against the SERVER's clock. `canReadDocs` is passed through
   // deliberately: a viewer without document:read must read "non visible", never
   // "0 documents".
+  // ONE tenant-zone read, shared by every Quality panel on this page.
+  const qc2TimeZone = await getTenantTimezone();
   const qc2 = deriveQC2({
     fileNumber: file.fileNumber,
     createdAt: file.createdAt,
@@ -137,7 +141,7 @@ export default async function FileDetailPage({ params }: { params: { id: string 
     canReadDocuments: canReadDocs,
     documents,
     missingRequiredCount: missingDocs.length,
-    timeZone: await getTenantTimezone(),
+    timeZone: qc2TimeZone,
   });
 
   // Embedded customs (only if the user can read customs).
@@ -145,6 +149,19 @@ export default async function FileDetailPage({ params }: { params: { id: string 
   const [customsRecord, missingCustomsDocs] = canReadCustoms
     ? await Promise.all([getCustomsRecord(file.id), getMissingCustomsDocuments(file.id)])
     : [null, []];
+
+  // MAYA-P0.7-D — Contrôle Qualité N°4. Pure derivation from facts already
+  // loaded above. Both permission flags are passed through: without
+  // customs:read no customs/BAE/GAINDE fact is disclosed, and without
+  // document:read no tally is — restricted must never render as absent.
+  const qc4 = deriveQC4({
+    canReadCustoms,
+    canReadDocuments: canReadDocs,
+    customs: customsRecord,
+    documents,
+    missingRequiredCount: missingDocs.length,
+    timeZone: qc2TimeZone,
+  });
 
   // MAYA-P0.5-B — the derived compatibility label. Only computed when the
   // customs regime is READABLE by this user: deriving « TC » for someone who
@@ -392,6 +409,7 @@ export default async function FileDetailPage({ params }: { params: { id: string 
           />
         </div>
       )}
+      <QC4Panel evidence={qc4} />
       {/* UAT-1 — Operations owns the delivery proof once transport is DELIVERED.
           Hidden before delivery and rendered above Transport, because after
           delivery it is the outstanding work. */}

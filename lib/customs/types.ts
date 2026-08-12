@@ -50,6 +50,14 @@ export type CustomsRecord = {
   receivabilityStatus: string | null;
   receivabilityAt: string | null;
   receivabilityNote: string | null;
+  /**
+   * MAYA-P0.7-D — how the declaration is driven: 'manual' or 'GAINDE'.
+   * PROVENANCE, never a synchronisation claim. GAINDE is reported `unsupported`
+   * by the provider config (no API contract — BLK-1), so this reads 'manual' in
+   * practice and QC4 must say so rather than imply a live link.
+   */
+  providerCode: string;
+  providerSyncedAt: string | null;
 };
 
 export type CustomsQueueItem = {

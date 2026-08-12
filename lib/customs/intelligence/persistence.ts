@@ -81,6 +81,10 @@ export function rowToDeclaration(row: IntelRecordRow): Declaration {
     receivabilityStatus: null,
     receivabilityAt: null,
     receivabilityNote: null,
+    // The intelligence lifecycle reads these columns directly below; carried
+    // here so the shape is complete.
+    providerCode: row.provider_code ?? "manual",
+    providerSyncedAt: row.provider_synced_at ?? null,
   };
   const base = toDeclaration(record, {
     status: coerceDeclarationStatus(row.intel_status),

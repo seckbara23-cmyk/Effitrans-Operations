@@ -23,6 +23,8 @@ import type {
 type RecordRow = {
   id: string;
   file_id: string;
+  provider_code: string | null;
+  provider_synced_at: string | null;
   receivability_status: string | null;
   receivability_at: string | null;
   receivability_note: string | null;
@@ -60,11 +62,16 @@ function toRecord(r: RecordRow): CustomsRecord {
     receivabilityStatus: r.receivability_status ?? null,
     receivabilityAt: r.receivability_at ?? null,
     receivabilityNote: r.receivability_note ?? null,
+    // MAYA-P0.7-D — PROVENANCE, not status. `provider_code` says WHO drives the
+    // declaration ('manual' or 'GAINDE'); it is read so QC4 can state how a
+    // customs reference was obtained instead of implying a live integration.
+    providerCode: r.provider_code ?? "manual",
+    providerSyncedAt: r.provider_synced_at ?? null,
   };
 }
 
 const RECORD_COLS =
-  "id, file_id, status, required, declaration_number, customs_office, regime, declaration_date, bae_reference, release_date, inspection_status, external_ref, notes, receivability_status, receivability_at, receivability_note";
+  "id, file_id, status, required, declaration_number, customs_office, regime, declaration_date, bae_reference, release_date, inspection_status, external_ref, notes, receivability_status, receivability_at, receivability_note, provider_code, provider_synced_at";
 
 /** The (single) customs record for a dossier, or null. */
 export async function getCustomsRecord(fileId: string): Promise<CustomsRecord | null> {
