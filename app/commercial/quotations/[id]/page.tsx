@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { QC1Panel } from "@/components/commercial/qc1-panel";
+import { deriveQC1 } from "@/lib/commercial/qc1";
 import { PageHeader } from "@/components/ui/page-header";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import {
-  getQuotation, listLines, listVersions, getRequest,
+  getQuotation, listLines, listVersions, getRequest, commercialTimezone,
   COMMERCIAL_READ_PERMISSIONS, QUOTATION_STATUS_FR, ACCEPTANCE_KIND_FR,
 } from "@/lib/commercial/service";
 import { quotationTotals, formatAmountMinor, formatQuantityMilli, formatRateBp } from "@/lib/commercial/money";
@@ -36,11 +38,14 @@ export default async function QuotationDetailPage({ params }: { params: { id: st
   const quotation = await getQuotation(user.tenantId, params.id);
   if (!quotation) notFound();
 
-  const [lines, versions, request, timeline] = await Promise.all([
+  const [lines, versions, request, timeline, timezone] = await Promise.all([
     listLines(user.tenantId, quotation.id),
     listVersions(user.tenantId, quotation.requestId),
     getRequest(user.tenantId, quotation.requestId),
     readQuotationTimeline(user.tenantId, quotation.id),
+    // Tenant-local rendering for QC1. Joins the EXISTING parallel batch, so it
+    // adds no round trip — and it is LAST, matching the destructuring above.
+    commercialTimezone(user.tenantId),
   ]);
 
   const totals = quotationTotals(lines);
@@ -62,6 +67,12 @@ export default async function QuotationDetailPage({ params }: { params: { id: st
         meta={`${QUOTATION_STATUS_FR[quotation.status]}${request?.subject ? ` · ${request.subject}` : ""}`}
         actions={<Link href="/commercial" className="text-sm text-navy-900 hover:underline">← Commercial</Link>}
       />
+
+      {/* MAYA-P0.7-B — Contrôle Qualité N°1. DERIVED from the request and the
+          versions this page already loaded, so it costs no extra query and
+          stores nothing. The commercial authority remains the only place these
+          facts exist. */}
+      {request && <QC1Panel evidence={deriveQC1(request, versions, timezone)} />}
 
       {/* Read-only view of the lines as they stand. The editor below appears only
           for an agent on a DRAFT; everyone permitted to read sees this. */}
