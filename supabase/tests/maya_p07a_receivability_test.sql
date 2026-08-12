@@ -225,11 +225,18 @@ end $$;
 do $$
 declare n int;
 begin
+  -- PRECISE, deliberately. An earlier '%receivab%' matched
+  -- `legacy_receivable_link` (FIN-AGING-2) — an ACCOUNTS-RECEIVABLE table with
+  -- nothing to do with recevabilité. The concept being guarded is
+  -- "receivability"/"recevabilite", and neither substring occurs in
+  -- "receivable", so this says what it means.
   select count(*) into n from information_schema.tables
    where table_schema='public'
-     and (table_name ilike '%receivab%' or table_name ilike '%recevab%');
+     and (table_name ilike '%receivability%' or table_name ilike '%recevabilite%');
   insert into _r values ('no_receivability_table', case when n=0 then 1 else 0 end);
-  if n <> 0 then raise exception 'QC3 FAIL: no receivability table may exist (found %)', n; end if;
+  if n <> 0 then
+    raise exception 'QC3 FAIL: no receivability table may exist (found %)', n;
+  end if;
 
   select count(*) into n from pg_constraint
    where conrelid='public.customs_record'::regclass
