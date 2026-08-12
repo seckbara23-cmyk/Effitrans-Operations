@@ -46,7 +46,9 @@ type FileListRow = {
   legacy_reference: string | null;
   shipment:
     | {
+        id: string;
         transport_mode: string | null;
+        vessel_or_flight: string | null;
         origin: string | null;
         destination: string | null;
         bl_awb_ref: string | null;
@@ -68,7 +70,7 @@ export async function listFiles(criteria: FileFilterCriteria = {}): Promise<File
   let query = supabase
     .from("operational_file")
     .select(
-      "id, file_number, type, status, priority, created_at, account_manager_id, client_id, client_reference, provenance, legacy_reference, client:client_id(name), shipment(transport_mode, origin, destination, bl_awb_ref, container_ref, eta, cargo_form)",
+      "id, file_number, type, status, priority, created_at, account_manager_id, client_id, client_reference, provenance, legacy_reference, client:client_id(name), shipment(id, transport_mode, vessel_or_flight, origin, destination, bl_awb_ref, container_ref, eta, cargo_form)",
     )
     .eq("tenant_id", user.tenantId);
   if (!scope.all) query = query.in("id", scope.ids);
@@ -76,7 +78,63 @@ export async function listFiles(criteria: FileFilterCriteria = {}): Promise<File
   const { data, error } = await query.limit(2000).returns<FileListRow[]>();
   if (error) throw new Error(`[files] list failed: ${error.message}`);
 
-  const rows: FileSearchRow[] = (data ?? []).map((f) => {
+  const listRows = (data ?? []) as FileListRow[];
+  const searching = Boolean(criteria.search?.trim());
+  const permissions = await getEffectivePermissions(user.id);
+  const canReadCustoms = hasPermission(permissions, "customs:read");
+
+  // ---- BATCHED SIDE READS (MAYA-P0.6-B regime, MAYA-P0.6-C retrieval) ------
+  //
+  // PERMISSION IS STRUCTURAL, NOT COSMETIC. Without `customs:read` this block
+  // does not execute, so no customs value is fetched — nothing is read and
+  // then discarded, and an ungated viewer's result set is byte-identical to
+  // what it was before customs data was searchable.
+  //
+  // `declaration_number` is fetched ONLY when a search term exists: it is
+  // restricted, and reading it to render a list that never shows it would be
+  // exactly the "fetch then discard" this phase forbids. `regime` is read
+  // whenever permitted because the derived NAME depends on it (P0.6-B).
+  //
+  // PERFORMANCE: at most three queries per call, whatever the row count —
+  // one dossier read plus two batched child reads. Never one per row.
+  const regimes = new Map<string, string>();
+  const declarations = new Map<string, string>();
+  if (canReadCustoms) {
+    // Two literal selects rather than one interpolated string: PostgREST types
+    // the result from the literal, and a computed select collapses it.
+    const customsQuery = searching
+      ? supabase.from("customs_record").select("file_id, regime, declaration_number").eq("tenant_id", user.tenantId)
+      : supabase.from("customs_record").select("file_id, regime").eq("tenant_id", user.tenantId);
+    const { data: customs } = await customsQuery
+      .returns<{ file_id: string; regime: string | null; declaration_number?: string | null }[]>();
+    for (const c of customs ?? []) {
+      if (c.regime) regimes.set(c.file_id, c.regime);
+      if (c.declaration_number) declarations.set(c.file_id, c.declaration_number);
+    }
+  }
+
+  // Container numbers live in a CHILD table (ocean_container), keyed by
+  // shipment. Read once, and only when someone is actually searching — the
+  // list itself does not display them.
+  const containersByShipment = new Map<string, string[]>();
+  if (searching) {
+    const { data: containers } = await supabase
+      .from("ocean_container")
+      .select("shipment_id, container_number")
+      .eq("tenant_id", user.tenantId);
+    for (const c of (containers ?? []) as { shipment_id: string; container_number: string }[]) {
+      const list = containersByShipment.get(c.shipment_id);
+      if (list) list.push(c.container_number);
+      else containersByShipment.set(c.shipment_id, [c.container_number]);
+    }
+  }
+
+  // ---- projection -----------------------------------------------------------
+  // The derived name is computed HERE, before filtering, so a user can search
+  // by « IMPORT MARITIME TC ». It inherits the customs gate for free: an
+  // ungated viewer has no regime, so no full name, so no match — which is the
+  // correct outcome rather than a special case.
+  const rows: FileSearchRow[] = listRows.map((f) => {
     const s = f.shipment?.[0] ?? null;
     return {
       id: f.id,
@@ -94,58 +152,42 @@ export async function listFiles(criteria: FileFilterCriteria = {}): Promise<File
       containerRef: s?.container_ref ?? null,
       transportMode: s?.transport_mode ?? null,
       eta: s?.eta ?? null,
+      legacyReference: f.legacy_reference,
+      clientReference: f.client_reference,
+      vesselOrFlight: s?.vessel_or_flight ?? null,
+      containerNumbers: s?.id ? containersByShipment.get(s.id) ?? [] : [],
+      declarationNumber: declarations.get(f.id) ?? null,
+      mayaLabel: deriveMayaLabelFromRow({
+        type: f.type as FileType,
+        transportMode: (s?.transport_mode ?? null) as TransportMode | null,
+        cargoForm: s?.cargo_form ?? null,
+        regime: regimes.get(f.id) ?? null,
+      })?.labelFr ?? null,
     };
   });
 
   const filtered = applyFileFilters(rows, { ...criteria, currentUserId: user.id }, new Date());
   const sorted = sortFiles(filtered, criteria.sort);
 
-  // MAYA-P0.6-B — the regime dimension of the derived name.
-  //
-  // PERMISSION: read ONLY when the viewer holds `customs:read` — the same gate
-  // P0.5-B applied on the dossier page. Without it this query does not run at
-  // all, so there is nothing to leak and nothing to pay for.
-  //
-  // PERFORMANCE: ONE query for the whole page, never one per row. Only dossiers
-  // that actually carry a regime are fetched (`regime is not null`), which is a
-  // small minority, so the map stays cheap however long the list is.
-  const regimes = new Map<string, string>();
-  const permissions = await getEffectivePermissions(user.id);
-  if (hasPermission(permissions, "customs:read")) {
-    const { data: customs } = await supabase
-      .from("customs_record")
-      .select("file_id, regime")
-      .eq("tenant_id", user.tenantId)
-      .not("regime", "is", null);
-    for (const c of customs ?? []) regimes.set(c.file_id as string, String(c.regime));
-  }
+  const byId = new Map(listRows.map((f) => [f.id, f]));
 
-  const byId = new Map(((data ?? []) as FileListRow[]).map((f) => [f.id, f]));
-
-  return sorted.map((f) => {
-    const raw = byId.get(f.id);
-    const shipment = raw?.shipment?.[0] ?? null;
-    return {
-      id: f.id,
-      fileNumber: f.fileNumber,
-      type: f.type as FileType,
-      clientName: f.clientName,
-      transportMode: f.transportMode as TransportMode | null,
-      status: f.status as FileStatus,
-      priority: f.priority as Priority,
-      // Derived in memory from facts already read. `deriveMayaLabelFromRow` is
-      // THE taxonomy authority; nothing here re-implements a naming rule.
-      mayaLabel: deriveMayaLabelFromRow({
-        type: f.type as FileType,
-        transportMode: f.transportMode as TransportMode | null,
-        cargoForm: shipment?.cargo_form ?? null,
-        regime: regimes.get(f.id) ?? null,
-      })?.labelFr ?? null,
-      clientReference: raw?.client_reference ?? null,
-      provenance: raw?.provenance ?? "PLATFORM_NATIVE",
-      legacyReference: raw?.legacy_reference ?? null,
-    };
-  });
+  return sorted.map((f) => ({
+    id: f.id,
+    fileNumber: f.fileNumber,
+    type: f.type as FileType,
+    clientName: f.clientName,
+    transportMode: f.transportMode as TransportMode | null,
+    status: f.status as FileStatus,
+    priority: f.priority as Priority,
+    // Already derived above; never recomputed, and NEVER re-derived from a
+    // different regime source.
+    mayaLabel: f.mayaLabel,
+    clientReference: f.clientReference,
+    provenance: byId.get(f.id)?.provenance ?? "PLATFORM_NATIVE",
+    legacyReference: f.legacyReference,
+    // The declaration number is DELIBERATELY absent from the result: it was
+    // matched against, it is not disclosed by having matched.
+  }));
 }
 
 /**

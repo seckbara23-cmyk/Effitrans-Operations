@@ -17,6 +17,14 @@ const row = (over: Partial<FileSearchRow>): FileSearchRow => ({
   accountManagerId: null,
   clientId: "c1",
   clientName: "Dakar Trading",
+  // MAYA-P0.6-C retrieval fields. Absent by default so every existing
+  // assertion keeps testing exactly what it tested before.
+  legacyReference: null,
+  clientReference: null,
+  vesselOrFlight: null,
+  containerNumbers: [],
+  declarationNumber: null,
+  mayaLabel: null,
   origin: "Shanghai",
   destination: "Port de Dakar",
   blAwbRef: "MAEU123456",

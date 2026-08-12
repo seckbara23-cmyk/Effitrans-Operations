@@ -26,20 +26,59 @@ export type FileSearchRow = {
   containerRef: string | null;
   transportMode: string | null;
   eta: string | null;
+  /**
+   * MAYA-P0.6-C — the identifiers staff actually have in front of them.
+   *
+   * Every one of these is supplied by the reader, which decides what the
+   * viewer is allowed to be matched against. That is deliberate: the
+   * permission decision belongs to the query, not to this pure function.
+   * `declarationNumber` is null for a viewer without `customs:read` because
+   * it was NEVER READ — not because it is filtered out here.
+   */
+  legacyReference: string | null;
+  clientReference: string | null;
+  vesselOrFlight: string | null;
+  /** Container numbers from the child table, already batched by the reader. */
+  containerNumbers: string[];
+  /** Customs-sensitive: present only for a `customs:read` viewer. */
+  declarationNumber: string | null;
+  /** The derived MAYA-compatible name; null when it cannot be derived in full. */
+  mayaLabel: string | null;
 };
 
-/** The six fields the search box matches against (ILIKE / substring). */
+/**
+ * The fields the search box matches against (substring, case-insensitive).
+ *
+ * MAYA-P0.6-C widened this from six to the identifiers staff actually quote.
+ * Two properties hold:
+ *
+ *   * every value is TREATED AS OPAQUE TEXT. The MAYA legacy reference in
+ *     particular is matched as a string and never parsed, split or normalised
+ *     to infer a type, year or sequence — Q125 proved several incompatible
+ *     shapes coexist, so any parsing rule would be wrong for some of them.
+ *   * restricted values are absent rather than hidden. `declarationNumber` is
+ *     null unless the reader was allowed to fetch it, so an ungated viewer
+ *     cannot match one, and their result count is identical to what it was
+ *     before this field existed.
+ */
 export function matchesSearch(row: FileSearchRow, rawTerm: string | undefined): boolean {
   const term = (rawTerm ?? "").trim().toLowerCase();
   if (!term) return true;
-  return [
+  const scalar = [
     row.fileNumber,
     row.clientName,
     row.origin,
     row.destination,
     row.blAwbRef,
     row.containerRef,
+    row.legacyReference,
+    row.clientReference,
+    row.vesselOrFlight,
+    row.declarationNumber,
+    row.mayaLabel,
   ].some((v) => (v ?? "").toLowerCase().includes(term));
+  if (scalar) return true;
+  return row.containerNumbers.some((c) => c.toLowerCase().includes(term));
 }
 
 /** Active = not in a terminal state (DEC-B43 — delegates to THE canonical predicate). */

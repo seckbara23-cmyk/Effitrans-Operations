@@ -42,7 +42,10 @@ describe("1/6 — the MAYA-compatible name reaches the list, consistently", () =
   it("the list read derives the label through THE taxonomy authority", () => {
     const body = listFilesBody();
     expect(body).toContain("deriveMayaLabelFromRow");
-    expect(body).toContain("cargoForm: shipment?.cargo_form");
+    // The derive call is fed from the shipment row and the batched regime map.
+    // Matched on the SOURCE of each argument rather than on a local variable
+    // name, which a later refactor may legitimately rename (P0.6-C did).
+    expect(body).toMatch(/cargoForm: \w+\?\.cargo_form/);
     expect(body).toContain("regime: regimes.get(f.id)");
   });
 
@@ -127,12 +130,20 @@ describe("4/5 — one taxonomy, no per-row query", () => {
 
   it("the regime is read ONCE per list, never inside the row loop", () => {
     const body = listFilesBody();
-    expect((body.match(/from\("customs_record"\)/g) ?? []).length).toBe(1);
-    // The single read must precede the mapping, not sit inside it.
-    expect(body.indexOf('from("customs_record")')).toBeLessThan(body.indexOf("return sorted.map"));
-    // And the map callback must not query anything at all.
-    const mapBody = body.slice(body.indexOf("return sorted.map"));
-    expect(mapBody).not.toMatch(/await|supabase|\.from\(/);
+    // The durable property is "one read per CALL, outside the row mapping" —
+    // not "the string appears once". P0.6-C introduced two literal customs
+    // selects of which exactly one executes (PostgREST needs literal selects),
+    // so counting occurrences would now measure the wrong thing.
+    const customsReads = body.indexOf('from("customs_record")');
+    expect(customsReads).toBeGreaterThan(-1);
+    expect(customsReads).toBeLessThan(body.indexOf("listRows.map"));
+    // No query, and no await, inside either mapping callback.
+    for (const marker of ["listRows.map", "return sorted.map"]) {
+      const from = body.indexOf(marker);
+      const to = body.indexOf("applyFileFilters", from);
+      const mapBody = body.slice(from, to === -1 ? undefined : to);
+      expect(mapBody, marker).not.toMatch(/await|supabase|\.from\(/);
+    }
   });
 
   it("the extra columns ride the EXISTING list query — no second dossier read", () => {
@@ -213,10 +224,17 @@ describe("9/10/11/12 — nothing else moved", () => {
     expect(read("lib/platform/ops/build-info.ts")).toContain('LATEST_MIGRATION = "20260823000001_maya_migration_staging"');
   });
 
-  it("search matching was NOT widened — that is P0.6-C", () => {
+  it("search widening belongs to P0.6-C, and is pinned there", () => {
+    // SUPERSEDED, not deleted. In P0.6-B this asserted that search matching had
+    // NOT been widened — a correct statement of that phase's scope boundary.
+    // P0.6-C is the phase that legitimately moved the boundary, so the
+    // assertion now records where the property lives instead of denying it.
     const filter = code("lib/files/filter.ts");
     for (const field of ["legacyReference", "clientReference", "vesselOrFlight"]) {
-      expect(filter, field).not.toContain(field);
+      expect(filter, field).toContain(field);
     }
+    // What P0.6-B itself must still be true of: it added no search field.
+    const naming = code("lib/files/types.ts");
+    expect(naming).toContain("mayaLabel");
   });
 });
