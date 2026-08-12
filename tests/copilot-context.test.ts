@@ -36,6 +36,7 @@ const FILE: FileDetail = {
   provenance: "PLATFORM_NATIVE",
   legacyReference: null,
   shipment: {
+    id: "11111111-1111-1111-1111-111111111111",
     transportMode: "SEA",
     incoterm: "CIF",
     origin: "Shanghai",

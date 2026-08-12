@@ -119,6 +119,52 @@ export type FileTransition = {
   occurredAt: string;
 };
 
+/**
+ * MAYA-P0.6-D — one physical carriage unit belonging to this dossier's shipment.
+ *
+ * A read-only projection of a row that ALREADY EXISTS in the transport model
+ * (`ocean_container` for sea, `air_cargo_piece` for air). Two rules hold:
+ *
+ *   * every value is carried through EXACTLY AS STORED. `type` in particular is
+ *     the raw `iso_type` / `uld_type` text — it is never parsed, mapped or
+ *     bucketed. No size class is derived from it (see `DossierCarriage.total`).
+ *   * this type classifies nothing. It renames nothing. `/shipping` remains the
+ *     authority that MANAGES these rows; the dossier only shows them.
+ */
+export type CarriageUnit = {
+  id: string;
+  /** Container number (sea), or the ULD this line is built into (air). */
+  label: string | null;
+  /** `iso_type` (sea) or `uld_type` (air), verbatim. NEVER parsed. */
+  type: string | null;
+  /** Lifecycle status as the transport model records it. */
+  status: string | null;
+  /** Air only — pieces on this line. Null for a container. */
+  pieceCount: number | null;
+  weightKg: number | null;
+  volumeM3: number | null;
+  /** Air only — free text the air model already stores. */
+  dimensions: string | null;
+  specialHandling: string | null;
+  dangerousGoods: boolean;
+  temperatureControlled: boolean;
+};
+
+/**
+ * The dossier's carriage, as read under `transport:read`.
+ *
+ * `total` is the plain number of AUTHORIZED rows returned — nothing more. It is
+ * deliberately NOT broken down by size class: `iso_type` is unvalidated free
+ * text (`normalizeReference(input.isoType, 8)`) with no vocabulary, CHECK or
+ * parser behind it, so a TC20/TC40 split would be manufactured rather than
+ * read. That remains unresolved pending a vocabulary decision.
+ */
+export type DossierCarriage = {
+  mode: "SEA" | "AIR";
+  total: number;
+  units: CarriageUnit[];
+};
+
 export type FileDetail = {
   id: string;
   tenantId: string;
@@ -143,6 +189,11 @@ export type FileDetail = {
   provenance: string;
   legacyReference: string | null;
   shipment: {
+    /**
+     * MAYA-P0.6-D — the shipment's own key, so the dossier's carriage units can
+     * be read with ONE query instead of re-resolving the shipment first.
+     */
+    id: string;
     transportMode: TransportMode | null;
     incoterm: string | null;
     origin: string | null;

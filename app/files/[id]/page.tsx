@@ -5,7 +5,8 @@ import { PageHeader } from "@/components/ui/page-header";
 import { ProcessJourneyPanel } from "@/components/process/process-journey";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
-import { getFile, listAssignableStaff, listFiles } from "@/lib/files/service";
+import { getDossierCarriage, getFile, listAssignableStaff, listFiles } from "@/lib/files/service";
+import { CarriagePanel } from "@/components/files/carriage-panel";
 import { deriveMayaLabelFromRow, isCargoForm, CARGO_FORM_LABELS_FR } from "@/lib/files/taxonomy";
 import { canCancel } from "@/lib/files/status";
 import { listClients } from "@/lib/clients/service";
@@ -144,6 +145,14 @@ export default async function FileDetailPage({ params }: { params: { id: string 
   // Embedded transport (only if the user can read transport).
   const canReadTransport = hasPermission(permissions, "transport:read");
   const transportRecord = canReadTransport ? await getTransportRecord(file.id) : null;
+  // MAYA-P0.6-D — the dossier's own carriage units. Gated on the SAME
+  // transport:read the panels below use, so an ungated viewer issues no query at
+  // all: the rows are never retrieved, not retrieved and then hidden. Returns
+  // null for a road-only dossier, which has no carriage units by construction.
+  const carriage =
+    canReadTransport && file.shipment
+      ? await getDossierCarriage(file.shipment.id, file.shipment.transportMode)
+      : null;
   // UAT-1 — the canonical predicate, not the pre-WES-4 literal. A POD is proof
   // when it is VERIFIED, when it is a legacy APPROVED row, or once WES-5 has
   // consumed it as evidence.
@@ -379,6 +388,13 @@ export default async function FileDetailPage({ params }: { params: { id: string 
             canVerify: hasPermission(permissions, "document:approve"),
           }}
         />
+      )}
+      {/* MAYA-P0.6-D — what this dossier is carrying, immediately above how it
+          is being moved. Renders nothing for a road-only dossier. */}
+      {carriage && (
+        <div id="carriage" className="scroll-mt-24">
+          <CarriagePanel carriage={carriage} />
+        </div>
       )}
       {canReadTransport && (
         <div id="transport" className="scroll-mt-24">

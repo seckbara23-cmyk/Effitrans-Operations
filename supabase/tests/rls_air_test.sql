@@ -6,6 +6,10 @@
 --   * a user without transport:read sees none
 --   * cross-tenant + same-tenant writes via the authenticated client are rejected
 -- Expected: A(1/0 uld, 1/0 airline), B(1/0), noperm(0), writes blocked.
+--
+-- MAYA-P0.6-D extends it to air_cargo_piece, which the dossier workspace now
+-- reads directly: own piece visible, other tenant's refused, and refused
+-- outright without transport:read. Expected: A(1/0 piece), B(1/0), noperm(0).
 
 begin;
 
@@ -49,10 +53,20 @@ insert into public.air_uld (id, tenant_id, shipment_id, uld_number) values
   ('00000000-0000-0000-0000-00000000ed1b', '00000000-0000-0000-0000-0000000000d2', '00000000-0000-0000-0000-00000000ad1b', 'AKE22222BB')
 on conflict (id) do nothing;
 
+-- MAYA-P0.6-D — air_cargo_piece is now read by the DOSSIER workspace
+-- (getDossierCarriage), not only by /air. This suite already proved air_uld and
+-- air_airline; the pieces themselves were never covered, so they are added here
+-- rather than in a new suite.
+insert into public.air_cargo_piece (id, tenant_id, shipment_id, uld_id, piece_count, weight_kg) values
+  ('00000000-0000-0000-0000-00000000ec1a', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-00000000ad1a', '00000000-0000-0000-0000-00000000ed1a', 3, 120.5),
+  ('00000000-0000-0000-0000-00000000ec1b', '00000000-0000-0000-0000-0000000000d2', '00000000-0000-0000-0000-00000000ad1b', '00000000-0000-0000-0000-00000000ed1b', 7, 300.0)
+on conflict (id) do nothing;
+
 create temp table _r (check_name text, value int) on commit drop;
 
 do $$
 declare a_u int; a_ou int; a_al int; a_oal int; b_u int; b_ou int; n_u int;
+        a_p int; a_op int; b_p int; b_op int; n_p int;
 begin
   perform set_config('role', 'authenticated', true);
   perform set_config('request.jwt.claims', json_build_object('sub','00000000-0000-0000-0000-0000000000d1','role','authenticated')::text, true);
@@ -60,15 +74,26 @@ begin
   select count(*) into a_ou from public.air_uld where id='00000000-0000-0000-0000-00000000ed1b';
   select count(*) into a_al  from public.air_airline where id='00000000-0000-0000-0000-00000000aa1a';
   select count(*) into a_oal from public.air_airline where id='00000000-0000-0000-0000-00000000aa1b';
+  -- Carriage pieces, the P0.6-D read: own visible, other tenant's invisible.
+  select count(*) into a_p  from public.air_cargo_piece where id='00000000-0000-0000-0000-00000000ec1a';
+  select count(*) into a_op from public.air_cargo_piece where id='00000000-0000-0000-0000-00000000ec1b';
   perform set_config('request.jwt.claims', json_build_object('sub','00000000-0000-0000-0000-0000000000d2','role','authenticated')::text, true);
   select count(*) into b_u  from public.air_uld where id='00000000-0000-0000-0000-00000000ed1b';
   select count(*) into b_ou from public.air_uld where id='00000000-0000-0000-0000-00000000ed1a';
+  select count(*) into b_p  from public.air_cargo_piece where id='00000000-0000-0000-0000-00000000ec1b';
+  select count(*) into b_op from public.air_cargo_piece where id='00000000-0000-0000-0000-00000000ec1a';
   perform set_config('request.jwt.claims', json_build_object('sub','00000000-0000-0000-0000-0000000000d3','role','authenticated')::text, true);
   select count(*) into n_u from public.air_uld where id='00000000-0000-0000-0000-00000000ed1a';
+  -- No transport:read ⇒ the carriage rows are REFUSED, not returned-then-hidden.
+  select count(*) into n_p from public.air_cargo_piece where id='00000000-0000-0000-0000-00000000ec1a';
   perform set_config('role', 'postgres', true);
-  insert into _r values ('A_ownUld', a_u), ('A_otherUld', a_ou), ('A_ownAirline', a_al), ('A_otherAirline', a_oal), ('B_ownUld', b_u), ('B_otherUld', b_ou), ('noperm_uld', n_u);
+  insert into _r values ('A_ownUld', a_u), ('A_otherUld', a_ou), ('A_ownAirline', a_al), ('A_otherAirline', a_oal), ('B_ownUld', b_u), ('B_otherUld', b_ou), ('noperm_uld', n_u),
+                        ('A_ownPiece', a_p), ('A_otherPiece', a_op), ('B_ownPiece', b_p), ('B_otherPiece', b_op), ('noperm_piece', n_p);
   if a_u<>1 or a_ou<>0 or a_al<>1 or a_oal<>0 or b_u<>1 or b_ou<>0 or n_u<>0 then
     raise exception 'RLS AIR FAIL: A(u=% ou=% al=% oal=%) B(u=% ou=%) noperm=%', a_u, a_ou, a_al, a_oal, b_u, b_ou, n_u;
+  end if;
+  if a_p<>1 or a_op<>0 or b_p<>1 or b_op<>0 or n_p<>0 then
+    raise exception 'RLS AIR CARRIAGE FAIL: A(p=% op=%) B(p=% op=%) noperm=%', a_p, a_op, b_p, b_op, n_p;
   end if;
 end $$;
 

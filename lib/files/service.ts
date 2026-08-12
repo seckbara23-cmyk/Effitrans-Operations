@@ -20,6 +20,8 @@ import { staffDisplayName } from "@/lib/users/lifecycle";
 import { applyFileFilters, sortFiles, type FileSearchRow } from "./filter";
 import { aggregateFiles, type FileOverview } from "./aggregate";
 import type {
+  CarriageUnit,
+  DossierCarriage,
   FileDetail,
   FileFilterCriteria,
   FileListItem,
@@ -325,7 +327,7 @@ export async function getFile(id: string): Promise<FileDetail | null> {
   const { data: shipment } = await supabase
     .from("shipment")
     .select(
-      "transport_mode, incoterm, origin, destination, cargo_type, carrier_name, vessel_or_flight, bl_awb_ref, container_ref, cargo_form, quantity, quantity_unit, net_weight_kg, gross_weight_kg, volume_m3, package_count, goods_description, supplier_name, warehouse_entry_date",
+      "id, transport_mode, incoterm, origin, destination, cargo_type, carrier_name, vessel_or_flight, bl_awb_ref, container_ref, cargo_form, quantity, quantity_unit, net_weight_kg, gross_weight_kg, volume_m3, package_count, goods_description, supplier_name, warehouse_entry_date",
     )
     .eq("file_id", id)
     .maybeSingle();
@@ -370,6 +372,7 @@ export async function getFile(id: string): Promise<FileDetail | null> {
     legacyReference: file.legacy_reference,
     shipment: shipment
       ? {
+          id: shipment.id,
           transportMode: shipment.transport_mode as TransportMode | null,
           incoterm: shipment.incoterm,
           origin: shipment.origin,
@@ -399,6 +402,122 @@ export async function getFile(id: string): Promise<FileDetail | null> {
       occurredAt: h.occurred_at,
     })),
   };
+}
+
+/**
+ * MAYA-P0.6-D — the carriage units this dossier is actually carrying.
+ * ---------------------------------------------------------------------------
+ * MAYA showed per-container rows on the dossier itself. Effitrans stores them
+ * (`ocean_container`, `air_cargo_piece`) and already shows them to the CLIENT
+ * in the portal — but not to the operator working the dossier, who had to leave
+ * for `/shipping`. This closes exactly that gap and nothing else.
+ *
+ * AUTHORIZATION IS STRUCTURAL. `transport:read` is re-asserted here rather than
+ * inherited from the caller — a reader that trusts its caller's check is one
+ * refactor away from being called without one — and the read runs on the
+ * USER-CONTEXT client, whose policies (`ocean_container_select`,
+ * `air_cargo_piece_select`) each require
+ * `tenant_id = auth_tenant_id() AND has_permission('transport:read')`.
+ * So the DATABASE refuses the rows for an unauthorized or cross-tenant reader:
+ * nothing is fetched and then discarded in application code. The explicit
+ * tenant filter below is a second, independent layer, not the only one.
+ *
+ * COST: exactly ONE query, and only for a sea or air dossier. Both tables are
+ * served by their existing `(tenant_id, shipment_id)` index. No per-unit read.
+ *
+ * NOT DERIVED HERE: any TC20/TC40 size split. `iso_type` is unvalidated free
+ * text, so a size class would be manufactured rather than read (see
+ * `DossierCarriage`). `/shipping` remains the authority that MANAGES these rows.
+ */
+export async function getDossierCarriage(
+  shipmentId: string,
+  transportMode: TransportMode | null,
+): Promise<DossierCarriage | null> {
+  const user = await assertPermission("transport:read");
+
+  const mode: "SEA" | "AIR" | null =
+    transportMode === "SEA" || transportMode === "MULTIMODAL"
+      ? "SEA"
+      : transportMode === "AIR"
+        ? "AIR"
+        : null;
+  // A road-only dossier (or one with no mode yet) has no carriage units by
+  // construction — that is an absence of the concept, not an empty result.
+  if (!mode) return null;
+
+  const supabase = getServerSupabaseClient();
+
+  if (mode === "SEA") {
+    const { data } = await supabase
+      .from("ocean_container")
+      .select("id, container_number, iso_type, status, gross_weight_kg")
+      .eq("tenant_id", user.tenantId)
+      .eq("shipment_id", shipmentId)
+      .order("container_number", { ascending: true })
+      .returns<
+        {
+          id: string;
+          container_number: string;
+          iso_type: string | null;
+          status: string | null;
+          gross_weight_kg: number | null;
+        }[]
+      >();
+    const units: CarriageUnit[] = (data ?? []).map((c) => ({
+      id: c.id,
+      label: c.container_number,
+      type: c.iso_type,
+      status: c.status,
+      pieceCount: null,
+      weightKg: c.gross_weight_kg,
+      volumeM3: null,
+      dimensions: null,
+      specialHandling: null,
+      dangerousGoods: false,
+      temperatureControlled: false,
+    }));
+    return { mode, total: units.length, units };
+  }
+
+  // Air: the ULD this line is built into rides along as a to-one embed, so the
+  // ULD number/type/status costs no extra round trip. `air_uld_select` carries
+  // the same tenant + transport:read predicate, so the embed cannot widen what
+  // this reader may see.
+  const { data } = await supabase
+    .from("air_cargo_piece")
+    .select(
+      "id, piece_count, weight_kg, volume_m3, dimensions, special_handling, dangerous_goods, temperature_controlled, uld:uld_id(uld_number, uld_type, status)",
+    )
+    .eq("tenant_id", user.tenantId)
+    .eq("shipment_id", shipmentId)
+    .order("created_at", { ascending: true })
+    .returns<
+      {
+        id: string;
+        piece_count: number | null;
+        weight_kg: number | null;
+        volume_m3: number | null;
+        dimensions: string | null;
+        special_handling: string | null;
+        dangerous_goods: boolean | null;
+        temperature_controlled: boolean | null;
+        uld: { uld_number: string; uld_type: string | null; status: string | null } | null;
+      }[]
+    >();
+  const units: CarriageUnit[] = (data ?? []).map((p) => ({
+    id: p.id,
+    label: p.uld?.uld_number ?? null,
+    type: p.uld?.uld_type ?? null,
+    status: p.uld?.status ?? null,
+    pieceCount: p.piece_count,
+    weightKg: p.weight_kg,
+    volumeM3: p.volume_m3,
+    dimensions: p.dimensions,
+    specialHandling: p.special_handling,
+    dangerousGoods: p.dangerous_goods === true,
+    temperatureControlled: p.temperature_controlled === true,
+  }));
+  return { mode, total: units.length, units };
 }
 
 /**
