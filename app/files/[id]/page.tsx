@@ -9,6 +9,8 @@ import { getDossierCarriage, getFile, getTenantTimezone, listAssignableStaff, li
 import { CarriagePanel } from "@/components/files/carriage-panel";
 import { QC2Panel } from "@/components/files/qc2-panel";
 import { QC4Panel } from "@/components/files/qc4-panel";
+import { QC5Panel } from "@/components/files/qc5-panel";
+import { deriveQC5 } from "@/lib/files/qc5";
 import { deriveQC4 } from "@/lib/files/qc4";
 import { deriveQC2 } from "@/lib/files/qc2";
 import { deriveMayaLabelFromRow, isCargoForm, CARGO_FORM_LABELS_FR } from "@/lib/files/taxonomy";
@@ -198,6 +200,20 @@ export default async function FileDetailPage({ params }: { params: { id: string 
   const trackingOn = trackingEnabled();
   const canReadTracking = hasPermission(permissions, "tracking:read");
   const trackingEvents = trackingOn && canReadTracking ? await getTrackingTimeline(file.id) : [];
+  // MAYA-P0.7-E — Contrôle Qualité N°5. Pure derivation from facts already
+  // loaded. Three gates are passed through, not assumed: transport:read,
+  // document:read, and tracking (feature flag AND tracking:read) — each
+  // missing gate reports « restricted », never an empty fact.
+  const qc5 = deriveQC5({
+    canReadTransport,
+    canReadDocuments: canReadDocs,
+    canReadTracking: trackingOn && canReadTracking,
+    transport: transportRecord,
+    documents,
+    trackingEvents,
+    timeZone: qc2TimeZone,
+  });
+
   // Phase 3.4C — dispatcher driver assignment (assign a DRIVER user).
   // WES-1E: chauffeur IDENTITY assignment is NOT a tracking feature. Gating it
   // behind TRACKING_ENABLED meant a planner could fill in a driver's name, see no
@@ -446,6 +462,7 @@ export default async function FileDetailPage({ params }: { params: { id: string 
           />
         </div>
       )}
+      <QC5Panel evidence={qc5} />
       {canReadTransport && transportRecord && (
         <DriverAssign
           transportId={transportRecord.id}
