@@ -17,6 +17,32 @@ import type { KpiWindow } from "./types";
 
 export const DEFAULT_TIMEZONE = "Africa/Dakar";
 
+/**
+ * One instant, rendered « 12/08/2026 09:02 » IN THE TENANT'S ZONE.
+ *
+ * Lives here because this module is THE tenant-time mechanic (DEC-B39), and a
+ * second copy is how the platform ends up with two answers to "what time was
+ * that". `getHours()` reads the SERVER clock: on a UTC runner with a UTC tenant
+ * it agrees with itself and is wrong for every other tenant — the defect
+ * Phase 10.0D already fixed once for day boundaries.
+ */
+export function formatTenantInstant(iso: string, timeZone: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  try {
+    const parts = new Intl.DateTimeFormat("fr-FR", {
+      timeZone, day: "2-digit", month: "2-digit", year: "numeric",
+      hour: "2-digit", minute: "2-digit", hour12: false,
+    }).formatToParts(d);
+    const get = (t: string) => parts.find((x) => x.type === t)?.value ?? "";
+    return `${get("day")}/${get("month")}/${get("year")} ${get("hour")}:${get("minute")}`;
+  } catch {
+    // An unusable zone must not lose the fact. UTC is stated, never implied.
+    const i = d.toISOString();
+    return `${i.slice(8, 10)}/${i.slice(5, 7)}/${i.slice(0, 4)} ${i.slice(11, 16)} UTC`;
+  }
+}
+
 /** Validate an IANA timezone; fall back to the platform default on anything invalid. */
 export function resolveTimezone(raw: string | null | undefined): string {
   if (!raw || typeof raw !== "string") return DEFAULT_TIMEZONE;

@@ -5,8 +5,10 @@ import { PageHeader } from "@/components/ui/page-header";
 import { ProcessJourneyPanel } from "@/components/process/process-journey";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
-import { getDossierCarriage, getFile, listAssignableStaff, listFiles } from "@/lib/files/service";
+import { getDossierCarriage, getFile, getTenantTimezone, listAssignableStaff, listFiles } from "@/lib/files/service";
 import { CarriagePanel } from "@/components/files/carriage-panel";
+import { QC2Panel } from "@/components/files/qc2-panel";
+import { deriveQC2 } from "@/lib/files/qc2";
 import { deriveMayaLabelFromRow, isCargoForm, CARGO_FORM_LABELS_FR } from "@/lib/files/taxonomy";
 import { canCancel } from "@/lib/files/status";
 import { listClients } from "@/lib/clients/service";
@@ -122,6 +124,21 @@ export default async function FileDetailPage({ params }: { params: { id: string 
         getMissingRequiredDocuments(file.id, file.type),
       ])
     : [[], [], []];
+
+  // MAYA-P0.7-C — Contrôle Qualité N°2. Derived from facts this page already
+  // loaded; the only added read is the tenant zone, so an instant is never
+  // rendered against the SERVER's clock. `canReadDocs` is passed through
+  // deliberately: a viewer without document:read must read "non visible", never
+  // "0 documents".
+  const qc2 = deriveQC2({
+    fileNumber: file.fileNumber,
+    createdAt: file.createdAt,
+    clientName: file.clientName,
+    canReadDocuments: canReadDocs,
+    documents,
+    missingRequiredCount: missingDocs.length,
+    timeZone: await getTenantTimezone(),
+  });
 
   // Embedded customs (only if the user can read customs).
   const canReadCustoms = hasPermission(permissions, "customs:read");
@@ -334,6 +351,7 @@ export default async function FileDetailPage({ params }: { params: { id: string 
           </p>
         )}
       </section>
+      <QC2Panel evidence={qc2} />
       <FileForm mode="edit" fileId={file.id} initial={file} clients={clients} parents={parentOptions} canUpdate={canUpdate} />
       {canReadTasks && (
         <TaskPanel

@@ -24,6 +24,7 @@
  *    be a second Quality copy of Commercial activity, which the doctrine
  *    forbids: the operational fact is recorded once, and Quality reads it.
  */
+import { formatTenantInstant } from "@/lib/operations/kpi/windows";
 import type { QuotationRequest, Quotation } from "./service";
 
 /** A control whose evidence the platform can and cannot supply today. */
@@ -84,29 +85,14 @@ export function formatDelay(minutes: number): string {
 }
 
 /**
- * A short instant as « 12/08/2026 09:02 », IN THE TENANT'S TIME ZONE.
+ * « 12/08/2026 09:02 » in the tenant's zone.
  *
- * The zone is explicit rather than implicit. `getHours()` would read the
- * SERVER's clock, which is a defect Phase 10.0D already had to fix once: a
- * timestamp rendered in UTC is wrong for eight hours a day in a tenant that is
- * not on UTC, and it silently agrees with itself in CI while being wrong in
- * production. Dakar happens to sit on UTC, which is exactly what would let this
- * ship unnoticed and break for the next tenant.
+ * DELEGATES to the platform's one tenant-time mechanic rather than keeping a
+ * second copy — the earlier local implementation used the SERVER clock, which
+ * agrees with itself on a UTC runner and is wrong everywhere else.
  */
 export function formatInstant(iso: string, timeZone: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  try {
-    const parts = new Intl.DateTimeFormat("fr-FR", {
-      timeZone, day: "2-digit", month: "2-digit", year: "numeric",
-      hour: "2-digit", minute: "2-digit", hour12: false,
-    }).formatToParts(d);
-    const get = (t: string) => parts.find((x) => x.type === t)?.value ?? "";
-    return `${get("day")}/${get("month")}/${get("year")} ${get("hour")}:${get("minute")}`;
-  } catch {
-    // An unusable zone must not lose the fact. UTC is stated, never implied.
-    return `${d.toISOString().slice(8, 10)}/${d.toISOString().slice(5, 7)}/${d.toISOString().slice(0, 4)} ${d.toISOString().slice(11, 16)} UTC`;
-  }
+  return formatTenantInstant(iso, timeZone);
 }
 
 /**

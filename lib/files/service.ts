@@ -15,6 +15,7 @@ import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { deriveMayaLabelFromRow } from "./taxonomy";
+import { resolveTimezone } from "@/lib/operations/kpi/windows";
 import { resolveFileScope } from "@/lib/authz/visibility";
 import { staffDisplayName } from "@/lib/users/lifecycle";
 import { applyFileFilters, sortFiles, type FileSearchRow } from "./filter";
@@ -402,6 +403,26 @@ export async function getFile(id: string): Promise<FileDetail | null> {
       occurredAt: h.occurred_at,
     })),
   };
+}
+
+/**
+ * The tenant's operating timezone, for rendering instants on the dossier.
+ *
+ * Follows the pattern four other modules already use (collections, commercial,
+ * KPI reader, receivables alerts): read `organization.timezone` and pass it
+ * through `resolveTimezone`, which falls back to the platform default on
+ * anything invalid. Gated by `file:read` — the same authority as the page it
+ * serves — and tenant-scoped by construction, since it can only read the
+ * caller's own organization row.
+ */
+export async function getTenantTimezone(): Promise<string> {
+  const user = await assertPermission("file:read");
+  const { data } = await getAdminSupabaseClient()
+    .from("organization")
+    .select("timezone")
+    .eq("id", user.tenantId)
+    .maybeSingle<{ timezone: string | null }>();
+  return resolveTimezone(data?.timezone ?? null);
 }
 
 /**
