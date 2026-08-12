@@ -17,6 +17,27 @@ begin;
 
 create temp table _r (check_name text, value int) on commit drop;
 
+-- SELF-CONTAINED ACTOR. The RPC now carries an OPS-SEC-2A trust contract, so
+-- p_actor must be a real, active user of the target tenant who genuinely holds
+-- customs:update. This suite provisions its own rather than borrowing another
+-- suite's fixture id — the same id means different things in different suites.
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-0000007a0a01', 'qc3-declarant@test.local')
+on conflict (id) do nothing;
+insert into public.app_user (id, tenant_id, email, status) values
+  ('00000000-0000-0000-0000-0000007a0a01', '00000000-0000-0000-0000-000000000001', 'qc3-declarant@test.local', 'active')
+on conflict (id) do nothing;
+insert into public.role (id, tenant_id, code, label_fr) values
+  ('00000000-0000-0000-0000-0000007a0b01', '00000000-0000-0000-0000-000000000001', 'QC3_TEST_DECLARANT', 'Déclarant (test QC3)')
+on conflict (tenant_id, code) do nothing;
+insert into public.role_permission (role_id, permission_id)
+select '00000000-0000-0000-0000-0000007a0b01', p.id from public.permission p
+ where p.code = 'customs:update'
+on conflict do nothing;
+insert into public.user_role (user_id, role_id, tenant_id) values
+  ('00000000-0000-0000-0000-0000007a0a01', '00000000-0000-0000-0000-0000007a0b01', '00000000-0000-0000-0000-000000000001')
+on conflict do nothing;
+
 insert into public.client (id, tenant_id, name) values
   ('00000000-0000-0000-0000-0000000c7a01', '00000000-0000-0000-0000-000000000001', 'QC3 Client')
 on conflict (id) do nothing;
@@ -62,13 +83,13 @@ do $$
 declare bad_outcome boolean := false; no_reason_nr boolean := false; no_reason_sr boolean := false;
 begin
   begin
-    perform public.record_customs_receivability('00000000-0000-0000-0000-0000000d7a01', 'MAYBE', 'x', '00000000-0000-0000-0000-0000000000f1');
+    perform public.record_customs_receivability('00000000-0000-0000-0000-0000000d7a01', 'MAYBE', 'x', '00000000-0000-0000-0000-0000007a0a01');
   exception when others then bad_outcome := true; end;
   begin
-    perform public.record_customs_receivability('00000000-0000-0000-0000-0000000d7a01', 'NON_RECEVABLE', '   ', '00000000-0000-0000-0000-0000000000f1');
+    perform public.record_customs_receivability('00000000-0000-0000-0000-0000000d7a01', 'NON_RECEVABLE', '   ', '00000000-0000-0000-0000-0000007a0a01');
   exception when others then no_reason_nr := true; end;
   begin
-    perform public.record_customs_receivability('00000000-0000-0000-0000-0000000d7a01', 'SOUS_RESERVE', null, '00000000-0000-0000-0000-0000000000f1');
+    perform public.record_customs_receivability('00000000-0000-0000-0000-0000000d7a01', 'SOUS_RESERVE', null, '00000000-0000-0000-0000-0000007a0a01');
   exception when others then no_reason_sr := true; end;
 
   insert into _r values ('invalid_outcome_refused', case when bad_outcome then 1 else 0 end),
@@ -93,7 +114,7 @@ begin
 
   perform public.record_customs_receivability(
     '00000000-0000-0000-0000-0000000d7a01', 'NON_RECEVABLE', '  facture manquante  ',
-    '00000000-0000-0000-0000-0000000000f1');
+    '00000000-0000-0000-0000-0000007a0a01');
 
   select receivability_status, receivability_at, receivability_by, receivability_note, status
     into v_status, v_at, v_by, v_note, st_after
@@ -104,7 +125,7 @@ begin
   insert into _r values
     ('decision_recorded', case when v_status='NON_RECEVABLE' then 1 else 0 end),
     ('date_written_by_server', case when v_at is not null then 1 else 0 end),
-    ('author_recorded', case when v_by='00000000-0000-0000-0000-0000000000f1' then 1 else 0 end),
+    ('author_recorded', case when v_by='00000000-0000-0000-0000-0000007a0a01' then 1 else 0 end),
     ('reason_trimmed', case when v_note='facture manquante' then 1 else 0 end),
     ('one_event_appended', ev_after - ev_before),
     ('status_unchanged', case when st_before is not distinct from st_after then 1 else 0 end);
@@ -154,7 +175,7 @@ begin
   begin
     perform public.record_customs_receivability(
       '00000000-0000-0000-0000-0000000d7a01', 'NON_RECEVABLE', 'facture manquante',
-      '00000000-0000-0000-0000-0000000000f1');
+      '00000000-0000-0000-0000-0000007a0a01');
   exception when others then dup := true; end;
   select count(*) into ev_after from public.business_event
    where event_type='CUSTOMS_RECEIVABILITY_DECIDED' and subject_id='00000000-0000-0000-0000-0000000d7a01';
@@ -162,7 +183,7 @@ begin
   -- …but the file becoming receivable later is a legitimate NEW decision.
   perform public.record_customs_receivability(
     '00000000-0000-0000-0000-0000000d7a01', 'RECEVABLE', null,
-    '00000000-0000-0000-0000-0000000000f1');
+    '00000000-0000-0000-0000-0000007a0a01');
   select receivability_status into v_status from public.customs_record
    where id='00000000-0000-0000-0000-0000000d7a01';
 

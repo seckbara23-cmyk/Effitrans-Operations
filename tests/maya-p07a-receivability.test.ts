@@ -263,6 +263,21 @@ describe("authorization and attribution", () => {
     expect(m).toContain("grant  execute on function public.record_customs_receivability(uuid, text, text, uuid) to service_role");
   });
 
+  it("the caller-declared actor is VERIFIED, not believed (OPS-SEC-2A)", () => {
+    const m = read(MIGRATION);
+    // p_actor arrives from the application, so the database checks it against
+    // app_user + get_user_permissions and requires the SAME permission the
+    // server action gated on. Without this the RPC would assert an authority it
+    // never established — and INV-7 counts any such function.
+    expect(m).toMatch(/assert_actor_authority\(p_actor, v_tenant, 'customs:update', 'SERVICE'\)/);
+    // The assertion runs BEFORE the write.
+    expect(m.indexOf("assert_actor_authority")).toBeLessThan(m.indexOf("update public.customs_record"));
+    // INV-9: the fail-closed unratified lane is never invoked. Checked on the
+    // function BODY, which is what the catalog invariant inspects.
+    const body = m.slice(m.indexOf("as $$", m.indexOf("record_customs_receivability")));
+    expect(body.slice(0, body.indexOf("$$;"))).not.toContain("SYSTEM");
+  });
+
   it("the decision records WHO and WHEN, from the server not the caller", () => {
     const m = read(MIGRATION);
     expect(m).toMatch(/receivability_at\s*= now\(\)/);

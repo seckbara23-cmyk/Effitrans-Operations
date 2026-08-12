@@ -132,6 +132,17 @@ begin
     from public.customs_record where id = p_customs_id for update;
   if not found then raise exception 'customs record not found'; end if;
 
+  -- OPS-SEC-2A trust contract. p_actor is CALLER-DECLARED, so the database
+  -- verifies it rather than believing it: the nomination is checked against
+  -- app_user and get_user_permissions, and must hold the same permission the
+  -- server action gated on. A definer function that trusted its caller's word
+  -- about who is acting would assert authority it never established.
+  --
+  -- 'SERVICE' is hard-coded rather than accepted, which is safe BECAUSE the
+  -- primitive validates the declaration: reached from an authenticated session
+  -- instead of the service role, the lane check refuses it.
+  perform public.assert_actor_authority(p_actor, v_tenant, 'customs:update', 'SERVICE');
+
   -- Same outcome AND same reason as the standing decision: nothing changed, so
   -- nothing is recorded. Refused rather than silently ignored, so the caller
   -- can tell the operator their decision was already on file.
