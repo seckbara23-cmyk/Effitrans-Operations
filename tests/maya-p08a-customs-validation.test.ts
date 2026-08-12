@@ -29,6 +29,9 @@ const code = (p: string) =>
   read(p).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "").replace(/^\s*--.*$/gm, "");
 
 const MIGRATION = "supabase/migrations/20260825000001_customs_validation_event.sql";
+// MAYA-P0.8-B (PG-6) — the editor half, added by a later migration that REPLACES
+// the function. Assertions about the LIVE rule must read this one.
+const MIGRATION_PG6 = "supabase/migrations/20260826000001_customs_editor_attribution.sql";
 const ACTIONS = "lib/customs/actions.ts";
 const PANEL = "components/customs/customs-panel.tsx";
 const PAGE = "app/files/[id]/page.tsx";
@@ -85,13 +88,41 @@ describe("the permission finally has a consumer", () => {
 // ===========================================================================
 describe("maker-checker is enforced by the DATABASE", () => {
   it("the RPC refuses the preparer, using the table's real authorship field", () => {
-    const m = read(MIGRATION);
+    const m = read(MIGRATION_PG6);
     expect(m).toMatch(/v_creator = p_actor/);
     expect(m).toContain("the preparer of a customs record may not validate it");
-    // The maker comes from created_by — the only authorship column, and one
-    // that createCustoms reliably writes.
-    expect(m).toMatch(/select tenant_id, file_id, created_by, reviewed_at/);
     expect(code("lib/customs/actions.ts")).toContain("created_by: user.id");
+  });
+
+  it("PG-6 — it ALSO refuses the last EDITOR, closing PG-1's own hole", () => {
+    // PG-1 could only see created_by, so a checker who edited someone else's
+    // record could validate their own edit. Both halves now disqualify.
+    const m = read(MIGRATION_PG6);
+    expect(m).toMatch(/v_editor = p_actor/);
+    expect(m).toContain("the last editor of a customs record may not validate it");
+    expect(m).toMatch(/select tenant_id, file_id, created_by, updated_by, reviewed_at/);
+    // The edit is attributed where it happens.
+    expect(code("lib/customs/actions.ts")).toContain("updated_by: user.id");
+    expect(actionBody()).toContain('"self_validation_editor"');
+  });
+
+  it("PG-6 strengthens PG-1 without weakening it — the contract survived", () => {
+    const m = read(MIGRATION_PG6);
+    expect(m).toMatch(/assert_actor_authority\(p_actor, v_tenant, 'customs:validate', 'SERVICE'\)/);
+    expect(m).toMatch(/for update;/);
+    expect(m).toContain("this customs record is already validated");
+    // …and the migration proves all three of those itself.
+    expect(m).toContain("the creator half of maker-checker was lost");
+    expect(m).toContain("the actor-authority contract was lost");
+  });
+
+  it("PG-6 does not treat status, BAE or recevabilité as editorship", () => {
+    // Only updateCustoms attributes an edit. Moving a dossier along is not
+    // authorship of the information whose exactitude is certified.
+    const s = code("lib/customs/actions.ts");
+    expect((s.match(/updated_by: user\.id/g) ?? []).length).toBe(1);
+    const upd = s.slice(s.indexOf("export async function updateCustoms"), s.indexOf("export async function changeCustomsStatus"));
+    expect(upd).toContain("updated_by: user.id");
   });
 
   it("the server ALSO refuses early, so the operator gets a clear message", () => {
@@ -257,13 +288,19 @@ describe("audit, timeline and blast radius", () => {
     expect(added).toEqual(["reviewed_at"]);
   });
 
-  it("migration 103 is registered", () => {
+  it("both validation migrations are on disk and the ledger agrees", () => {
     const migrations = readdirSync(fileURLToPath(new URL("../supabase/migrations", import.meta.url)))
       .filter((f) => f.endsWith(".sql"));
     const bi = read("lib/platform/ops/build-info.ts");
-    expect(migrations).toHaveLength(103);
-    expect(bi).toContain("MIGRATION_COUNT = 103");
-    expect(bi).toContain('LATEST_MIGRATION = "20260825000001_customs_validation_event"');
+    // DURABLE: compare against the DECLARED count, never a literal — a literal
+    // asserts "no migration exists beyond this one" and any later phase
+    // invalidates it. What stays true is that both of THESE exist and that the
+    // declared count matches the files on disk.
+    expect(migrations).toHaveLength(Number(/MIGRATION_COUNT = (\d+)/.exec(bi)![1]));
+    expect(migrations).toContain("20260825000001_customs_validation_event.sql");
+    expect(migrations).toContain("20260826000001_customs_editor_attribution.sql");
+    // The LIVE function is the later one, since it replaces the earlier.
+    expect(bi).toContain('LATEST_MIGRATION = "20260826000001_customs_editor_attribution"');
   });
 });
 

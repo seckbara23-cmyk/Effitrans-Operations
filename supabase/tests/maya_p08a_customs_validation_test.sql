@@ -4,6 +4,7 @@
 -- Proves the DATABASE enforces what the UI merely presents:
 --   * an actor without customs:validate is refused
 --   * the PREPARER cannot validate their own record, even holding the permission
+--   * the last EDITOR cannot validate either (PG-6 — the editor half)
 --   * a different holder CAN validate
 --   * a cross-tenant actor is refused
 --   * a forged / nonexistent actor is refused
@@ -138,6 +139,33 @@ begin
   if v_by is not null or v_at is not null then
     raise exception 'PG1 FAIL: a refused attempt wrote state (by=% at=%)', v_by, v_at;
   end if;
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 2b. PG-6 — the EDITOR half. This is the hole PG-1 left open: a checker who
+--     did not create the record but EDITED it would have been allowed to
+--     validate their own edit. `checker` is used here precisely because he is
+--     otherwise a legitimate validator.
+-- ---------------------------------------------------------------------------
+do $$
+declare editor_blocked boolean := false;
+begin
+  update public.customs_record
+     set updated_by = '00000000-0000-0000-0000-00000008a002'
+   where id = '00000000-0000-0000-0000-00000008a0e1';
+
+  begin
+    perform public.record_customs_validation('00000000-0000-0000-0000-00000008a0e1', '00000000-0000-0000-0000-00000008a002');
+  exception when others then editor_blocked := true; end;
+
+  insert into _r values ('editor_self_validation_refused', case when editor_blocked then 1 else 0 end);
+  if not editor_blocked then
+    raise exception 'PG6 FAIL: the last editor must not be able to validate';
+  end if;
+
+  -- Clear it so section 3 can prove the legitimate path still works.
+  update public.customs_record set updated_by = null
+   where id = '00000000-0000-0000-0000-00000008a0e1';
 end $$;
 
 -- ---------------------------------------------------------------------------

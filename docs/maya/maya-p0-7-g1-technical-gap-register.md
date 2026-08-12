@@ -71,7 +71,7 @@ have no signer role** (BLK-FIN-1/2). A document reaching them halts honestly.
 These are **not** questions for staff. The meaning is clear; the capability is
 missing. Each is scoped here so P0.8 can pick them up without re-deriving.
 
-### PG-1 — The Chef de Transit validation event (from R-10)
+### PG-1 — The Chef de Transit validation event (from R-10) — ✅ **CLOSED**
 
 | | |
 |---|---|
@@ -84,6 +84,32 @@ missing. Each is scoped here so P0.8 can pick them up without re-deriving.
 | **Migration** | Probably one narrow additive column. |
 | **Depends on business** | **No.** This is the cleanest gap in the register — it can be built before any answer returns. |
 | **Recommended phase** | **P0.8, first item.** |
+| **STATUS** | ✅ **CLOSED — MAYA-P0.8-A, `aa1210e`, CI #445, migration 103. PRODUCTION UAT PASSED 2026-08-12** (see §H). |
+
+**Production UAT evidence, observed 2026-08-12.** « Validation Chef de Transit »
+renders in the Dédouanement section; an authorized Chef de Transit executes it;
+the panel then reads *« Validé le 12/08/2026 par chef.transit.demo@effitrans.sn »*
+and the action disappears. Recevabilité stayed independently « Non évaluée »,
+the customs fields stayed independent, and the dossier remained « Déclaration
+préparée » — the validation manufactured **no** status transition, which was the
+explicit design constraint.
+
+**What PG-1 could not do, and PG-6 does.** PG-1's separation could only see
+`created_by`, because that was the only authorship column. A checker who EDITED
+someone else's record could therefore validate their own edit. That hole is
+closed by **PG-6** below.
+
+### PG-6 — The editor half of maker-checker (discovered by PG-1) — ✅ **CLOSED**
+
+| | |
+|---|---|
+| **Authority affected** | `customs_record`, `record_customs_validation` |
+| **Current before** | `updateCustoms` attributed nothing; only `created_by` existed. |
+| **Missing** | `updated_by`, and the second disqualification in the RPC. |
+| **Why not `audit_log`** | The editor WAS recoverable there (`CUSTOMS_UPDATED` carries its actor), but that store is forensic and retained on its own terms. Making a live authorization decision depend on a retention policy means the separation weakens silently if rows are ever pruned. Provenance a control depends on belongs on the record. |
+| **Scope** | Only `updateCustoms` attributes an edit. Changing a status, recording a BAE or pronouncing recevabilité are acts on the row, not authorship of the information being certified. |
+| **Depends on business** | **No.** Recording who edited is provenance, not policy. |
+| **STATUS** | ✅ **CLOSED — MAYA-P0.8-B, migration 104.** ⚠ operator apply pending. |
 
 ### PG-2 — Bon de Recettes (from R-18)
 
@@ -113,6 +139,7 @@ missing. Each is scoped here so P0.8 can pick them up without re-deriving.
 | **Missing** | A role per step. Deliberately never guessed. |
 | **Depends on business** | **Yes — blocking.** Q6.6. |
 | **Note** | This is **configuration, not schema** — mapping a step to an existing role. Cheap once answered. |
+| **P0.8-B re-audit** | **NOTHING TO BUILD.** `AUTHORIZATION_SIGNER_MAP`, `signerRoleFor()` and `isBlockedStep()` already exist in `lib/finance/expense/visa.ts`; the mechanism is complete and only two role VALUES are absent. This gap is pure business data. |
 
 ### PG-5 — Vehicle authority (from R-13)
 

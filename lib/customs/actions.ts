@@ -28,7 +28,7 @@ type Admin = ReturnType<typeof getAdminSupabaseClient>;
 async function loadCustoms(supabase: Admin, id: string, tenantId: string) {
   const { data } = await supabase
     .from("customs_record")
-    .select("id, file_id, status, required, bae_reference, declaration_number, declaration_date, receivability_status, receivability_note, created_by, reviewed_at")
+    .select("id, file_id, status, required, bae_reference, declaration_number, declaration_date, receivability_status, receivability_note, created_by, updated_by, reviewed_at")
     .eq("id", id)
     .eq("tenant_id", tenantId)
     .is("deleted_at", null)
@@ -156,6 +156,10 @@ export async function updateCustoms(id: string, input: CustomsInput): Promise<Ac
       inspection_status: input.inspectionStatus ?? "NOT_REQUIRED",
       external_ref: input.externalRef?.trim() || null,
       notes: input.notes?.trim() || null,
+      // MAYA-P0.8-B (PG-6) — attribute the EDIT. This is the information whose
+      // exactitude the Chef de Transit later certifies, so whoever wrote it
+      // must be excluded from validating it.
+      updated_by: user.id,
       ...(input.required === undefined ? {} : { required: input.required }),
     })
     .eq("id", id)
@@ -294,9 +298,14 @@ export async function recordCustomsValidation(id: string): Promise<ActionResult>
   if (!(await isFileVisible(user.id, user.tenantId, rec.file_id))) {
     return { ok: false, error: "forbidden" };
   }
-  // Fail before showing success. The RPC enforces both of these too.
+  // Fail before showing success. The RPC enforces all of these too.
+  // BOTH halves of authorship disqualify: whoever wrote the information may not
+  // certify it, whether they wrote it first (created_by) or last (updated_by).
   if (rec.created_by && rec.created_by === user.id) {
     return { ok: false, error: "self_validation" };
+  }
+  if (rec.updated_by && rec.updated_by === user.id) {
+    return { ok: false, error: "self_validation_editor" };
   }
   if (rec.reviewed_at) return { ok: false, error: "already_validated" };
 

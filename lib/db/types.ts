@@ -1262,6 +1262,8 @@ export type Database = {
           receivability_note: string | null;
           // MAYA-P0.8-A (PG-1) — WHO already existed as reviewed_by; WHEN did not.
           reviewed_at: string | null;
+          // MAYA-P0.8-B (PG-6) — the editor half of maker-checker.
+          updated_by: string | null;
         };
         Insert: {
           id?: string;
@@ -1274,6 +1276,7 @@ export type Database = {
           receivability_by?: string | null;
           receivability_note?: string | null;
           reviewed_at?: string | null;
+          updated_by?: string | null;
           declaration_number?: string | null;
           customs_office?: string | null;
           regime?: string | null;
@@ -1330,6 +1333,7 @@ export type Database = {
           receivability_by?: string | null;
           receivability_note?: string | null;
           reviewed_at?: string | null;
+          updated_by?: string | null;
         };
         Relationships: [
           {

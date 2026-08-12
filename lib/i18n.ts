@@ -556,6 +556,7 @@ export const t = {
       unchanged: "Cette décision est déjà enregistrée à l'identique.",
       record_failed: "Enregistrement impossible.",
       self_validation: "Le préparateur ne peut pas valider son propre dossier douane.",
+      self_validation_editor: "La dernière personne ayant modifié ce dossier douane ne peut pas le valider.",
       already_validated: "Ce dossier douane est déjà validé.",
       protected_released:
         "Ce dédouanement est libéré (BAE) : il ne peut plus être supprimé.",
