@@ -41,6 +41,15 @@ export type CustomsRecord = {
   inspectionStatus: InspectionStatus;
   externalRef: string | null;
   notes: string | null;
+  /**
+   * MAYA-P0.7-A — Quality Control N°3 (Déclarant en Douane). The RECORDED
+   * outcome only; the criteria that produced it are deliberately not modelled,
+   * because the Quality Manual names the control and not the checklist.
+   * `null` = not yet assessed, never "receivable by default".
+   */
+  receivabilityStatus: string | null;
+  receivabilityAt: string | null;
+  receivabilityNote: string | null;
 };
 
 export type CustomsQueueItem = {

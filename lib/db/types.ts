@@ -1254,6 +1254,12 @@ export type Database = {
           intel_version: number;
           submitted_at: string | null;
           released_at: string | null;
+          // MAYA-P0.7-A — Quality Control N°3 (recevabilité). All nullable:
+          // null = not yet assessed, never "receivable by default".
+          receivability_status: string | null;
+          receivability_at: string | null;
+          receivability_by: string | null;
+          receivability_note: string | null;
         };
         Insert: {
           id?: string;
@@ -1261,6 +1267,10 @@ export type Database = {
           file_id: string;
           status?: string;
           required?: boolean;
+          receivability_status?: string | null;
+          receivability_at?: string | null;
+          receivability_by?: string | null;
+          receivability_note?: string | null;
           declaration_number?: string | null;
           customs_office?: string | null;
           regime?: string | null;
@@ -1312,6 +1322,10 @@ export type Database = {
           intel_version?: number;
           submitted_at?: string | null;
           released_at?: string | null;
+          receivability_status?: string | null;
+          receivability_at?: string | null;
+          receivability_by?: string | null;
+          receivability_note?: string | null;
         };
         Relationships: [
           {
@@ -4539,6 +4553,12 @@ export type Database = {
       };
       record_bae_reference: {
         Args: { p_customs_id: string; p_bae_reference: string; p_actor: string | null };
+        Returns: Json;
+      };
+      // MAYA-P0.7-A — Quality Control N°3. Writes the decision AND appends the
+      // ledger event in one transaction; service_role only.
+      record_customs_receivability: {
+        Args: { p_customs_id: string; p_status: string; p_note: string | null; p_actor: string };
         Returns: Json;
       };
       next_invoice_number: {

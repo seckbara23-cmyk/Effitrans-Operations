@@ -75,6 +75,12 @@ export function rowToDeclaration(row: IntelRecordRow): Declaration {
     inspectionStatus: row.inspection_status as InspectionStatus,
     externalRef: row.external_ref,
     notes: row.notes,
+    // MAYA-P0.7-A — the intelligence lifecycle does not read recevabilité and
+    // must not: a QC judgement is not a declaration state. Carried as null so
+    // the shape is complete without implying the engine consumes it.
+    receivabilityStatus: null,
+    receivabilityAt: null,
+    receivabilityNote: null,
   };
   const base = toDeclaration(record, {
     status: coerceDeclarationStatus(row.intel_status),

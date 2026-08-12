@@ -98,6 +98,15 @@ export const EVENT_TYPES: readonly EventTypeDef[] = [
   { type: "CUSTOMS_STATUS_CHANGED", domain: "customs", version: 1, emission: "trigger", metadataKeys: [...TRANSITION], clientSafe: false, labelFr: "Statut douane modifié" },
   { type: "CUSTOMS_DECLARED", domain: "customs", version: 1, emission: "trigger", metadataKeys: [...TRANSITION, "reference"], clientSafe: true, labelFr: "Déclaration déposée" },
   { type: "BAE_RECORDED", domain: "customs", version: 1, emission: "trigger", metadataKeys: ["reference"], clientSafe: false, labelFr: "BAE enregistré" },
+  // MAYA-P0.7-A — Quality Control N°3. Emitted ONLY by
+  // record_customs_receivability: the WES-9 customs trigger does not watch the
+  // receivability columns, so there is exactly one owner of this fact and no
+  // double emission is possible. The declarant's REASON TEXT is not carried —
+  // only whether one was given — for the reason WES-9A kept assignment reasons
+  // out of the ledger: free text belongs on the record, where it can be
+  // corrected, not in an immutable append-only store. Internal: a receivability
+  // refusal is an internal judgement and must not reach the customer portal.
+  { type: "CUSTOMS_RECEIVABILITY_DECIDED", domain: "customs", version: 1, emission: "rpc", metadataKeys: [...TRANSITION, "has_reason"], clientSafe: false, labelFr: "Recevabilité prononcée" },
   { type: "CUSTOMS_RELEASE_COMPLETED", domain: "customs", version: 1, emission: "trigger", metadataKeys: [...TRANSITION, "reference"], clientSafe: true, labelFr: "Mainlevée obtenue" },
 
   // ----------------------------------------------------------------- transport

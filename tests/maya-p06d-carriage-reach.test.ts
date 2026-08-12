@@ -371,9 +371,14 @@ describe("nothing else moved", () => {
   it("no migration was added by this phase", () => {
     const migrations = readdirSync(fileURLToPath(new URL("../supabase/migrations", import.meta.url)))
       .filter((f) => f.endsWith(".sql"));
-    expect(migrations).toHaveLength(101);
-    expect(read("lib/platform/ops/build-info.ts")).toContain("MIGRATION_COUNT = 101");
-    expect(read("lib/platform/ops/build-info.ts")).toContain('LATEST_MIGRATION = "20260823000001_maya_migration_staging"');
+    // DURABLE FORM. This used to pin the literal count (101), which asserted
+    // "no migration exists anywhere" rather than "this phase added none" — so
+    // it broke the moment a LATER phase legitimately shipped one (P0.7-A did).
+    // What actually matters, and stays true forever: the declared count matches
+    // the files on disk, and THIS phase's own files contain no migration.
+    const declared = Number(/MIGRATION_COUNT = (\d+)/.exec(read("lib/platform/ops/build-info.ts"))![1]);
+    expect(migrations).toHaveLength(declared);
+    expect(migrations.filter((f) => /carriage|container/i.test(f))).toEqual([]);
     // …and no RPC was created to serve the panel.
     expect(readerBody()).not.toContain(".rpc(");
   });

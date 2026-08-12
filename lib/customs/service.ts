@@ -23,6 +23,9 @@ import type {
 type RecordRow = {
   id: string;
   file_id: string;
+  receivability_status: string | null;
+  receivability_at: string | null;
+  receivability_note: string | null;
   status: string;
   required: boolean;
   declaration_number: string | null;
@@ -51,11 +54,17 @@ function toRecord(r: RecordRow): CustomsRecord {
     inspectionStatus: r.inspection_status as InspectionStatus,
     externalRef: r.external_ref,
     notes: r.notes,
+    // MAYA-P0.7-A — QC N°3. Null means NOT YET ASSESSED, which is deliberately
+    // distinct from every recorded outcome: an unassessed file is neither
+    // receivable nor refused, and quality reporting must tell the three apart.
+    receivabilityStatus: r.receivability_status ?? null,
+    receivabilityAt: r.receivability_at ?? null,
+    receivabilityNote: r.receivability_note ?? null,
   };
 }
 
 const RECORD_COLS =
-  "id, file_id, status, required, declaration_number, customs_office, regime, declaration_date, bae_reference, release_date, inspection_status, external_ref, notes";
+  "id, file_id, status, required, declaration_number, customs_office, regime, declaration_date, bae_reference, release_date, inspection_status, external_ref, notes, receivability_status, receivability_at, receivability_note";
 
 /** The (single) customs record for a dossier, or null. */
 export async function getCustomsRecord(fileId: string): Promise<CustomsRecord | null> {

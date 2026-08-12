@@ -20,6 +20,7 @@ import { onCustomsReleased } from "@/lib/handoffs/triggers";
 import { custCustomsCleared } from "@/lib/customer-notify/triggers";
 import { canDeclare, canRelease, requiredCustomsDocCodes } from "./gates";
 import { canTransition, isCustomsStatus } from "./status";
+import { validateReceivability } from "./receivability";
 import type { ActionResult, CustomsInput, CustomsStatus } from "./types";
 
 type Admin = ReturnType<typeof getAdminSupabaseClient>;
@@ -27,7 +28,7 @@ type Admin = ReturnType<typeof getAdminSupabaseClient>;
 async function loadCustoms(supabase: Admin, id: string, tenantId: string) {
   const { data } = await supabase
     .from("customs_record")
-    .select("id, file_id, status, required, bae_reference, declaration_number, declaration_date")
+    .select("id, file_id, status, required, bae_reference, declaration_number, declaration_date, receivability_status, receivability_note")
     .eq("id", id)
     .eq("tenant_id", tenantId)
     .is("deleted_at", null)
@@ -239,6 +240,73 @@ export async function changeCustomsStatus(id: string, toStatus: string): Promise
  * Recording is the Declarant's action. The official evidence is uploaded
  * separately as a BAE document and verified by someone else.
  */
+/**
+ * MAYA-P0.7-A — record the recevabilité decision (Quality Control N°3).
+ *
+ * OWNERSHIP comes from first-party evidence: the Effitrans Quality Control
+ * Manual places « Recevabilité » under QC N°3, Déclarant en Douane. The
+ * declarant already holds `customs:update`, so this needs NO new permission —
+ * and deliberately does not use `customs:validate`, which is the Chef de
+ * Transit's checker half and must stay separate from the preparer's work.
+ *
+ * WHAT IT DOES NOT DO:
+ *   * it does not evaluate criteria — the manual names the control, not the
+ *     checklist, so the outcome is the declarant's judgement and no document
+ *     requirement is invented here;
+ *   * it does not gate anything — no status moves, no step completes, no
+ *     handoff fires. Recording that the control happened is the whole change.
+ *
+ * Re-deciding is allowed (a refused file becomes receivable once the missing
+ * piece arrives); repeating the IDENTICAL decision is refused so the timeline
+ * does not accumulate the same fact twice.
+ */
+export async function recordReceivability(
+  id: string,
+  outcome: string,
+  note: string | null,
+): Promise<ActionResult> {
+  let user;
+  try {
+    user = await assertPermission("customs:update");
+  } catch {
+    return { ok: false, error: "forbidden" };
+  }
+
+  const supabase = getAdminSupabaseClient();
+  const rec = await loadCustoms(supabase, id, user.tenantId);
+  if (!rec) return { ok: false, error: "not_found" };
+  if (!(await isFileVisible(user.id, user.tenantId, rec.file_id))) {
+    return { ok: false, error: "forbidden" };
+  }
+
+  const check = validateReceivability(
+    { outcome, note },
+    { outcome: rec.receivability_status ?? null, note: rec.receivability_note ?? null },
+  );
+  if (!check.ok) return { ok: false, error: check.error };
+
+  // The RPC writes the decision and appends the ledger event in ONE
+  // transaction, so a decision can never land without leaving a trace.
+  const { error } = await supabase.rpc("record_customs_receivability", {
+    p_customs_id: id,
+    p_status: check.decision.outcome,
+    p_note: check.decision.note,
+    p_actor: user.id,
+  });
+  if (error) return { ok: false, error: "record_failed" };
+
+  await writeAudit({
+    action: AuditActions.CUSTOMS_UPDATED,
+    actorId: user.id,
+    tenantId: user.tenantId,
+    entity: "customs_record",
+    entityId: id,
+    after: { receivability_status: check.decision.outcome, has_reason: check.decision.note !== null },
+  });
+  revalidate(rec.file_id);
+  return { ok: true, id };
+}
+
 export async function recordBaeReference(
   id: string,
   baeReference: string,

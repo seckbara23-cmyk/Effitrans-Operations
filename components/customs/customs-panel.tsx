@@ -13,9 +13,17 @@ import {
   changeCustomsStatus,
   createCustoms,
   deleteCustoms,
+  recordReceivability,
   releaseCustoms,
   updateCustoms,
 } from "@/lib/customs/actions";
+import {
+  isReceivabilityOutcome,
+  reasonRequired,
+  RECEIVABILITY_LABELS_FR,
+  RECEIVABILITY_OUTCOMES,
+  type ReceivabilityOutcome,
+} from "@/lib/customs/receivability";
 import type { ActionResult, CustomsRecord, MissingCustomsDoc } from "@/lib/customs/types";
 
 const STATUS_STYLE: Record<string, string> = {
@@ -29,6 +37,13 @@ const STATUS_STYLE: Record<string, string> = {
   RELEASED: "bg-teal-50 text-teal-700",
   BLOCKED: "bg-red-50 text-red-700",
   CANCELLED: "bg-slate-100 text-slate-400 line-through",
+};
+
+/** Refusal reads as a warning, never as a failure of the dossier. */
+const RECEIVABILITY_STYLE: Record<ReceivabilityOutcome, string> = {
+  RECEVABLE: "bg-teal-50 text-teal-700",
+  NON_RECEVABLE: "bg-red-50 text-red-700",
+  SOUS_RESERVE: "bg-amber-50 text-amber-700",
 };
 
 const REGIMES = [
@@ -189,6 +204,59 @@ export function CustomsPanel({
             )}
           </div>
         )}
+
+        {/* MAYA-P0.7-A — Contrôle Qualité N°3 : recevabilité.
+            A RECORDED DECISION, not a gate. Nothing on this dossier behaves
+            differently because of what is chosen here; the control exists so
+            that the declarant's judgement is attributable and dated. The
+            criteria are deliberately absent — the Quality Manual names the
+            control, not the checklist. */}
+        <div className="rounded-lg border border-slate-200 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-xs font-semibold text-navy-900">{c.receivability.title}</h3>
+            {record.receivabilityStatus && isReceivabilityOutcome(record.receivabilityStatus) ? (
+              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${RECEIVABILITY_STYLE[record.receivabilityStatus]}`}>
+                {RECEIVABILITY_LABELS_FR[record.receivabilityStatus]}
+              </span>
+            ) : (
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">
+                {c.receivability.notAssessed}
+              </span>
+            )}
+          </div>
+          {record.receivabilityAt && (
+            <p className="mt-1 text-[11px] text-slate-500">
+              {c.receivability.decidedOn} {new Date(record.receivabilityAt).toLocaleDateString("fr-FR")}
+              {record.receivabilityNote ? ` — ${record.receivabilityNote}` : ""}
+            </p>
+          )}
+          {canUpdate && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {RECEIVABILITY_OUTCOMES.map((o) => (
+                <button
+                  key={o}
+                  onClick={() => {
+                    // A reason is mandatory for everything but a clean
+                    // acceptance; an empty prompt aborts rather than recording
+                    // a refusal nobody can explain.
+                    if (reasonRequired(o)) {
+                      const reason = window.prompt(c.receivability.reasonPrompt);
+                      if (!reason || !reason.trim()) return;
+                      run(() => recordReceivability(record.id, o, reason.trim()));
+                      return;
+                    }
+                    run(() => recordReceivability(record.id, o, null));
+                  }}
+                  disabled={pending}
+                  className="rounded-md border border-slate-200 px-2 py-1 text-xs font-medium text-navy-700 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  {RECEIVABILITY_LABELS_FR[o]}
+                </button>
+              ))}
+            </div>
+          )}
+          <p className="mt-2 text-[11px] text-slate-400">{c.receivability.hint}</p>
+        </div>
 
         {/* Editable manual-reference metadata */}
         {canUpdate && (

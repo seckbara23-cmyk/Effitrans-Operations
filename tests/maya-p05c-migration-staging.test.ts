@@ -455,7 +455,10 @@ describe("3/20 — isolation, authority, and what stayed untouched", () => {
 
   it("housekeeping: build-info, registry and CI wiring", () => {
     const b = read("lib/platform/ops/build-info.ts");
-    expect(b).toContain('LATEST_MIGRATION = "20260823000001_maya_migration_staging"');
+    // P0.5-C's migration remains ON DISK and in the ledger; it is no longer the
+    // NEWEST, because later phases legitimately shipped their own.
+    expect(readdirSync(fileURLToPath(new URL("../supabase/migrations", import.meta.url))))
+      .toContain("20260823000001_maya_migration_staging.sql");
     const count = readdirSync(fileURLToPath(new URL("../supabase/migrations", import.meta.url)))
       .filter((f) => f.endsWith(".sql")).length;
     expect(b).toContain(`MIGRATION_COUNT = ${count}`);

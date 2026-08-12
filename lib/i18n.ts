@@ -481,6 +481,16 @@ export const t = {
     cancel: "Annuler",
     release: "Libérer (BAE)",
     baePrompt: "Référence BAE / libération :",
+    // MAYA-P0.7-A — Contrôle Qualité N°3 (Déclarant en douane).
+    receivability: {
+      title: "Recevabilité",
+      notAssessed: "Non évaluée",
+      // Names the control's owner without asserting a checklist the manual
+      // does not define.
+      hint: "Contrôle du déclarant en douane. Les critères ne sont pas encore arrêtés : la décision reste un jugement professionnel et ne conditionne aucune étape.",
+      reasonPrompt: "Motif (obligatoire) :",
+      decidedOn: "Prononcée le",
+    },
     save: "Enregistrer",
     saving: "Enregistrement…",
     fields: {
@@ -530,6 +540,11 @@ export const t = {
       invalid_transition: "Transition non autorisée.",
       customs_docs_missing: "Documents requis manquants pour déclarer.",
       bae_required: "Une référence BAE est requise pour libérer.",
+      // MAYA-P0.7-A — recevabilité.
+      invalid_outcome: "Décision de recevabilité invalide.",
+      reason_required: "Un motif est obligatoire pour ce choix.",
+      unchanged: "Cette décision est déjà enregistrée à l'identique.",
+      record_failed: "Enregistrement impossible.",
       protected_released:
         "Ce dédouanement est libéré (BAE) : il ne peut plus être supprimé.",
       use_release: "Utilisez l'action « Libérer ».",
