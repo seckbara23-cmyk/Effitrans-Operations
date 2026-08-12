@@ -10,6 +10,8 @@ import { CarriagePanel } from "@/components/files/carriage-panel";
 import { QC2Panel } from "@/components/files/qc2-panel";
 import { QC4Panel } from "@/components/files/qc4-panel";
 import { QC5Panel } from "@/components/files/qc5-panel";
+import { QC6Panel } from "@/components/files/qc6-panel";
+import { deriveQC6 } from "@/lib/files/qc6";
 import { deriveQC5 } from "@/lib/files/qc5";
 import { deriveQC4 } from "@/lib/files/qc4";
 import { deriveQC2 } from "@/lib/files/qc2";
@@ -226,6 +228,17 @@ export default async function FileDetailPage({ params }: { params: { id: string 
   // Embedded finance (finance-role based — NOT inherited from file visibility).
   const canReadFinance = hasPermission(permissions, "finance:read");
   const finance = canReadFinance ? await getFinanceForFile(file.id) : null;
+
+  // MAYA-P0.7-F — Contrôle Qualité N°6. Pure derivation from the finance
+  // projection this page already loaded. `canReadFinance` is passed through:
+  // finance visibility is role-based and NOT inherited from dossier access, so
+  // an ungated viewer must read « restricted », never « 0 frais ».
+  const qc6 = deriveQC6({
+    canReadFinance,
+    charges: finance?.charges ?? [],
+    invoices: finance?.invoices ?? [],
+    timeZone: qc2TimeZone,
+  });
 
   // Communications (staff-role based) — timeline + manual email triggers.
   const canEmail = hasPermission(permissions, "communication:send");
@@ -497,6 +510,7 @@ export default async function FileDetailPage({ params }: { params: { id: string 
           />
         </div>
       )}
+      <QC6Panel evidence={qc6} />
       {canReadDocs && artifactItems.length > 0 && (
         <ArtifactPanel
           fileId={file.id}
