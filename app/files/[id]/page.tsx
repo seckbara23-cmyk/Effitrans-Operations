@@ -5,7 +5,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { ProcessJourneyPanel } from "@/components/process/process-journey";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
-import { getDossierCarriage, getFile, getTenantTimezone, listAssignableStaff, listFiles } from "@/lib/files/service";
+import { getDossierCarriage, getFile, getTenantTimezone, listAssignableStaff, listParentCandidates } from "@/lib/files/service";
 import { CarriagePanel } from "@/components/files/carriage-panel";
 import { QC2Panel } from "@/components/files/qc2-panel";
 import { QC4Panel } from "@/components/files/qc4-panel";
@@ -96,13 +96,12 @@ export default async function FileDetailPage({ params }: { params: { id: string 
       ? [{ id: file.clientId, name: file.clientName ?? file.clientId }]
       : [];
 
-  // MAYA-P0.5-B — candidate parents for « Dossier mère » and the derived MAYA
-  // compatibility label. listFiles is already scoped by file:read + visibility,
-  // so a dossier the user cannot see can never be offered as a parent — and the
-  // database refuses a cross-tenant parent regardless.
-  const parentOptions = canUpdate
-    ? (await listFiles()).filter((f) => f.id !== file.id).map((f) => ({ id: f.id, fileNumber: f.fileNumber }))
-    : [];
+  // MAYA-P0.5-B — candidate parents for « Dossier mère ».
+  // MAYA-P0.8-C: this used to call listFiles(), mapping up to 2000 dossiers
+  // through the search projection (plus a customs read and a MAYA label per
+  // row) to keep two fields. The narrow reader returns exactly those two, under
+  // the same file:read visibility — now enforced by the RLS policy itself.
+  const parentOptions = canUpdate ? await listParentCandidates(file.id) : [];
   // Phase 3.2A — assignment + delete/cancel controls (permission-gated).
   const canAssign = hasPermission(permissions, "file:assign");
   const canManageLifecycle = hasPermission(permissions, "file:delete");

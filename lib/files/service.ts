@@ -406,6 +406,59 @@ export async function getFile(id: string): Promise<FileDetail | null> {
 }
 
 /**
+ * MAYA-P0.8-C — candidate parents for the « Dossier mère » selector.
+ * ---------------------------------------------------------------------------
+ * The dossier page used to call `listFiles()` for this, and kept two fields out
+ * of it. Since P0.6-B/C that call maps up to 2000 dossiers through the full
+ * search projection, issues a batched customs read whenever the viewer holds
+ * `customs:read`, and derives a MAYA-compatible label per row — all discarded
+ * except `{ id, fileNumber }`. It ran on every dossier page load for anyone who
+ * could edit.
+ *
+ * This reads the two columns the selector actually renders, and nothing else.
+ *
+ * VISIBILITY IS UNCHANGED, and is now enforced one layer lower. `listFiles`
+ * runs on the admin client and therefore has to REBUILD the row filter in
+ * application code via `resolveFileScope` — that helper exists precisely
+ * because the admin client bypasses RLS, and its own comment says it "mirrors
+ * can_read_file for admin reads". This reader selects only `operational_file`
+ * columns, with no embed that would need another table's policy, so it can run
+ * on the USER-CONTEXT client and let the real policy decide:
+ *   tenant_id = auth_tenant_id() AND has_permission('file:read')
+ *                                AND can_read_file(id)
+ * Same rows, decided by the database rather than by a mirror of it.
+ *
+ * Behaviour is otherwise preserved deliberately: no status, archived or type
+ * filter is introduced, because the selector never had one and narrowing it
+ * here would silently change which dossiers may be chosen as a parent. The
+ * same 2000-row bound and the same newest-first ordering are kept.
+ *
+ * Parent INTEGRITY is not this function's job and is not duplicated here: the
+ * `enforce_file_parent()` trigger already refuses a cross-tenant parent, a
+ * self-parent and any cycle, in the database, whatever the UI offers.
+ */
+export async function listParentCandidates(
+  excludeFileId: string,
+): Promise<{ id: string; fileNumber: string }[]> {
+  const user = await assertPermission("file:read");
+  const supabase = getServerSupabaseClient();
+
+  const { data, error } = await supabase
+    .from("operational_file")
+    .select("id, file_number")
+    .eq("tenant_id", user.tenantId)
+    // Excluded in the QUERY rather than after the fact — a dossier can never be
+    // its own parent, so it should never travel.
+    .neq("id", excludeFileId)
+    .order("created_at", { ascending: false })
+    .limit(2000)
+    .returns<{ id: string; file_number: string }[]>();
+  if (error) throw new Error(`[files] parent candidates failed: ${error.message}`);
+
+  return (data ?? []).map((f) => ({ id: f.id, fileNumber: f.file_number }));
+}
+
+/**
  * The tenant's operating timezone, for rendering instants on the dossier.
  *
  * Follows the pattern four other modules already use (collections, commercial,
