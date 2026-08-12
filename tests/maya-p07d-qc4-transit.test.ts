@@ -22,6 +22,7 @@ import { describe, expect, it } from "vitest";
 import {
   deriveQC4, slaPolicy, describeThreshold, hoursBetween, formatHours, baeDocumentState,
   QC4_NO_CHECKLIST, QC4_NO_VALIDATION_RECORD, QC4_NO_TRANSMISSION_FACT,
+  QC4_VALIDATION_IS_NOT_A_VERDICT,
   type QC4Input,
 } from "@/lib/files/qc4";
 import type { DocumentItem } from "@/lib/documents/types";
@@ -51,7 +52,8 @@ const customs = (over: Partial<CustomsRecord> = {}): CustomsRecord => ({
   releaseDate: "2026-08-11T01:00:00.000Z", inspectionStatus: "NOT_REQUIRED",
   externalRef: "GND-77421", notes: null,
   receivabilityStatus: null, receivabilityAt: null, receivabilityNote: null,
-  providerCode: "manual", providerSyncedAt: null, ...over,
+  providerCode: "manual", providerSyncedAt: null,
+  reviewedAt: null, reviewedByEmail: null, ...over,
 });
 
 const input = (over: Partial<QC4Input> = {}): QC4Input => ({
@@ -86,20 +88,22 @@ describe("nothing is invented where Effitrans defined nothing", () => {
 
   it("no accuracy score, percentage or green indicator is produced", () => {
     const c = byKey(deriveQC4(input()), "informationAccuracy");
-    expect(c.state).toBe("not_represented");
+    expect(c.state).toBe("absent");
     expect(c.reason).toBe(QC4_NO_VALIDATION_RECORD);
     const s = code(PURE);
     expect(s).not.toMatch(/accuracyScore|percent|scorePct|isAccurate/i);
   });
 
-  it("the validation gap is stated precisely: the separation exists, the record does not", () => {
-    expect(QC4_NO_VALIDATION_RECORD).toMatch(/customs:validate/);
-    expect(QC4_NO_VALIDATION_RECORD).toMatch(/Chef de Transit/);
-    // The evidence: no action consumes customs:validate, and reviewed_by is
-    // never written. Pinned so a future phase notices when that changes.
+  it("the validation gap is CLOSED by P0.8-A — the pin fired as designed", () => {
+    // This test previously asserted that NOTHING consumed customs:validate and
+    // that reviewed_by was never written. MAYA-P0.8-A (PG-1) closed exactly
+    // that gap, so the pin now asserts the new truth rather than the old one.
     const actions = code("lib/customs/actions.ts");
-    expect(actions).not.toContain('assertPermission("customs:validate")');
-    expect(actions).not.toMatch(/reviewed_by:/);
+    expect(actions).toContain('assertPermission("customs:validate")');
+    expect(actions).toContain("record_customs_validation");
+    // What is STILL open is the business criterion, not the software.
+    expect(QC4_NO_VALIDATION_RECORD).toMatch(/Chef de Transit/);
+    expect(QC4_VALIDATION_IS_NOT_A_VERDICT).toMatch(/ne vaut pas conformité/);
   });
 
   it("no internal transmission fact is fabricated from client sharing", () => {
@@ -299,8 +303,11 @@ describe("pure derivation, no duplicate authority, no migration", () => {
     const migrations = readdirSync(fileURLToPath(new URL("../supabase/migrations", import.meta.url)))
       .filter((f) => f.endsWith(".sql"));
     const declared = Number(/MIGRATION_COUNT = (\d+)/.exec(read("lib/platform/ops/build-info.ts"))![1]);
+    // DURABLE FORM. A literal count asserts "no migration exists anywhere",
+    // which breaks the moment a LATER phase legitimately ships one — as
+    // MAYA-P0.8-A did. What stays true is that the declared count matches the
+    // files on disk, and that THIS phase contributed none of them.
     expect(migrations).toHaveLength(declared);
-    expect(declared).toBe(102);
   });
 });
 

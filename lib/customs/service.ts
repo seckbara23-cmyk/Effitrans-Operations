@@ -23,6 +23,8 @@ import type {
 type RecordRow = {
   id: string;
   file_id: string;
+  reviewed_at: string | null;
+  reviewer: { email: string | null } | null;
   provider_code: string | null;
   provider_synced_at: string | null;
   receivability_status: string | null;
@@ -67,11 +69,16 @@ function toRecord(r: RecordRow): CustomsRecord {
     // customs reference was obtained instead of implying a live integration.
     providerCode: r.provider_code ?? "manual",
     providerSyncedAt: r.provider_synced_at ?? null,
+    // MAYA-P0.8-A — the Chef de Transit validation. Null = not yet validated;
+    // it is deliberately NOT a status, so it cannot be confused with the
+    // customs lifecycle.
+    reviewedAt: r.reviewed_at ?? null,
+    reviewedByEmail: r.reviewer?.email ?? null,
   };
 }
 
 const RECORD_COLS =
-  "id, file_id, status, required, declaration_number, customs_office, regime, declaration_date, bae_reference, release_date, inspection_status, external_ref, notes, receivability_status, receivability_at, receivability_note, provider_code, provider_synced_at";
+  "id, file_id, status, required, declaration_number, customs_office, regime, declaration_date, bae_reference, release_date, inspection_status, external_ref, notes, receivability_status, receivability_at, receivability_note, provider_code, provider_synced_at, reviewed_at, reviewer:reviewed_by(email)";
 
 /** The (single) customs record for a dossier, or null. */
 export async function getCustomsRecord(fileId: string): Promise<CustomsRecord | null> {

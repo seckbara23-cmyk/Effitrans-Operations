@@ -13,6 +13,7 @@ import {
   changeCustomsStatus,
   createCustoms,
   deleteCustoms,
+  recordCustomsValidation,
   recordReceivability,
   releaseCustoms,
   updateCustoms,
@@ -63,6 +64,7 @@ export function CustomsPanel({
   canUpdate,
   canRelease,
   canDelete,
+  canValidate,
 }: {
   fileId: string;
   record: CustomsRecord | null;
@@ -71,6 +73,7 @@ export function CustomsPanel({
   canUpdate: boolean;
   canRelease: boolean;
   canDelete: boolean;
+  canValidate: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -204,6 +207,37 @@ export function CustomsPanel({
             )}
           </div>
         )}
+
+        {/* MAYA-P0.8-A (PG-1) — validation Chef de Transit.
+            A CHECKER control, distinct from preparation. The action is offered
+            only to a holder of customs:validate, and the SERVER and the
+            DATABASE both refuse a preparer validating their own record — the
+            button is never the security boundary. */}
+        <div className="rounded-lg border border-slate-200 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-xs font-semibold text-navy-900">{c.validation.title}</h3>
+            {record.reviewedAt ? (
+              <span className="rounded-full bg-teal-50 px-2 py-0.5 text-xs font-medium text-teal-700">
+                {c.validation.validatedOn} {new Date(record.reviewedAt).toLocaleDateString("fr-FR")}
+                {record.reviewedByEmail ? ` ${c.validation.by} ${record.reviewedByEmail}` : ""}
+              </span>
+            ) : (
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">
+                {c.validation.notValidated}
+              </span>
+            )}
+          </div>
+          {canValidate && !record.reviewedAt && (
+            <button
+              onClick={() => run(() => recordCustomsValidation(record.id))}
+              disabled={pending}
+              className="mt-2 rounded-md border border-teal-200 px-2 py-1 text-xs font-medium text-teal-700 hover:bg-teal-50 disabled:opacity-50"
+            >
+              {c.validation.action}
+            </button>
+          )}
+          <p className="mt-2 text-[11px] text-slate-400">{c.validation.hint}</p>
+        </div>
 
         {/* MAYA-P0.7-A — Contrôle Qualité N°3 : recevabilité.
             A RECORDED DECISION, not a gate. Nothing on this dossier behaves

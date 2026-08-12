@@ -491,6 +491,16 @@ export const t = {
       reasonPrompt: "Motif (obligatoire) :",
       decidedOn: "Prononcée le",
     },
+    // MAYA-P0.8-A (PG-1) — validation Chef de Transit.
+    validation: {
+      title: "Validation Chef de Transit",
+      action: "Valider — Chef de Transit",
+      validatedOn: "Validé le",
+      by: "par",
+      notValidated: "Non validée",
+      // Says what the fact is, and what it is not.
+      hint: "Contrôle du Chef de Transit, distinct de la préparation. Le préparateur du dossier douane ne peut pas valider son propre travail.",
+    },
     save: "Enregistrer",
     saving: "Enregistrement…",
     fields: {
@@ -545,6 +555,8 @@ export const t = {
       reason_required: "Un motif est obligatoire pour ce choix.",
       unchanged: "Cette décision est déjà enregistrée à l'identique.",
       record_failed: "Enregistrement impossible.",
+      self_validation: "Le préparateur ne peut pas valider son propre dossier douane.",
+      already_validated: "Ce dossier douane est déjà validé.",
       protected_released:
         "Ce dédouanement est libéré (BAE) : il ne peut plus être supprimé.",
       use_release: "Utilisez l'action « Libérer ».",

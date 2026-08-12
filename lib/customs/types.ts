@@ -58,6 +58,13 @@ export type CustomsRecord = {
    */
   providerCode: string;
   providerSyncedAt: string | null;
+  /**
+   * MAYA-P0.8-A — the Chef de Transit validation. An OPERATIONAL fact: it
+   * records that a checker other than the preparer validated the record. It is
+   * not a Quality verdict and not a lifecycle state.
+   */
+  reviewedAt: string | null;
+  reviewedByEmail: string | null;
 };
 
 export type CustomsQueueItem = {

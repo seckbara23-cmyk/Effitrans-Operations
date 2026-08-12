@@ -1260,6 +1260,8 @@ export type Database = {
           receivability_at: string | null;
           receivability_by: string | null;
           receivability_note: string | null;
+          // MAYA-P0.8-A (PG-1) — WHO already existed as reviewed_by; WHEN did not.
+          reviewed_at: string | null;
         };
         Insert: {
           id?: string;
@@ -1271,6 +1273,7 @@ export type Database = {
           receivability_at?: string | null;
           receivability_by?: string | null;
           receivability_note?: string | null;
+          reviewed_at?: string | null;
           declaration_number?: string | null;
           customs_office?: string | null;
           regime?: string | null;
@@ -1326,6 +1329,7 @@ export type Database = {
           receivability_at?: string | null;
           receivability_by?: string | null;
           receivability_note?: string | null;
+          reviewed_at?: string | null;
         };
         Relationships: [
           {
@@ -4559,6 +4563,12 @@ export type Database = {
       // ledger event in one transaction; service_role only.
       record_customs_receivability: {
         Args: { p_customs_id: string; p_status: string; p_note: string | null; p_actor: string };
+        Returns: Json;
+      };
+      // MAYA-P0.8-A (PG-1) — records the Chef de Transit validation. Enforces
+      // maker-checker and actor authority in the database; service_role only.
+      record_customs_validation: {
+        Args: { p_customs_id: string; p_actor: string };
         Returns: Json;
       };
       next_invoice_number: {

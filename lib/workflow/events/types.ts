@@ -98,6 +98,13 @@ export const EVENT_TYPES: readonly EventTypeDef[] = [
   { type: "CUSTOMS_STATUS_CHANGED", domain: "customs", version: 1, emission: "trigger", metadataKeys: [...TRANSITION], clientSafe: false, labelFr: "Statut douane modifié" },
   { type: "CUSTOMS_DECLARED", domain: "customs", version: 1, emission: "trigger", metadataKeys: [...TRANSITION, "reference"], clientSafe: true, labelFr: "Déclaration déposée" },
   { type: "BAE_RECORDED", domain: "customs", version: 1, emission: "trigger", metadataKeys: ["reference"], clientSafe: false, labelFr: "BAE enregistré" },
+  // MAYA-P0.8-A (PG-1) — the Chef de Transit validation. Emitted ONLY by
+  // record_customs_validation; the WES-9 customs trigger watches status and the
+  // BAE reference, not the review columns, so there is one owner. Internal: an
+  // internal control decision is not customer-facing. `maker_checked` records
+  // that the separation was evaluated, never WHO the maker was — the ledger
+  // states the fact, the record holds the identities.
+  { type: "CUSTOMS_VALIDATED", domain: "customs", version: 1, emission: "rpc", metadataKeys: ["maker_checked"], clientSafe: false, labelFr: "Validation Chef de Transit" },
   // MAYA-P0.7-A — Quality Control N°3. Emitted ONLY by
   // record_customs_receivability: the WES-9 customs trigger does not watch the
   // receivability columns, so there is exactly one owner of this fact and no

@@ -28,7 +28,7 @@ type Admin = ReturnType<typeof getAdminSupabaseClient>;
 async function loadCustoms(supabase: Admin, id: string, tenantId: string) {
   const { data } = await supabase
     .from("customs_record")
-    .select("id, file_id, status, required, bae_reference, declaration_number, declaration_date, receivability_status, receivability_note")
+    .select("id, file_id, status, required, bae_reference, declaration_number, declaration_date, receivability_status, receivability_note, created_by, reviewed_at")
     .eq("id", id)
     .eq("tenant_id", tenantId)
     .is("deleted_at", null)
@@ -260,6 +260,64 @@ export async function changeCustomsStatus(id: string, toStatus: string): Promise
  * piece arrives); repeating the IDENTICAL decision is refused so the timeline
  * does not accumulate the same fact twice.
  */
+/**
+ * MAYA-P0.8-A (PG-1) — record the Chef de Transit validation.
+ *
+ * Closes a gap that had been open since the customs module shipped:
+ * `customs:validate` existed, the maker-checker separation existed in the role
+ * templates, and `reviewed_by` existed — but nothing ever consumed the
+ * permission or wrote the column, so the platform expressed a control it could
+ * not perform.
+ *
+ * THE SERVER CHECKS, AND THEN THE DATABASE CHECKS AGAIN. This action asserts
+ * `customs:validate` and refuses an obvious self-validation early so the
+ * operator gets a clear message; the RPC re-establishes BOTH independently,
+ * because the checker role holds `customs:update` as well and a UI-only
+ * separation would be one crafted request away from being bypassed.
+ *
+ * WHAT IT DOES NOT DO: it moves no customs status, completes no process step,
+ * fires no handoff, and asserts no Quality verdict. Recording that the Chef de
+ * Transit validated is an operational fact; whether that fact satisfies QC4's
+ * « Exactitude des informations » is a business criterion nobody has ratified.
+ */
+export async function recordCustomsValidation(id: string): Promise<ActionResult> {
+  let user;
+  try {
+    user = await assertPermission("customs:validate");
+  } catch {
+    return { ok: false, error: "forbidden" };
+  }
+
+  const supabase = getAdminSupabaseClient();
+  const rec = await loadCustoms(supabase, id, user.tenantId);
+  if (!rec) return { ok: false, error: "not_found" };
+  if (!(await isFileVisible(user.id, user.tenantId, rec.file_id))) {
+    return { ok: false, error: "forbidden" };
+  }
+  // Fail before showing success. The RPC enforces both of these too.
+  if (rec.created_by && rec.created_by === user.id) {
+    return { ok: false, error: "self_validation" };
+  }
+  if (rec.reviewed_at) return { ok: false, error: "already_validated" };
+
+  const { error } = await supabase.rpc("record_customs_validation", {
+    p_customs_id: id,
+    p_actor: user.id,
+  });
+  if (error) return { ok: false, error: "record_failed" };
+
+  await writeAudit({
+    action: AuditActions.CUSTOMS_UPDATED,
+    actorId: user.id,
+    tenantId: user.tenantId,
+    entity: "customs_record",
+    entityId: id,
+    after: { reviewed_by: user.id },
+  });
+  revalidate(rec.file_id);
+  return { ok: true, id };
+}
+
 export async function recordReceivability(
   id: string,
   outcome: string,

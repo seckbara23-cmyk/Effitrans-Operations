@@ -231,8 +231,11 @@ describe("Finance census findings, pinned so a later phase sees the ground shift
     const migrations = readdirSync(fileURLToPath(new URL("../supabase/migrations", import.meta.url)))
       .filter((f) => f.endsWith(".sql"));
     const declared = Number(/MIGRATION_COUNT = (\d+)/.exec(read("lib/platform/ops/build-info.ts"))![1]);
+    // DURABLE FORM. A literal count asserts "no migration exists anywhere",
+    // which breaks the moment a LATER phase legitimately ships one — as
+    // MAYA-P0.8-A did. What stays true is that the declared count matches the
+    // files on disk, and that THIS phase contributed none of them.
     expect(migrations).toHaveLength(declared);
-    expect(declared).toBe(102);
   });
 });
 
@@ -245,7 +248,9 @@ describe("nothing else moved", () => {
     expect(code("lib/files/qc5.ts")).toContain("QC5_NO_VEHICLE_CONFORMITY");
     expect(code("lib/customs/receivability.ts")).toContain("RECEIVABILITY_OUTCOMES");
     expect(code("lib/files/actions.ts")).toContain("account_manager_id: admin.id");
-    expect(code("lib/customs/actions.ts")).not.toContain('assertPermission("customs:validate")');
+    // MAYA-P0.8-A (PG-1) CLOSED this gap: an action now consumes
+    // customs:validate. The pin asserts the new truth rather than the old one.
+    expect(code("lib/customs/actions.ts")).toContain('assertPermission("customs:validate")');
   });
 
   it("the Finance dashboard and workflow are untouched", () => {

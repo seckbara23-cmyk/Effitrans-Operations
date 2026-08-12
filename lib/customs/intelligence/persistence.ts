@@ -85,6 +85,10 @@ export function rowToDeclaration(row: IntelRecordRow): Declaration {
     // here so the shape is complete.
     providerCode: row.provider_code ?? "manual",
     providerSyncedAt: row.provider_synced_at ?? null,
+    // The intelligence lifecycle does not read the Chef de Transit validation
+    // and must not: a checker's control decision is not a provider state.
+    reviewedAt: null,
+    reviewedByEmail: null,
   };
   const base = toDeclaration(record, {
     status: coerceDeclarationStatus(row.intel_status),

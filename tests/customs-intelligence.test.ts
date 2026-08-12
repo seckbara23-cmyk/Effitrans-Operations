@@ -25,7 +25,8 @@ function record(over: Partial<CustomsRecord> = {}): CustomsRecord {
     customsOffice: "DKR", regime: "IM4", declarationDate: "2026-07-10", baeReference: null, releaseDate: null,
     inspectionStatus: "PENDING", externalRef: null, notes: null,
     receivabilityStatus: null, receivabilityAt: null, receivabilityNote: null,
-    providerCode: "manual", providerSyncedAt: null, ...over,
+    providerCode: "manual", providerSyncedAt: null,
+    reviewedAt: null, reviewedByEmail: null, ...over,
   };
 }
 function decl(over: Partial<Declaration> = {}): Declaration {

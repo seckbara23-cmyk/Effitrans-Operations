@@ -270,8 +270,11 @@ describe("no duplicate authority, no new storage", () => {
     const migrations = readdirSync(fileURLToPath(new URL("../supabase/migrations", import.meta.url)))
       .filter((f) => f.endsWith(".sql"));
     const declared = Number(/MIGRATION_COUNT = (\d+)/.exec(read("lib/platform/ops/build-info.ts"))![1]);
+    // DURABLE FORM. A literal count asserts "no migration exists anywhere",
+    // which breaks the moment a LATER phase legitimately ships one — as
+    // MAYA-P0.8-A did. What stays true is that the declared count matches the
+    // files on disk, and that THIS phase contributed none of them.
     expect(migrations).toHaveLength(declared);
-    expect(declared).toBe(102);
     expect(migrations.filter((f) => /qc1|quality|commercial_control/i.test(f))).toEqual([]);
   });
 });

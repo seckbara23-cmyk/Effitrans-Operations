@@ -332,10 +332,13 @@ describe("migration discipline and blast radius", () => {
   it("migration 102 exists and the ledger constants match", () => {
     const migrations = readdirSync(fileURLToPath(new URL("../supabase/migrations", import.meta.url)))
       .filter((f) => f.endsWith(".sql"));
-    expect(migrations).toHaveLength(102);
+    // DURABLE FORM. A literal count asserts "no migration exists anywhere",
+    // which breaks when a LATER phase ships one — MAYA-P0.8-A did. What stays
+    // true: P0.7-A's own migration is on disk, and the declared count matches.
     const bi = read("lib/platform/ops/build-info.ts");
-    expect(bi).toContain("MIGRATION_COUNT = 102");
-    expect(bi).toContain('LATEST_MIGRATION = "20260824000001_customs_receivability"');
+    const declared = Number(/MIGRATION_COUNT = (\d+)/.exec(bi)![1]);
+    expect(migrations).toHaveLength(declared);
+    expect(migrations).toContain("20260824000001_customs_receivability.sql");
   });
 
   it("it is additive: no drop, no rename, no not-null on an existing column", () => {

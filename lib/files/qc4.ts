@@ -52,14 +52,16 @@ export const QC4_NO_CHECKLIST =
   "Non évalué : aucun référentiel de checklist Transit n'est défini dans la plateforme.";
 
 /**
- * `customs:validate` exists as a permission and is held by the Chef de Transit
- * (never by the Déclarant — the maker-checker separation is real). But NO action
- * consumes it and `customs_record.reviewed_by` is never written, so there is no
- * validation RECORD to reference. The separation is enforced; the event is not
- * captured.
+ * MAYA-P0.8-A closed the software half of this control: a validation can now be
+ * recorded. What remains open is the BUSINESS half — whether a Chef de Transit
+ * validation is what « exactitude des informations » means. So a recorded
+ * validation is reported as the fact it is, and never as a verdict.
  */
 export const QC4_NO_VALIDATION_RECORD =
-  "Non représenté : la séparation préparateur/valideur existe (customs:validate, réservé au Chef de Transit), mais aucune validation n'est enregistrée comme fait.";
+  "Aucune validation enregistrée à ce jour. La séparation préparateur/valideur existe (customs:validate, réservé au Chef de Transit).";
+
+export const QC4_VALIDATION_IS_NOT_A_VERDICT =
+  "Fait opérationnel enregistré. Le critère qualité « exactitude des informations » n'est pas défini : ce constat ne vaut pas conformité.";
 
 /**
  * « Transmission rapide des documents » names no recipient. The platform records
@@ -156,11 +158,23 @@ export function deriveQC4(input: QC4Input): QC4Evidence {
       reason: QC4_NO_CHECKLIST,
     },
     {
+      // MAYA-P0.8-A — the Chef de Transit validation is now recordable, so this
+      // control has an authoritative fact to reference. It reports WHO and WHEN
+      // and stops there: whether that validation SATISFIES « exactitude des
+      // informations » is a criterion nobody has ratified.
       key: "informationAccuracy",
       labelFr: "Exactitude des informations",
-      state: "not_represented",
-      value: null,
-      reason: QC4_NO_VALIDATION_RECORD,
+      state: !input.canReadCustoms ? "restricted" : c?.reviewedAt ? "observed" : "absent",
+      value: c?.reviewedAt
+        ? `Validation Chef de Transit le ${formatTenantInstant(c.reviewedAt, tz)}${
+            c.reviewedByEmail ? ` — ${c.reviewedByEmail}` : ""
+          }`
+        : null,
+      reason: !input.canReadCustoms
+        ? RESTRICTED_CUSTOMS
+        : c?.reviewedAt
+          ? QC4_VALIDATION_IS_NOT_A_VERDICT
+          : QC4_NO_VALIDATION_RECORD,
     },
     {
       key: "documentaryConformity",
