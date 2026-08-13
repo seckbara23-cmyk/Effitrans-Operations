@@ -199,7 +199,7 @@ end $$;
 -- 4. The same reference is refused; a correction is accepted and marked.
 -- ---------------------------------------------------------------------------
 do $$
-declare dup boolean := false; v_ref text; corrected boolean;
+declare dup boolean := false; v_ref text; corrected boolean; first_corrected boolean;
 begin
   begin
     perform public.record_gainde_registration(
@@ -209,13 +209,31 @@ begin
   perform public.record_gainde_registration(
     '00000000-0000-0000-0000-0000000b10e1', 'GND-2026-4418', '00000000-0000-0000-0000-0000000b1001');
   select external_ref into v_ref from public.customs_record where id='00000000-0000-0000-0000-0000000b10e1';
+  -- SELECT THE EVENT BY ITS REFERENCE, NOT BY TIME.
+  -- `business_event.occurred_at` defaults to now(), which in PostgreSQL is
+  -- TRANSACTION START time — identical for every row this suite writes, since
+  -- the whole file runs inside one BEGIN. `order by occurred_at desc limit 1`
+  -- therefore picks arbitrarily between the two registrations, and picked the
+  -- wrong one in CI #450. The reference identifies the row unambiguously.
   select (metadata->>'corrected')::boolean into corrected from public.business_event
-   where event_type='GAINDE_REGISTRATION_RECORDED' and subject_id='00000000-0000-0000-0000-0000000b10e1'
-   order by occurred_at desc limit 1;
+   where event_type='GAINDE_REGISTRATION_RECORDED'
+     and subject_id='00000000-0000-0000-0000-0000000b10e1'
+     and metadata->>'reference' = 'GND-2026-4418';
+
+  -- The FIRST registration must NOT be flagged as a correction. Asserting both
+  -- rows is only possible because selection is by reference rather than time.
+  select (metadata->>'corrected')::boolean into first_corrected from public.business_event
+   where event_type='GAINDE_REGISTRATION_RECORDED'
+     and subject_id='00000000-0000-0000-0000-0000000b10e1'
+     and metadata->>'reference' = 'GND-2026-4417';
 
   insert into _r values ('duplicate_reference_refused', case when dup then 1 else 0 end),
                         ('correction_accepted', case when v_ref='GND-2026-4418' then 1 else 0 end),
-                        ('correction_flagged', case when corrected then 1 else 0 end);
+                        ('correction_flagged', case when corrected then 1 else 0 end),
+                        ('first_registration_not_flagged', case when first_corrected then 0 else 1 end);
+  if first_corrected then
+    raise exception 'P11 FAIL: the first registration must not be marked a correction';
+  end if;
   if not dup then raise exception 'P11 FAIL: an identical reference must be refused'; end if;
   if v_ref <> 'GND-2026-4418' then raise exception 'P11 FAIL: a correction must be accepted'; end if;
   if not corrected then raise exception 'P11 FAIL: a correction must be marked as one'; end if;

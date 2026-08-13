@@ -148,9 +148,15 @@ end $$;
 do $$
 declare md jsonb; leaked int;
 begin
+  -- Selected by OUTCOME, not by time. `occurred_at` defaults to now(), which is
+  -- TRANSACTION START time, so every event this suite writes shares one value
+  -- and `order by occurred_at desc` cannot break a tie. Only one event exists
+  -- at this point today, so the old form passed — but it was a latent flake,
+  -- and the identical pattern failed in CI #450 in the P1.1 suite.
   select metadata into md from public.business_event
-   where event_type='CUSTOMS_RECEIVABILITY_DECIDED' and subject_id='00000000-0000-0000-0000-0000000d7a01'
-   order by occurred_at desc limit 1;
+   where event_type='CUSTOMS_RECEIVABILITY_DECIDED'
+     and subject_id='00000000-0000-0000-0000-0000000d7a01'
+     and metadata->>'to_status' = 'NON_RECEVABLE';
   select count(*) into leaked from public.business_event
    where event_type='CUSTOMS_RECEIVABILITY_DECIDED'
      and metadata::text ilike '%facture manquante%';
