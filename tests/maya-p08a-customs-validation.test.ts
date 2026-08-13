@@ -51,7 +51,8 @@ const customs = (over: Partial<CustomsRecord> = {}): CustomsRecord => ({
   externalRef: null, notes: null,
   receivabilityStatus: null, receivabilityAt: null, receivabilityNote: null,
   providerCode: "manual", providerSyncedAt: null,
-  reviewedAt: null, reviewedByEmail: null, ...over,
+  reviewedAt: null, reviewedByEmail: null,
+  gaindeRegisteredAt: null, gaindeRegisteredByEmail: null, ...over,
 });
 
 // ===========================================================================
@@ -299,8 +300,12 @@ describe("audit, timeline and blast radius", () => {
     expect(migrations).toHaveLength(Number(/MIGRATION_COUNT = (\d+)/.exec(bi)![1]));
     expect(migrations).toContain("20260825000001_customs_validation_event.sql");
     expect(migrations).toContain("20260826000001_customs_editor_attribution.sql");
-    // The LIVE function is the later one, since it replaces the earlier.
-    expect(bi).toContain('LATEST_MIGRATION = "20260826000001_customs_editor_attribution"');
+    // NOT pinned as "latest": a later phase legitimately ships its own
+    // migration (P1.1 did). What stays true is that PG-6 comes AFTER PG-1, so
+    // its CREATE OR REPLACE is the live definition of the function.
+    const pg1 = migrations.indexOf("20260825000001_customs_validation_event.sql");
+    const pg6 = migrations.indexOf("20260826000001_customs_editor_attribution.sql");
+    expect(pg6).toBeGreaterThan(pg1);
   });
 });
 

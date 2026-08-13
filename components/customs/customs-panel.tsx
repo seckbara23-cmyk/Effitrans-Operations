@@ -14,6 +14,7 @@ import {
   createCustoms,
   deleteCustoms,
   recordCustomsValidation,
+  recordGaindeRegistration,
   recordReceivability,
   releaseCustoms,
   updateCustoms,
@@ -65,6 +66,7 @@ export function CustomsPanel({
   canRelease,
   canDelete,
   canValidate,
+  canRegisterGainde,
 }: {
   fileId: string;
   record: CustomsRecord | null;
@@ -74,6 +76,7 @@ export function CustomsPanel({
   canRelease: boolean;
   canDelete: boolean;
   canValidate: boolean;
+  canRegisterGainde: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -207,6 +210,45 @@ export function CustomsPanel({
             )}
           </div>
         )}
+
+        {/* MAYA-P1.1 — CEO step 8 : enregistrement GAINDE par la Finance.
+            A FINANCE act, gated on customs:register — the narrow capability the
+            permission catalog already names for it. It is a typed record, never
+            a synchronisation: the hint says so, and QC4 keeps reporting the
+            provenance as manual. */}
+        <div className="rounded-lg border border-slate-200 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-xs font-semibold text-navy-900">{c.gainde.title}</h3>
+            {record.gaindeRegisteredAt ? (
+              <span className="rounded-full bg-teal-50 px-2 py-0.5 text-xs font-medium text-teal-700">
+                {c.gainde.registeredOn} {new Date(record.gaindeRegisteredAt).toLocaleDateString("fr-FR")}
+                {record.gaindeRegisteredByEmail ? ` ${c.gainde.by} ${record.gaindeRegisteredByEmail}` : ""}
+              </span>
+            ) : (
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">
+                {c.gainde.notRegistered}
+              </span>
+            )}
+          </div>
+          {record.externalRef && (
+            <p className="mt-1 text-[11px] text-slate-600">
+              {c.fields.externalRef} : <span className="tabular font-medium">{record.externalRef}</span>
+            </p>
+          )}
+          {canRegisterGainde && (
+            <button
+              onClick={() => {
+                const ref = window.prompt(c.gainde.prompt, record.externalRef ?? "");
+                if (ref && ref.trim()) run(() => recordGaindeRegistration(record.id, ref.trim()));
+              }}
+              disabled={pending}
+              className="mt-2 rounded-md border border-teal-200 px-2 py-1 text-xs font-medium text-teal-700 hover:bg-teal-50 disabled:opacity-50"
+            >
+              {c.gainde.action}
+            </button>
+          )}
+          <p className="mt-2 text-[11px] text-slate-400">{c.gainde.hint}</p>
+        </div>
 
         {/* MAYA-P0.8-A (PG-1) — validation Chef de Transit.
             A CHECKER control, distinct from preparation. The action is offered

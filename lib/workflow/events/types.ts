@@ -104,6 +104,12 @@ export const EVENT_TYPES: readonly EventTypeDef[] = [
   // internal control decision is not customer-facing. `maker_checked` records
   // that the separation was evaluated, never WHO the maker was — the ledger
   // states the fact, the record holds the identities.
+  // MAYA-P1.1 — CEO step 8: Finance registers the declaration in GAINDE.
+  // Emitted ONLY by record_gainde_registration. The reference travels, as it
+  // does for BAE_RECORDED — a business reference the client may quote, not
+  // personal data. `corrected` distinguishes a first registration from a
+  // replacement. Internal: a customs reference is not customer-facing.
+  { type: "GAINDE_REGISTRATION_RECORDED", domain: "customs", version: 1, emission: "rpc", metadataKeys: ["reference", "corrected"], clientSafe: false, labelFr: "Enregistrement GAINDE" },
   { type: "CUSTOMS_VALIDATED", domain: "customs", version: 1, emission: "rpc", metadataKeys: ["maker_checked"], clientSafe: false, labelFr: "Validation Chef de Transit" },
   // MAYA-P0.7-A — Quality Control N°3. Emitted ONLY by
   // record_customs_receivability: the WES-9 customs trigger does not watch the

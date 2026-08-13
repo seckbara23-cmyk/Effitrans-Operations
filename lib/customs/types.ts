@@ -65,6 +65,14 @@ export type CustomsRecord = {
    */
   reviewedAt: string | null;
   reviewedByEmail: string | null;
+  /**
+   * MAYA-P1.1 — CEO step 8, the Finance GAINDE registration. An operational
+   * fact: it records that Finance registered the declaration. It is NOT a
+   * synchronisation with GAINDE — no API contract exists (BLK-1) — and not a
+   * lifecycle state.
+   */
+  gaindeRegisteredAt: string | null;
+  gaindeRegisteredByEmail: string | null;
 };
 
 export type CustomsQueueItem = {

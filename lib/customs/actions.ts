@@ -28,7 +28,7 @@ type Admin = ReturnType<typeof getAdminSupabaseClient>;
 async function loadCustoms(supabase: Admin, id: string, tenantId: string) {
   const { data } = await supabase
     .from("customs_record")
-    .select("id, file_id, status, required, bae_reference, declaration_number, declaration_date, receivability_status, receivability_note, created_by, updated_by, reviewed_at")
+    .select("id, file_id, status, required, bae_reference, declaration_number, declaration_date, receivability_status, receivability_note, created_by, updated_by, reviewed_at, external_ref")
     .eq("id", id)
     .eq("tenant_id", tenantId)
     .is("deleted_at", null)
@@ -284,6 +284,65 @@ export async function changeCustomsStatus(id: string, toStatus: string): Promise
  * Transit validated is an operational fact; whether that fact satisfies QC4's
  * « Exactitude des informations » is a business criterion nobody has ratified.
  */
+/**
+ * MAYA-P1.1 — CEO step 8: Finance records the GAINDE registration.
+ *
+ * `customs:register` has existed since the process engine shipped, catalogued as
+ * « Register the declaration in GAINDE (Finance, step 9) » and granted to the
+ * Finance customs role. Nothing consumed it. This is its consumer.
+ *
+ * IT ASSERTS THE NARROW CAPABILITY AND NOTHING WIDER. `external_ref` is already
+ * writable through `updateCustoms`, but that path requires `customs:update` —
+ * the declaration-editing authority, which Finance deliberately does not hold.
+ * Reaching this one field by widening Finance's customs rights would trade a
+ * precise permission for a broad one.
+ *
+ * WHAT IT DOES NOT DO: it moves no customs status, asserts no synchronisation
+ * with GAINDE (there is no API contract — BLK-1), and touches neither
+ * `provider_code` nor `provider_synced_at`. The provenance stays « manual »,
+ * which is what QC4 reports.
+ */
+export async function recordGaindeRegistration(
+  id: string,
+  reference: string,
+): Promise<ActionResult> {
+  let user;
+  try {
+    user = await assertPermission("customs:register");
+  } catch {
+    return { ok: false, error: "forbidden" };
+  }
+  const ref = reference.trim();
+  if (!ref) return { ok: false, error: "reference_required" };
+
+  const supabase = getAdminSupabaseClient();
+  const rec = await loadCustoms(supabase, id, user.tenantId);
+  if (!rec) return { ok: false, error: "not_found" };
+  if (!(await isFileVisible(user.id, user.tenantId, rec.file_id))) {
+    return { ok: false, error: "forbidden" };
+  }
+  // Fail before showing success; the RPC refuses the duplicate as well.
+  if (rec.external_ref === ref) return { ok: false, error: "reference_unchanged" };
+
+  const { error } = await supabase.rpc("record_gainde_registration", {
+    p_customs_id: id,
+    p_reference: ref,
+    p_actor: user.id,
+  });
+  if (error) return { ok: false, error: "record_failed" };
+
+  await writeAudit({
+    action: AuditActions.CUSTOMS_UPDATED,
+    actorId: user.id,
+    tenantId: user.tenantId,
+    entity: "customs_record",
+    entityId: id,
+    after: { external_ref: ref, gainde_registered_by: user.id },
+  });
+  revalidate(rec.file_id);
+  return { ok: true, id };
+}
+
 export async function recordCustomsValidation(id: string): Promise<ActionResult> {
   let user;
   try {

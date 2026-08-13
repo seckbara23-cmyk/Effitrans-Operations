@@ -492,6 +492,17 @@ export const t = {
       decidedOn: "Prononcée le",
     },
     // MAYA-P0.8-A (PG-1) — validation Chef de Transit.
+    // MAYA-P1.1 — CEO step 8, enregistrement GAINDE par la Finance.
+    gainde: {
+      title: "Enregistrement GAINDE",
+      action: "Enregistrer dans GAINDE",
+      prompt: "Référence GAINDE :",
+      registeredOn: "Enregistré le",
+      by: "par",
+      notRegistered: "Non enregistré",
+      // Says plainly that this is a typed record, not a live link.
+      hint: "Saisie manuelle par le Service Finance. Aucune connexion GAINDE n'est en service : la plateforme enregistre la référence, elle ne la synchronise pas.",
+    },
     validation: {
       title: "Validation Chef de Transit",
       action: "Valider — Chef de Transit",
@@ -558,6 +569,8 @@ export const t = {
       self_validation: "Le préparateur ne peut pas valider son propre dossier douane.",
       self_validation_editor: "La dernière personne ayant modifié ce dossier douane ne peut pas le valider.",
       already_validated: "Ce dossier douane est déjà validé.",
+      reference_required: "Une référence GAINDE est requise.",
+      reference_unchanged: "Cette référence GAINDE est déjà enregistrée.",
       protected_released:
         "Ce dédouanement est libéré (BAE) : il ne peut plus être supprimé.",
       use_release: "Utilisez l'action « Libérer ».",

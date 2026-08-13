@@ -25,6 +25,8 @@ type RecordRow = {
   file_id: string;
   reviewed_at: string | null;
   reviewer: { email: string | null } | null;
+  gainde_registered_at: string | null;
+  gainde_registrar: { email: string | null } | null;
   provider_code: string | null;
   provider_synced_at: string | null;
   receivability_status: string | null;
@@ -74,11 +76,15 @@ function toRecord(r: RecordRow): CustomsRecord {
     // customs lifecycle.
     reviewedAt: r.reviewed_at ?? null,
     reviewedByEmail: r.reviewer?.email ?? null,
+    // MAYA-P1.1 — CEO step 8. Null = not registered; never a claim of provider
+    // synchronisation, which `providerCode` alone reports.
+    gaindeRegisteredAt: r.gainde_registered_at ?? null,
+    gaindeRegisteredByEmail: r.gainde_registrar?.email ?? null,
   };
 }
 
 const RECORD_COLS =
-  "id, file_id, status, required, declaration_number, customs_office, regime, declaration_date, bae_reference, release_date, inspection_status, external_ref, notes, receivability_status, receivability_at, receivability_note, provider_code, provider_synced_at, reviewed_at, reviewer:reviewed_by(email)";
+  "id, file_id, status, required, declaration_number, customs_office, regime, declaration_date, bae_reference, release_date, inspection_status, external_ref, notes, receivability_status, receivability_at, receivability_note, provider_code, provider_synced_at, reviewed_at, reviewer:reviewed_by(email), gainde_registered_at, gainde_registrar:gainde_registered_by(email)";
 
 /** The (single) customs record for a dossier, or null. */
 export async function getCustomsRecord(fileId: string): Promise<CustomsRecord | null> {

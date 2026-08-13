@@ -113,7 +113,7 @@ Columns compressed for readability; every row was traced to the named authority.
 | 5 Affectation Déclarant | Chef Transit | 5 `transit_declarant_assignment` | `listEligibleTransitAssignees` · `customs:assign` | **C** | exists but behind the kill switch + `transitExecution` tenant flag |
 | 6 Préparation déclaration | Déclarant | 6 `customs_preparation` | `customs_record` · `updateCustoms` · `customs:update` | **A** | — |
 | 7 Validation | Chef Transit | 7 `transit_validation` | `customs_record.reviewed_by/at` · `record_customs_validation` · `customs:validate` | **A** | ✅ PG-1 + PG-6; CEO confirms the design |
-| 8 GAINDE | Service Finance | 8–9 `coordinator_to_finance`, `gainde_registration` | `customs_record.external_ref` · **no action** · **`customs:register`** (CUSTOMS_FINANCE_OFFICER, OPS_SUPERVISOR) | **E** | **`customs:register` exists, is catalogued as "Register the declaration in GAINDE (Finance, step 9)", is granted to the right role — and NOTHING CONSUMES IT.** Identical to PG-1's pattern |
+| 8 GAINDE | Service Finance | 8–9 `coordinator_to_finance`, `gainde_registration` | `customs_record.external_ref` + `gainde_registered_at/_by` · `recordGaindeRegistration` / `record_gainde_registration` · **`customs:register`** | **A** ✅ | **CLOSED by MAYA-P1.1** (migration 105). The permission finally has a consumer |
 | 9 Rattachement | Déclarant | 10–11 | `customs_record` · `updateCustoms` | **F** | « rattachement » is undefined as a durable fact |
 | 10 BAE + formalités | Agent de Terrain | 12–13 | `bae_reference`, `release_date` · `recordBaeReference`, `recordCustomsRelease` · `customs:update`/`customs:release` | **A** | CUSTOMS_FIELD_AGENT holds `customs:update` |
 | 11 BAD + Delivery Order | Account Manager | — | **`BON_A_DELIVRER` document type EXISTS** (« Bon à Délivrer (BAD) / Delivery Order ») | **B** | the type exists; no AM-facing action names it |
@@ -261,10 +261,19 @@ definition is unratified, so it fails the "sufficiently defined" test.
 The suggested P1.1–P1.8 structure over-fits: seven of eighteen steps are already
 class A, and four more need wiring rather than building.
 
-**P1.1 — Give `customs:register` a consumer (row 8).** Not a contradiction and
-not a permission decision: the authority already exists, correctly scoped, and
-is simply unwired. This is PG-1's shape exactly, and PG-1 is the proof it can be
-done safely in one bounded slice.
+**P1.1 — Give `customs:register` a consumer (row 8).** ✅ **DONE** — migration
+105, `record_gainde_registration`. Row 8 is now class **A**. Finance can record
+the GAINDE registration through the narrow capability the catalog always named
+for it; nothing was synchronised, no status moved, and `customs:update` was
+never widened.
+
+**One finding P1.1 recorded rather than acted on:** the registry lists step 9's
+prerequisite as step 8, which follows Chef Transit validation, and the CEO
+workflow agrees on that ORDER. It is **not enforced**, because the registry
+states of itself that it *"DESCRIBES the process. It does not run it"*, and
+because PG-1 shipped on 2026-08-12 — so no dossier in flight carries
+`reviewed_at`, and a hard gate would block Finance on all of them. Whether
+registration should REQUIRE prior validation is now a business question.
 
 **P1.2 — Engine activation review.** Steps 4 and 5 exist behind a kill switch and
 a tenant flag. Determine whether they should be on. **Zero code.**

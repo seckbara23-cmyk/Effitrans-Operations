@@ -63,6 +63,8 @@ const EMP3_OUTBOUND = "supabase/migrations/20260811000001_outbound_mail.sql";
 const QC3_RECEIVABILITY = "supabase/migrations/20260824000001_customs_receivability.sql";
 // MAYA-P0.8-A — the Chef de Transit validation emitter.
 const PG1_VALIDATION = "supabase/migrations/20260825000001_customs_validation_event.sql";
+// MAYA-P1.1 — the Finance GAINDE registration emitter.
+const P11_GAINDE = "supabase/migrations/20260827000001_gainde_registration.sql";
 const LEDGER_MARKER = "lib/workflow/events/ledger-marker.ts";
 const migration = () => sqlCode(MIGRATION);
 /** WES-9A: the emission functions as they stand today (62 replaced by 63). */
@@ -711,7 +713,7 @@ describe("event sources", () => {
     // would be a lie about coverage, which is what this guards.
     const all = migration() + atomicity() + sqlCode(ASSIGNMENT) + sqlCode(DOC_GOV)
       + sqlCode(ARTIFACTS) + sqlCode(RECONCILE) + sqlCode(EC_TRIAGE) + sqlCode(COMMERCIAL)
-      + sqlCode(UT3_EMITTERS) + sqlCode(EMP3_OUTBOUND) + sqlCode(QC3_RECEIVABILITY) + sqlCode(PG1_VALIDATION);
+      + sqlCode(UT3_EMITTERS) + sqlCode(EMP3_OUTBOUND) + sqlCode(QC3_RECEIVABILITY) + sqlCode(PG1_VALIDATION) + sqlCode(P11_GAINDE);
     for (const def of emittedEventTypes()) {
       // The ledger marker is emitted from the application, by design: the
       // statement IS the act, so there is no prior transaction to join.

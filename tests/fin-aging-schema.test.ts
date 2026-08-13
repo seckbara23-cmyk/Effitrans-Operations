@@ -489,7 +489,8 @@ describe("the DB suite is wired into CI, last, with a readable failure", () => {
     // MAYA-P0.5-C appended its staging suite; the pin moves to it.
     // MAYA-P0.7-A appended its receivability suite; the pin moves to it.
     // MAYA-P0.8-A appended its customs validation suite; the pin moves to it.
-    const mine = ci.indexOf("maya_p08a_customs_validation_test.sql");
+    // MAYA-P1.1 appended its GAINDE suite; the pin moves to it.
+    const mine = ci.indexOf("maya_p11_gainde_registration_test.sql");
     const others = [...ci.matchAll(/-f supabase\/tests\/(\w+)\.sql/g)]
       .map((m) => ci.indexOf(`${m[1]}.sql`))
       .filter((i) => i !== mine);

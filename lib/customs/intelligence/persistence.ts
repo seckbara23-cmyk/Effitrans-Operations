@@ -89,6 +89,10 @@ export function rowToDeclaration(row: IntelRecordRow): Declaration {
     // and must not: a checker's control decision is not a provider state.
     reviewedAt: null,
     reviewedByEmail: null,
+    // The provider lifecycle does not read the Finance registration and must
+    // not: a manual registration is not a provider synchronisation.
+    gaindeRegisteredAt: null,
+    gaindeRegisteredByEmail: null,
   };
   const base = toDeclaration(record, {
     status: coerceDeclarationStatus(row.intel_status),

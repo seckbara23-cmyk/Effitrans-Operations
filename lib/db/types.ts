@@ -1264,6 +1264,9 @@ export type Database = {
           reviewed_at: string | null;
           // MAYA-P0.8-B (PG-6) — the editor half of maker-checker.
           updated_by: string | null;
+          // MAYA-P1.1 — CEO step 8, Finance registers in GAINDE.
+          gainde_registered_at: string | null;
+          gainde_registered_by: string | null;
         };
         Insert: {
           id?: string;
@@ -1277,6 +1280,8 @@ export type Database = {
           receivability_note?: string | null;
           reviewed_at?: string | null;
           updated_by?: string | null;
+          gainde_registered_at?: string | null;
+          gainde_registered_by?: string | null;
           declaration_number?: string | null;
           customs_office?: string | null;
           regime?: string | null;
@@ -1334,6 +1339,8 @@ export type Database = {
           receivability_note?: string | null;
           reviewed_at?: string | null;
           updated_by?: string | null;
+          gainde_registered_at?: string | null;
+          gainde_registered_by?: string | null;
         };
         Relationships: [
           {
@@ -4573,6 +4580,12 @@ export type Database = {
       // maker-checker and actor authority in the database; service_role only.
       record_customs_validation: {
         Args: { p_customs_id: string; p_actor: string };
+        Returns: Json;
+      };
+      // MAYA-P1.1 — Finance GAINDE registration. Asserts customs:register;
+      // service_role only.
+      record_gainde_registration: {
+        Args: { p_customs_id: string; p_reference: string; p_actor: string };
         Returns: Json;
       };
       next_invoice_number: {

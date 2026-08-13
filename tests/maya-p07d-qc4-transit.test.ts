@@ -53,7 +53,8 @@ const customs = (over: Partial<CustomsRecord> = {}): CustomsRecord => ({
   externalRef: "GND-77421", notes: null,
   receivabilityStatus: null, receivabilityAt: null, receivabilityNote: null,
   providerCode: "manual", providerSyncedAt: null,
-  reviewedAt: null, reviewedByEmail: null, ...over,
+  reviewedAt: null, reviewedByEmail: null,
+  gaindeRegisteredAt: null, gaindeRegisteredByEmail: null, ...over,
 });
 
 const input = (over: Partial<QC4Input> = {}): QC4Input => ({
