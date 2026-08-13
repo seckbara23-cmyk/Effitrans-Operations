@@ -23,6 +23,10 @@ const ERR_FR: Record<string, string> = {
   too_large: "Fichier trop volumineux (max 100 Ko).", not_a_png: "Ce fichier n'est pas un PNG valide.",
   mime_not_allowed: "Format non autorisé (PNG uniquement).", extension_not_allowed: "Extension .png requise.",
   alt_required: "Un texte alternatif est obligatoire.", storage_failed: "Échec du stockage.", forbidden: "Non autorisé.",
+  // P1.6B — every remaining server code gets a sentence. A refusal the operator
+  // cannot read is indistinguishable from the crash this phase fixed.
+  invalid_kind: "Type de ressource non reconnu.", empty: "Fichier vide ou absent.",
+  bad_dimensions: "Dimensions d'image invalides.", write_failed: "Échec de l'enregistrement.",
 };
 
 export function BrandAssetManager({ assets }: { assets: BrandAssetView[] }) {
@@ -44,7 +48,15 @@ export function BrandAssetManager({ assets }: { assets: BrandAssetView[] }) {
     if (file.size > MAX_ASSET_BYTES) { setStatus({ tone: "error", msg: ERR_FR.too_large }); return; }
     setStatus(null);
     start(async () => {
-      const res = await uploadBrandAsset({ kind, altText: alt.trim(), title: title.trim() || undefined, file });
+      // MAYA-P1.6B — FormData, not a File nested in a plain object. Same
+      // transport as the document and deposit uploaders, which are the two
+      // upload paths with a production record of working.
+      const fd = new FormData();
+      fd.set("kind", kind);
+      fd.set("altText", alt.trim());
+      fd.set("title", title.trim());
+      fd.set("file", file);
+      const res = await uploadBrandAsset(fd);
       if (res.ok) { setStatus({ tone: "ok", msg: "Ressource publiée." }); setAlt(""); setTitle(""); if (fileRef.current) fileRef.current.value = ""; router.refresh(); }
       else setStatus({ tone: "error", msg: ERR_FR[res.error] ?? "Échec." });
     });

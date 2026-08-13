@@ -107,20 +107,46 @@ export async function updateBrandProfile(input: BrandProfileInput): Promise<Bran
 
 // ------------------------------------------------------------- assets ----
 
-export async function uploadBrandAsset(form: { kind: string; altText: string; title?: string; file: File }): Promise<UploadResult> {
+/**
+ * MAYA-P1.6B — THE ARGUMENT IS FormData, and that is the whole fix.
+ *
+ * This used to take `{ kind, altText, title, file: File }` — a File nested inside
+ * a plain object argument. It is the ONLY upload in the codebase shaped that way,
+ * and production evidence says it never once worked: since DBC-1 shipped on
+ * 2026-07-16 there are ZERO `brand.asset.uploaded` audit events, zero
+ * `brand_asset` rows and zero objects in the bucket, and the server logs record
+ * no invocation at all — no POST, no `[observe]` line from the failure paths
+ * below. The action was never reached; the call failed in the browser.
+ *
+ * The two uploads that DO work in production — `uploadDocument` and
+ * `uploadProofOfDeposit` — both take FormData, which is the transport a file
+ * input already produces. This one now matches them.
+ *
+ * Nothing about the security contract changes: the kind allowlist, the PNG mime
+ * and extension checks, the 100 KB ceiling, the PNG byte-signature check and the
+ * required alt text are all still enforced HERE, on the server, and the storage
+ * path is still built server-side from the session tenant.
+ */
+export async function uploadBrandAsset(formData: FormData): Promise<UploadResult> {
   let admin;
   try {
     admin = await assertPermission("admin:config:manage");
   } catch {
     return { ok: false, error: "forbidden" };
   }
-  if (!isAssetKind(form.kind)) return { ok: false, error: "invalid_kind" };
-  const kind = form.kind as AssetKind;
+  const rawKind = String(formData.get("kind") ?? "");
+  const altText = String(formData.get("altText") ?? "");
+  const title = String(formData.get("title") ?? "");
+  const file = formData.get("file");
 
-  const buf = new Uint8Array(await form.file.arrayBuffer());
+  if (!isAssetKind(rawKind)) return { ok: false, error: "invalid_kind" };
+  const kind = rawKind as AssetKind;
+  if (!(file instanceof File) || file.size === 0) return { ok: false, error: "empty" };
+
+  const buf = new Uint8Array(await file.arrayBuffer());
   const check = validateAssetUpload({
-    kind, mime: form.file.type, filename: form.file.name, byteLength: buf.byteLength,
-    signatureOk: isPngSignature(buf), altText: form.altText,
+    kind, mime: file.type, filename: file.name, byteLength: buf.byteLength,
+    signatureOk: isPngSignature(buf), altText,
   });
   if (!check.ok) return { ok: false, error: check.error };
 
@@ -138,14 +164,14 @@ export async function uploadBrandAsset(form: { kind: string; altText: string; ti
   const { data: inserted, error: insErr } = await supabase
     .from("brand_asset")
     .insert({
-      tenant_id: admin.tenantId, kind, title: form.title?.trim() || null, storage_path: "pending",
-      version, mime: "image/png", bytes: buf.byteLength, alt_text: form.altText.trim(),
+      tenant_id: admin.tenantId, kind, title: title.trim() || null, storage_path: "pending",
+      version, mime: "image/png", bytes: buf.byteLength, alt_text: altText.trim(),
       status: "PUBLISHED", uploaded_by: admin.id,
     })
     .select("id").single();
   if (insErr || !inserted) { reportError(insErr, { scope: "action", event: "brand.asset.insert" }); return { ok: false, error: "write_failed" }; }
 
-  const path = buildAssetPath({ tenantId: admin.tenantId, kind, assetId: inserted.id, version, filename: form.file.name });
+  const path = buildAssetPath({ tenantId: admin.tenantId, kind, assetId: inserted.id, version, filename: file.name });
   const up = await supabase.storage.from(PUBLIC_BUCKET).upload(path, buf, { contentType: "image/png", upsert: false });
   if (up.error) {
     // Compensate: remove the orphan registry row this call created.
