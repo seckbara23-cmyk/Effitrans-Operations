@@ -51,6 +51,12 @@ alter table public.customs_record
 -- Both columns move together. Safe to state symmetrically, unlike P0.8-A's
 -- constraint: these columns are NEW, so no existing row can violate them and
 -- nothing has to be back-filled to make the migration apply.
+--
+-- RE-RUN SAFE. Every statement here is idempotent — `add column if not exists`,
+-- a guarded `add constraint`, `create or replace function`, and revoke/grant.
+-- That matters: the first production attempt aborted in the assertion block at
+-- the very end, so this file may meet a database where some of it already
+-- applied. Running it again converges either way.
 do $$
 begin
   if not exists (
@@ -151,8 +157,20 @@ grant  execute on function public.record_gainde_registration(uuid, text, uuid) t
 -- ===========================================================================
 -- Self-assertions.
 -- ===========================================================================
+--
+-- THE ASSERTIONS READ CODE, NOT PROSE.
+--
+-- `pg_proc.prosrc` returns the function body INCLUDING its comments. The first
+-- version of this block matched the raw source, and it fired in production on
+-- the body's own honesty comment — the line that names `customs:update`
+-- precisely in order to say the RPC does NOT use it. The invariant was right
+-- about the rule and wrong about the evidence.
+--
+-- `v_body` therefore strips `--` comments before any check. The rule is
+-- unchanged and, if anything, stricter: a comment can no longer satisfy the
+-- positive check either, so `customs:register` must appear in EXECUTABLE code.
 do $$
-declare n int; v_src text;
+declare n int; v_src text; v_body text;
 begin
   select count(*) into n from information_schema.columns
    where table_schema = 'public' and table_name = 'customs_record'
@@ -162,23 +180,30 @@ begin
 
   select p.prosrc into v_src from pg_proc p
    where p.oid = to_regprocedure('public.record_gainde_registration(uuid,text,uuid)');
+  if v_src is null then raise exception 'P1.1: the registration RPC was not created'; end if;
+  -- `n` makes `.` stop at a newline and `$` match at end-of-line, so this
+  -- removes each `--` comment without needing an escaped newline literal.
+  v_body := regexp_replace(v_src, '--.*$', '', 'ng');
 
-  -- The narrow capability, and no substitute.
-  if v_src !~ 'customs:register' then
+  -- The narrow capability, asserted in code, and no substitute.
+  if v_body !~ 'assert_actor_authority' then
+    raise exception 'P1.1: the RPC must verify the caller-declared actor (INV-7)';
+  end if;
+  if v_body !~ 'customs:register' then
     raise exception 'P1.1: the RPC must assert customs:register';
   end if;
-  if v_src ~ 'customs:update' or v_src ~ 'customs:validate' then
+  if v_body ~ 'customs:update' or v_body ~ 'customs:validate' then
     raise exception 'P1.1: a broader customs permission must never substitute';
   end if;
   -- No fabricated synchronisation, and no status movement.
-  if v_src ~ 'provider_synced_at' or v_src ~ 'provider_code' then
+  if v_body ~ 'provider_synced_at' or v_body ~ 'provider_code' then
     raise exception 'P1.1: registration must not touch provider synchronisation state';
   end if;
-  if v_src ~ 'intel_status' then
+  if v_body ~ 'intel_status' then
     raise exception 'P1.1: registration must not move the customs lifecycle';
   end if;
   -- INV-9: the fail-closed lane is never invoked.
-  if v_src ~ 'SYSTEM' then
+  if v_body ~ 'SYSTEM' then
     raise exception 'P1.1: the unratified lane must not be invoked';
   end if;
 end $$;

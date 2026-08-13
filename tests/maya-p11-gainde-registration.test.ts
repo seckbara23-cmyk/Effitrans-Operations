@@ -57,6 +57,47 @@ describe("the permission finally has a consumer", () => {
     expect(actionBody()).toContain('assertPermission("customs:register")');
   });
 
+  it("the migration's OWN guard reads code, not prose — the P1.1 incident", () => {
+    // The first version of this migration scanned pg_proc.prosrc raw. prosrc
+    // INCLUDES comments, so it matched the body's own honesty line naming
+    // customs:update to say it is NOT used — and aborted in production, then
+    // in CI #449. The rule was right; the evidence was wrong.
+    const m = read(MIGRATION);
+    expect(m).toContain("v_body := regexp_replace(v_src, '--.*$', '', 'ng')");
+    // Every permission check now reads the stripped body, never the raw source.
+    const guard = m.slice(m.indexOf("declare n int; v_src text; v_body text;"));
+    for (const bad of ["v_src ~ 'customs:update'", "v_src ~ 'customs:validate'", "v_src !~ 'customs:register'"]) {
+      expect(guard, bad).not.toContain(bad);
+    }
+    expect(guard).toContain("v_body ~ 'customs:update'");
+    expect(guard).toContain("v_body !~ 'customs:register'");
+  });
+
+  it("the EXECUTABLE body names customs:register and no broader permission", () => {
+    // The property the migration asserts, asserted here too — on the same
+    // comment-stripped basis, so the two can never disagree.
+    const m = read(MIGRATION);
+    const raw = m.slice(m.indexOf("as $$", m.indexOf("record_gainde_registration")));
+    const body = raw.slice(0, raw.indexOf("$$;")).replace(/--[^\n]*/g, "");
+    expect(body).toContain("customs:register");
+    expect(body).not.toContain("customs:update");
+    expect(body).not.toContain("customs:validate");
+    expect(body).not.toContain("provider_code");
+    expect(body).not.toContain("provider_synced_at");
+    expect(body).not.toContain("intel_status");
+    expect(body).not.toContain("SYSTEM");
+    // …and the comment that broke it is still there, because it is true.
+    expect(raw.slice(0, raw.indexOf("$$;"))).toContain("never customs:update");
+  });
+
+  it("the migration is re-run safe, which is why 105 needs no new timestamp", () => {
+    const m = read(MIGRATION);
+    expect(m).toContain("add column if not exists");
+    expect(m).toContain("create or replace function");
+    expect(m).toMatch(/if not exists \(\s*select 1 from pg_constraint/);
+    expect(m).toContain("RE-RUN SAFE");
+  });
+
   it("and NOTHING wider — not update, not validate", () => {
     const b = actionBody();
     const perms = [...b.matchAll(/assertPermission\("([^"]+)"\)/g)].map((m) => m[1]);
