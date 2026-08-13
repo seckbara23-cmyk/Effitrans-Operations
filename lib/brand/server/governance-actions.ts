@@ -55,11 +55,11 @@ export async function setTemplateLifecycle(category: string, key: string, to: st
   if (error) return { ok: false, error: "invalid" };
 
   if (isNew) {
-    await writeAudit({ action: AuditActions.BRAND_TEMPLATE_CREATED, actorId: admin.id, tenantId: admin.tenantId, entity: "brand_template", entityId: key, after: { category, key, status: target } });
+    await writeAudit({ action: AuditActions.BRAND_TEMPLATE_CREATED, actorId: admin.id, tenantId: admin.tenantId, entity: "brand_template", after: { category, key, status: target } });
   }
   await writeAudit({
     action: AuditActions.BRAND_TEMPLATE_LIFECYCLE_CHANGED,
-    actorId: admin.id, tenantId: admin.tenantId, entity: "brand_template", entityId: key,
+    actorId: admin.id, tenantId: admin.tenantId, entity: "brand_template",
     before: { status: from }, after: { category, key, status: target },
   });
   revalidatePath("/brand-center/governance");

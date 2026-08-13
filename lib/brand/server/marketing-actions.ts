@@ -54,7 +54,7 @@ export async function generateMarketingEmail(args: {
   if (args.intent === "generate") {
     await writeAudit({
       action: AuditActions.BRAND_DOWNLOAD_GENERATED,
-      actorId: admin.id, tenantId: admin.tenantId, entity: "brand_marketing", entityId: input.type,
+      actorId: admin.id, tenantId: admin.tenantId, entity: "brand_marketing",
       after: { type: input.type, provider }, // safe metadata; never the HTML
     });
   }

@@ -38,7 +38,7 @@ export async function generateDeck(input: DeckInput, intent: "preview" | "genera
 
   await writeAudit({
     action: intent === "generate" ? AuditActions.BRAND_PRESENTATION_GENERATED : AuditActions.BRAND_PRESENTATION_PREVIEWED,
-    actorId: admin.id, tenantId: admin.tenantId, entity: "brand_presentation", entityId: input.presentationType,
+    actorId: admin.id, tenantId: admin.tenantId, entity: "brand_presentation",
     // safe metadata; never the slides or the PPTX
     after: { type: input.presentationType, slides: total },
   });
@@ -49,7 +49,7 @@ export async function generateDeck(input: DeckInput, intent: "preview" | "genera
 export async function recordPresentationDownload(type: string): Promise<{ ok: boolean }> {
   let admin;
   try { admin = await assertPermission("admin:config:manage"); } catch { return { ok: false }; }
-  await writeAudit({ action: AuditActions.BRAND_PRESENTATION_DOWNLOADED, actorId: admin.id, tenantId: admin.tenantId, entity: "brand_presentation", entityId: type, after: { type } });
+  await writeAudit({ action: AuditActions.BRAND_PRESENTATION_DOWNLOADED, actorId: admin.id, tenantId: admin.tenantId, entity: "brand_presentation", after: { type } });
   return { ok: true };
 }
 
@@ -81,7 +81,7 @@ export async function generateCommunication(input: {
   if (input.intent === "generate") {
     await writeAudit({
       action: AuditActions.BRAND_COMMUNICATION_GENERATED,
-      actorId: admin.id, tenantId: admin.tenantId, entity: "brand_communication", entityId: kind,
+      actorId: admin.id, tenantId: admin.tenantId, entity: "brand_communication",
       after: { kind }, // safe metadata; never the content
     });
   }

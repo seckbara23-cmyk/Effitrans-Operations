@@ -66,6 +66,23 @@ export async function readBrandCore(tenantId: string): Promise<BrandCore> {
     supabase.from("organization").select("legal_name, trade_name, name").eq("id", tenantId).maybeSingle(),
   ]);
 
+  // MAYA-P1.6A — AN EMPTY BRAND AND A BROKEN QUERY MUST NOT LOOK ALIKE.
+  //
+  // Every read below used `?? {}` / `?? []`, so a genuine failure — a dropped
+  // policy, a renamed column, an outage — rendered as « aucune couleur, aucun
+  // logo, aucune adhésion »: the Brand Center would calmly tell the Direction
+  // their brand is unconfigured. A missing ROW is a legitimate empty state and
+  // `maybeSingle()` reports it as `data: null, error: null`; a failed QUERY sets
+  // `error`. Only the second is a failure, and it must surface as one.
+  for (const [what, res] of [
+    ["profil de marque", profileRes], ["ressources visuelles", assetsRes],
+    ["adhésions", membersRes], ["organisation", orgRes],
+  ] as const) {
+    if (res.error) {
+      throw new Error(`[brand] lecture « ${what} » impossible: ${res.error.message}`);
+    }
+  }
+
   const p = (profileRes.data ?? {}) as Record<string, string | null>;
   const profile: BrandProfile = {
     colorGreen: p.color_green ?? null, colorGold: p.color_gold ?? null, colorAnthracite: p.color_anthracite ?? null,

@@ -71,7 +71,7 @@ export async function generateCorporateDocument(args: {
 
   await writeAudit({
     action: args.intent === "generate" ? AuditActions.BRAND_DOCUMENT_GENERATED : AuditActions.BRAND_DOCUMENT_PREVIEWED,
-    actorId: admin.id, tenantId: admin.tenantId, entity: "brand_document", entityId: input.type,
+    actorId: admin.id, tenantId: admin.tenantId, entity: "brand_document",
     // safe metadata; never the document content, prices, or line items
     after: { type: input.type, format: args.format },
   });
@@ -85,7 +85,7 @@ export async function recordDocumentDownload(type: string, format: DocFormat): P
   try { admin = await assertPermission("admin:config:manage"); } catch { return { ok: false }; }
   await writeAudit({
     action: AuditActions.BRAND_DOCUMENT_DOWNLOADED,
-    actorId: admin.id, tenantId: admin.tenantId, entity: "brand_document", entityId: type,
+    actorId: admin.id, tenantId: admin.tenantId, entity: "brand_document",
     after: { type, format },
   });
   return { ok: true };

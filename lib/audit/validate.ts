@@ -8,6 +8,7 @@
  *  - action is required (non-empty)
  *  - non-"system." actions REQUIRE an actorId OR a clientUserId (fail closed)
  *  - override actions (isOverride) REQUIRE an overrideReason
+ *  - entityId, when present, must be a UUID (P1.6A)
  */
 export type AuditEventInput = {
   action: string;
@@ -16,9 +17,30 @@ export type AuditEventInput = {
   clientUserId?: string | null;
   /** platform (platform_admin) actor — attribution for platform.* events */
   platformActorId?: string | null;
+  /** The audited row's id. `audit_log.entity_id` is a UUID column. */
+  entityId?: string | null;
   isOverride?: boolean;
   overrideReason?: string | null;
 };
+
+/**
+ * MAYA-P1.6A. `audit_log.entity_id` is a `uuid` column, and nothing checked what
+ * was written into it. The Brand Center passed TEMPLATE KEYS — "EXECUTIVE",
+ * "PRESENTATION", a document type — so Postgres rejected the insert, writeAudit
+ * threw (deliberately: WES-9 makes a failed mandatory event abort its action),
+ * and the whole server action died with a 500 the operator saw as
+ * « Une erreur est survenue ».
+ *
+ * A business key is not an entity id. It belongs in `after`, where every one of
+ * those call sites was already putting it. This check moves the failure from a
+ * production Postgres error to a unit-testable boundary with a message that
+ * names the offending value.
+ */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isUuid(value: string): boolean {
+  return UUID_RE.test(value);
+}
 
 /**
  * Machine events (Phase 1.15B): provider-webhook and TTL-sweep driven, with no
@@ -68,6 +90,15 @@ export function validateAuditEvent(event: AuditEventInput): void {
   if (event.isOverride && !event.overrideReason) {
     throw new Error(
       `[audit] overrideReason is required for override action "${event.action}"`,
+    );
+  }
+
+  // The column is a uuid. Say so here, in French-free engineer language, rather
+  // than letting Postgres say it in the middle of a user's action.
+  if (event.entityId != null && !isUuid(event.entityId)) {
+    throw new Error(
+      `[audit] entityId must be a UUID for action "${event.action}" — received "${event.entityId}". ` +
+        `A business key (template key, type code) belongs in \`after\`, not in entity_id.`,
     );
   }
 }
