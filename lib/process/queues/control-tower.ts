@@ -18,6 +18,7 @@ import { evaluateBranch, type ExecutionView } from "../engine/state";
 import { evaluatePickupGate } from "../engine/gates";
 import type { EvidenceSnapshot } from "../engine/evidence";
 import { OPEN_STATES, isDone } from "../engine/types";
+import { isActiveFile } from "@/lib/files/filter";
 
 export type TowerBucket = {
   key: string;
@@ -63,7 +64,21 @@ export async function getProcessTower(
 
   const fileIds = instances.map((i) => i.file_id as string);
 
-  const [{ data: cusRows }, { data: trnRows }, { data: docRows }] = await Promise.all([
+  // MAYA-P1.7 — THE POPULATION BOUNDARY.
+  //
+  // The tower scoped on `process_instance.status <> 'CANCELLED'` and never read
+  // the DOSSIER's status at all, so a dossier that is settled, delivered and
+  // CLOSED kept generating work: EFT-IMP-2026-00003 was incrementing « Bon à
+  // Délivrer manquant » in the Coordinator's tower. It cannot be actioned — it
+  // is closed — so the count was asking for work nobody can do.
+  //
+  // DEC-B43 already settles what "active" means, and says so in its own words:
+  // « No other module may re-derive "active" from status literals; they import
+  // this predicate. » The tower was the module that had not. Applied ONCE here,
+  // at the population, rather than as a condition bolted onto each bucket —
+  // fifteen copies of a semantic is fifteen chances to drift.
+  const [{ data: fileStatusRows }, { data: cusRows }, { data: trnRows }, { data: docRows }] = await Promise.all([
+    scopedFrom(admin, "operational_file", tenantId).select("id, status").in("id", fileIds),
     hasPermission(permissions, "customs:read")
       ? scopedFrom(admin, "customs_record", tenantId).select("file_id, required, status, bae_reference").in("file_id", fileIds).is("deleted_at", null)
       : Promise.resolve({ data: [] as Row[] }),
@@ -92,7 +107,22 @@ export async function getProcessTower(
     else docsByFile.set(k, [d]);
   }
 
-  const handoffs = (handoffRows ?? []) as Row[];
+  // Active dossiers only (DEC-B43). A status the predicate does not recognise
+  // stays IN: a workload tower must fail towards showing work, never hiding it.
+  const activeFileIds = new Set(
+    ((fileStatusRows ?? []) as Row[])
+      .filter((f) => isActiveFile(String(f.status)))
+      .map((f) => f.id as string),
+  );
+  const activeInstanceIds = new Set(
+    instances.filter((i) => activeFileIds.has(i.file_id as string)).map((i) => i.id as string),
+  );
+
+  // Handoffs follow the same population: a transfer on a closed dossier is not
+  // outstanding intake work either.
+  const handoffs = ((handoffRows ?? []) as Row[]).filter((h) =>
+    activeInstanceIds.has(h.process_instance_id as string),
+  );
   const unreceived = handoffs.filter((h) => h.status === "SENT").length;
   const rejectedHandoffs = handoffs.filter((h) => h.status === "REJECTED").length;
 
@@ -133,6 +163,11 @@ export async function getProcessTower(
     const execs = execsByInstance.get(inst.id as string) ?? [];
     if (execs.length === 0) continue;
     const fileId = inst.file_id as string;
+    // Terminal dossier: its history stays readable everywhere else, it simply
+    // is not outstanding work. ONE check, before any bucket is evaluated.
+    if (!activeFileIds.has(fileId)) continue;
+    // Terminal dossier: its history stays readable everywhere else, it simply
+    // is not outstanding work. ONE check, before any bucket is evaluated.
 
     const views: ExecutionView[] = execs.map((e) => ({
       stepKey: e.step_key as string,

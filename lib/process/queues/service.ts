@@ -33,6 +33,7 @@ import { evaluateBranch, liveByKey, missingPrerequisites, type ExecutionView } f
 import { evaluatePickupGate } from "../engine/gates";
 import { evaluateStepEvidence, type EvidenceSnapshot } from "../engine/evidence";
 import { OPEN_STATES } from "../engine/types";
+import { isActiveFile } from "@/lib/files/filter";
 import { getQueue, queueStepKeys } from "./registry";
 import { compareQueueItems, evaluatePriority, type PriorityResult } from "./priority";
 import { blockerSentence } from "../labels";
@@ -174,9 +175,18 @@ export async function getDepartmentQueue(req: QueueRequest): Promise<QueueResult
   }
 
   const { data: fileRows } = await scopedFrom(admin, "operational_file", req.tenantId)
-    .select("id, file_number, type, client_id, priority")
+    .select("id, file_number, type, client_id, priority, status")
     .in("id", fileIds);
-  const files = new Map(((fileRows ?? []) as Row[]).map((f) => [f.id as string, f]));
+  // MAYA-P1.7 — the SAME population as the Control Tower (DEC-B43). A tower
+  // bucket that links here must not say 5 while the queue shows 4, and a closed
+  // dossier is not a queue item: nobody can action it. Terminal files simply
+  // never enter the map, so the existing `if (!file) continue` below drops
+  // their rows exactly as it drops rows outside the caller's dossier scope.
+  const files = new Map(
+    ((fileRows ?? []) as Row[])
+      .filter((f) => isActiveFile(String(f.status)))
+      .map((f) => [f.id as string, f]),
+  );
 
   const clientIds = [...new Set([...files.values()].map((f) => f.client_id as string))];
   const { data: clientRows } = await scopedFrom(admin, "client", req.tenantId)
