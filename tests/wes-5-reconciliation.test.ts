@@ -29,7 +29,10 @@ const sql = () => sqlCode(MIGRATION);
 const FACTS: ModuleFacts = {
   fileType: "IMP",
   fileStatus: "IN_PROGRESS",
-  customs: { status: "RELEASED", required: true, declarationNumber: "D-2026-001", baeReference: "BAE-1" },
+  customs: {
+    status: "RELEASED", required: true, declarationNumber: "D-2026-001", baeReference: "BAE-1",
+    gaindeRegisteredAt: "2026-08-13T09:30:00.000Z",
+  },
   transport: { status: "POD_RECEIVED" },
   verifiedPodDocumentId: "pod-doc-1",
   verifiedBaeDocumentId: "bae-doc-1",
@@ -63,9 +66,46 @@ describe("WES-5B step satisfaction", () => {
     expect(r.satisfaction).toBe("IN_PROGRESS");
   });
 
-  it("requires the declaration NUMBER, not just the status, for GAINDE", () => {
+  it("proves GAINDE from the FINANCE milestone, not the Declarant's paperwork", () => {
+    // MAYA-P1.2 replaced the old proxy (« DECLARED + declaration number »).
+    // That proxy completed a step the registry assigns to Finance using a fact
+    // the Declarant writes — and had already done so once in production.
+    const declaredOnly = {
+      ...FACTS,
+      customs: { ...FACTS.customs!, declarationNumber: "D-2026-001", gaindeRegisteredAt: null },
+    };
+    expect(evaluateStep({ stepKey: "gainde_registration", facts: declaredOnly, execution: null }).satisfaction)
+      .not.toBe("SATISFIED");
+    expect(evaluateStep({ stepKey: "gainde_registration", facts: FACTS, execution: null }).satisfaction)
+      .toBe("SATISFIED");
+  });
+
+  it("the milestone alone proves it — a reference edit cannot reopen the act", () => {
+    // `external_ref` stays writable through customs:update. Keying on the
+    // reference would let an unrelated edit reopen an act Finance signed.
     const noNumber = { ...FACTS, customs: { ...FACTS.customs!, declarationNumber: "  " } };
-    expect(evaluateStep({ stepKey: "gainde_registration", facts: noNumber, execution: null }).satisfaction).not.toBe("SATISFIED");
+    expect(evaluateStep({ stepKey: "gainde_registration", facts: noNumber, execution: null }).satisfaction)
+      .toBe("SATISFIED");
+  });
+
+  it("a step completed on the OLD proxy becomes CONFLICT — reported, never regressed", () => {
+    // Exactly one production dossier is in this state: COMPLETED, provenance
+    // RECONCILED, fact CUSTOMS_DECLARED, and no Finance registration. WES-5
+    // makes that visible rather than resolving it, and NOTHING is back-filled:
+    // inventing a registration date and actor is precisely the lie to avoid.
+    const legacy = { ...FACTS, customs: { ...FACTS.customs!, gaindeRegisteredAt: null } };
+    const r = evaluateStep({
+      stepKey: "gainde_registration",
+      facts: legacy,
+      execution: { stepKey: "gainde_registration", state: "COMPLETED" },
+    });
+    expect(r.satisfaction).toBe("CONFLICT");
+  });
+
+  it("an unregistered dossier still projects as pending, exactly as before", () => {
+    const legacy = { ...FACTS, customs: { ...FACTS.customs!, gaindeRegisteredAt: null } };
+    expect(evaluateStep({ stepKey: "gainde_registration", facts: legacy, execution: { stepKey: "gainde_registration", state: "AVAILABLE" } }).satisfaction)
+      .toBe("IN_PROGRESS");
   });
 
   it("proves pickup from any later transport state — the ladder is monotonic", () => {

@@ -59,7 +59,14 @@ export type ModuleFacts = {
   /** operational_file.status */
   fileStatus: string;
   /** customs_record, when one exists. */
-  customs: { status: string; required: boolean; declarationNumber: string | null; baeReference: string | null } | null;
+  customs: {
+    status: string;
+    required: boolean;
+    declarationNumber: string | null;
+    baeReference: string | null;
+    /** MAYA-P1.1 milestone: when Finance recorded the GAINDE registration. */
+    gaindeRegisteredAt: string | null;
+  } | null;
   /** transport_record, when one exists. */
   transport: { status: string } | null;
   /** Current (non-superseded) verified POD document id, if any. */
@@ -119,14 +126,30 @@ export const FACT_RULES: Readonly<Record<string, FactRule>> = {
     factFr: "Dossier ouvert (statut du dossier au-delà de Brouillon)",
   },
 
-  // GAINDE registration: the declaration exists officially. DECLARED-or-later
-  // plus a recorded declaration number — never inferred from free text alone.
+  // GAINDE registration: the FINANCE milestone — not the Declarant's paperwork.
+  //
+  // MAYA-P1.2. This rule used to read « DECLARED-or-later + a declaration
+  // number ». That is the DECLARANT's fact, written under customs:update, and
+  // it was completing a step the registry assigns to CUSTOMS_FINANCE_OFFICER
+  // whose requiredEvidence it spells out as registration_date + registered_by.
+  // The proxy was reasonable when no milestone existed; WES-5 shipped before
+  // P1.1 created one. It is not reasonable now, and it was not harmless: a
+  // production dossier was already COMPLETED at this step, provenance
+  // RECONCILED, fact CUSTOMS_DECLARED, on a registration Finance never made.
+  //
+  // Tightening a rule regresses nothing — that is the point of the CONFLICT
+  // verdict below. A step completed on the old proxy whose milestone is absent
+  // now reports CONFLICT: reported, never resolved, which is the truth about it.
   gainde_registration: {
-    satisfied: (f) =>
-      customsRank(f) >= (CUSTOMS_RANK["DECLARED"] ?? 99) &&
-      Boolean(f.customs?.declarationNumber?.trim()),
+    satisfied: (f) => Boolean(f.customs?.gaindeRegisteredAt),
+    // Deliberately keyed on the milestone ALONE. `external_ref` stays writable
+    // through customs:update, so keying on the reference would let an unrelated
+    // edit reopen an act Finance already performed and signed.
+    //
+    // `started` is unchanged: a declaration under way is the registration
+    // visibly pending. IN_PROGRESS completes nothing.
     started: (f) => customsRank(f) > 0,
-    factFr: "Déclaration enregistrée (numéro de déclaration + statut DECLARED)",
+    factFr: "Enregistrement GAINDE effectué par la Finance (date + agent)",
   },
 
   // Field clearance culminates in the official release. RELEASED is the fact;

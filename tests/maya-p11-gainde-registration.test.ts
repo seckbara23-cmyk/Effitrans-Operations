@@ -196,8 +196,14 @@ describe("no status moves, and no prerequisite is invented", () => {
     expect(upd).not.toMatch(/\bstatus\b|intel_status/);
   });
 
-  it("the action fires no handoff, notification or reconciliation", () => {
-    expect(actionBody()).not.toMatch(/reconcileDossierProcess|onCustomsReleased|custCustomsCleared|changeCustomsStatus/);
+  it("the action fires no handoff and no status cascade", () => {
+    // MAYA-P1.2 AMENDED THIS. It used to forbid `reconcileDossierProcess` too,
+    // and that was right at the time: no rule proved this step from Finance's
+    // fact, so reconciling would have completed CEO step 8 from the DECLARANT's
+    // paperwork. P1.2 made the rule read the milestone, so the call became the
+    // ordinary WES-5 convergence — and what the prohibition actually protected
+    // (no status move, no cascade, no handoff) is unchanged and still pinned.
+    expect(actionBody()).not.toMatch(/onCustomsReleased|custCustomsCleared|changeCustomsStatus|sendHandoff|notifyRoles/);
   });
 
   it("prior Chef Transit validation is NOT enforced — and the reason is recorded", () => {

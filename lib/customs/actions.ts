@@ -301,6 +301,15 @@ export async function changeCustomsStatus(id: string, toStatus: string): Promise
  * with GAINDE (there is no API contract — BLK-1), and touches neither
  * `provider_code` nor `provider_synced_at`. The provenance stays « manual »,
  * which is what QC4 reports.
+ *
+ * MAYA-P1.2 — AND THEN THE PROJECTION CATCHES UP. P1.1 shipped without the
+ * reconciliation call below, deliberately: no rule yet proved this step from
+ * Finance's fact, so calling it would have completed the step from the
+ * DECLARANT's paperwork and called that a Finance act. The rule now reads the
+ * milestone, so the call is the ordinary WES-5 convergence every other
+ * fact-writing action already performs — and the prohibition it was protecting
+ * still holds, because reconciliation completes exactly the steps a fact
+ * proves: no status moves, no successor opens, no human-only step is touched.
  */
 export async function recordGaindeRegistration(
   id: string,
@@ -339,6 +348,18 @@ export async function recordGaindeRegistration(
     entityId: id,
     after: { external_ref: ref, gainde_registered_by: user.id },
   });
+
+  // WES-5 convergence. Idempotent and never-throwing: the milestone already
+  // committed atomically with its own event, and a failed run changes nothing
+  // — the next one catches up. Without it the Control Tower would keep asking
+  // Finance for an act Finance has durable evidence of having performed.
+  await reconcileDossierProcess({
+    tenantId: user.tenantId,
+    fileId: rec.file_id,
+    cause: "gainde_registration",
+    actorId: user.id,
+  });
+
   revalidate(rec.file_id);
   return { ok: true, id };
 }
