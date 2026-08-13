@@ -315,6 +315,141 @@ describe("security, audit and blast radius", () => {
 });
 
 // ===========================================================================
+// MAYA-P1.1 — production UAT reconciliation.
+//
+// UAT reported « no Enregistrement GAINDE action available to Finance ». The
+// control was not missing. « Chargé finance » is FINANCE_OFFICER; the role that
+// owns CEO step 8 is CUSTOMS_FINANCE_OFFICER, « Chargé finance douane ». The
+// first holds NO customs permission at all — which is, in as many words, the
+// ratified reason the second exists. Two different jobs, two different labels,
+// one letter of difference on screen.
+//
+// So nothing is built here. What was missing was a TEST: nothing pinned the
+// composition that makes the act reachable to the right actor and inert for the
+// wrong one. These do.
+//
+// Note the asymmetry they guard. The server action admits `customs:register`
+// ALONE, but the panel that carries the button is wrapped in `customs:read`.
+// That is safe only for as long as every register-holder also holds read —
+// true in all three grant sources today, and now enforced rather than assumed.
+// The alternative, granting Finance `customs:read` it does not need or building
+// a second panel for a holder that does not exist, both cost more than the rule.
+// ===========================================================================
+function templateBlock(roleKey: string): string {
+  const roles = read("lib/platform/role-templates.ts");
+  const start = roles.indexOf(`key: "${roleKey}"`);
+  expect(start, `${roleKey} must be a tenant role template`).toBeGreaterThan(-1);
+  const next = roles.indexOf('key: "', start + 6);
+  return roles.slice(start, next === -1 ? undefined : next);
+}
+
+/** The GAINDE card, from its heading to the next card's. */
+function gaindeCard(): string {
+  const p = code(PANEL);
+  const start = p.indexOf("c.gainde.title");
+  const end = p.indexOf("c.validation.title");
+  expect(start, "the GAINDE card must exist in the panel").toBeGreaterThan(-1);
+  expect(end).toBeGreaterThan(start);
+  return p.slice(start, end);
+}
+
+describe("a customs:register holder reaches the act, and gains nothing else", () => {
+  it("every role granted customs:register also holds customs:read", () => {
+    // THE REACHABILITY INVARIANT. The panel wrapper is `customs:read`; the
+    // action is `customs:register`. A role granted the second without the first
+    // would hold an authority it could never exercise — a silent dead end, not
+    // an error message. Fix the composition then, not this assertion.
+    const roles = read("lib/platform/role-templates.ts");
+    const registerHolders = [...roles.matchAll(/key: "(\w+)"/g)]
+      .map((m) => m[1])
+      .filter((k) => templateBlock(k).includes('"customs:register"'));
+    expect(registerHolders.length).toBeGreaterThan(0);
+    for (const k of registerHolders) {
+      expect(templateBlock(k), `${k} holds customs:register`).toContain('"customs:read"');
+    }
+  });
+
+  it("the two SQL grant sources agree with the template", () => {
+    // EC-3B: a permission lives in three places. The template provisions NEW
+    // tenants; these two carry the EXISTING one. All three must name the same
+    // holders, or production diverges from the repository silently.
+    for (const f of ["supabase/migrations/20260713000001_process_engine.sql", "supabase/seed.sql"]) {
+      const sql = code(f);
+      const block = sql.slice(sql.indexOf("p.code = 'customs:register'"));
+      // Parse the codes; do NOT substring-match them. `CUSTOMS_FINANCE_OFFICER`
+      // ENDS in `FINANCE_OFFICER`, so "is FINANCE_OFFICER absent" is a question
+      // only an exact set can answer — the two roles this whole phase is about.
+      const roleList = block.slice(block.indexOf("r.code in ("), block.indexOf("on conflict"));
+      const granted = new Set([...roleList.matchAll(/'([A-Z_]+)'/g)].map((m) => m[1]));
+      expect(granted, f).toEqual(new Set(["SYSTEM_ADMIN", "OPS_SUPERVISOR", "CUSTOMS_FINANCE_OFFICER"]));
+      expect(granted.has("FINANCE_OFFICER"), `${f}: the plain Finance role`).toBe(false);
+      // …and that same role is granted customs:read, so the panel renders.
+      const readBlock = sql.slice(sql.indexOf("and r.code = 'CUSTOMS_FINANCE_OFFICER'") - 600);
+      expect(readBlock.slice(0, 700), f).toContain("'customs:read'");
+    }
+  });
+
+  it("FINANCE_OFFICER holds NO customs permission — the reason the other role exists", () => {
+    // This is what UAT actually met. It is correct behaviour, and it is why the
+    // screenshot showed « Non visible avec vos accès (douane) » in QC4.
+    expect(templateBlock("FINANCE_OFFICER")).not.toMatch(/"customs:/);
+    expect(templateBlock("CUSTOMS_FINANCE_OFFICER"))
+      .toContain("FINANCE_OFFICER holds no customs permission at all");
+  });
+
+  it("the Finance customs role gets the act and NOT the declaration authority", () => {
+    const b = templateBlock("CUSTOMS_FINANCE_OFFICER");
+    expect(b).toContain('"customs:register"');
+    expect(b).toContain('"customs:read"');
+    for (const denied of ["create", "update", "delete", "release", "validate", "assign"]) {
+      expect(b, `customs:${denied}`).not.toContain(`"customs:${denied}"`);
+    }
+  });
+
+  it("the GAINDE card is gated on customs:register alone", () => {
+    const card = gaindeCard();
+    expect(card).toMatch(/canRegisterGainde &&/);
+    for (const flag of ["canUpdate", "canValidate", "canRelease", "canCreate", "canDelete"]) {
+      expect(card, flag).not.toContain(flag);
+    }
+  });
+
+  it("and every OTHER control on the panel stays behind its own permission", () => {
+    // The same viewer — read + register, nothing else — must see a read-only
+    // customs panel carrying exactly one action. Each of these is the gate that
+    // makes that true; none of them is `canRegisterGainde`.
+    const p = code(PANEL);
+    expect(p).toMatch(/\(canUpdate \|\| canRelease\) && targets\.length > 0/); // status moves
+    expect(p).toMatch(/canUpdate && \(\s*<form onSubmit=\{onSubmit\}/);        // declaration edit
+    expect(p).toMatch(/canValidate && !record\.reviewedAt/);                   // PG-1 validation
+    const recevabilite = p.slice(p.indexOf("c.receivability.title"));
+    expect(recevabilite.slice(0, recevabilite.indexOf("RECEIVABILITY_OUTCOMES"))).toContain("canUpdate &&");
+  });
+
+  it("Finance's own workflow surface points at the act", () => {
+    // Reachability is not only the dossier page: the queue the official process
+    // assigns to this role, and the control tower bucket that routes to it.
+    const q = code("lib/process/queues/registry.ts");
+    const block = q.slice(q.indexOf('key: "finance_customs"'), q.indexOf('key: "customs_field"'));
+    expect(block).toContain('officialRole: "CUSTOMS_FINANCE_OFFICER"');
+    expect(block).toMatch(/permission: "process:read"/);
+    expect(templateBlock("CUSTOMS_FINANCE_OFFICER")).toContain('"process:read"');
+    expect(code("lib/process/queues/control-tower.ts")).toContain('"/queues/finance_customs"');
+  });
+
+  it("the evidence contract is reference + date + actor, and the receipt is not here", () => {
+    // Step 9's requiredEvidence names four things. Three are captured; the
+    // fourth is a DOCUMENT, and the document authority already owns documents.
+    const card = gaindeCard();
+    expect(card).toContain("record.externalRef");
+    expect(card).toContain("record.gaindeRegisteredAt");
+    expect(card).toContain("record.gaindeRegisteredByEmail");
+    expect(card).not.toMatch(/receipt|recu|reçu/i);
+    expect(read(MIGRATION)).toContain("the document authority already owns documents");
+  });
+});
+
+// ===========================================================================
 describe("nothing else moved", () => {
   it("PG-1 and PG-6 survive intact", () => {
     expect(code(ACTIONS)).toContain('assertPermission("customs:validate")');
