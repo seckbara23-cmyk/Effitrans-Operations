@@ -42,7 +42,10 @@ const SUITE = read("supabase/tests/hr_a1_foundation_activation_test.sql");
 const STUDIO = read("components/hr/configuration-studio.tsx");
 const FILE_ACTIONS = read("lib/hr/employee-file-actions.ts");
 
-const PARKED = ["hr:sensitive:read", "hr:leave:approve", "hr:performance:finalize"];
+// HR-B1 unparked hr:leave:approve (Direction seats DGA/DAF, migration 108).
+// The remaining two stay parked; the leave seat is pinned separately below.
+const PARKED = ["hr:sensitive:read", "hr:performance:finalize"];
+const LEAVE_SEATS = ["DGA", "DAF"];
 
 /** role_permission grant blocks in seed.sql (the role-templates.test.ts idiom). */
 function seedGrantBlocks(): string[] {
@@ -72,7 +75,9 @@ describe("HRQ-D2 Option A — the grant exists in all three sources", () => {
   it("no OTHER template gains any hr:* — SYSTEM_ADMIN included (DEC-B25)", () => {
     for (const t of TENANT_ROLE_TEMPLATES) {
       if (t.key === "HR_OFFICER") continue;
-      expect(t.permissions.filter((p) => p.startsWith("hr:")), `${t.key} must hold no hr:*`).toEqual([]);
+      // HR-B1: the Direction seats hold exactly the leave approval, nothing else.
+      const expected = LEAVE_SEATS.includes(t.key) ? ["hr:leave:approve"] : [];
+      expect(t.permissions.filter((p) => p.startsWith("hr:")), `${t.key} hr:* grants`).toEqual(expected);
     }
   });
 });
@@ -87,10 +92,14 @@ describe("the three parked authorities stay parked (asserted on DATA)", () => {
     }
   });
 
-  it("no seed grant block grants any parked code", () => {
+  it("no seed grant block grants any parked code; the leave seat goes to Direction only", () => {
     for (const block of seedGrantBlocks()) {
       for (const code of PARKED) {
         expect(block).not.toContain(`'${code}'`);
+      }
+      if (block.includes("'hr:leave:approve'")) {
+        expect(block).toContain("'DAF', 'DGA'");
+        expect(block).not.toContain("'CEO'");
       }
     }
   });

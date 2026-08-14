@@ -140,6 +140,9 @@ export function buildNavigation(ctx: NavigationContext): Navigation {
     // The control tower STAYS — it is the supervisory entry point, and for a Coordinator
     // it is still the landing page. It is simply not the default thing to click.
     const controlTower = base.items.find((i) => i.key === "operations-center")!;
+    // HR-B1 — « Mes congés » comes from the base (ungated, identity-scoped
+    // page); the engine adds to the base, it does not replace it.
+    const myLeave = base.items.find((i) => i.key === "my-leave") ?? null;
 
     const items: (NavigationItem | null)[] = [
       {
@@ -166,6 +169,7 @@ export function buildNavigation(ctx: NavigationContext): Navigation {
         permission: "process:read",
         hint: "Où en est chaque dossier dans le processus officiel",
       },
+      myLeave,
     ];
 
     return section(base.key, base.label, grant(perms, items));

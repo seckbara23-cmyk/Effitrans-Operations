@@ -4416,7 +4416,7 @@ export type Database = {
         Returns: string;
       };
       hr_cancel_leave_request: {
-        Args: { p_tenant: string; p_request: string; p_actor: string; p_reason: string };
+        Args: { p_tenant: string; p_request: string; p_actor: string; p_reason: string; p_mode?: string };
         Returns: string;
       };
       hr_assign_equipment: {

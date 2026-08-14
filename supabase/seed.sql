@@ -1145,6 +1145,16 @@ where r.tenant_id = '00000000-0000-0000-0000-000000000001'
   and r.code in ('ACCOUNTANT', 'TREASURER', 'DAF', 'DGA')
 on conflict do nothing;
 
+-- HR-B1 — Direction org-wide leave approval seats (mirrors migration
+-- 20260830000001). Deliberately NOT the CEO role: six broad accounts hold it
+-- in production, and its grant awaits explicit ratification (HR-1A question a).
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id from public.role r
+join public.permission p on p.code = 'hr:leave:approve'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('DAF', 'DGA')
+on conflict do nothing;
+
 -- ===========================================================================
 -- Phase 11.0D — the Autorisation visa chain (DEC-C08/C11). Mirrors migration
 -- 20260726000002. finance:expense:sign goes ONLY to the six seats that sign this

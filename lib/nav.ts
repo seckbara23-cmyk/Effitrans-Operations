@@ -54,6 +54,12 @@ export const BASE_SECTIONS: NavigationSection[] = [
       // better destination, and the builder DOES gate the control tower by role. You
       // may only take someone's front door away once you have given them another one.
       { key: "operations-center", label: "Centre d'opérations", href: "/dashboard", iconKey: "tower" },
+      // HR-B1 — « Mes congés » is ungated LIKE THE DASHBOARD, deliberately: it
+      // is every staff member's personal leave space, and what a visitor can DO
+      // there is decided by identity (their linked employee record, their
+      // manager relationship) and by the database — not by a nav permission.
+      // An unlinked account sees a plain explanation, never an error.
+      { key: "my-leave", label: "Mes congés", href: "/conges", iconKey: "team" },
       // "Mon Travail" and "Parcours des dossiers" are added by the navigation builder
       // when the process workspaces are live. They are the only two entries in the
       // whole sidebar that genuinely require the engine.

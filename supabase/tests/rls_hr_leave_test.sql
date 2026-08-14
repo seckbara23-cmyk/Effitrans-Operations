@@ -1,7 +1,8 @@
 -- RLS + invariants test — HR-5 Leave & Attendance (migration 77). BEGIN/ROLLBACK.
 -- Proves: tenant confinement + hr:read gate; SYSTEM_ADMIN sees 0 (DEC-B25);
--- portal sees 0; hr:leave:approve exists and is granted to NOBODY; the
--- maker-checker refusal (decider = requester) raises; a decided request is
+-- portal sees 0; hr:leave:approve is granted to the Direction seats (DAF/DGA)
+-- and NOBODY else (HR-B1 — the scope proofs live in hr_b1_leave_scope_test);
+-- the maker-checker refusal (decider = requester) raises; a decided request is
 -- immutable; approval decrements entitlement and emits in ONE transaction;
 -- cancellation restores it; and NO ON_LEAVE value can enter employee.status.
 
@@ -25,6 +26,11 @@ on conflict do nothing;
 insert into public.user_role (user_id, role_id, tenant_id)
 select '00000000-0000-0000-0000-00000000005c', r.id, r.tenant_id from public.role r
 where r.tenant_id = '00000000-0000-0000-0000-000000000001' and r.code = 'SYSTEM_ADMIN'
+on conflict do nothing;
+-- HR-B1: the decider must carry authority now — 5b sits in Direction (DAF).
+insert into public.user_role (user_id, role_id, tenant_id)
+select '00000000-0000-0000-0000-00000000005b', r.id, r.tenant_id from public.role r
+where r.tenant_id = '00000000-0000-0000-0000-000000000001' and r.code = 'DAF'
 on conflict do nothing;
 insert into public.client (id, tenant_id, name) values
   ('00000000-0000-0000-0000-0000000ccd05', '00000000-0000-0000-0000-000000000001', 'HR5 Client')
@@ -77,10 +83,13 @@ begin
 
   perform set_config('role', 'postgres', true);
 
-  -- The approval authority exists and is held by NOBODY (unratified).
+  -- HR-B1: the approval authority exists; its grants land ONLY on the
+  -- Direction seats (DAF/DGA). perm_grants counts grants OUTSIDE them: 0.
   select count(*) into perm_rows from public.permission where code = 'hr:leave:approve';
   select count(*) into perm_grants from public.role_permission rp
-    join public.permission p on p.id = rp.permission_id where p.code = 'hr:leave:approve';
+    join public.permission p on p.id = rp.permission_id
+    join public.role r on r.id = rp.role_id
+    where p.code = 'hr:leave:approve' and r.code not in ('DAF', 'DGA');
 
   -- Maker-checker: the requester cannot decide their own request.
   begin
@@ -108,10 +117,11 @@ begin
     immutable_rejected := 1;
   end;
 
-  -- Cancelling an approved leave gives the entitlement back.
+  -- Cancelling an approved leave gives the entitlement back. HR-B1: the ADMIN
+  -- mode asserts hr:manage in the database, so the HR officer cancels.
   perform public.hr_cancel_leave_request(
     '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000005501',
-    '00000000-0000-0000-0000-00000000005b', 'Motif de test');
+    '00000000-0000-0000-0000-00000000005a', 'Motif de test');
   select taken_tenths into taken_after_cancel from public.hr_leave_entitlement
    where id = '00000000-0000-0000-0000-00000000e501';
   select count(*) into events_cancelled from public.hr_employee_event

@@ -255,10 +255,11 @@ describe("the sidebar is role-driven, not a static list of every role", () => {
 
   it("drops a section entirely when the user may see none of its items", () => {
     // process:read only: no analytics, no client:read, no file:read, no admin. Only
-    // PILOTAGE survives, and inside it only Mon Travail and the Parcours.
+    // PILOTAGE survives: Mon Travail, the Parcours, and (HR-B1) « Mes congés » —
+    // personal space, ungated by design.
     const nav = buildNavigation(ctx({ roleCodes: ["CUSTOMS_DECLARANT"], permissions: ["process:read"] }));
     expect(nav.sections.map((s) => s.key)).toEqual(["pilotage"]);
-    expect(nav.sections[0].items.map((i) => i.href)).toEqual(["/my-work", "/journeys"]);
+    expect(nav.sections[0].items.map((i) => i.href)).toEqual(["/my-work", "/journeys", "/conges"]);
   });
 
   it("uses the canonical queue keys and labels in Mon Travail — never a re-declared one", () => {

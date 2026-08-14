@@ -85,7 +85,8 @@ describe("the sidebar is exactly the five agreed sections", () => {
     const byKey = Object.fromEntries(
       full.sections.map((s) => [s.key, s.items.map((i) => i.label)]),
     );
-    expect(byKey.pilotage).toEqual(["Mon Travail", "Centre d'opérations", "Parcours des dossiers"]);
+    // HR-B1 appended « Mes congés » (ungated, identity-scoped) to Pilotage.
+    expect(byKey.pilotage).toEqual(["Mon Travail", "Centre d'opérations", "Parcours des dossiers", "Mes congés"]);
     expect(byKey.files).toEqual(["Dossiers", "Clients", "Enterprise Mail"]);
     // Sidebar Départements now mirror the canonical operational departments.
     // Documentation (Operations) and Douane/Transport (Transit) are workspaces
@@ -115,6 +116,7 @@ describe("the sidebar is exactly the five agreed sections", () => {
       "/brand-center": "../app/brand-center/page.tsx",
       "/settings/audit": "../app/settings/audit/page.tsx",
       "/settings": "../app/settings/page.tsx",
+      "/conges": "../app/conges/page.tsx",
     };
     for (const href of hrefs({ roleCodes: ["SYSTEM_ADMIN"] })) {
       expect(ROUTES[href], `${href} has no page`).toBeDefined();
@@ -177,19 +179,21 @@ describe("the sidebar is exactly the five agreed sections", () => {
 // ============================================== PILOTAGE order (5.0E-3C) ====
 
 describe("PILOTAGE puts Mon Travail first", () => {
-  it("flag OFF: exactly [Centre d'opérations]", () => {
+  it("flag OFF: exactly [Centre d'opérations, Mes congés]", () => {
     // With the engine dark there is no Mon Travail to lead with, and the control tower
-    // is the only landing an operational user has — so it stays, ungated.
+    // is the only landing an operational user has — so it stays, ungated. HR-B1 added
+    // « Mes congés », ungated for the same reason: it is personal space, not authority.
     const pil = legacyNavigation().sections.find((s) => s.key === "pilotage")!;
-    expect(pil.items.map((i) => i.label)).toEqual(["Centre d'opérations"]);
+    expect(pil.items.map((i) => i.label)).toEqual(["Centre d'opérations", "Mes congés"]);
   });
 
-  it("flag ON: exactly [Mon Travail, Centre d'opérations, Parcours des dossiers]", () => {
+  it("flag ON: exactly [Mon Travail, Centre d'opérations, Parcours des dossiers, Mes congés]", () => {
     const pil = nav({ roleCodes: ["OPS_SUPERVISOR"] }).sections.find((s) => s.key === "pilotage")!;
     expect(pil.items.map((i) => i.label)).toEqual([
       "Mon Travail",
       "Centre d'opérations",
       "Parcours des dossiers",
+      "Mes congés",
     ]);
   });
 
@@ -230,7 +234,8 @@ describe("PILOTAGE puts Mon Travail first", () => {
       roleCodes: ["CUSTOMS_DECLARANT"],
       permissions: ["process:read", "customs:read"],
     }).sections.find((s) => s.key === "pilotage")!;
-    expect(pil.items.map((i) => i.href)).toEqual(["/my-work", "/journeys"]);
+    // « Mes congés » stays: it is the déclarant's own leave, not oversight.
+    expect(pil.items.map((i) => i.href)).toEqual(["/my-work", "/journeys", "/conges"]);
   });
 
   it("highlights /my-work on its query-string views", () => {

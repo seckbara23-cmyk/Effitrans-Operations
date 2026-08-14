@@ -1,9 +1,12 @@
 "use client";
 
 /**
- * HR-5 — Leave workspace (client). Approval controls render only for holders of
- * `hr:leave:approve`; while that authority is unratified nobody holds it, and
- * the panel says so plainly rather than showing a button the server refuses.
+ * HR-5 — Leave workspace (client) — the HR DESK view (oversight + entry on
+ * behalf of employees). HR-B1 activated approval as an ORGANIZATIONAL
+ * authority: the employee's manager decides from « Mes congés » (/conges), and
+ * Direction seats (DGA/DAF, hr:leave:approve) decide org-wide. Approval
+ * controls here render only for org-wide seat holders — HR oversight never
+ * silently impersonates the manager lane.
  */
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -23,7 +26,10 @@ const STATUS_FR: Record<string, string> = {
 };
 const ERR: Record<string, string> = {
   forbidden: "Action non autorisée (hr:manage requis).",
-  forbidden_approval: "Autorisation d'approbation requise (hr:leave:approve) — en attente de ratification.",
+  forbidden_approval: "Vous n'êtes pas autorisé à décider de cette demande : seul le responsable hiérarchique de l'employé ou un siège Direction peut le faire.",
+  own_leave: "Vous ne pouvez pas décider de votre propre congé.",
+  refusal_note_required: "Un refus doit être motivé — ajoutez un commentaire pour l'employé.",
+  actor_invalid: "Votre compte n'est pas actif.",
   employee_not_found: "Employé introuvable.",
   request_not_found: "Demande introuvable.",
   not_submitted: "Seule une demande soumise peut être décidée.",

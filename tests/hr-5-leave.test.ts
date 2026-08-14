@@ -97,15 +97,24 @@ describe("approval is a separate authority", () => {
   const m = sql(MIG);
   const a = code(ACTIONS);
 
-  it("hr:leave:approve is catalogued and granted to NO role", () => {
+  it("hr:leave:approve is catalogued here and granted here to NO role — HR-B1 grants it, elsewhere, to Direction", () => {
+    // Migration 77 (HR-5) stays what it was: catalogue only. The activation
+    // lives in migration 108, ONLY on the Direction seats.
     expect(m).toContain("'hr:leave:approve'");
     expect(m).not.toContain("role_permission");
+    const b1 = sql("supabase/migrations/20260830000001_hr_leave_approval_activation.sql");
+    expect(b1).toMatch(/p\.code = 'hr:leave:approve'[\s\S]{0,80}r\.code in \('DGA', 'DAF'\)/);
   });
 
-  it("the decide action gates on hr:leave:approve — never hr:manage", () => {
-    const decide = a.slice(a.indexOf("export async function decideLeaveRequest"));
-    expect(decide.slice(0, 400)).toContain('assertPermission("hr:leave:approve")');
-    expect(decide.slice(0, 400)).not.toContain('assertPermission("hr:manage")');
+  it("the decide action never rides hr:manage — HR-B1 moved the authority into the RPC", () => {
+    const from = a.indexOf("export async function decideLeaveRequest");
+    const to = a.indexOf("export async function", from + 1);
+    const decide = a.slice(from, to === -1 ? undefined : to);
+    expect(decide).not.toContain('assertPermission("hr:manage")');
+    // No flat permission gate either: it would BLOCK the manager lane. The
+    // database decides (manager relationship or assert_actor_authority).
+    expect(decide).not.toContain('assertPermission("hr:leave:approve")');
+    expect(decide).toContain('rpc("hr_decide_leave_request"');
   });
 
   it("requesting and submitting stay on hr:manage — they are not decisions", () => {

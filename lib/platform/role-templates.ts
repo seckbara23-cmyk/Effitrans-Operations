@@ -621,6 +621,10 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       ...BASE, "finance:read", "finance:expense:read", "finance:expense:export",
       // Phase 11.0D — a signing seat of the Autorisation chain (DEC-C08/C11).
       "finance:expense:sign",
+      // HR-B1 — Direction org-wide leave approval seat (ratified: Department
+      // Managers + Direction + CEO; CEO's grant awaits the HR-1A question (a)
+      // answer because six broad accounts hold that role today).
+      "hr:leave:approve",
     ],
   },
   {
@@ -636,6 +640,8 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       // and external sharing. Does not prepare drafts or stage imports.
       "finance:aging:export", "finance:aging:finalize", "finance:aging:import_approve", "finance:aging:print", "finance:aging:read", "finance:aging:share", "finance:aging:validate",
       ...BASE, "finance:read", "finance:expense:read", "finance:expense:export",
+      // HR-B1 — Direction org-wide leave approval seat (see DAF's note).
+      "hr:leave:approve",
     ],
   },
   {

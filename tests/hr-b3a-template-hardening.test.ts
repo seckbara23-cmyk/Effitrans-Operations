@@ -210,8 +210,9 @@ describe("nothing HR-B3 guaranteed has moved", () => {
       .readdirSync(fileURLToPath(new URL("../supabase/migrations", import.meta.url)))
       .filter((f: string) => f.endsWith(".sql"));
     expect(migrations).toHaveLength(Number(/MIGRATION_COUNT = (\d+)/.exec(read("lib/platform/ops/build-info.ts"))![1]));
-    // The newest migration is still HR-B3's — B3A added none.
-    expect([...migrations].sort().pop()).toBe("20260829000001_hr_import_apply.sql");
+    // B3A itself shipped no migration — durable: no file carries its name.
+    expect(migrations.some((f: string) => /b3a/i.test(f))).toBe(false);
+    expect(migrations).toContain("20260829000001_hr_import_apply.sql");
   });
 
   it("apply still creates exclusively through createEmployee and four-eyes still stands", () => {

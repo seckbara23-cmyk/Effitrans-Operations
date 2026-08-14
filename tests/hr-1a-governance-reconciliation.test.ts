@@ -25,20 +25,23 @@ function templateBlock(roleKey: string): string {
   return s.slice(i, j === -1 ? undefined : j);
 }
 
-describe("the seats stay parked until the grant phase — nothing leaked early", () => {
-  it("no role template holds hr:leave:approve or hr:performance:finalize", () => {
+describe("the seats: leave approval landed on Direction (HR-B1); the rest stay parked", () => {
+  it("hr:leave:approve sits on DGA and DAF alone; the other two authorities stay ungranted", () => {
+    // HR-B1 moved this pin: the leave seat is live on the Direction roles.
     const s = read("lib/platform/role-templates.ts");
-    expect(s).not.toContain('"hr:leave:approve"');
+    for (const r of ["DGA", "DAF"]) {
+      expect(templateBlock(r), r).toContain('"hr:leave:approve"');
+    }
     expect(s).not.toContain('"hr:performance:finalize"');
     expect(s).not.toContain('"hr:sensitive:read"');
   });
 
-  it("the Direction roles exist for the future grant — CEO, DGA, DAF", () => {
+  it("CEO remains ungranted — the HR-1A question (a) boundary, not an oversight", () => {
     for (const r of ["CEO", "DGA", "DAF"]) templateBlock(r);
-    // …and none of them holds any hr:* today.
-    for (const r of ["CEO", "DGA", "DAF"]) {
-      expect(templateBlock(r), r).not.toMatch(/"hr:/);
-    }
+    // Six broad accounts hold CEO in production; its grant is a decision.
+    expect(templateBlock("CEO")).not.toMatch(/"hr:/);
+    // HR_OFFICER never decides what it can request (SoD).
+    expect(templateBlock("HR_OFFICER")).not.toContain('"hr:leave:approve"');
   });
 
   it("no DEPARTMENT_MANAGER role was invented", () => {
@@ -49,15 +52,18 @@ describe("the seats stay parked until the grant phase — nothing leaked early",
 });
 
 describe("the premises HR-B1/B2 are designed against", () => {
-  it("leave decision is gated flat — permission plus maker-checker, no scope", () => {
-    // THE HR-B1 MUTATION TARGET: when the manager lane lands in the RPC, this
-    // pin moves with it. Until then, a scope check appearing only here (the
-    // action) or nowhere would both be wrong.
+  it("HR-B1 landed: the decision authority lives in the RPC, both lanes", () => {
+    // The pin moved with the manager lane, exactly as designed: the action no
+    // longer gates on the flat permission (that would BLOCK the manager lane);
+    // it resolves identity and the DATABASE decides — manager relationship or
+    // assert_actor_authority('hr:leave:approve').
     const s = code("lib/hr/leave-actions.ts");
     const fn = s.slice(s.indexOf("export async function decideLeaveRequest"));
-    expect(fn.slice(0, 900)).toContain('assertPermission("hr:leave:approve")');
-    expect(fn.slice(0, 900)).toContain('rpc("hr_decide_leave_request"');
-    expect(fn.slice(0, 900)).not.toMatch(/manager_employee_id|managerEmployeeId/);
+    expect(fn.slice(0, 1200)).not.toContain('assertPermission("hr:leave:approve")');
+    expect(fn.slice(0, 1200)).toContain('rpc("hr_decide_leave_request"');
+    const m = code("supabase/migrations/20260830000001_hr_leave_approval_activation.sql");
+    expect(m).toContain("manager_employee_id = v_actor_emp");
+    expect(m).toContain("assert_actor_authority(p_actor, p_tenant, 'hr:leave:approve', 'SERVICE')");
   });
 
   it("the manager relationship the scoped lane will read already exists", () => {
