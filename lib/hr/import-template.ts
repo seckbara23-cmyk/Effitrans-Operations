@@ -11,7 +11,18 @@
  * (CreateEmployeeInput / the resolution the validator performs). No invented
  * schema. The matricule is deliberately ABSENT: numbers are minted by
  * next_employee_number at application, never supplied by a spreadsheet.
+ *
+ * HR-B3A (production UAT hardening): the closed vocabularies are DERIVED from
+ * their authoritative registries — departments from lib/organization/
+ * departments, employment types from lib/hr/validate, statuses from
+ * lib/hr/lifecycle — never re-typed here. The template's dropdowns show the
+ * FRENCH labels those registries already carry, and canonicalizeEmployeeVocab
+ * maps label or code (accent/case-insensitive, EXACT — nothing fuzzy) back to
+ * the canonical code before validation. One source of truth, friendlier entry.
  */
+import { CANONICAL_DEPARTMENTS } from "@/lib/organization/departments";
+import { EMPLOYMENT_TYPES } from "./validate";
+import { EMPLOYEE_STATUS_LABELS_FR } from "./lifecycle";
 
 export type EmployeeTemplateColumn = {
   /** Internal field key — what KIND_FIELDS/validation/apply read. */
@@ -28,15 +39,21 @@ export const EMPLOYEE_TEMPLATE_COLUMNS: readonly EmployeeTemplateColumn[] = [
   { field: "last_name", headerFr: "Nom", required: true, hintFr: "Obligatoire" },
   {
     field: "department", headerFr: "Département plateforme", required: true,
-    hintFr: "Obligatoire — OPERATIONS, TRANSIT, FINANCE ou HUMAN_RESOURCES",
+    hintFr: "Obligatoire — choisissez dans la liste : Opérations, Transit, Finance ou Ressources humaines",
   },
   { field: "professional_email", headerFr: "Email professionnel", required: false, hintFr: "prenom.nom@exemple.sn" },
-  { field: "professional_phone", headerFr: "Téléphone professionnel", required: false, hintFr: "+221 …" },
+  {
+    field: "professional_phone", headerFr: "Téléphone professionnel", required: false,
+    hintFr: "+221770000001 — la colonne est en format Texte : ne la reformatez pas, le + est préservé",
+  },
   {
     field: "employment_type", headerFr: "Type d'emploi", required: false,
-    hintFr: "CDI, CDD, STAGE, JOURNALIER, PRESTATAIRE ou AUTRE",
+    hintFr: "Choisissez dans la liste : CDI, CDD, STAGE, JOURNALIER, PRESTATAIRE ou AUTRE",
   },
-  { field: "hire_date", headerFr: "Date d'entrée", required: false, hintFr: "AAAA-MM-JJ (ex. 2026-09-01)" },
+  {
+    field: "hire_date", headerFr: "Date d'entrée", required: false,
+    hintFr: "AAAA-MM-JJ (ex. 2026-08-14) — la colonne est au format date, Excel affiche la forme canonique",
+  },
   {
     field: "org_unit", headerFr: "Unité d'organisation", required: false,
     hintFr: "Code ou nom exact d'une unité active (Configuration RH)",
@@ -55,7 +72,7 @@ export const EMPLOYEE_TEMPLATE_COLUMNS: readonly EmployeeTemplateColumn[] = [
   },
   {
     field: "status", headerFr: "Statut initial", required: false,
-    hintFr: "DRAFT (défaut) ou ACTIVE",
+    hintFr: "Choisissez dans la liste : Brouillon (défaut) ou Actif",
   },
 ] as const;
 
@@ -84,6 +101,60 @@ export function autoMapEmployeeHeaders(sourceHeaders: readonly string[]): Record
     if (hit) mapping[col.field] = hit;
   }
   return mapping;
+}
+
+// ======================================================= closed vocabularies ==
+
+export type TemplateVocabEntry = { code: string; labelFr: string };
+
+/**
+ * The three closed-vocabulary columns, DERIVED from their authoritative
+ * registries — this object never invents a value. Dropdowns show labelFr;
+ * canonicalizeEmployeeVocab accepts either form.
+ */
+export const EMPLOYEE_TEMPLATE_VOCAB: Readonly<
+  Record<"department" | "employment_type" | "status", readonly TemplateVocabEntry[]>
+> = {
+  department: CANONICAL_DEPARTMENTS.map((d) => ({ code: d.code, labelFr: d.labelFr })),
+  // Employment types ARE already the human vocabulary (CDI, CDD, …).
+  employment_type: EMPLOYMENT_TYPES.map((t) => ({ code: t, labelFr: t })),
+  status: EMPLOYEE_IMPORT_ALLOWED_STATUSES.map((s) => ({ code: s, labelFr: EMPLOYEE_STATUS_LABELS_FR[s] })),
+};
+
+/**
+ * Map an operator-entered value onto its canonical code: exact code or exact
+ * French label, accent- and case-insensitive — « Finance » → FINANCE,
+ * « Ressources humaines » → HUMAN_RESOURCES, « Brouillon » → DRAFT, « cdi » →
+ * CDI. Anything else is returned unchanged and the validator refuses it with
+ * the full expected list — deterministic, never a guess.
+ */
+export function canonicalizeEmployeeVocab(field: string, value: string): string {
+  const vocab = (EMPLOYEE_TEMPLATE_VOCAB as Record<string, readonly TemplateVocabEntry[] | undefined>)[field];
+  if (!vocab || !value.trim()) return value;
+  const n = norm(value);
+  const hit = vocab.find((e) => norm(e.code) === n || norm(e.labelFr) === n);
+  return hit ? hit.code : value;
+}
+
+// ========================================================= instructions sheet ==
+
+/**
+ * The « Instructions » worksheet content — documentation lives HERE, in a
+ * sheet the parser never reads, so it can never be mistaken for an employee
+ * (the UAT-proven trap: a hint row under the headers counted as a ligne).
+ */
+export function employeeTemplateInstructionRows(): string[][] {
+  return [
+    ["Colonne", "Obligatoire", "Consignes"],
+    ...EMPLOYEE_TEMPLATE_COLUMNS.map((c) => [c.headerFr, c.required ? "Oui" : "Non", c.hintFr]),
+    [],
+    ["Règles générales", "", ""],
+    ["Saisie", "", "Ligne 1 de l'onglet Employes = en-têtes. Saisissez les employés à partir de la ligne 2 — aucune ligne d'exemple, aucune ligne de consigne."],
+    ["Dates", "", "Format AAAA-MM-JJ (ex. 2026-08-14). La colonne Date d'entrée est déjà au format date."],
+    ["Téléphones", "", "La colonne Téléphone est en format Texte pour préserver +221… — ne la convertissez pas en nombre."],
+    ["Données de référence", "", "Unité d'organisation, Poste, Site de travail et Responsable hiérarchique sont facultatifs ; s'ils sont renseignés, ils doivent correspondre exactement à la configuration RH existante."],
+    ["Matricule", "", "Le matricule n'est jamais saisi : il est attribué par la plateforme lors de l'application du lot."],
+  ];
 }
 
 /**

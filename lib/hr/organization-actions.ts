@@ -35,8 +35,10 @@ import {
   EMPLOYEE_TEMPLATE_OPTIONAL,
   EMPLOYEE_IMPORT_ALLOWED_STATUSES,
   autoMapEmployeeHeaders,
+  canonicalizeEmployeeVocab,
   excelSerialToIsoDate,
 } from "./import-template";
+import { CANONICAL_DEPARTMENTS } from "@/lib/organization/departments";
 import { parseXlsx, looksLikeZip } from "./xlsx";
 import { EMPLOYMENT_TYPES } from "./validate";
 import { createEmployee, transitionEmployee } from "./actions";
@@ -712,7 +714,8 @@ const KIND_FIELDS: Record<string, { required: string[]; optional: string[] }> = 
   },
 };
 
-const CANONICAL_DEPARTMENTS = ["OPERATIONS", "TRANSIT", "FINANCE", "HUMAN_RESOURCES"];
+// HR-B3A: derived from THE canonical registry — never a second hard-coded list.
+const DEPARTMENT_CODES: readonly string[] = CANONICAL_DEPARTMENTS.map((d) => d.code);
 
 
 
@@ -768,9 +771,16 @@ function validateEmployeeRow(
   const push = (field: string, code: string, message_fr: string) =>
     problems.push({ field, code, message_fr });
 
-  if (parsed.department && !CANONICAL_DEPARTMENTS.includes(parsed.department)) {
+  // HR-B3A: accept the registries' own French labels (« Finance » → FINANCE,
+  // « Brouillon » → DRAFT) — exact, accent/case-insensitive, then validate the
+  // canonical code. The server stays authoritative; Excel dropdowns are UX.
+  for (const f of ["department", "employment_type", "status"] as const) {
+    if (parsed[f]) parsed[f] = canonicalizeEmployeeVocab(f, parsed[f]);
+  }
+
+  if (parsed.department && !DEPARTMENT_CODES.includes(parsed.department)) {
     push("department", "invalid_department",
-      `Département inconnu : « ${parsed.department} » (attendu : ${CANONICAL_DEPARTMENTS.join(", ")})`);
+      `Département inconnu : « ${parsed.department} » (attendu : ${DEPARTMENT_CODES.join(", ")})`);
   }
   if (parsed.employment_type && !(EMPLOYMENT_TYPES as readonly string[]).includes(parsed.employment_type)) {
     push("employment_type", "invalid_employment_type",
@@ -808,7 +818,10 @@ function validateEmployeeRow(
     }
   }
   if (parsed.professional_phone && !PHONE_RE.test(parsed.professional_phone)) {
-    push("professional_phone", "invalid_phone", `Téléphone invalide : « ${parsed.professional_phone} »`);
+    const numerified = /^-?\d+(\.\d+)?[eE][+-]?\d+$/.test(parsed.professional_phone);
+    push("professional_phone", "invalid_phone", numerified
+      ? `Téléphone converti en nombre par Excel : « ${parsed.professional_phone} » — utilisez la colonne Texte du modèle fourni et ressaisissez le numéro avec son +`
+      : `Téléphone invalide : « ${parsed.professional_phone} »`);
   }
   if (parsed.first_name && parsed.last_name) {
     const key = `${parsed.first_name.trim().toLowerCase()}|${parsed.last_name.trim().toLowerCase()}`;

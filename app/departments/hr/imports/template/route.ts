@@ -3,16 +3,16 @@
  * ---------------------------------------------------------------------------
  * The headers ARE the contract: they come from EMPLOYEE_TEMPLATE_COLUMNS, the
  * same definition the auto-mapper and the validator read, so a file made from
- * this template needs no manual correspondance at all. Row 2 carries the
- * per-column guidance; the operator overwrites it with the first employee.
+ * this template needs no manual correspondance at all. HR-B3A: the data sheet
+ * holds headers ONLY (guidance lives in the « Instructions » sheet, dropdowns
+ * and column formats guide entry) — see lib/hr/import-template-xlsx.ts.
  *
  * Gated exactly like the imports page: hr:manage. Deterministic bytes.
  */
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
-import { EMPLOYEE_TEMPLATE_COLUMNS } from "@/lib/hr/import-template";
-import { buildXlsx } from "@/lib/hr/xlsx";
+import { buildEmployeeImportTemplate } from "@/lib/hr/import-template-xlsx";
 
 export const dynamic = "force-dynamic";
 
@@ -24,9 +24,7 @@ export async function GET(): Promise<NextResponse> {
     return new NextResponse("hr:manage requis", { status: 403 });
   }
 
-  const headers = EMPLOYEE_TEMPLATE_COLUMNS.map((c) => (c.required ? `${c.headerFr} *` : c.headerFr));
-  const hints = EMPLOYEE_TEMPLATE_COLUMNS.map((c) => c.hintFr);
-  const bytes = buildXlsx("Employes", [headers, hints]);
+  const bytes = buildEmployeeImportTemplate();
 
   return new NextResponse(Buffer.from(bytes), {
     status: 200,

@@ -103,10 +103,49 @@ function colIndex(ref: string): number {
 }
 
 // ----------------------------------------------------------------- writer ----
-/** A one-sheet .xlsx from rows of strings. Row 1 is whatever the caller puts there. */
-export function buildXlsx(sheetName: string, rows: readonly (readonly string[])[]): Uint8Array {
-  const enc = new TextEncoder();
-  const rowsXml = rows
+/**
+ * Column-level cell formats (HR-B3A). "text" (numFmt 49 = @) protects
+ * identifiers the operator TYPES — a phone in a General column becomes a
+ * number, loses its + and displays scientific; a text column preserves
+ * +221770000001 exactly. "date" (custom yyyy-mm-dd) lets Excel accept any
+ * locale date entry and store the day serial the parser already converts —
+ * displayed canonically, imported deterministically.
+ */
+export type XlsxColumnStyle = "text" | "date";
+
+export type XlsxSheet = {
+  name: string;
+  rows: readonly (readonly string[])[];
+  /** 0-based column index → display width (characters). */
+  colWidths?: Readonly<Record<number, number>>;
+  /** 0-based column index → format applied to the whole column. */
+  colStyles?: Readonly<Record<number, XlsxColumnStyle>>;
+  /** Dropdown (list validation) on a column; rows firstRow..lastRow (1-based, defaults 2..2001). */
+  validations?: readonly { col: number; values: readonly string[]; firstRow?: number; lastRow?: number }[];
+};
+
+// cellXfs indices in styles.xml below.
+const XF_TEXT = 1;
+const XF_DATE = 2;
+
+/** Minimal-but-complete stylesheet: default, text (@), date (yyyy-mm-dd). */
+const STYLES_XML =
+  `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+  `<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` +
+  `<numFmts count="1"><numFmt numFmtId="164" formatCode="yyyy\\-mm\\-dd"/></numFmts>` +
+  `<fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts>` +
+  `<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>` +
+  `<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>` +
+  `<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>` +
+  `<cellXfs count="3">` +
+  `<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>` +
+  `<xf numFmtId="49" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>` +
+  `<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>` +
+  `</cellXfs>` +
+  `</styleSheet>`;
+
+function sheetXml(sheet: XlsxSheet): string {
+  const rowsXml = sheet.rows
     .map((cells, r) => {
       const cellsXml = cells
         .map((v, c) => `<c r="${colLetter(c)}${r + 1}" t="inlineStr"><is><t xml:space="preserve">${escXml(v)}</t></is></c>`)
@@ -114,6 +153,57 @@ export function buildXlsx(sheetName: string, rows: readonly (readonly string[])[
       return `<row r="${r + 1}">${cellsXml}</row>`;
     })
     .join("");
+
+  const colIndices = new Set([
+    ...Object.keys(sheet.colWidths ?? {}).map(Number),
+    ...Object.keys(sheet.colStyles ?? {}).map(Number),
+  ]);
+  const colsXml = colIndices.size
+    ? `<cols>${[...colIndices]
+        .sort((a, b) => a - b)
+        .map((c) => {
+          const width = sheet.colWidths?.[c];
+          const style = sheet.colStyles?.[c];
+          const styleAttr = style ? ` style="${style === "text" ? XF_TEXT : XF_DATE}"` : "";
+          const widthAttr = ` width="${width ?? 12}" customWidth="1"`;
+          return `<col min="${c + 1}" max="${c + 1}"${widthAttr}${styleAttr}/>`;
+        })
+        .join("")}</cols>`
+    : "";
+
+  // Inline list validations — the vocabulary travels IN the formula (≤255
+  // chars, ours are far below), no hidden reference sheet to protect.
+  const validationsXml = sheet.validations?.length
+    ? `<dataValidations count="${sheet.validations.length}">${sheet.validations
+        .map((v) => {
+          const first = v.firstRow ?? 2;
+          const last = v.lastRow ?? 2001;
+          const letter = colLetter(v.col);
+          return (
+            `<dataValidation type="list" allowBlank="1" showInputMessage="1" showErrorMessage="1" ` +
+            `sqref="${letter}${first}:${letter}${last}">` +
+            `<formula1>${escXml(`"${v.values.join(",")}"`)}</formula1>` +
+            `</dataValidation>`
+          );
+        })
+        .join("")}</dataValidations>`
+    : "";
+
+  return (
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` +
+    colsXml +
+    `<sheetData>${rowsXml}</sheetData>` +
+    validationsXml +
+    `</worksheet>`
+  );
+}
+
+/** A multi-sheet .xlsx. Sheet ORDER matters: the parser reads the FIRST sheet,
+ *  so the data sheet always comes first and documentation sheets after. */
+export function buildXlsxWorkbook(sheets: readonly XlsxSheet[]): Uint8Array {
+  const enc = new TextEncoder();
+  const stylesRelId = `rId${sheets.length + 1}`;
 
   const entries: ZipEntry[] = [
     {
@@ -124,7 +214,10 @@ export function buildXlsx(sheetName: string, rows: readonly (readonly string[])[
           `<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>` +
           `<Default Extension="xml" ContentType="application/xml"/>` +
           `<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>` +
-          `<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>` +
+          sheets
+            .map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`)
+            .join("") +
+          `<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>` +
           `</Types>`,
       ),
     },
@@ -142,7 +235,7 @@ export function buildXlsx(sheetName: string, rows: readonly (readonly string[])[
       data: enc.encode(
         `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
           `<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">` +
-          `<sheets><sheet name="${escXml(sheetName)}" sheetId="1" r:id="rId1"/></sheets>` +
+          `<sheets>${sheets.map((s, i) => `<sheet name="${escXml(s.name)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join("")}</sheets>` +
           `</workbook>`,
       ),
     },
@@ -151,19 +244,22 @@ export function buildXlsx(sheetName: string, rows: readonly (readonly string[])[
       data: enc.encode(
         `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
           `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
-          `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>` +
+          sheets
+            .map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`)
+            .join("") +
+          `<Relationship Id="${stylesRelId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>` +
           `</Relationships>`,
       ),
     },
-    {
-      name: "xl/worksheets/sheet1.xml",
-      data: enc.encode(
-        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
-          `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${rowsXml}</sheetData></worksheet>`,
-      ),
-    },
+    ...sheets.map((s, i) => ({ name: `xl/worksheets/sheet${i + 1}.xml`, data: enc.encode(sheetXml(s)) })),
+    { name: "xl/styles.xml", data: enc.encode(STYLES_XML) },
   ];
   return buildZip(entries);
+}
+
+/** A one-sheet .xlsx from rows of strings. Row 1 is whatever the caller puts there. */
+export function buildXlsx(sheetName: string, rows: readonly (readonly string[])[]): Uint8Array {
+  return buildXlsxWorkbook([{ name: sheetName, rows }]);
 }
 
 // ----------------------------------------------------------------- reader ----
@@ -257,6 +353,13 @@ export function parseXlsx(buf: Uint8Array): string[][] {
         const v = /<v>([\s\S]*?)<\/v>/.exec(inner)?.[1];
         if (v !== undefined) {
           value = type === "s" ? (shared[Number(v)] ?? "") : unescXml(v);
+          // A numeric cell stored in scientific notation would corrupt an
+          // identifier (a phone, a matricule-like code) — expand it back to
+          // plain digits. Values are ALWAYS treated as strings, never numbers.
+          if (type === "n" && /^-?\d+(\.\d+)?[eE][+-]?\d+$/.test(value)) {
+            value = expandScientific(value);
+          }
+
         }
       }
       while (cells.length < idx) cells.push("");
@@ -265,6 +368,24 @@ export function parseXlsx(buf: Uint8Array): string[][] {
     rows.push(cells);
   }
   return rows;
+}
+
+/** Exact digit-shift expansion of scientific notation ("2.21770000001E+11" →
+ *  "221770000001") — string arithmetic, no float roundtrip, no precision loss.
+ *  Negative exponents (true fractions) are left untouched: they are not
+ *  identifiers and inventing leading zeros would fabricate data. */
+export function expandScientific(s: string): string {
+  const m = /^(-?)(\d+)(?:\.(\d+))?[eE]([+-]?\d+)$/.exec(s);
+  if (!m) return s;
+  const [, sign, intPart, fracPart = "", expStr] = m;
+  const exp = Number(expStr);
+  const digits = intPart + fracPart;
+  const point = intPart.length + exp; // digits before the decimal point
+  if (point <= 0) return s;
+  const padded = digits.padEnd(Math.max(point, digits.length), "0");
+  const whole = padded.slice(0, point);
+  const frac = padded.slice(point).replace(/0+$/, "");
+  return sign + whole + (frac ? `.${frac}` : "");
 }
 
 /** PK\x03\x04 — the only reliable cheap discriminator between xlsx and csv. */

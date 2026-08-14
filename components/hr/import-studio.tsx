@@ -30,7 +30,7 @@ export type ImportOutcomeLine = {
 };
 
 const KINDS = [
-  { value: "EMPLOYEES", label: "Employés", fields: "modèle Excel fourni — correspondance automatique" },
+  { value: "EMPLOYEES", label: "Employés", fields: "modèle Excel fourni — en-têtes ligne 1, employés dès la ligne 2, consignes dans l'onglet Instructions" },
   { value: "ORG_UNITS", label: "Unités d'organisation", fields: "name, unit_kind, code?, parent_code?, canonical_department?" },
   { value: "POSITIONS", label: "Postes", fields: "title, code?, description?" },
   { value: "WORK_LOCATIONS", label: "Sites de travail", fields: "name, city?" },
