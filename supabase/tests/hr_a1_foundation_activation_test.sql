@@ -37,12 +37,26 @@ begin
               where r.tenant_id = v_tenant and r.code = 'HR_OFFICER'
                 and p.code = 'hr:config:manage'),
      '-'),
-    ('the three parked authorities are granted to NOBODY',
+    -- HR-B1 unparked hr:leave:approve onto the Direction seats; the OTHER two
+    -- authorities stay parked, and the leave seat lands NOWHERE else.
+    ('the two parked authorities are granted to NOBODY',
      not exists (select 1
                    from public.role_permission rp
                    join public.permission p on p.id = rp.permission_id
-                  where p.code in ('hr:sensitive:read', 'hr:leave:approve',
-                                   'hr:performance:finalize')),
+                  where p.code in ('hr:sensitive:read', 'hr:performance:finalize')),
+     '-'),
+    ('hr:leave:approve lands ONLY on the Direction seats DAF/DGA (HR-B1)',
+     not exists (select 1
+                   from public.role r
+                   join public.role_permission rp on rp.role_id = r.id
+                   join public.permission p on p.id = rp.permission_id
+                  where p.code = 'hr:leave:approve' and r.code not in ('DAF', 'DGA'))
+     and 2 = (select count(*)
+                from public.role r
+                join public.role_permission rp on rp.role_id = r.id
+                join public.permission p on p.id = rp.permission_id
+               where r.tenant_id = v_tenant and r.code in ('DAF', 'DGA')
+                 and p.code = 'hr:leave:approve'),
      '-'),
     ('SYSTEM_ADMIN holds NO hr:* (DEC-B25)',
      not exists (select 1
@@ -51,12 +65,13 @@ begin
                    join public.permission p on p.id = rp.permission_id
                   where r.code = 'SYSTEM_ADMIN' and p.code like 'hr:%'),
      '-'),
-    ('no role other than HR_OFFICER holds any hr:*',
+    ('no role beyond HR_OFFICER and the Direction leave seats holds any hr:*',
      not exists (select 1
                    from public.role r
                    join public.role_permission rp on rp.role_id = r.id
                    join public.permission p on p.id = rp.permission_id
-                  where p.code like 'hr:%' and r.code <> 'HR_OFFICER'),
+                  where p.code like 'hr:%' and r.code <> 'HR_OFFICER'
+                    and not (r.code in ('DAF', 'DGA') and p.code = 'hr:leave:approve')),
      '-');
 
   -- The EXACT permission set — an over-grant elsewhere in the seed would pass
