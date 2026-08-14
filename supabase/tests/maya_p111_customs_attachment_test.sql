@@ -11,37 +11,44 @@
 -- ===========================================================================
 begin;
 
--- ---- fixtures -------------------------------------------------------------
-insert into public.organization (id, name, slug, status)
-values ('00000000-0000-0000-0000-0000000c1100', 'P111 Tenant', 'p111-tenant', 'active')
+-- ---- fixtures ------------------------------------------------------------
+-- Mirrors the known-good shape of the P1.1 suite: auth.users FIRST (app_user
+-- references it), the SEED tenant for the main actors, role keyed (tenant, code)
+-- with label_fr, and user_role carrying its tenant.
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-0000000c1001', 'p111-declarant@test.local'),
+  ('00000000-0000-0000-0000-0000000c1002', 'p111-noperm@test.local')
 on conflict (id) do nothing;
 
-insert into public.role (id, tenant_id, code, name)
-values ('00000000-0000-0000-0000-0000000c1110', '00000000-0000-0000-0000-0000000c1100', 'DECLARANT_P111', 'Déclarant'),
-       ('00000000-0000-0000-0000-0000000c1111', '00000000-0000-0000-0000-0000000c1100', 'OUTSIDER_P111', 'Sans droit')
+insert into public.app_user (id, tenant_id, email, status) values
+  ('00000000-0000-0000-0000-0000000c1001', '00000000-0000-0000-0000-000000000001', 'p111-declarant@test.local', 'active'),
+  ('00000000-0000-0000-0000-0000000c1002', '00000000-0000-0000-0000-000000000001', 'p111-noperm@test.local', 'active')
 on conflict (id) do nothing;
+
+insert into public.role (id, tenant_id, code, label_fr) values
+  ('00000000-0000-0000-0000-0000000c1110', '00000000-0000-0000-0000-000000000001', 'P111_DECLARANT', 'Declarant (test P111)'),
+  ('00000000-0000-0000-0000-0000000c1111', '00000000-0000-0000-0000-000000000001', 'P111_NOPERM', 'Sans droit (test P111)')
+on conflict (tenant_id, code) do nothing;
 
 insert into public.role_permission (role_id, permission_id)
 select '00000000-0000-0000-0000-0000000c1110', p.id from public.permission p where p.code = 'customs:update'
 on conflict do nothing;
 
-insert into public.app_user (id, tenant_id, email, full_name, status)
-values ('00000000-0000-0000-0000-0000000c1001', '00000000-0000-0000-0000-0000000c1100', 'declarant.p111@example.test', 'Déclarant', 'active'),
-       ('00000000-0000-0000-0000-0000000c1002', '00000000-0000-0000-0000-0000000c1100', 'outsider.p111@example.test', 'Sans droit', 'active')
-on conflict (id) do nothing;
-
-insert into public.user_role (user_id, role_id)
-values ('00000000-0000-0000-0000-0000000c1001', '00000000-0000-0000-0000-0000000c1110'),
-       ('00000000-0000-0000-0000-0000000c1002', '00000000-0000-0000-0000-0000000c1111')
+insert into public.user_role (user_id, role_id, tenant_id) values
+  ('00000000-0000-0000-0000-0000000c1001', '00000000-0000-0000-0000-0000000c1110', '00000000-0000-0000-0000-000000000001'),
+  ('00000000-0000-0000-0000-0000000c1002', '00000000-0000-0000-0000-0000000c1111', '00000000-0000-0000-0000-000000000001')
 on conflict do nothing;
 
-insert into public.operational_file (id, tenant_id, file_number, type, status)
-values ('00000000-0000-0000-0000-0000000c11f1', '00000000-0000-0000-0000-0000000c1100', 'P111-0001', 'IMP', 'IN_PROGRESS')
+insert into public.client (id, tenant_id, name) values
+  ('00000000-0000-0000-0000-0000000c11d1', '00000000-0000-0000-0000-000000000001', 'P111 Client')
 on conflict (id) do nothing;
 
-insert into public.customs_record (id, tenant_id, file_id, status, required, declaration_number, external_ref)
-values ('00000000-0000-0000-0000-0000000c11e1', '00000000-0000-0000-0000-0000000c1100',
-        '00000000-0000-0000-0000-0000000c11f1', 'DECLARED', true, 'DEC-P111', 'GND-P111')
+insert into public.operational_file (id, tenant_id, file_number, type, client_id) values
+  ('00000000-0000-0000-0000-0000000c11f1', '00000000-0000-0000-0000-000000000001', 'EFT-IMP-2099-96001', 'IMP', '00000000-0000-0000-0000-0000000c11d1')
+on conflict (id) do nothing;
+
+insert into public.customs_record (id, tenant_id, file_id, status, declaration_number, external_ref) values
+  ('00000000-0000-0000-0000-0000000c11e1', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000c11f1', 'DECLARED', 'DEC-P111', 'GND-P111')
 on conflict (id) do nothing;
 
 -- ---- 1. AUTHORITY ---------------------------------------------------------

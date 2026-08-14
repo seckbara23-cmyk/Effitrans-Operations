@@ -124,10 +124,10 @@ begin
   end if;
 
   -- Normalise before validating: trim, upper, drop blanks, de-duplicate.
-  select array_agg(distinct s order by s) into v_systems
-    from unnest(coalesce(p_systems, array[]::text[])) as s0(s0)
-    cross join lateral (select upper(btrim(s0))) as t(s)
-   where nullif(btrim(s0), '') is not null;
+  select array_agg(distinct upper(btrim(s)) order by upper(btrim(s)))
+    into v_systems
+    from unnest(coalesce(p_systems, array[]::text[])) as s
+   where btrim(coalesce(s, '')) <> '';
 
   if v_systems is null or array_length(v_systems, 1) is null then
     raise exception 'at least one customs system is required';
