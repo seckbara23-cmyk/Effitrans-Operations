@@ -232,7 +232,8 @@ describe("nothing is synchronised, and nothing is required that was not ratified
       .filter((f) => f.endsWith(".sql"));
     const bi = read("lib/platform/ops/build-info.ts");
     expect(migrations).toHaveLength(Number(/MIGRATION_COUNT = (\d+)/.exec(bi)![1]));
-    expect(bi).toContain('LATEST_MIGRATION = "20260828000001_customs_attachment"');
+    // LATEST_MIGRATION moves on; that THIS migration shipped is durable:
+    expect(migrations).toContain("20260828000001_customs_attachment.sql");
     const m = read(MIGRATION);
     expect(m).toContain("add column if not exists");
     expect(m).toContain("create or replace function");

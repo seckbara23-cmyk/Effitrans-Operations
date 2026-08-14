@@ -60,39 +60,52 @@ describe("master data is create-only today — the HR-C1 mutation targets", () =
 });
 
 describe("the import pipeline — real, four-eyed, shallow, endless", () => {
-  it("EMPLOYEES is a supported import kind with the code's own template", () => {
+  it("EMPLOYEES is a supported import kind, and its contract lives in ONE module", () => {
     const s = read(ORG);
     expect(s).toContain('"ORG_UNITS" | "POSITIONS" | "WORK_LOCATIONS" | "EMPLOYEES"');
-    // The current template contract, verbatim — HR-B3 extends exactly this.
-    expect(s).toContain('required: ["first_name", "last_name", "department"]');
-    expect(s).toContain('optional: ["employee_number", "job_title", "email", "phone", "status", "hire_date"]');
+    // HR-B3 moved the contract to import-template.ts — shared by the xlsx
+    // builder, the auto-mapper, the validator and the tests. The matricule is
+    // deliberately NOT a column: numbers are minted at application.
+    expect(s).toContain("required: [...EMPLOYEE_TEMPLATE_REQUIRED]");
+    // The FIELD LIST has no matricule column (prose may mention the engine).
+    const tpl = read("lib/hr/import-template.ts");
+    expect(tpl).not.toMatch(/field: "employee_number"/);
   });
 
-  it("validation is exactly four checks deep — no duplicate or reference logic", () => {
-    // The HR-B3 work list, stated as absences. Any of these appearing outside
-    // that phase would be an unaudited validation change.
+  it("HR-B3 landed: validation is deep — duplicates, references, managers", () => {
     const s = code(ORG);
-    const validate = s.slice(s.indexOf("export async function validateHrImport"), s.indexOf("export async function submitHrImport"));
-    expect(validate).toContain("invalid_date");
-    expect(validate).toContain("invalid_department");
-    expect(validate).not.toMatch(/duplicate|professional_email|manager|position_id|work_location_id/);
+    // The row validator resolves references and refuses what it cannot prove.
+    for (const check of ["email_exists", "duplicate_in_file", "duplicate_name_in_file",
+                         "unknown_unit", "inactive_unit", "unknown_position", "inactive_position",
+                         "unknown_site", "inactive_site", "unknown_manager"]) {
+      expect(s, check).toContain(`"${check}"`);
+    }
+    // …and nothing is ever CREATED from a spreadsheet value.
+    const validator = s.slice(s.indexOf("function validateEmployeeRow"), s.indexOf("export async function validateHrImport"));
+    expect(validator).not.toMatch(/\.insert\(/);
   });
 
-  it("CSV only — the studio does not accept Excel yet", () => {
-    expect(read("components/hr/import-studio.tsx")).toContain('accept=".csv,text/csv"');
-    expect(read("components/hr/import-studio.tsx")).not.toMatch(/xlsx|spreadsheetml/);
-  });
-
-  it("no template download exists yet", () => {
-    expect(code("components/hr/import-studio.tsx") + code("app/departments/hr/imports/page.tsx"))
-      .not.toMatch(/Télécharger le modèle|download.*template|template.*download/i);
-  });
-
-  it("the pipeline still stops at READY and the four-eyes visa is identity-enforced", () => {
+  it("HR-B3 landed: Excel is accepted, server-parsed, size-limited", () => {
+    expect(read("components/hr/import-studio.tsx")).toContain('accept=".xlsx,.csv');
     const s = read(ORG);
-    expect(s).toContain("THE PIPELINE STOPS AT READY");
+    // The limits are the SERVER's, not the file input's.
+    expect(s).toContain("MAX_IMPORT_BYTES");
+    expect(s).toContain("MAX_IMPORT_ROWS");
+    expect(s).toContain('"file_too_large"');
+  });
+
+  it("HR-B3 landed: the template downloads from the shared contract", () => {
+    expect(read("components/hr/import-studio.tsx")).toContain("Télécharger le modèle Excel");
+    const route = read("app/departments/hr/imports/template/route.ts");
+    expect(route).toContain("EMPLOYEE_TEMPLATE_COLUMNS");
+    expect(route).toContain('hasPermission(permissions, "hr:manage")');
+  });
+
+  it("the four-eyes visa is identity-enforced, and apply comes only after it", () => {
     const approve = code(ORG).slice(code(ORG).indexOf("export async function approveHrImport"));
     expect(approve.slice(0, 800)).toContain("batch.submitted_by === admin.id");
+    const apply = code(ORG).slice(code(ORG).indexOf("export async function applyHrImport"));
+    expect(apply).toContain('.in("status", ["READY", "APPLIED_WITH_ERRORS"])');
   });
 
   it("the audit is on the record with the dual-manager coherence note", () => {

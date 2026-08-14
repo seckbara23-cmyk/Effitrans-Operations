@@ -3634,6 +3634,9 @@ export type Database = {
           submitted_by: string | null; submitted_at: string | null;
           approved_by: string | null; approved_at: string | null;
           rejection_reason: string | null; created_at: string; updated_at: string;
+          // HR-B3 — application evidence (migration 107).
+          applied_by: string | null; applied_at: string | null;
+          applied_count: number; failed_count: number;
         };
         Insert: {
           id?: string; tenant_id: string; batch_number: string; import_kind: string;
@@ -3646,6 +3649,8 @@ export type Database = {
           submitted_by?: string | null; submitted_at?: string | null;
           approved_by?: string | null; approved_at?: string | null;
           rejection_reason?: string | null;
+          applied_by?: string | null; applied_at?: string | null;
+          applied_count?: number; failed_count?: number;
         };
         Relationships: [];
       };
@@ -3653,12 +3658,17 @@ export type Database = {
         Row: {
           id: string; tenant_id: string; batch_id: string; source_row_number: number;
           raw: unknown; parsed: unknown; status: string;
+          // HR-B3 — which employee the row became, and how it ended.
+          employee_id: string | null; outcome: string | null; outcome_reason: string | null;
         };
         Insert: {
           id?: string; tenant_id: string; batch_id: string; source_row_number: number;
           raw: unknown; parsed?: unknown; status?: string;
         };
-        Update: { parsed?: unknown; status?: string };
+        Update: {
+          parsed?: unknown; status?: string;
+          employee_id?: string | null; outcome?: string | null; outcome_reason?: string | null;
+        };
         Relationships: [];
       };
       hr_leave_category: {

@@ -1,10 +1,10 @@
 /**
  * HR-1 — Import staging workspace. Gate: hr:manage.
  * ---------------------------------------------------------------------------
- * The pipeline ends at READY (frozen scope): Upload → Stage → Mapping →
- * Validation → Preview → Maker-Checker → READY. Nothing here — or anywhere in
- * HR-1 — applies a batch to the real tables; activation waits behind HRQ-A4
- * among others, and the page says so instead of hiding it.
+ * HR-1 froze the pipeline at READY behind HRQ-A4. Effitrans answered YES, so
+ * HR-B3 completed it: template → upload (xlsx/csv) → validation → preview →
+ * four-eyes visa → APPLY → report. Application creates employees through the
+ * exact createEmployee path — never a parallel insert.
  */
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -12,7 +12,8 @@ import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui/page-header";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
-import { listImportBatches } from "@/lib/hr/organization";
+import { listImportBatches, listImportErrors, listImportOutcomes } from "@/lib/hr/organization";
+import { countHrOfficers } from "@/lib/hr/read";
 import { HrImportStudio } from "@/components/hr/import-studio";
 
 export const metadata: Metadata = { title: "Imports RH" };
@@ -40,16 +41,22 @@ export default async function HrImportsPage() {
   }
 
   const batches = await listImportBatches(user.tenantId);
+  const batchIds = batches.map((b) => b.id);
+  const [errors, outcomes, hrOfficerCount] = await Promise.all([
+    listImportErrors(user.tenantId, batchIds),
+    listImportOutcomes(user.tenantId, batchIds),
+    countHrOfficers(user.tenantId),
+  ]);
 
   return (
     <div className="animate-fade-in space-y-6">
       <PageHeader
         meta="Ressources humaines"
         title="Imports — préparation"
-        subtitle="Téléversement → préparation → correspondance → validation → visa à quatre yeux → PRÊT. L'application des lots n'est pas encore activée (HRQ-A4 en attente)."
+        subtitle="Modèle Excel → téléversement → validation → aperçu → visa à quatre yeux → application → rapport. Les employés apparaissent dans le Registre à l'application du lot."
       />
       <Link href="/departments/hr" className="inline-block text-sm text-teal-700 hover:underline">← Tableau de bord RH</Link>
-      <HrImportStudio batches={batches} currentUserId={user.id} />
+      <HrImportStudio batches={batches} currentUserId={user.id} hrOfficerCount={hrOfficerCount} errors={errors} outcomes={outcomes} />
     </div>
   );
 }

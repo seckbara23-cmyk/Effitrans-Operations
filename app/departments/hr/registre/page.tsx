@@ -54,7 +54,16 @@ export default async function HrRegistryPage({
 }: {
   searchParams?: { status?: string; department?: string; q?: string };
 }) {
-  const header = <PageHeader meta="Management" title="Ressources humaines" subtitle="Registre du personnel — identité, département, fonction, statut d'emploi et liaison de compte." />;
+  const header = (
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <PageHeader meta="Management" title="Ressources humaines" subtitle="Registre du personnel — identité, département, fonction, statut d'emploi et liaison de compte." />
+      {/* HR-B3 — manual and bulk registration are equal paths into ONE registry. */}
+      <Link href="/departments/hr/imports"
+        className="rounded-lg border border-teal-300 bg-teal-50 px-3 py-2 text-sm font-medium text-teal-800 hover:bg-teal-100">
+        Importer des employés
+      </Link>
+    </div>
+  );
 
   const user = await requireUser();
   const permissions = await getEffectivePermissions(user.id);

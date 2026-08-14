@@ -76,6 +76,64 @@ export const getHrConfiguration = cache(async (tenantId: string): Promise<HrConf
   return data ?? null;
 });
 
+/** HR-B3 — validation errors for the listed batches, for the readable preview
+ *  (« Ligne 17 — Poste « Comptble » introuvable »). */
+export const listImportErrors = cache(async (tenantId: string, batchIds: string[]): Promise<
+  { batch_id: string; row: number; message_fr: string }[]
+> => {
+  if (batchIds.length === 0) return [];
+  const supabase = getAdminSupabaseClient();
+  const { data, error } = await supabase
+    .from("hr_import_error")
+    .select("batch_id, message_fr, staging_row:staging_row_id(source_row_number)")
+    .eq("tenant_id", tenantId)
+    .in("batch_id", batchIds)
+    .limit(500)
+    .returns<{ batch_id: string; message_fr: string; staging_row: { source_row_number: number } | null }[]>();
+  if (error) throw new Error(`[hr] import errors read failed: ${error.message}`);
+  return (data ?? [])
+    .map((e) => ({
+      batch_id: e.batch_id,
+      row: e.staging_row?.source_row_number ?? 0,
+      message_fr: e.message_fr,
+    }))
+    .sort((a, b) => a.row - b.row);
+});
+
+/** HR-B3 — the import report: which spreadsheet row became which employee. */
+export const listImportOutcomes = cache(async (tenantId: string, batchIds: string[]): Promise<
+  { batch_id: string; row: number; outcome: string | null; reason: string | null; employee_number: string | null; employee_name: string | null }[]
+> => {
+  if (batchIds.length === 0) return [];
+  const supabase = getAdminSupabaseClient();
+  const { data, error } = await supabase
+    .from("hr_import_staging_row")
+    .select("batch_id, source_row_number, outcome, outcome_reason, employee:employee_id(employee_number, first_name, last_name)")
+    .eq("tenant_id", tenantId)
+    .in("batch_id", batchIds)
+    .not("outcome", "is", null)
+    .order("source_row_number")
+    .limit(2000);
+  if (error) throw new Error(`[hr] import outcomes read failed: ${error.message}`);
+  // Embedded-relation selects are untyped for tables without Relationships;
+  // the shape is asserted once here.
+  const rows = (data ?? []) as unknown as {
+    batch_id: string; source_row_number: number; outcome: string | null; outcome_reason: string | null;
+    employee: { employee_number: string; first_name: string; last_name: string } | null;
+  }[];
+  return rows.map((r) => {
+    const emp = r.employee;
+    return {
+      batch_id: r.batch_id,
+      row: r.source_row_number,
+      outcome: r.outcome ?? null,
+      reason: r.outcome_reason ?? null,
+      employee_number: emp?.employee_number ?? null,
+      employee_name: emp ? `${emp.first_name} ${emp.last_name}` : null,
+    };
+  });
+});
+
 export const listImportBatches = cache(async (tenantId: string): Promise<HrImportBatch[]> => {
   const supabase = getAdminSupabaseClient();
   const { data, error } = await supabase

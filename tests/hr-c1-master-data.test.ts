@@ -181,9 +181,9 @@ describe("scope held", () => {
     expect(migrations.some((f: string) => f.includes("hr_c1") || f.includes("hr-c1"))).toBe(false);
   });
 
-  it("the import pipeline was not touched — HR-B3 is next, not now", () => {
-    const s = read(ORG);
-    expect(s).toContain("THE PIPELINE STOPS AT READY");
-    expect(code(ORG)).not.toMatch(/applyHrImport|applyBatch/);
+  it("HR-B3 followed: the apply stage exists and honours the same boundaries", () => {
+    const s = code(ORG);
+    expect(s).toContain("export async function applyHrImport");
+    expect(s).not.toMatch(/from\("employee"\)\s*\.insert/);
   });
 });

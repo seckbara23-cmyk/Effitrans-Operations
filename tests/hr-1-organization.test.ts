@@ -5,7 +5,7 @@
  * HR-1 surfaces, so a later change cannot quietly weaken it:
  *   * the two HRQ-D2 permissions are catalog-only — granted to NO role (B1)
  *   * org tables carry RLS + the ratified triggers/CHECKs
- *   * the import pipeline stops at READY — no apply/activate code exists
+ *   * the import pipeline applies (HR-B3) only through the createEmployee path
  *   * the dashboard is the hub page; the registry moved to /registre
  *   * HR stays under MANAGEMENT — DÉPARTEMENTS keeps its ratified 3 entries
  *   * the buildOrgTree helper arranges and orders the forest correctly
@@ -112,10 +112,13 @@ describe("migration 73 — structures of the frozen architecture", () => {
 });
 
 // ---------------------------------------------------------------------------
-describe("the pipeline stops at READY — nothing applies a batch", () => {
-  it("no apply/activate action exists in the actions module", () => {
+describe("the apply stage (HR-B3) creates only through the registry path", () => {
+  it("applyHrImport exists and delegates to createEmployee — never an insert", () => {
     const a = code(ACTIONS);
-    expect(a).not.toMatch(/applyHrImport|activateHrImport|executeHrImport/);
+    const apply = a.slice(a.indexOf("export async function applyHrImport"));
+    expect(a).toContain("export async function applyHrImport");
+    expect(apply).toContain("createEmployee(");
+    expect(apply).not.toMatch(/from\("employee"\)\s*\.insert/);
     // Approval writes READY and nothing else touches hr_org_unit from a batch.
     expect(a).not.toMatch(/from\("hr_org_unit"\)[\s\S]{0,200}batch/);
   });

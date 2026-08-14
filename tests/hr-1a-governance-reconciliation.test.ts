@@ -84,13 +84,14 @@ describe("the import pipeline: authorized, four-eyed, and deliberately unfinishe
     expect(fn.slice(0, 800)).toContain('"same_actor"');
   });
 
-  it("the pipeline still stops at READY — HR-B3 is where the apply stage lands", () => {
-    // HRQ-A4 is YES, but activation is CODE, not a flag. When HR-B3 ships its
-    // apply action this pin moves; until then an apply appearing anywhere else
-    // would be a parallel employee-creation path.
-    const s = read("lib/hr/organization-actions.ts");
-    expect(s).toContain("THE PIPELINE STOPS AT READY");
-    expect(code("lib/hr/organization-actions.ts")).not.toMatch(/applyHrImport|applyBatch|import_apply/);
+  it("HR-B3 landed: the apply stage exists, and only after the visa", () => {
+    // HR-B3 shipped the apply stage. It enters only from a visa'd batch (or
+    // the failed remainder of one) and creates exclusively via createEmployee.
+    const s = code("lib/hr/organization-actions.ts");
+    const apply = s.slice(s.indexOf("export async function applyHrImport"));
+    expect(s).toContain("export async function applyHrImport");
+    expect(apply).toContain('.in("status", ["READY", "APPLIED_WITH_ERRORS"])');
+    expect(apply).toContain("createEmployee(");
   });
 
   it("the audit is on the record with both flags for Effitrans", () => {

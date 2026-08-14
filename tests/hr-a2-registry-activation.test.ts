@@ -219,12 +219,14 @@ describe("registry & operations center surfaces (§8, §9)", () => {
 
 // ---------------------------------------------------------------------------
 describe("boundaries unchanged (§12, §14, §16)", () => {
-  it("import application stays pinned at READY — no apply path appeared", () => {
+  it("HR-B3 landed: apply exists, creates only via createEmployee, states widened by 107", () => {
     const o = code("lib/hr/organization-actions.ts");
-    expect(o).not.toMatch(/applyHrImport|from\("employee"\)\s*\.insert/);
-    // The batch status vocabulary still ends at READY/REJECTED.
+    expect(o).toContain("applyHrImport");
+    expect(o).not.toMatch(/from\("employee"\)\s*\.insert/);
+    // The apply states arrived in migration 107, not by editing history.
     const m73 = read("supabase/migrations/20260801000001_hr_organization_foundation.sql");
     expect(m73).not.toMatch(/'APPLIED'/);
+    expect(read("supabase/migrations/20260829000001_hr_import_apply.sql")).toContain("'APPLIED_WITH_ERRORS'");
   });
 
   it("HR-A2 ships NO migration", () => {

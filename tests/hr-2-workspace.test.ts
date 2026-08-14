@@ -70,10 +70,12 @@ describe("ledger — every registry write emits, with compensation", () => {
 
 describe("EMPLOYEES import stays staging-only", () => {
   const o = code("lib/hr/organization-actions.ts");
-  it("the kind exists with its validation, and no apply path appeared", () => {
+  it("the kind exists with its validation; apply creates only via the registry", () => {
     expect(o).toContain("EMPLOYEES:");
     expect(o).toContain('"invalid_department"');
-    expect(o).not.toMatch(/applyHrImport|from\("employee"\)\s*\.insert/);
+    // HR-B3: apply exists — but ONLY through createEmployee, never an insert.
+    expect(o).toContain("applyHrImport");
+    expect(o).not.toMatch(/from\("employee"\)\s*\.insert/);
   });
 });
 
