@@ -175,8 +175,23 @@ export async function createOrgUnit(input: {
   return { ok: true, id: data.id };
 }
 
-/** Flag-inactive — units are never deleted once created (frozen rule). */
-export async function setOrgUnitActive(id: string, active: boolean): Promise<HrActionResult> {
+/** Flag-inactive — units are never deleted once created (frozen rule).
+ *
+ * HR-C1 — deactivation now inspects real dependencies first, and the three
+ * outcomes the audit required are distinct:
+ *   * ACTIVE CHILD UNITS  → REFUSED (`active_children`): an active child under
+ *     an inactive parent is an incoherent tree — deactivate bottom-up.
+ *   * OPEN ASSIGNMENTS    → WARNING (`unit_in_use`) unless acknowledged: the
+ *     placements survive untouched (history is never rewritten; only NEW
+ *     assignments are refused by validateAssignmentTargets), but the operator
+ *     must say so knowingly.
+ *   * NEITHER             → safe, as before.
+ */
+export async function setOrgUnitActive(
+  id: string,
+  active: boolean,
+  opts?: { acknowledgeInUse?: boolean },
+): Promise<HrActionResult> {
   let admin;
   try {
     admin = await assertPermission("hr:config:manage");
@@ -184,6 +199,28 @@ export async function setOrgUnitActive(id: string, active: boolean): Promise<HrA
     return { ok: false, error: "forbidden" };
   }
   const supabase = getAdminSupabaseClient();
+
+  if (!active) {
+    const [children, assignments] = await Promise.all([
+      supabase
+        .from("hr_org_unit")
+        .select("id", { count: "exact", head: true })
+        .eq("tenant_id", admin.tenantId)
+        .eq("parent_id", id)
+        .eq("is_active", true),
+      supabase
+        .from("employee_assignment")
+        .select("id", { count: "exact", head: true })
+        .eq("tenant_id", admin.tenantId)
+        .eq("org_unit_id", id)
+        .is("effective_to", null),
+    ]);
+    if ((children.count ?? 0) > 0) return { ok: false, error: "active_children" };
+    if ((assignments.count ?? 0) > 0 && !opts?.acknowledgeInUse) {
+      return { ok: false, error: "unit_in_use" };
+    }
+  }
+
   const { error } = await supabase
     .from("hr_org_unit")
     .update({ is_active: active })
@@ -196,8 +233,10 @@ export async function setOrgUnitActive(id: string, active: boolean): Promise<HrA
     tenantId: admin.tenantId,
     entity: "hr_org_unit",
     entityId: id,
+    after: active ? undefined : { acknowledged_in_use: opts?.acknowledgeInUse === true },
   });
   revalidatePath(`${HR_PATH}/organisation`);
+  revalidatePath(`${HR_PATH}/configuration`);
   return { ok: true, id };
 }
 
@@ -255,6 +294,255 @@ export async function createWorkLocation(input: { name: string; city?: string | 
   });
   revalidatePath(`${HR_PATH}/configuration`);
   return { ok: true, id: data.id };
+}
+
+// ------------------------------------------------- master-data corrections ----
+// HR-C1 -- the missing half of the CRUD. HR-2 found the master data CREATE-ONLY:
+// a typo in a unit name meant a second record and an abandoned first. These are
+// the corrections, under the same authority (hr:config:manage), the same audit
+// contract, and the same frozen rule: deactivation, never deletion.
+
+/** Fields an org-unit correction may touch. `parentId: null` means "make root". */
+export async function updateOrgUnit(
+  id: string,
+  input: {
+    name?: string;
+    unitKind?: UnitKind;
+    parentId?: string | null;
+    code?: string | null;
+    canonicalDepartment?: string | null;
+  },
+): Promise<HrActionResult> {
+  let admin;
+  try {
+    admin = await assertPermission("hr:config:manage");
+  } catch {
+    return { ok: false, error: "forbidden" };
+  }
+  const supabase = getAdminSupabaseClient();
+  const { data: current } = await supabase
+    .from("hr_org_unit")
+    .select("id, name, unit_kind, parent_id, code, canonical_department")
+    .eq("id", id)
+    .eq("tenant_id", admin.tenantId)
+    .maybeSingle();
+  if (!current) return { ok: false, error: "not_found" };
+
+  const patch: { name?: string; unit_kind?: UnitKind; parent_id?: string | null; code?: string | null; canonical_department?: string | null } = {};
+  if (input.name !== undefined) {
+    const name = input.name.trim();
+    if (!name) return { ok: false, error: "name_required" };
+    patch.name = name;
+  }
+  if (input.unitKind !== undefined && input.unitKind !== current.unit_kind) {
+    if (!UNIT_KINDS.includes(input.unitKind)) return { ok: false, error: "invalid_kind" };
+    // THE CHILD-COMPATIBILITY CHECK. The DB trigger revalidates only the row
+    // being written against ITS parent -- it never looks down. Retyping a
+    // Departement that carries Sections into an Equipe would leave every child
+    // violating the order the trigger enforces on their next write. The action
+    // is the boundary (the HR-A2 rule), so the check lives here.
+    const { data: children } = await supabase
+      .from("hr_org_unit")
+      .select("unit_kind")
+      .eq("tenant_id", admin.tenantId)
+      .eq("parent_id", id);
+    const newRank = UNIT_KINDS.indexOf(input.unitKind);
+    const broken = (children ?? []).some((c) => UNIT_KINDS.indexOf(c.unit_kind as UnitKind) <= newRank);
+    if (broken) return { ok: false, error: "invalid_kind_children" };
+    // THE CHILD-COMPATIBILITY CHECK. The DB trigger revalidates only the row
+    // being written against ITS parent -- it never looks down. Retyping a
+    // Departement that carries Sections into an Equipe would leave every child
+    // violating the order the trigger enforces on their next write. The action
+    // is the boundary (the HR-A2 rule), so the check lives here.
+    patch.unit_kind = input.unitKind;
+  }
+  if (input.parentId !== undefined) patch.parent_id = input.parentId || null;
+  if (input.code !== undefined) patch.code = input.code?.trim() || null;
+  if (input.canonicalDepartment !== undefined) patch.canonical_department = input.canonicalDepartment || null;
+  if (Object.keys(patch).length === 0) return { ok: true, id };
+
+  // Re-parenting is revalidated by the SAME database trigger that guards
+  // creation (before insert OR update): self-parent, cross-tenant parent and
+  // the strict kind order are all re-checked there. The strict order is also
+  // what makes cycles structurally impossible -- every ancestor has a strictly
+  // lower rank, so a descendant can never be accepted as a parent.
+  const { error } = await supabase
+    .from("hr_org_unit")
+    .update(patch)
+    .eq("id", id)
+    .eq("tenant_id", admin.tenantId);
+  if (error) {
+    const m = error.message;
+    if (m.includes("hiérarchie") || m.includes("propre parent") || m.includes("introuvable") || m.includes("autre organisation")) {
+      return { ok: false, error: "invalid_parent" };
+    }
+    return { ok: false, error: "save_failed" };
+  }
+
+  await writeAudit({
+    action: "hr.org_unit_updated",
+    actorId: admin.id,
+    tenantId: admin.tenantId,
+    entity: "hr_org_unit",
+    entityId: id,
+    before: {
+      name: current.name, unit_kind: current.unit_kind,
+      parent_id: current.parent_id, canonical_department: current.canonical_department,
+    },
+    after: patch,
+  });
+  revalidatePath(`${HR_PATH}/organisation`);
+  revalidatePath(`${HR_PATH}/configuration`);
+  return { ok: true, id };
+}
+
+export async function updatePosition(
+  id: string,
+  input: { title?: string; code?: string | null; description?: string | null },
+): Promise<HrActionResult> {
+  let admin;
+  try {
+    admin = await assertPermission("hr:config:manage");
+  } catch {
+    return { ok: false, error: "forbidden" };
+  }
+  const supabase = getAdminSupabaseClient();
+  const { data: current } = await supabase
+    .from("hr_position")
+    .select("id, title")
+    .eq("id", id)
+    .eq("tenant_id", admin.tenantId)
+    .maybeSingle();
+  if (!current) return { ok: false, error: "not_found" };
+
+  const patch: { title?: string; code?: string | null; description?: string | null } = {};
+  if (input.title !== undefined) {
+    const title = input.title.trim();
+    if (!title) return { ok: false, error: "title_required" };
+    patch.title = title;
+  }
+  if (input.code !== undefined) patch.code = input.code?.trim() || null;
+  if (input.description !== undefined) patch.description = input.description?.trim() || null;
+  if (Object.keys(patch).length === 0) return { ok: true, id };
+
+  const { error } = await supabase
+    .from("hr_position")
+    .update(patch)
+    .eq("id", id)
+    .eq("tenant_id", admin.tenantId);
+  if (error) return { ok: false, error: error.message.includes("duplicate") ? "already_exists" : "save_failed" };
+
+  await writeAudit({
+    action: "hr.position_updated",
+    actorId: admin.id,
+    tenantId: admin.tenantId,
+    entity: "hr_position",
+    entityId: id,
+    before: { title: current.title },
+    after: patch,
+  });
+  revalidatePath(`${HR_PATH}/configuration`);
+  return { ok: true, id };
+}
+
+/** Flag-inactive -- a referenced position stays readable forever; only NEW
+ *  assignments are refused (validateAssignmentTargets requires active). */
+export async function setPositionActive(id: string, active: boolean): Promise<HrActionResult> {
+  let admin;
+  try {
+    admin = await assertPermission("hr:config:manage");
+  } catch {
+    return { ok: false, error: "forbidden" };
+  }
+  const supabase = getAdminSupabaseClient();
+  const { error } = await supabase
+    .from("hr_position")
+    .update({ is_active: active })
+    .eq("id", id)
+    .eq("tenant_id", admin.tenantId);
+  if (error) return { ok: false, error: "save_failed" };
+  await writeAudit({
+    action: active ? "hr.position_reactivated" : "hr.position_deactivated",
+    actorId: admin.id,
+    tenantId: admin.tenantId,
+    entity: "hr_position",
+    entityId: id,
+  });
+  revalidatePath(`${HR_PATH}/configuration`);
+  return { ok: true, id };
+}
+
+export async function updateWorkLocation(
+  id: string,
+  input: { name?: string; city?: string | null },
+): Promise<HrActionResult> {
+  let admin;
+  try {
+    admin = await assertPermission("hr:config:manage");
+  } catch {
+    return { ok: false, error: "forbidden" };
+  }
+  const supabase = getAdminSupabaseClient();
+  const { data: current } = await supabase
+    .from("hr_work_location")
+    .select("id, name, city")
+    .eq("id", id)
+    .eq("tenant_id", admin.tenantId)
+    .maybeSingle();
+  if (!current) return { ok: false, error: "not_found" };
+
+  const patch: { name?: string; city?: string | null } = {};
+  if (input.name !== undefined) {
+    const name = input.name.trim();
+    if (!name) return { ok: false, error: "name_required" };
+    patch.name = name;
+  }
+  if (input.city !== undefined) patch.city = input.city?.trim() || null;
+  if (Object.keys(patch).length === 0) return { ok: true, id };
+
+  const { error } = await supabase
+    .from("hr_work_location")
+    .update(patch)
+    .eq("id", id)
+    .eq("tenant_id", admin.tenantId);
+  if (error) return { ok: false, error: error.message.includes("duplicate") ? "already_exists" : "save_failed" };
+
+  await writeAudit({
+    action: "hr.work_location_updated",
+    actorId: admin.id,
+    tenantId: admin.tenantId,
+    entity: "hr_work_location",
+    entityId: id,
+    before: { name: current.name, city: current.city },
+    after: patch,
+  });
+  revalidatePath(`${HR_PATH}/configuration`);
+  return { ok: true, id };
+}
+
+export async function setWorkLocationActive(id: string, active: boolean): Promise<HrActionResult> {
+  let admin;
+  try {
+    admin = await assertPermission("hr:config:manage");
+  } catch {
+    return { ok: false, error: "forbidden" };
+  }
+  const supabase = getAdminSupabaseClient();
+  const { error } = await supabase
+    .from("hr_work_location")
+    .update({ is_active: active })
+    .eq("id", id)
+    .eq("tenant_id", admin.tenantId);
+  if (error) return { ok: false, error: "save_failed" };
+  await writeAudit({
+    action: active ? "hr.work_location_reactivated" : "hr.work_location_deactivated",
+    actorId: admin.id,
+    tenantId: admin.tenantId,
+    entity: "hr_work_location",
+    entityId: id,
+  });
+  revalidatePath(`${HR_PATH}/configuration`);
+  return { ok: true, id };
 }
 
 // ---------------------------------------------------------------- import staging

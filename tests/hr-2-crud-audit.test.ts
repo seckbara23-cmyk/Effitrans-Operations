@@ -34,19 +34,28 @@ describe("the registry is complete and its rules hold", () => {
 });
 
 describe("master data is create-only today — the HR-C1 mutation targets", () => {
-  it("no update action exists for units, positions or sites", () => {
-    // When HR-C1 lands updateOrgUnit/updatePosition/updateWorkLocation, this
-    // moves with it. Until then an update appearing piecemeal would bypass the
-    // audit's referential-integrity requirements (hierarchy re-check on
-    // re-parent, tenant scope).
+  it("HR-C1 landed: the three update actions exist, under the config authority", () => {
+    // These pins moved deliberately when HR-C1 shipped the corrections the
+    // audit found missing. Each update loads the current row tenant-scoped and
+    // re-checks hr:config:manage server-side.
     const s = code(ORG);
-    expect(s).not.toMatch(/export async function (updateOrgUnit|updatePosition|updateWorkLocation)/);
+    for (const fn of ["updateOrgUnit", "updatePosition", "updateWorkLocation"]) {
+      const body = s.slice(s.indexOf(`export async function ${fn}`));
+      expect(body.slice(0, 600), fn).toContain('assertPermission("hr:config:manage")');
+      expect(body.slice(0, 1400), fn).toContain('.eq("tenant_id", admin.tenantId)');
+    }
   });
 
-  it("only org units can be deactivated; positions and sites cannot", () => {
+  it("HR-C1 landed: positions and sites can now be deactivated too", () => {
     const s = code(ORG);
-    expect(s).toContain("export async function setOrgUnitActive");
-    expect(s).not.toMatch(/setPositionActive|setWorkLocationActive/);
+    for (const fn of ["setOrgUnitActive", "setPositionActive", "setWorkLocationActive"]) {
+      expect(s, fn).toContain(`export async function ${fn}`);
+    }
+    // Still deactivation, never deletion — no destructive path on the master
+    // tables. (Staging-row cleanup during re-validation is a different thing.)
+    for (const tbl of ["hr_org_unit", "hr_position", "hr_work_location"]) {
+      expect(s, tbl).not.toMatch(new RegExp(`from\("${tbl}"\)\s*\.delete`));
+    }
   });
 });
 
