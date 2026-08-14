@@ -43,6 +43,8 @@ export type ReconcileCause =
   | "transport_transition"
   /** MAYA-P1.2 — Finance recorded the GAINDE registration milestone. */
   | "gainde_registration"
+  /** MAYA-P1.11 — the Declarant recorded the rattachement. */
+  | "customs_attachment"
   | "manual"
   | "legacy_compatibility";
 
@@ -95,9 +97,9 @@ async function run(input: {
       .eq("id", input.fileId).eq("tenant_id", input.tenantId)
       .maybeSingle<{ id: string; type: string; status: string }>(),
     supabase.from("customs_record")
-      .select("status, required, declaration_number, bae_reference, gainde_registered_at")
+      .select("status, required, declaration_number, bae_reference, gainde_registered_at, attachment_completed_at")
       .eq("file_id", input.fileId).eq("tenant_id", input.tenantId)
-      .maybeSingle<{ status: string; required: boolean; declaration_number: string | null; bae_reference: string | null; gainde_registered_at: string | null }>(),
+      .maybeSingle<{ status: string; required: boolean; declaration_number: string | null; bae_reference: string | null; gainde_registered_at: string | null; attachment_completed_at: string | null }>(),
     supabase.from("transport_record").select("status")
       .eq("file_id", input.fileId).eq("tenant_id", input.tenantId)
       .maybeSingle<{ status: string }>(),
@@ -121,6 +123,7 @@ async function run(input: {
           declarationNumber: customs.data.declaration_number,
           baeReference: customs.data.bae_reference,
           gaindeRegisteredAt: customs.data.gainde_registered_at,
+          attachmentCompletedAt: customs.data.attachment_completed_at,
         }
       : null,
     transport: transport.data ? { status: transport.data.status } : null,
@@ -222,6 +225,7 @@ function factCode(stepKey: string): string {
     // MAYA-P1.2: was CUSTOMS_DECLARED, which named the DECLARANT's fact on a
     // step the registry assigns to Finance. The code now names what proves it.
     case "gainde_registration": return "GAINDE_REGISTERED";
+    case "gainde_document_submission": return "CUSTOMS_ATTACHMENT_RECORDED";
     case "customs_field_clearance": return "CUSTOMS_RELEASED";
     case "pickup": return "TRANSPORT_PICKED_UP";
     case "transport_pod_handoff": return "POD_RECEIVED";

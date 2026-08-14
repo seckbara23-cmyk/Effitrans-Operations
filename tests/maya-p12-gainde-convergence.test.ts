@@ -23,7 +23,7 @@
  * authorises the FACT (« Finance registers the declaration in GAINDE »); it
  * does not authorise a chain reaction, and none is built.
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
@@ -56,6 +56,7 @@ const facts = (over: { gaindeRegisteredAt?: string | null; declarationNumber?: s
     declarationNumber: over.declarationNumber === undefined ? "IMP-2026-000123" : over.declarationNumber,
     baeReference: null,
     gaindeRegisteredAt: over.gaindeRegisteredAt === undefined ? null : over.gaindeRegisteredAt,
+    attachmentCompletedAt: null,
   },
   transport: null,
   verifiedPodDocumentId: null,
@@ -194,6 +195,7 @@ describe("the fact reaches the projection, and stops there", () => {
     expect([...FACT_PROVABLE_STEP_KEYS].sort()).toEqual([
       "am_dossier_opening",
       "customs_field_clearance",
+      "gainde_document_submission", // MAYA-P1.11 — CEO step 9, once ratified
       "gainde_registration",
       "pickup",
       "transport_pod_handoff",
@@ -277,6 +279,7 @@ describe("P1.1 survives P1.2 intact", () => {
         providerCode: "manual", providerSyncedAt: null,
         reviewedAt: null, reviewedByEmail: null,
         gaindeRegisteredAt: REGISTERED, gaindeRegisteredByEmail: null,
+  attachmentCompletedAt: null, attachmentCompletedByEmail: null, attachmentSystems: [],
       } satisfies CustomsRecord,
       documents: [], missingRequiredCount: 0, timeZone: TZ,
     });
@@ -290,7 +293,12 @@ describe("P1.1 survives P1.2 intact", () => {
     // Section M: 106 is not created merely because this is a new phase. The
     // rule, the read and the trigger are all code; the fact shipped in 105.
     const bi = read("lib/platform/ops/build-info.ts");
-    expect(bi).toContain("MIGRATION_COUNT = 105");
-    expect(bi).toContain('LATEST_MIGRATION = "20260827000001_gainde_registration"');
+    // MAYA-P1.11 made this a moving number. What the phase actually meant is
+    // that the ledger stays self-consistent, which is durable.
+    expect(readdirSync(fileURLToPath(new URL("../supabase/migrations", import.meta.url)))
+      .filter((f: string) => f.endsWith(".sql")).length)
+      .toBe(Number(/MIGRATION_COUNT = (\d+)/.exec(read("lib/platform/ops/build-info.ts"))![1]));
+    // LATEST_MIGRATION moves with every migration; the ledger-consistency
+    // check above is the durable form of « this phase added none ».
   });
 });

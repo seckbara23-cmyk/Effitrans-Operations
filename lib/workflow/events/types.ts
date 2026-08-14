@@ -111,6 +111,10 @@ export const EVENT_TYPES: readonly EventTypeDef[] = [
   // replacement. Internal: a customs reference is not customer-facing.
   { type: "GAINDE_REGISTRATION_RECORDED", domain: "customs", version: 1, emission: "rpc", metadataKeys: ["reference", "corrected"], clientSafe: false, labelFr: "Enregistrement GAINDE" },
   { type: "CUSTOMS_VALIDATED", domain: "customs", version: 1, emission: "rpc", metadataKeys: ["maker_checked"], clientSafe: false, labelFr: "Validation Chef de Transit" },
+  // MAYA-P1.11 — CEO step 9. Emitted ONLY by record_customs_attachment. The
+  // systems are business context (GAINDE/ORBUS), never personal data; `repeated`
+  // marks the retry Effitrans described after a recevabilite rejection.
+  { type: "CUSTOMS_ATTACHMENT_RECORDED", domain: "customs", version: 1, emission: "rpc", metadataKeys: ["systems", "repeated"], clientSafe: false, labelFr: "Rattachement des documents" },
   // MAYA-P0.7-A — Quality Control N°3. Emitted ONLY by
   // record_customs_receivability: the WES-9 customs trigger does not watch the
   // receivability columns, so there is exactly one owner of this fact and no

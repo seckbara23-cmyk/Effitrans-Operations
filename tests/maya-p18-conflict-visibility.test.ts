@@ -22,7 +22,7 @@
  * These guards defend the three things a future conflict phase must not break,
  * and reproduce the exact production verdict so the finding cannot decay.
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { evaluateStep, type ModuleFacts } from "@/lib/process/reconcile/satisfaction";
@@ -42,6 +42,7 @@ const productionDossier = (): ModuleFacts => ({
     status: "RELEASED", required: true,
     declarationNumber: "IMP-2026-000123", baeReference: "GAINDE-2026-458721",
     gaindeRegisteredAt: null, // Finance never registered — the contradiction
+    attachmentCompletedAt: null,
   },
   transport: { status: "DELIVERED" },
   verifiedPodDocumentId: "pod-consumed-as-evidence",
@@ -105,7 +106,11 @@ describe("conflicts are computed and discarded — the technical gap, recorded",
   it("nothing persists a conflict — and nothing needs to", () => {
     // The verdict is pure over facts already stored, so a future surface needs
     // no migration. Storage was never the blocker; audience and ownership are.
-    expect(read("lib/platform/ops/build-info.ts")).toContain("MIGRATION_COUNT = 105");
+    // MAYA-P1.11 made this a moving number. What the phase actually meant is
+    // that the ledger stays self-consistent, which is durable.
+    expect(readdirSync(fileURLToPath(new URL("../supabase/migrations", import.meta.url)))
+      .filter((f: string) => f.endsWith(".sql")).length)
+      .toBe(Number(/MIGRATION_COUNT = (\d+)/.exec(read("lib/platform/ops/build-info.ts"))![1]));
     expect(code(RECONCILE)).not.toMatch(/insert into|\.insert\(/);
     expect(code("lib/process/reconcile/satisfaction.ts")).not.toMatch(/acknowledg|dismiss|resolved/i);
   });

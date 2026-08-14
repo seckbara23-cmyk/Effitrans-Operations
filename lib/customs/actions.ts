@@ -364,6 +364,81 @@ export async function recordGaindeRegistration(
   return { ok: true, id };
 }
 
+/**
+ * MAYA-P1.11 - CEO step 9: the Declarant attaches the documents (rattachement).
+ *
+ * Effitrans ratified the act: the Declarant scans the Facture, the BL and the
+ * required authorizations and attaches them HIMSELF, in GAINDE and ORBUS, with
+ * NO automatic synchronisation. This records that he did it. It is registry
+ * step 11 `gainde_document_submission`, whose owner, permission, manual nature
+ * and prerequisite already matched that description.
+ *
+ * AUTHORITY is `customs:update` - the permission the registry step already
+ * declares, held by CUSTOMS_DECLARANT. No permission is created and no role is
+ * widened: every holder could already edit this record.
+ *
+ * RE-RECORDING IS ALLOWED, deliberately. Effitrans defined the failure path as
+ * "la declaration sera bloquee au niveau de la recevabilite, le declarant
+ * rattache de nouveau", and a second attempt is normally the SAME documents in
+ * the SAME systems - so refusing an identical repeat would block the exact
+ * retry the business describes. Every attempt is kept in the ledger.
+ *
+ * WHAT IT DOES NOT DO: it moves no customs status, asserts no synchronisation
+ * with GAINDE or ORBUS (BLK-1 - Effitrans answered "Non"), touches no other
+ * customs act, and never requires a screenshot to succeed.
+ */
+export async function recordCustomsAttachment(
+  id: string,
+  systems: string[],
+): Promise<ActionResult> {
+  let user;
+  try {
+    user = await assertPermission("customs:update");
+  } catch {
+    return { ok: false, error: "forbidden" };
+  }
+  const clean = [...new Set(systems.map((s) => s.trim().toUpperCase()).filter(Boolean))];
+  if (clean.length === 0) return { ok: false, error: "system_required" };
+  if (!clean.every((s) => s === "GAINDE" || s === "ORBUS")) {
+    return { ok: false, error: "unknown_system" };
+  }
+
+  const supabase = getAdminSupabaseClient();
+  const rec = await loadCustoms(supabase, id, user.tenantId);
+  if (!rec) return { ok: false, error: "not_found" };
+  if (!(await isFileVisible(user.id, user.tenantId, rec.file_id))) {
+    return { ok: false, error: "forbidden" };
+  }
+
+  const { error } = await supabase.rpc("record_customs_attachment", {
+    p_customs_id: id,
+    p_systems: clean,
+    p_actor: user.id,
+  });
+  if (error) return { ok: false, error: "record_failed" };
+
+  await writeAudit({
+    action: AuditActions.CUSTOMS_UPDATED,
+    actorId: user.id,
+    tenantId: user.tenantId,
+    entity: "customs_record",
+    entityId: id,
+    after: { attachment_systems: clean, attachment_completed_by: user.id },
+  });
+
+  // WES-5 convergence - the same path every other fact-writing action uses.
+  // Idempotent and never-throwing: the fact already committed with its event.
+  await reconcileDossierProcess({
+    tenantId: user.tenantId,
+    fileId: rec.file_id,
+    cause: "customs_attachment",
+    actorId: user.id,
+  });
+
+  revalidate(rec.file_id);
+  return { ok: true, id };
+}
+
 export async function recordCustomsValidation(id: string): Promise<ActionResult> {
   let user;
   try {

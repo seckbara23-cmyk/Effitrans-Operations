@@ -93,6 +93,7 @@ export function rowToDeclaration(row: IntelRecordRow): Declaration {
     // not: a manual registration is not a provider synchronisation.
     gaindeRegisteredAt: null,
     gaindeRegisteredByEmail: null,
+    attachmentCompletedAt: null, attachmentCompletedByEmail: null, attachmentSystems: [],
   };
   const base = toDeclaration(record, {
     status: coerceDeclarationStatus(row.intel_status),

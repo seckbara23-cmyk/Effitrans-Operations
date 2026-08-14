@@ -12,7 +12,7 @@
  *
  * These are those links, and nothing more.
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { canReceivePod, canPickup } from "@/lib/transport/gates";
@@ -121,7 +121,11 @@ describe("the post-BAD chain is owned as the CEO document says", () => {
     for (const f of ["lib/transport/actions.ts", "lib/process/reconcile/satisfaction.ts"]) {
       expect(code(f), f).not.toMatch(/port_exit|portExit/);
     }
-    expect(read("lib/platform/ops/build-info.ts")).toContain("MIGRATION_COUNT = 105");
+    // MAYA-P1.11 made this a moving number. What the phase actually meant is
+    // that the ledger stays self-consistent, which is durable.
+    expect(readdirSync(fileURLToPath(new URL("../supabase/migrations", import.meta.url)))
+      .filter((f: string) => f.endsWith(".sql")).length)
+      .toBe(Number(/MIGRATION_COUNT = (\d+)/.exec(read("lib/platform/ops/build-info.ts"))![1]));
   });
 
   it("no fleet module was invented — a vehicle is still a plate", () => {

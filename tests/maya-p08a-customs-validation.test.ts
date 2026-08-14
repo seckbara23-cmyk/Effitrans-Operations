@@ -52,7 +52,8 @@ const customs = (over: Partial<CustomsRecord> = {}): CustomsRecord => ({
   receivabilityStatus: null, receivabilityAt: null, receivabilityNote: null,
   providerCode: "manual", providerSyncedAt: null,
   reviewedAt: null, reviewedByEmail: null,
-  gaindeRegisteredAt: null, gaindeRegisteredByEmail: null, ...over,
+  gaindeRegisteredAt: null, gaindeRegisteredByEmail: null,
+  attachmentCompletedAt: null, attachmentCompletedByEmail: null, attachmentSystems: [], ...over,
 });
 
 // ===========================================================================

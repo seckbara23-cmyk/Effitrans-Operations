@@ -436,6 +436,7 @@ export default async function FileDetailPage({ params }: { params: { id: string 
             canDelete={hasPermission(permissions, "customs:delete")}
             canValidate={hasPermission(permissions, "customs:validate")}
             canRegisterGainde={hasPermission(permissions, "customs:register")}
+            canAttach={hasPermission(permissions, "customs:update")}
           />
         </div>
       )}

@@ -32,6 +32,7 @@ const FACTS: ModuleFacts = {
   customs: {
     status: "RELEASED", required: true, declarationNumber: "D-2026-001", baeReference: "BAE-1",
     gaindeRegisteredAt: "2026-08-13T09:30:00.000Z",
+    attachmentCompletedAt: null,
   },
   transport: { status: "POD_RECEIVED" },
   verifiedPodDocumentId: "pod-doc-1",
@@ -46,9 +47,13 @@ describe("WES-5B step satisfaction", () => {
     // Every entry must survive: "could this step mean anything other than
     // this fact?" Absence means human-only, so the model can under-automate
     // but never over-automate.
+    // MAYA-P1.11 added `gainde_document_submission` (CEO step 9, rattachement)
+    // once Effitrans ratified the act, its owner and its manual nature. The set
+    // grows only when a business answer arrives — never to make a step tidy.
     expect([...FACT_PROVABLE_STEP_KEYS].sort()).toEqual([
       "am_dossier_opening",
       "customs_field_clearance",
+      "gainde_document_submission",
       "gainde_registration",
       "pickup",
       "transport_pod_handoff",

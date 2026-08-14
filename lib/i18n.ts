@@ -493,6 +493,18 @@ export const t = {
     },
     // MAYA-P0.8-A (PG-1) — validation Chef de Transit.
     // MAYA-P1.1 — CEO step 8, enregistrement GAINDE par la Finance.
+    // MAYA-P1.11 — CEO step 9, rattachement par le Declarant.
+    attachment: {
+      title: "Rattachement des documents",
+      action: "Enregistrer le rattachement",
+      prompt: "Systemes ou le rattachement a ete fait :",
+      doneOn: "Rattache le",
+      by: "par",
+      notDone: "Non rattache",
+      systems: "Systemes",
+      // States plainly that the platform records a manual act and verifies nothing.
+      hint: "Le Declarant scanne et rattache lui-meme les documents (facture, BL, autorisations) dans GAINDE / ORBUS. La plateforme enregistre l'operation declaree ; elle ne la verifie pas et ne se synchronise avec aucun systeme douanier. En cas de rejet a la recevabilite, refaites le rattachement et enregistrez-le de nouveau.",
+    },
     gainde: {
       title: "Enregistrement GAINDE",
       action: "Enregistrer dans GAINDE",

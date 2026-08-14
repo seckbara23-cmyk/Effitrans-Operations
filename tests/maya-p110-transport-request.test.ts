@@ -16,7 +16,7 @@
  * consumer without the business answer, and they fail if step 3's real authority
  * silently changes underneath it.
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { EFFITRANS_PROCESS } from "@/lib/process/effitrans-process";
@@ -108,7 +108,11 @@ describe("request and order are distinct artifacts, one authority", () => {
   });
 
   it("nothing was built: no migration, no new object, no new permission", () => {
-    expect(read("lib/platform/ops/build-info.ts")).toContain("MIGRATION_COUNT = 105");
+    // MAYA-P1.11 made this a moving number. What the phase actually meant is
+    // that the ledger stays self-consistent, which is durable.
+    expect(readdirSync(fileURLToPath(new URL("../supabase/migrations", import.meta.url)))
+      .filter((f: string) => f.endsWith(".sql")).length)
+      .toBe(Number(/MIGRATION_COUNT = (\d+)/.exec(read("lib/platform/ops/build-info.ts"))![1]));
     const doc = read("docs/maya/maya-p1-10-transport-request-audit.md");
     expect(doc).toContain("stale / unanchored permission");
     expect(doc).toContain("Two active document types share one French label");

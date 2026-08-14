@@ -21,7 +21,7 @@
  * and every historical surface. A closed dossier is still fully readable; it is
  * simply not outstanding work.
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { FILE_STATUSES, TERMINAL_FILE_STATUSES, isActiveFileStatus } from "@/lib/files/status";
@@ -159,7 +159,11 @@ describe("what a closed dossier stops doing — and what it keeps", () => {
     expect(code("lib/files/qc4.ts")).toContain("QC4_NO_CHECKLIST");
     expect(code("lib/process/effitrans-process.ts")).not.toContain("rattachement_completed_at");
     const bi = read("lib/platform/ops/build-info.ts");
-    expect(bi).toContain("MIGRATION_COUNT = 105");
+    // MAYA-P1.11 made this a moving number. What the phase actually meant is
+    // that the ledger stays self-consistent, which is durable.
+    expect(readdirSync(fileURLToPath(new URL("../supabase/migrations", import.meta.url)))
+      .filter((f: string) => f.endsWith(".sql")).length)
+      .toBe(Number(/MIGRATION_COUNT = (\d+)/.exec(read("lib/platform/ops/build-info.ts"))![1]));
   });
 
   it("tenant scoping is unchanged on both surfaces", () => {

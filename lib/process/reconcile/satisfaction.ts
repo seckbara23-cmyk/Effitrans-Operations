@@ -66,6 +66,8 @@ export type ModuleFacts = {
     baeReference: string | null;
     /** MAYA-P1.1 milestone: when Finance recorded the GAINDE registration. */
     gaindeRegisteredAt: string | null;
+    /** MAYA-P1.11: when the Declarant recorded the rattachement (CEO step 9). */
+    attachmentCompletedAt: string | null;
   } | null;
   /** transport_record, when one exists. */
   transport: { status: string } | null;
@@ -150,6 +152,25 @@ export const FACT_RULES: Readonly<Record<string, FactRule>> = {
     // visibly pending. IN_PROGRESS completes nothing.
     started: (f) => customsRank(f) > 0,
     factFr: "Enregistrement GAINDE effectué par la Finance (date + agent)",
+  },
+
+  // Rattachement (CEO step 9): the Declarant attached the documents in GAINDE /
+  // ORBUS and recorded it. MAYA-P1.11.
+  //
+  // The fact is the Declarant's OWN act and nothing else. Effitrans ratified
+  // who does it and that it is manual, so no neighbouring customs fact may
+  // stand in for it: not the declaration number (the Declarant's paperwork),
+  // not gainde_registered_at (FINANCE's act, CEO step 8), not the BAE or the
+  // release (CEO step 10), not submitted_at (the Customs Intelligence provider
+  // clock). Each of those is a different act by a different owner, and P1.2
+  // exists because one of them was once allowed to prove another.
+  gainde_document_submission: {
+    satisfied: (f) => Boolean(f.customs?.attachmentCompletedAt),
+    // The registration is the prerequisite the registry names, so a registered
+    // declaration is the attachment visibly pending. IN_PROGRESS completes
+    // nothing.
+    started: (f) => Boolean(f.customs?.gaindeRegisteredAt),
+    factFr: "Rattachement des documents effectué par le Déclarant (GAINDE / ORBUS)",
   },
 
   // Field clearance culminates in the official release. RELEASED is the fact;

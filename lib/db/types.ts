@@ -4588,6 +4588,12 @@ export type Database = {
         Args: { p_customs_id: string; p_reference: string; p_actor: string };
         Returns: Json;
       };
+      // MAYA-P1.11 — the Declarant's rattachement. Asserts customs:update;
+      // service_role only.
+      record_customs_attachment: {
+        Args: { p_customs_id: string; p_systems: string[]; p_actor: string };
+        Returns: Json;
+      };
       next_invoice_number: {
         Args: { p_tenant: string };
         Returns: string;

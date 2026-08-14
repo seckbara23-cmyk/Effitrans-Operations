@@ -72,6 +72,10 @@ export type CustomsRecord = {
    * lifecycle state.
    */
   gaindeRegisteredAt: string | null;
+  /** MAYA-P1.11 - rattachement (CEO step 9), recorded by the Declarant. */
+  attachmentCompletedAt: string | null;
+  attachmentCompletedByEmail: string | null;
+  attachmentSystems: string[];
   gaindeRegisteredByEmail: string | null;
 };
 

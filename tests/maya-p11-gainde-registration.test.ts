@@ -48,7 +48,8 @@ const customs = (over: Partial<CustomsRecord> = {}): CustomsRecord => ({
   receivabilityStatus: null, receivabilityAt: null, receivabilityNote: null,
   providerCode: "manual", providerSyncedAt: null,
   reviewedAt: null, reviewedByEmail: null,
-  gaindeRegisteredAt: null, gaindeRegisteredByEmail: null, ...over,
+  gaindeRegisteredAt: null, gaindeRegisteredByEmail: null,
+  attachmentCompletedAt: null, attachmentCompletedByEmail: null, attachmentSystems: [], ...over,
 });
 
 // ===========================================================================
@@ -477,7 +478,7 @@ describe("nothing else moved", () => {
     const bi = read("lib/platform/ops/build-info.ts");
     expect(migrations).toHaveLength(Number(/MIGRATION_COUNT = (\d+)/.exec(bi)![1]));
     expect(migrations).toContain("20260827000001_gainde_registration.sql");
-    expect(bi).toContain('LATEST_MIGRATION = "20260827000001_gainde_registration"');
+    // LATEST_MIGRATION moves on; that this phase's migration SHIPPED does not.
   });
 
   it("no rattachement, BAE, transport or finance work leaked in", () => {
