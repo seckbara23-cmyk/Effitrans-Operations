@@ -82,6 +82,11 @@ begin
   select count(*) into portal_reqs from public.hr_leave_request where id = '00000000-0000-0000-0000-000000005501';
 
   perform set_config('role', 'postgres', true);
+  -- HR-B1: the RPCs now call assert_actor_authority, whose SERVICE branch
+  -- REFUSES a session-bearing caller (EFA08). The claims set for the RLS reads
+  -- above must therefore be cleared before exercising the decision paths —
+  -- exactly as PostgREST service-role calls arrive: no session, nominated actor.
+  perform set_config('request.jwt.claims', '', true);
 
   -- HR-B1: the approval authority exists; its grants land ONLY on the
   -- Direction seats (DAF/DGA). perm_grants counts grants OUTSIDE them: 0.

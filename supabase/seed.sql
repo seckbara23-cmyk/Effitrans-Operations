@@ -1060,9 +1060,9 @@ on conflict (tenant_id, code) do nothing;
 -- finance:*, process:*, or any :delete authority.
 -- HR-A1 (HRQ-D2 = Option A, ratified 2026-08-09): + hr:config:manage — the
 -- configuration center (structure, postes, sites, numérotation, catalogue de
--- compétences). Mirrors migration 20260821000001. The three OTHER parked
--- authorities (hr:sensitive:read, hr:leave:approve, hr:performance:finalize)
--- remain granted to NOBODY.
+-- compétences). Mirrors migration 20260821000001. hr:sensitive:read and
+-- hr:performance:finalize remain granted to NOBODY; hr:leave:approve went to
+-- the Direction seats DAF/DGA in HR-B1 (see the block after the Finance roles).
 insert into public.role_permission (role_id, permission_id)
 select r.id, p.id
 from public.role r
