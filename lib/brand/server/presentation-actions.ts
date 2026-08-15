@@ -12,10 +12,11 @@ import { assertPermission } from "@/lib/auth/require-permission";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
 import { readBrandCore } from "./service";
-import { buildCorporateDeck, presentationReadiness, buildCommunicationModel, type DeckInput } from "@/lib/brand/presentation/model";
+import { resolveCommunicationModel } from "./communication";
+import { buildCorporateDeck, presentationReadiness, type DeckInput } from "@/lib/brand/presentation/model";
 import { renderSlideSvg, renderCommunicationSvg } from "@/lib/brand/presentation/svg";
 import { buildPptx } from "@/lib/brand/pptx/ooxml";
-import { COMMUNICATION_META, isCommunicationKind, isPresentationType, type CommunicationKind } from "@/lib/brand/presentation/registry";
+import { isPresentationType } from "@/lib/brand/presentation/registry";
 
 export type DeckResult =
   | { ok: true; ready: true; slidesSvg: string[]; pptxBase64: string; filename: string }
@@ -63,27 +64,21 @@ export async function generateCommunication(input: {
 }): Promise<CommResult> {
   let admin;
   try { admin = await assertPermission("admin:config:manage"); } catch { return { ok: false, error: "forbidden" }; }
-  if (!isCommunicationKind(input.kind) || !input.headline?.trim()) return { ok: false, error: "invalid" };
-  const kind = input.kind as CommunicationKind;
 
-  const core = await readBrandCore(admin.tenantId);
-  const readiness = presentationReadiness(core.profile);
-  if (!readiness.ready) return { ok: true, ready: false, missing: readiness.missing };
+  // The ONE resolver both this action and the PNG export route use — preview,
+  // SVG and PNG are always built from the same input model (no drift).
+  const resolved = await resolveCommunicationModel(admin.tenantId, input);
+  if (!resolved.ok) return { ok: false, error: "invalid" };
+  if (!resolved.ready) return { ok: true, ready: false, missing: resolved.missing };
 
-  const meta = COMMUNICATION_META[kind];
-  const model = buildCommunicationModel({
-    kind, width: meta.width, height: meta.height, companyName: core.displayName, profile: core.profile,
-    headline: input.headline, subline: input.subline ?? null,
-    person: kind === "CEO_BANNER" && input.personName ? { name: input.personName, title: input.personTitle ?? null } : null,
-  });
-  const svg = renderCommunicationSvg(model);
+  const svg = renderCommunicationSvg(resolved.model);
 
   if (input.intent === "generate") {
     await writeAudit({
       action: AuditActions.BRAND_COMMUNICATION_GENERATED,
       actorId: admin.id, tenantId: admin.tenantId, entity: "brand_communication",
-      after: { kind }, // safe metadata; never the content
+      after: { kind: resolved.kind, format: "svg" }, // safe metadata; never the content
     });
   }
-  return { ok: true, ready: true, svg, filename: `${kind.toLowerCase()}.svg` };
+  return { ok: true, ready: true, svg, filename: `${resolved.kind.toLowerCase()}.svg` };
 }

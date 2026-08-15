@@ -87,10 +87,33 @@ export function buildCorporateDeck(input: {
 
 export type CommunicationBrand = { companyName: string; slogan: string | null; green: string; gold: string; anthracite: string; footer: string };
 
+/** The APPROVED logo, already resolved to a self-contained data URI by the
+ *  server layer (never a hard-coded substitute, never an unpublished asset —
+ *  pickSocialLogo enforces PUBLISHED). Null only when no logo is published. */
+export type CommunicationLogo = { href: string; alt: string };
+
+/**
+ * THE approved-logo rule for social masters — PURE, structural typing so the
+ * pure layer never imports server modules. Only PUBLISHED assets are ever
+ * considered (the signature engine's rule); the reversed (white) mark comes
+ * first because these masters sit on the brand green, then primary, then the
+ * e-mail PNG. A DRAFT or archived logo can never leak into an export.
+ */
+export function pickSocialLogo<T extends { kind: string; status: string }>(assets: readonly T[]): T | null {
+  const published = assets.filter((a) => a.status === "PUBLISHED");
+  return (
+    published.find((a) => a.kind === "LOGO_REVERSED") ??
+    published.find((a) => a.kind === "LOGO_PRIMARY") ??
+    published.find((a) => a.kind === "LOGO_EMAIL_PNG") ??
+    null
+  );
+}
+
 export type CommunicationModel = {
   kind: CommunicationKind;
   width: number; height: number;
   brand: CommunicationBrand;
+  logo: CommunicationLogo | null;
   headline: string;
   subline: string | null;
   /** CEO banner: person name + title. */
@@ -100,6 +123,7 @@ export type CommunicationModel = {
 export function buildCommunicationModel(input: {
   kind: CommunicationKind; width: number; height: number;
   companyName: string; profile: BrandProfile;
+  logo?: CommunicationLogo | null;
   headline: string; subline?: string | null; person?: { name: string; title: string | null } | null;
 }): CommunicationModel {
   return {
@@ -109,8 +133,11 @@ export function buildCommunicationModel(input: {
       green: input.profile.colorGreen ?? "#0F766E", gold: input.profile.colorGold ?? "#C8A24B",
       anthracite: input.profile.colorAnthracite ?? "#333F48", footer: input.profile.compliance.footer_line,
     },
+    logo: input.logo ?? null,
     headline: input.headline,
-    subline: input.subline ?? null,
+    // Title/subtitle are CONTENT, not decoration. A blank or whitespace
+    // subline is NO subline — it must never leave an empty-text artefact.
+    subline: input.subline?.trim() ? input.subline.trim() : null,
     person: input.person ?? null,
   };
 }

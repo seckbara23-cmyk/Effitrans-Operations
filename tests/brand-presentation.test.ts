@@ -142,11 +142,16 @@ describe("generation is server-side, gated, safely audited", () => {
     expect(actions).toContain("readBrandCore(admin.tenantId)");
     expect(actions).toContain("buildPptx(deck)");
     expect(actions).toContain("renderSlideSvg(");
-    expect(actions).toContain("renderCommunicationSvg(model)");
+    // Social hardening: the model now comes from the ONE shared resolver
+    // (communication.ts) both the action and the PNG route use.
+    expect(actions).toContain("renderCommunicationSvg(resolved.model)");
+    expect(actions).toContain("resolveCommunicationModel(admin.tenantId");
   });
   it("audits type/kind only — never the slides, PPTX, or content", () => {
     const audits = code("../lib/brand/server/presentation-actions.ts").split("writeAudit(").slice(1).map((x) => x.slice(0, x.indexOf("});")));
-    for (const a of audits) for (const bad of ["svg", "pptx", "base64", "headline", "bullets", "slidesSvg"]) expect(a, bad).not.toContain(bad);
+    // Banned: CONTENT-bearing fragments. The safe `format: "svg" | "png"`
+    // metadata tag (social hardening) is not content and stays allowed.
+    for (const a of audits) for (const bad of ["res.svg", ".svg,", "pptx", "base64", "headline", "bullets", "slidesSvg", "model."]) expect(a, bad).not.toContain(bad);
     expect(AuditActions.BRAND_PRESENTATION_GENERATED).toBe("brand.presentation.generated");
     expect(AuditActions.BRAND_COMMUNICATION_GENERATED).toBe("brand.communication.generated");
   });

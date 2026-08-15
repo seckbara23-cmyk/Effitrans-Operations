@@ -103,7 +103,8 @@ describe("the exact production failure", () => {
     // Dropping the audit evidence would have been the wrong fix.
     expect(code("lib/brand/server/governance-actions.ts")).toContain("after: { category, key, status: target }");
     expect(code("lib/brand/server/document-actions.ts")).toContain("after: { type, format }");
-    expect(code("lib/brand/server/presentation-actions.ts")).toContain("after: { kind }");
+    // Social hardening: the communication audit gained a safe format tag.
+    expect(code("lib/brand/server/presentation-actions.ts")).toContain('after: { kind: resolved.kind, format: "svg" }');
     expect(code("lib/brand/server/marketing-actions.ts")).toMatch(/after: \{ type: input\.type, provider \}/);
   });
 
