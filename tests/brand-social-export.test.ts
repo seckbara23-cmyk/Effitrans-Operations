@@ -254,18 +254,56 @@ describe("BANNERS ARE FROZEN — the polish must not touch the wide branch", () 
     });
   });
 
-  it("the executive banner spec is byte-identical to the accepted composition", () => {
+  it("the executive banner spec matches the measured-stack composition (UAT collision fix)", () => {
+    // The person block previously bottom-anchored independently of the centred
+    // title/subtitle — a long subtitle collided with the name in production.
+    // The wide branch is now ONE measured stack; this pin holds ITS geometry.
     expect(composeCommunication(model("CEO_BANNER", { person: { name: "A. NIANG", title: "Directrice Générale" } }))).toEqual({
       width: 1584, height: 396, background: "#0F766E",
       items: [
         { t: "rect", x: 0, y: 0, w: 13, h: 396, fill: "#C8A24B" },
         { t: "image", x: 87, y: 95, w: 494, h: 206, href: LOGO_URI, alt: "Effitrans" },
         { t: "rect", x: 646, y: 87, w: 2, h: 222, fill: "#ffffff", opacity: 0.45 },
-        { t: "text", x: 711, top: 177, size: 42, weight: 800, fill: "#ffffff", text: "Effitrans — Performance in Motion" },
-        { t: "text", x: 711, top: 226, size: 36, weight: 700, fill: "#ffffff", text: "A. NIANG" },
-        { t: "text", x: 711, top: 283, size: 26, weight: 400, fill: "#ffffff", opacity: 0.9, text: "Directrice Générale" },
+        { t: "text", x: 711, top: 119, size: 42, weight: 800, fill: "#ffffff", text: "Effitrans — Performance in Motion" },
+        { t: "text", x: 711, top: 201, size: 36, weight: 700, fill: "#ffffff", text: "A. NIANG" },
+        { t: "text", x: 711, top: 251, size: 26, weight: 400, fill: "#ffffff", opacity: 0.9, text: "Directrice Générale" },
       ],
     });
+  });
+
+  it("UAT REGRESSION — the executive stack never collides: title, subtitle, name, function are disjoint", () => {
+    // The exact production reproduction.
+    const spec = composeCommunication(model("CEO_BANNER", {
+      headline: "La logistique intégrée au service de votre performance",
+      subline: "Des solutions fiables au Sénégal et à l'international",
+      person: { name: "Abdoul Lahad Niang", title: "Directeur General" },
+    }));
+    const texts = spec.items.filter((i) => i.t === "text") as { top: number; size: number; text: string }[];
+    expect(texts).toHaveLength(4); // title, subtitle, name, function — each once
+    const sorted = [...texts].sort((a, b) => a.top - b.top);
+    for (let i = 1; i < sorted.length; i++) {
+      // THE MUTATION TARGET: bounding boxes must not intersect — each line
+      // starts strictly below the previous line's bottom.
+      expect(sorted[i].top, `${sorted[i - 1].text} vs ${sorted[i].text}`)
+        .toBeGreaterThanOrEqual(sorted[i - 1].top + sorted[i - 1].size);
+    }
+    // Everything stays inside the vertical safe zone.
+    expect(sorted[0].top).toBeGreaterThanOrEqual(Math.round(396 * 0.06));
+    expect(sorted[3].top + sorted[3].size).toBeLessThanOrEqual(396 - 40);
+  });
+
+  it("a blank subtitle REFLOWS the executive stack — no phantom gap, no artefact", () => {
+    const person = { name: "Abdoul Lahad Niang", title: "Directeur General" };
+    const base = composeCommunication(model("CEO_BANNER", { headline: "La logistique intégrée au service de votre performance", subline: null, person }));
+    const blank = composeCommunication(model("CEO_BANNER", { headline: "La logistique intégrée au service de votre performance", subline: "   ", person }));
+    expect(blank).toEqual(base); // whitespace subtitle === no subtitle
+    const withSub = composeCommunication(model("CEO_BANNER", { headline: "La logistique intégrée au service de votre performance", subline: "Des solutions fiables au Sénégal et à l'international", person }));
+    const nameOf = (spec: typeof base) => spec.items.find((i) => i.t === "text" && i.weight === 700)!;
+    const nameBase = nameOf(base), nameSub = nameOf(withSub);
+    if (nameBase.t !== "text" || nameSub.t !== "text") throw new Error("unreachable");
+    // Without the subtitle the name moves UP — the stack reflows, it does not
+    // hold a reserved empty slot.
+    expect(nameBase.top).toBeLessThan(nameSub.top);
   });
 });
 

@@ -218,25 +218,38 @@ export function composeCommunication(m: CommunicationModel): CommunicationSpec {
   const hasSub = Boolean(m.subline);
 
   if (wide) {
-    // Banner: title (and optional subtitle) vertically centred right of the lockup.
+    // Banner: ONE measured vertical stack — title, optional subtitle, then the
+    // optional executive name and function — centred as a whole. Every line
+    // carries its own gap, so an absent subtitle REFLOWS the stack (no phantom
+    // gap) and nothing can collide: the UAT defect was the person block being
+    // bottom-anchored independently while title+subtitle were centred, which
+    // overlapped at 1584×396 with a long subtitle. With no person and ≤1
+    // subtitle this reduces EXACTLY to the frozen company-banner arithmetic.
+    type StackLine = { text: string; size: number; weight: number; opacity?: number; gapBefore: number };
+    const lines: StackLine[] = [];
     const title = fitText(m.headline, textWidth, Math.round(h * 0.24), 16);
+    lines.push({ text: title.text, size: title.size, weight: 800, gapBefore: 0 });
     if (hasSub) {
       const sub = fitText(m.subline!, textWidth, Math.round(h * 0.11), 12);
-      const gap = Math.round(h * 0.07);
-      const blockH = title.size + gap + sub.size;
-      const topT = Math.round((h - blockH) / 2);
-      items.push({ t: "text", x: textX, top: topT, size: title.size, weight: 800, fill: "#ffffff", text: title.text });
-      items.push({ t: "text", x: textX, top: topT + title.size + gap, size: sub.size, weight: 400, fill: "#ffffff", opacity: 0.92, text: sub.text });
-    } else {
-      items.push({ t: "text", x: textX, top: Math.round((h - title.size) / 2), size: title.size, weight: 800, fill: "#ffffff", text: title.text });
+      lines.push({ text: sub.text, size: sub.size, weight: 400, opacity: 0.92, gapBefore: Math.round(h * 0.07) });
     }
     if (m.person) {
       const p = fitText(m.person.name, textWidth, Math.round(h * 0.09), 12);
-      items.push({ t: "text", x: textX, top: h - pad - (m.person.title ? Math.round(p.size * 2.3) : p.size), size: p.size, weight: 700, fill: "#ffffff", text: p.text });
+      lines.push({ text: p.text, size: p.size, weight: 700, gapBefore: Math.round(h * 0.1) });
       if (m.person.title) {
         const pt = fitText(m.person.title, textWidth, Math.round(h * 0.065), 11);
-        items.push({ t: "text", x: textX, top: h - pad - pt.size, size: pt.size, weight: 400, fill: "#ffffff", opacity: 0.9, text: pt.text });
+        lines.push({ text: pt.text, size: pt.size, weight: 400, opacity: 0.9, gapBefore: Math.round(h * 0.035) });
       }
+    }
+    const blockH = lines.reduce((sum, l) => sum + l.gapBefore + l.size, 0);
+    let cursor = Math.max(Math.round(h * 0.06), Math.round((h - blockH) / 2));
+    for (const l of lines) {
+      cursor += l.gapBefore;
+      items.push({
+        t: "text", x: textX, top: cursor, size: l.size, weight: l.weight, fill: "#ffffff",
+        ...(l.opacity !== undefined ? { opacity: l.opacity } : {}), text: l.text,
+      });
+      cursor += l.size;
     }
   } else {
     // Square / announcement (visual polish): large lockup, WRAPPED title in up
