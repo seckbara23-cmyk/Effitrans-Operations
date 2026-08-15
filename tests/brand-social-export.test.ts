@@ -23,7 +23,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { buildCommunicationModel, type CommunicationModel } from "@/lib/brand/presentation/model";
 import {
-  composeCommunication, specToSvg, renderCommunicationSvg, fitTextSize, estimateTextWidth,
+  composeCommunication, specToSvg, renderCommunicationSvg, fitTextSize, fitLines, wrapText, estimateTextWidth,
 } from "@/lib/brand/presentation/svg";
 import { COMMUNICATION_META, COMMUNICATION_KINDS, type CommunicationKind } from "@/lib/brand/presentation/registry";
 import { pickSocialLogo } from "@/lib/brand/presentation/model";
@@ -131,10 +131,15 @@ describe("composition invariants across all four templates", () => {
     const s = code("lib/brand/presentation/svg.ts");
     expect(s).toContain("return specToSvg(composeCommunication(m))");
     for (const kind of COMMUNICATION_KINDS) {
-      const svg = renderCommunicationSvg(model(kind, { subline: "Transit & logistique" }));
+      const m = model(kind, { subline: "Transit & logistique" });
+      const svg = renderCommunicationSvg(m);
       const meta = COMMUNICATION_META[kind];
       expect(svg, kind).toContain(`viewBox="0 0 ${meta.width} ${meta.height}"`);
-      expect(count(svg, "Effitrans — Performance in Motion"), kind).toBe(1);
+      // The title is CONTENT exactly once: banners keep it on one line; the
+      // polished square/announcement may WRAP it — the joined title lines
+      // reconstruct the headline verbatim, and nothing repeats it.
+      const titles = composeCommunication(m).items.filter((i) => i.t === "text" && i.weight === 800);
+      expect(titles.map((t) => (t.t === "text" ? t.text : "")).join(" "), kind).toBe(m.headline);
       expect(svg, kind).toContain("Transit &amp; logistique");
     }
   });
@@ -147,6 +152,15 @@ describe("composition invariants across all four templates", () => {
     expect(t.size).toBeLessThan(fitTextSize("court", 9999, Math.round(191 * 0.24)));
     // The RENDERED text (possibly ellipsis-truncated) always fits the canvas.
     expect(t.x + estimateTextWidth(t.text, t.size)).toBeLessThanOrEqual(1128);
+  });
+
+  it("wrapping primitives: deterministic wrap; the floor still ellipsis-truncates", () => {
+    expect(wrapText("un deux trois", 9999, 20)).toEqual(["un deux trois"]);
+    const fitted = fitLines("mot ".repeat(80).trim(), 300, 40, 16, 2);
+    expect(fitted.size).toBe(16);
+    expect(fitted.lines).toHaveLength(2);
+    expect(fitted.lines[1].endsWith("…")).toBe(true);
+    for (const l of fitted.lines) expect(estimateTextWidth(l, fitted.size)).toBeLessThanOrEqual(300);
   });
 
   it("escaping holds for title and subtitle", () => {
@@ -166,6 +180,92 @@ describe("composition invariants across all four templates", () => {
     const svg = renderCommunicationSvg(model("COMPANY_BANNER", { logo: null, headline: "Le transit maîtrisé" }));
     expect(count(svg, "Effitrans")).toBe(1);
     expect(svg).not.toContain("<image");
+  });
+});
+
+// ===========================================================================
+// The UAT strings the polish was judged against.
+const UAT = {
+  headline: "La logistique intégrée au service de votre performance",
+  subline: "Des solutions fiables au Sénégal et à l’international",
+};
+
+describe("VISUAL POLISH — Publication (1200×1200) and Annonce (1200×627) fill their canvas", () => {
+  const pub = composeCommunication(model("PUBLICATION", UAT));
+  const ann = composeCommunication(model("ANNOUNCEMENT", UAT));
+
+  it("the UAT title gains SCALE through wrapping — never one microscopic line", () => {
+    const pubTitles = pub.items.filter((i) => i.t === "text" && i.weight === 800);
+    const annTitles = ann.items.filter((i) => i.t === "text" && i.weight === 800);
+    // THE MUTATION TARGETS: single-line fitting would collapse these to ~44/36px.
+    expect(pubTitles).toHaveLength(3);
+    expect((pubTitles[0] as { size: number }).size).toBe(92);
+    expect(annTitles).toHaveLength(2);
+    expect((annTitles[0] as { size: number }).size).toBe(70);
+  });
+
+  it("the subtitle is used intentionally, readable, wrapped", () => {
+    const pubSubs = pub.items.filter((i) => i.t === "text" && i.weight === 400);
+    const annSubs = ann.items.filter((i) => i.t === "text" && i.weight === 400);
+    expect((pubSubs[0] as { size: number }).size).toBe(50);
+    expect(pubSubs).toHaveLength(2);
+    expect((annSubs[0] as { size: number }).size).toBe(34);
+  });
+
+  it("the logo presence grew — the announcement lockup is no longer tiny", () => {
+    const pubLogo = pub.items.find((i) => i.t === "image")!;
+    const annLogo = ann.items.find((i) => i.t === "image")!;
+    if (pubLogo.t !== "image" || annLogo.t !== "image") throw new Error("unreachable");
+    expect(pubLogo.h).toBe(144); // 1200 × 0.12
+    expect(annLogo.h).toBe(125); // 627 × 0.20 — was 88 (h × 0.14)
+  });
+
+  it("everything stays inside the safe zone — wrapped lines included", () => {
+    for (const [spec, w, h] of [[pub, 1200, 1200], [ann, 1200, 627]] as const) {
+      for (const it of spec.items) {
+        if (it.t === "text") {
+          expect(it.x + estimateTextWidth(it.text, it.size)).toBeLessThanOrEqual(w);
+          expect(it.top + it.size).toBeLessThanOrEqual(h - 20);
+        }
+      }
+    }
+  });
+
+  it("a blank subtitle still leaves no artefact on the polished layouts", () => {
+    for (const kind of ["PUBLICATION", "ANNOUNCEMENT"] as const) {
+      const base = renderCommunicationSvg(model(kind, { headline: UAT.headline, subline: null }));
+      const blank = renderCommunicationSvg(model(kind, { headline: UAT.headline, subline: "   " }));
+      expect(blank, kind).toBe(base);
+      expect(base, kind).not.toMatch(/<text[^>]*>\s*<\/text>/);
+    }
+  });
+});
+
+describe("BANNERS ARE FROZEN — the polish must not touch the wide branch", () => {
+  it("the company banner spec is byte-identical to the accepted composition", () => {
+    expect(composeCommunication(model("COMPANY_BANNER"))).toEqual({
+      width: 1128, height: 191, background: "#0F766E",
+      items: [
+        { t: "rect", x: 0, y: 0, w: 9, h: 191, fill: "#C8A24B" },
+        { t: "image", x: 42, y: 46, w: 238, h: 99, href: LOGO_URI, alt: "Effitrans" },
+        { t: "rect", x: 312, y: 42, w: 2, h: 107, fill: "#ffffff", opacity: 0.45 },
+        { t: "text", x: 344, top: 76, size: 40, weight: 800, fill: "#ffffff", text: "Effitrans — Performance in Motion" },
+      ],
+    });
+  });
+
+  it("the executive banner spec is byte-identical to the accepted composition", () => {
+    expect(composeCommunication(model("CEO_BANNER", { person: { name: "A. NIANG", title: "Directrice Générale" } }))).toEqual({
+      width: 1584, height: 396, background: "#0F766E",
+      items: [
+        { t: "rect", x: 0, y: 0, w: 13, h: 396, fill: "#C8A24B" },
+        { t: "image", x: 87, y: 95, w: 494, h: 206, href: LOGO_URI, alt: "Effitrans" },
+        { t: "rect", x: 646, y: 87, w: 2, h: 222, fill: "#ffffff", opacity: 0.45 },
+        { t: "text", x: 711, top: 177, size: 42, weight: 800, fill: "#ffffff", text: "Effitrans — Performance in Motion" },
+        { t: "text", x: 711, top: 226, size: 36, weight: 700, fill: "#ffffff", text: "A. NIANG" },
+        { t: "text", x: 711, top: 283, size: 26, weight: 400, fill: "#ffffff", opacity: 0.9, text: "Directrice Générale" },
+      ],
+    });
   });
 });
 

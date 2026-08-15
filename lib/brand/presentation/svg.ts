@@ -132,6 +132,49 @@ export function fitText(text: string, maxWidth: number, startSize: number, minSi
   return { text: `${t.trimEnd()}…`, size };
 }
 
+/** Greedy word-wrap at a given size — deterministic, estimate-based. */
+export function wrapText(text: string, maxWidth: number, size: number): string[] {
+  const words = text.split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let line = "";
+  for (const word of words) {
+    const candidate = line ? `${line} ${word}` : word;
+    if (line && estimateTextWidth(candidate, size) > maxWidth) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = candidate;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+/**
+ * Largest size whose greedy wrap fits maxLines × maxWidth. A long French title
+ * on a square post becomes two or three LARGE lines instead of one microscopic
+ * one — the visual-polish rule. At the floor the last line ellipsis-truncates,
+ * so the no-clipping guarantee still holds for any input.
+ */
+export function fitLines(
+  text: string, maxWidth: number, startSize: number, minSize: number, maxLines: number,
+): { lines: string[]; size: number } {
+  for (let size = startSize; size >= minSize; size--) {
+    const lines = wrapText(text, maxWidth, size);
+    if (lines.length <= maxLines && lines.every((l) => estimateTextWidth(l, size) <= maxWidth)) {
+      return { lines, size };
+    }
+  }
+  const lines = wrapText(text, maxWidth, minSize).slice(0, maxLines);
+  const lastIndex = lines.length - 1;
+  let last = lines[lastIndex];
+  if (estimateTextWidth(last, minSize) > maxWidth || wrapText(text, maxWidth, minSize).length > maxLines) {
+    while (last.length > 1 && estimateTextWidth(`${last.trimEnd()}…`, minSize) > maxWidth) last = last.slice(0, -1);
+    lines[lastIndex] = `${last.trimEnd()}…`;
+  }
+  return { lines, size: minSize };
+}
+
 /** Compute the full layout for a social master. PURE — the single source both
  *  serializers consume. */
 export function composeCommunication(m: CommunicationModel): CommunicationSpec {
@@ -145,7 +188,8 @@ export function composeCommunication(m: CommunicationModel): CommunicationSpec {
   items.push({ t: "rect", x: 0, y: 0, w: accent, h, fill: brand.gold });
 
   // Logo block. Banners: left-aligned lockup; tall formats: top block.
-  const logoH = wide ? Math.round(h * 0.52) : Math.round(h * 0.14);
+  const square = !wide && h >= w * 0.8;
+  const logoH = wide ? Math.round(h * 0.52) : Math.round(h * (square ? 0.12 : 0.2));
   const logoW = Math.round(logoH * 2.4); // contain-fit box; wider marks letterbox cleanly
   const logoX = pad;
   const logoY = wide ? Math.round((h - logoH) / 2) : pad;
@@ -195,14 +239,33 @@ export function composeCommunication(m: CommunicationModel): CommunicationSpec {
       }
     }
   } else {
-    // Square / announcement: stacked, generous middle, gold rule under the title.
-    const title = fitText(m.headline, w - pad * 2, Math.round(h * 0.075), 20);
-    const titleTop = Math.round(h * (hasSub ? 0.42 : 0.46));
-    items.push({ t: "text", x: pad, top: titleTop, size: title.size, weight: 800, fill: "#ffffff", text: title.text });
-    items.push({ t: "rect", x: pad, y: titleTop + title.size + Math.round(h * 0.03), w: Math.round(w * 0.12), h: 6, fill: brand.gold });
-    if (hasSub) {
-      const sub = fitText(m.subline!, w - pad * 2, Math.round(h * 0.035), 14);
-      items.push({ t: "text", x: pad, top: titleTop + title.size + Math.round(h * 0.06), size: sub.size, weight: 400, fill: "#ffffff", opacity: 0.92, text: sub.text });
+    // Square / announcement (visual polish): large lockup, WRAPPED title in up
+    // to 3 (square) / 2 (announcement) lines so long French titles gain scale
+    // instead of shrinking to one microscopic line, gold rule, wrapped
+    // subtitle — the whole block measured and vertically CENTRED between the
+    // logo and the bottom safe zone. Professional whitespace, no dead space.
+    const contentW = w - pad * 2;
+    const lineFactor = 1.18;
+    const title = fitLines(m.headline, contentW, Math.round(h * (square ? 0.09 : 0.115)), 24, square ? 3 : 2);
+    const sub = hasSub ? fitLines(m.subline!, contentW, Math.round(h * (square ? 0.042 : 0.055)), 16, 2) : null;
+
+    const titleLineH = Math.round(title.size * lineFactor);
+    const subLineH = sub ? Math.round(sub.size * lineFactor) : 0;
+    const ruleGap = Math.round(h * 0.035);
+    const ruleH = Math.max(6, Math.round(h * 0.008));
+    const blockH = title.lines.length * titleLineH + ruleGap + ruleH + (sub ? ruleGap + sub.lines.length * subLineH : 0);
+    const logoBottom = logoY + logoH + Math.round(pad * 0.4);
+    const blockTop = logoBottom + Math.max(0, Math.round(((h - pad) - logoBottom - blockH) / 2));
+
+    title.lines.forEach((line, i) => {
+      items.push({ t: "text", x: pad, top: blockTop + i * titleLineH, size: title.size, weight: 800, fill: "#ffffff", text: line });
+    });
+    const ruleY = blockTop + title.lines.length * titleLineH + ruleGap;
+    items.push({ t: "rect", x: pad, y: ruleY, w: Math.round(w * 0.14), h: ruleH, fill: brand.gold });
+    if (sub) {
+      sub.lines.forEach((line, i) => {
+        items.push({ t: "text", x: pad, top: ruleY + ruleH + ruleGap + i * subLineH, size: sub.size, weight: 400, fill: "#ffffff", opacity: 0.92, text: line });
+      });
     }
     if (m.person) {
       const pSize = Math.round(h * 0.032);
