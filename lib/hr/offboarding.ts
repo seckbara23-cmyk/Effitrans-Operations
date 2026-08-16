@@ -62,6 +62,16 @@ export async function listOffboardingItems(tenantId: string, caseId: string): Pr
   return data ?? [];
 }
 
+/** Live cases only — the workspace's working set. */
+export async function listLiveOffboardingCases(tenantId: string): Promise<OffboardingCase[]> {
+  const s = getAdminSupabaseClient();
+  const { data, error } = await s.from("hr_offboarding_case").select("*")
+    .eq("tenant_id", tenantId).in("status", ["OPEN", "IN_PROGRESS"])
+    .order("planned_departure_date", { ascending: true });
+  if (error) throw new Error(`[hr] live offboarding cases read failed: ${error.message}`);
+  return data ?? [];
+}
+
 export type OffboardingGates = {
   /** Open custody rows — a non-empty list BLOCKS completion (freeze-ratified). */
   openCustody: EquipmentAssignment[];
@@ -104,5 +114,47 @@ export async function offboardingGates(tenantId: string, employeeId: string): Pr
     missingDocuments: missing,
     contractsNotEnded: contracts.count ?? 0,
     account: { linked: linkedId !== null, status: accountStatus },
+  };
+}
+
+export type OffboardingCounts = {
+  activeCases: number;
+  equipmentOutstanding: number;
+  stepsPending: number;
+  completedCases: number;
+};
+
+/**
+ * HR-8B hub counters. Composition of facts the platform already stores — no
+ * analytics subsystem: the departing population is the live cases, and the
+ * equipment figure counts open custody rows FOR THOSE EMPLOYEES ONLY (the
+ * tenant-wide custody figure already has its own card).
+ */
+export async function offboardingCounts(tenantId: string): Promise<OffboardingCounts> {
+  const s = getAdminSupabaseClient();
+  const head = { count: "exact" as const, head: true };
+  const [live, completed] = await Promise.all([
+    s.from("hr_offboarding_case").select("id, employee_id")
+      .eq("tenant_id", tenantId).in("status", ["OPEN", "IN_PROGRESS"]),
+    s.from("hr_offboarding_case").select("id", head)
+      .eq("tenant_id", tenantId).eq("status", "COMPLETED"),
+  ]);
+  const cases = live.data ?? [];
+  if (cases.length === 0) {
+    return { activeCases: 0, equipmentOutstanding: 0, stepsPending: 0, completedCases: completed.count ?? 0 };
+  }
+  const [custody, steps] = await Promise.all([
+    s.from("hr_equipment_assignment").select("id", head)
+      .eq("tenant_id", tenantId).is("returned_on", null)
+      .in("employee_id", cases.map((c) => c.employee_id)),
+    s.from("hr_offboarding_item").select("id", head)
+      .eq("tenant_id", tenantId).eq("status", "PENDING")
+      .in("case_id", cases.map((c) => c.id)),
+  ]);
+  return {
+    activeCases: cases.length,
+    equipmentOutstanding: custody.count ?? 0,
+    stepsPending: steps.count ?? 0,
+    completedCases: completed.count ?? 0,
   };
 }

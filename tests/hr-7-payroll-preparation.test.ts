@@ -198,11 +198,12 @@ describe("vocabulary and configuration — Effitrans's words, not ours", () => {
 
 // ===========================================================================
 describe("the French surface", () => {
-  it("the hub tile is a real workspace now; offboarding/reporting stay deferred", () => {
+  it("the hub tile is a real workspace now; reporting stays deferred", () => {
+    // HR-8B activated « Départs » — this twin of the SoonTile pin moves with it.
     const hub = read("app/departments/hr/page.tsx");
     expect(hub).toContain('href="/departments/hr/paie"');
     expect(hub).not.toMatch(/SoonTile[^/]*title="Préparation de paie"/);
-    expect(hub).toMatch(/SoonTile[^/]*title="Offboarding"/);
+    expect(hub).toMatch(/SoonTile[^/]*title="Reporting RH"/);
   });
 
   it("statuses and exceptions render as French sentences, never codes", () => {

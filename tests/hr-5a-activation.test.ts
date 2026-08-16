@@ -95,7 +95,7 @@ describe("canonical routes — one entry point per capability", () => {
     for (const href of [
       "/departments/hr/registre", "/departments/hr/organisation", "/departments/hr/onboarding",
       "/departments/hr/equipement", "/departments/hr/conges", "/departments/hr/configuration",
-      "/departments/hr/imports",
+      "/departments/hr/imports", "/departments/hr/departs",
     ]) {
       const tiles = [...h.matchAll(new RegExp(`WorkspaceTile href="${href}"`, "g"))].length;
       expect(tiles, href).toBe(1);
@@ -109,8 +109,9 @@ describe("canonical routes — one entry point per capability", () => {
     expect(routes).not.toContain("tableau");
     // HR-6 added `performance` and `formation` — both are WORKSPACES reached
     // from the hub, not competing dashboards, so the invariant still holds.
-    expect(routes.sort()).toEqual(["[id]", "configuration", "conges", "equipement", "formation",
-      "imports", "onboarding", "organisation", "paie", "performance", "registre"]);
+    // HR-8B added `departs` — a workspace reached from the hub, not a rival hub.
+    expect(routes.sort()).toEqual(["[id]", "configuration", "conges", "departs", "equipement",
+      "formation", "imports", "onboarding", "organisation", "paie", "performance", "registre"]);
   });
 
   it("the registry's filter links point at /registre — the HR-1 move is honoured", () => {

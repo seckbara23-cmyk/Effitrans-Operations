@@ -24,6 +24,7 @@ import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { employeeStats, countHrOfficers } from "@/lib/hr/read";
 import { hrDashboardCounts, getHrConfiguration } from "@/lib/hr/organization";
 import { hrOperationsCounts } from "@/lib/hr/onboarding";
+import { offboardingCounts } from "@/lib/hr/offboarding";
 import { leaveCounts } from "@/lib/hr/leave";
 import { getHrCenterData, EXPIRY_WINDOW_DAYS } from "@/lib/hr/workspace";
 import { CERTIFICATE_EXPIRY_WINDOW_DAYS } from "@/lib/hr/training";
@@ -77,7 +78,7 @@ export default async function HrOperationsCenterPage() {
   const canConfigure = hasPermission(permissions, "hr:config:manage");
   const canManage = hasPermission(permissions, "hr:manage");
 
-  const [stats, counts, config, ops, leave, center, hrOfficers] = await Promise.all([
+  const [stats, counts, config, ops, leave, center, hrOfficers, departures] = await Promise.all([
     employeeStats(user.tenantId),
     hrDashboardCounts(user.tenantId),
     getHrConfiguration(user.tenantId),
@@ -85,6 +86,7 @@ export default async function HrOperationsCenterPage() {
     leaveCounts(user.tenantId),
     getHrCenterData(user.tenantId),
     countHrOfficers(user.tenantId),
+    offboardingCounts(user.tenantId),
   ]);
 
   const UNAVAILABLE = "indisponible";
@@ -99,11 +101,12 @@ export default async function HrOperationsCenterPage() {
         subtitle="Centre d'opérations RH — effectifs, intégration, équipements, congés et organisation."
       />
 
-      {/* Effectifs — the headline row */}
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+      {/* Effectifs — the headline row (HR-8B added « Départs en cours ») */}
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-5">
         <StatCard label="Employés actifs" value={stats.active} tone="teal" href="/departments/hr/registre" />
         <StatCard label="En congé aujourd'hui" value={leave.onLeaveToday} tone="navy" href="/departments/hr/conges" />
         <StatCard label="Intégrations en cours" value={ops.activeCases} tone="navy" href="/departments/hr/onboarding" />
+        <StatCard label="Départs en cours" value={departures.activeCases} tone="amber" href="/departments/hr/departs" />
         <StatCard label="Équipements attribués" value={ops.assetsAssigned} tone="slate" href="/departments/hr/equipement" />
       </div>
 
@@ -115,6 +118,9 @@ export default async function HrOperationsCenterPage() {
           { label: `Documents expirant (${EXPIRY_WINDOW_DAYS} j)`, value: documentsSoon ?? UNAVAILABLE, tone: "amber" },
           { label: "Restitutions attendues", value: ops.assetsAwaitingReturn, tone: "red" },
           { label: "Tâches d'intégration en retard", value: ops.overdueItems, tone: "red" },
+          // HR-8B. Departures only: the tenant-wide custody figures are above.
+          { label: "Matériel à restituer (départs)", value: departures.equipmentOutstanding, tone: "red" },
+          { label: "Étapes de clôture à terminer", value: departures.stepsPending, tone: "amber" },
           // HR-6. Live signals, computed on load — no scheduler exists, and none
           // was invented to produce them (see the HR-5A deferral).
           { label: "Revues à finaliser", value: center.performance?.awaitingFinalization ?? UNAVAILABLE, tone: "amber" },
@@ -164,7 +170,9 @@ export default async function HrOperationsCenterPage() {
           <WorkspaceTile href="/departments/hr/formation" title="Formation" subtitle="Catalogue, inscriptions, certificats" />
           {/* HR-7B — activated: facts-only preparation (DEC-B63; amounts stay out — Q1). */}
           <WorkspaceTile href="/departments/hr/paie" title="Préparation de paie" subtitle="Périodes, faits collectés, ajustements — sans montants" />
-          <SoonTile title="Offboarding" note="À venir — HR-8" />
+          {/* HR-8B — activated: clearance only. The employment lifecycle stays
+              in the registry and the account step stays in Administration. */}
+          <WorkspaceTile href="/departments/hr/departs" title="Départs" subtitle="Sorties, restitution, clôture" />
           <SoonTile title="Reporting RH" note="À venir — HR-9" />
         </div>
       </div>

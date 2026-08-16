@@ -222,17 +222,106 @@ describe("registry, types, ledger — the platform knows the new tables", () => 
   });
 });
 
-describe("HR-8A is DARK — no route, no tile, no navigation", () => {
-  it("the hub still shows the Offboarding SoonTile; no departs route exists", () => {
-    // (hr-1-readiness-audit pins the SoonTile too — this is the HR-8-side twin.)
-    expect(read("app/departments/hr/page.tsx")).toMatch(/SoonTile[^/]*title="Offboarding"/);
-    expect(() => read("app/departments/hr/departs/page.tsx")).toThrow();
+// ===========================================================================
+// HR-8B — the workspace. Everything below is about what a person SEES.
+// ===========================================================================
+const PAGE = "app/departments/hr/departs/page.tsx";
+const STUDIO = "components/hr/offboarding-studio.tsx";
+const HUB = "app/departments/hr/page.tsx";
+
+describe("HR-8B — the workspace exists and the tile is activated", () => {
+  it("the route is gated on hr:read and composes the HR-8A reads", () => {
+    const p = code(PAGE);
+    expect(p).toMatch(/hasPermission\(permissions, "hr:read"\)/);
+    expect(p).toMatch(/notFound\(\)/);
+    expect(p).toMatch(/hasPermission\(permissions, "hr:manage"\)/);
+    for (const fn of ["listOffboardingCases", "listOffboardingItems", "listOffboardingTemplates", "offboardingGates"]) {
+      expect(p, fn).toContain(fn);
+    }
   });
 
-  it("no component imports the offboarding lib yet", () => {
-    for (const f of ["components/hr/onboarding-studio.tsx", "components/hr/employee-admin.tsx"]) {
-      expect(read(f), f).not.toMatch(/offboarding/i);
+  it("the hub tile is live and the « à venir » note is gone", () => {
+    const h = read(HUB);
+    expect(h).toMatch(/WorkspaceTile href="\/departments\/hr\/departs" title="Départs"/);
+    expect(h).not.toMatch(/SoonTile[^/]*title="Offboarding"/);
+    expect(h).not.toContain("À venir — HR-8");
+    // Exactly one entry point for the capability (the HR-5A rule).
+    expect([...h.matchAll(/WorkspaceTile href="\/departments\/hr\/departs"/g)].length).toBe(1);
+  });
+
+  it("counters are composed from existing facts, not a new analytics layer", () => {
+    const h = read(HUB);
+    expect(h).toContain("Départs en cours");
+    expect(h).toContain("Matériel à restituer (départs)");
+    expect(h).toContain("Étapes de clôture à terminer");
+    // The reader lives in the HR-8 domain module and counts rows — nothing else.
+    const c = code("lib/hr/offboarding.ts");
+    expect(c).toContain("export async function offboardingCounts");
+    expect(c).not.toMatch(/materialized|_kpi|analytics/i);
+  });
+});
+
+describe("HR-8B — plain French, no engineering vocabulary on screen", () => {
+  it("no SQLSTATE, permission code, or table name reaches the UI", () => {
+    // Comment-stripped: a comment explaining which SQLSTATE is translated is
+    // documentation; a SQLSTATE in a rendered string is a leak.
+    for (const f of [PAGE, STUDIO]) {
+      expect(code(f), f).not.toMatch(/HR8\d\d|HR630|EFA\d\d/);
     }
+    // A permission code may be CHECKED (that is authorization); it may never be
+    // DISPLAYED. Comments and the gate calls themselves are removed, and what
+    // remains must be free of engineering vocabulary — so a code rendered into
+    // any label, message or attribute fails this test.
+    // Type positions (Tbl["hr_offboarding_case"]["Row"]) and the gate calls are
+    // removed first: they are authorization and typing, never rendered text.
+    const rendered = (f: string) =>
+      code(f)
+        .replace(/hasPermission\(permissions, "[^"]+"\)/g, "")
+        .replace(/Tbl\["[^"]+"\]\["[^"]+"\]/g, "");
+    for (const f of [PAGE, STUDIO]) {
+      expect(rendered(f), f).not.toMatch(/hr:manage|hr:read|hr:config|admin:users/);
+      expect(rendered(f), f).not.toMatch(/hr_offboarding_|assert_actor_authority|SQLSTATE/);
+    }
+  });
+
+  it("the governed refusals are translated into business sentences", () => {
+    const s = read(STUDIO);
+    expect(s).toContain("L'employé doit d'abord être marqué comme ayant quitté l'entreprise");
+    expect(s).toContain("Du matériel est encore attribué à cet employé");
+    expect(s).toContain("Certaines étapes obligatoires ne sont pas terminées");
+    // Each maps from the action-layer code, not from a raw database string.
+    for (const k of ["employee_not_terminated", "equipment_outstanding", "blocking_items_pending"]) {
+      expect(s, k).toMatch(new RegExp(`${k}:\\s*"`));
+    }
+  });
+});
+
+describe("HR-8B — the boundaries hold on screen", () => {
+  it("the workspace never terminates anyone", () => {
+    for (const f of [PAGE, STUDIO]) {
+      expect(code(f), f).not.toMatch(/transitionEmployee|"TERMINATED"/);
+    }
+    // And it says so, in French, where the case is opened.
+    expect(read(STUDIO)).toContain("ne met pas fin au contrat");
+  });
+
+  it("equipment return is delegated, never reimplemented", () => {
+    const s = code(STUDIO);
+    expect(s).toContain('href="/departments/hr/equipement"');
+    expect(s).not.toMatch(/returnEquipment|hr_return_equipment|returned_on/);
+  });
+
+  it("the account step is a link to Administration, never an action", () => {
+    const s = code(STUDIO);
+    expect(s).toContain('href="/users"');
+    expect(s).not.toMatch(/archiveUser|setUserStatus|banUser|admin:users/);
+    // The prompt only appears when the completion RPC says the account is live.
+    expect(s).toContain("promptAccountHandoff");
+    expect(read(STUDIO)).toContain("PAS été désactivé");
+  });
+
+  it("no four-eyes was introduced in the workspace (RQ-8.5 still open)", () => {
+    expect(code(STUDIO)).not.toMatch(/quatre yeux|four.eyes|approver|second acteur/i);
   });
 });
 
