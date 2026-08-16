@@ -313,3 +313,15 @@ import) → HR-3 (Documents & Contracts) → HR-4 (Onboarding & Equipment) → H
 Attendance) → HR-6 (Performance & Training) → HR-7 (Payroll Preparation) → HR-8
 (Offboarding) → HR-9 (Reporting & Analytics). Dark-first throughout; each phase behind the
 standing rollout idiom; RLS suites appended last in CI; HR-1 starts on explicit go.
+
+### Addendum 2026-08-16 — roadmap extension (registered at the HR-8 audit; no frozen decision altered)
+
+**HR-10 — Guide utilisateur & SOP RH**, scheduled after HR-8 and HR-9: an in-platform
+user guide and standard operating procedures for HR staff — French, concise,
+non-technical, organized around the actual HR workspaces, using real production
+screenshots and simple numbered operating instructions, with contextual « Aide » access
+from HR workspaces where appropriate; audience Chargé RH / HR Manager; a
+printable/branded PDF version may also be produced. Registered as a future requirement
+by `hr-8-offboarding-audit.md` §18 — **not built now**. (The pre-freeze note in
+`hr-erd-roadmap-decisions.md` naming ATS an "HR-10 candidate" is superseded by the
+ratified renumbering; ATS remains unscheduled.)
