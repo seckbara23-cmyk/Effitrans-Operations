@@ -323,6 +323,19 @@ describe("HR-8B — the boundaries hold on screen", () => {
   it("no four-eyes was introduced in the workspace (RQ-8.5 still open)", () => {
     expect(code(STUDIO)).not.toMatch(/quatre yeux|four.eyes|approver|second acteur/i);
   });
+
+  it("HR-8C D-1 — an evidence-required step never offers a « Fait » that must fail", () => {
+    // No evidence picker exists in the checklist surfaces (the shipped HR-4
+    // idiom withholds the button rather than refusing the click). « Sans objet »
+    // and « Rouvrir » stay available; the database rule is untouched.
+    const s = code(STUDIO);
+    expect(s).toMatch(/i\.status === "PENDING" && !i\.evidence_required && \(\s*<button[\s\S]{0,400}status: "DONE"/);
+    expect(s).toMatch(/status: "NOT_APPLICABLE"/);
+    expect(read(STUDIO)).toContain("à joindre au dossier de l&apos;employé");
+    // The onboarding surface it mirrors still behaves the same way.
+    expect(code("components/hr/onboarding-studio.tsx"))
+      .toMatch(/i\.status === "PENDING" && !i\.evidence_required/);
+  });
 });
 
 describe("CI wiring — the suite runs, and runs LAST", () => {

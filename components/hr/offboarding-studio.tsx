@@ -220,23 +220,40 @@ export function OffboardingStudio({
                                 <span className="text-slate-700">
                                   {i.label_fr}
                                   {i.is_blocking && <span className="ml-2 text-xs text-red-600">obligatoire</span>}
-                                  {i.evidence_required && <span className="ml-2 text-xs text-slate-400">pièce requise</span>}
+                                  {i.evidence_required && (
+                                    <span className="ml-2 text-xs text-slate-400">
+                                      pièce requise — à joindre au dossier de l&apos;employé
+                                    </span>
+                                  )}
                                 </span>
                                 <span className="flex items-center gap-2">
                                   <span className="text-xs text-slate-500">{ITEM_STATUS_FR[i.status] ?? i.status}</span>
+                                  {/* An item whose evidence is required cannot be
+                                      marked done from here: no evidence picker
+                                      exists in the checklist surfaces (the HR-4
+                                      idiom). The affordance is withheld and the
+                                      reason is stated, rather than offering a
+                                      button whose only outcome is a refusal. */}
+                                  {canManage && live && i.status === "PENDING" && !i.evidence_required && (
+                                    <button disabled={pending}
+                                      onClick={() => run(() => completeOffboardingItem({ itemId: i.id, status: "DONE" }))}
+                                      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:border-teal-300 disabled:opacity-50">
+                                      Fait
+                                    </button>
+                                  )}
                                   {canManage && live && i.status === "PENDING" && (
-                                    <>
-                                      <button disabled={pending}
-                                        onClick={() => run(() => completeOffboardingItem({ itemId: i.id, status: "DONE" }))}
-                                        className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:border-teal-300 disabled:opacity-50">
-                                        Fait
-                                      </button>
-                                      <button disabled={pending}
-                                        onClick={() => run(() => completeOffboardingItem({ itemId: i.id, status: "NOT_APPLICABLE" }))}
-                                        className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:border-teal-300 disabled:opacity-50">
-                                        Sans objet
-                                      </button>
-                                    </>
+                                    <button disabled={pending}
+                                      onClick={() => run(() => completeOffboardingItem({ itemId: i.id, status: "NOT_APPLICABLE" }))}
+                                      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:border-teal-300 disabled:opacity-50">
+                                      Sans objet
+                                    </button>
+                                  )}
+                                  {canManage && live && i.status !== "PENDING" && (
+                                    <button disabled={pending}
+                                      onClick={() => run(() => completeOffboardingItem({ itemId: i.id, status: "PENDING" }))}
+                                      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-500 hover:border-slate-300 disabled:opacity-50">
+                                      Rouvrir
+                                    </button>
                                   )}
                                 </span>
                               </li>
