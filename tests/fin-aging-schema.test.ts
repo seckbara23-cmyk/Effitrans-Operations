@@ -492,7 +492,8 @@ describe("the DB suite is wired into CI, last, with a readable failure", () => {
     // MAYA-P1.1 appended its GAINDE suite; the pin moves to it.
     // HR-B1 appended its leave scope suite; the pin moves to it.
     // HR-B2 appended its performance identity suite; the pin moves to it.
-    const mine = ci.indexOf("hr_b2_performance_identity_test.sql");
+    // HR-7 appended its payroll preparation suite; the pin moves to it.
+    const mine = ci.indexOf("hr_7_payroll_preparation_test.sql");
     const others = [...ci.matchAll(/-f supabase\/tests\/(\w+)\.sql/g)]
       .map((m) => ci.indexOf(`${m[1]}.sql`))
       .filter((i) => i !== mine);

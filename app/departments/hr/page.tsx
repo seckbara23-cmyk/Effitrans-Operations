@@ -162,7 +162,8 @@ export default async function HrOperationsCenterPage() {
             : <GatedTile title="Imports" gate="hr:manage" />}
           <WorkspaceTile href="/departments/hr/performance" title="Performance" subtitle="Cycles, objectifs, compétences" />
           <WorkspaceTile href="/departments/hr/formation" title="Formation" subtitle="Catalogue, inscriptions, certificats" />
-          <SoonTile title="Préparation de paie" note="À venir — HR-7" />
+          {/* HR-7B — activated: facts-only preparation (DEC-B63; amounts stay out — Q1). */}
+          <WorkspaceTile href="/departments/hr/paie" title="Préparation de paie" subtitle="Périodes, faits collectés, ajustements — sans montants" />
           <SoonTile title="Offboarding" note="À venir — HR-8" />
           <SoonTile title="Reporting RH" note="À venir — HR-9" />
         </div>

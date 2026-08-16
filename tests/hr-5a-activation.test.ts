@@ -110,7 +110,7 @@ describe("canonical routes — one entry point per capability", () => {
     // HR-6 added `performance` and `formation` — both are WORKSPACES reached
     // from the hub, not competing dashboards, so the invariant still holds.
     expect(routes.sort()).toEqual(["[id]", "configuration", "conges", "equipement", "formation",
-      "imports", "onboarding", "organisation", "performance", "registre"]);
+      "imports", "onboarding", "organisation", "paie", "performance", "registre"]);
   });
 
   it("the registry's filter links point at /registre — the HR-1 move is honoured", () => {

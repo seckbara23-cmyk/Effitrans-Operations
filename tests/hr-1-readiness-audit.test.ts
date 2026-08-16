@@ -41,11 +41,15 @@ describe("creating the first employee needs no prior configuration", () => {
 });
 
 describe("the deferred modules are deferred, not defective", () => {
-  it("paie, offboarding and reporting remain SoonTiles", () => {
+  it("offboarding and reporting remain SoonTiles; paie activated by HR-7B", () => {
+    // HR-7A/B/C moved this pin deliberately: « Préparation de paie » is now a
+    // real facts-only workspace (DEC-B63 boundary intact — no amounts).
     const page = read("app/departments/hr/page.tsx");
-    for (const t of ["Préparation de paie", "Offboarding", "Reporting RH"]) {
+    for (const t of ["Offboarding", "Reporting RH"]) {
       expect(page).toMatch(new RegExp(`SoonTile[^/]*title="${t}"`));
     }
+    expect(page).toContain('href="/departments/hr/paie"');
+    expect(page).not.toMatch(/SoonTile[^/]*title="Préparation de paie"/);
   });
 
   it("rehire-is-a-new-record (DEC-B26) still holds in the lifecycle", () => {

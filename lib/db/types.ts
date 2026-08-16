@@ -3697,6 +3697,74 @@ export type Database = {
         Update: { worked_minutes?: number; source?: string; note?: string | null };
         Relationships: [];
       };
+      hr_payroll_period: {
+        Row: {
+          id: string; tenant_id: string; code: string; label_fr: string;
+          period_start: string; period_end: string; status: string;
+          cutoff_at: string | null; line_count: number; draft_excluded_count: number;
+          prepared_by: string | null; prepared_at: string | null;
+          verified_by: string | null; verified_at: string | null;
+          approved_by: string | null; approved_at: string | null;
+          locked_by: string | null; locked_at: string | null;
+          cancelled_at: string | null; cancellation_reason: string | null;
+          version: number; supersedes_period_id: string | null;
+          created_by: string | null; created_at: string; updated_at: string;
+        };
+        Insert: {
+          id?: string; tenant_id: string; code: string; label_fr: string;
+          period_start: string; period_end: string; status?: string;
+          version?: number; supersedes_period_id?: string | null; created_by?: string | null;
+        };
+        Update: {
+          status?: string; label_fr?: string; cutoff_at?: string | null;
+          line_count?: number; draft_excluded_count?: number;
+          prepared_by?: string | null; prepared_at?: string | null;
+          verified_by?: string | null; verified_at?: string | null;
+          approved_by?: string | null; approved_at?: string | null;
+          locked_by?: string | null; locked_at?: string | null;
+          cancelled_at?: string | null; cancellation_reason?: string | null;
+        };
+        Relationships: [];
+      };
+      hr_payroll_period_line: {
+        Row: {
+          id: string; tenant_id: string; period_id: string; employee_id: string;
+          employee_number: string; first_name: string; last_name: string; department: string;
+          org_unit_label: string | null; position_label: string | null; work_location_label: string | null;
+          contract_kind: string | null; employment_status: string;
+          hire_date: string | null; termination_date: string | null;
+          joined_in_period: boolean; left_in_period: boolean;
+          has_open_assignment: boolean; has_linked_account: boolean;
+          attendance_days: number; worked_minutes: number;
+          leave_breakdown: unknown; leave_tenths_total: number; exceptions: unknown;
+          created_at: string;
+        };
+        Insert: { id?: string; tenant_id: string; period_id: string; employee_id: string; employee_number: string; first_name: string; last_name: string; department: string; employment_status: string };
+        Update: { exceptions?: unknown };
+        Relationships: [];
+      };
+      hr_payroll_adjustment_kind: {
+        Row: {
+          id: string; tenant_id: string; code: string; label_fr: string; unit: string;
+          requires_reason: boolean; is_active: boolean; created_at: string; updated_at: string;
+        };
+        Insert: { id?: string; tenant_id: string; code: string; label_fr: string; unit: string; requires_reason?: boolean; is_active?: boolean };
+        Update: { code?: string; label_fr?: string; unit?: string; requires_reason?: boolean; is_active?: boolean };
+        Relationships: [];
+      };
+      hr_payroll_adjustment: {
+        Row: {
+          id: string; tenant_id: string; period_id: string; employee_id: string; kind_id: string;
+          quantity: number; reason: string | null; evidence_document_id: string | null;
+          status: string; proposed_by: string; proposed_at: string;
+          decided_by: string | null; decided_at: string | null; decision_note: string | null;
+          version: number; supersedes_adjustment_id: string | null;
+          created_at: string; updated_at: string;
+        };
+        Insert: { id?: string; tenant_id: string; period_id: string; employee_id: string; kind_id: string; quantity: number; reason?: string | null; evidence_document_id?: string | null; proposed_by: string; version?: number; supersedes_adjustment_id?: string | null };
+        Update: { status?: string; decided_by?: string | null; decided_at?: string | null; decision_note?: string | null };
+        Relationships: [];
+      };
       hr_performance_cycle: {
         Row: { id: string; tenant_id: string; code: string; label_fr: string; cycle_kind: string; status: string; period_start: string; period_end: string; opens_on: string | null; submission_deadline: string | null; review_deadline: string | null; finalized_at: string | null; cancelled_at: string | null; cancellation_reason: string | null; hr_owner_id: string | null; target_scope: string; target_org_unit_id: string | null; target_position_id: string | null; weight_total_bp: number; created_by: string | null; created_at: string; updated_at: string };
         Insert: { id?: string; tenant_id: string; code: string; label_fr: string; cycle_kind: string; status?: string; period_start: string; period_end: string; opens_on?: string | null; submission_deadline?: string | null; review_deadline?: string | null; hr_owner_id?: string | null; target_scope?: string; target_org_unit_id?: string | null; target_position_id?: string | null; weight_total_bp?: number; created_by?: string | null };
@@ -4411,6 +4479,42 @@ export type Database = {
       };
       hr_close_training_enrollment: {
         Args: { p_tenant: string; p_enrollment: string; p_actor: string; p_status: string; p_reason?: string | null };
+        Returns: string;
+      };
+      hr_create_payroll_period: {
+        Args: { p_tenant: string; p_actor: string; p_code: string; p_label: string; p_start: string; p_end: string };
+        Returns: string;
+      };
+      hr_prepare_payroll_period: {
+        Args: { p_tenant: string; p_period: string; p_actor: string };
+        Returns: number;
+      };
+      hr_verify_payroll_period: {
+        Args: { p_tenant: string; p_period: string; p_actor: string };
+        Returns: string;
+      };
+      hr_reopen_payroll_period: {
+        Args: { p_tenant: string; p_period: string; p_actor: string };
+        Returns: string;
+      };
+      hr_approve_payroll_period: {
+        Args: { p_tenant: string; p_period: string; p_actor: string };
+        Returns: string;
+      };
+      hr_lock_payroll_period: {
+        Args: { p_tenant: string; p_period: string; p_actor: string };
+        Returns: string;
+      };
+      hr_cancel_payroll_period: {
+        Args: { p_tenant: string; p_period: string; p_actor: string; p_reason: string };
+        Returns: string;
+      };
+      hr_propose_payroll_adjustment: {
+        Args: { p_tenant: string; p_period: string; p_employee: string; p_kind: string; p_actor: string; p_quantity: number; p_reason?: string | null; p_evidence?: string | null; p_supersedes?: string | null };
+        Returns: string;
+      };
+      hr_decide_payroll_adjustment: {
+        Args: { p_tenant: string; p_adjustment: string; p_actor: string; p_decision: string; p_note?: string | null };
         Returns: string;
       };
       hr_decide_leave_request: {
