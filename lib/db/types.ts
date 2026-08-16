@@ -3820,9 +3820,9 @@ export type Database = {
         Relationships: [];
       };
       hr_checklist_template: {
-        Row: { id: string; tenant_id: string; code: string; label_fr: string; is_active: boolean; created_at: string; updated_at: string };
-        Insert: { id?: string; tenant_id: string; code: string; label_fr: string; is_active?: boolean };
-        Update: { label_fr?: string; is_active?: boolean };
+        Row: { id: string; tenant_id: string; code: string; label_fr: string; kind: string; is_active: boolean; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; code: string; label_fr: string; kind?: string; is_active?: boolean };
+        Update: { label_fr?: string; kind?: string; is_active?: boolean };
         Relationships: [];
       };
       hr_checklist_item_template: {
@@ -3838,6 +3838,19 @@ export type Database = {
         Relationships: [];
       };
       hr_onboarding_item: {
+        Row: { id: string; tenant_id: string; case_id: string; item_template_id: string | null; position: number; label_fr: string; responsible_function: string | null; is_required: boolean; is_blocking: boolean; evidence_required: boolean; due_date: string | null; status: string; evidence_document_id: string | null; comment: string | null; completed_by: string | null; completed_at: string | null };
+        Insert: { id?: string; tenant_id: string; case_id: string; item_template_id?: string | null; position: number; label_fr: string; responsible_function?: string | null; is_required?: boolean; is_blocking?: boolean; evidence_required?: boolean; due_date?: string | null; status?: string };
+        Update: { status?: string; evidence_document_id?: string | null; comment?: string | null; completed_by?: string | null; completed_at?: string | null; due_date?: string | null };
+        Relationships: [];
+      };
+      // HR-8A — offboarding dark foundation (migration 111).
+      hr_offboarding_case: {
+        Row: { id: string; tenant_id: string; employee_id: string; template_id: string | null; status: string; planned_departure_date: string | null; reason: string | null; manager_employee_id: string | null; hr_officer_id: string | null; completed_at: string | null; cancelled_at: string | null; cancellation_reason: string | null; summary: string | null; created_by: string | null; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; employee_id: string; template_id?: string | null; status?: string; planned_departure_date?: string | null; reason?: string | null; manager_employee_id?: string | null; hr_officer_id?: string | null; summary?: string | null; created_by?: string | null };
+        Update: { status?: string; planned_departure_date?: string | null; reason?: string | null; manager_employee_id?: string | null; completed_at?: string | null; cancelled_at?: string | null; cancellation_reason?: string | null; summary?: string | null };
+        Relationships: [];
+      };
+      hr_offboarding_item: {
         Row: { id: string; tenant_id: string; case_id: string; item_template_id: string | null; position: number; label_fr: string; responsible_function: string | null; is_required: boolean; is_blocking: boolean; evidence_required: boolean; due_date: string | null; status: string; evidence_document_id: string | null; comment: string | null; completed_by: string | null; completed_at: string | null };
         Insert: { id?: string; tenant_id: string; case_id: string; item_template_id?: string | null; position: number; label_fr: string; responsible_function?: string | null; is_required?: boolean; is_blocking?: boolean; evidence_required?: boolean; due_date?: string | null; status?: string };
         Update: { status?: string; evidence_document_id?: string | null; comment?: string | null; completed_by?: string | null; completed_at?: string | null; due_date?: string | null };
@@ -4538,6 +4551,19 @@ export type Database = {
         Returns: string;
       };
       hr_complete_onboarding: {
+        Args: { p_tenant: string; p_case: string; p_actor: string };
+        Returns: string;
+      };
+      // HR-8A — offboarding RPCs (migration 111), INV-7 inside.
+      hr_open_offboarding_case: {
+        Args: { p_tenant: string; p_employee: string; p_actor: string; p_reason: string; p_planned_date?: string | null; p_template?: string | null; p_manager?: string | null };
+        Returns: string;
+      };
+      hr_complete_offboarding_item: {
+        Args: { p_tenant: string; p_item: string; p_actor: string; p_status: string; p_evidence?: string | null; p_comment?: string | null };
+        Returns: string;
+      };
+      hr_complete_offboarding: {
         Args: { p_tenant: string; p_case: string; p_actor: string };
         Returns: string;
       };

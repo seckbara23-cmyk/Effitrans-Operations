@@ -13,10 +13,10 @@
  */
 
 /** The latest migration shipped in this build (pinned to the directory by test). */
-export const LATEST_MIGRATION = "20260901000001_hr_payroll_preparation";
+export const LATEST_MIGRATION = "20260902000001_hr_offboarding_foundation";
 
 /** Total migrations shipped in this build (pinned by test). */
-export const MIGRATION_COUNT = 110;
+export const MIGRATION_COUNT = 111;
 
 /** Newest DATA-probeable migration marker: this permission row proves migrations ≥ this point. */
 export const MIGRATION_PROBE = {

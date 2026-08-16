@@ -136,6 +136,9 @@ export const TENANT_SCOPED_TABLES = new Set<string>([
   "hr_equipment_type",
   "hr_equipment",
   "hr_equipment_assignment",
+  // HR-8A offboarding (migration 111)
+  "hr_offboarding_case",
+  "hr_offboarding_item",
   // HR-5 leave & attendance (migration 77)
   "hr_leave_category",
   "hr_leave_entitlement",

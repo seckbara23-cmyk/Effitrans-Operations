@@ -1,0 +1,251 @@
+/**
+ * EFFITRANS-HR-8A — offboarding dark foundation.
+ * ---------------------------------------------------------------------------
+ * The governing spec is docs/hr/hr-8-offboarding-audit.md (verdict GO) and
+ * the HR-0F freeze. This suite pins the boundaries structurally:
+ *
+ *   * OFFBOARDING ≠ TERMINATION (I-8.12): the employee lifecycle is untouched;
+ *   * the completion gate is DATABASE-SIDE (I-8.2): TERMINATED + zero open
+ *     custody + blocking items resolved, inside hr_complete_offboarding —
+ *     proven live in supabase/tests/hr_8_offboarding_test.sql;
+ *   * the account step is a PROMPT, never a call (I-8.3): no HR surface or
+ *     role touches admin:users:*;
+ *   * NO new permission is catalogued (audit §9): hr:manage operates HR-8;
+ *   * the template engine is SHARED, discriminated by kind (I-8.10);
+ *   * HR-8A is DARK: no route, no tile — HR-8B activates « Départs ».
+ */
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it } from "vitest";
+import { TENANT_ROLE_TEMPLATES } from "@/lib/platform/role-templates";
+
+const read = (p: string) => readFileSync(fileURLToPath(new URL(`../${p}`, import.meta.url)), "utf8");
+const code = (p: string) =>
+  read(p).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "").replace(/^\s*--.*$/gm, "");
+const sql = (p: string) => read(p).replace(/--[^\n]*/g, "");
+
+const MIG = "supabase/migrations/20260902000001_hr_offboarding_foundation.sql";
+const SUITE = "supabase/tests/hr_8_offboarding_test.sql";
+const RPCS = ["hr_open_offboarding_case", "hr_complete_offboarding_item", "hr_complete_offboarding"];
+
+/**
+ * The body of one migration RPC — pins must bind to THE function, not the
+ * file. The boundary is the next function OR the revoke block that follows
+ * the last one: a `-- ===` marker would be gone after comment-stripping, and
+ * an over-long slice would reach assertion 6c, whose text shares the pinned
+ * predicates (the HR-7 shared-string lesson — M1 survived exactly this way).
+ */
+function fnSlice(name: string): string {
+  const m = sql(MIG);
+  const start = m.indexOf(`create or replace function public.${name}(`);
+  expect(start, `${name} present`).toBeGreaterThan(-1);
+  const rest = m.slice(start + 10);
+  const next = rest.search(/create or replace function|revoke execute on function/);
+  expect(next, `${name} slice bounded`).toBeGreaterThan(-1);
+  return m.slice(start, start + 10 + next);
+}
+
+// ===========================================================================
+describe("I-8.2 — the completion gate is database-side, in the RPC", () => {
+  it("hr_complete_offboarding tests TERMINATED, open custody, and blocking items", () => {
+    const s = fnSlice("hr_complete_offboarding");
+    // M2 killer: the employment must actually have ended.
+    expect(s).toMatch(/is distinct from 'TERMINATED'/);
+    expect(s).toContain("HR813");
+    // M1 killer: the equipment gate reads the LIVE custody rows.
+    expect(s).toMatch(/from public\.hr_equipment_assignment a[\s\S]{0,200}?\.returned_on is null/);
+    expect(s).toContain("HR814");
+    // Blocking items must be resolved (DONE or NOT_APPLICABLE).
+    expect(s).toMatch(/is_blocking and status = 'PENDING'/);
+    expect(s).toContain("HR815");
+    // And the migration ASSERTS the gate at apply time (drift-refusing).
+    expect(read(MIG)).toMatch(/assertion 6c failed: completion gate weakened/);
+  });
+
+  it("completion never writes employee, custody, or account rows (I-8.1/I-8.3)", () => {
+    const s = fnSlice("hr_complete_offboarding");
+    expect(s).not.toMatch(/update public\.(employee|hr_equipment_assignment|app_user)\b/);
+    // The advisory is an EVENT about the account, never an act on it.
+    expect(s).toContain("offboarding_completed_account_active");
+  });
+});
+
+describe("INV-7 — every HR-8 RPC checks actor integrity and authority", () => {
+  it("HR630 + assert_actor_authority('hr:manage') in each of the three RPCs", () => {
+    for (const fn of RPCS) {
+      const s = fnSlice(fn);
+      expect(s, fn).toContain("errcode = 'HR630'");
+      expect(s, fn).toMatch(/assert_actor_authority\(p_actor, p_tenant, 'hr:manage', 'SERVICE'\)/);
+    }
+    expect(read(MIG)).toMatch(/assertion 6e failed/); // the apply-time census
+  });
+
+  it("the RPCs are service_role transport only", () => {
+    const m = sql(MIG);
+    for (const fn of RPCS) {
+      expect(m).toMatch(new RegExp(`revoke execute on function public\\.${fn}\\([^)]*\\) from public`));
+      expect(m).toMatch(new RegExp(`grant execute on function public\\.${fn}\\([^)]*\\) to service_role`));
+    }
+  });
+});
+
+describe("I-8.3 — the account step stays a handoff between two seats", () => {
+  it("no role template holds both hr:manage and any admin:users:*", () => {
+    for (const t of TENANT_ROLE_TEMPLATES) {
+      if (t.permissions.includes("hr:manage")) {
+        const leaked = t.permissions.filter((p) => p.startsWith("admin:users:"));
+        expect(leaked, `template ${JSON.stringify(t).slice(0, 60)}`).toEqual([]);
+      }
+    }
+    // And the migration + SQL suite re-assert it against LIVE grants.
+    expect(read(MIG)).toMatch(/assertion 6d failed/);
+    expect(read(SUITE)).toMatch(/hold both hr:manage and admin:users/);
+  });
+
+  it("no HR lib file calls any admin:users authority or account write", () => {
+    for (const f of ["lib/hr/offboarding.ts", "lib/hr/offboarding-actions.ts"]) {
+      const s = code(f);
+      expect(s, f).not.toMatch(/admin:users/);
+      expect(s, f).not.toMatch(/from\("app_user"\)\s*\.(update|insert|delete|upsert)/);
+    }
+  });
+});
+
+describe("audit §9 — no new authority; hr:manage operates HR-8", () => {
+  it("migration 111 catalogues ZERO permissions and asserts so", () => {
+    const m = sql(MIG);
+    expect(m).not.toMatch(/insert into public\.permission/);
+    expect(m).not.toMatch(/insert into public\.role_permission/);
+    expect(read(MIG)).toMatch(/assertion 6f failed/);
+  });
+
+  it("actions gate on hr:manage only — no four-eyes invented (RQ-8.5)", () => {
+    const a = code("lib/hr/offboarding-actions.ts");
+    expect(a.split('assertPermission("hr:manage")').length - 1).toBe(4);
+    expect(a).not.toMatch(/assertPermission\("(?!hr:manage)/);
+  });
+});
+
+describe("I-8.10 — one shared template engine, discriminated by kind", () => {
+  it("the kind column is constrained to the audited vocabulary, census first", () => {
+    const m = sql(MIG);
+    expect(m).toMatch(/add column if not exists kind text not null default 'ONBOARDING'/);
+    expect(m).toMatch(/check \(kind in \('ONBOARDING','OFFBOARDING'\)\)/);
+    // The MAYA-P0.8-A rule: a data census precedes the constraint.
+    expect(m.indexOf("refusing to constrain")).toBeLessThan(m.indexOf("hr_checklist_template_kind_check\n  check"));
+  });
+
+  it("every template-consuming read filters its own kind", () => {
+    // The census found exactly two list sites; each must claim its kind.
+    expect(code("lib/hr/onboarding.ts")).toMatch(/hr_checklist_template[\s\S]{0,200}\.eq\("kind", "ONBOARDING"\)/);
+    expect(code("lib/hr/offboarding.ts")).toMatch(/hr_checklist_template[\s\S]{0,200}\.eq\("kind", "OFFBOARDING"\)/);
+  });
+
+  it("the open RPC accepts only an OFFBOARDING-kind template", () => {
+    expect(fnSlice("hr_open_offboarding_case")).toMatch(/kind = 'OFFBOARDING'/);
+  });
+});
+
+describe("case governance — the audited lifecycle, structurally", () => {
+  it("statuses, one live case per employee, governed cancellation, terminal COMPLETED", () => {
+    const m = sql(MIG);
+    expect(m).toMatch(/check \(status in \('OPEN','IN_PROGRESS','COMPLETED','CANCELLED'\)\)/);
+    // M5 killer: the live-slot index is PARTIAL over the open statuses.
+    expect(m).toMatch(/create unique index if not exists uq_offboarding_live_case\s+on public\.hr_offboarding_case \(employee_id\)\s+where status in \('OPEN','IN_PROGRESS'\)/);
+    // M4 killer: the PREDICATES are pinned, not the constraint names — a
+    // weakened check (true) must not survive.
+    expect(m).toMatch(/offboarding_cancelled_has_reason\s+check \(status <> 'CANCELLED' or \(cancellation_reason is not null and btrim\(cancellation_reason\) <> ''\)\)/);
+    expect(m).toMatch(/offboarding_completed_has_date\s+check \(status <> 'COMPLETED' or completed_at is not null\)/);
+    expect(m).toMatch(/offboarding_item_done_has_actor\s+check \(status <> 'DONE' or \(completed_by is not null and completed_at is not null\)\)/);
+  });
+
+  it("cases open only for ACTIVE/SUSPENDED employees (RQ-8.6 untouched)", () => {
+    expect(fnSlice("hr_open_offboarding_case")).toMatch(/not in \('ACTIVE','SUSPENDED'\)/);
+  });
+
+  it("the cancel action compensates a failed ledger emission (WES-9A)", () => {
+    const a = code("lib/hr/offboarding-actions.ts");
+    const start = a.indexOf("export async function cancelOffboardingCase");
+    const s = a.slice(start, a.indexOf("export async function", start + 10));
+    // M6 killer: the compensating revert lives INSIDE the cancel function.
+    expect(s).toMatch(/status: c\.status, cancelled_at: null, cancellation_reason: null/);
+    expect(s).toContain("offboarding_case_cancelled");
+  });
+});
+
+describe("I-8.12 — the termination lifecycle is NOT modified", () => {
+  it("transitionEmployee still gates on documents and still only prompts revocation", () => {
+    const a = code("lib/hr/actions.ts");
+    expect(a).toContain("missingTerminationDocuments(ctx.tenantId, id)");
+    expect(a).toMatch(/promptRevocation = toStatus === "TERMINATED"/);
+    // And nothing in HR-8 imports or wraps the transition.
+    expect(code("lib/hr/offboarding-actions.ts")).not.toMatch(/transitionEmployee/);
+  });
+
+  it("lifecycle.ts is byte-identical in intent: TERMINATED requires a reason, ARCHIVED is terminal", () => {
+    const l = code("lib/hr/lifecycle.ts");
+    expect(l).toMatch(/TERMINATED: \["ARCHIVED"\]/);
+    expect(l).toMatch(/ARCHIVED: \[\]/);
+    expect(l).toMatch(/to === "TERMINATED"/);
+  });
+});
+
+describe("registry, types, ledger — the platform knows the new tables", () => {
+  it("both tables are tenant-scoped and typed with Relationships", () => {
+    const reg = code("lib/db/tenant-tables.ts");
+    expect(reg).toContain('"hr_offboarding_case"');
+    expect(reg).toContain('"hr_offboarding_item"');
+    const t = read("lib/db/types.ts");
+    for (const tbl of ["hr_offboarding_case", "hr_offboarding_item"]) {
+      const start = t.indexOf(`${tbl}: {`);
+      expect(start, tbl).toBeGreaterThan(-1);
+      expect(t.slice(start, start + 2500), tbl).toContain("Relationships: [];");
+    }
+  });
+
+  it("the five offboarding ledger kinds exist with French labels", () => {
+    const l = read("lib/hr/ledger.ts");
+    for (const k of [
+      "offboarding_case_opened", "offboarding_item_completed", "offboarding_case_completed",
+      "offboarding_case_cancelled", "offboarding_completed_account_active",
+    ]) {
+      expect((l.match(new RegExp(`\\b${k}\\b`, "g")) ?? []).length, k).toBeGreaterThanOrEqual(2);
+    }
+  });
+
+  it("RLS: select on hr:read, and NO write policy — actions are the boundary", () => {
+    const m = sql(MIG);
+    expect(m).toMatch(/hr_offboarding_case_select[\s\S]{0,200}has_permission\('hr:read'\)/);
+    expect(m).toMatch(/hr_offboarding_item_select[\s\S]{0,200}has_permission\('hr:read'\)/);
+    expect(m).not.toMatch(/create policy \w+_(insert|update|delete)/);
+    expect(m).toMatch(/grant select on public\.hr_offboarding_case, public\.hr_offboarding_item to authenticated/);
+  });
+});
+
+describe("HR-8A is DARK — no route, no tile, no navigation", () => {
+  it("the hub still shows the Offboarding SoonTile; no departs route exists", () => {
+    // (hr-1-readiness-audit pins the SoonTile too — this is the HR-8-side twin.)
+    expect(read("app/departments/hr/page.tsx")).toMatch(/SoonTile[^/]*title="Offboarding"/);
+    expect(() => read("app/departments/hr/departs/page.tsx")).toThrow();
+  });
+
+  it("no component imports the offboarding lib yet", () => {
+    for (const f of ["components/hr/onboarding-studio.tsx", "components/hr/employee-admin.tsx"]) {
+      expect(read(f), f).not.toMatch(/offboarding/i);
+    }
+  });
+});
+
+describe("CI wiring — the suite runs, and runs LAST", () => {
+  it("ci.yml runs hr_8_offboarding_test.sql (ordering pinned in fin-aging-schema)", () => {
+    expect(read(".github/workflows/ci.yml")).toContain("supabase/tests/hr_8_offboarding_test.sql");
+  });
+
+  it("the SQL suite clears jwt claims before RPC calls (EFA08) and rolls back", () => {
+    const s = read(SUITE);
+    expect(s).toContain("set_config('request.jwt.claims', '', true)");
+    expect(s.trimEnd().endsWith("rollback;")).toBe(true);
+    // Suite actors hold REAL grants (or refusal tests pass for the wrong reason).
+    expect(s).toMatch(/where p\.code = 'hr:manage'/);
+  });
+});

@@ -46,7 +46,16 @@ export type HrEventKind =
   | "performance_review_acknowledged"
   | "training_assigned"
   | "training_completed"
-  | "certificate_recorded";
+  | "certificate_recorded"
+  // HR-8A. Emitted by the offboarding RPCs (same-transaction) and the guarded
+  // cancel action. `offboarding_completed_account_active` is the ADVISORY:
+  // clearance completed while the linked login account is not yet archived —
+  // the 8.1A handoff stays a prompt, never a call (I-8.3).
+  | "offboarding_case_opened"
+  | "offboarding_item_completed"
+  | "offboarding_case_completed"
+  | "offboarding_case_cancelled"
+  | "offboarding_completed_account_active";
 
 /** French labels for the projection — one entry per kind, exhaustively. */
 export const HR_EVENT_LABEL_FR: Record<HrEventKind, string> = {
@@ -79,6 +88,11 @@ export const HR_EVENT_LABEL_FR: Record<HrEventKind, string> = {
   training_assigned: "Formation assignée",
   training_completed: "Formation terminée",
   certificate_recorded: "Certificat enregistré",
+  offboarding_case_opened: "Dossier de départ ouvert",
+  offboarding_item_completed: "Étape de clôture complétée",
+  offboarding_case_completed: "Départ clôturé",
+  offboarding_case_cancelled: "Dossier de départ annulé",
+  offboarding_completed_account_active: "Départ clôturé — accès plateforme non archivé",
 };
 
 export type EmitInput = {

@@ -35,8 +35,9 @@ export const LIFECYCLE_FR: Record<string, string> = {
 
 export async function listChecklistTemplates(tenantId: string): Promise<ChecklistTemplate[]> {
   const s = getAdminSupabaseClient();
+  // I-8.10: the template engine is shared; this surface is the ONBOARDING kind.
   const { data, error } = await s.from("hr_checklist_template").select("*")
-    .eq("tenant_id", tenantId).eq("is_active", true).order("label_fr");
+    .eq("tenant_id", tenantId).eq("is_active", true).eq("kind", "ONBOARDING").order("label_fr");
   if (error) throw new Error(`[hr] templates read failed: ${error.message}`);
   return data ?? [];
 }
