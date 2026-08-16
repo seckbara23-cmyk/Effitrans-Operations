@@ -625,6 +625,8 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       // Managers + Direction + CEO; CEO's grant awaits the HR-1A question (a)
       // answer because six broad accounts hold that role today).
       "hr:leave:approve",
+      // HR-B2 — the same Direction seat for performance finalization.
+      "hr:performance:finalize",
     ],
   },
   {
@@ -640,8 +642,8 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       // and external sharing. Does not prepare drafts or stage imports.
       "finance:aging:export", "finance:aging:finalize", "finance:aging:import_approve", "finance:aging:print", "finance:aging:read", "finance:aging:share", "finance:aging:validate",
       ...BASE, "finance:read", "finance:expense:read", "finance:expense:export",
-      // HR-B1 — Direction org-wide leave approval seat (see DAF's note).
-      "hr:leave:approve",
+      // HR-B1/HR-B2 — Direction org-wide seats (see DAF's note).
+      "hr:leave:approve", "hr:performance:finalize",
     ],
   },
   {

@@ -17,14 +17,35 @@ import "server-only";
  *    when) and never the CONTENT. `hr:sensitive:read` unlocks the prose, exactly
  *    as it unlocks C3-classed documents in HR-3. No new read permission was
  *    invented to do this.
+ *
+ * 3. HR-B2 — IDENTITY-SCOPED DISCLOSURE (Q2, ratified). Two narrow lanes join
+ *    the org-wide permission: an employee reads the prose of their OWN
+ *    evaluation, and the manager SNAPSHOTTED on an evaluation reads that
+ *    employee's self-assessment plus the review they authored. The rule is
+ *    pure (./performance/disclosure) and it neither grants nor implies
+ *    `hr:sensitive:read`.
+ *
+ *    THE WITHHOLDING DISCIPLINE SURVIVES THE CHANGE: prose is still never
+ *    fetched for a row the reader has no lane on. The workflow columns are
+ *    read for every row; the C3 columns are read in a SECOND, narrowed query
+ *    restricted to the rows the reader may see — so a reader with a lane on
+ *    their own row does not pull a colleague's prose into memory on the way.
  */
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
+import { evaluationDisclosure, hasAnyDisclosure, type DisclosureScope } from "./performance/disclosure";
 import type { Evaluation, Objective, PerformanceCycle, Competency, CompetencyAssessment, CycleStatus, EvaluationStatus } from "./performance/scoring";
 
 // The pure primitives live in ./performance/scoring so the CLIENT workspace can
 // import them: a `server-only` module cannot cross that boundary. Re-exported
 // here so server callers still have one import.
 export * from "./performance/scoring";
+
+type WorkflowRow = {
+  id: string; cycle_id: string; employee_id: string; manager_employee_id: string | null;
+  status: string; self_submitted_at: string | null; manager_submitted_at: string | null;
+  finalized_at: string | null; acknowledged_at: string | null;
+  self_entered_by: string | null; manager_entered_by: string | null; finalized_by: string | null;
+};
 
 const WORKFLOW_COLUMNS =
   "id, cycle_id, employee_id, manager_employee_id, status, self_submitted_at, " +
@@ -35,7 +56,9 @@ const C3_COLUMNS =
   "recommended_actions, moderation_note, final_summary";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-function mapEvaluation(r: any, canReadSensitive: boolean): Evaluation {
+/** Merge a workflow row with the prose the reader's lanes actually disclose. */
+function mapEvaluation(r: any, prose: any | null, scope: DisclosureScope): Evaluation {
+  const p = prose ?? {};
   return {
     id: r.id,
     cycleId: r.cycle_id,
@@ -49,15 +72,46 @@ function mapEvaluation(r: any, canReadSensitive: boolean): Evaluation {
     selfEnteredBy: r.self_entered_by,
     managerEnteredBy: r.manager_entered_by,
     finalizedBy: r.finalized_by,
-    contentWithheld: !canReadSensitive,
-    selfComments: canReadSensitive ? (r.self_comments ?? null) : null,
-    managerComments: canReadSensitive ? (r.manager_comments ?? null) : null,
-    managerStrengths: canReadSensitive ? (r.manager_strengths ?? null) : null,
-    managerDevelopment: canReadSensitive ? (r.manager_development ?? null) : null,
-    recommendedActions: canReadSensitive ? (r.recommended_actions ?? null) : null,
-    moderationNote: canReadSensitive ? (r.moderation_note ?? null) : null,
-    finalSummary: canReadSensitive ? (r.final_summary ?? null) : null,
+    contentWithheld: !hasAnyDisclosure(scope),
+    selfComments: scope.self ? (p.self_comments ?? null) : null,
+    managerComments: scope.manager ? (p.manager_comments ?? null) : null,
+    managerStrengths: scope.manager ? (p.manager_strengths ?? null) : null,
+    managerDevelopment: scope.manager ? (p.manager_development ?? null) : null,
+    recommendedActions: scope.manager ? (p.recommended_actions ?? null) : null,
+    moderationNote: scope.hr ? (p.moderation_note ?? null) : null,
+    finalSummary: scope.hr ? (p.final_summary ?? null) : null,
   };
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
+export type EvaluationReader = {
+  /** The org-wide sensitive authority (hr:sensitive:read). */
+  canReadSensitive: boolean;
+  /** The reader's linked ACTIVE employee id, when they have one. */
+  viewerEmployeeId?: string | null;
+};
+
+/**
+ * Fetch the C3 columns for exactly the rows this reader has a lane on.
+ * A reader with neither the org-wide permission nor an identity gets no query
+ * at all — the prose never enters the process.
+ */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+async function fetchProse(
+  tenantId: string, ids: string[], reader: EvaluationReader,
+): Promise<Map<string, any>> {
+  const viewer = reader.viewerEmployeeId ?? null;
+  if (ids.length === 0 || (!reader.canReadSensitive && !viewer)) return new Map();
+  const s = getAdminSupabaseClient();
+  let q = s.from("hr_evaluation").select(`id, ${C3_COLUMNS}`).eq("tenant_id", tenantId).in("id", ids);
+  if (!reader.canReadSensitive && viewer) {
+    // The narrowing that keeps the discipline: own row, or a row whose
+    // SNAPSHOTTED manager is the reader. Nothing else is even selected.
+    q = q.or(`employee_id.eq.${viewer},manager_employee_id.eq.${viewer}`);
+  }
+  const { data, error } = await q;
+  if (error) throw new Error(`[hr] evaluation content read failed: ${error.message}`);
+  return new Map((data ?? []).map((r: any) => [r.id, r]));
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
@@ -89,27 +143,44 @@ export async function getCycle(tenantId: string, cycleId: string): Promise<Perfo
  */
 export async function listEvaluations(
   tenantId: string,
-  opts: { cycleId?: string; employeeId?: string; canReadSensitive: boolean },
+  opts: { cycleId?: string; employeeId?: string; managerEmployeeId?: string } & EvaluationReader,
 ): Promise<Evaluation[]> {
   const s = getAdminSupabaseClient();
-  const columns = opts.canReadSensitive ? `${WORKFLOW_COLUMNS}, ${C3_COLUMNS}` : WORKFLOW_COLUMNS;
-  let q = s.from("hr_evaluation").select(columns).eq("tenant_id", tenantId);
+  let q = s.from("hr_evaluation").select(WORKFLOW_COLUMNS).eq("tenant_id", tenantId);
   if (opts.cycleId) q = q.eq("cycle_id", opts.cycleId);
   if (opts.employeeId) q = q.eq("employee_id", opts.employeeId);
-  const { data, error } = await q.order("created_at", { ascending: false }).limit(500);
+  if (opts.managerEmployeeId) q = q.eq("manager_employee_id", opts.managerEmployeeId);
+  const { data, error } = await q.order("created_at", { ascending: false }).limit(500)
+    .returns<WorkflowRow[]>();
   if (error) throw new Error(`[hr] evaluations read failed: ${error.message}`);
-  return (data ?? []).map((r) => mapEvaluation(r, opts.canReadSensitive));
+  const rows = data ?? [];
+  const prose = await fetchProse(tenantId, rows.map((r) => r.id), opts);
+  return rows.map((r) => {
+    const scope = evaluationDisclosure({
+      canReadSensitive: opts.canReadSensitive,
+      viewerEmployeeId: opts.viewerEmployeeId ?? null,
+      evaluation: { employeeId: r.employee_id, managerEmployeeId: r.manager_employee_id },
+    });
+    return mapEvaluation(r, prose.get(r.id) ?? null, scope);
+  });
 }
 
 export async function getEvaluation(
-  tenantId: string, evaluationId: string, canReadSensitive: boolean,
+  tenantId: string, evaluationId: string, reader: EvaluationReader,
 ): Promise<Evaluation | null> {
   const s = getAdminSupabaseClient();
-  const columns = canReadSensitive ? `${WORKFLOW_COLUMNS}, ${C3_COLUMNS}` : WORKFLOW_COLUMNS;
-  const { data, error } = await s.from("hr_evaluation").select(columns)
-    .eq("tenant_id", tenantId).eq("id", evaluationId).maybeSingle();
+  const { data, error } = await s.from("hr_evaluation").select(WORKFLOW_COLUMNS)
+    .eq("tenant_id", tenantId).eq("id", evaluationId).maybeSingle()
+    .returns<WorkflowRow | null>();
   if (error) throw new Error(`[hr] evaluation read failed: ${error.message}`);
-  return data ? mapEvaluation(data, canReadSensitive) : null;
+  if (!data) return null;
+  const scope = evaluationDisclosure({
+    canReadSensitive: reader.canReadSensitive,
+    viewerEmployeeId: reader.viewerEmployeeId ?? null,
+    evaluation: { employeeId: data.employee_id, managerEmployeeId: data.manager_employee_id },
+  });
+  const prose = hasAnyDisclosure(scope) ? await fetchProse(tenantId, [data.id], reader) : new Map();
+  return mapEvaluation(data, prose.get(data.id) ?? null, scope);
 }
 
 export async function listObjectives(

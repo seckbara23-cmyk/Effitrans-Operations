@@ -60,6 +60,10 @@ export const BASE_SECTIONS: NavigationSection[] = [
       // manager relationship) and by the database — not by a nav permission.
       // An unlinked account sees a plain explanation, never an error.
       { key: "my-leave", label: "Mes congés", href: "/conges", iconKey: "team" },
+      // HR-B2 — « Mes évaluations », ungated for the same reason as « Mes
+      // congés »: personal space, where identity (not a nav permission)
+      // decides what a visitor can do.
+      { key: "my-evaluations", label: "Mes évaluations", href: "/evaluations", iconKey: "report" },
       // "Mon Travail" and "Parcours des dossiers" are added by the navigation builder
       // when the process workspaces are live. They are the only two entries in the
       // whole sidebar that genuinely require the engine.

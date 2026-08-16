@@ -20,6 +20,7 @@ import { AssignmentPanel } from "@/components/hr/assignment-panel";
 import { listEmployeeAssignments, listOrgUnits, listPositions, listWorkLocations } from "@/lib/hr/organization";
 import { getEmployeeTimeline, HR_EVENT_LABEL_FR, type HrEventKind } from "@/lib/hr/ledger";
 import { listEmployees } from "@/lib/hr/read";
+import { resolveActiveLinkedEmployee } from "@/lib/hr/identity";
 import { EmployeeFilePanel } from "@/components/hr/employee-file-panel";
 import { listDocumentTypes, listEmployeeDocuments, listEmployeeContracts } from "@/lib/hr/employee-file";
 import { listEmployeeCustody, listEquipment, listEquipmentTypes, getLiveOnboardingCase, ONBOARDING_STATUS_FR, RETURN_OUTCOME_FR } from "@/lib/hr/onboarding";
@@ -83,9 +84,11 @@ export default async function EmployeeProfilePage({ params }: { params: { id: st
     listEmployeeDocuments(user.tenantId, employee.id, canSeeSensitive),
     listEmployeeContracts(user.tenantId, employee.id),
   ]);
-  // HR-6 — the workflow is visible on hr:read; the C3 prose needs hr:sensitive:read.
+  // HR-6 — the workflow is visible on hr:read; the C3 prose needs
+  // hr:sensitive:read, or (HR-B2/Q2) an identity lane on the row itself.
+  const viewerEmployeeId = (await resolveActiveLinkedEmployee(user.tenantId, user.id))?.id ?? null;
   const [evaluations, employeeObjectives, cycles, enrollments, courses] = await Promise.all([
-    listEvaluations(user.tenantId, { employeeId: employee.id, canReadSensitive: canSeeSensitive }),
+    listEvaluations(user.tenantId, { employeeId: employee.id, canReadSensitive: canSeeSensitive, viewerEmployeeId: viewerEmployeeId }),
     listObjectives(user.tenantId, { employeeId: employee.id }),
     listCycles(user.tenantId),
     listEnrollments(user.tenantId, { employeeId: employee.id }),

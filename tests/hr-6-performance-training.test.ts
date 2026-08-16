@@ -62,7 +62,7 @@ describe("migration chain — additive, forward-only", () => {
 });
 
 // ---------------------------------------------------------------------------
-describe("permissions — exactly ONE new code, granted to NOBODY", () => {
+describe("permissions — exactly ONE new code (HR-B2 later granted it to Direction)", () => {
   it("adds hr:performance:finalize and nothing else", () => {
     const both = code(PERF_SQL) + code(TRAIN_SQL);
     const added = [...both.matchAll(/\('(hr:[a-z:_]+)',\s*'hr'/g)].map((m) => m[1]);
@@ -83,13 +83,18 @@ describe("permissions — exactly ONE new code, granted to NOBODY", () => {
     }
   });
 
-  it("finalization is gated on its OWN authority, never on hr:manage", () => {
+  it("finalization keeps its OWN authority — HR-B2 moved the check into the RPC", () => {
+    // The pin moved with the two-lane activation: gating the ACTION on
+    // hr:performance:finalize would block the manager-of-record lane (a
+    // manager holds no hr:* permission), so the assertion lives where the
+    // authority now does — in the database.
     const a = code("lib/hr/performance-actions.ts");
-    expect(a).toContain('assertPermission("hr:performance:finalize")');
-    // The finalize function must not fall back to a broader gate.
     const fn = a.slice(a.indexOf("export async function finalizeEvaluation"));
     const body = fn.slice(0, fn.indexOf("\n}"));
     expect(body).not.toContain('assertPermission("hr:manage")');
+    expect(body).not.toContain('assertPermission("hr:performance:finalize")');
+    const mig = read("supabase/migrations/20260831000001_hr_performance_identity_activation.sql");
+    expect(mig).toContain("assert_actor_authority(p_actor, p_tenant, 'hr:performance:finalize', 'SERVICE')");
   });
 
   it("the competency CATALOG is configuration, gated on hr:config:manage", () => {
@@ -147,7 +152,10 @@ describe("security — RLS, tenant isolation, portal invisibility", () => {
 
   it("C3 evaluation prose is WITHHELD at the query, not merely at the mapping", () => {
     const p = code("lib/hr/performance.ts");
-    expect(p).toContain("canReadSensitive ? `${WORKFLOW_COLUMNS}, ${C3_COLUMNS}` : WORKFLOW_COLUMNS");
+    // HR-B2 kept the discipline and narrowed it further: the prose query runs
+    // only for a reader with a lane, and only over the rows that lane covers.
+    expect(p).toContain("if (ids.length === 0 || (!reader.canReadSensitive && !viewer)) return new Map()");
+    expect(p).toContain("or(`employee_id.eq.${viewer},manager_employee_id.eq.${viewer}`)");
     // The workflow projection must not name a single prose column.
     const workflow = p.slice(p.indexOf("const WORKFLOW_COLUMNS"), p.indexOf("const C3_COLUMNS"));
     for (const c of ["self_comments", "manager_comments", "manager_strengths",
@@ -542,7 +550,8 @@ describe("workspace activation", () => {
 
   it("the employee profile shows the workflow and withholds the C3 prose", () => {
     const p = code("app/departments/hr/[id]/page.tsx");
-    expect(p).toContain("listEvaluations(user.tenantId, { employeeId: employee.id, canReadSensitive: canSeeSensitive })");
+    // HR-B2 added the identity lane to the same call (Q2 disclosure).
+    expect(p).toContain("listEvaluations(user.tenantId, { employeeId: employee.id, canReadSensitive: canSeeSensitive, viewerEmployeeId: viewerEmployeeId })");
     expect(p).toContain("listEnrollments(user.tenantId, { employeeId: employee.id })");
     expect(p).toContain("ev.contentWithheld");
   });

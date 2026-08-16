@@ -26,14 +26,23 @@ function templateBlock(roleKey: string): string {
 }
 
 describe("the seats: leave approval landed on Direction (HR-B1); the rest stay parked", () => {
-  it("hr:leave:approve sits on DGA and DAF alone; the other two authorities stay ungranted", () => {
-    // HR-B1 moved this pin: the leave seat is live on the Direction roles.
+  it("both Direction authorities sit on DGA and DAF alone; hr:sensitive:read stays parked", () => {
+    // HR-B1 moved this pin for leave; HR-B2 moved it again for performance.
     const s = read("lib/platform/role-templates.ts");
     for (const r of ["DGA", "DAF"]) {
       expect(templateBlock(r), r).toContain('"hr:leave:approve"');
+      expect(templateBlock(r), r).toContain('"hr:performance:finalize"');
     }
-    expect(s).not.toContain('"hr:performance:finalize"');
     expect(s).not.toContain('"hr:sensitive:read"');
+  });
+
+  it("HR-B2 landed: performance finalization is two-laned in the RPC, HR616 intact", () => {
+    const m = read("supabase/migrations/20260831000001_hr_performance_identity_activation.sql");
+    expect(m).toContain("assert_actor_authority(p_actor, p_tenant, 'hr:performance:finalize', 'SERVICE')");
+    expect(m).toContain("HR616");
+    const a = code("lib/hr/performance-actions.ts");
+    const fn = a.slice(a.indexOf("export async function finalizeEvaluation"));
+    expect(fn.slice(0, 1200)).not.toContain("assertPermission(");
   });
 
   it("CEO remains ungranted — the HR-1A question (a) boundary, not an oversight", () => {

@@ -18,6 +18,7 @@ import "server-only";
  * are; the HR workspace keeps administrative oversight.
  */
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
+import { resolveLinkedEmployee } from "./identity";
 import { departmentLabelFr, isCanonicalDepartment } from "@/lib/organization/departments";
 import type { Database } from "@/lib/db/types";
 import { computeBalance } from "./leave/balance";
@@ -51,13 +52,9 @@ export type MyLeaveWorkspace = {
   orgPending: PendingDecision[];
 };
 
-export async function resolveLinkedEmployee(tenantId: string, userId: string): Promise<MyEmployee | null> {
-  const s = getAdminSupabaseClient();
-  const { data } = await s.from("employee")
-    .select("id, employee_number, first_name, last_name, department, status")
-    .eq("tenant_id", tenantId).eq("linked_app_user_id", userId).maybeSingle();
-  return data ?? null;
-}
+/** THE shared resolver (lib/hr/identity), re-exported so leave and performance
+ *  can never grow two different rules for "who is this login?". */
+export { resolveLinkedEmployee };
 
 function deptFr(code: string): string {
   return isCanonicalDepartment(code) ? departmentLabelFr(code) : code;

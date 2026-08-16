@@ -237,7 +237,11 @@ describe("boundaries unchanged (§12, §14, §16)", () => {
 
   it("parked authorities and SYSTEM_ADMIN exclusion are still CI-proven on every run", () => {
     const a1 = read("supabase/tests/hr_a1_foundation_activation_test.sql");
-    expect(a1).toMatch(/parked authorities are granted to NOBODY/);
+    // HR-B1 and HR-B2 activated two of the three parked authorities onto the
+    // Direction seats; the suite still proves the remaining one is granted to
+    // NOBODY, and that the activated pair lands nowhere else.
+    expect(a1).toMatch(/hr:sensitive:read is still granted to NOBODY/);
+    expect(a1).toMatch(/lands ONLY on the Direction seats/);
     expect(a1).toMatch(/SYSTEM_ADMIN holds NO hr:/);
   });
 

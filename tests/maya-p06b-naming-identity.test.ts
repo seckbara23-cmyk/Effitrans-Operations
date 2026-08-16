@@ -225,7 +225,10 @@ describe("9/10/11/12 — nothing else moved", () => {
     // the files on disk, and THIS phase's own files contain no migration.
     const declared = Number(/MIGRATION_COUNT = (\d+)/.exec(read("lib/platform/ops/build-info.ts"))![1]);
     expect(migrations).toHaveLength(declared);
-    expect(migrations.filter((f) => /p0[._-]?6|naming|identity/i.test(f))).toEqual([]);
+    // NARROWED (HR-B2): "identity" alone matched a later, unrelated phase's
+    // migration (hr_performance_identity_activation). The property this test
+    // owns is that THIS phase — dossier naming/identity — shipped none.
+    expect(migrations.filter((f) => /p0[._-]?6|dossier_naming|naming_identity/i.test(f))).toEqual([]);
   });
 
   it("search widening belongs to P0.6-C, and is pinned there", () => {

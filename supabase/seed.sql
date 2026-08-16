@@ -1155,6 +1155,16 @@ where r.tenant_id = '00000000-0000-0000-0000-000000000001'
   and r.code in ('DAF', 'DGA')
 on conflict do nothing;
 
+-- HR-B2 — the same Direction seats finalize performance reviews (mirrors
+-- migration 20260831000001). CEO again deliberately absent; HR_OFFICER too —
+-- preparing a review and freezing it forever are different authorities.
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id from public.role r
+join public.permission p on p.code = 'hr:performance:finalize'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('DAF', 'DGA')
+on conflict do nothing;
+
 -- ===========================================================================
 -- Phase 11.0D — the Autorisation visa chain (DEC-C08/C11). Mirrors migration
 -- 20260726000002. finance:expense:sign goes ONLY to the six seats that sign this

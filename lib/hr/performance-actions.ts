@@ -3,17 +3,24 @@
 /**
  * HR-6 — Performance actions.
  *
- * SEPARATION OF AUTHORITY, EXPLICIT:
- *   cycles · objectives · self-assessment · manager review · competencies → hr:manage
- *   FINALIZE an evaluation                                    → hr:performance:finalize
- *   competency CATALOG and scales                             → hr:config:manage
+ * SEPARATION OF AUTHORITY, EXPLICIT (HR-B2 activated the identity half):
+ *   cycles · objectives · competency assessment → hr:manage
+ *   competency CATALOG and scales               → hr:config:manage
+ *   the four evaluation STAGES                  → decided by the DATABASE:
+ *     self-assessment / acknowledgment  the employee themselves (linked ACTIVE
+ *                                       employee = the evaluation's employee),
+ *                                       else hr:manage (the HR desk);
+ *     manager review                    the manager SNAPSHOTTED on the
+ *                                       evaluation, else hr:manage;
+ *     FINALIZE                          the manager of record, else the
+ *                                       org-wide `hr:performance:finalize`
+ *                                       (Direction: DGA/DAF).
  *
- * `hr:performance:finalize` exists in the catalogue and is GRANTED TO NO ROLE
- * until management ratifies it (docs/hr/hr-6-permission-analysis.md). It
- * therefore denies everyone today — deliberately, on the `hr:leave:approve`
- * precedent. Finalization freezes a person's performance record permanently;
- * letting it ride hr:manage would make that irreversible act as routine as
- * editing a phone number.
+ * These actions therefore resolve WHO is calling and let
+ * migration 20260831000001's RPCs decide WHETHER they may — a permission gate
+ * here would BLOCK the identity lanes, since an employee and a manager hold no
+ * hr:* permission at all. HR616 (a finalizer never finalizes the review they
+ * authored) and every HR-6 invariant are enforced in the database, unchanged.
  *
  * Every consequential operation goes through a transactional RPC (ADR-HR2-01 as
  * hardened in HR-4/HR-5): the transition, the domain writes and the ledger
@@ -23,6 +30,7 @@
 import { revalidatePath } from "next/cache";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
+import { getCurrentUser } from "@/lib/auth/current-user";
 import { writeAudit } from "@/lib/audit/log";
 import { WEIGHT_TOTAL_BP } from "./performance/scoring";
 import type { Database } from "@/lib/db/types";
@@ -40,11 +48,24 @@ const RPC_ERRORS: Record<string, string> = {
   HR616: "same_actor_manager", HR617: "weight_total_mismatch", HR618: "not_finalized",
   HR619: "weight_out_of_range", HR620: "title_required", HR621: "cycle_closed",
   HR622: "objective_not_found",
+  // HR-B2 identity lanes.
+  HR630: "actor_invalid", HR631: "own_evaluation",
 };
 const mapRpc = (e: { code?: string; message?: string } | null) => ({
-  error: (e?.code && RPC_ERRORS[e.code]) || "save_failed",
+  // EFA* = the trusted-actor framework refused: the caller is neither the
+  // person concerned, nor the manager of record, nor an authorized seat.
+  error: (e?.code && RPC_ERRORS[e.code])
+    || (e?.code?.startsWith("EFA") ? "forbidden_stage" : "save_failed"),
   detail: e?.message,
 });
+
+const MY_PATH = "/evaluations";
+
+/** The caller, or null. Identity only — authority lives in the RPCs. */
+async function actor(): Promise<{ id: string; tenantId: string } | null> {
+  const user = await getCurrentUser();
+  return user ? { id: user.id, tenantId: user.tenantId } : null;
+}
 
 const PATH = "/departments/hr/performance";
 
@@ -71,6 +92,17 @@ export async function createPerformanceCycle(input: {
   if (input.periodEnd < input.periodStart) return { ok: false, error: "invalid_period" };
 
   const s = getAdminSupabaseClient();
+  // HR-B2 — the vocabulary check HR-6 promised ("validated app-side against
+  // hr_configuration", the employment_kinds idiom). An EMPTY configured list
+  // means the tenant has not named its cycle kinds, and any non-empty kind is
+  // accepted: the platform never invents the words a company uses.
+  const { data: cfg } = await s.from("hr_configuration")
+    .select("performance_cycle_kinds").eq("tenant_id", admin.tenantId).maybeSingle();
+  const kinds = ((cfg?.performance_cycle_kinds as string[] | null) ?? [])
+    .map((k) => String(k).trim().toUpperCase()).filter(Boolean);
+  if (kinds.length > 0 && !kinds.includes(input.cycleKind.trim().toUpperCase())) {
+    return { ok: false, error: "invalid_cycle_kind" };
+  }
   const { data, error } = await s.from("hr_performance_cycle").insert({
     tenant_id: admin.tenantId, code: input.code.trim(), label_fr: input.labelFr.trim(),
     cycle_kind: input.cycleKind.trim(), period_start: input.periodStart, period_end: input.periodEnd,
@@ -220,84 +252,102 @@ export async function updateObjectiveProgress(input: {
 /* ========================================================================== */
 
 /**
- * Stage 1. NOTE ON WHO IS SPEAKING: until an employee self-service surface
- * exists (HRQ-P1), the login recorded here belongs to an HR operator entering
- * the employee's words, not to the employee. The column is named
- * `self_entered_by` for exactly that reason, and the audit records the same.
+ * Stage 1. WHO IS SPEAKING, resolved by the database: the employee themselves
+ * when their linked ACTIVE employee record IS this evaluation's employee — the
+ * HRQ-P1 surface HR-6 anticipated now exists at /evaluations — otherwise an HR
+ * operator holding hr:manage, entering the employee's words on their behalf.
+ * `self_entered_by` keeps recording the LOGIN either way, and the ledger event
+ * records which of the two it was.
  */
 export async function submitSelfAssessment(evaluationId: string, comments: string): Promise<PerfResult> {
-  let admin;
-  try { admin = await assertPermission("hr:manage"); } catch { return { ok: false, error: "forbidden" }; }
+  const me = await actor();
+  if (!me) return { ok: false, error: "forbidden" };
   const s = getAdminSupabaseClient();
   const { error } = await s.rpc("hr_submit_self_assessment", {
-    p_tenant: admin.tenantId, p_evaluation: evaluationId, p_actor: admin.id,
+    p_tenant: me.tenantId, p_evaluation: evaluationId, p_actor: me.id,
     p_comments: comments,
   });
   if (error) return { ok: false, ...mapRpc(error) };
   // C3 DISCIPLINE: the audit records THAT a stage happened, never its prose.
-  await writeAudit({ action: "hr.performance.self_submitted", actorId: admin.id,
-    tenantId: admin.tenantId, entity: "hr_evaluation", entityId: evaluationId });
+  await writeAudit({ action: "hr.performance.self_submitted", actorId: me.id,
+    tenantId: me.tenantId, entity: "hr_evaluation", entityId: evaluationId });
   revalidatePath(PATH);
+  revalidatePath(MY_PATH);
   return { ok: true, id: evaluationId };
 }
 
-/** Stage 2. The RPC refuses an actor who already filled the self-assessment. */
+/**
+ * Stage 2. The manager SNAPSHOTTED on the evaluation reviews it; the HR desk
+ * (hr:manage) may still enter a review on their behalf. The RPC refuses an
+ * actor who filled the self-assessment (HR614) and anyone reviewing their own
+ * evaluation (HR631).
+ */
 export async function submitManagerReview(input: {
   evaluationId: string; comments: string; strengths?: string | null;
   development?: string | null; recommendedActions?: string | null;
 }): Promise<PerfResult> {
-  let admin;
-  try { admin = await assertPermission("hr:manage"); } catch { return { ok: false, error: "forbidden" }; }
+  const me = await actor();
+  if (!me) return { ok: false, error: "forbidden" };
   const s = getAdminSupabaseClient();
   const { error } = await s.rpc("hr_submit_manager_review", {
-    p_tenant: admin.tenantId, p_evaluation: input.evaluationId, p_actor: admin.id,
+    p_tenant: me.tenantId, p_evaluation: input.evaluationId, p_actor: me.id,
     p_comments: input.comments, p_strengths: input.strengths || null,
     p_development: input.development || null, p_actions: input.recommendedActions || null,
   });
   if (error) return { ok: false, ...mapRpc(error) };
-  await writeAudit({ action: "hr.performance.manager_submitted", actorId: admin.id,
-    tenantId: admin.tenantId, entity: "hr_evaluation", entityId: input.evaluationId });
+  await writeAudit({ action: "hr.performance.manager_submitted", actorId: me.id,
+    tenantId: me.tenantId, entity: "hr_evaluation", entityId: input.evaluationId });
   revalidatePath(PATH);
+  revalidatePath(MY_PATH);
   return { ok: true, id: input.evaluationId };
 }
 
 /**
- * Stage 3 — THE consequential act. Gated on hr:performance:finalize, which
- * nobody holds until ratification. The RPC independently enforces the weight
- * total and the actor separation, so this gate is not the only thing standing
- * between a record and permanence.
+ * Stage 3 — THE consequential act, two lanes decided in the database: the
+ * manager of record for their own scope, or an org-wide
+ * `hr:performance:finalize` seat (Direction). A permission gate here would
+ * block the first lane — a manager holds no hr:* permission — so authority is
+ * asserted where it can see the evaluation: inside the RPC, which also keeps
+ * enforcing the weight total (HR617) and HR616, so a manager can never
+ * finalize the review they themselves wrote.
  */
 export async function finalizeEvaluation(input: {
   evaluationId: string; moderationNote?: string | null; finalSummary?: string | null;
 }): Promise<PerfResult> {
-  let admin;
-  try { admin = await assertPermission("hr:performance:finalize"); }
-  catch { return { ok: false, error: "forbidden_finalize" }; }
+  const me = await actor();
+  if (!me) return { ok: false, error: "forbidden_finalize" };
   const s = getAdminSupabaseClient();
   const { error } = await s.rpc("hr_finalize_evaluation", {
-    p_tenant: admin.tenantId, p_evaluation: input.evaluationId, p_actor: admin.id,
+    p_tenant: me.tenantId, p_evaluation: input.evaluationId, p_actor: me.id,
     p_moderation_note: input.moderationNote || null, p_final_summary: input.finalSummary || null,
   });
   if (error) return { ok: false, ...mapRpc(error) };
-  await writeAudit({ action: "hr.performance.finalized", actorId: admin.id,
-    tenantId: admin.tenantId, entity: "hr_evaluation", entityId: input.evaluationId });
+  await writeAudit({ action: "hr.performance.finalized", actorId: me.id,
+    tenantId: me.tenantId, entity: "hr_evaluation", entityId: input.evaluationId });
   revalidatePath(PATH);
+  revalidatePath(MY_PATH);
   return { ok: true, id: input.evaluationId };
 }
 
-/** Stage 4 — receipt, never approval. The trigger guarantees nothing else moves. */
+/**
+ * Stage 4 — receipt, never approval, and now genuinely the employee's own:
+ * the person concerned acknowledges from /evaluations, with the HR desk
+ * (hr:manage) still able to record a receipt taken elsewhere. The trigger
+ * guarantees the acknowledgment cannot alter one character of what was written.
+ */
 export async function acknowledgeEvaluation(evaluationId: string, note?: string): Promise<PerfResult> {
-  let admin;
-  try { admin = await assertPermission("hr:manage"); } catch { return { ok: false, error: "forbidden" }; }
+  const me = await actor();
+  if (!me) return { ok: false, error: "forbidden" };
   const s = getAdminSupabaseClient();
   const { error } = await s.rpc("hr_acknowledge_evaluation", {
-    p_tenant: admin.tenantId, p_evaluation: evaluationId, p_actor: admin.id,
+    p_tenant: me.tenantId, p_evaluation: evaluationId, p_actor: me.id,
     p_note: note?.trim() || null,
   });
   if (error) return { ok: false, ...mapRpc(error) };
-  await writeAudit({ action: "hr.performance.acknowledged", actorId: admin.id,
-    tenantId: admin.tenantId, entity: "hr_evaluation", entityId: evaluationId });
+  await writeAudit({ action: "hr.performance.acknowledged", actorId: me.id,
+    tenantId: me.tenantId, entity: "hr_evaluation", entityId: evaluationId });
   revalidatePath(PATH);
+  revalidatePath(MY_PATH);
   return { ok: true, id: evaluationId };
 }
 

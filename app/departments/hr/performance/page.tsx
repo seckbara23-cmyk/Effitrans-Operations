@@ -11,6 +11,7 @@ import { StatCard } from "@/components/departments/stat-card";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { listEmployees } from "@/lib/hr/read";
+import { resolveActiveLinkedEmployee } from "@/lib/hr/identity";
 import {
   listCycles, listEvaluations, listObjectives, listCompetencies, performanceCounts,
 } from "@/lib/hr/performance";
@@ -34,10 +35,13 @@ export default async function HrPerformancePage() {
   const canFinalize = hasPermission(permissions, "hr:performance:finalize");
   const canConfigure = hasPermission(permissions, "hr:config:manage");
   const canReadSensitive = hasPermission(permissions, "hr:sensitive:read");
+  // HR-B2/Q2 — an HR operator who is ALSO an employee reads their own prose
+  // here too: the lane belongs to the person, not to the page.
+  const me = await resolveActiveLinkedEmployee(user.tenantId, user.id);
 
   const [cycles, evaluations, objectives, competencies, counts, directory] = await Promise.all([
     listCycles(user.tenantId),
-    listEvaluations(user.tenantId, { canReadSensitive }),
+    listEvaluations(user.tenantId, { canReadSensitive, viewerEmployeeId: me?.id ?? null }),
     listObjectives(user.tenantId),
     listCompetencies(user.tenantId),
     performanceCounts(user.tenantId),

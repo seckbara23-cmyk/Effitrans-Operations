@@ -3538,6 +3538,7 @@ export type Database = {
           id: string; tenant_id: string; status: string;
           employee_number_keep_existing: boolean; employee_number_prefix: string | null;
           employment_kinds: unknown; termination_reasons: unknown;
+          performance_cycle_kinds: unknown;
           activated_by: string | null; activated_at: string | null;
           created_at: string; updated_at: string;
         };
@@ -3545,12 +3546,13 @@ export type Database = {
           id?: string; tenant_id: string; status?: string;
           employee_number_keep_existing?: boolean; employee_number_prefix?: string | null;
           employment_kinds?: unknown; termination_reasons?: unknown;
+          performance_cycle_kinds?: unknown;
           activated_by?: string | null; activated_at?: string | null;
         };
         Update: {
           status?: string; employee_number_keep_existing?: boolean;
           employee_number_prefix?: string | null; employment_kinds?: unknown;
-          termination_reasons?: unknown; activated_by?: string | null; activated_at?: string | null;
+          termination_reasons?: unknown; performance_cycle_kinds?: unknown; activated_by?: string | null; activated_at?: string | null;
         };
         Relationships: [];
       };

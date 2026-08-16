@@ -1,6 +1,8 @@
 -- RLS + invariants test — HR-6 Performance (migration 78). BEGIN/ROLLBACK.
 -- Proves: tenant confinement + hr:read gate; SYSTEM_ADMIN sees 0 (DEC-B25);
--- portal sees 0; hr:performance:finalize exists and is granted to NOBODY;
+-- portal sees 0; hr:performance:finalize is granted to the Direction seats
+-- (DAF/DGA) and NOBODY else — HR-B2 activated it, and the identity-lane proofs
+-- live in hr_b2_performance_identity_test.sql;
 -- the four-stage workflow enforces ACTOR SEPARATION at every seat; the weight
 -- total is enforced AT FINALIZATION and only when objectives exist; a finalized
 -- evaluation is immutable except for the acknowledgment; acknowledgment cannot
@@ -8,6 +10,12 @@
 -- supersedes rather than rewrites; and the ledger receives the mandated events.
 
 begin;
+
+-- HR-B2/EFA08: the performance RPCs now call assert_actor_authority, whose
+-- SERVICE branch refuses a session-bearing caller. This suite therefore holds
+-- NO jwt claims while it exercises them (it sets claims only at the end, for
+-- the RLS reads, where no RPC runs).
+select set_config('request.jwt.claims', '', true);
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-00000000006a', 'hr6-self@test.local'),
@@ -29,6 +37,26 @@ on conflict do nothing;
 insert into public.user_role (user_id, role_id, tenant_id)
 select '00000000-0000-0000-0000-00000000006c', r.id, r.tenant_id from public.role r
 where r.tenant_id = '00000000-0000-0000-0000-000000000001' and r.code = 'SYSTEM_ADMIN'
+on conflict do nothing;
+
+-- HR-B2 — the reviewing and finalizing actors carry real authority now.
+-- `hr6-mgr` acts as the HR desk proxy for the manager stage (hr:manage);
+-- `hr6-final` holds the Direction finalization seat. Granting these is what
+-- keeps each assertion below testing ITS OWN invariant rather than the new
+-- authority check.
+insert into public.role (id, tenant_id, code, label_fr) values
+  ('00000000-0000-0000-0000-0000000060c1', '00000000-0000-0000-0000-000000000001', 'HR6_PROXY', 'Proxy RH (test HR-6)'),
+  ('00000000-0000-0000-0000-0000000060c2', '00000000-0000-0000-0000-000000000001', 'HR6_FINAL', 'Finalisation (test HR-6)')
+on conflict (tenant_id, code) do nothing;
+insert into public.role_permission (role_id, permission_id)
+select '00000000-0000-0000-0000-0000000060c1', p.id from public.permission p where p.code = 'hr:manage'
+on conflict do nothing;
+insert into public.role_permission (role_id, permission_id)
+select '00000000-0000-0000-0000-0000000060c2', p.id from public.permission p where p.code = 'hr:performance:finalize'
+on conflict do nothing;
+insert into public.user_role (user_id, role_id, tenant_id) values
+  ('00000000-0000-0000-0000-00000000006b', '00000000-0000-0000-0000-0000000060c1', '00000000-0000-0000-0000-000000000001'),
+  ('00000000-0000-0000-0000-00000000006e', '00000000-0000-0000-0000-0000000060c2', '00000000-0000-0000-0000-000000000001')
 on conflict do nothing;
 insert into public.client (id, tenant_id, name) values
   ('00000000-0000-0000-0000-0000000ccd06', '00000000-0000-0000-0000-000000000001', 'HR6 Client')
@@ -89,10 +117,15 @@ declare
 begin
   perform set_config('role', 'postgres', true);
 
-  -- The finalize authority exists and is held by NOBODY (unratified).
+  -- HR-B2: the finalize authority exists; its grants land ONLY on the
+  -- Direction seats (and this suite's own finalization fixture role).
+  -- perm_grants counts grants OUTSIDE that set: 0.
   select count(*) into perm_rows from public.permission where code = 'hr:performance:finalize';
   select count(*) into perm_grants from public.role_permission rp
-    join public.permission p on p.id = rp.permission_id where p.code = 'hr:performance:finalize';
+    join public.permission p on p.id = rp.permission_id
+    join public.role r on r.id = rp.role_id
+    where p.code = 'hr:performance:finalize'
+      and r.code not in ('DAF', 'DGA', 'HR6_FINAL');
 
   -- Opening the cycle materializes evaluations and emits one event per employee.
   select public.hr_open_performance_cycle(
