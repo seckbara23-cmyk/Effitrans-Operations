@@ -312,6 +312,22 @@ describe("HR-8B — the boundaries hold on screen", () => {
     expect(s).not.toMatch(/returnEquipment|hr_return_equipment|returned_on/);
   });
 
+  it("HR-8E D-5 — a suspended account is never described as still active", () => {
+    // Found reconciling the final UAT step: after Actif → Suspendu the panel
+    // still said « encore actif ». Three states, three truths; only archival
+    // closes the handoff, and Administration alone performs it.
+    const s = code(STUDIO);
+    expect(s).toMatch(/gates\.account\.status === "archived" \?/);
+    expect(s).toMatch(/gates\.account\.status === "inactive" \?/);
+    expect(s).toMatch(/gatesByCase\[handoffFor\]\?\.account\.status === "active"/);
+    // The vocabulary is the platform's, not a second copy.
+    expect(s).toMatch(/STAFF_STATUS_LABEL\.inactive/);
+    expect(s).toMatch(/from "@\/lib\/users\/lifecycle"/);
+    expect(read(STUDIO)).toContain("la connexion n&apos;est plus");
+    // Still no account write, and still only a link out.
+    expect(s).not.toMatch(/setUserStatus|archiveUser|banUser/);
+  });
+
   it("the account step is a link to Administration, never an action", () => {
     const s = code(STUDIO);
     expect(s).toContain('href="/users"');

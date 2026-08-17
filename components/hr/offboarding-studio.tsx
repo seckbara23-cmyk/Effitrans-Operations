@@ -20,6 +20,9 @@ import {
   openOffboardingCase, completeOffboardingItem, completeOffboardingCase, cancelOffboardingCase,
 } from "@/lib/hr/offboarding-actions";
 import type { Database } from "@/lib/db/types";
+// The account-status vocabulary belongs to the platform's user lifecycle; HR
+// reads it, never redefines it (and never writes it).
+import { STAFF_STATUS_LABEL } from "@/lib/users/lifecycle";
 
 type Tbl = Database["public"]["Tables"];
 type Case = Tbl["hr_offboarding_case"]["Row"];
@@ -128,7 +131,11 @@ export function OffboardingStudio({
 
       {handoffFor && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800" role="status">
-          <p className="font-medium">Départ clôturé. L&apos;accès à la plateforme n&apos;a PAS été désactivé.</p>
+          <p className="font-medium">
+            {gatesByCase[handoffFor]?.account.status === "active"
+              ? "Départ clôturé. L'accès à la plateforme n'a PAS été désactivé."
+              : "Départ clôturé. Le compte de connexion n'est pas encore archivé."}
+          </p>
           <p className="mt-1">
             La désactivation ou l&apos;archivage du compte de connexion est une action distincte, confiée à
             l&apos;administration des comptes. Pour la réaliser, utilisez{" "}
@@ -360,10 +367,20 @@ export function OffboardingStudio({
                       {/* --- platform access: a prompt, never an action ------- */}
                       <div>
                         <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Accès plateforme</p>
+                        {/* The account's real state, in the platform's own words: a
+                            suspended account can no longer sign in, and calling it
+                            « encore actif » would be false. Only archival closes the
+                            handoff — and only Administration performs it. */}
                         {!gates?.account.linked ? (
                           <p className="text-sm text-slate-500">Cet employé n&apos;a pas de compte de connexion.</p>
                         ) : gates.account.status === "archived" ? (
                           <p className="text-sm text-slate-500">Le compte de connexion est archivé.</p>
+                        ) : gates.account.status === "inactive" ? (
+                          <p className="text-sm text-slate-700">
+                            Le compte de connexion est « {STAFF_STATUS_LABEL.inactive} » : la connexion n&apos;est plus
+                            possible. Son archivage définitif relève de l&apos;administration des comptes :{" "}
+                            <Link href="/users" className="text-teal-700 hover:underline">Administration → Utilisateurs</Link>.
+                          </p>
                         ) : (
                           <p className="text-sm text-slate-700">
                             Le compte de connexion est encore actif. Sa désactivation relève de l&apos;administration des

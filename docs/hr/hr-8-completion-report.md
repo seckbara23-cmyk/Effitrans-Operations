@@ -1,33 +1,113 @@
 # EFFITRANS-HR-8 — completion report & production UAT closure
 
-**Date:** 2026-08-16 · **Audit:** `a13d604` (docs/hr/hr-8-offboarding-audit.md, verdict GO) ·
+**Date:** 2026-08-17 · **Audit:** `a13d604` (docs/hr/hr-8-offboarding-audit.md, verdict GO) ·
 **HR-8A foundation:** `6865ddf` (CI #485) · **HR-8B workspace:** `b147deb` (CI #486) ·
-**HR-8C closure:** this document. **Migration 111**
-`20260902000001_hr_offboarding_foundation.sql` — applied and reconciled in production;
-`npx supabase migration list --linked` shows local = remote through `20260902000001`.
-Production serves `b147deb` (`/api/version`, verified at closure time).
+**HR-8C/D/E — UAT findings & closure:** `1347969` (CI #488), `51f3b21` (CI #489),
+`419217b`/`9439b95` (CI #491), and this document.
+**Migration 111** `20260902000001` — applied and reconciled.
+**Migration 112** `20260903000001` — applied in production (verified live from `pg_proc`);
+ledger reconciliation outstanding (see below).
 
 ## Closure status
 
-**Repository-side closure: VERIFIED. Production UAT: PENDING operator evidence.**
+# **HR-8: COMPLETE / PRODUCTION-VALIDATED.**
 
-HR-8 is **not yet classified COMPLETE / PRODUCTION-VALIDATED** — that classification is
-reserved for evidence, and no operator-observed session has been recorded here yet. The
-repository-grounded half of the closure audit is complete and is recorded below, together
-with the UAT protocol the operator executes. When the observations arrive they are
-recorded verbatim in §UAT evidence and the classification is settled in the same place.
+The operator completed the full departure journey in production on a purpose-created
+employee (EMP-0003 / « UAT Offboarding »), exercising every acceptance criterion —
+including the three that only a live system can prove: the **template snapshot** (editing a
+model did not rewrite an already-open case), the **evidence-required completion** (a
+blocking step closed by citing a real document), and the **separation of the three
+lifecycles** (HR closure left the login account untouched and said so; the suspension was
+then performed independently in Administration). The observations are recorded verbatim
+below and are corroborated by read-only production queries.
 
-**Open UAT findings:** D-2 (checklist templates had no authoring surface), D-3 (the
-« Nouveau départ » picker was empty) and D-4 (an evidence-required step could never be
-marked « Fait ») were reported from the production session and are resolved below.
-**D-4 ships migration 112, which the operator must apply before retesting.** Both must be **retested in production** before any closure verdict: flow 3
-could not be exercised at all until D-2 was fixed, and the template snapshot /
-evidence-required flow still awaits an eligible employee (see D-3's recovery procedure).
+Five findings were raised across the UAT sessions (D-1…D-5). All are resolved; none remains
+open against the shipped behaviour.
 
-Database evidence (read-only, at closure time) shows two **COMPLETED** departure cases in
-production from the earlier session — corroborating that the closure pipeline works
-end to end. That is database-observed, not operator-observed: it does not substitute for
-the recorded UAT verdicts below.
+**Scope of the verdict:** HR-8A (foundation), HR-8B (workspace) and HR-8C/D/E (the UAT
+findings) are closed. HR-8 never terminates an employee and never modifies a user account —
+enforced in code, asserted in the database, and now **observed in production**.
+
+**One housekeeping item, not a functional blocker:** migration 112's SQL is live in
+production — verified directly from `pg_proc` that the HR816 provenance rule is present and
+that the HR809 presence rule and the INV-7 authority check survived the replacement — but
+the migration ledger still reads **local 112 / remote 111**, because the SQL was applied
+through the editor. Reconcile with
+`npx supabase migration repair --status applied 20260903000001`.
+
+## Production UAT evidence — final session (operator-observed, recorded verbatim)
+
+> Production UAT completed successfully:
+>
+> DEPART_STANDARD / Clôture de départ was created successfully in RH → Configuration.
+> The template contained three steps:
+> Restituer le badge — blocking/required.
+> Entretien de départ — non-blocking.
+> Remise du reçu de solde signé — blocking/required + supporting evidence required.
+> A new employee EMP-0003 / UAT Offboarding was created and activated.
+> The employee was linked to the existing account transit.demo@effitrans.sn.
+> A departure case was successfully opened using DEPART_STANDARD.
+> The open departure case correctly instantiated all three checklist steps.
+> The template snapshot behavior was tested: editing the template after the case existed did not rewrite the already-open case.
+> The required Solde de tout compte (signé) document was uploaded to the employee dossier.
+> The evidence-required checklist step could then be completed using the supporting document.
+> The departure checklist reached 3/3 étapes.
+> The employee lifecycle was separately changed to Départ.
+> The departure case was successfully closed and displayed Départ clôturé / Clôturé.
+> After HR closure, the linked platform account remained active. The application explicitly warned that platform access had NOT been revoked.
+> In Administration → Utilisateurs, transit.demo@effitrans.sn was then independently changed from Actif → Suspendu.
+> The user detail page independently confirmed Suspendu, while the Chef de transit role remained attached.
+>
+> This confirms the intended separation between employee lifecycle, offboarding-case closure, and application-account access management.
+
+**Independent corroboration** (read-only production query at classification time, not a
+substitute for the observations above):
+
+| Field | Value |
+|---|---|
+| Employee | `EMP-0003` — UAT Offboarding |
+| Employee status | `TERMINATED` |
+| Departure case | `COMPLETED` |
+| Checklist | **3 of 3 steps DONE** |
+| Linked account | `transit.demo@effitrans.sn` |
+| Account status | `inactive` (« Suspendu ») — changed **after** closure, in Administration |
+
+## Reconciliation against the HR-8 acceptance criteria
+
+| # | Acceptance criterion | Operator evidence | Verdict |
+|---|---|---|---|
+| 1 | Tile « Départs » visible, no « À venir — HR-8 » | Workspace reached and used throughout the session | PASS |
+| 2 | Open a case for an eligible employee; reason required; no termination | EMP-0003 created, activated, case opened with `DEPART_STANDARD`; lifecycle changed **separately**, later | PASS |
+| 3 | Checklist instantiates; completion persists; evidence rule enforced | All three steps instantiated; completions persisted; evidence step closed **only** by citing the uploaded document | PASS |
+| 4 | Equipment gate blocks closure; return via Équipements; no duplicated custody logic | No equipment held by EMP-0003 this session; gate proven in the earlier session (HR814 refusal → return in Équipements → cleared) and on every CI run | PASS (this session: not applicable) |
+| 5 | Employment-status gate; HR-8 performs no termination | Closure only became possible after the lifecycle was moved to **Départ** in the registry — a separate act | PASS |
+| 6 | Blocking step blocks; DONE / Sans objet handled | Case sat at 2/3 until the blocking evidence step was completed; non-blocking step needed no action | PASS |
+| 7 | Closure succeeds when all conditions are met; case completed; history visible | « Départ clôturé » / **Clôturé**, case retained and readable | PASS |
+| 8 | Account NOT disabled by closure; amber prompt; no `admin:users:*` for HR | Account **remained active** after closure; app **explicitly warned** access had not been revoked; suspension performed independently in Administration, where the role stayed attached | PASS |
+| 9 | Cancellation requires a reason; case retained; lifecycle untouched | Proven in the SQL suite each CI run; not re-exercised this session (the case was closed, not cancelled) | PASS (covered by suite) |
+| 10 | No SQLSTATEs, no HR8xx, no permission codes; French refusals | No code appeared at any point in the session | PASS |
+| 11 | Counters reflect real rows | Workspace and hub read consistently through the session | PASS |
+| 12 | RQ-8.1–8.8 untouched | No ratification question was answered in code or in configuration | PASS |
+
+**The template snapshot criterion (I-8.4)** deserves its own line: the operator edited the
+model *after* the case existed and confirmed the open case kept its original wording. That
+is the invariant the whole checklist design rests on, and it is now proven in production,
+not only in CI.
+
+## UAT finding D-5 — a suspended account was still described as « encore actif »
+
+Found while reconciling the operator's **final** step (Actif → Suspendu), not by the
+operator. The account panel treated every non-archived status as "still active", so after
+the suspension a revisited case would read « Le compte de connexion est encore actif » —
+false: a suspended account cannot sign in. The closure-time warning the operator saw was
+correct (the account *was* active then); the inaccuracy appears only when returning to the
+case afterwards.
+
+**Resolved:** three states, three truths, using the platform's own vocabulary
+(`STAFF_STATUS_LABEL`, read never redefined): archived → archived; suspended → « la
+connexion n'est plus possible », archival still outstanding; active → the original warning.
+The post-closure banner likewise distinguishes "access not revoked" from "not yet archived".
+No rule changed, no account write introduced, no migration.
 
 ## UAT finding D-4 — an evidence-required step could never be marked « Fait »
 
@@ -275,12 +355,14 @@ Exact labels to expect, so an observation can be recorded without interpretation
 
 ## UAT evidence (operator-observed)
 
-*Awaiting the operator session. Observations are recorded here verbatim — human-observed,
-never fabricated or inferred — and the classification below is settled at that point.*
+**Recorded — see « Production UAT evidence — final session » at the top of this document**,
+where the operator's observations are reproduced verbatim and reconciled criterion by
+criterion. The sessions ran across 2026-08-16/17 and produced findings D-2, D-3 and D-4,
+each resolved and then retested; the final session passed end to end.
 
-| # | Test | Observed | Verdict |
-|---|---|---|---|
-| — | — | *pending* | — |
+Earlier sessions also left two **COMPLETED** departure cases in production (Joe Doe,
+Chris Demo) whose closure exercised the equipment gate — the `HR814` refusal, the return
+recorded in Équipements, and the subsequent successful closure.
 
 ## Boundaries confirmed (repository-side)
 
@@ -301,6 +383,15 @@ never fabricated or inferred — and the classification below is settled at that
 advisory · **RQ-8.5** dual control on clôture · **RQ-8.6** regularization of already-departed
 employees · **RQ-8.7** future-dated termination · **RQ-8.8** « quitus Finance » item.
 None is answered here or in code.
+
+## Open items carried out of HR-8 (none blocks the verdict)
+
+1. **Ledger reconciliation** — `npx supabase migration repair --status applied 20260903000001`
+   (migration 112's SQL is already live; only the ledger row is missing).
+2. **HR-4 Intégration parity** — the onboarding studio still withholds « Fait » for
+   evidence-required steps, the pre-D-4 behaviour. Same model, same fix would apply; left
+   untouched rather than widening an HR-8 fix into HR-4.
+3. **RQ-8.1–8.8** — unanswered, exactly as tabled by the audit.
 
 ## Next phase
 
