@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/page-header";
+import { BrandGuideLink } from "@/components/brand/guide-link";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { getBrandCenterOverview } from "@/lib/brand/server/service";
@@ -43,6 +44,7 @@ export default async function BrandCenterPage() {
   return (
     <div className="animate-fade-in space-y-6">
       <PageHeader meta="Administration" title="Centre de marque" subtitle="La source unique de l'identité de marque du tenant. Aucune valeur n'est inventée : les éléments manquants sont à fournir par la Direction." />
+      <BrandGuideLink route="/brand-center" />
 
       <section className="surface p-5">
         <div className="flex items-center gap-3">

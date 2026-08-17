@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/ui/page-header";
+import { BrandGuideLink } from "@/components/brand/guide-link";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { getBrandCenterOverview } from "@/lib/brand/server/service";
@@ -18,6 +19,7 @@ export default async function BrandMembershipsPage() {
   return (
     <div className="animate-fade-in space-y-6">
       <PageHeader meta="Centre de marque" title="Réseaux internationaux" subtitle="Adhésions et affiliations (WCA, FIATA…). Saisissez uniquement des informations approuvées ; les logos partenaires ne peuvent être ni modifiés ni recolorés." />
+      <BrandGuideLink route="/brand-center/memberships" />
       <MembershipManager memberships={memberships} />
     </div>
   );

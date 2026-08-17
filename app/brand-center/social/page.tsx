@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/ui/page-header";
+import { BrandGuideLink } from "@/components/brand/guide-link";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { CommunicationStudio } from "@/components/brand/communication-studio";
@@ -16,6 +17,7 @@ export default async function SocialPage() {
   return (
     <div className="animate-fade-in space-y-6">
       <PageHeader meta="Centre de marque" title="Réseaux sociaux" subtitle="Modèles approuvés (bannières LinkedIn, publications, annonces) pilotés par le Centre de marque. Pas de campagne, pas de programmation." />
+      <BrandGuideLink route="/brand-center/social" />
       <CommunicationStudio />
     </div>
   );

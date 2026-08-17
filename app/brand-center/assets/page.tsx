@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/ui/page-header";
+import { BrandGuideLink } from "@/components/brand/guide-link";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { getBrandCenterOverview } from "@/lib/brand/server/service";
@@ -18,6 +19,7 @@ export default async function BrandAssetsPage() {
   return (
     <div className="animate-fade-in space-y-6">
       <PageHeader meta="Centre de marque" title="Ressources visuelles" subtitle="Logos et images approuvés au format PNG (max 100 Ko). Le SVG n'est pas accepté ; les logos partenaires nécessitent l'accord d'usage." />
+      <BrandGuideLink route="/brand-center/assets" />
       <BrandAssetManager assets={assets} />
     </div>
   );

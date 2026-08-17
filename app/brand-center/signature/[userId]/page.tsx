@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/page-header";
+import { BrandGuideLink } from "@/components/brand/guide-link";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { compileEmployeeSignature } from "@/lib/brand/server/signature-actions";
@@ -27,6 +28,7 @@ export default async function SignaturePage({ params }: { params: { userId: stri
   return (
     <div className="animate-fade-in space-y-6">
       <PageHeader meta="Centre de marque · Identité collaborateurs" title={`Signature — ${person.name}`} subtitle={`Variante : ${person.signatureVariant}. La signature est générée côté serveur à partir des données du Centre de marque.`} />
+      <BrandGuideLink route="/brand-center/signature/[userId]" />
       <p className="text-sm"><Link href="/brand-center/people" className="text-teal-700 hover:underline">← Retour aux collaborateurs</Link></p>
       <SignatureStudio userId={person.userId} employeeName={person.name} variant={person.signatureVariant} initial={initial} />
     </div>

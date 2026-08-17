@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/ui/page-header";
+import { BrandGuideLink } from "@/components/brand/guide-link";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { MarketingStudio } from "@/components/brand/marketing-studio";
@@ -16,6 +17,7 @@ export default async function MarketingPage() {
   return (
     <div className="animate-fade-in space-y-6">
       <PageHeader meta="Centre de marque" title="E-mailing marketing" subtitle="Modèles HTML portables (Mailchimp, HubSpot, Dynamics), pilotés par le Centre de marque. Aucun envoi, aucune programmation, aucun suivi." />
+      <BrandGuideLink route="/brand-center/marketing" />
       <MarketingStudio />
     </div>
   );

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui/page-header";
+import { BrandGuideLink } from "@/components/brand/guide-link";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { listWorkforceProfiles } from "@/lib/brand/server/service";
@@ -31,6 +32,7 @@ export default async function DocumentTypePage({ params }: { params: { type: str
   return (
     <div className="animate-fade-in space-y-6">
       <PageHeader meta="Centre de marque · Modèles de documents" title={template.label} subtitle="Renseignez le contenu, prévisualisez le PDF, puis téléchargez en PDF ou DOCX." />
+      <BrandGuideLink route="/brand-center/documents/[type]" />
       <p className="text-sm"><Link href="/brand-center/documents" className="text-teal-700 hover:underline">← Modèles de documents</Link></p>
       <DocumentStudio template={template} people={people} today={today} />
     </div>

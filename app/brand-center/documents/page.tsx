@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/page-header";
+import { BrandGuideLink } from "@/components/brand/guide-link";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { getBrandCenterOverview } from "@/lib/brand/server/service";
@@ -22,6 +23,7 @@ export default async function DocumentsPage() {
   return (
     <div className="animate-fade-in space-y-6">
       <PageHeader meta="Centre de marque" title="Modèles de documents" subtitle="Documents d'entreprise pilotés par le Centre de marque (PDF + DOCX). L'en-tête, les couleurs, le pied de page et la conformité sont injectés automatiquement." />
+      <BrandGuideLink route="/brand-center/documents" />
       {!readiness.ready && (
         <div className="surface border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
           Marque incomplète : {readiness.missing.join(", ")}. <Link href="/brand-center" className="font-medium underline">Compléter le Centre de marque</Link>.

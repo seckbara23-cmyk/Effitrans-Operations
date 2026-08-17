@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/ui/page-header";
+import { BrandGuideLink } from "@/components/brand/guide-link";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { getBrandCenterOverview } from "@/lib/brand/server/service";
@@ -18,6 +19,7 @@ export default async function BrandIdentityPage() {
   return (
     <div className="animate-fade-in space-y-6">
       <PageHeader meta="Centre de marque" title="Identité de marque" subtitle="Valeurs officielles de la marque. Les couleurs restent vides tant que la Direction ne les a pas fournies." />
+      <BrandGuideLink route="/brand-center/identity" />
       <BrandIdentityForm profile={profile} />
     </div>
   );

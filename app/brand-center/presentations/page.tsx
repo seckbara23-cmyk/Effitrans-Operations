@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/ui/page-header";
+import { BrandGuideLink } from "@/components/brand/guide-link";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { PresentationStudio } from "@/components/brand/presentation-studio";
@@ -16,6 +17,7 @@ export default async function PresentationsPage() {
   return (
     <div className="animate-fade-in space-y-6">
       <PageHeader meta="Centre de marque" title="Présentations" subtitle="Deck d'entreprise éditable (PPTX) piloté par le Centre de marque. Prévisualisez les diapositives, puis téléchargez le PowerPoint." />
+      <BrandGuideLink route="/brand-center/presentations" />
       <PresentationStudio />
     </div>
   );

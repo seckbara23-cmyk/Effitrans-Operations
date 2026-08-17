@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/page-header";
+import { BrandGuideLink } from "@/components/brand/guide-link";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 
@@ -35,6 +36,7 @@ export default async function DownloadsPage() {
   return (
     <div className="animate-fade-in space-y-6">
       <PageHeader meta="Centre de marque" title="Centre de téléchargement" subtitle="Point d'accès unique à tous les livrables de marque. Chaque livrable est généré à partir du Centre de marque." />
+      <BrandGuideLink route="/brand-center/downloads" />
       {GROUPS.map((g) => (
         <section key={g.title} className="surface p-5">
           <h2 className="mb-3 text-sm font-semibold text-navy-900">{g.title}</h2>

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/ui/page-header";
+import { BrandGuideLink } from "@/components/brand/guide-link";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { getGovernanceDashboard } from "@/lib/brand/server/governance-service";
@@ -18,6 +19,7 @@ export default async function GovernancePage() {
   return (
     <div className="animate-fade-in space-y-6">
       <PageHeader meta="Centre de marque" title="Gouvernance de la marque" subtitle="Cycle de vie des modèles (Brouillon → Approuvé → Publié → Retiré). Un modèle ne peut être publié que si la marque est complète." />
+      <BrandGuideLink route="/brand-center/governance" />
       <GovernanceDashboard rows={rows} ready={readiness.ready} missing={readiness.missing} />
     </div>
   );

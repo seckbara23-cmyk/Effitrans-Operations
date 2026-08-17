@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/page-header";
+import { BrandGuideLink } from "@/components/brand/guide-link";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { getCardAdminView } from "@/lib/brand/server/card-service";
@@ -21,6 +22,7 @@ export default async function CardAdminPage({ params }: { params: { userId: stri
   return (
     <div className="animate-fade-in space-y-6">
       <PageHeader meta="Centre de marque · Identité collaborateurs" title={`Carte numérique — ${view.name}`} subtitle="Carte de visite publique, opt-in et révocable. Aucune donnée du tenant n'est exposée." />
+      <BrandGuideLink route="/brand-center/card/[userId]" />
       <p className="text-sm"><Link href="/brand-center/people" className="text-teal-700 hover:underline">← Retour aux collaborateurs</Link></p>
       <CardStudio userId={params.userId} view={view} />
     </div>

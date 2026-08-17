@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/ui/page-header";
+import { BrandGuideLink } from "@/components/brand/guide-link";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { listWorkforceProfiles } from "@/lib/brand/server/service";
@@ -19,6 +20,7 @@ export default async function BrandPeoplePage() {
   return (
     <div className="animate-fade-in space-y-6">
       <PageHeader meta="Centre de marque" title="Identité collaborateurs" subtitle="Fonction, coordonnées et variante de signature. Le nom, l'e-mail et les rôles restent gérés par le module Utilisateurs." />
+      <BrandGuideLink route="/brand-center/people" />
       <PeopleManager people={people} />
     </div>
   );
