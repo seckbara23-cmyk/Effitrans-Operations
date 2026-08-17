@@ -3828,7 +3828,7 @@ export type Database = {
       hr_checklist_item_template: {
         Row: { id: string; tenant_id: string; template_id: string; position: number; label_fr: string; responsible_function: string | null; is_required: boolean; is_blocking: boolean; evidence_required: boolean; due_offset_days: number };
         Insert: { id?: string; tenant_id: string; template_id: string; position: number; label_fr: string; responsible_function?: string | null; is_required?: boolean; is_blocking?: boolean; evidence_required?: boolean; due_offset_days?: number };
-        Update: { label_fr?: string; is_required?: boolean; is_blocking?: boolean; evidence_required?: boolean; due_offset_days?: number };
+        Update: { label_fr?: string; responsible_function?: string | null; is_required?: boolean; is_blocking?: boolean; evidence_required?: boolean; due_offset_days?: number };
         Relationships: [];
       };
       hr_onboarding_case: {

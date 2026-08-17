@@ -105,7 +105,8 @@ export function OnboardingStudio({
           </div>
           {templates.length === 0 && (
             <p className="text-xs text-slate-400">
-              Aucun modèle de check-list configuré : le dossier sera créé sans éléments. Les modèles se configurent dans le centre de configuration.
+              Aucun modèle de check-list configuré : le dossier sera créé sans éléments. Les modèles se créent dans
+              Configuration → Modèles de check-list.
             </p>
           )}
         </section>

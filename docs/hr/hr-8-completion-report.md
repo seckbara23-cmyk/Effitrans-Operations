@@ -17,6 +17,45 @@ repository-grounded half of the closure audit is complete and is recorded below,
 with the UAT protocol the operator executes. When the observations arrive they are
 recorded verbatim in §UAT evidence and the classification is settled in the same place.
 
+**Open UAT finding:** D-2 (checklist templates had no authoring surface) was reported
+from the production session and is resolved below; it must be **retested in production**
+before any closure verdict. UAT flow 3 could not be exercised at all until it was fixed.
+
+## UAT finding D-2 — checklist templates had no authoring surface (root cause)
+
+**Reported from production UAT:** Départs states « Aucun modèle de clôture n'est
+configuré », Intégration says the models « se configurent dans le centre de
+configuration », and RH → Configuration contains no such section.
+
+**Root cause — genuinely missing, not merely unreachable.** A census of every reference to
+`hr_checklist_template` / `hr_checklist_item_template` across the repository found
+**reads only**: `listChecklistTemplates` (Intégration), `listOffboardingTemplates`
+(Départs), and the item read that instantiates a case. **No INSERT or UPDATE existed
+anywhere** — not in a server action, not in `seed.sql`, not in the setup wizard, not in
+the import pipeline. HR-4 shipped the template *engine* and both *consumers* but never an
+*authoring surface*, so « Aucun modèle » was permanent and unfixable from inside the
+platform. HR-8B inherited the gap and made it visible; the onboarding studio's pointer to
+the configuration center had never been true. The defect predates HR-8 and belongs to HR-4.
+
+**Resolution — the smallest surface that closes it, no new model, no new permission, no
+migration.** A « Modèles de check-list » panel in the existing configuration center
+(`hr:config:manage`, the permission HR_OFFICER already holds under HR-A1), writing the
+same two HR-4 tables for both kinds:
+
+* create a template (code, libellé, **Intégration** or **Départ**);
+* rename it; retire and restore it by deactivation — templates are never deleted,
+  because instantiated cases point at them;
+* add, correct and remove steps, with « bloquante », « pièce justificative requise »,
+  responsible function and a due-date offset; positions are assigned by the server;
+* `kind` and `code` are immutable after creation — a case was opened under that identity;
+* a step already used by a case cannot be deleted: the foreign key refuses, and the
+  refusal is translated (« Cette étape a déjà été utilisée dans un dossier… ») instead of
+  being swallowed;
+* both workspaces now name the place that exists: « Configuration → Modèles de check-list ».
+
+Editing a template still never rewrites an open case — instantiation copies labels (I-8.4),
+and the panel says so in French.
+
 ## Pre-UAT defect found and fixed (D-1)
 
 The closure audit found one genuine defect **before** the operator met it, in the HR-8B
@@ -81,6 +120,24 @@ Exact labels to expect, so an observation can be recorded without interpretation
 10. **Copy** — no code, SQLSTATE or permission name anywhere on screen.
 11. **Counters** — hub shows « Départs en cours », and in the attention list « Matériel à
     restituer (départs) » and « Étapes de clôture à terminer », consistent with the rows.
+
+### Retest steps for D-2 (production)
+
+0. **Configure a model first** — RH → **Configuration** → « Modèles de check-list » :
+   create `DEPART_STANDARD` / « Clôture de départ » of kind **Départ**; open it and add
+   steps, e.g. « Restituer le badge » (bloquante), « Entretien de départ » (décochez
+   *bloquante*), « Remise du reçu de solde signé » (bloquante + *pièce requise*).
+   Create an **Intégration** model the same way to prove both kinds.
+1. **Départs → Nouveau départ** now offers « Clôture de départ » in the model list; the
+   « Aucun modèle » notice is gone (and while it showed, it named this exact place).
+2. Open the case: the three steps appear in order with their flags; the « pièce requise »
+   step offers only *Sans objet* (D-1).
+3. Back in Configuration, rename a step and confirm the **already-open case keeps its
+   original wording** — the snapshot rule, visible.
+4. Try to delete a step that the open case used: refused in French; deleting an unused
+   step succeeds. Deactivate the model and confirm it disappears from the pickers while
+   the open case is unaffected.
+5. Resume the standard protocol at step 3 above.
 
 ## UAT evidence (operator-observed)
 

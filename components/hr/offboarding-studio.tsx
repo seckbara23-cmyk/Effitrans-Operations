@@ -164,7 +164,15 @@ export function OffboardingStudio({
           <p className="text-xs text-slate-400">
             Ouvrir un dossier de départ ne met pas fin au contrat : le statut d&apos;emploi reste géré depuis la
             fiche de l&apos;employé, dans le registre.
-            {templates.length === 0 && " Aucun modèle de clôture n'est configuré : le dossier sera créé sans étapes."}
+            {templates.length === 0 && (
+              <>
+                {" "}Aucun modèle de clôture n&apos;est configuré : le dossier sera créé sans étapes. Les modèles se
+                créent dans{" "}
+                <Link href="/departments/hr/configuration" className="text-teal-700 hover:underline">
+                  Configuration → Modèles de check-list
+                </Link>.
+              </>
+            )}
           </p>
         </section>
       )}

@@ -19,7 +19,9 @@ import {
   listPositions,
   listWorkLocations,
 } from "@/lib/hr/organization";
+import { listAllChecklistTemplates, listChecklistItemsByTemplate } from "@/lib/hr/checklists";
 import { HrConfigurationStudio } from "@/components/hr/configuration-studio";
+import { ChecklistTemplatesPanel } from "@/components/hr/checklist-templates-panel";
 
 export const metadata: Metadata = { title: "Configuration RH" };
 export const dynamic = "force-dynamic";
@@ -51,11 +53,13 @@ export default async function HrConfigurationPage() {
     );
   }
 
-  const [config, units, positions, locations] = await Promise.all([
+  const [config, units, positions, locations, templates, itemsByTemplate] = await Promise.all([
     getHrConfiguration(user.tenantId),
     listOrgUnits(user.tenantId),
     listPositions(user.tenantId),
     listWorkLocations(user.tenantId),
+    listAllChecklistTemplates(user.tenantId),
+    listChecklistItemsByTemplate(user.tenantId),
   ]);
 
   return (
@@ -67,6 +71,9 @@ export default async function HrConfigurationPage() {
       />
       <Link href="/departments/hr" className="inline-block text-sm text-teal-700 hover:underline">← Tableau de bord RH</Link>
       <HrConfigurationStudio config={config} units={units} positions={positions} locations={locations} />
+      {/* HR-8C — the checklist template engine (HR-4) finally has an authoring
+          surface; it serves Intégration and Départs from the same two tables. */}
+      <ChecklistTemplatesPanel templates={templates} itemsByTemplate={itemsByTemplate} />
     </div>
   );
 }
