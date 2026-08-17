@@ -125,6 +125,10 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "finance:aging:export", "finance:aging:print", "finance:aging:read",
       "analytics:read", "audit:read:all", "client:read", "communication:read", "customs:read",
       "document:read", "executive:dashboard:read", "file:read", "file:read:all", "finance:read",
+      // HR-9A (RQ-9.1 ratified) — the executive seat's FIRST and ONLY hr:*.
+      // Aggregates with NO row access: exactly the ratified EXECUTIVE_SUMMARY
+      // scope, so the privacy floor applies to its small-group breakdowns.
+      "hr:reports:read",
       "org:read:own", ...BASE,
       "process:read", "report:read", "task:read", "task:read:all", "tracking:read",
       "tracking:read:all", "transport:read", "logistics:copilot:read",
@@ -562,6 +566,10 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       // authorities (hr:sensitive:read, hr:leave:approve,
       // hr:performance:finalize) stay granted to NOBODY.
       "hr:config:manage",
+      // HR-9A (RQ-9.1 ratified) — aggregated HR reporting. The HR desk already
+      // reads every row under hr:read, so an aggregate over them discloses
+      // nothing new; the privacy floor therefore does not apply to this seat.
+      "hr:reports:read",
     ],
   },
   // =========================================================================

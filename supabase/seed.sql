@@ -1068,8 +1068,19 @@ select r.id, p.id
 from public.role r
 join public.permission p
   on p.code in ('profile:read:self', 'profile:update:self', 'hr:read', 'hr:manage',
-                'hr:config:manage', 'messaging:read', 'messaging:send')
+                'hr:config:manage', 'hr:reports:read', 'messaging:read', 'messaging:send')
 where r.tenant_id = '00000000-0000-0000-0000-000000000001' and r.code = 'HR_OFFICER'
+on conflict do nothing;
+
+-- HR-9A (RQ-9.1 ratified, mirrors migration 20260905000001): aggregated HR
+-- reporting reaches the executive seat too. It is the CEO role's FIRST and
+-- ONLY hr:* — aggregates with no row access, so the privacy floor applies to
+-- its small-group breakdowns. DGA/DAF and SYSTEM_ADMIN are deliberately NOT
+-- granted; a migration assertion refuses any other holder.
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id from public.role r
+join public.permission p on p.code = 'hr:reports:read'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001' and r.code = 'CEO'
 on conflict do nothing;
 
 -- NO hr:* grant to SYSTEM_ADMIN or any other role (DEC-B25): HR data is the

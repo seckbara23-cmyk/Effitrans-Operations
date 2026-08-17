@@ -78,8 +78,11 @@ describe("HRQ-D2 Option A — the grant exists in all three sources", () => {
     for (const t of TENANT_ROLE_TEMPLATES) {
       if (t.key === "HR_OFFICER") continue;
       // HR-B1/HR-B2: the Direction seats hold exactly the two activated
-      // authorities, and no other template holds any hr:* at all.
-      const expected = DIRECTION_SEATS.includes(t.key) ? DIRECTION_CODES : [];
+      // authorities. HR-9A (RQ-9.1 ratified) added ONE more holder: the
+      // executive seat receives `hr:reports:read` and nothing else — aggregates
+      // with no row access. Every other template still holds no hr:* at all.
+      const expected = DIRECTION_SEATS.includes(t.key) ? DIRECTION_CODES
+        : t.key === "CEO" ? ["hr:reports:read"] : [];
       expect(
         t.permissions.filter((p) => p.startsWith("hr:")).sort(),
         `${t.key} hr:* grants`,

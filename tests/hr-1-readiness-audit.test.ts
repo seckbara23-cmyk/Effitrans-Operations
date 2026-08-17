@@ -41,18 +41,16 @@ describe("creating the first employee needs no prior configuration", () => {
 });
 
 describe("the deferred modules are deferred, not defective", () => {
-  it("reporting remains a SoonTile; paie (HR-7B) and départs (HR-8B) are activated", () => {
-    // HR-7A/B/C moved this pin deliberately: « Préparation de paie » is now a
-    // real facts-only workspace (DEC-B63 boundary intact — no amounts).
-    // HR-8B moved it again: « Départs » is a real clearance workspace, and the
-    // old "Offboarding — À venir" tile is gone. Reporting RH stays deferred.
+  it("every HR capability is activated — no SoonTile remains on the hub", () => {
+    // This pin has moved with each activation: HR-7B (paie), HR-8B (départs),
+    // and now HR-9B (rapports) — the last deferred module. A SoonTile
+    // reappearing would mean a capability quietly regressed to « à venir ».
     const page = read("app/departments/hr/page.tsx");
-    expect(page).toMatch(/SoonTile[^/]*title="Reporting RH"/);
     expect(page).toContain('href="/departments/hr/paie"');
     expect(page).toContain('href="/departments/hr/departs"');
-    expect(page).not.toMatch(/SoonTile[^/]*title="Préparation de paie"/);
-    expect(page).not.toMatch(/SoonTile[^/]*title="(Offboarding|Départs)"/);
-    expect(page).not.toContain("À venir — HR-8");
+    expect(page).toContain('href="/departments/hr/rapports"');
+    expect(page).not.toMatch(/<SoonTile/);
+    expect(page).not.toMatch(/À venir — HR-\d/);
   });
 
   it("rehire-is-a-new-record (DEC-B26) still holds in the lifecycle", () => {

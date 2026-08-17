@@ -45,10 +45,15 @@ describe("the seats: leave approval landed on Direction (HR-B1); the rest stay p
     expect(fn.slice(0, 1200)).not.toContain("assertPermission(");
   });
 
-  it("CEO remains ungranted — the HR-1A question (a) boundary, not an oversight", () => {
+  it("CEO holds reporting only — every other HR authority is still a decision", () => {
     for (const r of ["CEO", "DGA", "DAF"]) templateBlock(r);
-    // Six broad accounts hold CEO in production; its grant is a decision.
-    expect(templateBlock("CEO")).not.toMatch(/"hr:/);
+    // Six broad accounts hold CEO in production, so each grant is a decision.
+    // HR-9A (RQ-9.1) ratified exactly one: aggregated reporting, with NO row
+    // access — the ratified EXECUTIVE_SUMMARY scope. Nothing else may follow
+    // without its own ratification, so the pin narrows rather than lifts.
+    const ceo = templateBlock("CEO");
+    expect(ceo).toContain('"hr:reports:read"');
+    expect([...ceo.matchAll(/"(hr:[a-z:_]+)"/g)].map((m) => m[1]).sort()).toEqual(["hr:reports:read"]);
     // HR_OFFICER never decides what it can request (SoD).
     expect(templateBlock("HR_OFFICER")).not.toContain('"hr:leave:approve"');
   });

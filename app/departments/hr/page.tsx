@@ -77,6 +77,7 @@ export default async function HrOperationsCenterPage() {
   if (!hasPermission(permissions, "hr:read")) notFound();
   const canConfigure = hasPermission(permissions, "hr:config:manage");
   const canManage = hasPermission(permissions, "hr:manage");
+  const canReadReports = hasPermission(permissions, "hr:reports:read");
 
   const [stats, counts, config, ops, leave, center, hrOfficers, departures] = await Promise.all([
     employeeStats(user.tenantId),
@@ -173,7 +174,11 @@ export default async function HrOperationsCenterPage() {
           {/* HR-8B — activated: clearance only. The employment lifecycle stays
               in the registry and the account step stays in Administration. */}
           <WorkspaceTile href="/departments/hr/departs" title="Départs" subtitle="Sorties, restitution, clôture" />
-          <SoonTile title="Reporting RH" note="À venir — HR-9" />
+          {/* HR-9B — activated: aggregates only, behind hr:reports:read. Named,
+              not hidden, for a reader who does not hold the authority. */}
+          {canReadReports
+            ? <WorkspaceTile href="/departments/hr/rapports" title="Reporting RH" subtitle="Effectifs, mouvements, congés — agrégats" />
+            : <GatedTile title="Reporting RH" gate="hr:reports:read" />}
         </div>
       </div>
 
