@@ -144,5 +144,81 @@ begin
   end if;
 end $$;
 
+-- ---------------------------------------------------------------------------
+-- HR-8 carryover — evidence parity with Départs (the ratified D-4 model):
+-- presence (HR408) was already enforced; provenance (HR412) is now too. A step
+-- may only cite a document of ITS OWN employee, not soft-deleted.
+-- ---------------------------------------------------------------------------
+do $$
+declare v_type uuid; v_doc uuid; v_foreign uuid; v_deleted uuid;
+        v_item uuid := '00000000-0000-0000-0000-0000001a4402';
+begin
+  perform set_config('request.jwt.claims', '', true);
+
+  -- The suite brings its own document type: the SOLDE_TOUT_COMPTE row is seeded
+  -- by a migration that selects from `organization`, and in a fresh CI database
+  -- the tenant does not exist yet at that point.
+  insert into public.hr_document_type (id, tenant_id, code, label_fr, data_class, required_for_termination)
+  values ('00000000-0000-0000-0000-0000000dc441', '00000000-0000-0000-0000-000000000001',
+          'HR4_PREUVE', 'Pièce justificative (test HR-4)', 'C2', false)
+  on conflict (tenant_id, code) do nothing;
+  select id into v_type from public.hr_document_type
+   where tenant_id = '00000000-0000-0000-0000-000000000001' and code = 'HR4_PREUVE';
+
+  update public.hr_onboarding_item set evidence_required = true, status = 'PENDING' where id = v_item;
+
+  insert into public.hr_document (tenant_id, employee_id, document_type_id, title, storage_path)
+  values ('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000eee41',
+          v_type, 'Preuve E1', 'hr/e1/preuve.pdf') returning id into v_doc;
+  insert into public.hr_document (tenant_id, employee_id, document_type_id, title, storage_path)
+  values ('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000eee42',
+          v_type, 'Preuve E2', 'hr/e2/preuve.pdf') returning id into v_foreign;
+  insert into public.hr_document (tenant_id, employee_id, document_type_id, title, storage_path, deleted_at)
+  values ('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000eee41',
+          v_type, 'Preuve supprimée', 'hr/e1/old.pdf', now()) returning id into v_deleted;
+
+  begin
+    perform public.hr_complete_onboarding_item(
+      '00000000-0000-0000-0000-000000000001', v_item, '00000000-0000-0000-0000-0000000000f7', 'DONE');
+    raise exception 'HR-4 FAIL: DONE without evidence must be refused';
+  exception when others then
+    if sqlerrm like 'HR-4 FAIL%' then raise; end if;
+    if sqlstate <> 'HR408' then
+      raise exception 'HR-4 FAIL: expected HR408, got % (%)', sqlstate, sqlerrm;
+    end if;
+  end;
+
+  begin
+    perform public.hr_complete_onboarding_item(
+      '00000000-0000-0000-0000-000000000001', v_item, '00000000-0000-0000-0000-0000000000f7', 'DONE', v_foreign);
+    raise exception 'HR-4 FAIL: another employee''s document must not qualify';
+  exception when others then
+    if sqlerrm like 'HR-4 FAIL%' then raise; end if;
+    if sqlstate <> 'HR412' then
+      raise exception 'HR-4 FAIL: expected HR412 foreign evidence, got % (%)', sqlstate, sqlerrm;
+    end if;
+  end;
+
+  begin
+    perform public.hr_complete_onboarding_item(
+      '00000000-0000-0000-0000-000000000001', v_item, '00000000-0000-0000-0000-0000000000f7', 'DONE', v_deleted);
+    raise exception 'HR-4 FAIL: a deleted document must not qualify';
+  exception when others then
+    if sqlerrm like 'HR-4 FAIL%' then raise; end if;
+    if sqlstate <> 'HR412' then
+      raise exception 'HR-4 FAIL: expected HR412 deleted evidence, got % (%)', sqlstate, sqlerrm;
+    end if;
+  end;
+
+  perform public.hr_complete_onboarding_item(
+    '00000000-0000-0000-0000-000000000001', v_item, '00000000-0000-0000-0000-0000000000f7', 'DONE', v_doc);
+  if not exists (
+    select 1 from public.hr_onboarding_item
+     where id = v_item and status = 'DONE' and evidence_document_id = v_doc) then
+    raise exception 'HR-4 FAIL: a qualifying document must complete the step and be recorded';
+  end if;
+  insert into _r values ('evidence_provenance_enforced', 1);
+end $$;
+
 select * from _r order by check_name;
 rollback;

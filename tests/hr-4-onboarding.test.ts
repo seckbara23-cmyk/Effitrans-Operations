@@ -162,6 +162,63 @@ describe("navigation & department icons", () => {
   });
 });
 
+// ===========================================================================
+// HR-8 carryover — Intégration reaches evidence parity with Départs. ONE
+// architecture (the ratified D-4 model), expressed in each family's numbering.
+// ===========================================================================
+describe("evidence parity with Départs (D-4 model, not a second one)", () => {
+  const MIG = "supabase/migrations/20260904000001_hr_onboarding_evidence_provenance.sql";
+  const strip = (s: string) => s.replace(/--[^\n]*/g, "");
+  const fnSlice = () => {
+    const m = strip(read(MIG));
+    const start = m.indexOf("create or replace function public.hr_complete_onboarding_item");
+    const end = m.indexOf("revoke execute on function");
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    return m.slice(start, end);
+  };
+
+  it("the RPC enforces presence AND provenance", () => {
+    const fn = fnSlice();
+    expect(fn).toContain("HR408");
+    expect(fn).toMatch(/d\.employee_id = v_employee/);
+    expect(fn).toMatch(/d\.tenant_id = p_tenant/);
+    expect(fn).toMatch(/d\.deleted_at is null/);
+    expect(fn).toContain("HR412");
+    expect(read(MIG)).toMatch(/assertion 1 failed: the evidence provenance rule is absent or weakened/);
+    // Parity itself is asserted at apply time against the offboarding twin.
+    expect(read(MIG)).toMatch(/assertion 2 failed: the two checklist families disagree/);
+  });
+
+  it("the workspace completes an evidence step by CITING a document", () => {
+    const s = read("components/hr/onboarding-studio.tsx")
+      .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    expect(s).toMatch(/i\.evidence_required && \(\s*<select[\s\S]{0,800}documentsByCase/);
+    expect(s).toMatch(/\(!i\.evidence_required \|\| evidenceFor\[i\.id\]\)/);
+    expect(s).toMatch(/evidenceDocumentId: i\.evidence_required \? evidenceFor\[i\.id\] : null/);
+    // The page supplies only that employee's documents, sensitive tier respected.
+    const p = read("app/departments/hr/onboarding/page.tsx");
+    expect(p).toMatch(/listEmployeeDocuments\(user\.tenantId, c\.employee_id, canSeeSensitive\)/);
+    expect(p).toMatch(/hasPermission\(permissions, "hr:sensitive:read"\)/);
+  });
+
+  it("the refusal is one semantic in both families, in French", () => {
+    expect(read("lib/hr/onboarding-actions.ts")).toMatch(/HR412: "evidence_not_eligible"/);
+    expect(read("lib/hr/offboarding-actions.ts")).toMatch(/HR816: "evidence_not_eligible"/);
+    for (const f of ["components/hr/onboarding-studio.tsx", "components/hr/offboarding-studio.tsx"]) {
+      expect(read(f), f).toContain("n'appartient pas au dossier de cet employé");
+    }
+  });
+
+  it("the SQL suite proves it live", () => {
+    const s = read("supabase/tests/rls_hr_onboarding_test.sql");
+    expect(s).toMatch(/expected HR408/);
+    expect(s).toMatch(/expected HR412 foreign evidence/);
+    expect(s).toMatch(/expected HR412 deleted evidence/);
+    expect(s).toMatch(/a qualifying document must complete the step and be recorded/);
+  });
+});
+
 describe("CI runs the HR-4 suite last", () => {
   it("appended after HR-3, before Stop", () => {
     const ci = read(".github/workflows/ci.yml");

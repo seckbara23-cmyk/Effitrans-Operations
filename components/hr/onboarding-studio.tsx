@@ -30,6 +30,7 @@ const ERR: Record<string, string> = {
   wrong_status: "Action impossible dans l'état actuel du dossier.",
   item_not_found: "Élément introuvable.",
   evidence_required: "Une pièce justificative est requise pour cet élément.",
+  evidence_not_eligible: "La pièce choisie n'appartient pas au dossier de cet employé.",
   blocking_items_pending: "Clôture refusée : des éléments bloquants restent à compléter.",
   reason_required: "Le motif d'annulation est obligatoire.",
   event_failed: "L'événement de journal n'a pas pu être écrit — l'action a été annulée.",
@@ -42,13 +43,15 @@ const PROV_KINDS = [
 ] as const;
 
 export function OnboardingStudio({
-  cases, employees, templates, itemsByCase, provByCase, canManage,
+  cases, employees, templates, itemsByCase, provByCase, documentsByCase, canManage,
 }: {
   cases: Case[];
   employees: { id: string; label: string }[];
   templates: Template[];
   itemsByCase: Record<string, Item[]>;
   provByCase: Record<string, Prov[]>;
+  /** The case employee's own documents — the only evidence a step may cite. */
+  documentsByCase: Record<string, { id: string; label: string }[]>;
   canManage: boolean;
 }) {
   const router = useRouter();
@@ -58,6 +61,8 @@ export function OnboardingStudio({
   const [templateId, setTemplateId] = useState("");
   const [plannedStart, setPlannedStart] = useState("");
   const [open, setOpen] = useState<string | null>(null);
+  /** Document chosen as evidence, per checklist step. */
+  const [evidenceFor, setEvidenceFor] = useState<Record<string, string>>({});
 
   const run = (fn: () => Promise<{ ok: boolean; error?: string; detail?: string }>) => {
     setError(null);
@@ -172,9 +177,28 @@ export function OnboardingStudio({
                               </span>
                             )}
                             {i.evidence_required && <span className="text-[11px] text-slate-400">preuve requise</span>}
-                            {canManage && i.status === "PENDING" && !i.evidence_required && (
+                            {/* Evidence parity with Départs (the ratified D-4 model):
+                                a step that requires a document is completed by CITING
+                                one of THIS employee's documents. The database re-checks
+                                presence (HR408) and provenance (HR412). */}
+                            {canManage && i.status === "PENDING" && i.evidence_required && (
+                              <select value={evidenceFor[i.id] ?? ""}
+                                onChange={(e) => setEvidenceFor({ ...evidenceFor, [i.id]: e.target.value })}
+                                className="rounded-md border border-slate-200 px-1.5 py-0.5 text-[11px]"
+                                aria-label="Pièce justificative">
+                                <option value="">— Pièce justificative —</option>
+                                {(documentsByCase[c.id] ?? []).map((d) => (
+                                  <option key={d.id} value={d.id}>{d.label}</option>
+                                ))}
+                              </select>
+                            )}
+                            {canManage && i.status === "PENDING"
+                              && (!i.evidence_required || evidenceFor[i.id]) && (
                               <button disabled={pending}
-                                onClick={() => run(() => completeOnboardingItem({ itemId: i.id, status: "DONE" }))}
+                                onClick={() => run(() => completeOnboardingItem({
+                                  itemId: i.id, status: "DONE",
+                                  evidenceDocumentId: i.evidence_required ? evidenceFor[i.id] : null,
+                                }))}
                                 className="text-xs text-teal-700 hover:underline">Marquer fait</button>
                             )}
                             {canManage && i.status === "PENDING" && (

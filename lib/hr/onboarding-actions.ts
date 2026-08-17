@@ -25,6 +25,8 @@ const RPC_ERRORS: Record<string, string> = {
   HR404: "invalid_outcome", HR405: "assignment_not_found", HR406: "invalid_status",
   HR407: "item_not_found", HR408: "evidence_required", HR409: "case_not_found",
   HR410: "wrong_status", HR411: "blocking_items_pending",
+  // Evidence parity with Départs (D-4): same semantic, each family's numbering.
+  HR412: "evidence_not_eligible",
 };
 function mapRpcError(e: { code?: string; message?: string } | null): { error: string; detail?: string } {
   const mapped = e?.code ? RPC_ERRORS[e.code] : undefined;
