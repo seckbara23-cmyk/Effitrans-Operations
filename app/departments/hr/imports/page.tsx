@@ -10,6 +10,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui/page-header";
+import { GuideLink } from "@/components/hr/guide-link";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { listImportBatches, listImportErrors, listImportOutcomes } from "@/lib/hr/organization";
@@ -55,7 +56,10 @@ export default async function HrImportsPage() {
         title="Imports — préparation"
         subtitle="Modèle Excel → téléversement → validation → aperçu → visa à quatre yeux → application → rapport. Les employés apparaissent dans le Registre à l'application du lot."
       />
-      <Link href="/departments/hr" className="inline-block text-sm text-teal-700 hover:underline">← Tableau de bord RH</Link>
+      <div className="flex flex-wrap items-center gap-4">
+        <Link href="/departments/hr" className="inline-block text-sm text-teal-700 hover:underline">← Tableau de bord RH</Link>
+        <GuideLink route="/departments/hr/imports" />
+      </div>
       <HrImportStudio batches={batches} currentUserId={user.id} hrOfficerCount={hrOfficerCount} errors={errors} outcomes={outcomes} />
     </div>
   );

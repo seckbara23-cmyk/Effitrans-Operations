@@ -14,6 +14,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui/page-header";
+import { GuideLink } from "@/components/hr/guide-link";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { buildHrReport, resolvePeriod, reportViewerTier } from "@/lib/hr/reporting";
@@ -51,7 +52,10 @@ export default async function HrReportsPage({
     <div className="animate-fade-in space-y-6">
       <PageHeader meta="Ressources humaines" title="Reporting RH"
         subtitle="Indicateurs agrégés — effectifs, mouvements, congés et charge opérationnelle." />
-      <Link href="/departments/hr" className="inline-block text-sm text-teal-700 hover:underline">← Tableau de bord RH</Link>
+      <div className="flex flex-wrap items-center gap-4">
+        <Link href="/departments/hr" className="inline-block text-sm text-teal-700 hover:underline">← Tableau de bord RH</Link>
+        <GuideLink route="/departments/hr/rapports" />
+      </div>
       <ReportingStudio period={report.period} headline={report.headline}
         byStatus={report.byStatus} byDepartment={report.byDepartment} byOrgUnit={report.byOrgUnit}
         departments={departments} department={department} tier={tier} />

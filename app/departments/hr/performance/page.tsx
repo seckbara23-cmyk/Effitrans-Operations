@@ -7,6 +7,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui/page-header";
+import { GuideLink } from "@/components/hr/guide-link";
 import { StatCard } from "@/components/departments/stat-card";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
@@ -58,9 +59,12 @@ export default async function HrPerformancePage() {
         title="Performance"
         subtitle="Cycles d'évaluation, objectifs et compétences — les pondérations sont vérifiées à la finalisation, jamais supposées."
       />
-      <Link href="/departments/hr" className="inline-block text-sm text-teal-700 hover:underline">
+      <div className="flex flex-wrap items-center gap-4">
+        <Link href="/departments/hr" className="inline-block text-sm text-teal-700 hover:underline">
         ← Centre d&apos;opérations RH
       </Link>
+        <GuideLink route="/departments/hr/performance" />
+      </div>
 
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <StatCard label="Cycles en cours" value={counts.cyclesInProgress} tone="teal" />

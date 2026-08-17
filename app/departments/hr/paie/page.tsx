@@ -9,6 +9,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui/page-header";
+import { GuideLink } from "@/components/hr/guide-link";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import {
@@ -51,9 +52,12 @@ export default async function HrPayrollPage({
         title="Préparation de paie"
         subtitle="Faits et quantités uniquement — identités, mouvements, présence, congés approuvés, ajustements. Aucun montant : le calcul de paie reste externe (DEC-B63)."
       />
-      <Link href="/departments/hr" className="inline-block text-sm text-teal-700 hover:underline">
+      <div className="flex flex-wrap items-center gap-4">
+        <Link href="/departments/hr" className="inline-block text-sm text-teal-700 hover:underline">
         ← Centre d&apos;opérations RH
       </Link>
+        <GuideLink route="/departments/hr/paie" />
+      </div>
       <PayrollStudio
         periods={periods}
         lines={lines}

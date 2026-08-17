@@ -7,6 +7,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui/page-header";
+import { GuideLink } from "@/components/hr/guide-link";
 import { StatCard } from "@/components/departments/stat-card";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
@@ -47,9 +48,12 @@ export default async function HrTrainingPage() {
         title="Formation"
         subtitle="Catalogue, plans, inscriptions et certificats — un registre RH, pas une plateforme de cours."
       />
-      <Link href="/departments/hr" className="inline-block text-sm text-teal-700 hover:underline">
+      <div className="flex flex-wrap items-center gap-4">
+        <Link href="/departments/hr" className="inline-block text-sm text-teal-700 hover:underline">
         ← Centre d&apos;opérations RH
       </Link>
+        <GuideLink route="/departments/hr/formation" />
+      </div>
 
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <StatCard label="Formations au catalogue" value={counts.activeCourses} tone="teal" />

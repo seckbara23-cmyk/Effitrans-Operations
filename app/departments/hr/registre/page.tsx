@@ -12,6 +12,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui/page-header";
+import { GuideLink } from "@/components/hr/guide-link";
 import { StatCard } from "@/components/departments/stat-card";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
@@ -58,10 +59,13 @@ export default async function HrRegistryPage({
     <div className="flex flex-wrap items-start justify-between gap-3">
       <PageHeader meta="Management" title="Ressources humaines" subtitle="Registre du personnel — identité, département, fonction, statut d'emploi et liaison de compte." />
       {/* HR-B3 — manual and bulk registration are equal paths into ONE registry. */}
-      <Link href="/departments/hr/imports"
-        className="rounded-lg border border-teal-300 bg-teal-50 px-3 py-2 text-sm font-medium text-teal-800 hover:bg-teal-100">
-        Importer des employés
-      </Link>
+      <span className="flex flex-wrap items-center gap-4">
+        <GuideLink route="/departments/hr/registre" />
+        <Link href="/departments/hr/imports"
+          className="rounded-lg border border-teal-300 bg-teal-50 px-3 py-2 text-sm font-medium text-teal-800 hover:bg-teal-100">
+          Importer des employés
+        </Link>
+      </span>
     </div>
   );
 

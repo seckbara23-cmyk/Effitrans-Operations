@@ -11,6 +11,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui/page-header";
+import { GuideLink } from "@/components/hr/guide-link";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import {
@@ -48,7 +49,10 @@ export default async function HrConfigurationPage() {
           au catalogue mais n'est attribuée à aucun rôle : la ratification HRQ-D2
           (plafond 9 → 11) est en attente. Aucune configuration n'est possible avant elle.
         </div>
+        <div className="flex flex-wrap items-center gap-4">
         <Link href="/departments/hr" className="inline-block text-sm text-teal-700 hover:underline">← Tableau de bord RH</Link>
+        <GuideLink route="/departments/hr/configuration" />
+      </div>
       </div>
     );
   }

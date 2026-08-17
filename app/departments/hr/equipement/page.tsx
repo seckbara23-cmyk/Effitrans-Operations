@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui/page-header";
+import { GuideLink } from "@/components/hr/guide-link";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { listEmployees } from "@/lib/hr/read";
@@ -30,7 +31,10 @@ export default async function HrEquipmentPage() {
   return (
     <div className="animate-fade-in space-y-6">
       <PageHeader meta="Ressources humaines" title="Équipements" subtitle="Parc, attribution et restitution — historique de garde inaltérable." />
-      <Link href="/departments/hr" className="inline-block text-sm text-teal-700 hover:underline">← Tableau de bord RH</Link>
+      <div className="flex flex-wrap items-center gap-4">
+        <Link href="/departments/hr" className="inline-block text-sm text-teal-700 hover:underline">← Tableau de bord RH</Link>
+        <GuideLink route="/departments/hr/equipement" />
+      </div>
       <EquipmentStudio equipment={equipment} types={types} openCustody={openCustody}
         employees={employees} canManage={canManage} />
     </div>

@@ -179,6 +179,8 @@ export default async function HrOperationsCenterPage() {
           {canReadReports
             ? <WorkspaceTile href="/departments/hr/rapports" title="Reporting RH" subtitle="Effectifs, mouvements, congés — agrégats" />
             : <GatedTile title="Reporting RH" gate="hr:reports:read" />}
+          {/* HR-10 — the mode opératoire, alongside the workspaces it documents. */}
+          <WorkspaceTile href="/departments/hr/guide" title="Guide RH" subtitle="Mode opératoire — qui fait quoi, dans quel ordre" />
         </div>
       </div>
 
