@@ -79,14 +79,28 @@ begin
                    join public.permission p on p.id = rp.permission_id
                   where r.code = 'SYSTEM_ADMIN' and p.code like 'hr:%'),
      '-'),
-    ('no role beyond HR_OFFICER and the Direction seats holds any hr:*',
+    -- HR-9A (RQ-9.1 ratified) added ONE more holder: the executive seat takes
+    -- `hr:reports:read` — aggregates, with no row access — and nothing else.
+    -- Every other role still holds no hr:* at all.
+    ('no role beyond HR_OFFICER, the Direction seats and the CEO report seat holds any hr:*',
      not exists (select 1
                    from public.role r
                    join public.role_permission rp on rp.role_id = r.id
                    join public.permission p on p.id = rp.permission_id
                   where p.code like 'hr:%' and r.code <> 'HR_OFFICER'
                     and not (r.code in ('DAF', 'DGA')
-                             and p.code in ('hr:leave:approve', 'hr:performance:finalize'))),
+                             and p.code in ('hr:leave:approve', 'hr:performance:finalize'))
+                    and not (r.code = 'CEO' and p.code = 'hr:reports:read')),
+     '-'),
+
+    ('CEO holds hr:reports:read and NOTHING else (HR-9A, RQ-9.1)',
+     -- DISTINCT: several tenants may each carry a CEO role; what is pinned is
+     -- the SET of hr:* codes that seat holds, not how many tenants hold it.
+     (select coalesce(string_agg(distinct p.code, ',' order by p.code), '')
+        from public.role r
+        join public.role_permission rp on rp.role_id = r.id
+        join public.permission p on p.id = rp.permission_id
+       where r.code = 'CEO' and p.code like 'hr:%') = 'hr:reports:read',
      '-');
 
   -- The EXACT permission set — an over-grant elsewhere in the seed would pass
@@ -97,8 +111,9 @@ begin
     join public.permission p on p.id = rp.permission_id
    where r.tenant_id = v_tenant and r.code = 'HR_OFFICER';
   insert into _r values
-    ('HR_OFFICER permission set is exactly the ratified seven',
-     v_perms = 'hr:config:manage,hr:manage,hr:read,messaging:read,messaging:send,profile:read:self,profile:update:self',
+    -- HR-9A added `hr:reports:read` to the HR desk: seven became eight.
+    ('HR_OFFICER permission set is exactly the ratified eight',
+     v_perms = 'hr:config:manage,hr:manage,hr:read,hr:reports:read,messaging:read,messaging:send,profile:read:self,profile:update:self',
      coalesce(v_perms, 'NULL'));
 end
 $grants$;
