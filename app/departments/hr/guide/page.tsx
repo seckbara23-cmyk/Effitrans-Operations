@@ -47,10 +47,12 @@ export default async function HrGuidePage() {
   if (!hasPermission(permissions, "hr:read")) notFound();
 
   const sections = await guideWithReadiness(user.tenantId);
-  // Safe view audit — reader and tenant only, no content.
+  // Safe view audit — reader and tenant only, no content. `entity_id` is a uuid
+  // column: the guide has no row, so it carries NO entityId, and its business
+  // key travels in `after` (UAT-HR10-01).
   await writeAudit({
     action: "hr.guide.viewed", actorId: user.id, tenantId: user.tenantId,
-    entity: "hr_guide", entityId: "sop",
+    entity: "hr_guide", after: { guide: "sop" },
   });
 
   const blocked = sections.filter((s) => !s.available);

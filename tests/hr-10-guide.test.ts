@@ -16,6 +16,7 @@ import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { GUIDE_SECTIONS, guideAnchorForRoute } from "@/lib/hr/guide/content";
+import { validateAuditEvent } from "@/lib/audit/validate";
 
 const read = (p: string) => readFileSync(fileURLToPath(new URL(`../${p}`, import.meta.url)), "utf8");
 const code = (p: string) =>
@@ -182,7 +183,46 @@ describe("RQ-10.1 / RQ-10.3 / RQ-10.4 — scope held", () => {
     const p = code(PAGE);
     expect(p).toMatch(/hasPermission\(permissions, "hr:read"\)/);
     expect(p).toMatch(/notFound\(\)/);
-    expect(p).toMatch(/writeAudit\(\{[\s\S]{0,120}"hr\.guide\.viewed"/);
+    expect(p).toMatch(/writeAudit\(\{[\s\S]{0,160}"hr\.guide\.viewed"/);
+  });
+
+  // -------------------------------------------------------------------------
+  // UAT-HR10-01 — the guide crashed in production on its FIRST render: the
+  // audit event carried entityId "sop", and `entity_id` is a uuid column whose
+  // validator refuses a business key. The page never renders during a build or
+  // a unit test, so nothing local exercised it.
+  // -------------------------------------------------------------------------
+  it("UAT-HR10-01 — the guide's own audit event passes the real validator", () => {
+    const uuid = "00000000-0000-0000-0000-000000000001";
+    // The event the page emits today: no entityId at all (the business key
+    // travels in `after`, which this validator does not police).
+    expect(() => validateAuditEvent({
+      action: "hr.guide.viewed", actorId: uuid,
+    })).not.toThrow();
+    // And the production failure mode, reproduced: it must still be refused.
+    expect(() => validateAuditEvent({
+      action: "hr.guide.viewed", actorId: uuid, entityId: "sop",
+    })).toThrow(/entityId must be a UUID/);
+  });
+
+  it("UAT-HR10-01 — no audit call anywhere passes a non-UUID entityId literal", () => {
+    // The class of defect, not just its two instances: a literal business key
+    // in entity_id crashes the page that emits it, at render time.
+    const roots = ["app", "lib", "components"];
+    const uuidLike = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const offenders: string[] = [];
+    const walk = (dir: string) => {
+      for (const e of readdirSync(fileURLToPath(new URL(`../${dir}`, import.meta.url)), { withFileTypes: true })) {
+        const rel = `${dir}/${e.name}`;
+        if (e.isDirectory()) { walk(rel); continue; }
+        if (!/\.tsx?$/.test(e.name)) continue;
+        for (const m of read(rel).matchAll(/entityId:\s*"([^"]*)"/g)) {
+          if (!uuidLike.test(m[1])) offenders.push(`${rel}: entityId: "${m[1]}"`);
+        }
+      }
+    };
+    for (const r of roots) walk(r);
+    expect(offenders).toEqual([]);
   });
 
   it("contextual Aide links reach the guide from every documented workspace", () => {

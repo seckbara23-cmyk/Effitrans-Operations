@@ -28,7 +28,9 @@ export default async function GuidesPage() {
     return <div className="surface p-6 text-sm text-slate-600">Accès non autorisé.</div>;
   }
   // Safe view audit — actor/tenant only, no content.
-  await writeAudit({ action: AuditActions.BRAND_GUIDE_VIEWED, actorId: user.id, tenantId: user.tenantId, entity: "brand_guide", entityId: "install" });
+  // `entity_id` is a uuid column and this guide has no row — the business key
+  // travels in `after` (same defect as UAT-HR10-01, found with it).
+  await writeAudit({ action: AuditActions.BRAND_GUIDE_VIEWED, actorId: user.id, tenantId: user.tenantId, entity: "brand_guide", after: { guide: "install" } });
   return (
     <div className="animate-fade-in space-y-6">
       <PageHeader meta="Centre de marque" title="Guides d'installation des signatures" subtitle="Instructions par client de messagerie. Le rendu final peut varier ; aucune compatibilité pixel-perfect n'est garantie." />
