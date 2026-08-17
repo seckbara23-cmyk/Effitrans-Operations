@@ -316,6 +316,91 @@ begin
   raise notice 'HR-8 PASS: item discipline (auto-advance, HR809, N/A resolves)';
 end $$;
 
+-- ---- E2. QUALIFYING evidence (D-4): presence AND provenance, server-side --
+do $$
+declare v_case uuid; v_item uuid; v_doc uuid; v_foreign uuid; v_deleted uuid; v_type uuid;
+begin
+  select v::uuid into v_case from _hr8 where k = 'case_e1';
+  -- The step is currently NOT_APPLICABLE from case E; reopen it to prove the
+  -- evidence path itself, then restore it so later cases are unaffected.
+  select id into v_item from public.hr_offboarding_item where case_id = v_case and position = 3;
+  perform public.hr_complete_offboarding_item(
+    '00000000-0000-0000-0000-000000000001', v_item,
+    '00000000-0000-0000-0000-0000000a8001', 'PENDING');
+
+  select id into v_type from public.hr_document_type
+   where tenant_id = '00000000-0000-0000-0000-000000000001' and code = 'SOLDE_TOUT_COMPTE';
+
+  insert into public.hr_document (tenant_id, employee_id, document_type_id, title, storage_path)
+  values ('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000a8e01',
+          v_type, 'Solde signé E1', 'hr/e1/solde.pdf')
+  returning id into v_doc;
+  -- Another employee's document, and one that was soft-deleted.
+  insert into public.hr_document (tenant_id, employee_id, document_type_id, title, storage_path)
+  values ('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000a8e02',
+          v_type, 'Solde signé E2', 'hr/e2/solde.pdf')
+  returning id into v_foreign;
+  insert into public.hr_document (tenant_id, employee_id, document_type_id, title, storage_path, deleted_at)
+  values ('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000a8e01',
+          v_type, 'Solde supprimé', 'hr/e1/old.pdf', now())
+  returning id into v_deleted;
+
+  begin
+    perform public.hr_complete_offboarding_item(
+      '00000000-0000-0000-0000-000000000001', v_item,
+      '00000000-0000-0000-0000-0000000a8001', 'DONE');
+    raise exception 'HR-8: DONE without evidence must be refused server-side';
+  exception when others then
+    if sqlerrm like 'HR-8:%' then raise; end if;
+    if sqlstate <> 'HR809' then
+      raise exception 'HR-8: expected HR809 missing evidence, got % (%)', sqlstate, sqlerrm;
+    end if;
+  end;
+
+  begin
+    perform public.hr_complete_offboarding_item(
+      '00000000-0000-0000-0000-000000000001', v_item,
+      '00000000-0000-0000-0000-0000000a8001', 'DONE', v_foreign);
+    raise exception 'HR-8: another employee''s document must not qualify as evidence';
+  exception when others then
+    if sqlerrm like 'HR-8:%' then raise; end if;
+    if sqlstate <> 'HR816' then
+      raise exception 'HR-8: expected HR816 foreign evidence, got % (%)', sqlstate, sqlerrm;
+    end if;
+  end;
+
+  begin
+    perform public.hr_complete_offboarding_item(
+      '00000000-0000-0000-0000-000000000001', v_item,
+      '00000000-0000-0000-0000-0000000a8001', 'DONE', v_deleted);
+    raise exception 'HR-8: a deleted document must not qualify as evidence';
+  exception when others then
+    if sqlerrm like 'HR-8:%' then raise; end if;
+    if sqlstate <> 'HR816' then
+      raise exception 'HR-8: expected HR816 deleted evidence, got % (%)', sqlstate, sqlerrm;
+    end if;
+  end;
+
+  -- The employee's own live document completes the step.
+  perform public.hr_complete_offboarding_item(
+    '00000000-0000-0000-0000-000000000001', v_item,
+    '00000000-0000-0000-0000-0000000a8001', 'DONE', v_doc);
+  if not exists (
+    select 1 from public.hr_offboarding_item
+     where id = v_item and status = 'DONE' and evidence_document_id = v_doc
+       and completed_by is not null) then
+    raise exception 'HR-8: a qualifying document must complete the step and be recorded';
+  end if;
+  if not exists (
+    select 1 from public.hr_employee_event
+     where employee_id = '00000000-0000-0000-0000-0000000a8e01'
+       and event_kind = 'offboarding_item_completed'
+       and payload->>'evidence_document_id' = v_doc::text) then
+    raise exception 'HR-8: the ledger must record which document justified the step';
+  end if;
+  raise notice 'HR-8 PASS: qualifying evidence (HR809 presence, HR816 provenance)';
+end $$;
+
 -- ---- F. completion succeeds; ledger + ACCOUNT ADVISORY --------------------
 do $$
 declare v_case uuid; v_payload jsonb;

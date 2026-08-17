@@ -31,6 +31,8 @@ export type CaseGates = {
   missingDocuments: string[];
   contractsNotEnded: number;
   account: { linked: boolean; status: string | null };
+  /** The employee's own documents — the only evidence a step may cite (HR816). */
+  documents: { id: string; label: string }[];
 };
 
 const STATUS_FR: Record<string, string> = {
@@ -54,6 +56,7 @@ const ERR: Record<string, string> = {
   invalid_status: "Action impossible dans l'état actuel.",
   item_not_found: "Étape introuvable.",
   evidence_required: "Une pièce justificative est requise pour cette étape.",
+  evidence_not_eligible: "La pièce choisie n'appartient pas au dossier de cet employé.",
   case_not_open: "Ce dossier de départ n'est plus modifiable.",
   case_not_found: "Dossier de départ introuvable.",
   wrong_status: "Action impossible dans l'état actuel du dossier.",
@@ -94,6 +97,8 @@ export function OffboardingStudio({
   const [plannedDate, setPlannedDate] = useState("");
   const [templateId, setTemplateId] = useState("");
   const [cancelReason, setCancelReason] = useState("");
+  /** Document chosen as evidence, per checklist step. */
+  const [evidenceFor, setEvidenceFor] = useState<Record<string, string>>({});
 
   const run = (
     fn: () => Promise<{ ok: boolean; error?: string; detail?: string; promptAccountHandoff?: boolean }>,
@@ -254,21 +259,38 @@ export function OffboardingStudio({
                                   {i.is_blocking && <span className="ml-2 text-xs text-red-600">obligatoire</span>}
                                   {i.evidence_required && (
                                     <span className="ml-2 text-xs text-slate-400">
-                                      pièce requise — à joindre au dossier de l&apos;employé
+                                      {(gates?.documents.length ?? 0) === 0
+                                        ? "pièce requise — aucun document au dossier de l'employé"
+                                        : "pièce requise"}
                                     </span>
                                   )}
                                 </span>
                                 <span className="flex items-center gap-2">
                                   <span className="text-xs text-slate-500">{ITEM_STATUS_FR[i.status] ?? i.status}</span>
-                                  {/* An item whose evidence is required cannot be
-                                      marked done from here: no evidence picker
-                                      exists in the checklist surfaces (the HR-4
-                                      idiom). The affordance is withheld and the
-                                      reason is stated, rather than offering a
-                                      button whose only outcome is a refusal. */}
-                                  {canManage && live && i.status === "PENDING" && !i.evidence_required && (
+                                  {/* A step that requires a document is completed by
+                                      CITING one — the model has always carried
+                                      evidence_document_id. The picker offers only this
+                                      employee's own documents; the database re-checks
+                                      that provenance (HR816) and refuses a step marked
+                                      done with no document at all (HR809). */}
+                                  {canManage && live && i.status === "PENDING" && i.evidence_required && (
+                                    <select value={evidenceFor[i.id] ?? ""}
+                                      onChange={(e) => setEvidenceFor({ ...evidenceFor, [i.id]: e.target.value })}
+                                      className="rounded-md border border-slate-200 px-2 py-1 text-xs"
+                                      aria-label="Pièce justificative">
+                                      <option value="">— Pièce justificative —</option>
+                                      {(gates?.documents ?? []).map((d) => (
+                                        <option key={d.id} value={d.id}>{d.label}</option>
+                                      ))}
+                                    </select>
+                                  )}
+                                  {canManage && live && i.status === "PENDING"
+                                    && (!i.evidence_required || evidenceFor[i.id]) && (
                                     <button disabled={pending}
-                                      onClick={() => run(() => completeOffboardingItem({ itemId: i.id, status: "DONE" }))}
+                                      onClick={() => run(() => completeOffboardingItem({
+                                        itemId: i.id, status: "DONE",
+                                        evidenceDocumentId: i.evidence_required ? evidenceFor[i.id] : null,
+                                      }))}
                                       className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:border-teal-300 disabled:opacity-50">
                                       Fait
                                     </button>

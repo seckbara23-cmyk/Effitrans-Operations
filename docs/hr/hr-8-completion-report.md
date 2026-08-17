@@ -17,9 +17,10 @@ repository-grounded half of the closure audit is complete and is recorded below,
 with the UAT protocol the operator executes. When the observations arrive they are
 recorded verbatim in §UAT evidence and the classification is settled in the same place.
 
-**Open UAT findings:** D-2 (checklist templates had no authoring surface) and D-3 (the
-« Nouveau départ » picker was empty) were reported from the production session and are
-resolved below. Both must be **retested in production** before any closure verdict: flow 3
+**Open UAT findings:** D-2 (checklist templates had no authoring surface), D-3 (the
+« Nouveau départ » picker was empty) and D-4 (an evidence-required step could never be
+marked « Fait ») were reported from the production session and are resolved below.
+**D-4 ships migration 112, which the operator must apply before retesting.** Both must be **retested in production** before any closure verdict: flow 3
 could not be exercised at all until D-2 was fixed, and the template snapshot /
 evidence-required flow still awaits an eligible employee (see D-3's recovery procedure).
 
@@ -27,6 +28,73 @@ Database evidence (read-only, at closure time) shows two **COMPLETED** departure
 production from the earlier session — corroborating that the closure pipeline works
 end to end. That is database-observed, not operator-observed: it does not substitute for
 the recorded UAT verdicts below.
+
+## UAT finding D-4 — an evidence-required step could never be marked « Fait »
+
+**Reported from production UAT** (EMP-0003 / `DEPART_STANDARD`): with « Solde de tout
+compte (signé) » in the employee's file and Départs correctly reporting « Tous les
+documents requis sont au dossier », the third step (blocking + pièce requise) still showed
+**À faire** and offered only **Sans objet**. The case was stuck at 2/3.
+
+**Verdict: defective — and the earlier D-1 decision was the cause.** The audit traced the
+whole path:
+
+| Layer | State before D-4 |
+|---|---|
+| RPC `hr_complete_offboarding_item` | **Presence enforced server-side**: `DONE` + `evidence_required` + null evidence → `HR809`. Never a UI courtesy. |
+| RPC — *provenance* | **Not checked.** Any `hr_document` uuid was accepted, including **another employee's**, another tenant's, or a **soft-deleted** one. Only the foreign key constrained it. |
+| Action `completeOffboardingItem` | Already accepted and forwarded `evidenceDocumentId`. Complete. |
+| Départs UI | Never passed evidence, and **deliberately hid « Fait »** (finding D-1) on the premise that no evidence picker existed anywhere. |
+
+So the answer to « intentionally hidden, incorrectly gated, or missing » is: **intentionally
+hidden, on a premise that was wrong.** The model has always carried
+`hr_offboarding_item.evidence_document_id` and the RPC has always taken `p_evidence`; what
+was missing was the picker. The consequence was worse than an awkward screen — a blocking
+step could only be resolved by **Sans objet**, which would record a falsehood about a
+document that actually exists, so the case could never be closed truthfully.
+
+**Correction (migration 112 + the picker), smallest within the existing model:**
+
+* **Départs** now offers, on an evidence-required step, a picker of **that employee's own
+  documents** (label = type + title, C3 hidden unless the reader holds
+  `hr:sensitive:read`, reusing the employee-file rule rather than restating it).
+  « Fait » appears when no evidence is required, or once a document is chosen.
+* **Migration 112** (`20260903000001_hr_offboarding_evidence_provenance.sql`) replaces
+  *one function* and nothing else, adding the rule the audit found missing:
+  **HR816 — the cited document must belong to this tenant, to the case's own employee,
+  and must not be soft-deleted**, checked whenever evidence is supplied whatever the
+  target status. Every pre-existing rule (HR630, INV-7, HR807/808/809/810) is preserved,
+  and the migration **asserts at apply time** both that the new rule is present and that
+  none of the old ones was lost in the replacement — plus that the closure gate itself is
+  untouched. The ledger event now records which document justified the step.
+* The refusal reaches the user in French (« La pièce choisie n'appartient pas au dossier de
+  cet employé. ») — never as a code.
+
+**Answering the brief's verification question directly:** an evidence-required blocking
+step can now be completed **only** when qualifying evidence exists, and **absence is
+rejected server-side, not merely hidden** — `HR809` predates this fix and is proven live in
+the SQL suite; `HR816` adds the provenance half. Both are exercised against a real database
+on every CI run (a foreign employee's document, a soft-deleted document, and no document
+at all are each refused; the employee's own live document succeeds and is recorded).
+
+**Known parallel, deliberately out of scope:** the HR-4 **Intégration** studio still
+withholds « Fait » for evidence-required steps for the same original reason. It has the
+same model and could take the same picker; it is left untouched here rather than widening
+an HR-8 UAT fix into HR-4, and is recorded as an open item.
+
+### Production retest steps for D-4
+
+**Migration 112 must be applied first** (SQL editor, then
+`npx supabase migration repair --status applied 20260903000001`). Then, on the EMP-0003
+case:
+
+1. The third step now shows a « — Pièce justificative — » picker listing « Solde de tout
+   compte (signé) — <titre> ». Choose it; **Fait** appears; click it → the step becomes
+   **Fait** and the case reads **3/3 étapes**.
+2. Reopen the step (**Rouvrir**) and try **Fait** without choosing a document: no button is
+   offered, and the database would refuse it anyway (HR809).
+3. Confirm in the employee's timeline that the completion event names the document.
+4. Continue the closure protocol: mark the departure in the registry, then **Clôturer**.
 
 ## UAT finding D-3 — the « Nouveau départ » employee picker was empty
 

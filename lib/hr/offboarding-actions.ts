@@ -30,6 +30,7 @@ const RPC_ERRORS: Record<string, string> = {
   HR807: "invalid_status", HR808: "item_not_found", HR809: "evidence_required",
   HR810: "case_not_open", HR811: "case_not_found", HR812: "wrong_status",
   HR813: "employee_not_terminated", HR814: "equipment_outstanding", HR815: "blocking_items_pending",
+  HR816: "evidence_not_eligible",
 };
 function mapRpcError(e: { code?: string; message?: string } | null): { error: string; detail?: string } {
   if (e?.message?.includes("EFA")) return { error: "forbidden_offboarding", detail: e?.message };

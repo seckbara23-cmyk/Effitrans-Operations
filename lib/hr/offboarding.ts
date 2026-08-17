@@ -14,7 +14,7 @@ import "server-only";
  */
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import type { Database } from "@/lib/db/types";
-import { missingTerminationDocuments } from "./employee-file";
+import { missingTerminationDocuments, listEmployeeDocuments } from "./employee-file";
 
 type Tbl = Database["public"]["Tables"];
 export type OffboardingCase = Tbl["hr_offboarding_case"]["Row"];
@@ -81,6 +81,12 @@ export type OffboardingGates = {
   contractsNotEnded: number;
   /** The 8.1A handoff state — ADVISORY prompt (RQ-8.3), never executed by HR. */
   account: { linked: boolean; status: string | null };
+  /**
+   * The employee's own non-deleted documents — the ONLY evidence a clearance
+   * step may cite. The database enforces that provenance (HR816); this read
+   * merely makes the legitimate choices offerable.
+   */
+  documents: { id: string; label: string }[];
 };
 
 /**
@@ -88,9 +94,11 @@ export type OffboardingGates = {
  * hr_complete_offboarding re-derives the blocking facts inside its own
  * transaction — this read can be stale, the gate cannot.
  */
-export async function offboardingGates(tenantId: string, employeeId: string): Promise<OffboardingGates> {
+export async function offboardingGates(
+  tenantId: string, employeeId: string, canSeeSensitive = false,
+): Promise<OffboardingGates> {
   const s = getAdminSupabaseClient();
-  const [custody, missing, contracts, emp] = await Promise.all([
+  const [custody, missing, contracts, emp, documents] = await Promise.all([
     s.from("hr_equipment_assignment").select("*")
       .eq("tenant_id", tenantId).eq("employee_id", employeeId)
       .is("returned_on", null).order("assigned_on"),
@@ -99,6 +107,7 @@ export async function offboardingGates(tenantId: string, employeeId: string): Pr
       .eq("tenant_id", tenantId).eq("employee_id", employeeId).neq("status", "ENDED"),
     s.from("employee").select("linked_app_user_id")
       .eq("tenant_id", tenantId).eq("id", employeeId).maybeSingle(),
+    listEmployeeDocuments(tenantId, employeeId, canSeeSensitive),
   ]);
   if (custody.error) throw new Error(`[hr] custody gate read failed: ${custody.error.message}`);
 
@@ -114,6 +123,10 @@ export async function offboardingGates(tenantId: string, employeeId: string): Pr
     missingDocuments: missing,
     contractsNotEnded: contracts.count ?? 0,
     account: { linked: linkedId !== null, status: accountStatus },
+    documents: documents.map((d) => ({
+      id: d.id,
+      label: d.type?.label_fr ? `${d.type.label_fr} — ${d.title}` : d.title,
+    })),
   };
 }
 

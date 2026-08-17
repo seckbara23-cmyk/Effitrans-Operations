@@ -25,6 +25,7 @@ const code = (p: string) =>
 const sql = (p: string) => read(p).replace(/--[^\n]*/g, "");
 
 const MIG = "supabase/migrations/20260902000001_hr_offboarding_foundation.sql";
+const MIG_EVIDENCE = "supabase/migrations/20260903000001_hr_offboarding_evidence_provenance.sql";
 const SUITE = "supabase/tests/hr_8_offboarding_test.sql";
 const RPCS = ["hr_open_offboarding_case", "hr_complete_offboarding_item", "hr_complete_offboarding"];
 
@@ -350,17 +351,52 @@ describe("HR-8B — the boundaries hold on screen", () => {
     expect(code(PAGE)).toMatch(/registrySize=\{directory\.length\}/);
   });
 
-  it("HR-8C D-1 — an evidence-required step never offers a « Fait » that must fail", () => {
-    // No evidence picker exists in the checklist surfaces (the shipped HR-4
-    // idiom withholds the button rather than refusing the click). « Sans objet »
-    // and « Rouvrir » stay available; the database rule is untouched.
+  it("HR-8D D-4 — an evidence-required step is completed by CITING a document", () => {
+    // Supersedes D-1: the affordance was withheld because no picker existed.
+    // The model always carried evidence_document_id, so the picker is what was
+    // missing — a blocking step that can only ever be « Sans objet » cannot be
+    // truthfully closed.
     const s = code(STUDIO);
-    expect(s).toMatch(/i\.status === "PENDING" && !i\.evidence_required && \(\s*<button[\s\S]{0,400}status: "DONE"/);
+    // The picker offers this employee's documents, for evidence-required steps.
+    expect(s).toMatch(/i\.evidence_required && \(\s*<select[\s\S]{0,800}gates\?\.documents/);
+    // « Fait » appears when no evidence is required, OR once one is chosen.
+    expect(s).toMatch(/\(!i\.evidence_required \|\| evidenceFor\[i\.id\]\)/);
+    expect(s).toMatch(/evidenceDocumentId: i\.evidence_required \? evidenceFor\[i\.id\] : null/);
     expect(s).toMatch(/status: "NOT_APPLICABLE"/);
-    expect(read(STUDIO)).toContain("à joindre au dossier de l&apos;employé");
-    // The onboarding surface it mirrors still behaves the same way.
-    expect(code("components/hr/onboarding-studio.tsx"))
-      .toMatch(/i\.status === "PENDING" && !i\.evidence_required/);
+  });
+
+  it("HR-8D D-4 — evidence rules are the DATABASE's: presence AND provenance", () => {
+    const m = sql(MIG_EVIDENCE);
+    // Bound the slice at the revoke block: the self-assertions below it QUOTE
+    // these very predicates, and an unbounded slice would let a gutted function
+    // pass on its own assertion's text (the HR-8A M1 lesson, twice learned).
+    const start = m.indexOf("create or replace function public.hr_complete_offboarding_item");
+    const end = m.indexOf("revoke execute on function");
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const fn = m.slice(start, end);
+    // Presence (unchanged) and provenance (new): same employee, same tenant, live.
+    expect(fn).toContain("HR809");
+    expect(fn).toMatch(/d\.employee_id = v_employee/);
+    expect(fn).toMatch(/d\.tenant_id = p_tenant/);
+    expect(fn).toMatch(/d\.deleted_at is null/);
+    expect(fn).toContain("HR816");
+    // Applied-time refusal if any of it is ever weakened away.
+    expect(read(MIG_EVIDENCE)).toMatch(/assertion 1 failed: the evidence provenance rule is absent or weakened/);
+    // The closure gate is NOT touched by this migration — asserted at apply time.
+    expect(read(MIG_EVIDENCE)).toMatch(/assertion 2 failed: the closure gate changed/);
+    expect(m).not.toMatch(/create or replace function public\.hr_complete_offboarding\(/);
+    // The refusal reaches the user in French, never as a code.
+    expect(code("lib/hr/offboarding-actions.ts")).toMatch(/HR816: "evidence_not_eligible"/);
+    expect(read(STUDIO)).toContain("n'appartient pas au dossier de cet employé");
+  });
+
+  it("the SQL suite proves the evidence rules live", () => {
+    const s = read(SUITE);
+    expect(s).toMatch(/expected HR809 missing evidence/);
+    expect(s).toMatch(/expected HR816 foreign evidence/);
+    expect(s).toMatch(/expected HR816 deleted evidence/);
+    expect(s).toMatch(/a qualifying document must complete the step and be recorded/);
   });
 });
 

@@ -40,6 +40,9 @@ export default async function HrOffboardingPage() {
   const permissions = await getEffectivePermissions(user.id);
   if (!hasPermission(permissions, "hr:read")) notFound();
   const canManage = hasPermission(permissions, "hr:manage");
+  // Only a sensitive-tier holder sees C3 documents in the evidence picker; the
+  // list is the employee file's own rule, reused rather than re-implemented.
+  const canSeeSensitive = hasPermission(permissions, "hr:sensitive:read");
 
   const [cases, templates, directory, equipment] = await Promise.all([
     listOffboardingCases(user.tenantId),
@@ -69,7 +72,7 @@ export default async function HrOffboardingPage() {
   await Promise.all(cases.map(async (c) => {
     const [items, gates] = await Promise.all([
       listOffboardingItems(user.tenantId, c.id),
-      offboardingGates(user.tenantId, c.employee_id),
+      offboardingGates(user.tenantId, c.employee_id, canSeeSensitive),
     ]);
     itemsByCase[c.id] = items;
     gatesByCase[c.id] = {
@@ -81,6 +84,7 @@ export default async function HrOffboardingPage() {
       missingDocuments: gates.missingDocuments,
       contractsNotEnded: gates.contractsNotEnded,
       account: gates.account,
+      documents: gates.documents,
     };
   }));
 
