@@ -160,7 +160,7 @@ export const BRAND_GUIDE_SECTIONS: readonly BrandGuideSection[] = [
     audience: "Administrateur du Centre de marque.",
     when: "À l'adhésion à un réseau, à son renouvellement, ou à sa fin.",
     steps: [
-      "Réseaux internationaux → « Ajouter une adhésion » : organisation, numéro d'adhésion, URL officielle, dates de validité.",
+      "Réseaux internationaux → sous « Ajouter une adhésion », renseignez le réseau, le numéro d'adhésion, l'URL officielle et les dates de validité, puis cliquez sur « Ajouter ».",
       "Ordonnez les adhésions selon l'affichage souhaité.",
       "« Désactiver » retire une adhésion de l'affichage sans effacer son historique.",
     ],

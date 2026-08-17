@@ -217,6 +217,18 @@ describe("content fidelity — production wordings, reused not re-described", ()
     }
   });
 
+  it("BCG-F1 — a heading is not described as a button", () => {
+    // Production UAT (Step 5): « Ajouter une adhésion » is the section HEADING;
+    // the button reads « Ajouter ». The guide must name the click accurately.
+    const membership = read("components/brand/membership-manager.tsx");
+    expect(membership).toMatch(/<h2[^>]*>Ajouter une adhésion<\/h2>/);
+    expect(membership).toMatch(/"Ajouter"/);
+    const s = BRAND_GUIDE_SECTIONS.find((x) => x.id === "reseaux-internationaux")!;
+    const step = s.steps.find((t) => t.includes("Ajouter une adhésion"))!;
+    expect(step).toMatch(/sous « Ajouter une adhésion »/);
+    expect(step).toMatch(/cliquez sur « Ajouter »/);
+  });
+
   it("no permission code, SQLSTATE or table name reaches the reader", () => {
     const prose = BRAND_GUIDE_SECTIONS.flatMap((s) =>
       [s.title, s.audience, s.when, ...s.steps, ...s.needs, ...s.automatic,
