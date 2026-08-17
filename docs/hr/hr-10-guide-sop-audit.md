@@ -165,3 +165,55 @@ grant census). Mutations: a section claiming an authority nobody holds without t
 no HR feature, no permission, no migration, and answers no ratification question.
 
 **After HR-10 closes: HOLD.** TMS is next and receives its own ratified roadmap.
+
+---
+
+## UAT-HR10-01 — the guide crashed on its first production render (BLOCKER, fixed)
+
+**Operator observation (2026-08-17, Chargé RH, `/departments/hr/guide`):** the shell
+loaded, the route was reached, and the main content fell into the application error
+boundary — « Une erreur est survenue. Le chargement de cette page a échoué… ». The guide
+content, the section summary and the readiness banner could not be validated.
+Classification: BLOCKER.
+
+**Root cause, from the production runtime log — not inferred:**
+
+> `Error: [audit] entityId must be a UUID for action "hr.guide.viewed" — received "sop".`
+> `A business key (template key, type code) belongs in `after`, not in entity_id.`
+> at `/departments/hr/guide/page.js` · route `/departments/hr/guide.rsc` · 1 occurrence,
+> 1 user.
+
+`audit_log.entity_id` is a `uuid` column, and `validateAuditEvent` refuses a non-UUID by
+design (MAYA-P1.6A) so that Postgres never says it in the middle of a user's action. The
+guide documents workspaces; it has **no row**, so it had no id to give — and the view audit
+passed its business key `"sop"` instead. The audit throws, the Server Component rejects,
+and the error boundary catches it: the page could never render, for anyone.
+
+**Why nothing local caught it.** The route is `force-dynamic`, so `next build` never
+renders it; no unit test calls `writeAudit`; and the structural tests only read source.
+The guard fires at render time, which first happened in production.
+
+**What it was NOT** — each checked: not permissions (the gate passed; the crash is after
+it), not RLS (the census uses the service-role client), not the authority/readiness census
+(it completes; the throw is in the audit that follows), not production data shape, not
+serialization (the page has no client boundary), not a missing migration.
+
+**Fix (smallest):** the business key travels in `after`, exactly where the validator's own
+message says it belongs. No gate weakened, no fallback zero counts, no change to the
+census, the content, or the guide's behaviour.
+
+**Second occurrence, found with it:** `/brand-center/guides` passed `entityId: "install"`
+and would crash identically for an admin opening it. Pre-existing, same one line, fixed
+here.
+
+**Regression tests:** the real `validateAuditEvent` is executed on both shapes — today's
+event passes, the production call still throws — and a scan of `app/`, `lib/` and
+`components/` refuses any literal non-UUID `entityId` anywhere, so the class cannot return.
+Reinstating the exact production call turns the suite red.
+
+**Unaffected:** `/departments/hr` and every existing HR workspace. The production log shows
+them serving normally in the same window (hub 58 requests, départs 49, registre 45, …), and
+only `/departments/hr/guide` produced the error group.
+
+**Status: fixed in `b4a570e`, NOT closed.** HR-10 remains un-validated until the operator
+repeats UAT Step 1 in production.
