@@ -17,9 +17,75 @@ repository-grounded half of the closure audit is complete and is recorded below,
 with the UAT protocol the operator executes. When the observations arrive they are
 recorded verbatim in §UAT evidence and the classification is settled in the same place.
 
-**Open UAT finding:** D-2 (checklist templates had no authoring surface) was reported
-from the production session and is resolved below; it must be **retested in production**
-before any closure verdict. UAT flow 3 could not be exercised at all until it was fixed.
+**Open UAT findings:** D-2 (checklist templates had no authoring surface) and D-3 (the
+« Nouveau départ » picker was empty) were reported from the production session and are
+resolved below. Both must be **retested in production** before any closure verdict: flow 3
+could not be exercised at all until D-2 was fixed, and the template snapshot /
+evidence-required flow still awaits an eligible employee (see D-3's recovery procedure).
+
+Database evidence (read-only, at closure time) shows two **COMPLETED** departure cases in
+production from the earlier session — corroborating that the closure pipeline works
+end to end. That is database-observed, not operator-observed: it does not substitute for
+the recorded UAT verdicts below.
+
+## UAT finding D-3 — the « Nouveau départ » employee picker was empty
+
+**Reported from production UAT:** after D-2 was deployed and a Départ model was authored,
+the operator opened Départs → Nouveau départ to start a case for *Transit Demo* — a person
+observed moments earlier in Administration as an **active account** with the role Chef de
+transit — and found the **Employé picker empty**.
+
+**Verdict: NOT a product defect in the eligibility rule.** Two independent, correct causes,
+established by reading production (read-only) rather than inferred:
+
+| Fact (production, tenant `…0001`) | Value |
+|---|---|
+| Active login accounts | **48** |
+| Employee-registry records | **2** — `EMP-0001` Joe Doe, `EMP-0002` Chris Demo |
+| Employees eligible for a departure (ACTIVE/SUSPENDED) | **0** |
+| Status of both registry records | **TERMINATED** |
+| Their departure cases | both **COMPLETED** (« Test UAT HR-8C », « Test UAT HR-8C matériel ») |
+| `transit.demo@effitrans.sn` | active account, **no employee record, no link** |
+| Offboarding templates | **1** (D-2's model, authored successfully) |
+
+1. **Transit Demo has no employee-registry record at all.** The picker reads the HR
+   employee registry, not the account list, so there is nothing to offer. The same is true
+   of the other demo accounts (`ops.supervisor`, `recouvrement`, `transport`).
+2. **Both registry records are TERMINATED** — closed by the earlier UAT session itself — so
+   the eligible population is genuinely empty. Starting a departure for an
+   already-departed person is exactly what RQ-8.6 leaves unratified, and the database
+   refuses it (`HR803`) independently of the screen.
+
+**Is an active operational user with no employee record expected architecture?** **Yes —
+deliberately.** Employment records and login accounts are two lifecycles that the platform
+keeps separate: `employee.linked_app_user_id` is optional in both directions, linking
+grants nothing, and termination never silently revokes access (DEC-B26/B59/B62). Accounts
+are provisioned in Administration; people are registered in the HR registry; the two lists
+are distinct surfaces by design. What is **not** expected is the *ratio*: 48 accounts to 2
+employees means the HR registry has never been populated — the mass-registration batch
+`HR-IMP-MST7EF6P` still waits on a second HR Officer for its four-eyes approval. That is a
+**data/rollout state, not a defect**, and eligibility must not be widened to paper over it.
+
+**The one genuine defect found here (fixed):** the empty picker was **silent**. It rendered
+an empty select and a disabled button with no explanation, which reads as a malfunction —
+against the platform's own honest-state doctrine. « Nouveau départ » now states the reason
+and distinguishes the two cases: no employee in the registry at all (« Un compte de
+connexion n'est pas un employé… ») versus a registry whose people are already departing or
+already gone. Eligibility itself is unchanged and pinned against widening.
+
+### Production-safe UAT recovery (no data surgery, no weakened rules)
+
+1. **Register the UAT subject as an employee** — RH → **Employés** → « Nouvel employé »
+   (nom, prénom, département TRANSIT, poste, date d'embauche). The matricule is assigned by
+   the platform (`EMP-0003`).
+2. **Activate the record** — a new employee is created in **Brouillon**; move it to
+   **Actif** from the employee's file. Only then is a departure possible.
+3. *(Optional)* link the existing `transit.demo@effitrans.sn` account to that record — the
+   link grants nothing and is not required for HR-8, but it makes the account-handoff step
+   (flow 8) exercisable.
+4. **Do not** reactivate `EMP-0001`/`EMP-0002` to free them up: `TERMINATED → ACTIVE` does
+   not exist by design, and rehire is a new record (DEC-B26).
+5. Resume the D-2 retest steps below with the new employee and the `DEPART_STANDARD` model.
 
 ## UAT finding D-2 — checklist templates had no authoring surface (root cause)
 

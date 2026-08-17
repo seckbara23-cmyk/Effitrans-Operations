@@ -324,6 +324,32 @@ describe("HR-8B — the boundaries hold on screen", () => {
     expect(code(STUDIO)).not.toMatch(/quatre yeux|four.eyes|approver|second acteur/i);
   });
 
+  it("HR-8C D-3 — eligibility is NOT weakened: only ACTIVE/SUSPENDED, never already-departing", () => {
+    // The picker mirrors the RPC rule (HR803) exactly. Widening it — to include
+    // TERMINATED people, or to stop excluding those with a live case — must
+    // fail here. An empty picker is a legitimate state, not a bug to code around.
+    const p = code(PAGE);
+    expect(p).toMatch(/\["ACTIVE", "SUSPENDED"\]\.includes\(e\.status\)/);
+    expect(p).toMatch(/!eligibleIds\.has\(e\.id\)/);
+    expect(p).toMatch(/\["OPEN", "IN_PROGRESS"\]\.includes\(c\.status\)/);
+    expect(p).not.toMatch(/"TERMINATED"|"DRAFT"|"ARCHIVED"/);
+    // The database still refuses anything else regardless of the screen.
+    expect(fnSlice("hr_open_offboarding_case")).toMatch(/not in \('ACTIVE','SUSPENDED'\)/);
+  });
+
+  it("HR-8C D-3 — an empty picker explains itself, with the right reason", () => {
+    const s = code(STUDIO);
+    // Two distinct causes, two distinct sentences, driven by the registry size.
+    expect(s).toMatch(/eligible\.length === 0 &&/);
+    expect(s).toMatch(/registrySize === 0 \?/);
+    const t = read(STUDIO);
+    expect(t).toContain("Un compte de connexion n&apos;est pas");
+    expect(t).toContain("soit déjà en cours de départ, soit déjà sorties des effectifs");
+    expect(t).toContain('href="/departments/hr/registre"');
+    // The page supplies the fact rather than the component guessing it.
+    expect(code(PAGE)).toMatch(/registrySize=\{directory\.length\}/);
+  });
+
   it("HR-8C D-1 — an evidence-required step never offers a « Fait » that must fail", () => {
     // No evidence picker exists in the checklist surfaces (the shipped HR-4
     // idiom withholds the button rather than refusing the click). « Sans objet »

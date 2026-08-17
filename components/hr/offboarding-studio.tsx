@@ -71,7 +71,7 @@ function Progress({ items }: { items: Item[] }) {
 }
 
 export function OffboardingStudio({
-  cases, employeeById, eligible, templates, itemsByCase, gatesByCase, canManage,
+  cases, employeeById, eligible, templates, itemsByCase, gatesByCase, canManage, registrySize,
 }: {
   cases: Case[];
   employeeById: Record<string, { label: string; matricule: string; status: string }>;
@@ -80,6 +80,8 @@ export function OffboardingStudio({
   itemsByCase: Record<string, Item[]>;
   gatesByCase: Record<string, CaseGates>;
   canManage: boolean;
+  /** How many people the HR registry holds — an empty picker must say WHY. */
+  registrySize: number;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -133,6 +135,28 @@ export function OffboardingStudio({
       {canManage && (
         <section className="surface space-y-3 p-5">
           <h2 className="text-sm font-semibold text-navy-900">Nouveau départ</h2>
+          {/* An empty list of eligible people is a legitimate state, but never a
+              silent one: it has two distinct causes and the user is told which. */}
+          {eligible.length === 0 && (
+            <p className="rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
+              {registrySize === 0 ? (
+                <>
+                  Aucun employé n&apos;est enregistré dans le registre RH. Un compte de connexion n&apos;est pas
+                  un employé : enregistrez d&apos;abord la personne dans{" "}
+                  <Link href="/departments/hr/registre" className="text-teal-700 hover:underline">Employés</Link>,
+                  puis activez sa fiche — un départ ne peut concerner qu&apos;une personne en poste.
+                </>
+              ) : (
+                <>
+                  Aucun employé ne peut entrer en procédure de départ actuellement : les personnes du registre
+                  sont soit déjà en cours de départ, soit déjà sorties des effectifs. Les comptes de connexion
+                  sans fiche employé n&apos;apparaissent pas ici — enregistrez la personne dans{" "}
+                  <Link href="/departments/hr/registre" className="text-teal-700 hover:underline">Employés</Link>{" "}
+                  si elle manque au registre.
+                </>
+              )}
+            </p>
+          )}
           <div className="grid gap-2 sm:grid-cols-5">
             <select value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}
               className="rounded-md border border-slate-200 px-2 py-1.5 text-sm" aria-label="Employé">

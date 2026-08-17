@@ -90,7 +90,8 @@ export default async function HrOffboardingPage() {
         subtitle="Sorties, restitution du matériel et clôture des dossiers." />
       <Link href="/departments/hr" className="inline-block text-sm text-teal-700 hover:underline">← Tableau de bord RH</Link>
       <OffboardingStudio cases={cases} employeeById={employeeById} eligible={eligible}
-        templates={templates} itemsByCase={itemsByCase} gatesByCase={gatesByCase} canManage={canManage} />
+        templates={templates} itemsByCase={itemsByCase} gatesByCase={gatesByCase} canManage={canManage}
+        registrySize={directory.length} />
     </div>
   );
 }
