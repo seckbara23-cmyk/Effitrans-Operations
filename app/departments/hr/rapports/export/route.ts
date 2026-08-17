@@ -17,7 +17,10 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
-import { buildHrReport, resolvePeriod, reportViewerTier, applyPrivacyFloor, MASKED_LABEL_FR } from "@/lib/hr/reporting";
+import {
+  buildHrReport, resolvePeriod, reportViewerTier, applyPrivacyFloor,
+  MASKED_LABEL_FR, EMPLOYEE_STATUS_FR,
+} from "@/lib/hr/reporting";
 import { CANONICAL_DEPARTMENTS } from "@/lib/organization/departments";
 import { toCsv } from "@/lib/bi/aggregate";
 import { writeAudit } from "@/lib/audit/log";
@@ -69,14 +72,17 @@ export async function GET(request: Request) {
     ["Documents expirant bientôt", h.documentsExpiringSoon ?? "indisponible"],
   ];
 
-  // The same floor as the screen: a masked group is named and its count withheld.
-  for (const [title, breakdown] of [
-    ["Par statut", report.byStatus], ["Par département", report.byDepartment],
-    ["Par unité d'organisation", report.byOrgUnit],
+  // The same floor as the screen: a masked group is named and its count
+  // withheld. The same VOCABULARY too — a status reads « Départ » in the file
+  // exactly as it does on screen, never the raw code (HR-9D finding F-1).
+  for (const [title, breakdown, translate] of [
+    ["Par statut", report.byStatus, EMPLOYEE_STATUS_FR],
+    ["Par département", report.byDepartment, null],
+    ["Par unité d'organisation", report.byOrgUnit, null],
   ] as const) {
     rows.push([], [title, ""]);
     for (const r of applyPrivacyFloor(breakdown, tier)) {
-      rows.push([r.label, r.masked ? MASKED_LABEL_FR : r.count]);
+      rows.push([translate?.[r.label] ?? r.label, r.masked ? MASKED_LABEL_FR : r.count]);
     }
   }
   rows.push([], ["Note", "Aucun taux de rotation n'est calculé : la méthode n'est pas arrêtée."]);

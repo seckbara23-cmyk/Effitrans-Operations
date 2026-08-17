@@ -80,6 +80,13 @@ describe("RQ-9.2 — the privacy floor, as ratified", () => {
     expect(e).toContain("MASKED_LABEL_FR");
     expect(MASKED_LABEL_FR).toBe("masqué");
   });
+
+  it("HR-9D F-1 — the file speaks the screen's French, never a raw status code", () => {
+    // The UAT export printed « TERMINATED » where the workspace shows « Départ ».
+    const e = code(EXPORT);
+    expect(e).toMatch(/\["Par statut", report\.byStatus, EMPLOYEE_STATUS_FR\]/);
+    expect(e).toMatch(/translate\?\.\[r\.label\] \?\? r\.label/);
+  });
 });
 
 describe("RQ-9.1 — one authority, two seats, and not the analytics door", () => {
