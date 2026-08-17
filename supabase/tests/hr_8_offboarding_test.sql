@@ -328,8 +328,20 @@ begin
     '00000000-0000-0000-0000-000000000001', v_item,
     '00000000-0000-0000-0000-0000000a8001', 'PENDING');
 
+  -- The suite brings its own document type. The SOLDE_TOUT_COMPTE row is
+  -- seeded by migration 20260802000001 via `select ... from organization`, and
+  -- in a fresh CI database the tenant does not exist yet at that point (seed.sql
+  -- runs after the migrations) — so that row is present in production and
+  -- ABSENT here. A fixture must never depend on which environment it runs in.
+  insert into public.hr_document_type (id, tenant_id, code, label_fr, data_class, required_for_termination)
+  values ('00000000-0000-0000-0000-0000000a8fc1', '00000000-0000-0000-0000-000000000001',
+          'HR8_SOLDE', 'Solde de tout compte (test HR-8)', 'C2', false)
+  on conflict (tenant_id, code) do nothing;
   select id into v_type from public.hr_document_type
-   where tenant_id = '00000000-0000-0000-0000-000000000001' and code = 'SOLDE_TOUT_COMPTE';
+   where tenant_id = '00000000-0000-0000-0000-000000000001' and code = 'HR8_SOLDE';
+  if v_type is null then
+    raise exception 'HR-8: the test document type fixture is missing';
+  end if;
 
   insert into public.hr_document (tenant_id, employee_id, document_type_id, title, storage_path)
   values ('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000a8e01',
