@@ -30,17 +30,21 @@ insert into public.operational_file (id, tenant_id, file_number, type, client_id
    '00000000-0000-0000-0000-000000becc01', 'DRAFT')
 on conflict (id) do nothing;
 
--- Reference data: one port + one airport per tenant.
-insert into public.ocean_port (id, tenant_id, unlocode, name, latitude, longitude) values
-  ('00000000-0000-0000-0000-000000bec001', '00000000-0000-0000-0000-000000000001', 'SNDKR', 'Port de Dakar (test)', 14.6928, -17.4467),
-  ('00000000-0000-0000-0000-000000bec002', '00000000-0000-0000-0000-000000000001', 'CNSHA', 'Shanghai (test)', 31.2304, 121.4737),
-  ('00000000-0000-0000-0000-000000bec099', '00000000-0000-0000-0000-00000000b0b2', 'FRLEH', 'Le Havre (autre tenant)', 49.4944, 0.1079)
+-- Reference data: one port + one airport per tenant. The controlled codes are
+-- deliberately NULL: the (tenant, unlocode)/(tenant, iata) unique indexes are
+-- partial on NOT NULL, and seed.sql already carries real SNDKR/CNSHA/DSS/CDG
+-- rows for tenant 1 — a suite fixture must be collision-proof in EVERY
+-- environment (the HR-8 evidence lesson: bring your own, and own it fully).
+insert into public.ocean_port (id, tenant_id, name, latitude, longitude) values
+  ('00000000-0000-0000-0000-000000bec001', '00000000-0000-0000-0000-000000000001', 'Port A (test TMS-2)', 14.6928, -17.4467),
+  ('00000000-0000-0000-0000-000000bec002', '00000000-0000-0000-0000-000000000001', 'Port B (test TMS-2)', 31.2304, 121.4737),
+  ('00000000-0000-0000-0000-000000bec099', '00000000-0000-0000-0000-00000000b0b2', 'Port (autre tenant, test TMS-2)', 49.4944, 0.1079)
 on conflict (id) do nothing;
 
-insert into public.air_airport (id, tenant_id, iata, name, latitude, longitude) values
-  ('00000000-0000-0000-0000-000000beca01', '00000000-0000-0000-0000-000000000001', 'DSS', 'AIBD Dakar (test)', 14.6700, -17.0733),
-  ('00000000-0000-0000-0000-000000beca02', '00000000-0000-0000-0000-000000000001', 'CDG', 'Paris CDG (test)', 49.0097, 2.5479),
-  ('00000000-0000-0000-0000-000000beca99', '00000000-0000-0000-0000-00000000b0b2', 'IST', 'Istanbul (autre tenant)', 41.2753, 28.7519)
+insert into public.air_airport (id, tenant_id, name, latitude, longitude) values
+  ('00000000-0000-0000-0000-000000beca01', '00000000-0000-0000-0000-000000000001', 'Aéroport A (test TMS-2)', 14.6700, -17.0733),
+  ('00000000-0000-0000-0000-000000beca02', '00000000-0000-0000-0000-000000000001', 'Aéroport B (test TMS-2)', 49.0097, 2.5479),
+  ('00000000-0000-0000-0000-000000beca99', '00000000-0000-0000-0000-00000000b0b2', 'Aéroport (autre tenant, test TMS-2)', 41.2753, 28.7519)
 on conflict (id) do nothing;
 
 -- ---- A. Columns exist, and a shipment WITHOUT geography is legal ----------
