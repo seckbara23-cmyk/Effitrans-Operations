@@ -190,7 +190,9 @@ describe("TMS-3 — scope guard (activation, not expansion)", () => {
     expect(migrations.some((f) => /tracking_activation|tms_?3/i.test(f))).toBe(false);
   });
 
-  it("no generic-TMS surface appeared (fleet/vehicle/fuel/maintenance/telematics stay excluded)", () => {
+  // PIN NARROWED (TMS-5, 2026-08-18): TMS-5 legitimately adds lib/fleet +
+  // components/fleet. The still-excluded domains are guarded unchanged.
+  it("no EXCLUDED generic-TMS surface appeared (fuel/telematics/route-opt/payroll)", () => {
     for (const dir of ["lib", "components"]) {
       const names: string[] = [];
       const walk = (d: string) => {
@@ -200,7 +202,8 @@ describe("TMS-3 — scope guard (activation, not expansion)", () => {
         }
       };
       walk(path.join(root, dir));
-      expect(names.some((n) => /fleet|vehicle|fuel|maintenance|telematic/i.test(n))).toBe(false);
+      // `payroll` excluded from the DIRECTORY scan: lib/hr/payroll is HR-7.
+      expect(names.some((n) => /fuel|telematic|route-?optim/i.test(n))).toBe(false);
     }
   });
 

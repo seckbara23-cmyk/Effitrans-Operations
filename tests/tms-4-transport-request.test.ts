@@ -156,9 +156,13 @@ describe("TMS-4 — the request lane in the panel", () => {
 // ========================================================== scope guard ====
 
 describe("TMS-4 — scope guard (no TMS-5/TMS-6 pre-build)", () => {
-  it("TMS-4 shipped NO migration — the latest is still TMS-2's", () => {
-    const migrations = fs.readdirSync(path.join(root, "supabase", "migrations")).filter((f) => f.endsWith(".sql")).sort();
-    expect(migrations[migrations.length - 1]).toBe("20260907000001_shipment_geography.sql");
+  // PIN REPHRASED (TMS-5, 2026-08-18): this asserted the newest migration was
+  // TMS-2's, which decays the moment ANY later phase ships one (TMS-5 ships
+  // 117). What it actually meant — TMS-4 itself shipped no migration — is
+  // durable, so that is what it now says.
+  it("TMS-4 shipped NO migration of its own", () => {
+    const migrations = fs.readdirSync(path.join(root, "supabase", "migrations")).filter((f) => f.endsWith(".sql"));
+    expect(migrations.some((f) => /transport_request|tms_?4/i.test(f))).toBe(false);
   });
 
   it("the external boundary stays free text + TRANSPORT_ORDER — no registry pre-built", () => {
@@ -167,7 +171,10 @@ describe("TMS-4 — scope guard (no TMS-5/TMS-6 pre-build)", () => {
     expect(fs.existsSync(path.join(root, "lib", "subcontractors"))).toBe(false);
   });
 
-  it("no vehicle/fleet surface appeared", () => {
+  // PIN NARROWED (TMS-5, 2026-08-18): TMS-5 is the ratified phase for the
+  // lightweight fleet, so lib/fleet + components/fleet are expected. Fuel,
+  // maintenance ERP, telematics and payroll remain excluded and guarded.
+  it("no EXCLUDED fleet-ERP surface appeared", () => {
     for (const dir of ["lib", "components", "app"]) {
       const names: string[] = [];
       const walk = (d: string) => {
@@ -176,7 +183,10 @@ describe("TMS-4 — scope guard (no TMS-5/TMS-6 pre-build)", () => {
         }
       };
       walk(path.join(root, dir));
-      expect(names.some((n) => /fleet|vehicle|fuel|maintenance/i.test(n)), dir).toBe(false);
+      // NB: `payroll` is deliberately absent — lib/hr/payroll is HR-7's
+      // legitimate domain. DRIVER payroll is guarded by content pins in the
+      // TMS-5 suite, which scans the fleet sources themselves.
+      expect(names.some((n) => /fuel|telematic|workshop/i.test(n)), dir).toBe(false);
     }
   });
 });

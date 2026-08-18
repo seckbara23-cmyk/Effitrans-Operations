@@ -38,6 +38,8 @@ export type TransportAssignment = {
   driverName?: string | null;
   driverPhone?: string | null;
   vehiclePlate?: string | null;
+  /** TMS-5 — internal fleet vehicle id (uuid) or null. */
+  vehicleId?: string | null;
   trailerOrContainer?: string | null;
   /** Assignment fields to explicitly clear. The only way to write null. */
   clearFields?: readonly string[];
@@ -47,6 +49,9 @@ export type TransportRecord = {
   id: string;
   fileId: string;
   status: TransportStatus;
+  /** TMS-5 — bound internal fleet vehicle (null for external/hired). */
+  vehicleId?: string | null;
+  vehicleLabel?: string | null;
   pickupLocation: string | null;
   deliveryLocation: string | null;
   pickupPlanned: string | null;

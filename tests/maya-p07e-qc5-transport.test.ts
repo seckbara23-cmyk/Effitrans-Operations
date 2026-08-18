@@ -91,8 +91,16 @@ describe("identified is not conforme", () => {
     expect(c.reason).toBe(QC5_NO_VEHICLE_CONFORMITY);
   });
 
-  it("no vehicle or conformity authority exists to reuse — pinned", () => {
-    // If a vehicle table ever lands, this test fails and QC5 must be revisited.
+  // QC5 REVISITED (TMS-5, 2026-08-18) — as this pin instructed. A vehicle
+  // registry DID land (migration 117: vehicle + vehicle_compliance +
+  // vehicle_maintenance), so the original assertion ("no vehicle table exists")
+  // is retired. The revisit's conclusion is that QC5's verdict does NOT change:
+  // vehicle_compliance records WHEN a document expires, which is a fleet-
+  // stewardship fact about the truck, not an attestation that this shipment's
+  // vehicle was conforme at loading. TMS-5 deliberately built no conformity
+  // verdict (ratified Q4: lightweight only), so the criterion stays
+  // `not_represented` — and that is what is now pinned.
+  it("a vehicle registry now exists, and QC5 still computes NO conformity verdict", () => {
     const tables = new Set<string>();
     for (const f of readdirSync(fileURLToPath(new URL("../supabase/migrations", import.meta.url)))) {
       if (!f.endsWith(".sql")) continue;
@@ -100,9 +108,13 @@ describe("identified is not conforme", () => {
         tables.add(m[1]);
       }
     }
-    expect([...tables].filter((t) => /vehicle|truck|fleet/i.test(t))).toEqual([]);
-    // And no conformity verdict is computed anywhere in the slice.
+    // The registry exists (TMS-5)…
+    expect([...tables]).toContain("vehicle");
+    expect([...tables]).toContain("vehicle_compliance");
+    // …and QC5 still neither reads it nor derives conformity from it.
     expect(code(PURE)).not.toMatch(/isConform|conformityOk|vehicleValid/i);
+    expect(code(PURE)).not.toContain("vehicle_compliance");
+    expect(code(PURE)).not.toContain("lib/fleet");
   });
 });
 

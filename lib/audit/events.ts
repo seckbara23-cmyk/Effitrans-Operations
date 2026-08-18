@@ -84,6 +84,15 @@ export const AuditActions = {
   CUSTOMS_BLOCKED: "customs.blocked",
   CUSTOMS_DELETED: "customs.deleted",
   // Phase 1.10 — Transport
+  // TMS-5 — Parc & Flotte. Vehicle master data is NOT a dossier fact, so the
+  // business-event ledger (dossier-scoped) is deliberately not used: the
+  // append-only audit log is the immutable history of these changes.
+  VEHICLE_CREATED: "vehicle.created",
+  VEHICLE_UPDATED: "vehicle.updated",
+  VEHICLE_STATUS_CHANGED: "vehicle.status_changed",
+  VEHICLE_COMPLIANCE_RECORDED: "vehicle.compliance_recorded",
+  VEHICLE_MAINTENANCE_OPENED: "vehicle.maintenance_opened",
+  VEHICLE_MAINTENANCE_CLOSED: "vehicle.maintenance_closed",
   TRANSPORT_CREATED: "transport.created",
   // TMS-4 — the REQUEST act (transport:request), distinct from starting
   // execution: the Account Manager raises the need, transport executes.

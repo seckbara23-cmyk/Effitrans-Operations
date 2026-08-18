@@ -291,14 +291,30 @@ describe("TMS-2 wiring & registry discipline", () => {
     expect(ci).toContain("-f supabase/tests/tms_2_shipment_geography_test.sql");
   });
 
-  it("no migration ever ships generic-TMS tables (frozen TMS-0 exclusions)", () => {
+  // PIN NARROWED (TMS-5, 2026-08-18): the ratified roadmap's TMS-5 phase ships
+  // the lightweight Parc & Flotte (migration 117 `fleet_registry`), so `fleet`
+  // and `vehicle` are no longer forbidden filenames. What remains excluded —
+  // fuel, telematics, route optimization, driver payroll, carrier billing — is
+  // still guarded here, and TMS-5's own suite guards the ERP surface itself.
+  it("no migration ever ships the EXCLUDED generic-TMS domains", () => {
     const files = fs.readdirSync(path.join(root, "supabase", "migrations")).filter((f) => f.endsWith(".sql"));
-    expect(files.some((f) => /vehicle|fleet|fuel|maintenance|telematic/i.test(f))).toBe(false);
+    // `payroll` is deliberately absent: 20260901000001_hr_payroll_preparation
+    // is HR-7's legitimate domain. DRIVER payroll — the TMS exclusion — is
+    // guarded by content pins in the TMS-5 fleet suite.
+    expect(files.some((f) => /fuel|telematic|route_optim|carrier_billing/i.test(f))).toBe(false);
   });
 
-  it("build-info advanced to migration 116", () => {
+  // PIN REPHRASED (TMS-5, 2026-08-18): pinning build-info's LATEST to THIS
+  // migration froze a moving value — every later phase would break it (the
+  // recurring frozen-latest trap). The durable statement is that TMS-2's
+  // migration is present and counted, and that build-info stays consistent
+  // with the directory, which the finance suite already enforces globally.
+  it("migration 116 is present and the ledger counts it", () => {
+    const migrations = fs.readdirSync(path.join(root, "supabase", "migrations")).filter((f) => f.endsWith(".sql"));
+    expect(migrations).toContain(MIGRATION);
     const buildInfo = read("lib", "platform", "ops", "build-info.ts");
-    expect(buildInfo).toContain('LATEST_MIGRATION = "20260907000001_shipment_geography"');
-    expect(buildInfo).toContain("MIGRATION_COUNT = 116");
+    const count = Number(/MIGRATION_COUNT = (\d+)/.exec(buildInfo)![1]);
+    expect(count).toBe(migrations.length);
+    expect(count).toBeGreaterThanOrEqual(116);
   });
 });

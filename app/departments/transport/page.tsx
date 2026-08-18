@@ -189,6 +189,7 @@ export default async function LogisticsCommandCenterPage() {
         <h2 className="mb-2 text-sm font-semibold text-navy-900">Accès rapide</h2>
         <div className="flex flex-wrap gap-2 text-sm">
           <Link href="/transport" className="rounded-lg border border-slate-200 px-3 py-1.5 hover:border-teal-300">🚚 Transport routier</Link>
+          <Link href="/transport/parc" className="rounded-lg border border-slate-200 px-3 py-1.5 hover:border-teal-300">🅿️ Parc &amp; Flotte</Link>
           <Link href="/shipping" className="rounded-lg border border-slate-200 px-3 py-1.5 hover:border-teal-300">🚢 Ocean Shipping</Link>
           <Link href="/air" className="rounded-lg border border-slate-200 px-3 py-1.5 hover:border-teal-300">✈️ Air Cargo</Link>
           <Link href="/customs/intelligence" className="rounded-lg border border-slate-200 px-3 py-1.5 hover:border-teal-300">🛃 Intelligence douanière</Link>

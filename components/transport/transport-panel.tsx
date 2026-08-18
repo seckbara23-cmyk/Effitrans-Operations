@@ -41,6 +41,7 @@ export function TransportPanel({
   canComplete,
   canDelete,
   canRequest = false,
+  fleetOptions = [],
 }: {
   fileId: string;
   record: TransportRecord | null;
@@ -50,6 +51,12 @@ export function TransportPanel({
   canAssign: boolean;
   canComplete: boolean;
   canDelete: boolean;
+  /**
+   * TMS-5 — internal fleet vehicles bindable right now (active, AVAILABLE,
+   * not already engaged). Empty when the parc is empty or the viewer cannot
+   * assign; the free-text plate below stays for external/hired vehicles.
+   */
+  fleetOptions?: { id: string; label: string }[];
   /**
    * TMS-4 — transport:request. The REQUEST act (Account Manager raises the
    * need); rendered only when the viewer cannot already START execution
@@ -180,11 +187,16 @@ export function TransportPanel({
           driverName: String(fd.get("driverName") ?? ""),
           driverPhone: String(fd.get("driverPhone") ?? ""),
           vehiclePlate: String(fd.get("vehiclePlate") ?? ""),
+          // TMS-5 — "" means « aucun véhicule du parc »; the explicit clear
+          // below is what actually unbinds it (WES-1A: empty never clears
+          // implicitly).
+          vehicleId: String(fd.get("vehicleId") ?? ""),
           trailerOrContainer: String(fd.get("trailerOrContainer") ?? ""),
           clearFields: clearedFields(fd, [
             ["driverName", r.driverName],
             ["driverPhone", r.driverPhone],
             ["vehiclePlate", r.vehiclePlate],
+            ["vehicleId", r.vehicleId ?? null],
             ["trailerOrContainer", r.trailerOrContainer],
           ]),
         },
@@ -263,6 +275,23 @@ export function TransportPanel({
           <form onSubmit={onAssign} className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <Field label={tr.fields.driverName} name="driverName" defaultValue={record.driverName} />
             <Field label={tr.fields.driverPhone} name="driverPhone" defaultValue={record.driverPhone} />
+            {/* TMS-5 — the INTERNAL fleet vehicle. Only available vehicles are
+                offered; the database refuses an immobilized one independently.
+                The free-text plate stays beside it for external/hired vehicles. */}
+            {(fleetOptions.length > 0 || record.vehicleId) && (
+              <label className="flex flex-col gap-1 text-xs text-slate-600">
+                Véhicule du parc
+                <select name="vehicleId" defaultValue={record.vehicleId ?? ""} className="rounded-md border border-slate-200 px-2 py-1 text-sm">
+                  <option value="">— Aucun (véhicule externe) —</option>
+                  {record.vehicleId && record.vehicleLabel && (
+                    <option value={record.vehicleId}>{record.vehicleLabel}</option>
+                  )}
+                  {fleetOptions
+                    .filter((o) => o.id !== record.vehicleId)
+                    .map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+                </select>
+              </label>
+            )}
             <Field label={tr.fields.vehiclePlate} name="vehiclePlate" defaultValue={record.vehiclePlate} />
             <Field label={tr.fields.trailer} name="trailerOrContainer" defaultValue={record.trailerOrContainer} />
             <div className="sm:col-span-2">

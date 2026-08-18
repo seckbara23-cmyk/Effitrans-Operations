@@ -1473,6 +1473,144 @@ export type Database = {
           },
         ];
       };
+      // TMS-5 — Parc & Flotte (migration 117).
+      vehicle: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          registration: string;
+          internal_code: string | null;
+          vehicle_type: string;
+          make: string | null;
+          model: string | null;
+          year: number | null;
+          capacity_kg: number | null;
+          capacity_m3: number | null;
+          odometer_km: number | null;
+          status: string;
+          is_active: boolean;
+          notes: string | null;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          registration: string;
+          internal_code?: string | null;
+          vehicle_type?: string;
+          make?: string | null;
+          model?: string | null;
+          year?: number | null;
+          capacity_kg?: number | null;
+          capacity_m3?: number | null;
+          odometer_km?: number | null;
+          status?: string;
+          is_active?: boolean;
+          notes?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          registration?: string;
+          internal_code?: string | null;
+          vehicle_type?: string;
+          make?: string | null;
+          model?: string | null;
+          year?: number | null;
+          capacity_kg?: number | null;
+          capacity_m3?: number | null;
+          odometer_km?: number | null;
+          status?: string;
+          is_active?: boolean;
+          notes?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      vehicle_compliance: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          vehicle_id: string;
+          type_code: string;
+          reference: string | null;
+          issued_on: string | null;
+          expires_on: string | null;
+          note: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          vehicle_id: string;
+          type_code: string;
+          reference?: string | null;
+          issued_on?: string | null;
+          expires_on?: string | null;
+          note?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          reference?: string | null;
+          issued_on?: string | null;
+          expires_on?: string | null;
+          note?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      vehicle_maintenance: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          vehicle_id: string;
+          kind: string;
+          status: string;
+          immobilizing: boolean;
+          description: string;
+          opened_on: string;
+          opened_by: string | null;
+          closed_on: string | null;
+          resolution: string | null;
+          closed_by: string | null;
+          odometer_km: number | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          vehicle_id: string;
+          kind: string;
+          status?: string;
+          immobilizing?: boolean;
+          description: string;
+          opened_on?: string;
+          opened_by?: string | null;
+          closed_on?: string | null;
+          resolution?: string | null;
+          closed_by?: string | null;
+          odometer_km?: number | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          status?: string;
+          immobilizing?: boolean;
+          description?: string;
+          closed_on?: string | null;
+          resolution?: string | null;
+          closed_by?: string | null;
+          odometer_km?: number | null;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       transport_record: {
         Row: {
           id: string;
@@ -1488,6 +1626,7 @@ export type Database = {
           driver_name: string | null;
           driver_phone: string | null;
           vehicle_plate: string | null;
+          vehicle_id: string | null;
           trailer_or_container: string | null;
           transport_company: string | null;
           delivery_reference: string | null;
@@ -1515,6 +1654,7 @@ export type Database = {
           driver_name?: string | null;
           driver_phone?: string | null;
           vehicle_plate?: string | null;
+          vehicle_id?: string | null;
           trailer_or_container?: string | null;
           transport_company?: string | null;
           delivery_reference?: string | null;
@@ -1542,6 +1682,7 @@ export type Database = {
           driver_name?: string | null;
           driver_phone?: string | null;
           vehicle_plate?: string | null;
+          vehicle_id?: string | null;
           trailer_or_container?: string | null;
           transport_company?: string | null;
           delivery_reference?: string | null;

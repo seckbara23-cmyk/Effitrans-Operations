@@ -25,6 +25,8 @@ type RecordRow = {
   driver_name: string | null;
   driver_phone: string | null;
   vehicle_plate: string | null;
+  vehicle_id: string | null;
+  vehicle?: { registration: string; internal_code: string | null } | null;
   trailer_or_container: string | null;
   transport_company: string | null;
   delivery_reference: string | null;
@@ -35,7 +37,7 @@ type RecordRow = {
 };
 
 const RECORD_COLS =
-  "id, file_id, status, pickup_location, delivery_location, pickup_planned, pickup_actual, delivery_planned, delivery_actual, driver_name, driver_phone, vehicle_plate, trailer_or_container, transport_company, delivery_reference, customs_override, notes, driver_user_id, updated_at";
+  "id, file_id, status, pickup_location, delivery_location, pickup_planned, pickup_actual, delivery_planned, delivery_actual, driver_name, driver_phone, vehicle_plate, trailer_or_container, transport_company, delivery_reference, customs_override, notes, driver_user_id, updated_at, vehicle_id, vehicle:vehicle_id(registration, internal_code)";
 
 function toRecord(r: RecordRow): TransportRecord {
   return {
@@ -51,6 +53,10 @@ function toRecord(r: RecordRow): TransportRecord {
     driverName: r.driver_name,
     driverPhone: r.driver_phone,
     vehiclePlate: r.vehicle_plate,
+    vehicleId: r.vehicle_id,
+    vehicleLabel: r.vehicle
+      ? (r.vehicle.internal_code ? `${r.vehicle.registration} — ${r.vehicle.internal_code}` : r.vehicle.registration)
+      : null,
     trailerOrContainer: r.trailer_or_container,
     transportCompany: r.transport_company,
     deliveryReference: r.delivery_reference,

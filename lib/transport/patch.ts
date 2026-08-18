@@ -40,6 +40,9 @@ export const TRANSPORT_ASSIGNMENT_FIELDS = [
   "driverName",
   "driverPhone",
   "vehiclePlate",
+  // TMS-5 — the INTERNAL fleet vehicle. vehiclePlate stays beside it: an
+  // external/hired vehicle is still recorded as free text (TMS-6 boundary).
+  "vehicleId",
   "trailerOrContainer",
 ] as const;
 
@@ -59,6 +62,7 @@ export const TRANSPORT_COLUMN: Readonly<Record<TransportPatchField, string>> = {
   driverName: "driver_name",
   driverPhone: "driver_phone",
   vehiclePlate: "vehicle_plate",
+  vehicleId: "vehicle_id",
   trailerOrContainer: "trailer_or_container",
 };
 

@@ -34,6 +34,7 @@ import { CustomsPanel } from "@/components/customs/customs-panel";
 import { getCustomsRecord, getMissingCustomsDocuments } from "@/lib/customs/service";
 import { isVerified } from "@/lib/documents/doctrine";
 import { TransportPanel } from "@/components/transport/transport-panel";
+import { listAssignableVehicles } from "@/lib/fleet/service";
 import { DeliveryProofPanel } from "@/components/transport/delivery-proof-panel";
 import { getTransportRecord } from "@/lib/transport/service";
 import { TrackingTimeline } from "@/components/transport/tracking-timeline";
@@ -106,6 +107,10 @@ export default async function FileDetailPage({ params }: { params: { id: string 
   // the same file:read visibility — now enforced by the RLS policy itself.
   const parentOptions = canUpdate ? await listParentCandidates(file.id) : [];
   // Phase 3.2A — assignment + delete/cancel controls (permission-gated).
+  // TMS-5 — bindable fleet vehicles, only for transport assigners.
+  const fleetOptions = hasPermission(permissions, "transport:assign")
+    ? await listAssignableVehicles()
+    : [];
   const canAssign = hasPermission(permissions, "file:assign");
   // TMS-1 — a DIFFERENT authority from file:assign: the Responsable client is
   // designated by the Operations Manager, never auto-crowned at creation.
@@ -505,6 +510,7 @@ export default async function FileDetailPage({ params }: { params: { id: string 
             canComplete={hasPermission(permissions, "transport:complete")}
             canDelete={hasPermission(permissions, "transport:delete")}
             canRequest={hasPermission(permissions, "transport:request")}
+            fleetOptions={fleetOptions}
           />
         </div>
       )}
