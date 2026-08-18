@@ -45,6 +45,8 @@ export function FileForm({
   clients,
   parents = [],
   canUpdate = true,
+  ports = [],
+  airports = [],
 }: {
   mode: "create" | "edit";
   fileId?: string;
@@ -58,6 +60,14 @@ export function FileForm({
    */
   parents?: { id: string; fileNumber: string }[];
   canUpdate?: boolean;
+  /**
+   * TMS-2 — controlled geography (ocean_port / air_airport of THIS tenant),
+   * loaded only for transport:read holders. Optional: with none supplied the
+   * pickers are simply absent and the free-text origin/destination — which
+   * remain the label either way — are all there is.
+   */
+  ports?: { id: string; label: string }[];
+  airports?: { id: string; label: string }[];
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -76,6 +86,11 @@ export function FileForm({
   const [vesselOrFlight, setVesselOrFlight] = useState(s?.vesselOrFlight ?? "");
   const [blAwbRef, setBlAwbRef] = useState(s?.blAwbRef ?? "");
   const [containerRef, setContainerRef] = useState(s?.containerRef ?? "");
+  // TMS-2 — geographic anchors (optional; free text above stays the label).
+  const [originPortId, setOriginPortId] = useState(s?.originPortId ?? "");
+  const [destinationPortId, setDestinationPortId] = useState(s?.destinationPortId ?? "");
+  const [originAirportId, setOriginAirportId] = useState(s?.originAirportId ?? "");
+  const [destinationAirportId, setDestinationAirportId] = useState(s?.destinationAirportId ?? "");
   // MAYA-P0.5-B — cargo declaration + dossier facts. Optional throughout.
   const [cargoForm, setCargoForm] = useState(s?.cargoForm ?? "");
   const [quantity, setQuantity] = useState(s?.quantity != null ? String(s.quantity) : "");
@@ -93,6 +108,9 @@ export function FileForm({
   const [processingDueDate, setProcessingDueDate] = useState(initial?.processingDueDate ?? "");
 
   const editable = mode === "create" || canUpdate;
+  // TMS-2 — which anchor pickers apply to the declared transport mode.
+  const showPorts = (transportMode === "SEA" || transportMode === "MULTIMODAL") && ports.length > 0;
+  const showAirports = (transportMode === "AIR" || transportMode === "MULTIMODAL") && airports.length > 0;
 
   function payload(): FileInput {
     return {
@@ -109,6 +127,12 @@ export function FileForm({
         vesselOrFlight,
         blAwbRef,
         containerRef,
+        // Anchors follow the declared mode: switching away from a mode drops
+        // the anchors that no longer apply (the server refuses mismatches too).
+        originPortId: showPorts ? originPortId || null : null,
+        destinationPortId: showPorts ? destinationPortId || null : null,
+        originAirportId: showAirports ? originAirportId || null : null,
+        destinationAirportId: showAirports ? destinationAirportId || null : null,
         cargoForm: cargoForm || null,
         quantity: numberOrNull(quantity),
         quantityUnit,
@@ -212,6 +236,49 @@ export function FileForm({
             <Field label={t.files.form.destination}>
               <input className={input} value={destination} disabled={!editable} onChange={(e) => setDestination(e.target.value)} />
             </Field>
+            {/* TMS-2 — controlled geographic anchors. The text above stays the
+                label; these link the SAME fact to the port/airport referential
+                so the tracking architecture can key on it. */}
+            {showPorts && (
+              <>
+                <Field label="Port d'origine (référentiel)">
+                  <select className={input} value={originPortId} disabled={!editable} onChange={(e) => setOriginPortId(e.target.value)}>
+                    <option value="">— Non associé —</option>
+                    {ports.map((p) => (
+                      <option key={p.id} value={p.id}>{p.label}</option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Port de destination (référentiel)">
+                  <select className={input} value={destinationPortId} disabled={!editable} onChange={(e) => setDestinationPortId(e.target.value)}>
+                    <option value="">— Non associé —</option>
+                    {ports.map((p) => (
+                      <option key={p.id} value={p.id}>{p.label}</option>
+                    ))}
+                  </select>
+                </Field>
+              </>
+            )}
+            {showAirports && (
+              <>
+                <Field label="Aéroport d'origine (référentiel)">
+                  <select className={input} value={originAirportId} disabled={!editable} onChange={(e) => setOriginAirportId(e.target.value)}>
+                    <option value="">— Non associé —</option>
+                    {airports.map((a) => (
+                      <option key={a.id} value={a.id}>{a.label}</option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Aéroport de destination (référentiel)">
+                  <select className={input} value={destinationAirportId} disabled={!editable} onChange={(e) => setDestinationAirportId(e.target.value)}>
+                    <option value="">— Non associé —</option>
+                    {airports.map((a) => (
+                      <option key={a.id} value={a.id}>{a.label}</option>
+                    ))}
+                  </select>
+                </Field>
+              </>
+            )}
             <Field label={t.files.form.carrier}>
               <input className={input} value={carrierName} disabled={!editable} onChange={(e) => setCarrierName(e.target.value)} />
             </Field>

@@ -44,6 +44,12 @@ function shipmentRow(tenantId: string, fileId: string, s: ShipmentInput | undefi
     vessel_or_flight: s?.vesselOrFlight?.trim() || null,
     bl_awb_ref: s?.blAwbRef?.trim() || null,
     container_ref: s?.containerRef?.trim() || null,
+    // TMS-2 — nullable geographic anchors; free-text origin/destination stay
+    // the label. Validated by validateShipmentGeography BEFORE any write.
+    origin_port_id: s?.originPortId || null,
+    destination_port_id: s?.destinationPortId || null,
+    origin_airport_id: s?.originAirportId || null,
+    destination_airport_id: s?.destinationAirportId || null,
     // MAYA-P0.5-B — the cargo declaration. Facts only.
     cargo_form: s?.cargoForm?.trim() || null,
     quantity: num(s?.quantity),
@@ -56,6 +62,46 @@ function shipmentRow(tenantId: string, fileId: string, s: ShipmentInput | undefi
     supplier_name: s?.supplierName?.trim() || null,
     warehouse_entry_date: s?.warehouseEntryDate?.trim() || null,
   };
+}
+
+/**
+ * TMS-2 — geographic anchors are validated BEFORE any write: ports belong to
+ * maritime/multimodal transport, airports to air/multimodal, and every
+ * referenced entity must belong to the caller's tenant (the DB trigger
+ * enforce_shipment_geo_tenant re-proves the tenant boundary — this check
+ * exists so the operator gets a sentence, never INSTEAD of the trigger).
+ * Returns an error code from t.files.errors, or null when valid.
+ */
+async function validateShipmentGeography(
+  supabase: ReturnType<typeof getAdminSupabaseClient>,
+  tenantId: string,
+  s: FileInput["shipment"],
+): Promise<string | null> {
+  const portIds = [s?.originPortId, s?.destinationPortId].filter((v): v is string => !!v);
+  const airportIds = [s?.originAirportId, s?.destinationAirportId].filter((v): v is string => !!v);
+  if (portIds.length === 0 && airportIds.length === 0) return null;
+
+  const mode = s?.transportMode ?? null;
+  if (portIds.length > 0 && mode !== "SEA" && mode !== "MULTIMODAL") return "geo_mode_mismatch";
+  if (airportIds.length > 0 && mode !== "AIR" && mode !== "MULTIMODAL") return "geo_mode_mismatch";
+
+  if (portIds.length > 0) {
+    const { data } = await supabase
+      .from("ocean_port")
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .in("id", portIds);
+    if ((data ?? []).length !== new Set(portIds).size) return "geo_invalid_reference";
+  }
+  if (airportIds.length > 0) {
+    const { data } = await supabase
+      .from("air_airport")
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .in("id", airportIds);
+    if ((data ?? []).length !== new Set(airportIds).size) return "geo_invalid_reference";
+  }
+  return null;
 }
 
 /**
@@ -84,6 +130,11 @@ export async function createFile(input: FileInput): Promise<ActionResult> {
   if (invalid) return { ok: false, error: invalid };
 
   const supabase = getAdminSupabaseClient();
+
+  // TMS-2 — refused BEFORE the dossier row exists and BEFORE a number is
+  // allocated: an invalid geography must not leave an orphan or burn a number.
+  const geoErr = await validateShipmentGeography(supabase, admin.tenantId, input.shipment);
+  if (geoErr) return { ok: false, error: geoErr };
 
   // Atomic, concurrency-safe number (per tenant x type x year).
   //
@@ -167,6 +218,10 @@ export async function updateFile(id: string, input: FileInput): Promise<ActionRe
   // A dossier may never be its own parent; the database also proves it, but
   // refusing here keeps the message specific.
   if (input.parentFileId && input.parentFileId === id) return { ok: false, error: "invalid_parent" };
+
+  // TMS-2 — geographic anchors validated before any write.
+  const geoErr = await validateShipmentGeography(supabase, admin.tenantId, input.shipment);
+  if (geoErr) return { ok: false, error: geoErr };
 
   const { error } = await supabase
     .from("operational_file")

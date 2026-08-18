@@ -328,7 +328,7 @@ export async function getFile(id: string): Promise<FileDetail | null> {
   const { data: shipment } = await supabase
     .from("shipment")
     .select(
-      "id, transport_mode, incoterm, origin, destination, cargo_type, carrier_name, vessel_or_flight, bl_awb_ref, container_ref, cargo_form, quantity, quantity_unit, net_weight_kg, gross_weight_kg, volume_m3, package_count, goods_description, supplier_name, warehouse_entry_date",
+      "id, transport_mode, incoterm, origin, destination, cargo_type, carrier_name, vessel_or_flight, bl_awb_ref, container_ref, cargo_form, quantity, quantity_unit, net_weight_kg, gross_weight_kg, volume_m3, package_count, goods_description, supplier_name, warehouse_entry_date, origin_port_id, destination_port_id, origin_airport_id, destination_airport_id",
     )
     .eq("file_id", id)
     .maybeSingle();
@@ -393,6 +393,10 @@ export async function getFile(id: string): Promise<FileDetail | null> {
           goodsDescription: shipment.goods_description,
           supplierName: shipment.supplier_name,
           warehouseEntryDate: shipment.warehouse_entry_date,
+          originPortId: shipment.origin_port_id,
+          destinationPortId: shipment.destination_port_id,
+          originAirportId: shipment.origin_airport_id,
+          destinationAirportId: shipment.destination_airport_id,
         }
       : null,
     history: (history ?? []).map((h) => ({
@@ -722,6 +726,46 @@ export async function getCommercialOrigin(fileId: string): Promise<CommercialOri
     if (exec?.state === "SKIPPED") skipReason = (exec.skip_reason as string | null) ?? null;
   }
   return { quotationId: null, devisNumber: null, skipReason };
+}
+
+export type GeoOption = { id: string; label: string };
+
+/**
+ * TMS-2 — picker options for the dossier form's geographic anchors. Gated by
+ * transport:read: the SAME authority the ocean_port / air_airport RLS select
+ * policies grant (this admin-client read must not show more than the direct
+ * read would — EC-3C). Active entries of the caller's tenant only. The label
+ * carries the controlled code when one is recorded.
+ */
+export async function listGeographyOptions(): Promise<{ ports: GeoOption[]; airports: GeoOption[] }> {
+  const user = await assertPermission("transport:read");
+  const supabase = getAdminSupabaseClient();
+  const [portsRes, airportsRes] = await Promise.all([
+    supabase
+      .from("ocean_port")
+      .select("id, name, unlocode")
+      .eq("tenant_id", user.tenantId)
+      .eq("active", true)
+      .order("name", { ascending: true })
+      .limit(500),
+    supabase
+      .from("air_airport")
+      .select("id, name, iata")
+      .eq("tenant_id", user.tenantId)
+      .eq("active", true)
+      .order("name", { ascending: true })
+      .limit(500),
+  ]);
+  return {
+    ports: (portsRes.data ?? []).map((p) => ({
+      id: p.id as string,
+      label: p.unlocode ? `${p.name} (${p.unlocode})` : (p.name as string),
+    })),
+    airports: (airportsRes.data ?? []).map((a) => ({
+      id: a.id as string,
+      label: a.iata ? `${a.name} (${a.iata})` : (a.name as string),
+    })),
+  };
 }
 
 export async function listAssignableStaff(): Promise<StaffOption[]> {

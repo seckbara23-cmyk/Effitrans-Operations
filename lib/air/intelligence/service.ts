@@ -86,11 +86,12 @@ export async function getAirShipmentDetail(id: string): Promise<AirShipmentDetai
   if (!data) return null;
   const awb = data.awb?.[0] ?? null;
 
-  const [ulds, events, customs, flight] = await Promise.all([
+  const [ulds, events, customs, flight, anchors] = await Promise.all([
     readUlds(admin, tenantId, id),
     readEvents(admin, tenantId, id),
     getShipmentCustomsSummary(admin, tenantId, data.file_id),
     awb?.flight_id ? readFlightMap(admin, tenantId, awb.flight_id) : Promise.resolve(null),
+    readShipmentAirportAnchors(admin, tenantId, id),
   ]);
 
   const last = latestAirMilestoneEvent(events);
@@ -101,7 +102,9 @@ export async function getAirShipmentDetail(id: string): Promise<AirShipmentDetai
 
   const milestoneMarkers = events.filter((e) => airEventIsMilestone(e.eventType) && e.location?.latitude != null && e.location?.longitude != null)
     .map((e) => ({ milestone: "IN_TRANSIT" as never, latitude: e.location!.latitude ?? null, longitude: e.location!.longitude ?? null, occurredAt: e.occurredAt, label: airMilestoneLabel(e.eventType as AirMilestone) }));
-  const map = buildShipmentMapProjection({ origin: flight?.origin ?? null, destination: flight?.destination ?? null, current: position, milestoneMarkers });
+  // TMS-2 — the ACTUAL flight stays the primary endpoint source; the dossier's
+  // own airport anchors are the fallback when no AWB/flight exists yet.
+  const map = buildShipmentMapProjection({ origin: flight?.origin ?? anchors.origin, destination: flight?.destination ?? anchors.destination, current: position, milestoneMarkers });
 
   const shipment = rowToAirShipment(data, { fileNumber: data.file?.file_number ?? null, clientName: data.file?.client?.name ?? null, mawb: awb?.mawb ?? null, hawb: awb?.hawb ?? null, positionConfidence: position.available ? position.confidence : null });
   return { shipment, version: data.air_tracking_version, ulds, timeline: sortEvents(events), position, map, customs, provider: resolveAirProviderConfig(shipment.providerCode), nextMilestones: nextAirMilestones(shipment.milestone), flightNumber: flight?.flightNumber ?? null };
@@ -115,6 +118,17 @@ async function readEvents(admin: Admin, tenantId: string, shipmentId: string): P
   const { data } = await admin.from("air_tracking_event").select("id, tenant_id, shipment_id, uld_id, event_type, occurred_at, received_at, source, provider_code, confidence, location_name, location_iata, latitude, longitude, flight_number, description, fingerprint").eq("tenant_id", tenantId).eq("shipment_id", shipmentId).order("occurred_at", { ascending: false }).limit(TIMELINE_CAP).returns<AirEventRow[]>();
   return (data ?? []).map(rowToAirEvent);
 }
+/**
+ * TMS-2 — the shipment's OWN airport anchors (origin/destination_airport_id).
+ * Fallback endpoints only: an actual flight always outranks them. Coordinates
+ * are never invented — an anchor without lat/lng contributes nothing.
+ */
+async function readShipmentAirportAnchors(admin: Admin, tenantId: string, shipmentId: string): Promise<{ origin: { latitude: number; longitude: number; label?: string } | null; destination: { latitude: number; longitude: number; label?: string } | null }> {
+  const { data } = await admin.from("shipment").select("origin:origin_airport_id(name, latitude, longitude), dest:destination_airport_id(name, latitude, longitude)").eq("id", shipmentId).eq("tenant_id", tenantId).maybeSingle<{ origin: { name: string; latitude: number | null; longitude: number | null } | null; dest: { name: string; latitude: number | null; longitude: number | null } | null }>();
+  const pt = (a: { name: string; latitude: number | null; longitude: number | null } | null) => (a && a.latitude != null && a.longitude != null ? { latitude: a.latitude, longitude: a.longitude, label: a.name } : null);
+  return { origin: pt(data?.origin ?? null), destination: pt(data?.dest ?? null) };
+}
+
 async function readFlightMap(admin: Admin, tenantId: string, flightId: string): Promise<{ flightNumber: string | null; origin: { latitude: number; longitude: number; label?: string } | null; destination: { latitude: number; longitude: number; label?: string } | null } | null> {
   const { data } = await admin.from("air_flight").select("flight_number, origin:origin_airport_id(name, latitude, longitude), dest:destination_airport_id(name, latitude, longitude)").eq("id", flightId).eq("tenant_id", tenantId).maybeSingle<{ flight_number: string | null; origin: { name: string; latitude: number | null; longitude: number | null } | null; dest: { name: string; latitude: number | null; longitude: number | null } | null }>();
   if (!data) return null;

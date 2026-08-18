@@ -20,6 +20,16 @@ export type ShipmentInput = {
   blAwbRef?: string | null;
   containerRef?: string | null;
   /**
+   * TMS-2 — nullable geographic anchors. The free-text origin/destination stay
+   * the human label; these link the SAME fact to the controlled reference data
+   * (ocean_port / air_airport) the tracking planes are keyed on. Ports for
+   * SEA/MULTIMODAL, airports for AIR/MULTIMODAL — validated server-side.
+   */
+  originPortId?: string | null;
+  destinationPortId?: string | null;
+  originAirportId?: string | null;
+  destinationAirportId?: string | null;
+  /**
    * MAYA-P0.5-B — the cargo declaration every dossier type can carry. Before
    * this, weight and volume existed only inside ocean_container /
    * air_cargo_piece, so a bulk or road-only dossier could not describe its
@@ -213,6 +223,11 @@ export type FileDetail = {
     goodsDescription: string | null;
     supplierName: string | null;
     warehouseEntryDate: string | null;
+    // TMS-2 — geographic anchors (nullable; text origin/destination = label).
+    originPortId: string | null;
+    destinationPortId: string | null;
+    originAirportId: string | null;
+    destinationAirportId: string | null;
   } | null;
   history: FileTransition[];
 };

@@ -1882,6 +1882,10 @@ export const t = {
       invalid_status: "Statut invalide.",
       invalid_transition: "Transition de statut non autorisée.",
       numbering_failed: "Échec de la génération du numéro de dossier.",
+      // TMS-2 — geographic anchors.
+      geo_mode_mismatch:
+        "Un port s'associe à un transport maritime ou multimodal, un aéroport à un transport aérien ou multimodal.",
+      geo_invalid_reference: "Le port ou l'aéroport sélectionné n'existe pas dans votre organisation.",
       not_found: "Dossier introuvable.",
       customs_not_released: "Impossible de clôturer : le dédouanement n'est pas libéré (BAE).",
       // Closure blockers — each names the ACTUAL unmet requirement, so the

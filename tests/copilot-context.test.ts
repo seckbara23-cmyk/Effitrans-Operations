@@ -56,6 +56,12 @@ const FILE: FileDetail = {
     goodsDescription: null,
     supplierName: null,
     warehouseEntryDate: null,
+    // TMS-2 geographic anchors — absent on this fixture; the copilot is
+    // unaffected by them.
+    originPortId: null,
+    destinationPortId: null,
+    originAirportId: null,
+    destinationAirportId: null,
   },
   history: [],
 };

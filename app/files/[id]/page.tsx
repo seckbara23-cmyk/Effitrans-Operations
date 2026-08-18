@@ -5,7 +5,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { ProcessJourneyPanel } from "@/components/process/process-journey";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
-import { getCommercialOrigin, getCommercialOwnerPanel, getDossierCarriage, getFile, getTenantTimezone, listAssignableStaff, listParentCandidates } from "@/lib/files/service";
+import { getCommercialOrigin, getCommercialOwnerPanel, getDossierCarriage, getFile, getTenantTimezone, listAssignableStaff, listGeographyOptions, listParentCandidates } from "@/lib/files/service";
 import { CommercialOrigin } from "@/components/files/commercial-origin";
 import { COMMERCIAL_READ_PERMISSIONS } from "@/lib/commercial/service";
 import { CarriagePanel } from "@/components/files/carriage-panel";
@@ -116,6 +116,10 @@ export default async function FileDetailPage({ params }: { params: { id: string 
   // QO-1 — commercial origin (devis or « Sans devis »). The link into the
   // commercial workspace is offered only to commercial-read holders (DEC-C32).
   const commercialOrigin = await getCommercialOrigin(file.id);
+  // TMS-2 — geographic anchor pickers for the edit form (transport:read only).
+  const geo = canUpdate && hasPermission(permissions, "transport:read")
+    ? await listGeographyOptions()
+    : { ports: [], airports: [] };
   const canLinkCommercial = COMMERCIAL_READ_PERMISSIONS.some((c) => hasPermission(permissions, c));
   const assigneeLabel = file.assigneeName ?? file.assigneeEmail;
 
@@ -423,7 +427,7 @@ export default async function FileDetailPage({ params }: { params: { id: string 
         )}
       </section>
       <QC2Panel evidence={qc2} />
-      <FileForm mode="edit" fileId={file.id} initial={file} clients={clients} parents={parentOptions} canUpdate={canUpdate} />
+      <FileForm mode="edit" fileId={file.id} initial={file} clients={clients} parents={parentOptions} canUpdate={canUpdate} ports={geo.ports} airports={geo.airports} />
       {canReadTasks && (
         <TaskPanel
           currentUserId={user.id}

@@ -785,6 +785,11 @@ export type Database = {
           goods_description: string | null;
           supplier_name: string | null;
           warehouse_entry_date: string | null;
+          // TMS-2 — nullable geographic anchors (label text stays origin/destination).
+          origin_port_id: string | null;
+          destination_port_id: string | null;
+          origin_airport_id: string | null;
+          destination_airport_id: string | null;
         };
         Insert: {
           id?: string;
@@ -836,6 +841,10 @@ export type Database = {
           goods_description?: string | null;
           supplier_name?: string | null;
           warehouse_entry_date?: string | null;
+          origin_port_id?: string | null;
+          destination_port_id?: string | null;
+          origin_airport_id?: string | null;
+          destination_airport_id?: string | null;
         };
         Update: {
           id?: string;
@@ -887,6 +896,10 @@ export type Database = {
           goods_description?: string | null;
           supplier_name?: string | null;
           warehouse_entry_date?: string | null;
+          origin_port_id?: string | null;
+          destination_port_id?: string | null;
+          origin_airport_id?: string | null;
+          destination_airport_id?: string | null;
         };
         Relationships: [
           {

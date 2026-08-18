@@ -198,6 +198,57 @@ export type ShipmentDetail = {
   nextMilestones: ShippingMilestone[];
 };
 
+/**
+ * TMS-2 — the dossier-level geographic endpoints for the ocean map.
+ * Resolution order: the shipment's OWN anchors (origin/destination_port_id),
+ * then the route legs (first leg's origin, last leg's destination). A port
+ * without recorded coordinates contributes nothing — never invented.
+ */
+async function readShipmentPortAnchors(
+  admin: Admin,
+  tenantId: string,
+  shipmentId: string,
+): Promise<{ origin: { latitude: number; longitude: number; label?: string } | null; destination: { latitude: number; longitude: number; label?: string } | null }> {
+  const { data: s } = await admin
+    .from("shipment")
+    .select("origin_port_id, destination_port_id")
+    .eq("id", shipmentId)
+    .eq("tenant_id", tenantId)
+    .maybeSingle<{ origin_port_id: string | null; destination_port_id: string | null }>();
+  let originId = s?.origin_port_id ?? null;
+  let destinationId = s?.destination_port_id ?? null;
+
+  if (!originId || !destinationId) {
+    const { data: legs } = await admin
+      .from("ocean_route_leg")
+      .select("sequence, origin_port_id, destination_port_id")
+      .eq("tenant_id", tenantId)
+      .eq("shipment_id", shipmentId)
+      .order("sequence", { ascending: true })
+      .returns<{ sequence: number; origin_port_id: string | null; destination_port_id: string | null }[]>();
+    if (legs && legs.length > 0) {
+      originId = originId ?? legs[0].origin_port_id;
+      destinationId = destinationId ?? legs[legs.length - 1].destination_port_id;
+    }
+  }
+
+  const ids = [...new Set([originId, destinationId].filter((v): v is string => !!v))];
+  if (ids.length === 0) return { origin: null, destination: null };
+  const { data: ports } = await admin
+    .from("ocean_port")
+    .select("id, name, latitude, longitude")
+    .eq("tenant_id", tenantId)
+    .in("id", ids)
+    .returns<{ id: string; name: string; latitude: number | null; longitude: number | null }[]>();
+  const pt = (pid: string | null) => {
+    const p = pid ? (ports ?? []).find((x) => x.id === pid) : null;
+    return p && p.latitude != null && p.longitude != null
+      ? { latitude: p.latitude, longitude: p.longitude, label: p.name }
+      : null;
+  };
+  return { origin: pt(originId), destination: pt(destinationId) };
+}
+
 export async function getOceanShipmentDetail(id: string): Promise<ShipmentDetail | null> {
   const { admin, tenantId } = await gate();
   const now = nowIso();
@@ -224,7 +275,10 @@ export async function getOceanShipmentDetail(id: string): Promise<ShipmentDetail
   const milestoneMarkers = events
     .filter((e) => eventIsMilestone(e.eventType) && e.location?.latitude != null && e.location?.longitude != null)
     .map((e) => ({ milestone: e.eventType as ShippingMilestone, latitude: e.location!.latitude ?? null, longitude: e.location!.longitude ?? null, occurredAt: e.occurredAt }));
-  const map = buildShipmentMapProjection({ current: position, milestoneMarkers });
+  // TMS-2 — dossier-level endpoints: the shipment's own port anchors first,
+  // the route legs' ports as fallback. Coordinates are never invented.
+  const endpoints = await readShipmentPortAnchors(admin, tenantId, id);
+  const map = buildShipmentMapProjection({ origin: endpoints.origin, destination: endpoints.destination, current: position, milestoneMarkers });
 
   return {
     shipment,

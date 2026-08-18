@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { listClients } from "@/lib/clients/service";
-import { listFiles } from "@/lib/files/service";
+import { listFiles, listGeographyOptions } from "@/lib/files/service";
 import { FileForm } from "@/components/files/file-form";
 import { t } from "@/lib/i18n";
 
@@ -39,13 +39,20 @@ export default async function NewFilePage() {
     ? (await listFiles()).map((f) => ({ id: f.id, fileNumber: f.fileNumber }))
     : [];
 
+  // TMS-2 — geographic anchor pickers, only for transport:read holders (the
+  // authority the reference-data RLS grants). Without it the pickers are
+  // simply absent and the free-text origin/destination remain all there is.
+  const geo = hasPermission(permissions, "transport:read")
+    ? await listGeographyOptions()
+    : { ports: [], airports: [] };
+
   return (
     <div className="animate-fade-in space-y-6">
       {header}
       <Link href="/files" className="text-sm text-teal-700 hover:underline">
         ← {t.files.backToList}
       </Link>
-      <FileForm mode="create" clients={clients} parents={parents} />
+      <FileForm mode="create" clients={clients} parents={parents} ports={geo.ports} airports={geo.airports} />
     </div>
   );
 }
