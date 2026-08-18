@@ -504,6 +504,7 @@ export default async function FileDetailPage({ params }: { params: { id: string 
             canAssign={hasPermission(permissions, "transport:assign")}
             canComplete={hasPermission(permissions, "transport:complete")}
             canDelete={hasPermission(permissions, "transport:delete")}
+            canRequest={hasPermission(permissions, "transport:request")}
           />
         </div>
       )}

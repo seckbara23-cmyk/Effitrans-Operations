@@ -61,16 +61,23 @@ describe("the act is unanchored — that is why this is not P1.1", () => {
     expect(wf).toMatch(/\*\*Documents received:\*\* transport request/);
   });
 
-  it("the permission is still granted and still unconsumed", () => {
-    // Granted to four roles including the AM…
+  // PIN MOVED (TMS-4, 2026-08-18): §6 of the P1.10 audit WAS answered — the
+  // TMS-4 directive names « Transport need → Request → validation/assignment →
+  // execution » as a required, auditable workflow stage. The permission is now
+  // consumed by EXACTLY ONE action: requestTransport (the request act), with
+  // the same four holders and the same catalog row. Collecting the demande as
+  // an inbound document (document:create) remains valid alongside it; the AM
+  // still gains NO execution authority and still cannot produce the artifact.
+  it("the permission is granted to the same four roles and consumed by exactly the request act", () => {
     expect(holders("transport:request").sort())
       .toEqual(["ACCOUNT_MANAGER", "OPS_SUPERVISOR", "SYSTEM_ADMIN", "TRANSPORT_OFFICER"]);
     expect(read("supabase/migrations/20260713000001_process_engine.sql"))
       .toContain("Raise a transport request for a dossier");
-    // …and asserted by nothing. If this ever fails, §6 of the audit was
-    // answered — or someone wired a consumer without answering it.
+    // The ONE consumer, and only where the request act lives.
+    const transport = code("lib/transport/actions.ts");
+    expect((transport.match(/assertPermission\("transport:request"\)/g) ?? []).length).toBe(1);
     for (const f of [
-      "lib/transport/actions.ts", "lib/transport/driver-actions.ts",
+      "lib/transport/driver-actions.ts",
       "lib/documents/artifacts/actions.ts", "lib/files/actions.ts",
     ]) {
       expect(code(f), f).not.toContain("transport:request");

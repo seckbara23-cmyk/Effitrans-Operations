@@ -225,11 +225,16 @@ describe("WES-1C — completed module records cannot be reset", () => {
 
   it("27 — revival touches ONLY deleted_at, so evidence survives", () => {
     // BAE reference, release date, delivery/POD timestamps are never written on revive.
+    // PIN SCOPED (TMS-4, 2026-08-18): requestTransport now sits before
+    // createTransport and has its own revival (pinned in tms-4-transport-
+    // request.test.ts) plus a legitimate fresh-insert `status:` — the slice is
+    // anchored to createTransport so it keeps measuring what it always did.
     for (const [name, src] of [["customs", CUSTOMS_ACTIONS], ["transport", TRANSPORT_ACTIONS]] as const) {
-      const revive = code(src).slice(
-        code(src).indexOf("if (!existing.deleted_at)"),
-        code(src).indexOf("return { ok: true, id: existing.id };"),
-      );
+      const c = code(src);
+      const from = name === "transport"
+        ? c.indexOf("if (!existing.deleted_at)", c.indexOf("export async function createTransport"))
+        : c.indexOf("if (!existing.deleted_at)");
+      const revive = c.slice(from, c.indexOf("return { ok: true, id: existing.id };", from));
       expect(revive.length, name).toBeGreaterThan(0);
       expect(revive, name).not.toMatch(/bae_reference|release_date|delivery_actual|pickup_actual|pod_document_id|status:/);
     }

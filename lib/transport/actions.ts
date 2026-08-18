@@ -20,6 +20,7 @@ import { isFileVisible } from "@/lib/authz/visibility";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
 import { onPodReceived } from "@/lib/handoffs/triggers";
+import { createNotification } from "@/lib/notifications/create";
 import { custTransportStarted, custDelivered } from "@/lib/customer-notify/triggers";
 import { canPickup, canReceivePod } from "./gates";
 import { canTransition, isTransportStatus } from "./status";
@@ -121,6 +122,105 @@ async function customsGate(supabase: Admin, fileId: string) {
     fileType: (file?.type as string) ?? "",
     customs: customs ? { required: customs.required, status: customs.status } : null,
   };
+}
+
+/**
+ * TMS-4 — the REQUEST act. This is what `transport:request` gates (registry
+ * step 3: the Account Manager prepares the demande de transport; the
+ * Transport side validates, assigns and executes). Distinct from
+ * createTransport (transport:create = starting EXECUTION): a requester holds
+ * no execution authority — the record lands NOT_STARTED, the requester is
+ * `created_by` + the audit row, and the transport officers are notified.
+ *
+ * Deliberately NO app-emitted business event: the transport_record insert
+ * trigger already emits TRANSPORT_PLANNING_CREATED — a second event for the
+ * same row would be the WES-4 double emission.
+ */
+export async function requestTransport(fileId: string, note?: string | null): Promise<ActionResult> {
+  let user;
+  try {
+    user = await assertPermission("transport:request");
+  } catch {
+    return { ok: false, error: "forbidden" };
+  }
+  if (!(await isFileVisible(user.id, user.tenantId, fileId))) return { ok: false, error: "forbidden" };
+
+  const supabase = getAdminSupabaseClient();
+  const { data: file } = await supabase
+    .from("operational_file")
+    .select("id, tenant_id, file_number")
+    .eq("id", fileId)
+    .maybeSingle();
+  if (!file || file.tenant_id !== user.tenantId) return { ok: false, error: "file_not_found" };
+
+  const { data: existing } = await supabase
+    .from("transport_record")
+    .select("id, deleted_at")
+    .eq("file_id", fileId)
+    .maybeSingle();
+
+  const precision = (note ?? "").replace(/\s+/g, " ").trim().slice(0, 500);
+  let recordId: string;
+  if (existing) {
+    if (!existing.deleted_at) return { ok: false, error: "already_exists" };
+    // WES-1C — revival RESTORES the record exactly as createTransport does:
+    // clearing deleted_at is the whole operation; planning history is
+    // preserved, and the note is NOT written over existing planning data.
+    const { error } = await supabase
+      .from("transport_record")
+      .update({ deleted_at: null })
+      .eq("id", existing.id);
+    if (error) return { ok: false, error: error.message };
+    recordId = existing.id;
+  } else {
+    const { data, error } = await supabase
+      .from("transport_record")
+      .insert({
+        tenant_id: user.tenantId,
+        file_id: fileId,
+        status: "NOT_STARTED",
+        created_by: user.id,
+        notes: precision ? `Demande de transport — ${precision}` : null,
+      })
+      .select("id")
+      .single();
+    if (error || !data) return { ok: false, error: error?.message ?? "create_failed" };
+    recordId = data.id;
+  }
+
+  await writeAudit({
+    action: AuditActions.TRANSPORT_REQUESTED,
+    actorId: user.id,
+    tenantId: user.tenantId,
+    entity: "transport_record",
+    entityId: recordId,
+    after: precision ? { file_id: fileId, note: precision } : { file_id: fileId },
+  });
+
+  // Notify the transport officers (the drivers.ts user_role idiom; skip self;
+  // best-effort by contract — createNotification never throws).
+  const { data: memberships } = await supabase
+    .from("user_role")
+    .select("user:user_id(id, status), role:role_id(code)")
+    .eq("tenant_id", user.tenantId)
+    .returns<{ user: { id: string; status: string } | null; role: { code: string } | null }[]>();
+  const notified = new Set<string>();
+  for (const m of memberships ?? []) {
+    if (m.role?.code !== "TRANSPORT_OFFICER" || !m.user || m.user.status !== "active") continue;
+    if (m.user.id === user.id || notified.has(m.user.id)) continue;
+    notified.add(m.user.id);
+    await createNotification({
+      tenantId: user.tenantId,
+      userId: m.user.id,
+      type: "FILE_ASSIGNED",
+      fileId,
+      title: "Demande de transport",
+      body: `Dossier ${file.file_number} — transport demandé${precision ? ` : ${precision}` : "."}`,
+    });
+  }
+
+  revalidate(fileId);
+  return { ok: true, id: recordId };
 }
 
 export async function createTransport(fileId: string): Promise<ActionResult> {

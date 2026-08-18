@@ -13,6 +13,7 @@ import {
   assignTransport,
   changeTransportStatus,
   createTransport,
+  requestTransport,
   deleteTransport,
   updateTransport,
 } from "@/lib/transport/actions";
@@ -39,6 +40,7 @@ export function TransportPanel({
   canAssign,
   canComplete,
   canDelete,
+  canRequest = false,
 }: {
   fileId: string;
   record: TransportRecord | null;
@@ -48,10 +50,17 @@ export function TransportPanel({
   canAssign: boolean;
   canComplete: boolean;
   canDelete: boolean;
+  /**
+   * TMS-4 — transport:request. The REQUEST act (Account Manager raises the
+   * need); rendered only when the viewer cannot already START execution
+   * (transport:create supersedes the request button, never the reverse).
+   */
+  canRequest?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [requestNote, setRequestNote] = useState("");
   const tr = t.transport;
 
   function run(fn: () => Promise<ActionResult>) {
@@ -85,6 +94,30 @@ export function TransportPanel({
             </button>
           )}
         </div>
+        {/* TMS-4 — the REQUEST lane: raise the need without execution
+            authority. The transport team is notified and takes over. */}
+        {!canCreate && canRequest && (
+          <div className="surface space-y-2 p-4">
+            <p className="text-xs text-slate-600">
+              Demander le transport de ce dossier — l&apos;équipe Transport est notifiée et prend la main.
+            </p>
+            <input
+              value={requestNote}
+              onChange={(e) => setRequestNote(e.target.value)}
+              maxLength={500}
+              placeholder="Précision (facultatif) — ex. : enlèvement souhaité, contraintes…"
+              className="w-full rounded-md border border-slate-200 px-3 py-1.5 text-sm"
+              disabled={pending}
+            />
+            <button
+              onClick={() => run(() => requestTransport(fileId, requestNote.trim() || null))}
+              disabled={pending}
+              className="rounded-lg bg-navy-900 px-3 py-2 text-sm font-medium text-white hover:bg-navy-800 disabled:opacity-50"
+            >
+              Demander le transport
+            </button>
+          </div>
+        )}
         {error && <p className="text-xs text-red-600">{error}</p>}
       </section>
     );

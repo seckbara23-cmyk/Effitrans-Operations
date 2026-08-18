@@ -85,6 +85,9 @@ export const AuditActions = {
   CUSTOMS_DELETED: "customs.deleted",
   // Phase 1.10 — Transport
   TRANSPORT_CREATED: "transport.created",
+  // TMS-4 — the REQUEST act (transport:request), distinct from starting
+  // execution: the Account Manager raises the need, transport executes.
+  TRANSPORT_REQUESTED: "transport.requested",
   TRANSPORT_UPDATED: "transport.updated",
   TRANSPORT_ASSIGNED: "transport.assigned",
   TRANSPORT_STATUS_CHANGED: "transport.status_changed",
