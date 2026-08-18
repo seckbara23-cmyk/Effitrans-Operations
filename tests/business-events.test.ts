@@ -66,6 +66,7 @@ const PG1_VALIDATION = "supabase/migrations/20260825000001_customs_validation_ev
 // MAYA-P1.1 — the Finance GAINDE registration emitter.
 const P11_GAINDE = "supabase/migrations/20260827000001_gainde_registration.sql";
 const P111_ATTACHMENT = "supabase/migrations/20260828000001_customs_attachment.sql";
+const TMS1_COMMERCIAL_OWNER = "supabase/migrations/20260906000001_commercial_owner_assignment.sql";
 const LEDGER_MARKER = "lib/workflow/events/ledger-marker.ts";
 const migration = () => sqlCode(MIGRATION);
 /** WES-9A: the emission functions as they stand today (62 replaced by 63). */
@@ -715,7 +716,7 @@ describe("event sources", () => {
     const all = migration() + atomicity() + sqlCode(ASSIGNMENT) + sqlCode(DOC_GOV)
       + sqlCode(ARTIFACTS) + sqlCode(RECONCILE) + sqlCode(EC_TRIAGE) + sqlCode(COMMERCIAL)
       + sqlCode(UT3_EMITTERS) + sqlCode(EMP3_OUTBOUND) + sqlCode(QC3_RECEIVABILITY) + sqlCode(PG1_VALIDATION) + sqlCode(P11_GAINDE)
-      + sqlCode(P111_ATTACHMENT);
+      + sqlCode(P111_ATTACHMENT) + sqlCode(TMS1_COMMERCIAL_OWNER);
     for (const def of emittedEventTypes()) {
       // The ledger marker is emitted from the application, by design: the
       // statement IS the act, so there is no prior transaction to join.

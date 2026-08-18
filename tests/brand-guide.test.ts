@@ -258,9 +258,14 @@ describe("RQ-BC.2 / RQ-BC.3 — scope, gate and the two distinct guides", () => 
     for (const f of [CONTENT, READER, PAGE, LINK]) {
       expect(code(f), f).not.toMatch(/insert into public\.permission|role_permission/);
     }
+    // The guide phase shipped NO migration: nothing sits between HR-9's
+    // migration and TMS-1's (the stable-pair idiom — a frozen "latest" literal
+    // would break on every later phase, the recurring self-inflicted pin).
     const migrations = readdirSync(fileURLToPath(new URL("../supabase/migrations", import.meta.url)))
       .filter((f) => f.endsWith(".sql")).sort();
-    expect(migrations[migrations.length - 1]).toBe("20260905000001_hr_reports_activation.sql");
+    const hr9 = migrations.indexOf("20260905000001_hr_reports_activation.sql");
+    expect(hr9).toBeGreaterThan(-1);
+    expect(migrations[hr9 + 1]).toBe("20260906000001_commercial_owner_assignment.sql");
   });
 
   it("the two guide surfaces stay semantically distinct, and one links to the other", () => {

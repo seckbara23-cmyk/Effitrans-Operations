@@ -108,7 +108,10 @@ export async function createFile(input: FileInput): Promise<ActionResult> {
       file_number: fileNumber,
       type: input.type,
       client_id: input.clientId,
-      account_manager_id: admin.id,
+      // TMS-1: the creator is NOT the Account Manager. The dossier is created
+      // « À affecter »; the Operations Manager designates the Responsable
+      // client through assignCommercialOwner (registry step 2). The creator
+      // keeps visibility through created_by (can_read_file).
       status: "DRAFT",
       priority: input.priority ?? "normal",
       created_by: admin.id,
@@ -435,6 +438,79 @@ export async function assignFile(id: string, assigneeUserId: string | null): Pro
   revalidatePath("/files");
   revalidatePath(`/files/${id}`);
   return { ok: true, id };
+}
+
+/** RPC refusals (TM101..TM106 + the platform actor-integrity code) -> stable app codes. */
+const COMMERCIAL_OWNER_RPC_ERRORS: Record<string, string> = {
+  HR630: "actor_invalid",
+  TM101: "not_found", TM102: "owner_required", TM103: "owner_unchanged",
+  TM104: "invalid_assignee", TM105: "file_terminal", TM106: "reason_required",
+};
+
+/**
+ * TMS-1 — designate or replace the dossier's Responsable client (Account
+ * Manager). Gate: file:assign:commercial (the Operations Manager's authority,
+ * ratified TMS-Q1/D1) — a DIFFERENT act from assignFile's working assignee,
+ * which stays on file:assign. Self-assignment by the Operations Manager runs
+ * through this exact path (D2): no bypass exists.
+ *
+ * The RPC re-checks everything in the database (INV-7): active-member target,
+ * terminal-dossier refusal, owner never vacated, reassignment-reason rule, and
+ * writes the immutable assignment_event in the same transaction.
+ */
+export async function assignCommercialOwner(input: {
+  fileId: string;
+  userId: string;
+  reasonCode: string;
+  reason?: string | null;
+}): Promise<ActionResult> {
+  let admin;
+  try {
+    admin = await assertPermission("file:assign:commercial");
+  } catch {
+    return { ok: false, error: "forbidden" };
+  }
+
+  const supabase = getAdminSupabaseClient();
+  const { data, error } = await supabase.rpc("assign_commercial_owner", {
+    p_file: input.fileId,
+    p_new_user_id: input.userId,
+    p_actor: admin.id,
+    p_reason_code: input.reasonCode,
+    p_reason: input.reason?.trim() || null,
+    p_policy_id: null,
+  });
+  if (error) {
+    const code = (error as { code?: string }).code ?? "";
+    return { ok: false, error: COMMERCIAL_OWNER_RPC_ERRORS[code] ?? "assign_failed" };
+  }
+
+  const result = data as unknown as { previous_user_id: string | null; assignment_event_id: string } | null;
+  await writeAudit({
+    action: AuditActions.FILE_COMMERCIAL_OWNER_ASSIGNED,
+    actorId: admin.id,
+    tenantId: admin.tenantId,
+    entity: "operational_file",
+    entityId: input.fileId,
+    before: { account_manager_id: result?.previous_user_id ?? null },
+    after: { account_manager_id: input.userId, reason_code: input.reasonCode },
+  });
+
+  // Best-effort notification to the NEW Responsable client only.
+  if (input.userId !== admin.id) {
+    await createNotification({
+      tenantId: admin.tenantId,
+      userId: input.userId,
+      type: "FILE_ASSIGNED",
+      fileId: input.fileId,
+      title: "Dossier confié",
+      body: "Vous êtes désigné Responsable client de ce dossier.",
+    });
+  }
+
+  revalidatePath("/files");
+  revalidatePath(`/files/${input.fileId}`);
+  return { ok: true, id: input.fileId };
 }
 
 export async function transitionFile(id: string, toStatus: string): Promise<ActionResult> {

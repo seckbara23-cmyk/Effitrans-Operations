@@ -172,6 +172,7 @@ on conflict do nothing;
 -- ---------------------------------------------------------------------------
 insert into public.permission (code, module, action, data_scope, description) values
   ('file:assign', 'file', 'assign', 'all', 'Assign operational files to staff'),
+  ('file:assign:commercial', 'files', 'assign_commercial', 'all', 'Désigner ou remplacer le Responsable client (Account Manager) d''un dossier — autorité du Responsable des opérations'),
   -- Advancing the status ladder is INDEPENDENT of editing master data.
   -- Mirrors migration 20260728000003.
   ('file:transition', 'file', 'transition', 'all',
@@ -198,6 +199,17 @@ join public.permission p on p.code = 'file:assign'
 where r.tenant_id = '00000000-0000-0000-0000-000000000001'
   and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR', 'ACCOUNT_MANAGER')
 on conflict do nothing;
+
+-- TMS-1 (D1 = Option A, ratified 2026-08-18, mirrors migration 20260906000001):
+-- the Responsable client assignment authority — Operations Manager + platform
+-- administration only. file:assign (working assignee) is untouched.
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id from public.role r
+join public.permission p on p.code = 'file:assign:commercial'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('OPS_SUPERVISOR', 'SYSTEM_ADMIN')
+on conflict do nothing;
+
 
 insert into public.role_permission (role_id, permission_id)
 select r.id, p.id

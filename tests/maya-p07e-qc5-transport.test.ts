@@ -304,7 +304,13 @@ describe("nothing else moved", () => {
     expect(code("lib/files/qc4.ts")).toContain("QC4_NO_VALIDATION_RECORD");
     expect(code("lib/customs/receivability.ts")).toContain("RECEIVABILITY_OUTCOMES");
     // The known unresolved items are NOT silently closed here.
-    expect(code("lib/files/actions.ts")).toContain("account_manager_id: admin.id");
+    // TMS-1 (2026-08-18) CLOSED this QC gap deliberately: the creator is no
+    // longer crowned Account Manager at creation — the Operations Manager
+    // designates the Responsable client through assign_commercial_owner
+    // (migration 20260906000001). The pin now guards the CLOSED state.
+    expect(code("lib/files/actions.ts")).not.toContain("account_manager_id: admin.id");
+    expect(read("supabase/migrations/20260906000001_commercial_owner_assignment.sql"))
+      .toContain("assign_commercial_owner");
     expect(read("lib/process/sla-policies.ts")).toMatch(/bae_followup[\s\S]{0,120}unconfigured/);
     // MAYA-P0.8-A (PG-1) CLOSED this gap: an action now consumes
     // customs:validate. The pin asserts the new truth rather than the old one.

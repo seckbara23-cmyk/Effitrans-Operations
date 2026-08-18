@@ -5,7 +5,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { ProcessJourneyPanel } from "@/components/process/process-journey";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
-import { getDossierCarriage, getFile, getTenantTimezone, listAssignableStaff, listParentCandidates } from "@/lib/files/service";
+import { getCommercialOwnerPanel, getDossierCarriage, getFile, getTenantTimezone, listAssignableStaff, listParentCandidates } from "@/lib/files/service";
 import { CarriagePanel } from "@/components/files/carriage-panel";
 import { QC2Panel } from "@/components/files/qc2-panel";
 import { QC4Panel } from "@/components/files/qc4-panel";
@@ -21,6 +21,7 @@ import { listClients } from "@/lib/clients/service";
 import { FileForm } from "@/components/files/file-form";
 import { FileWorkflow } from "@/components/files/file-workflow";
 import { FileAssignment } from "@/components/files/file-assignment";
+import { CommercialOwner } from "@/components/files/commercial-owner";
 import { FileDangerZone } from "@/components/files/file-danger-zone";
 import { TaskPanel } from "@/components/tasks/task-panel";
 import { listTasks } from "@/lib/tasks/service";
@@ -104,8 +105,12 @@ export default async function FileDetailPage({ params }: { params: { id: string 
   const parentOptions = canUpdate ? await listParentCandidates(file.id) : [];
   // Phase 3.2A — assignment + delete/cancel controls (permission-gated).
   const canAssign = hasPermission(permissions, "file:assign");
+  // TMS-1 — a DIFFERENT authority from file:assign: the Responsable client is
+  // designated by the Operations Manager, never auto-crowned at creation.
+  const canAssignCommercial = hasPermission(permissions, "file:assign:commercial");
   const canManageLifecycle = hasPermission(permissions, "file:delete");
-  const assignableStaff = canAssign ? await listAssignableStaff() : [];
+  const assignableStaff = canAssign || canAssignCommercial ? await listAssignableStaff() : [];
+  const commercialOwner = await getCommercialOwnerPanel(file.id);
   const assigneeLabel = file.assigneeName ?? file.assigneeEmail;
 
   // Embedded tasks (only if the user can read tasks).
@@ -326,6 +331,15 @@ export default async function FileDetailPage({ params }: { params: { id: string 
           "where is this, who has it, what next". */}
       <ProcessJourneyPanel fileId={file.id} />
       <FileWorkflow file={file} canTransitionStatus={canTransitionStatus} />
+      <CommercialOwner
+        fileId={file.id}
+        ownerId={commercialOwner.ownerId}
+        ownerLabel={commercialOwner.ownerLabel}
+        history={commercialOwner.history}
+        staff={assignableStaff}
+        canAssign={canAssignCommercial}
+        isTerminal={file.status === "CLOSED" || file.status === "CANCELLED"}
+      />
       <FileAssignment
         fileId={file.id}
         currentAssigneeId={file.assignedToUserId}

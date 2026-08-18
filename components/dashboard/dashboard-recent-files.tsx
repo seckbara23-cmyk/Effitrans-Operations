@@ -69,7 +69,9 @@ export function DashboardRecentFiles({ files }: { files: RecentDossier[] }) {
                     {t.files.statuses[f.status]}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-slate-600">{f.ownerEmail ?? t.common.none}</td>
+                <td className="px-4 py-3 text-slate-600">{f.ownerEmail ?? (
+                  <span className="rounded bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-800">À affecter</span>
+                )}</td>
               </tr>
             ))}
           </tbody>

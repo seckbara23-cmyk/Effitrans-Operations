@@ -57,6 +57,9 @@ export const AuditActions = {
   FILE_CANCELLED: "file.cancelled",
   FILE_DELETED: "file.deleted",
   FILE_ASSIGNED: "file.assigned",
+  // TMS-1 — the Responsable client (Account Manager), a different act from
+  // the working assignee above.
+  FILE_COMMERCIAL_OWNER_ASSIGNED: "file.commercial_owner_assigned",
   FILE_UNASSIGNED: "file.unassigned",
   // Phase 1.3 — Tasks
   TASK_CREATED: "task.created",

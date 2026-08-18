@@ -599,6 +599,76 @@ export async function getDossierCarriage(
  * 3.2A). Gated by file:assign. Mirrors listAssignees (tasks) but on the file
  * permission, so the assignee dropdown never depends on task:update.
  */
+/**
+ * TMS-1 — the « Responsable client » panel: current Account Manager and the
+ * immutable assignment history (assignment_event, subject COMMERCIAL_OWNER).
+ * Display data for anyone who can read the dossier; the ACT is gated
+ * separately on file:assign:commercial.
+ */
+export type CommercialOwnerHistoryRow = {
+  newUserLabel: string;
+  previousUserLabel: string | null;
+  actorLabel: string | null;
+  reasonCode: string;
+  reason: string | null;
+  provenance: string;
+  at: string;
+};
+export type CommercialOwnerPanel = {
+  ownerId: string | null;
+  ownerLabel: string | null;
+  history: CommercialOwnerHistoryRow[];
+};
+
+export async function getCommercialOwnerPanel(fileId: string): Promise<CommercialOwnerPanel> {
+  const user = await assertPermission("file:read");
+  const supabase = getAdminSupabaseClient();
+  const { data: f } = await supabase
+    .from("operational_file")
+    .select("account_manager_id")
+    .eq("tenant_id", user.tenantId)
+    .eq("id", fileId)
+    .maybeSingle();
+  const ownerId = (f?.account_manager_id as string | null) ?? null;
+
+  const { data: events } = await supabase
+    .from("assignment_event")
+    .select("previous_user_id, new_user_id, actor_user_id, reason, reason_code, provenance, created_at")
+    .eq("tenant_id", user.tenantId)
+    .eq("subject_type", "COMMERCIAL_OWNER")
+    .eq("subject_id", fileId)
+    .order("created_at", { ascending: false })
+    .limit(20);
+
+  const ids = new Set<string>();
+  if (ownerId) ids.add(ownerId);
+  for (const e of events ?? []) {
+    for (const v of [e.previous_user_id, e.new_user_id, e.actor_user_id]) if (v) ids.add(v as string);
+  }
+  const labels = new Map<string, string>();
+  if (ids.size > 0) {
+    const { data: users } = await supabase
+      .from("app_user")
+      .select("id, name, email")
+      .eq("tenant_id", user.tenantId)
+      .in("id", [...ids]);
+    for (const u of users ?? []) labels.set(u.id, (u.name as string | null) ?? (u.email as string));
+  }
+  return {
+    ownerId,
+    ownerLabel: ownerId ? labels.get(ownerId) ?? null : null,
+    history: (events ?? []).map((e) => ({
+      newUserLabel: labels.get(e.new_user_id as string) ?? "—",
+      previousUserLabel: e.previous_user_id ? labels.get(e.previous_user_id as string) ?? "—" : null,
+      actorLabel: e.actor_user_id ? labels.get(e.actor_user_id as string) ?? "—" : null,
+      reasonCode: e.reason_code as string,
+      reason: (e.reason as string | null) ?? null,
+      provenance: e.provenance as string,
+      at: e.created_at as string,
+    })),
+  };
+}
+
 export async function listAssignableStaff(): Promise<StaffOption[]> {
   const user = await assertPermission("file:assign");
   const supabase = getAdminSupabaseClient();

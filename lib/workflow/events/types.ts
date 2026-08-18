@@ -163,6 +163,10 @@ export const EVENT_TYPES: readonly EventTypeDef[] = [
   { type: "STEP_REASSIGNED", domain: "task", version: 1, emission: "rpc", metadataKeys: ASSIGNMENT_KEYS, clientSafe: false, labelFr: "Étape réaffectée" },
   { type: "OPERATIONAL_OWNER_ASSIGNED", domain: "dossier", version: 1, emission: "rpc", metadataKeys: ASSIGNMENT_KEYS, clientSafe: false, labelFr: "Responsable opérationnel désigné" },
   { type: "OPERATIONAL_OWNER_REASSIGNED", domain: "dossier", version: 1, emission: "rpc", metadataKeys: ASSIGNMENT_KEYS, clientSafe: false, labelFr: "Responsable opérationnel changé" },
+  // TMS-1 — the Responsable client (Account Manager), assigned by the
+  // Operations Manager (registry step 2), emitted by assign_commercial_owner.
+  { type: "COMMERCIAL_OWNER_ASSIGNED", domain: "dossier", version: 1, emission: "rpc", metadataKeys: ASSIGNMENT_KEYS, clientSafe: false, labelFr: "Responsable client désigné" },
+  { type: "COMMERCIAL_OWNER_REASSIGNED", domain: "dossier", version: 1, emission: "rpc", metadataKeys: ASSIGNMENT_KEYS, clientSafe: false, labelFr: "Responsable client remplacé" },
 
   // ------------------------------------------------------------------ handoff
   { type: "HANDOFF_SENT", domain: "handoff", version: 1, emission: "trigger", metadataKeys: ["from_step", "to_step"], clientSafe: false, labelFr: "Transfert envoyé" },

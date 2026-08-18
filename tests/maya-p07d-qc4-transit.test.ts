@@ -339,7 +339,13 @@ describe("nothing else moved", () => {
     expect(q2).toContain("QC2_TRANSMISSION_CONFLICT");
     // The Account Manager conflict and identity gap remain UNRESOLVED.
     expect(q2).toMatch(/Coordinateur/);
-    expect(code("lib/files/actions.ts")).toContain("account_manager_id: admin.id");
+    // TMS-1 (2026-08-18) CLOSED this QC gap deliberately: the creator is no
+    // longer crowned Account Manager at creation — the Operations Manager
+    // designates the Responsable client through assign_commercial_owner
+    // (migration 20260906000001). The pin now guards the CLOSED state.
+    expect(code("lib/files/actions.ts")).not.toContain("account_manager_id: admin.id");
+    expect(read("supabase/migrations/20260906000001_commercial_owner_assignment.sql"))
+      .toContain("assign_commercial_owner");
   });
 
   it("no Q5, Sage, client import or MAYA APPLY", () => {

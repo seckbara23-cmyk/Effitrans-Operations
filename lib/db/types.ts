@@ -4627,6 +4627,11 @@ export type Database = {
         };
         Returns: Json;
       };
+      // TMS-1 — the Responsable client (Account Manager) assignment.
+      assign_commercial_owner: {
+        Args: { p_file: string; p_new_user_id: string; p_actor: string; p_reason_code: string; p_reason?: string | null; p_policy_id?: string | null };
+        Returns: Json;
+      };
       // Phase WES-4 — document status + protected review record + business
       // event in ONE transaction (WES-9A Model A).
       // Phase WES-4G — artifact row + supersession + event in ONE transaction.

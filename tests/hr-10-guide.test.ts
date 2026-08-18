@@ -246,9 +246,13 @@ describe("RQ-10.1 / RQ-10.3 / RQ-10.4 — scope held", () => {
 
   it("HR-10 adds no permission, no migration, no HR feature", () => {
     const migrations = readdirSync(fileURLToPath(new URL("../supabase/migrations", import.meta.url)))
-      .filter((f) => f.endsWith(".sql"));
-    // 114 remains the newest: HR-10 shipped no migration of its own.
-    expect(migrations[migrations.length - 1]).toBe("20260905000001_hr_reports_activation.sql");
+      .filter((f) => f.endsWith(".sql")).sort();
+    // HR-10 shipped no migration of its own: nothing sits between HR-9's
+    // migration and TMS-1's (stable-pair idiom — a frozen "latest" literal is
+    // the recurring self-inflicted pin).
+    const hr9 = migrations.indexOf("20260905000001_hr_reports_activation.sql");
+    expect(hr9).toBeGreaterThan(-1);
+    expect(migrations[hr9 + 1]).toBe("20260906000001_commercial_owner_assignment.sql");
     // The reader only reads.
     expect(code(READER)).not.toMatch(/\.(insert|update|upsert|delete)\(/);
     // The guide route creates nothing.
