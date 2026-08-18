@@ -1,15 +1,19 @@
 /**
  * Transit department hub (department realignment).
  * ---------------------------------------------------------------------------
- * Transit executes shipment operations: customs clearance (Douane / GAINDE),
- * transport & logistics, and delivery. This hub is a NAVIGATION entry point that
- * links to the EXISTING routes (URLs unchanged) — "Douane" (/departments/customs)
- * and "Transport & Logistique" (/departments/transport) are now Transit
- * workspaces reached from here. Server-side gated on any-of customs/transport
- * read, exactly like the sidebar; every linked route re-checks itself.
+ * TMS-5B — Transit owns CUSTOMS and INTERNATIONAL shipment follow-up: Douane,
+ * Intelligence douanière, Suivi maritime, Suivi aérien. Ground-transport
+ * execution (Transport & Logistique, Demandes & Exécution, Parc & Flotte) moved
+ * to the TRANSPORT department hub — a relocation of navigation only: every
+ * route, component and permission is unchanged and still works by deep link.
  *
- * Labels are business domains ("Douane", "Transport & Logistique"), never a job
- * title (no "Chef de Transit"/"Déclarant" as a workspace label).
+ * The hub stays gated on any-of customs/transport read because maritime and air
+ * follow-up are themselves gated on transport:read; every linked route re-checks.
+ *
+ * Labels are business domains ("Douane", "Suivi maritime"), never a job title
+ * (no "Chef de Transit"/"Déclarant" as a workspace label). « Transporteur
+ * maritime » (ocean carrier) is a shipping line — never the Transport
+ * department, never a road subcontractor.
  */
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -27,12 +31,6 @@ const HUB_ANY_OF = ["customs:read", "transport:read"];
 const WORKSPACES = [
   { label: "Douane", href: "/departments/customs", permission: "customs:read", desc: "Déclarations, pièces manquantes, dédouanement et Bon à Enlever (BAE)." },
   { label: "Intelligence douanière", href: "/customs/intelligence", permission: "customs:read", desc: "Suivi canonique des déclarations (GAINDE) et tableau de bord douane." },
-  { label: "Transport & Logistique", href: "/departments/transport", permission: "transport:read", desc: "Command center logistique : routier, maritime et aérien." },
-  // TMS-5A — the parc shipped in TMS-5 but was only reachable through a chip on
-  // the Transport hub, two levels down. It is a Transit workspace like the
-  // others; `transport:read` is the ratified view authority, so the card simply
-  // disappears for anyone without it (same filter as every entry here).
-  { label: "Parc & Flotte", href: "/transport/parc", permission: "transport:read", desc: "Véhicules, conformité, maintenance et disponibilité." },
   { label: "Suivi maritime", href: "/shipping", permission: "transport:read", desc: "Navires, escales, conteneurs et voyages." },
   { label: "Suivi aérien", href: "/air", permission: "transport:read", desc: "Vols, LTA, ULD et aéroports." },
 ];
@@ -49,7 +47,7 @@ export default async function TransitHubPage() {
       <PageHeader
         meta="Départements"
         title="Transit"
-        subtitle="Exécution des opérations d'expédition : dédouanement, transport et livraison."
+        subtitle="Dédouanement et suivi international des expéditions."
       />
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {visible.map((w) => (

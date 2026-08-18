@@ -384,11 +384,15 @@ describe("permission enforcement", () => {
     expect(hub).toMatch(/label: "Balance âgée"[\s\S]{0,200}available: agingEnabled/);
   });
 
-  it("DÉPARTEMENTS stays exactly three entries", () => {
+  it("DÉPARTEMENTS holds only departments — « Balance âgée » stays a workspace", () => {
+    // PIN MOVED (TMS-5B, 2026-08-18): Transport became a DEPARTMENT by business
+    // decision, so the section holds four. The point this case makes is unchanged:
+    // a WORKSPACE never earns a top-level entry.
+
     const nav = code("lib/nav.ts");
     const section = nav.slice(nav.indexOf('key: "departments"'), nav.indexOf('key: "management"'));
     const labels = [...section.matchAll(/label: "([^"]+)"/g)].map((m) => m[1]);
-    expect(labels).toEqual(["Départements", "Opérations", "Transit", "Finance"]);
+    expect(labels).toEqual(["Départements", "Opérations", "Transit", "Transport", "Finance"]);
   });
 
   it("the env kill switch 404s the route rather than refusing it", () => {

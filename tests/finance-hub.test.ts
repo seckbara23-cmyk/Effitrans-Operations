@@ -81,7 +81,10 @@ describe("HR under Management — now real (Phase HR-1)", () => {
   it("HR is NOT a DÉPARTEMENTS entry (it is a management support function)", () => {
     const dep = navSections.find((s) => s.label === "Départements")!;
     expect(dep.items.some((i) => /Ressources humaines/i.test(i.label) || i.href === "/departments/hr")).toBe(false);
-    expect(dep.items.map((i) => i.label)).toEqual(["Opérations", "Transit", "Finance"]);
+    // PIN MOVED (TMS-5B, 2026-08-18): Transport became a DEPARTMENT by business
+    // decision, so the section holds four. The point this case makes is unchanged:
+    // a WORKSPACE never earns a top-level entry.
+    expect(dep.items.map((i) => i.label)).toEqual(["Opérations", "Transit", "Transport", "Finance"]);
   });
 
   it("the HR permissions exist in the catalog and are held only by HR_OFFICER", () => {

@@ -257,13 +257,18 @@ describe("workspace routes — one route per capability", () => {
     expect(src).toMatch(/hasPermission\(permissions, "quotation:create"\)/);
   });
 
-  it("DÉPARTEMENTS stays at exactly three entries — the workspace lives on the hub", () => {
+  it("DÉPARTEMENTS holds only DEPARTMENTS — the workspace lives on the hub", () => {
+    // PIN MOVED (TMS-5B, 2026-08-18): Transport became a DEPARTMENT by business
+    // decision, so the section holds four. The point this case makes is unchanged:
+    // a WORKSPACE never earns a top-level entry.
+
     const nav = code("lib/nav.ts");
     const i = nav.indexOf('label: "Départements"');
     const section = nav.slice(i, nav.indexOf("key: \"management\"", i));
     const hrefs = [...section.matchAll(/href: "([^"]+)"/g)].map((m) => m[1]);
     expect(hrefs).toEqual([
-      "/departments/operations", "/departments/transit", "/departments/finance",
+      "/departments/operations", "/departments/transit",
+      "/departments/transport", "/departments/finance",
     ]);
     // And /commercial is reachable from the Operations hub instead.
     expect(code("app/departments/operations/page.tsx")).toContain('href: "/commercial"');

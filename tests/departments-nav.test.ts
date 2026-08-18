@@ -17,13 +17,20 @@ const hrefs = allNavItems.map((i) => i.href);
 const base: NavSessionLike = { permissions: [], loading: false, configured: true };
 
 describe("Phase 2.0 — department navigation", () => {
-  it("mirrors the three canonical operational departments (Opérations, Transit, Finance)", () => {
-    // Realignment: DÉPARTEMENTS now matches the canonical operational departments.
-    // Opérations + Transit are aggregated hubs (permissionsAnyOf over their
-    // workspaces); Finance keeps its single gate. Direction stays under MANAGEMENT.
+  // PIN MOVED (TMS-5B, 2026-08-18): Transport became a first-class NAVIGATION
+  // department by business decision — Transit keeps customs + international
+  // follow-up, Transport owns ground execution. ⚠ The canonical registry
+  // (lib/organization/departments.ts) still enumerates four departments and
+  // still maps the transport roles to TRANSIT; the sidebar deliberately no
+  // longer mirrors it, and reconciling the two is a separate decision. The
+  // ORDER is asserted because the business decision named it.
+  it("lists the operational departments in order: Opérations, Transit, Transport, Finance", () => {
     const dept = navSections.find((s) => s.label === "Départements")!;
     const byLabel = Object.fromEntries(dept.items.map((i) => [i.label, i]));
-    expect(dept.items.map((i) => i.label)).toEqual(["Opérations", "Transit", "Finance"]);
+    expect(dept.items.map((i) => i.label)).toEqual(["Opérations", "Transit", "Transport", "Finance"]);
+    expect(byLabel["Transport"].href).toBe("/departments/transport");
+    // Visibility rides the EXISTING authority — no permission was invented.
+    expect(byLabel["Transport"].permission).toBe("transport:read");
     expect(byLabel["Opérations"].href).toBe("/departments/operations");
     // EC-3C adds the two quotation authorities. The Commercial workspace lives on
     // the Operations HUB (DÉPARTEMENTS stays at three entries, asserted above), and
@@ -43,6 +50,8 @@ describe("Phase 2.0 — department navigation", () => {
   it("no longer lists Douane / Documentation / Transport as TOP-LEVEL entries (now workspaces)", () => {
     const dept = navSections.find((s) => s.label === "Départements")!;
     const labels = dept.items.map((i) => i.label);
+    // « Transport & Logistique » names the command-center WORKSPACE, never the
+    // department entry (which is « Transport ») — TMS-5B did not change that.
     for (const gone of ["Douane", "Dédouanement", "Documentation", "Transport & Logistique"]) {
       expect(labels).not.toContain(gone);
     }

@@ -130,9 +130,12 @@ describe("the apply stage (HR-B3) creates only through the registry path", () =>
 
 // ---------------------------------------------------------------------------
 describe("navigation & pages — ratified placement", () => {
-  it("DÉPARTEMENTS keeps its ratified 3 entries; HR stays under MANAGEMENT", () => {
+  it("DÉPARTEMENTS holds the operational departments; HR stays under MANAGEMENT", () => {
+    // PIN MOVED (TMS-5B, 2026-08-18): Transport became a DEPARTMENT by business
+    // decision, so the section holds four. The point this case makes is unchanged:
+    // a WORKSPACE never earns a top-level entry.
     const departments = navSections.find((s) => s.key === "departments")!;
-    expect(departments.items.map((i) => i.key)).toEqual(["operations", "transit", "finance"]);
+    expect(departments.items.map((i) => i.key)).toEqual(["operations", "transit", "transport", "finance"]);
     const management = navSections.find((s) => s.key === "management")!;
     const hr = management.items.find((i) => i.key === "hr")!;
     expect(hr.href).toBe("/departments/hr");

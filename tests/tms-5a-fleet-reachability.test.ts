@@ -26,22 +26,33 @@ const service = read("lib", "fleet", "service.ts");
 
 // ============================================================ reachability ====
 
-describe("TMS-5A — the parc is reachable from the Transit department page", () => {
-  it("the Transit hub carries a « Parc & Flotte » workspace card with the ratified wording", () => {
-    expect(transitHub).toContain('label: "Parc & Flotte"');
-    expect(transitHub).toContain('href: "/transport/parc"');
-    expect(transitHub).toContain("Véhicules, conformité, maintenance et disponibilité.");
+describe("TMS-5A — the parc is reachable from its department page", () => {
+  // PINS MOVED (TMS-5B, 2026-08-18): TMS-5A put the parc card on the TRANSIT
+  // hub because that was where the operator looked and where transport lived.
+  // TMS-5B made Transport its own department, so the card moved with the
+  // responsibility. The REACHABILITY requirement is unchanged — only the hub.
+  it("the Transport hub carries a « Parc & Flotte » card with the ratified wording", () => {
+    // Bounded to the responsibility cards: the « Accès rapide » row also holds a
+    // Parc chip, and a chip is not a first-class card (the TMS-5A lesson). The
+    // boundaries are asserted — a vanished boundary must fail, never widen.
+    const start = transportHub.indexOf("the Transport department's own responsibilities");
+    const end = transportHub.indexOf("Operational platform cards");
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const cards = transportHub.slice(start, end);
+    expect(cards).toContain("Parc &amp; Flotte");
+    expect(cards).toContain('href="/transport/parc"');
+    expect(cards).toContain("Véhicules, conformité, maintenance et disponibilité.");
   });
 
-  it("the card is filtered by transport:read like every other workspace on the hub", () => {
-    // Bounded to THIS entry: a wider slice sweeps the neighbouring workspaces,
-    // which legitimately carry transport:read, and the pin would pass on their
-    // text instead of this card's.
-    const from = transitHub.indexOf('label: "Parc & Flotte"');
-    const entry = transitHub.slice(from, transitHub.indexOf("},", from));
-    expect(entry).toContain('permission: "transport:read"');
-    expect(entry).not.toContain('permission: "customs:read"');
-    // the hub renders only the entries whose permission the viewer holds
+  it("the Transit hub no longer presents the parc as a Transit responsibility", () => {
+    // Comment-stripped: the hub's doctrine comment NAMES what moved away, and a
+    // pin that forbids the phrase must not trip on the sentence explaining it.
+    const code = transitHub.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    expect(code).not.toContain("Parc & Flotte");
+    expect(code).not.toContain("/transport/parc");
+    expect(code).not.toContain("/departments/transport");
+    // …and the hub still filters what it does show by permission.
     expect(transitHub).toContain("WORKSPACES.filter((w) => hasPermission(permissions, w.permission))");
   });
 

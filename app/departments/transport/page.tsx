@@ -11,7 +11,7 @@ import { transportNextAction } from "@/lib/departments/classify";
 import type { TransportStatus } from "@/lib/transport/types";
 import { t } from "@/lib/i18n";
 
-export const metadata: Metadata = { title: "Transport & Logistique" };
+export const metadata: Metadata = { title: "Transport" };
 export const dynamic = "force-dynamic";
 
 function Notice({ children }: { children: React.ReactNode }) {
@@ -24,9 +24,9 @@ const RSTATUS = (s: string) => (t.transport.statuses as Record<string, string>)[
 export default async function LogisticsCommandCenterPage() {
   const header = (
     <PageHeader
-      meta="Logistique"
-      title="Transport & Logistique"
-      subtitle="Pilotage consolidé des opérations routières, maritimes, aériennes et douanières."
+      meta="Départements"
+      title="Transport"
+      subtitle="Exécution du transport terrestre : demandes, exécution, parc et suivi routier."
     />
   );
 
@@ -57,7 +57,43 @@ export default async function LogisticsCommandCenterPage() {
         <StatCard label="Exceptions" value={h.exceptions} tone="amber" />
       </div>
 
-      {/* Operational platform cards. */}
+      {/* TMS-5B — the Transport department's own responsibilities. Every href is
+          an EXISTING route: this is navigation, not a new console. « Transport &
+          Logistique » is this page itself (the command center below), so it is
+          not repeated as a card pointing at itself. */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <Link href="/transport" className="surface block p-4 transition-colors hover:border-teal-300">
+          <p className="text-sm font-semibold text-navy-900">Demandes &amp; Exécution</p>
+          <p className="mt-1 text-xs text-slate-500">
+            Demandes de transport, planification, affectation, enlèvement, transit, livraison et POD.
+          </p>
+        </Link>
+        <Link href="/transport/parc" className="surface block p-4 transition-colors hover:border-teal-300">
+          <p className="text-sm font-semibold text-navy-900">Parc &amp; Flotte</p>
+          <p className="mt-1 text-xs text-slate-500">
+            Véhicules, conformité, maintenance et disponibilité.
+          </p>
+        </Link>
+        <Link href="/journeys" className="surface block p-4 transition-colors hover:border-teal-300">
+          <p className="text-sm font-semibold text-navy-900">Parcours des dossiers</p>
+          <p className="mt-1 text-xs text-slate-500">
+            Où en est chaque dossier et qui le détient.
+          </p>
+        </Link>
+      </div>
+
+      {/* Road tracking has NO standalone route: positions and events are recorded
+          on each dossier (and by the driver on their mission). Saying so is more
+          honest than inventing a workspace that would only re-link this page. */}
+      <p className="text-xs text-slate-500">
+        Suivi routier : les positions et évènements sont saisis sur chaque dossier, et par le
+        chauffeur depuis sa mission.
+      </p>
+
+      {/* Operational platform cards — the « Transport & Logistique » command
+          center: consolidated road, ocean, air and customs pilotage. Ocean and
+          air are FOLLOW-UP links; those workspaces belong to Transit. */}
+      <h2 className="text-sm font-semibold text-navy-900">Transport &amp; Logistique</h2>
       <div className="grid gap-4 lg:grid-cols-2">
         <PlatformCard card={card("road")} title="Transport routier" icon={MODE_ICON.road} href="/transport" cta="Ouvrir les opérations routières" />
         <PlatformCard card={card("ocean")} title="Lignes maritimes" icon={MODE_ICON.ocean} href="/shipping" cta="Ouvrir Ocean Shipping" />

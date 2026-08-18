@@ -147,7 +147,10 @@ describe("navigation & department icons", () => {
 
   it("labels and placement are unchanged — DÉPARTEMENTS stays three, HR stays under MANAGEMENT", () => {
     const departments = navSections.find((s) => s.key === "departments")!;
-    expect(departments.items.map((i) => i.label)).toEqual(["Opérations", "Transit", "Finance"]);
+    // PIN MOVED (TMS-5B, 2026-08-18): Transport became a DEPARTMENT by business
+    // decision, so the section holds four. The point this case makes is unchanged:
+    // a WORKSPACE never earns a top-level entry.
+    expect(departments.items.map((i) => i.label)).toEqual(["Opérations", "Transit", "Transport", "Finance"]);
     expect(navSections.find((s) => s.key === "management")!.items.some((i) => i.key === "hr")).toBe(true);
   });
 

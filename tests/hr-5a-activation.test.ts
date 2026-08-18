@@ -135,9 +135,12 @@ describe("canonical routes — one entry point per capability", () => {
 
 // ---------------------------------------------------------------------------
 describe("navigation and icons — ratified placement preserved", () => {
-  it("HR stays under MANAGEMENT with IconTeam; DÉPARTEMENTS stays at three", () => {
+  it("HR stays under MANAGEMENT with IconTeam; DÉPARTEMENTS holds only departments", () => {
+    // PIN MOVED (TMS-5B, 2026-08-18): Transport became a DEPARTMENT by business
+    // decision, so the section holds four. The point this case makes is unchanged:
+    // a WORKSPACE never earns a top-level entry.
     const departments = navSections.find((s) => s.key === "departments")!;
-    expect(departments.items.map((i) => i.key)).toEqual(["operations", "transit", "finance"]);
+    expect(departments.items.map((i) => i.key)).toEqual(["operations", "transit", "transport", "finance"]);
     const hr = navSections.find((s) => s.key === "management")!.items.find((i) => i.key === "hr")!;
     expect(hr.label).toBe("Ressources humaines");
     expect(hr.iconKey).toBe("team");

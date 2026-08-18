@@ -104,9 +104,21 @@ export const BASE_SECTIONS: NavigationSection[] = [
   {
     key: "departments",
     label: "Départements",
-    // The sidebar Départements now mirror the CANONICAL operational departments
-    // (lib/organization/departments.ts): Opérations, Transit, Finance. HR is a
-    // support department and stays out of the operational sidebar.
+    // The sidebar Départements are Opérations, Transit, TRANSPORT and Finance.
+    // HR is a support department and stays out of the operational sidebar.
+    //
+    // TMS-5B — Transport became a first-class NAVIGATION department by business
+    // decision: Transit keeps customs and international follow-up (Douane,
+    // Intelligence douanière, Suivi maritime, Suivi aérien) while Transport owns
+    // ground execution (demandes, exécution, Parc & Flotte).
+    //
+    // ⚠ This list no longer mirrors lib/organization/departments.ts, which still
+    // enumerates four CANONICAL departments (OPERATIONS / TRANSIT / FINANCE /
+    // HUMAN_RESOURCES) and still maps TRANSPORT_OFFICER, PICKUP_AGENT and DRIVER
+    // to TRANSIT ("business decision 5"). That registry drives role→department
+    // derivation, messaging and workflow access — NOT this sidebar — so the
+    // navigation change is deliberately decoupled from it. Reconciling the
+    // canonical registry is a separate, load-bearing organizational decision.
     //
     // Documentation (an Operations capability) and Douane + Transport (Transit
     // execution) are no longer top-level entries — they are WORKSPACES reached
@@ -136,16 +148,27 @@ export const BASE_SECTIONS: NavigationSection[] = [
         label: "Transit",
         href: "/departments/transit",
         iconKey: "truck",
-        // Owns customs + transport execution — either reader sees the hub. "Transit"
-        // is a business function, never a job title; "Douane"/"Transport" live inside.
+        // TMS-5B — Transit owns customs and INTERNATIONAL shipment follow-up
+        // (Douane, Intelligence douanière, Suivi maritime, Suivi aérien); ground
+        // execution moved to the Transport department. transport:read stays in
+        // the any-of because maritime and air follow-up are gated on it.
         permissionsAnyOf: ["customs:read", "transport:read"],
+      },
+      {
+        key: "transport",
+        label: "Transport",
+        href: "/departments/transport",
+        iconKey: "container",
+        // TMS-5B — visibility rides the EXISTING transport authority; no
+        // permission was invented for a sidebar entry. The hub re-checks.
+        permission: "transport:read",
       },
       { key: "finance", label: "Finance", href: "/departments/finance", iconKey: "finance", permission: "finance:read" },
       // FIN-AGING-3 deliberately adds NOTHING here. « Balance âgée » is a Finance
-      // WORKSPACE, and the ratified sidebar realignment made DÉPARTEMENTS exactly
-      // three entries — Opérations, Transit, Finance — with workspaces reached
-      // from their department hub, exactly as Douane, Transport, Documentation
-      // and Caisse already are. Its entry lives in app/departments/finance.
+      // WORKSPACE reached from the Finance hub, exactly as Douane, Documentation
+      // and Caisse are from theirs. Its entry lives in app/departments/finance.
+      // (The section held exactly three entries until TMS-5B added Transport as
+      // a department in its own right — a workspace still never earns one.)
     ],
   },
   {

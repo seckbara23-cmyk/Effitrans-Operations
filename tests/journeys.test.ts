@@ -88,10 +88,10 @@ describe("the sidebar is exactly the five agreed sections", () => {
     // HR-B1 appended « Mes congés » (ungated, identity-scoped) to Pilotage.
     expect(byKey.pilotage).toEqual(["Mon Travail", "Centre d'opérations", "Parcours des dossiers", "Mes congés", "Mes évaluations"]);
     expect(byKey.files).toEqual(["Dossiers", "Clients", "Enterprise Mail"]);
-    // Sidebar Départements now mirror the canonical operational departments.
-    // Documentation (Operations) and Douane/Transport (Transit) are workspaces
-    // inside their hubs, not top-level entries.
-    expect(byKey.departments).toEqual(["Opérations", "Transit", "Finance"]);
+    // PIN MOVED (TMS-5B, 2026-08-18): Transport became a department by business
+    // decision. Documentation (Operations) and Douane (Transit) remain WORKSPACES
+    // inside their hubs — a workspace still never earns a top-level entry.
+    expect(byKey.departments).toEqual(["Opérations", "Transit", "Transport", "Finance"]);
     expect(byKey.management).toEqual(["Direction", "Ressources humaines", "Rapports", "Tableau exécutif"]);
     expect(byKey.administration).toEqual(["Utilisateurs", "Centre de marque", "Journal d'audit", "Paramètres"]);
   });
@@ -107,6 +107,8 @@ describe("the sidebar is exactly the five agreed sections", () => {
       "/mail": "../app/mail/page.tsx",
       "/departments/operations": "../app/departments/operations/page.tsx",
       "/departments/transit": "../app/departments/transit/page.tsx",
+      // TMS-5B — Transport is a department entry now, so its route joins the map.
+      "/departments/transport": "../app/departments/transport/page.tsx",
       "/departments/finance": "../app/departments/finance/page.tsx",
       "/departments/management": "../app/departments/management/page.tsx",
       "/departments/hr": "../app/departments/hr/page.tsx",
@@ -145,10 +147,12 @@ describe("the sidebar is exactly the five agreed sections", () => {
 
   it("names business FUNCTIONS — never activities, job titles or registry keys", () => {
     const labels = full.sections.flatMap((s) => s.items.map((i) => i.label));
-    // The Départements section is the three operational departments (functions),
-    // not activities ("Dédouanement") or job titles ("Caissière", "Déclarant").
+    // The Départements section names operational departments (functions), not
+    // activities ("Dédouanement") or job titles ("Caissière", "Déclarant").
+    // TMS-5B added « Transport » — a department, and still a business function,
+    // so the rule this case enforces is untouched.
     const depts = full.sections.find((s) => s.key === "departments")!;
-    expect(depts.items.map((i) => i.label)).toEqual(["Opérations", "Transit", "Finance"]);
+    expect(depts.items.map((i) => i.label)).toEqual(["Opérations", "Transit", "Transport", "Finance"]);
     for (const banned of [
       "Dédouanement",
       "Déclarant",

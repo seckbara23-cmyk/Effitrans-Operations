@@ -7,6 +7,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, it, expect } from "vitest";
 import { platformState, mergeAttention, sortUpcoming, headlineKpis, countBySeverity, type UnifiedAlert, type UpcomingMovement } from "@/lib/logistics/compose";
+import { navSections } from "@/lib/nav";
 
 const read = (p: string) => readFileSync(fileURLToPath(new URL(p, import.meta.url)), "utf8");
 const code = (p: string) => read(p).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
@@ -120,14 +121,20 @@ describe("the Command Center page + sidebar", () => {
     const page = read("../app/departments/transport/page.tsx");
     expect(page).toContain("customsAuthorized");
   });
-  it("Transport & Logistique is now a Transit workspace — route/permission unchanged, no URL break", () => {
-    // Department realignment: it left the top-level sidebar and became a WORKSPACE
-    // under the Transit hub. The ROUTE (/departments/transport) and its
-    // transport:read gate are unchanged — only the entry point moved.
+  // PIN MOVED (TMS-5B, 2026-08-18): this route was a Transit WORKSPACE under the
+  // earlier realignment. Transport is now a DEPARTMENT in its own right, so the
+  // command center is its landing page and the sidebar points at it directly.
+  // The invariant this case actually protects is unchanged and still asserted:
+  // the ROUTE and its transport:read gate never moved.
+  it("Transport & Logistique is the TRANSPORT department landing page — route/permission unchanged, no URL break", () => {
+    const entry = navSections
+      .find((s) => s.key === "departments")!
+      .items.find((i) => i.key === "transport")!;
+    expect(entry.href).toBe("/departments/transport");
+    expect(entry.permission).toBe("transport:read");
+    // …and Transit no longer advertises it as one of its workspaces.
     const transitHub = read("../app/departments/transit/page.tsx");
-    expect(transitHub).toContain('label: "Transport & Logistique"');
-    expect(transitHub).toContain('href: "/departments/transport"');
-    expect(transitHub).toContain('permission: "transport:read"');
+    expect(transitHub).not.toContain('label: "Transport & Logistique"');
     // The Command Center route itself still exists (this test file already asserts its content above).
     expect(() => read("../app/departments/transport/page.tsx")).not.toThrow();
   });
