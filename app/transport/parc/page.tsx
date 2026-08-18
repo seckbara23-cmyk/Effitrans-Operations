@@ -3,7 +3,7 @@ import Link from "next/link";
 import { PageHeader } from "@/components/ui/page-header";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
-import { listFleet, summarizeFleet } from "@/lib/fleet/service";
+import { listFleet, listVehicleMaintenance, summarizeFleet } from "@/lib/fleet/service";
 import { FleetConsole } from "@/components/fleet/fleet-console";
 
 export const metadata: Metadata = { title: "Parc & Flotte" };
@@ -55,6 +55,13 @@ export default async function ParcPage() {
 
   const fleet = await listFleet();
   const overview = summarizeFleet(fleet);
+  // TMS-5A — TMS-5 built listVehicleMaintenance and never rendered it, so the
+  // intervention history (« historique des interventions », including the
+  // return to service) was unreachable. Loaded for the vehicles on screen.
+  const histories = await Promise.all(
+    fleet.map(async (v) => [v.id, await listVehicleMaintenance(v.id)] as const),
+  );
+  const historyByVehicle = new Map(histories);
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -140,6 +147,43 @@ export default async function ParcPage() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {fleet.some((v) => (historyByVehicle.get(v.id) ?? []).length > 0) && (
+        <section className="surface p-4">
+          <h2 className="text-sm font-semibold text-navy-900">Historique des interventions</h2>
+          <p className="mt-0.5 text-xs text-slate-500">
+            Interventions planifiées et imprévues, immobilisations et remises en service.
+          </p>
+          <div className="mt-3 space-y-3">
+            {fleet.map((v) => {
+              const history = historyByVehicle.get(v.id) ?? [];
+              if (history.length === 0) return null;
+              return (
+                <div key={v.id}>
+                  <p className="text-xs font-medium text-slate-600">
+                    {v.registration}{v.internalCode ? ` · ${v.internalCode}` : ""}
+                  </p>
+                  <ul className="mt-1 space-y-1">
+                    {history.map((m) => (
+                      <li key={m.id} className="flex flex-wrap items-baseline gap-x-2 text-xs text-slate-600">
+                        <span className={`rounded px-1.5 py-0.5 text-[11px] ${m.status === "OPEN" ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-500"}`}>
+                          {m.status === "OPEN" ? "En cours" : "Clôturée"}
+                        </span>
+                        <span>{m.kind === "PLANNED" ? "Planifiée" : "Imprévue"}</span>
+                        {m.immobilizing && <span className="text-slate-400">· immobilisante</span>}
+                        <span className="text-slate-500">· ouverte le {m.openedOn}</span>
+                        {m.closedOn && <span className="text-slate-500">· remise en service le {m.closedOn}</span>}
+                        <span className="text-navy-800">— {m.description}</span>
+                        {m.resolution && <span className="text-slate-500">({m.resolution})</span>}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            })}
+          </div>
+        </section>
       )}
 
       {canManage && <FleetConsole vehicles={fleet} />}

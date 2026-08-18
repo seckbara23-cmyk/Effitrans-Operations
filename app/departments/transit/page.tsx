@@ -28,6 +28,11 @@ const WORKSPACES = [
   { label: "Douane", href: "/departments/customs", permission: "customs:read", desc: "Déclarations, pièces manquantes, dédouanement et Bon à Enlever (BAE)." },
   { label: "Intelligence douanière", href: "/customs/intelligence", permission: "customs:read", desc: "Suivi canonique des déclarations (GAINDE) et tableau de bord douane." },
   { label: "Transport & Logistique", href: "/departments/transport", permission: "transport:read", desc: "Command center logistique : routier, maritime et aérien." },
+  // TMS-5A — the parc shipped in TMS-5 but was only reachable through a chip on
+  // the Transport hub, two levels down. It is a Transit workspace like the
+  // others; `transport:read` is the ratified view authority, so the card simply
+  // disappears for anyone without it (same filter as every entry here).
+  { label: "Parc & Flotte", href: "/transport/parc", permission: "transport:read", desc: "Véhicules, conformité, maintenance et disponibilité." },
   { label: "Suivi maritime", href: "/shipping", permission: "transport:read", desc: "Navires, escales, conteneurs et voyages." },
   { label: "Suivi aérien", href: "/air", permission: "transport:read", desc: "Vols, LTA, ULD et aéroports." },
 ];
