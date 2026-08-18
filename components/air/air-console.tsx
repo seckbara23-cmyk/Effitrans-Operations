@@ -23,9 +23,20 @@ const ERR: Record<string, string> = {
 };
 const inp = "rounded-md border border-slate-200 px-2 py-1 text-sm"; const lab = "flex flex-col gap-1 text-xs text-slate-600";
 
-export function AirConsole({ shipmentId, currentMilestone, lastEventAt, ulds, flights, awb }: {
+export type AirLocationOption = {
+  id: string; label: string; name: string; iata: string | null;
+  latitude: number | null; longitude: number | null;
+};
+
+export function AirConsole({ shipmentId, currentMilestone, lastEventAt, ulds, flights, awb, locations = [] }: {
   shipmentId: string; currentMilestone: AirMilestone; lastEventAt: string | null;
   ulds: { id: string; number: string }[]; flights: Option[]; awb: { mawb: string | null; hawb: string | null };
+  /**
+   * TMS-3 — the tenant's curated airport referential (optional). Choosing an
+   * entry PREFILLS the location fields from the referential row — copied,
+   * never invented. The event stays source=MANUAL.
+   */
+  locations?: AirLocationOption[];
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -33,6 +44,20 @@ export function AirConsole({ shipmentId, currentMilestone, lastEventAt, ulds, fl
   const [eventType, setEventType] = useState("ACCEPTED");
   const [occurredAt, setOccurredAt] = useState("");
   const [confirmCorrection, setConfirm] = useState(false);
+  // TMS-3 — controlled so the referential picker can prefill; all editable.
+  const [locName, setLocName] = useState("");
+  const [locIata, setLocIata] = useState("");
+  const [locLat, setLocLat] = useState("");
+  const [locLon, setLocLon] = useState("");
+
+  function pickLocation(id: string) {
+    const a = locations.find((l) => l.id === id);
+    if (!a) return;
+    setLocName(a.name);
+    setLocIata(a.iata ?? "");
+    setLocLat(a.latitude != null ? String(a.latitude) : "");
+    setLocLon(a.longitude != null ? String(a.longitude) : "");
+  }
   const preview = useMemo(() => previewAirEvent(currentMilestone, eventType, occurredAt || null, lastEventAt), [currentMilestone, eventType, occurredAt, lastEventAt]);
 
   function run(fn: () => Promise<AirActionResult | AirMgmtResult>, reset?: HTMLFormElement) {
@@ -45,16 +70,24 @@ export function AirConsole({ shipmentId, currentMilestone, lastEventAt, ulds, fl
       <h2 className="text-sm font-semibold text-navy-900">Suivi et opérations (aérien)</h2>
 
       {/* Manual studio */}
-      <form onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); const lat = String(f.get("lat") ?? "").trim(); const lon = String(f.get("lon") ?? "").trim(); run(() => addManualAirEvent(shipmentId, { eventType, occurredAt: occurredAt || new Date().toISOString(), uldId: String(f.get("uld") ?? "") || null, locationName: String(f.get("locname") ?? "") || null, locationIata: String(f.get("iata") ?? "") || null, latitude: lat ? Number(lat) : null, longitude: lon ? Number(lon) : null, flightNumber: String(f.get("flightno") ?? "") || null, description: String(f.get("desc") ?? "") || null, confirmCorrection })); }} className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+      <form onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); const lat = locLat.trim(); const lon = locLon.trim(); run(() => addManualAirEvent(shipmentId, { eventType, occurredAt: occurredAt || new Date().toISOString(), uldId: String(f.get("uld") ?? "") || null, locationName: locName.trim() || null, locationIata: locIata.trim() || null, latitude: lat ? Number(lat) : null, longitude: lon ? Number(lon) : null, flightNumber: String(f.get("flightno") ?? "") || null, description: String(f.get("desc") ?? "") || null, confirmCorrection })); }} className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         <p className="sm:col-span-2 text-xs text-amber-700">Chaque évènement est étiqueté « Manuel ».</p>
+        {locations.length > 0 && (
+          <label className={`${lab} sm:col-span-2`}>Lieu depuis le référentiel (optionnel — préremplit les champs ci-dessous)
+            <select defaultValue="" onChange={(e) => pickLocation(e.target.value)} className={inp}>
+              <option value="">— Choisir un aéroport du référentiel —</option>
+              {locations.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
+            </select>
+          </label>
+        )}
         <label className={lab}>Évènement<select value={eventType} onChange={(e) => setEventType(e.target.value)} className={inp}>{EVENT_OPTIONS.map((m) => <option key={m} value={m}>{m === "POSITION_UPDATE" ? "Position" : m === "ETA_UPDATE" ? "ETA (voir ci-dessous)" : airMilestoneLabel(m as AirMilestone)}</option>)}</select></label>
         <label className={lab}>Date/heure<input type="datetime-local" onChange={(e) => setOccurredAt(e.target.value ? new Date(e.target.value).toISOString() : "")} className={inp} /></label>
         <label className={lab}>ULD<select name="uld" className={inp}><option value="">—</option>{ulds.map((u) => <option key={u.id} value={u.id}>{u.number}</option>)}</select></label>
-        <label className={lab}>Aéroport (IATA)<input name="iata" placeholder="DKR" className={inp} /></label>
-        <label className={lab}>Lieu (nom)<input name="locname" className={inp} /></label>
+        <label className={lab}>Aéroport (IATA)<input value={locIata} onChange={(e) => setLocIata(e.target.value)} placeholder="DKR" className={inp} /></label>
+        <label className={lab}>Lieu (nom)<input value={locName} onChange={(e) => setLocName(e.target.value)} className={inp} /></label>
         <label className={lab}>N° vol<input name="flightno" className={inp} /></label>
-        <label className={lab}>Latitude<input name="lat" inputMode="decimal" className={inp} /></label>
-        <label className={lab}>Longitude<input name="lon" inputMode="decimal" className={inp} /></label>
+        <label className={lab}>Latitude<input value={locLat} onChange={(e) => setLocLat(e.target.value)} inputMode="decimal" className={inp} /></label>
+        <label className={lab}>Longitude<input value={locLon} onChange={(e) => setLocLon(e.target.value)} inputMode="decimal" className={inp} /></label>
         <label className={`${lab} sm:col-span-2`}>Note<input name="desc" className={inp} /></label>
         <div className="sm:col-span-2 space-y-1">
           <div className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${preview.ok ? (preview.kind === "regress" ? "bg-amber-100 text-amber-800" : "bg-teal-50 text-teal-700") : "bg-red-50 text-red-700"}`}>{preview.message}</div>

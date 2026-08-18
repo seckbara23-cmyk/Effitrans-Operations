@@ -106,6 +106,20 @@ export async function listPortOptions(): Promise<Option[]> {
   const { data } = await admin.from("ocean_port").select("id, name, unlocode").eq("tenant_id", tenantId).eq("active", true).order("name").limit(OPTION_CAP).returns<{ id: string; name: string; unlocode: string | null }[]>();
   return (data ?? []).map((p) => ({ id: p.id, label: p.unlocode ? `${p.name} (${p.unlocode})` : p.name }));
 }
+export type PortLocationOption = { id: string; label: string; name: string; unlocode: string | null; latitude: number | null; longitude: number | null };
+
+/**
+ * TMS-3 — referential locations for the manual tracking form. Same gate as
+ * every read here (transport:read). The coordinates come from the curated
+ * ocean_port rows — COPIED into a manual event on explicit selection, never
+ * invented: a port without recorded coordinates offers none.
+ */
+export async function listPortLocationOptions(): Promise<PortLocationOption[]> {
+  const { admin, tenantId } = await gate();
+  const { data } = await admin.from("ocean_port").select("id, name, unlocode, latitude, longitude").eq("tenant_id", tenantId).eq("active", true).order("name").limit(OPTION_CAP).returns<{ id: string; name: string; unlocode: string | null; latitude: number | null; longitude: number | null }[]>();
+  return (data ?? []).map((p) => ({ id: p.id, label: p.unlocode ? `${p.name} (${p.unlocode})` : p.name, name: p.name, unlocode: p.unlocode, latitude: p.latitude, longitude: p.longitude }));
+}
+
 export async function listVesselOptions(): Promise<Option[]> {
   const { admin, tenantId } = await gate();
   const { data } = await admin.from("ocean_vessel").select("id, name, imo").eq("tenant_id", tenantId).eq("active", true).order("name").limit(OPTION_CAP).returns<{ id: string; name: string; imo: string | null }[]>();

@@ -279,9 +279,14 @@ describe("the panel is subordinate, and /shipping stays the authority", () => {
     }
   });
 
-  it("management is delegated to /shipping by link, not reimplemented", () => {
+  // PIN MOVED (TMS-3, 2026-08-18): the delegation link was the generic
+  // workspace root; TMS-3 deep-links to the dossier's OWN shipment detail
+  // (studioHref, falling back to /shipping without an id). The SEMANTIC is
+  // unchanged: management stays delegated by link, never reimplemented here.
+  it("management is delegated to the studio by link, not reimplemented", () => {
     const p = code(PANEL);
-    expect(p).toContain('href="/shipping"');
+    expect(p).toContain("href={studioHref}");
+    expect(p).toContain(': "/shipping";');
     expect(p).not.toMatch(/createContainer|updateContainer|moveContainer|deleteContainer/);
   });
 

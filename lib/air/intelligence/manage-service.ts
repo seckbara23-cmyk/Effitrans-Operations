@@ -63,6 +63,19 @@ export async function listAirportOptions(): Promise<Option[]> {
   const { data } = await admin.from("air_airport").select("id, name, iata").eq("tenant_id", tenantId).eq("active", true).order("name").limit(OPT_CAP).returns<{ id: string; name: string; iata: string | null }[]>();
   return (data ?? []).map((a) => ({ id: a.id, label: a.iata ? `${a.name} (${a.iata})` : a.name }));
 }
+export type AirportLocationOption = { id: string; label: string; name: string; iata: string | null; latitude: number | null; longitude: number | null };
+
+/**
+ * TMS-3 — referential locations for the manual air event form. Same gate as
+ * every read here (transport:read). Coordinates are COPIED from the curated
+ * air_airport rows on explicit selection, never invented.
+ */
+export async function listAirportLocationOptions(): Promise<AirportLocationOption[]> {
+  const { admin, tenantId } = await gate();
+  const { data } = await admin.from("air_airport").select("id, name, iata, latitude, longitude").eq("tenant_id", tenantId).eq("active", true).order("name").limit(OPT_CAP).returns<{ id: string; name: string; iata: string | null; latitude: number | null; longitude: number | null }[]>();
+  return (data ?? []).map((a) => ({ id: a.id, label: a.iata ? `${a.name} (${a.iata})` : a.name, name: a.name, iata: a.iata, latitude: a.latitude, longitude: a.longitude }));
+}
+
 export async function listFlightOptions(): Promise<Option[]> {
   const { admin, tenantId } = await gate();
   const { data } = await admin.from("air_flight").select("id, flight_number").eq("tenant_id", tenantId).order("scheduled_departure", { ascending: false, nullsFirst: false }).limit(OPT_CAP).returns<{ id: string; flight_number: string | null }[]>();

@@ -24,9 +24,22 @@ const ERRORS: Record<string, string> = {
   invalid_source: "Source invalide.", generic: "Erreur.",
 };
 
-export function TrackingStudio({ shipmentId, currentMilestone, lastEventAt, containers }: {
+export type StudioLocationOption = {
+  id: string; label: string; name: string; unlocode: string | null;
+  latitude: number | null; longitude: number | null;
+};
+
+export function TrackingStudio({ shipmentId, currentMilestone, lastEventAt, containers, locations = [] }: {
   shipmentId: string; currentMilestone: ShippingMilestone; lastEventAt: string | null;
   containers: { id: string; number: string }[];
+  /**
+   * TMS-3 — the tenant's curated port referential (optional). Choosing an
+   * entry PREFILLS the location fields below from the referential row —
+   * copied, never invented (a port without recorded coordinates fills none).
+   * The event stays source=MANUAL: a known port position is where the event
+   * happened, not vessel telemetry.
+   */
+  locations?: StudioLocationOption[];
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -35,6 +48,21 @@ export function TrackingStudio({ shipmentId, currentMilestone, lastEventAt, cont
   const [eventType, setEventType] = useState<string>("IN_TRANSIT");
   const [occurredAt, setOccurredAt] = useState<string>("");
   const [confirmCorrection, setConfirmCorrection] = useState(false);
+  // TMS-3 — location fields are controlled so the referential picker can
+  // prefill them; every value remains editable and optional.
+  const [locationName, setLocationName] = useState("");
+  const [locationUnlocode, setLocationUnlocode] = useState("");
+  const [latitude, setLatitude] = useState("");
+  const [longitude, setLongitude] = useState("");
+
+  function pickLocation(id: string) {
+    const p = locations.find((l) => l.id === id);
+    if (!p) return;
+    setLocationName(p.name);
+    setLocationUnlocode(p.unlocode ?? "");
+    setLatitude(p.latitude != null ? String(p.latitude) : "");
+    setLongitude(p.longitude != null ? String(p.longitude) : "");
+  }
 
   const preview = useMemo(
     () => previewManualEvent(currentMilestone, eventType, occurredAt || null, lastEventAt),
@@ -53,14 +81,14 @@ export function TrackingStudio({ shipmentId, currentMilestone, lastEventAt, cont
   function submitEvent(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
-    const lat = String(fd.get("latitude") ?? "").trim();
-    const lon = String(fd.get("longitude") ?? "").trim();
+    const lat = latitude.trim();
+    const lon = longitude.trim();
     run(() => addManualTrackingEvent(shipmentId, {
       eventType,
       occurredAt: occurredAt || new Date().toISOString(),
       containerId: String(fd.get("containerId") ?? "") || null,
-      locationName: String(fd.get("locationName") ?? "") || null,
-      locationUnlocode: String(fd.get("locationUnlocode") ?? "") || null,
+      locationName: locationName.trim() || null,
+      locationUnlocode: locationUnlocode.trim() || null,
       latitude: lat ? Number(lat) : null,
       longitude: lon ? Number(lon) : null,
       description: String(fd.get("description") ?? "") || null,
@@ -103,10 +131,18 @@ export function TrackingStudio({ shipmentId, currentMilestone, lastEventAt, cont
             </select>
           </label>
         )}
-        <label className="flex flex-col gap-1 text-xs text-slate-600">Lieu (nom)<input name="locationName" className="rounded-md border border-slate-200 px-2 py-1 text-sm" /></label>
-        <label className="flex flex-col gap-1 text-xs text-slate-600">UN/LOCODE<input name="locationUnlocode" placeholder="SNDKR" className="rounded-md border border-slate-200 px-2 py-1 text-sm" /></label>
-        <label className="flex flex-col gap-1 text-xs text-slate-600">Latitude<input name="latitude" inputMode="decimal" className="rounded-md border border-slate-200 px-2 py-1 text-sm" /></label>
-        <label className="flex flex-col gap-1 text-xs text-slate-600">Longitude<input name="longitude" inputMode="decimal" className="rounded-md border border-slate-200 px-2 py-1 text-sm" /></label>
+        {locations.length > 0 && (
+          <label className="flex flex-col gap-1 text-xs text-slate-600 sm:col-span-2">Lieu depuis le référentiel (optionnel — préremplit les champs ci-dessous)
+            <select defaultValue="" onChange={(e) => pickLocation(e.target.value)} className="rounded-md border border-slate-200 px-2 py-1 text-sm">
+              <option value="">— Choisir un port du référentiel —</option>
+              {locations.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
+            </select>
+          </label>
+        )}
+        <label className="flex flex-col gap-1 text-xs text-slate-600">Lieu (nom)<input value={locationName} onChange={(e) => setLocationName(e.target.value)} className="rounded-md border border-slate-200 px-2 py-1 text-sm" /></label>
+        <label className="flex flex-col gap-1 text-xs text-slate-600">UN/LOCODE<input value={locationUnlocode} onChange={(e) => setLocationUnlocode(e.target.value)} placeholder="SNDKR" className="rounded-md border border-slate-200 px-2 py-1 text-sm" /></label>
+        <label className="flex flex-col gap-1 text-xs text-slate-600">Latitude<input value={latitude} onChange={(e) => setLatitude(e.target.value)} inputMode="decimal" className="rounded-md border border-slate-200 px-2 py-1 text-sm" /></label>
+        <label className="flex flex-col gap-1 text-xs text-slate-600">Longitude<input value={longitude} onChange={(e) => setLongitude(e.target.value)} inputMode="decimal" className="rounded-md border border-slate-200 px-2 py-1 text-sm" /></label>
         <label className="flex flex-col gap-1 text-xs text-slate-600 sm:col-span-2">Note / motif d&apos;exception<input name="description" className="rounded-md border border-slate-200 px-2 py-1 text-sm" /></label>
 
         {/* Effect preview — shown before submission. */}

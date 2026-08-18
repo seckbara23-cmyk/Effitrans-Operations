@@ -5,7 +5,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { getAirShipmentDetail } from "@/lib/air/intelligence/service";
-import { listFlightOptions } from "@/lib/air/intelligence/manage-service";
+import { listAirportLocationOptions, listFlightOptions } from "@/lib/air/intelligence/manage-service";
 import { listDocuments } from "@/lib/documents/service";
 import { airMilestoneLabel, type AirMilestone } from "@/lib/air/intelligence/milestones";
 import { freshnessLabel, ageLabelFr } from "@/lib/shipping/intelligence/freshness";
@@ -29,9 +29,11 @@ export default async function AirDetailPage({ params }: { params: { shipmentId: 
   const detail = await getAirShipmentDetail(params.shipmentId);
   if (!detail) notFound();
   const canWrite = hasPermission(permissions, "transport:update");
-  const [flights, documents] = await Promise.all([
+  const [flights, documents, airportLocations] = await Promise.all([
     canWrite ? listFlightOptions() : Promise.resolve([]),
     hasPermission(permissions, "document:read") ? listDocuments(detail.shipment.fileId).catch(() => []) : Promise.resolve([]),
+    // TMS-3 — referential locations for the manual event picker.
+    canWrite ? listAirportLocationOptions() : Promise.resolve([]),
   ]);
   const { shipment: s, ulds, timeline, position, map, customs, provider, flightNumber } = detail;
   const lastEventAt = timeline.length ? timeline[timeline.length - 1].occurredAt : null;
@@ -106,7 +108,7 @@ export default async function AirDetailPage({ params }: { params: { shipmentId: 
         </div>
       </div>
 
-      {canWrite && <AirConsole shipmentId={s.id} currentMilestone={s.milestone} lastEventAt={lastEventAt} ulds={ulds.map((u) => ({ id: u.id, number: u.number }))} flights={flights} awb={{ mawb: s.mawb, hawb: s.hawb }} />}
+      {canWrite && <AirConsole shipmentId={s.id} currentMilestone={s.milestone} lastEventAt={lastEventAt} ulds={ulds.map((u) => ({ id: u.id, number: u.number }))} flights={flights} awb={{ mawb: s.mawb, hawb: s.hawb }} locations={airportLocations} />}
     </div>
   );
 }

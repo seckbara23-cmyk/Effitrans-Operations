@@ -5,7 +5,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { getOceanShipmentDetail } from "@/lib/shipping/intelligence/service";
-import { listRouteLegs, listCarrierOptions, listPortOptions, listVesselOptions, listVoyageOptions } from "@/lib/shipping/intelligence/manage-service";
+import { listRouteLegs, listCarrierOptions, listPortLocationOptions, listPortOptions, listVesselOptions, listVoyageOptions } from "@/lib/shipping/intelligence/manage-service";
 import { listDocuments } from "@/lib/documents/service";
 import { milestoneLabel, type ShippingMilestone } from "@/lib/shipping/intelligence/milestones";
 import { freshnessLabel, ageLabelFr } from "@/lib/shipping/intelligence/freshness";
@@ -37,13 +37,15 @@ export default async function ShipmentDetailPage({ params }: { params: { shipmen
 
   const canWrite = hasPermission(permissions, "transport:update");
   const canManage = hasPermission(permissions, "transport:manage");
-  const [routeLegs, carriers, ports, vessels, voyages, documents] = await Promise.all([
+  const [routeLegs, carriers, ports, vessels, voyages, documents, portLocations] = await Promise.all([
     listRouteLegs(params.shipmentId),
     canWrite ? listCarrierOptions() : Promise.resolve([]),
     canWrite ? listPortOptions() : Promise.resolve([]),
     canWrite ? listVesselOptions() : Promise.resolve([]),
     canWrite ? listVoyageOptions() : Promise.resolve([]),
     hasPermission(permissions, "document:read") ? listDocuments(detail.shipment.fileId).catch(() => []) : Promise.resolve([]),
+    // TMS-3 — referential locations for the manual event picker.
+    canWrite ? listPortLocationOptions() : Promise.resolve([]),
   ]);
 
   const { shipment: s, containers, timeline, position, map, customs, provider, nextMilestones } = detail;
@@ -148,7 +150,7 @@ export default async function ShipmentDetailPage({ params }: { params: { shipmen
 
       {canWrite && (
         <>
-          <TrackingStudio shipmentId={s.id} currentMilestone={s.milestone} lastEventAt={lastEventAt} containers={containers.map((c) => ({ id: c.id, number: c.number }))} />
+          <TrackingStudio shipmentId={s.id} currentMilestone={s.milestone} lastEventAt={lastEventAt} containers={containers.map((c) => ({ id: c.id, number: c.number }))} locations={portLocations} />
           <ShipmentOpsPanel shipmentId={s.id} options={{ carriers, ports, vessels, voyages }} booking={{ bookingReference: s.bookingReference, bookingStatus: s.bookingStatus, masterBl: s.masterBl, houseBl: s.houseBl }} />
         </>
       )}

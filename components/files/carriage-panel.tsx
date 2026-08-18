@@ -13,7 +13,18 @@ import type { DossierCarriage } from "@/lib/files/types";
  * text rendered verbatim; there is deliberately no 20'/40' breakdown, because
  * that field carries no validated vocabulary to derive one from.
  */
-export function CarriagePanel({ carriage }: { carriage: DossierCarriage }) {
+export function CarriagePanel({ carriage, shipmentId }: {
+  carriage: DossierCarriage;
+  /**
+   * TMS-3 — the dossier's OWN shipment, so the panel can deep-link into the
+   * tracking studio instead of the generic workspace root (the surface always
+   * existed; what was missing is reach).
+   */
+  shipmentId?: string | null;
+}) {
+  const studioHref = shipmentId
+    ? `${carriage.mode === "SEA" ? "/shipping" : "/air"}/shipments/${shipmentId}`
+    : "/shipping";
   const sea = carriage.mode === "SEA";
   const title = sea ? "Conteneurs" : "Colis aériens";
 
@@ -29,8 +40,8 @@ export function CarriagePanel({ carriage }: { carriage: DossierCarriage }) {
       {carriage.units.length === 0 ? (
         <p className="mt-3 text-sm text-slate-500">
           Aucune unité enregistrée pour cet acheminement.{" "}
-          <Link href="/shipping" className="text-teal-700 hover:underline">
-            Gérer dans Transport
+          <Link href={studioHref} className="text-teal-700 hover:underline">
+            {sea ? "Ouvrir le suivi maritime" : "Ouvrir le suivi aérien"}
           </Link>
         </p>
       ) : (
@@ -67,8 +78,8 @@ export function CarriagePanel({ carriage }: { carriage: DossierCarriage }) {
           </ul>
           <p className="mt-3 text-[11px] text-slate-500">
             Information en lecture seule.{" "}
-            <Link href="/shipping" className="text-teal-700 hover:underline">
-              Gérer dans Transport
+            <Link href={studioHref} className="text-teal-700 hover:underline">
+              {sea ? "Ouvrir le suivi maritime" : "Ouvrir le suivi aérien"}
             </Link>
           </p>
         </>

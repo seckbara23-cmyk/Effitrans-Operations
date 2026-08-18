@@ -490,7 +490,7 @@ export default async function FileDetailPage({ params }: { params: { id: string 
           is being moved. Renders nothing for a road-only dossier. */}
       {carriage && (
         <div id="carriage" className="scroll-mt-24">
-          <CarriagePanel carriage={carriage} />
+          <CarriagePanel carriage={carriage} shipmentId={file.shipment?.id ?? null} />
         </div>
       )}
       {canReadTransport && (
