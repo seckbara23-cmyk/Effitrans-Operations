@@ -5,7 +5,9 @@ import { PageHeader } from "@/components/ui/page-header";
 import { ProcessJourneyPanel } from "@/components/process/process-journey";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
-import { getCommercialOwnerPanel, getDossierCarriage, getFile, getTenantTimezone, listAssignableStaff, listParentCandidates } from "@/lib/files/service";
+import { getCommercialOrigin, getCommercialOwnerPanel, getDossierCarriage, getFile, getTenantTimezone, listAssignableStaff, listParentCandidates } from "@/lib/files/service";
+import { CommercialOrigin } from "@/components/files/commercial-origin";
+import { COMMERCIAL_READ_PERMISSIONS } from "@/lib/commercial/service";
 import { CarriagePanel } from "@/components/files/carriage-panel";
 import { QC2Panel } from "@/components/files/qc2-panel";
 import { QC4Panel } from "@/components/files/qc4-panel";
@@ -111,6 +113,10 @@ export default async function FileDetailPage({ params }: { params: { id: string 
   const canManageLifecycle = hasPermission(permissions, "file:delete");
   const assignableStaff = canAssign || canAssignCommercial ? await listAssignableStaff() : [];
   const commercialOwner = await getCommercialOwnerPanel(file.id);
+  // QO-1 — commercial origin (devis or « Sans devis »). The link into the
+  // commercial workspace is offered only to commercial-read holders (DEC-C32).
+  const commercialOrigin = await getCommercialOrigin(file.id);
+  const canLinkCommercial = COMMERCIAL_READ_PERMISSIONS.some((c) => hasPermission(permissions, c));
   const assigneeLabel = file.assigneeName ?? file.assigneeEmail;
 
   // Embedded tasks (only if the user can read tasks).
@@ -331,6 +337,12 @@ export default async function FileDetailPage({ params }: { params: { id: string 
           "where is this, who has it, what next". */}
       <ProcessJourneyPanel fileId={file.id} />
       <FileWorkflow file={file} canTransitionStatus={canTransitionStatus} />
+      <CommercialOrigin
+        quotationId={commercialOrigin.quotationId}
+        devisNumber={commercialOrigin.devisNumber}
+        skipReason={commercialOrigin.skipReason}
+        canLinkCommercial={canLinkCommercial}
+      />
       <CommercialOwner
         fileId={file.id}
         ownerId={commercialOwner.ownerId}

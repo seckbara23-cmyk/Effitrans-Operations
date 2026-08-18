@@ -44,6 +44,7 @@ export function IntakePanel({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [ownerUserId, setOwnerUserId] = useState("");
+  const [cotationPrecision, setCotationPrecision] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [blockerTitle, setBlockerTitle] = useState("");
@@ -132,6 +133,28 @@ export function IntakePanel({
         )}
       </div>
 
+      {/* QO-1 — a dossier may open WITHOUT a devis: a legitimate path, not
+          missing data. When a devis exists, the recorded reason is derived from
+          it automatically; otherwise this optional precision is appended to the
+          honest neutral reason (« Ouverture directe — dossier sans devis. »). */}
+      {!opened && canOpen && (
+        <div className="mt-3">
+          <label htmlFor="intake-cotation-precision" className="block text-xs font-medium text-slate-600">
+            Ouverture sans devis — précision (facultatif)
+          </label>
+          <input
+            id="intake-cotation-precision"
+            type="text"
+            maxLength={280}
+            value={cotationPrecision}
+            onChange={(e) => setCotationPrecision(e.target.value)}
+            disabled={pending}
+            placeholder="Ex. : client sous contrat, urgence opérationnelle…"
+            className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-teal-500 focus:outline-none"
+          />
+        </div>
+      )}
+
       {/* Blockers — the intake-level « document manquant » state. */}
       {state.openBlockers.length > 0 && (
         <div className="mt-3 rounded-lg border border-red-200 bg-white p-2.5">
@@ -167,7 +190,12 @@ export function IntakePanel({
           <button
             type="button"
             disabled={pending || !ownerUserId || nonOwnerBlocking.length > 0}
-            onClick={() => run(() => openDossierWorkflow(fileId, { ownerUserId }), "Dossier ouvert — le client voit « Dossier reçu ».")}
+            onClick={() =>
+              run(
+                () => openDossierWorkflow(fileId, { ownerUserId, cotationPrecision: cotationPrecision.trim() || undefined }),
+                "Dossier ouvert — le client voit « Dossier reçu ».",
+              )
+            }
             className="min-h-[36px] rounded-lg bg-teal-700 px-4 py-1.5 text-sm font-medium text-white hover:bg-teal-800 disabled:opacity-50"
           >
             Ouvrir le dossier

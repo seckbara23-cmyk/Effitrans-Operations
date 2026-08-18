@@ -669,6 +669,61 @@ export async function getCommercialOwnerPanel(fileId: string): Promise<Commercia
   };
 }
 
+export type CommercialOrigin = {
+  quotationId: string | null;
+  devisNumber: string | null;
+  skipReason: string | null;
+};
+
+/**
+ * QO-1 — the dossier's commercial origin. A devis is OPTIONAL: a dossier
+ * legitimately originates from an accepted quotation OR directly. The link
+ * lives on the quotation side (`converted_file_id`, EC-3D) — the dossier
+ * carries no quotation column, and this read adds no relationship. Gated by
+ * the page's own authority (file:read); the quotation CONTENT stays behind
+ * commercial read (DEC-C32) — only existence and number surface here.
+ */
+export async function getCommercialOrigin(fileId: string): Promise<CommercialOrigin> {
+  const user = await assertPermission("file:read");
+  const supabase = getAdminSupabaseClient();
+
+  const { data: devis } = await supabase
+    .from("quotation")
+    .select("id, quotation_number")
+    .eq("tenant_id", user.tenantId)
+    .eq("converted_file_id", fileId)
+    .maybeSingle();
+  if (devis) {
+    return {
+      quotationId: devis.id as string,
+      devisNumber: (devis.quotation_number as string | null) ?? null,
+      skipReason: null,
+    };
+  }
+
+  // Sans devis — the recorded reason is the cotation step's skip reason
+  // (the platform's existing, audited exception mechanism — reused, not
+  // duplicated). Absent until the dossier is opened.
+  const { data: instance } = await supabase
+    .from("process_instance")
+    .select("id, tenant_id")
+    .eq("file_id", fileId)
+    .neq("status", "CANCELLED")
+    .maybeSingle();
+  let skipReason: string | null = null;
+  if (instance && instance.tenant_id === user.tenantId) {
+    const { data: exec } = await supabase
+      .from("process_step_execution")
+      .select("state, skip_reason")
+      .eq("tenant_id", user.tenantId)
+      .eq("process_instance_id", instance.id)
+      .eq("step_key", "cotation")
+      .maybeSingle();
+    if (exec?.state === "SKIPPED") skipReason = (exec.skip_reason as string | null) ?? null;
+  }
+  return { quotationId: null, devisNumber: null, skipReason };
+}
+
 export async function listAssignableStaff(): Promise<StaffOption[]> {
   const user = await assertPermission("file:assign");
   const supabase = getAdminSupabaseClient();

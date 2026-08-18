@@ -340,7 +340,7 @@ export async function getIntakeState(fileId: string, diag?: IntakeDiag): Promise
  */
 export async function openDossierWorkflow(
   fileId: string,
-  input: { ownerUserId: string; skipCotation?: boolean },
+  input: { ownerUserId: string; skipCotation?: boolean; cotationPrecision?: string | null },
 ): Promise<IntakeActionResult> {
   const ctx = await intakeGuard("process:manage", fileId);
   if (isErr(ctx)) return { ok: false, error: ctx };
@@ -371,8 +371,10 @@ export async function openDossierWorkflow(
   const owned = await assignProcessOwner(fileId, { ownerUserId: input.ownerUserId, reason: "Ouverture du dossier" });
   if (!owned.ok) return { ok: false, error: `owner_${owned.error}` };
 
-  // 3. Cotation: skipped by default at intake (contract client / no quotation) so
-  //    the Operations intake step can open.
+  // 3. Cotation: skipped by default at intake so the Operations intake step can
+  //    open — but the RECORDED reason is derived, not presumed (QO-1). A devis is
+  //    optional: both origins are legitimate, and each gets its honest wording.
+  //    Historical executions keep whatever was recorded at the time.
   //
   //    The result is CHECKED. Only one failure is tolerated: a retry where
   //    cotation is already finished — skipping a SKIPPED step is refused by the
@@ -380,10 +382,23 @@ export async function openDossierWorkflow(
   //    Every other failure aborts, because continuing would leave step 4 unable
   //    to open and report success for a workflow that never started.
   if (input.skipCotation !== false) {
-    const skipped = await skipStep(fileId, "cotation", {
-      reason: "Ouverture directe — dossier sans cotation préalable (client sous contrat).",
-      source: "MANUAL",
-    });
+    const { data: devis } = await admin
+      .from("quotation")
+      .select("quotation_number")
+      .eq("tenant_id", ctx.tenantId)
+      .eq("converted_file_id", fileId)
+      .maybeSingle();
+    let reason: string;
+    if (devis) {
+      reason = devis.quotation_number
+        ? `Devis N° ${devis.quotation_number} accepté — cotation réalisée côté commercial.`
+        : "Devis accepté — cotation réalisée côté commercial.";
+    } else {
+      reason = "Ouverture directe — dossier sans devis.";
+      const precision = (input.cotationPrecision ?? "").replace(/\s+/g, " ").trim().slice(0, 280);
+      if (precision) reason += ` Précision : ${precision}`;
+    }
+    const skipped = await skipStep(fileId, "cotation", { reason, source: "MANUAL" });
     if (!skipped.ok) {
       const after = await loadProcessSnapshot(ctx.tenantId, fileId, ctx.permissions);
       const cotation = after?.executions.find((e) => e.stepKey === "cotation");

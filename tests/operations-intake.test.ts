@@ -283,11 +283,19 @@ describe("openDossierWorkflow — orchestration of existing audited actions", ()
     expect(open).toContain("if (!owned.ok) return { ok: false, error: `owner_${owned.error}` }");
   });
 
-  it("37 — cotation is skipped by default as an EXPLICIT manual skip with a French reason", () => {
-    expect(open).toContain('skipStep(fileId, "cotation"');
-    expect(open).toContain('source: "MANUAL"');
-    expect(open).toContain("sans cotation préalable");
+  // PIN MOVED (QO-1, 2026-08-18): this case previously pinned the universal
+  // hard-coded wording « …sans cotation préalable (client sous contrat) ». The
+  // ratified rule makes the devis OPTIONAL and the recorded reason DERIVED:
+  // devis-converted dossiers record the commercial path, direct dossiers record
+  // a neutral « sans devis » reason. The presumption must never return.
+  it("37 — cotation skip records a DERIVED honest reason: devis-converted vs « sans devis », never a universal presumption", () => {
+    expect(open).toContain('skipStep(fileId, "cotation", { reason, source: "MANUAL" })');
     expect(open).toContain("input.skipCotation !== false");
+    expect(open).toContain('.eq("converted_file_id", fileId)');
+    expect(open).toContain("cotation réalisée côté commercial");
+    expect(open).toContain("Ouverture directe — dossier sans devis.");
+    expect(open).not.toContain("client sous contrat");
+    expect(open).not.toContain("sans cotation préalable");
   });
 
   it("38 — the first Operations step is activated from the frozen registry key", () => {
