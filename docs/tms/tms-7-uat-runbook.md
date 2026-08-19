@@ -118,6 +118,9 @@ test suite never marks one PASS.**
 | UAT-02 | TMS-5B/5A | Transport owns its four responsibilities; Transit no longer shows them |
 | UAT-03 | TMS-5 vehicle registry + **TMS-5C** stale-selection fix | **PASS** (operator, 2026-08-19) | `UAT-TMS7-01 / UAT-01` (Renault Midlum 2020, Camion, 5000 kg) created from an EMPTY parc; tiles auto-updated 1/1/0/0/0/0 without manual refresh; row Disponible / Non renseignée; vehicle became the active « Véhicule concerné »; conformité, intervention and « Mettre hors service » all ENABLED; « Déclarer disponible » correctly disabled with « État actuel : Disponible »; suppression area present | None — **the original TMS-5C production defect did not recur** | Closed |
 | UAT-04 | TMS-5 compliance — dates/references only, reusing `classifyExpiry` | **PASS** (operator, 2026-08-19) | `Assurance : Expire bientôt (2026-09-03)` (amber) and `Visite technique : Valide (2027-06-15)` (teal) rendered on the row; « Conformité à surveiller » = 1; vehicle stayed Disponible (1/1); **no file-upload control exists** | None. An initial mismatch was **operator test-data entry error** (wrong expiry date), corrected by re-entry — not a product defect. The re-entry additionally exercised the ratified renewal path (one row per vehicle+type, updated in place, no duplicate) | Closed |
+| UAT-05 | TMS-5 immobilising intervention + availability interlock; TMS-5A history rendered | **PASS** (operator, 2026-08-19) | « Imprévue » intervention `UAT-TMS7 — plaquettes de frein` opened; vehicle moved Disponible → **Maintenance automatically** (not set by hand); tiles Disponibles 0 / En maintenance 1; entry shown in « Historique des interventions » as En cours · Imprévue · immobilisante; **« Déclarer disponible » REFUSED** with « Une intervention immobilisante est déjà ouverte pour ce véhicule. » and État stayed Maintenance | None | Closed — interlock proven non-bypassable from the UI |
+| UAT-06 | TMS-5/5C close intervention → return to service | **PASS** (operator, 2026-08-19) | Intervention closed with a résolution; vehicle returned to **Disponible** | None | Closed |
+| UAT-06b | TMS-5 out-of-service and reinstatement | **PASS** (operator, 2026-08-19) | Full lifecycle demonstrated end-to-end: **Disponible → Maintenance → Disponible → Hors service → Disponible**; transitions, maintenance lifecycle, dispatch interlock and reinstatement coherent together | None | Closed |
 | UAT-03 | TMS-5 | A vehicle can be registered (Parc & Flotte) |
 | UAT-04 | TMS-5 | Compliance dates recorded; expiry state rendered |
 | UAT-05 | TMS-5/5C | Immobilising intervention → Maintenance; excluded from dispatch |
@@ -144,6 +147,23 @@ silently skipped: cross-tenant rejection (single production tenant — covered b
 B6 and the SQL suites), and UAT-21/22 require respectively a second account
 without `transport:manage` and the tracking flag; both are stated as conditions,
 not assumed.
+
+### Scope validated so far (2026-08-19)
+
+**Parc & Flotte LIFECYCLE — UAT VALIDATED.** UAT-01…06b cover the TMS-5B/5A
+navigation split, vehicle registration, compliance and expiry classification,
+the maintenance lifecycle, the dispatch interlock and reinstatement. Not to be
+re-opened unless a later code change touches this scope.
+
+**Still OPEN inside TMS-5/5A/5C scope** — these were *not* exercised by that
+sequence and are deliberately NOT closed by association:
+
+| ID | Why it is still open |
+| --- | --- |
+| UAT-19 | A vehicle **with** history must be REFUSED permanent deletion. This is the half of the retention rule that protects operational evidence; it has never been demonstrated in production. `UAT-TMS7-01` now carries compliance **and** a closed intervention, so it is the correct subject. |
+| UAT-20 | A never-used vehicle **may** be deleted — partially evidenced by the earlier `vehicle.deleted` of AA-826-YY (audit log), but not performed as a controlled UAT with the confirmation step. |
+| UAT-21 | Requires a second account holding `transport:read` **without** `transport:manage`. |
+| UAT-22 | Requires `TRACKING_ENABLED=true`. |
 
 ## 6. Defect classification
 
