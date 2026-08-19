@@ -103,6 +103,15 @@ function documentApproverRoles(): string[] {
  * permission check still runs first, maker-checker still forbids
  * self-verification, and a tenant that pins a policy with narrower verifier
  * seats overrides this completely.
+ *
+ * RQ-15b (ratified 2026-08-19) — this binding is the COMPATIBILITY rule, not
+ * the target. It was ratified so existing dossiers can operate; it is expressly
+ * NOT a ratification that all five holders may verify every document at every
+ * step. The target is step-specific verifier seats aligned to the responsible
+ * function, reached by ACTIVATING A POLICY VERSION — not by editing this
+ * default again. SYSTEM_ADMIN appears here only because it holds the
+ * permission; it is technical/break-glass authority, and the target
+ * configuration should not treat it as an operating verifier.
  */
 function defaultSeats(): SeatBinding[] {
   const out: SeatBinding[] = [];

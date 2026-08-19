@@ -217,3 +217,33 @@ never supplied them. Two points need a decision:
    to be OPENED before its documents can be verified is the intended rule.
 
 Neither question blocks UAT-15 part 2; both should be answered before TMS-7 closes.
+
+### RQ-15b — RATIFIED (operator, 2026-08-19)
+
+**1. Verifier seat under LEGACY_DEFAULT — APPROVED as a COMPATIBILITY rule.**
+`document:approve` holders may populate the LEGACY_DEFAULT verifier seat. This
+validates the `1498e9f` repair and allows existing dossiers to operate.
+
+⚠ **This is expressly NOT ratification** of « all five holders may verify every
+document at every step » as the final business rule. It is the fallback, not the
+target. Two constraints follow and bind future work:
+
+* The intended target is **step-specific verifier seats configured through
+  workflow policy**, aligned to the responsible function. The override mechanism
+  already exists and takes precedence over the default — activating a policy
+  version is the ratified path to get there, NOT editing the default again.
+* **SYSTEM_ADMIN is technical / break-glass authority, not the normal operational
+  verifier.** It appears in the fallback seat because it holds `document:approve`;
+  the target configuration should not treat it as an operating verifier.
+
+**2. Un-opened dossiers remain non-verifiable — RATIFIED as INTENTIONAL.**
+A dossier must first be opened through the process engine so that an active step
+and a governance context exist. No process instance → no verifier seat →
+verification refused. This is the intended rule, not a gap. Dossiers
+EFT-IMP-2026-00001 and 00002 stay non-verifiable until opened.
+
+**3. Controls frozen.** Maker-checker, the `document:approve` check, the
+empty-seat refusal and policy-override behaviour are preserved EXACTLY as
+implemented in `1498e9f`. Any later change to these is a new ratification.
+
+**Verification:** CI **#539 GREEN** (`build` + `rls-tests`) on `1498e9f`.
