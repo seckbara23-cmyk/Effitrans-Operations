@@ -1,0 +1,156 @@
+# TMS-7 — End-to-End Production UAT: audit & runbook
+
+**Date:** 2026-08-19 · Scope: the accumulated acceptance criteria of TMS-1,
+QO-1, TMS-2, TMS-3, TMS-4, TMS-5/5A/5B/5C and TMS-6. **No feature development.**
+Every criterion below is inherited verbatim from its ratified contract — none is
+weakened, replaced or reinterpreted.
+
+## 1. Production baseline (read-only, verified 2026-08-19)
+
+| Fact | Value |
+| --- | --- |
+| Migrations applied | **115–119**, local = remote (`transport_provider` present in prod) |
+| Execution-source CHECK | `transport_execution_source_exclusive` **present** |
+| Interlock triggers | `trg_transport_vehicle` + `trg_transport_provider` **both armed** |
+| Dossiers | 3 — `EFT-IMP-2026-00001` (DELIVERED), `…00002` (DRAFT), `…00003` (CLOSED) |
+| Transport records | 3 |
+| Vehicles | **0** (the TMS-5C test vehicle AA-826-YY was permanently deleted — `vehicle.deleted` is in the audit log, so controlled deletion has already been exercised once in production) |
+| Providers | **0** |
+
+**Consequence for UAT:** both execution branches start from an empty registry,
+so every object this runbook uses is **new and clearly identifiable**. The three
+existing dossiers are genuine records and are **never modified** — they are read
+only, as the regression baseline.
+
+## 2. Test-object naming (production safety)
+
+| Object | Value to use |
+| --- | --- |
+| Dossier | created fresh; client « UAT » if one exists, else any client — reference `UAT-TMS7` |
+| Fleet vehicle | immatriculation **`UAT-TMS7-01`**, code interne `UAT-01` |
+| Throwaway vehicle (deletion test) | **`UAT-TMS7-99`** |
+| Subcontractor | **`UAT Transporteur SARL`** |
+
+Nothing else is created. No genuine record is altered, and **no historical
+evidence is deleted to make a test pass**.
+
+## 3. Category A — Automatable verification (executed 2026-08-19)
+
+| Evidence | Result |
+| --- | --- |
+| 11 phase suites (TMS-1, QO-1, TMS-2, TMS-3, TMS-4, TMS-5, 5A, 5B, 5C ×2, TMS-6) | **245/245 PASS** |
+| Full vitest | 7029 passed / 1 skipped (only the known CRLF-local expense pin) |
+| Typecheck + production build | clean |
+| CI #519 (`6d0392b`) — `rls-tests` runs every SQL suite against a real Postgres after applying all 119 migrations | **GREEN** |
+| DB-behavioural suites proven live in that run | `tms_2` geography, `tms_5` fleet (interlock, one-open-immobilisation, cross-tenant), `tms_6` subcontractor (**exclusion CHECK**, approval interlock, cross-tenant, carrier-name history) |
+
+These establish that the invariants hold **in a database**. They do **not**
+substitute for any human case below.
+
+## 4. Category B — Production database verification (operator-run, read-only)
+
+Run in the Supabase SQL editor. Each is READ-ONLY.
+
+**B1 — schema and interlocks are live**
+```sql
+select
+  (select count(*) from information_schema.tables
+     where table_schema='public' and table_name='transport_provider') as provider_table,
+  (select count(*) from pg_constraint
+     where conname='transport_execution_source_exclusive') as exclusion_check,
+  (select count(*) from pg_trigger
+     where tgname in ('trg_transport_vehicle','trg_transport_provider')) as interlocks;
+-- expect: 1, 1, 2
+```
+
+**B2 — no transport ever claims two executors (the TMS-6 invariant, in real data)**
+```sql
+select count(*) as contradictions from transport_record
+ where vehicle_id is not null and provider_id is not null;
+-- expect: 0
+```
+
+**B3 — « En mission » is derived, never stored** (run after UAT-12)
+```sql
+select v.registration, v.status,
+       (select count(*) from transport_record t
+         where t.vehicle_id = v.id and t.status in
+               ('PLANNED','DRIVER_ASSIGNED','PICKED_UP','IN_TRANSIT')) as engaged_now
+  from vehicle v where v.registration = 'UAT-TMS7-01';
+-- expect: status stays 'AVAILABLE' while engaged_now = 1
+--         (the parc shows « En mission » from the second column, not the first)
+```
+
+**B4 — carrier-name history survives a provider rename** (run after UAT-17)
+```sql
+select t.transport_company as printed_carrier, p.name as registry_name_now
+  from transport_record t join transport_provider p on p.id = t.provider_id
+ where t.transport_company is not null;
+-- expect: printed_carrier keeps the name as at assignment; registry_name_now differs
+```
+
+**B5 — audit trail of the UAT session**
+```sql
+select action, count(*) from audit_log
+ where action like 'vehicle%' or action like 'transport_provider%'
+    or action like 'transport.%' or action = 'file.commercial_owner_assigned'
+ group by action order by action;
+```
+
+**B6 — tenant isolation (structural)**
+```sql
+select count(*) as cross_tenant_leaks from transport_record t
+  left join vehicle v on v.id = t.vehicle_id
+  left join transport_provider p on p.id = t.provider_id
+ where (v.id is not null and v.tenant_id <> t.tenant_id)
+    or (p.id is not null and p.tenant_id <> t.tenant_id);
+-- expect: 0
+```
+
+## 5. Category C — Human production UAT (operator-run, one at a time)
+
+Sequenced so early objects are reused. **The operator performs these; a green
+test suite never marks one PASS.**
+
+| ID | Inherited from | What it proves |
+| --- | --- | --- |
+| UAT-01 | TMS-5B | Transport is a department in the sidebar, in the ratified order |
+| UAT-02 | TMS-5B/5A | Transport owns its four responsibilities; Transit no longer shows them |
+| UAT-03 | TMS-5 | A vehicle can be registered (Parc & Flotte) |
+| UAT-04 | TMS-5 | Compliance dates recorded; expiry state rendered |
+| UAT-05 | TMS-5/5C | Immobilising intervention → Maintenance; excluded from dispatch |
+| UAT-06 | TMS-5/5C | Close intervention → return to service |
+| UAT-07 | TMS-6 | An external provider can be registered and approved |
+| UAT-08 | TMS-6 | A suspended provider cannot be assigned |
+| UAT-09 | QO-1 + TMS-1 | New dossier reads « Sans devis » and « À affecter » |
+| UAT-10 | TMS-1 | Operations Manager designates the Responsable client |
+| UAT-11 | TMS-4 | Transport request raised; Transport receives it |
+| UAT-12 | TMS-5/5C | Internal branch: eligible vehicle assigned; « En mission » derived |
+| UAT-13 | TMS-6 | Fleet **and** provider on one transport is refused |
+| UAT-14 | TMS-5 | An immobilised vehicle cannot be dispatched |
+| UAT-15 | TMS-4 | Customs interlock at PICKED_UP, then delivery + POD evidence |
+| UAT-16 | TMS-6 | External branch: provider assigned, « Transport externe » |
+| UAT-17 | TMS-6 | Provider rename does not rewrite a past transport's carrier |
+| UAT-18 | TMS-6/TMS-4 | ORDRE DE TRANSPORT prints the right carrier identity |
+| UAT-19 | TMS-5C | A vehicle with history **cannot** be permanently deleted |
+| UAT-20 | TMS-5C | A never-used vehicle **can** be permanently deleted |
+| UAT-21 | TMS-5A/5C | A `transport:read`-only user sees the parc read-only, no grey buttons |
+| UAT-22 | TMS-3 | Road tracking honesty (only if `TRACKING_ENABLED=true`) |
+
+**Deferred / not human-testable in this environment**, recorded rather than
+silently skipped: cross-tenant rejection (single production tenant — covered by
+B6 and the SQL suites), and UAT-21/22 require respectively a second account
+without `transport:manage` and the tracking flag; both are stated as conditions,
+not assumed.
+
+## 6. Defect classification
+
+**BLOCKER** — authority, security, data integrity, or the core journey broken.
+Stop and report before dependent tests. **MAJOR** — required capability broken,
+workaround exists. **MINOR** — usability/presentation, no integrity impact.
+
+## 7. Evidence matrix
+
+Filled in as results arrive; every inherited criterion appears with its test,
+result, evidence and disposition. TMS-7 is **not** complete until every row is
+resolved.
