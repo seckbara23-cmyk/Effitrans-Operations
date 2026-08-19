@@ -161,6 +161,67 @@ describe("DEFECT-UAT15b — every fail-closed axis still refuses", () => {
   });
 });
 
+/**
+ * The gap the second UAT-15 failure exposed: the tests above prove the DEFAULT
+ * POLICY is right, which is not the same as proving the path production walks
+ * is right. That path is
+ *
+ *   process instance → active step → resolvePolicy → seat → eligibility
+ *
+ * and each link below is pinned on the real source, because the modules are
+ * `server-only` and cannot be imported into vitest.
+ */
+describe("DEFECT-UAT15b — the PRODUCTION resolution path, link by link", () => {
+  const resolver = read("lib", "workflow", "policy", "resolver.ts");
+
+  it("the resolver's floor IS this default — not a second policy object", () => {
+    // If the floor were built from anything else, every assertion above would
+    // be true of an object production never sees.
+    expect(resolver).toContain("const document = buildPlatformDefaultPolicy();");
+    expect(resolver).toContain('provenance: "LEGACY_DEFAULT",');
+  });
+
+  it("with no stored version, the floor is what resolves", () => {
+    // Production has 0 rows in workflow_policy_version, so resolution reaches
+    // the built-in floor. Pin the order that makes that true.
+    expect(resolver).toContain("if (!builtIn) {");
+    expect(resolver).toContain("return builtIn;");
+  });
+
+  it("the active step is read from the states the engine actually writes", () => {
+    // Production step rows carry PENDING / COMPLETED / SKIPPED. Only PENDING is
+    // open, and it must be in the filter or the step key silently comes back
+    // empty even for a dossier that IS open.
+    expect(governance).toContain('.in("state", ["AVAILABLE", "ACTIVE", "PENDING"])');
+  });
+
+  it("a COMPLETED or SKIPPED step is not mistaken for the active one", () => {
+    const filter = governance.slice(
+      governance.indexOf('.in("state",'),
+      governance.indexOf('.in("state",') + 60,
+    );
+    expect(filter).not.toContain("COMPLETED");
+    expect(filter).not.toContain("SKIPPED");
+  });
+
+  it("every step key the engine can persist is a key the binding covers", () => {
+    // The engine writes step keys from this same registry, so the binding can
+    // never miss one. Live examples observed in production are named here so a
+    // registry rename cannot quietly orphan them.
+    for (const live of ["pre_gate", "bon_a_delivrer", "transport_docs_transmission"]) {
+      expect(ALL_STEPS, live).toContain(live);
+      expect(seatRoles(live, "verifier").length, live).toBeGreaterThan(0);
+    }
+  });
+
+  it("NO process instance still yields an empty step key, hence a refusal", () => {
+    // RQ-15b ratified this as intentional: no instance ⇒ no step ⇒ no seat.
+    expect(governance).toContain('const stepKey = step?.step_key ?? "";');
+    expect(ALL_STEPS).not.toContain("");
+    expect(seatRoles("", "verifier")).toEqual([]);
+  });
+});
+
 describe("DEFECT-UAT15b — the assignee seats WES-3 depends on are untouched", () => {
   it("steps naming an official role still bind an assignee seat", () => {
     const withRole = [...EFFITRANS_PROCESS, ...PARALLEL_ACTIVITIES].filter((n) => n.role);

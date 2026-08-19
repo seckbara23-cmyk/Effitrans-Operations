@@ -247,3 +247,63 @@ empty-seat refusal and policy-override behaviour are preserved EXACTLY as
 implemented in `1498e9f`. Any later change to these is a new ratification.
 
 **Verification:** CI **#539 GREEN** (`build` + `rls-tests`) on `1498e9f`.
+
+## UAT-15 part 2 — second FAIL (2026-08-19): root cause is NOT a code defect
+
+Operator re-ran after CI #539. Both documents stayed **Téléversé** with the
+empty-verifier-seat message. The four candidate causes were discriminated with
+read-only evidence for **EFT-IMP-2026-00004** (`f36d4518-a6a7-442f-98ab-ba69ac80a3c2`).
+
+| Candidate | Verdict | Evidence |
+| --- | --- | --- |
+| **A** deployment/version | **ELIMINATED** | `GET /api/version` → `sha ab2bacb0…`, `ref main`, `env production`. That is the ratification commit, which CONTAINS `1498e9f`. The fix is live |
+| **B** persisted policy without the binding | **ELIMINATED** | `workflow_policy_version` = **0 rows**. Nothing is stored, so resolution reaches the built-in floor |
+| **C** runtime construction/cache | **ELIMINATED** | The floor is `buildPlatformDefaultPolicy()` itself (`resolver.ts`), memoized per server process; the new deployment starts new processes, and prod already reports the new SHA |
+| **D** step/policy mismatch | **CONFIRMED — in its most basic form** | **`process_instance` = 0 rows for EFT-IMP-2026-00004.** No instance ⇒ no active step ⇒ `stepKey = ""` ⇒ no binding matches ⇒ empty verifier eligibility ⇒ `not_a_verifier` |
+
+### What actually happened
+
+The dossier was **never opened through the process engine.** The audit log for the
+operator session contains `file.assigned` (21:50:30Z) and `file.transition`
+(21:51:00Z) — the ordinary dossier owner-assignment and status transition, which
+moved `operational_file.status` to **OPENED**. That is what renders « 57 % terminé »
+and the « Vérifier les documents en attente » next action: those come from the FILE
+lifecycle, not from the process engine. **No process/intake action appears in the
+audit log at all**, and `openDossierWorkflow` writes a `process_instance` row.
+
+Instances by dossier: 00001 = 0, 00002 = 0, **00003 = 1**, 00004 = **0**.
+
+**Therefore the refusal is CORRECT and is the behaviour ratified under RQ-15b(2):**
+no process instance → no verifier seat → verification refused. The `1498e9f` repair
+is live and correct; its precondition is simply not met on this dossier.
+
+### Hypotheses additionally eliminated
+
+* **Step-state vocabulary mismatch** — production writes `PENDING` / `COMPLETED` /
+  `SKIPPED`; the governance query accepts `AVAILABLE`/`ACTIVE`/`PENDING`, so the
+  only open state IS covered. Now pinned, and mutation-tested (M7, M8).
+* **Live step keys outside the binding** — `pre_gate`, `bon_a_delivrer` and
+  `transport_docs_transmission` are all registry keys and all carry a verifier
+  binding. Now pinned.
+* **Tenant flag layer** — `tenant_process_rollout` has `process_engine = true`.
+  The tenant is NOT the blocker.
+
+### Remaining unknown (needs one operator action)
+
+Why « Ouvrir le dossier » did not run. `intake` requires the tenant flag (satisfied)
+ANDed with TWO environment-only flags, `EFFITRANS_PROCESS_STRUCTURES_ENABLED` and
+`EFFITRANS_OPERATIONS_INTAKE_ENABLED`, which cannot be read from the database.
+If either is unset, `openDossierWorkflow` refuses with `engine_disabled`.
+
+The platform already ships a read-only, auth-required diagnostic that answers
+exactly this: **`/api/diagnostics/intake?fileId=f36d4518-a6a7-442f-98ab-ba69ac80a3c2`**.
+It re-evaluates the same expressions the page evaluates and reports each boolean.
+It writes nothing and creates no process instance.
+
+### Coverage added (no production code changed)
+
+The prior tests proved the DEFAULT POLICY correct, which is not the same as proving
+the PATH correct — a fair criticism, and the gap that let this recur. Six tests now
+pin the composed production path: resolver floor identity, the built-in fallback,
+the active-step state filter, COMPLETED/SKIPPED exclusion, live step-key coverage,
+and the ratified no-instance refusal. Mutations **M7–M10** all caught.
