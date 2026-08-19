@@ -36,17 +36,21 @@ const seed = read("../supabase/seed.sql");
 
 // -------------------------------------------------- 1/2: the four departments ----
 
-describe("1/2 — exactly four canonical departments, Transit under Operations", () => {
-  it("exactly OPERATIONS, TRANSIT, FINANCE, HUMAN_RESOURCES — nothing else", () => {
+describe("1/2 — exactly five canonical departments; Transit and Transport under Operations", () => {
+  it("exactly OPERATIONS, TRANSIT, TRANSPORT, FINANCE, HUMAN_RESOURCES — nothing else", () => {
+    // PIN MOVED (TMS-5C, 2026-08-18): TRANSPORT was ratified as a department in
+    // its own right and carved out of TRANSIT, superseding business decision 5.
     expect(CANONICAL_DEPARTMENTS.map((d) => d.code).sort()).toEqual(
-      ["FINANCE", "HUMAN_RESOURCES", "OPERATIONS", "TRANSIT"],
+      ["FINANCE", "HUMAN_RESOURCES", "OPERATIONS", "TRANSIT", "TRANSPORT"],
     );
   });
 
-  it("TRANSIT's organizational parent is OPERATIONS; no other department has a parent", () => {
+  it("TRANSIT and TRANSPORT report under OPERATIONS; no other department has a parent", () => {
+    // TRANSPORT inherits Transit's rollup position because it was carved out of it.
     expect(getCanonicalDepartment("TRANSIT")!.parent).toBe("OPERATIONS");
+    expect(getCanonicalDepartment("TRANSPORT")!.parent).toBe("OPERATIONS");
     for (const d of CANONICAL_DEPARTMENTS) {
-      if (d.code !== "TRANSIT") expect(d.parent, d.code).toBeNull();
+      if (d.code !== "TRANSIT" && d.code !== "TRANSPORT") expect(d.parent, d.code).toBeNull();
     }
   });
 
@@ -55,9 +59,9 @@ describe("1/2 — exactly four canonical departments, Transit under Operations",
     expect(departmentLabelFr("TRANSIT")).toBe("Transit");
   });
 
-  it("French labels exist for all four", () => {
+  it("French labels exist for all five", () => {
     expect(CANONICAL_DEPARTMENTS.map((d) => d.labelFr)).toEqual(
-      ["Opérations", "Transit", "Finance", "Ressources humaines"],
+      ["Opérations", "Transit", "Transport", "Finance", "Ressources humaines"],
     );
   });
 });
@@ -83,17 +87,44 @@ describe("5-9 — role-to-department mapping follows the confirmed business deci
     expect(roleCanonicalDepartment("DOCUMENTATION_OFFICER")).toBe("OPERATIONS");
   });
 
-  it("6 — Transport coordination belongs to Transit (TRANSPORT_OFFICER)", () => {
-    expect(roleCanonicalDepartment("TRANSPORT_OFFICER")).toBe("TRANSIT");
+  it("6 — Transport coordination belongs to TRANSPORT (TMS-5C supersedes decision 5)", () => {
+    // PIN MOVED (TMS-5C, 2026-08-18): TRANSPORT was ratified as a department in
+    // its own right and carved out of TRANSIT, superseding business decision 5.
+    expect(roleCanonicalDepartment("TRANSPORT_OFFICER")).toBe("TRANSPORT");
   });
 
   it("7 — the Déclarant en douane is Transit", () => {
     expect(roleCanonicalDepartment("CUSTOMS_DECLARANT")).toBe("TRANSIT");
   });
 
-  it("Transit staff roles: Chef de Transit, field agent, pickup, driver", () => {
-    for (const r of ["CHIEF_OF_TRANSIT", "CUSTOMS_FIELD_AGENT", "PICKUP_AGENT", "DRIVER"]) {
+  it("Transit staff roles: Chef de Transit, Déclarant, field agent", () => {
+    for (const r of ["CHIEF_OF_TRANSIT", "CUSTOMS_DECLARANT", "CUSTOMS_FIELD_AGENT"]) {
       expect(roleCanonicalDepartment(r), r).toBe("TRANSIT");
+    }
+  });
+
+  it("Transport staff roles: transport officer, pickup agent, driver (TMS-5C)", () => {
+    for (const r of ["TRANSPORT_OFFICER", "PICKUP_AGENT", "DRIVER"]) {
+      expect(roleCanonicalDepartment(r), r).toBe("TRANSPORT");
+    }
+  });
+
+  it("TMS-5C moved EXACTLY three roles — every other mapping is byte-stable", () => {
+    // The guard that matters most: a department correction must not quietly
+    // re-file an unrelated role.
+    const expected: Record<string, string | null> = {
+      COORDINATOR: "OPERATIONS", OPS_SUPERVISOR: "OPERATIONS", ACCOUNT_MANAGER: "OPERATIONS",
+      DOCUMENTATION_OFFICER: "OPERATIONS", WAREHOUSE_COORDINATOR: "OPERATIONS",
+      CHIEF_OF_TRANSIT: "TRANSIT", CUSTOMS_DECLARANT: "TRANSIT",
+      CUSTOMS_FIELD_AGENT: "TRANSIT", QUOTATION_MANAGER: "TRANSIT",
+      TRANSPORT_OFFICER: "TRANSPORT", PICKUP_AGENT: "TRANSPORT", DRIVER: "TRANSPORT",
+      FINANCE_OFFICER: "FINANCE", BILLING_OFFICER: "FINANCE", COLLECTIONS_OFFICER: "FINANCE",
+      CUSTOMS_FINANCE_OFFICER: "FINANCE", ADMINISTRATIVE_OFFICER: "FINANCE", COURIER: "FINANCE",
+      CASHIER: "FINANCE", ACCOUNTANT: "FINANCE", TREASURER: "FINANCE", DAF: "FINANCE", DGA: "FINANCE",
+      HR_OFFICER: "HUMAN_RESOURCES", SYSTEM_ADMIN: null,
+    };
+    for (const [role, dept] of Object.entries(expected)) {
+      expect(roleCanonicalDepartment(role), role).toBe(dept);
     }
   });
 
@@ -150,8 +181,11 @@ describe("10/11 — existing role and permission codes are preserved", () => {
 // -------------------------------------------------- 12: legacy values resolve ----
 
 describe("12 — legacy Transport & Logistique (and friends) resolve safely", () => {
-  it("« Transport & Logistique » resolves to TRANSIT for display purposes", () => {
-    expect(resolveLegacyDepartmentLabel("Transport & Logistique")).toBe("TRANSIT");
+  it("« Transport & Logistique » resolves to TRANSPORT for display purposes", () => {
+    // PIN MOVED (TMS-5C, 2026-08-18): TRANSPORT was ratified as a department in
+    // its own right and carved out of TRANSIT, superseding business decision 5.
+    expect(resolveLegacyDepartmentLabel("Transport & Logistique")).toBe("TRANSPORT");
+    expect(resolveLegacyDepartmentLabel("Transport")).toBe("TRANSPORT");
   });
 
   it("« Douane » and « Dédouanement » resolve to TRANSIT; « Documentation » to OPERATIONS", () => {
@@ -170,8 +204,8 @@ describe("12 — legacy Transport & Logistique (and friends) resolve safely", ()
 // -------------------------------------------------- 13/14: selection + production ----
 
 describe("13/14 — department selection and production data safety", () => {
-  it("13 — any department picker consumes exactly the four canonical entries (no fifth option exists to show)", () => {
-    expect(CANONICAL_DEPARTMENTS).toHaveLength(4);
+  it("13 — any department picker consumes exactly the five canonical entries", () => {
+    expect(CANONICAL_DEPARTMENTS).toHaveLength(5);
   });
 
   it("14 — no schema change: the registry is pure, imports no database client, adds no migration", () => {

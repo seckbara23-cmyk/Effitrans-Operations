@@ -52,11 +52,10 @@ import type { Department } from "@/lib/files/lifecycle";
 /**
  * Which real department carries each lifecycle stage's work.
  *
- * Derived from the SAME business classification 9.0A recorded, and consistent
- * with `QUEUE_DEPARTMENT_TO_CANONICAL`: customs and physical transport are
- * TRANSIT's work; opening, documentation and archiving are OPERATIONS; billing
- * and collection are FINANCE. HUMAN_RESOURCES never appears — it processes no
- * dossiers (`processesDossiers: false`).
+ * Consistent with `QUEUE_DEPARTMENT_TO_CANONICAL`: customs is TRANSIT's work;
+ * physical transport is TRANSPORT's (TMS-5C); opening, documentation and
+ * archiving are OPERATIONS; billing and collection are FINANCE.
+ * HUMAN_RESOURCES never appears — it processes no dossiers.
  */
 export const LIFECYCLE_DEPARTMENT_TO_CANONICAL: Readonly<
   Record<Department, CanonicalDepartmentCode>
@@ -64,7 +63,10 @@ export const LIFECYCLE_DEPARTMENT_TO_CANONICAL: Readonly<
   opening: "OPERATIONS",
   documentation: "OPERATIONS",
   customs: "TRANSIT",
-  transport: "TRANSIT",
+  // TMS-5C — the transport stage follows the Transport department. This MUST
+  // move together with ROLE_CANONICAL_DEPARTMENT: remapping the roles alone
+  // would have taken the transport stage out of the transport team's own queue.
+  transport: "TRANSPORT",
   finance: "FINANCE",
   archive: "OPERATIONS",
 } as const;
@@ -77,8 +79,9 @@ export function canonicalDepartmentForLifecycle(
 
 /**
  * Roles that sit inside a department for ORG-CHART purposes but carry NO
- * dossier visibility. Found during WES-3 implementation: `DRIVER` maps to
- * TRANSIT, so deriving visibility from department membership alone would have
+ * dossier visibility. Found during WES-3 implementation: `DRIVER` maps to a
+ * real department (TRANSPORT since TMS-5C), so deriving visibility from
+ * department membership alone would have
  * given every driver read access to every customs and transport dossier —
  * exactly what WES-3C forbids ("Driver: no dossier visibility from WES-3").
  *

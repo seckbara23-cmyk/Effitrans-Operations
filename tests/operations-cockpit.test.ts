@@ -15,7 +15,7 @@ import {
   type FinanceRequestRowLike,
 } from "@/lib/operations/compose";
 import { COCKPIT_SECTIONS } from "@/lib/operations/types";
-import { TRANSIT_TEAMS, QUEUE_DEPARTMENT_TO_CANONICAL } from "@/lib/organization/departments";
+import { TRANSIT_TEAMS, CANONICAL_DEPARTMENTS, QUEUE_DEPARTMENT_TO_CANONICAL } from "@/lib/organization/departments";
 import { QUEUES } from "@/lib/process/queues/registry";
 import type { UnifiedAlert } from "@/lib/logistics/compose";
 import type { DashboardTasks } from "@/lib/tasks/types";
@@ -59,8 +59,11 @@ describe("rollupQueueDepths — engine queues → canonical departments (display
     expect(byQueue[0].labelFr).toBe(def.labelFr);
   });
   it("every mapped canonical department is a real registry code", () => {
+    // Read the registry instead of transcribing it: a hand-copied list is what
+    // made this case fail when TMS-5C added TRANSPORT.
+    const codes = CANONICAL_DEPARTMENTS.map((d) => d.code);
     for (const dept of Object.values(QUEUE_DEPARTMENT_TO_CANONICAL)) {
-      expect(["OPERATIONS", "TRANSIT", "FINANCE", "HUMAN_RESOURCES"]).toContain(dept);
+      expect(codes).toContain(dept);
     }
   });
 });

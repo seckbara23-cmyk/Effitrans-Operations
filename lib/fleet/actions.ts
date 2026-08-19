@@ -212,6 +212,82 @@ export async function setVehicleActive(id: string, isActive: boolean): Promise<F
   return { ok: true, id };
 }
 
+/**
+ * TMS-5C — permanent deletion of a vehicle that NEVER SERVED.
+ *
+ * The retention rule, derived from what each child row actually means:
+ *   * transport_record.vehicle_id — OPERATIONAL EVIDENCE that a mission used
+ *     this vehicle. Any reference, current or historical, REFUSES deletion.
+ *     The FK carries no ON DELETE clause, so the database refuses it too even
+ *     if this check were bypassed.
+ *   * vehicle_maintenance — intervention history: work performed, an
+ *     immobilization, a return to service, each audited. Also evidence, so any
+ *     row REFUSES deletion.
+ *   * vehicle_compliance — DESCRIPTIVE master data about the asset (insurance
+ *     and inspection dates). It records nothing that happened operationally and
+ *     cannot exist without its vehicle, so it is removed with it (the FK's
+ *     existing cascade). This is the one child whose retention differs, and it
+ *     is deliberate rather than a convenience to make the delete succeed.
+ *
+ * A vehicle carrying protected history is never destroyed: it is retired
+ * through the existing lifecycle (« Mettre hors service »), which is why this
+ * action refuses instead of offering a force flag.
+ */
+export async function deleteVehicle(id: string, confirmation: string): Promise<FleetResult> {
+  let user;
+  try { user = await assertPermission("transport:manage"); } catch { return { ok: false, error: "forbidden" }; }
+
+  const supabase = getAdminSupabaseClient();
+  const { data: vehicle } = await supabase
+    .from("vehicle")
+    .select("id, registration")
+    .eq("id", id)
+    .eq("tenant_id", user.tenantId)          // tenant ownership, server-side
+    .maybeSingle<{ id: string; registration: string }>();
+  if (!vehicle) return { ok: false, error: "not_found" };
+
+  // The confirmation is re-checked HERE: the browser never decides whether a
+  // destructive operation may proceed.
+  if ((confirmation ?? "").replace(/\s+/g, " ").trim().toUpperCase() !== vehicle.registration.toUpperCase()) {
+    return { ok: false, error: "confirmation_mismatch" };
+  }
+
+  const { count: transportRefs } = await supabase
+    .from("transport_record")
+    .select("id", { count: "exact", head: true })
+    .eq("tenant_id", user.tenantId)
+    .eq("vehicle_id", id);
+  if ((transportRefs ?? 0) > 0) return { ok: false, error: "vehicle_in_use" };
+
+  const { count: maintenanceRows } = await supabase
+    .from("vehicle_maintenance")
+    .select("id", { count: "exact", head: true })
+    .eq("tenant_id", user.tenantId)
+    .eq("vehicle_id", id);
+  if ((maintenanceRows ?? 0) > 0) return { ok: false, error: "vehicle_has_history" };
+
+  const { error } = await supabase
+    .from("vehicle")
+    .delete()
+    .eq("id", id)
+    .eq("tenant_id", user.tenantId);
+  if (error) {
+    // 23503 = a transport_record still points here (a race against the checks
+    // above). The database is the backstop; the refusal stays the same.
+    if (error.code === "23503") return { ok: false, error: "vehicle_in_use" };
+    return { ok: false, error: error.message };
+  }
+
+  await writeAudit({
+    action: AuditActions.VEHICLE_DELETED,
+    actorId: user.id, tenantId: user.tenantId,
+    entity: "vehicle", entityId: id,
+    before: { registration: vehicle.registration },
+  });
+  revalidate();
+  return { ok: true, id };
+}
+
 /** Record or renew a compliance item (dates and references only). */
 export async function upsertVehicleCompliance(input: {
   vehicleId: string; typeCode: string; reference?: string | null;

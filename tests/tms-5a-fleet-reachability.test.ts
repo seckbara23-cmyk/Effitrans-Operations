@@ -90,7 +90,10 @@ describe("TMS-5A — the ratified authority is what actually gates the surface",
 
   it("the management console renders ONLY for transport:manage", () => {
     expect(parcPage).toContain('const canManage = hasPermission(permissions, "transport:manage")');
-    expect(parcPage).toContain("{canManage && <FleetConsole vehicles={fleet} />}");
+    // TMS-5C turned this into a ternary so a reader gets an explanation rather
+    // than nothing; the console itself is still gated on canManage alone.
+    expect(parcPage).toContain("{canManage ? (");
+    expect(parcPage).toContain("<FleetConsole vehicles={fleet} />");
   });
 
   it("a reader without transport:manage is never shown a write control", () => {

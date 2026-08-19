@@ -71,14 +71,15 @@ describe("TMS-5B — Transport is a department in the sidebar", () => {
     expect(canSeeNavItem(item("Transport")!, session([]))).toBe(false);
   });
 
-  it("the canonical org registry is deliberately NOT rewritten by a nav change", () => {
-    // lib/organization/departments.ts drives role→department derivation,
-    // messaging and workflow access — not the sidebar. TMS-5B left it alone;
-    // reconciling it is a separate, load-bearing organizational decision, and
-    // this pin records that the divergence is deliberate rather than forgotten.
+  // PIN RESOLVED (TMS-5C, 2026-08-18): TMS-5B deliberately left the canonical
+  // registry diverged and recorded that here. TMS-5C closed the divergence, so
+  // the pin now asserts AGREEMENT — navigation and canonical organization tell
+  // the same story — while still proving the sidebar never derives from the
+  // registry (they agree by decision, not by coupling).
+  it("navigation and the canonical org registry now AGREE about Transport", () => {
     const registry = read("lib", "organization", "departments.ts");
-    expect(registry).toContain('"OPERATIONS" | "TRANSIT" | "FINANCE" | "HUMAN_RESOURCES"');
-    expect(registry).toContain('TRANSPORT_OFFICER: "TRANSIT"');
+    expect(registry).toContain('| "TRANSPORT"');
+    expect(registry).toContain('TRANSPORT_OFFICER: "TRANSPORT"');
     expect(read("lib", "nav.ts")).not.toContain("CANONICAL_DEPARTMENTS");
   });
 });
@@ -183,9 +184,12 @@ describe("TMS-5B — relocation, not duplication", () => {
       .toContain("check (status in ('AVAILABLE', 'MAINTENANCE', 'OUT_OF_SERVICE'))");
   });
 
+  // PIN REPHRASED (TMS-5C): asserting the newest migration decays the moment a
+  // later phase ships one. What this case means — TMS-5B itself shipped no
+  // migration — is durable.
   it("TMS-5B shipped NO migration and NO permission change", () => {
-    const migrations = fs.readdirSync(path.join(root, "supabase", "migrations")).filter((f) => f.endsWith(".sql")).sort();
-    expect(migrations[migrations.length - 1]).toBe("20260908000001_fleet_registry.sql");
+    const migrations = fs.readdirSync(path.join(root, "supabase", "migrations")).filter((f) => f.endsWith(".sql"));
+    expect(migrations.some((f) => /transport_department_nav|tms_?5b/i.test(f))).toBe(false);
     const templates = read("lib", "platform", "role-templates.ts");
     for (const invented of ["transport:department", "department:transport"]) {
       expect(templates, invented).not.toContain(invented);

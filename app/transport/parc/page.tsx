@@ -186,7 +186,16 @@ export default async function ParcPage() {
         </section>
       )}
 
-      {canManage && <FleetConsole vehicles={fleet} />}
+      {canManage ? (
+        <FleetConsole vehicles={fleet} />
+      ) : (
+        /* TMS-5C — a reader is told WHY there are no controls, instead of
+           meeting a wall of greyed-out buttons. */
+        <p className="surface p-4 text-xs text-slate-500">
+          Consultation seule : la modification du parc (ajout de véhicule, conformité, interventions,
+          disponibilité) relève du Responsable Transport.
+        </p>
+      )}
     </div>
   );
 }

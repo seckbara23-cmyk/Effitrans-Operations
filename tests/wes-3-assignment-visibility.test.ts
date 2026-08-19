@@ -74,9 +74,13 @@ describe("WES-3 department bridge", () => {
     }
   });
 
-  it("places customs and transport under TRANSIT, billing under FINANCE", () => {
+  // PIN MOVED (TMS-5C, 2026-08-18): the transport STAGE follows the Transport
+  // department. This had to move with ROLE_CANONICAL_DEPARTMENT — remapping the
+  // roles alone would have taken the transport stage out of the transport
+  // team's own queue, which is the one outcome the realignment must not cause.
+  it("places customs under TRANSIT, transport under TRANSPORT, billing under FINANCE", () => {
     expect(canonicalDepartmentForLifecycle("customs")).toBe("TRANSIT");
-    expect(canonicalDepartmentForLifecycle("transport")).toBe("TRANSIT");
+    expect(canonicalDepartmentForLifecycle("transport")).toBe("TRANSPORT");
     expect(canonicalDepartmentForLifecycle("finance")).toBe("FINANCE");
     expect(canonicalDepartmentForLifecycle("opening")).toBe("OPERATIONS");
   });

@@ -181,8 +181,11 @@ describe("navigation placement — workspace not department", () => {
 
   it("21 — Caisse is NOT added to the canonical department registry", () => {
     const depts = read("../lib/organization/departments.ts");
-    expect(depts).toContain('CanonicalDepartmentCode = "OPERATIONS" | "TRANSIT" | "FINANCE" | "HUMAN_RESOURCES"');
+    // PIN MOVED (TMS-5C, 2026-08-18): the registry gained TRANSPORT, so pinning
+    // the whole union froze an unrelated fact. What this case actually asserts —
+    // Caisse is a WORKSPACE, never a department — is what it now asserts.
     expect(depts).not.toMatch(/code:\s*"CAISSE"/);
+    expect(depts).not.toContain('"CAISSE"');
   });
 });
 

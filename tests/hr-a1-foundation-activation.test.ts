@@ -241,7 +241,7 @@ describe("activation is an operator UI session — never SQL seed data", () => {
     expect(STUDIO).not.toMatch(/\[\s*"OPERATIONS",\s*"TRANSIT",\s*"FINANCE",\s*"HUMAN_RESOURCES"\s*\]/);
     // The registry is what the operator sees, labeled in French.
     expect(CANONICAL_DEPARTMENTS.map((d) => d.code)).toEqual([
-      "OPERATIONS", "TRANSIT", "FINANCE", "HUMAN_RESOURCES",
+      "OPERATIONS", "TRANSIT", "TRANSPORT", "FINANCE", "HUMAN_RESOURCES",
     ]);
   });
 

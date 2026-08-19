@@ -2,13 +2,22 @@
  * THE canonical Effitrans organization registry (Phase 9.0A). PURE — no I/O,
  * client + server safe.
  * ---------------------------------------------------------------------------
- * Effitrans has FOUR real departments, confirmed by the business (see
- * docs/business-processes/Workflow_Complet_Effitrans_FR.pdf §1-2):
+ * Effitrans has FIVE real departments (TMS-5C, 2026-08-18 — TRANSPORT was
+ * ratified as a department in its own right and carved out of TRANSIT):
  *
  *   OPERATIONS ─┬─ owns every dossier from opening to operational completion
- *               └── TRANSIT — a REAL department, operationally under Operations
+ *               ├── TRANSIT — customs clearance and international follow-up
+ *               └── TRANSPORT — ground execution: demandes, exécution, parc,
+ *                    enlèvement, road tracking
  *   FINANCE    ──  payments, invoicing, financial closure
  *   HUMAN_RESOURCES — organizational support; does not process dossiers
+ *
+ * TMS-5C supersedes "business decision 5" (transport coordination belongs to
+ * Transit). Nothing about it is authorization: `can_read_file` never consults a
+ * department, no department value is stored anywhere, and no permission moved —
+ * so the correction needed NO migration and NO operator action. What it does
+ * move is which department's WORK QUEUE a transport/pickup dossier appears in,
+ * which is precisely the point of the split.
  *
  * Everything the platform previously PRESENTED as a department is something
  * else, and stays what it is (see docs/workflow/phase-9.0a-organization-audit.md
@@ -26,7 +35,12 @@
  * production data to migrate.
  */
 
-export type CanonicalDepartmentCode = "OPERATIONS" | "TRANSIT" | "FINANCE" | "HUMAN_RESOURCES";
+export type CanonicalDepartmentCode =
+  | "OPERATIONS"
+  | "TRANSIT"
+  | "TRANSPORT"
+  | "FINANCE"
+  | "HUMAN_RESOURCES";
 
 export type CanonicalDepartment = {
   code: CanonicalDepartmentCode;
@@ -39,13 +53,18 @@ export type CanonicalDepartment = {
 };
 
 /**
- * Exactly four. TRANSIT is independently selectable everywhere (staff
- * assignment, tasks, queues, reports, dashboards, messaging routing) — the
- * parent link is for ORG-CHART ROLLUP only, never a merge.
+ * Exactly five. TRANSIT and TRANSPORT are independently selectable everywhere
+ * (staff assignment, tasks, queues, reports, dashboards, messaging routing) —
+ * the parent link is for ORG-CHART ROLLUP only, never a merge.
+ *
+ * TRANSPORT inherits TRANSIT's reporting position (under OPERATIONS) because it
+ * was carved OUT of Transit: keeping the rollup shape is the conservative
+ * reading, and no business statement placed it elsewhere.
  */
 export const CANONICAL_DEPARTMENTS: readonly CanonicalDepartment[] = [
   { code: "OPERATIONS", labelFr: "Opérations", labelEn: "Operations", parent: null, processesDossiers: true },
   { code: "TRANSIT", labelFr: "Transit", labelEn: "Transit", parent: "OPERATIONS", processesDossiers: true },
+  { code: "TRANSPORT", labelFr: "Transport", labelEn: "Transport", parent: "OPERATIONS", processesDossiers: true },
   { code: "FINANCE", labelFr: "Finance", labelEn: "Finance", parent: null, processesDossiers: true },
   { code: "HUMAN_RESOURCES", labelFr: "Ressources humaines", labelEn: "Human Resources", parent: null, processesDossiers: false },
 ] as const;
@@ -104,10 +123,13 @@ export const ROLE_CANONICAL_DEPARTMENT: Readonly<Record<string, CanonicalDepartm
   CHIEF_OF_TRANSIT: "TRANSIT",
   CUSTOMS_DECLARANT: "TRANSIT", // Déclarant en douane — prepares/submits in GAINDE
   CUSTOMS_FIELD_AGENT: "TRANSIT", // Agent de terrain douane (BAE, sorties)
-  TRANSPORT_OFFICER: "TRANSIT", // business decision 5: transport coordination belongs to Transit
-  PICKUP_AGENT: "TRANSIT", // enlèvement / sortie port
-  DRIVER: "TRANSIT", // transport execution (narrow mobile identity, unchanged)
   QUOTATION_MANAGER: "TRANSIT", // PROVISIONAL — cotation is Chef de Transit's step T1 in the Guide
+
+  // ---- Transport — ground execution (TMS-5C, superseding business decision 5)
+  TRANSPORT_OFFICER: "TRANSPORT", // coordination du transport terrestre
+  PICKUP_AGENT: "TRANSPORT", // enlèvement / sortie port
+  DRIVER: "TRANSPORT", // transport execution (narrow mission-scoped identity; still
+  // carries NO dossier visibility — see NON_DOSSIER_ROLES in workflow/access)
 
   // ---- Finance — payments, invoicing, financial closure ---------------------
   FINANCE_OFFICER: "FINANCE",
@@ -188,8 +210,8 @@ export const QUEUE_DEPARTMENT_TO_CANONICAL: Readonly<Record<string, CanonicalDep
   customs_declaration: "TRANSIT",
   finance_customs: "FINANCE", // Guide étape 5: Enregistrement — Finance
   customs_field: "TRANSIT",
-  transport: "TRANSIT",
-  pickup: "TRANSIT",
+  transport: "TRANSPORT", // TMS-5C
+  pickup: "TRANSPORT", // TMS-5C — enlèvement is Transport's execution work
   billing: "FINANCE",
   finance: "FINANCE",
   administration: "FINANCE", // PROVISIONAL — invoice-deposit chain
@@ -205,8 +227,8 @@ export const QUEUE_DEPARTMENT_TO_CANONICAL: Readonly<Record<string, CanonicalDep
  * docs/workflow/phase-9.0a-organization-audit.md).
  */
 export const LEGACY_DEPARTMENT_LABEL_TO_CANONICAL: Readonly<Record<string, CanonicalDepartmentCode | null>> = {
-  "Transport & Logistique": "TRANSIT",
-  Transport: "TRANSIT",
+  "Transport & Logistique": "TRANSPORT", // TMS-5C
+  Transport: "TRANSPORT", // TMS-5C
   Douane: "TRANSIT",
   "Dédouanement": "TRANSIT",
   Documentation: "OPERATIONS",

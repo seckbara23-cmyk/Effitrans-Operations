@@ -93,6 +93,10 @@ export const AuditActions = {
   VEHICLE_COMPLIANCE_RECORDED: "vehicle.compliance_recorded",
   VEHICLE_MAINTENANCE_OPENED: "vehicle.maintenance_opened",
   VEHICLE_MAINTENANCE_CLOSED: "vehicle.maintenance_closed",
+  // TMS-5C — permanent removal of a vehicle that never served. The audit row
+  // carries the immatriculation, so the trail still names what was destroyed
+  // once the row itself is gone.
+  VEHICLE_DELETED: "vehicle.deleted",
   TRANSPORT_CREATED: "transport.created",
   // TMS-4 — the REQUEST act (transport:request), distinct from starting
   // execution: the Account Manager raises the need, transport executes.

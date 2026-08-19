@@ -36,8 +36,9 @@ describe("TMS-5 — the authority is the ratified transport one, nothing invente
   it("registering, editing and immobilizing ride transport:manage", () => {
     const manageGates = actions.match(/assertPermission\("transport:manage"\)/g) ?? [];
     // createVehicle, updateVehicle, setVehicleStatus, setVehicleActive,
-    // upsertVehicleCompliance, openVehicleMaintenance, closeVehicleMaintenance
-    expect(manageGates.length).toBe(7);
+    // upsertVehicleCompliance, openVehicleMaintenance, closeVehicleMaintenance,
+    // and (TMS-5C) deleteVehicle — the destructive act rides the SAME authority.
+    expect(manageGates.length).toBe(8);
     expect(actions).not.toContain('assertPermission("transport:read")');
   });
 
@@ -57,8 +58,10 @@ describe("TMS-5 — the authority is the ratified transport one, nothing invente
       transportActions.indexOf("export async function changeTransportStatus"),
     );
     expect(assignSlice).toContain('assertPermission("transport:assign")');
-    // the fleet module never binds a transport itself
-    expect(actions).not.toContain("transport_record");
+    // The fleet module never BINDS a transport. TMS-5C added a READ of
+    // transport_record (to refuse deleting a vehicle that already served), so
+    // the guard is now what it always meant: no write, no bind.
+    expect(actions).not.toMatch(/from\("transport_record"\)[\s\S]{0,160}?\.(insert|update|upsert|delete)\(/);
   });
 
   it("NO fleet permission was invented, in the migration or the templates", () => {
@@ -248,11 +251,13 @@ describe("TMS-5 — the excluded fleet-ERP surface never appeared", () => {
 
   it("build-info advanced to migration 117 as the stable pair", () => {
     const migrations = fs.readdirSync(path.join(root, "supabase", "migrations")).filter((f) => f.endsWith(".sql")).sort();
+    // PIN MOVED (TMS-5C): migration 118 now follows. The durable statement is
+    // that TMS-5's migration sits where it always did, in ledger order.
     const idx = migrations.indexOf("20260907000001_shipment_geography.sql");
     expect(migrations[idx + 1]).toBe(MIGRATION);
+    expect(migrations[idx + 2]).toBe("20260910000001_canonical_transport_department.sql");
     const buildInfo = read("lib", "platform", "ops", "build-info.ts");
-    expect(buildInfo).toContain('LATEST_MIGRATION = "20260908000001_fleet_registry"');
-    expect(buildInfo).toContain("MIGRATION_COUNT = 117");
+    expect(Number(/MIGRATION_COUNT = (\d+)/.exec(buildInfo)![1])).toBe(migrations.length);
   });
 
   it("the SQL suite exists with its five cases and runs in CI", () => {

@@ -16,6 +16,7 @@ import {
   closeVehicleMaintenance,
   setVehicleStatus,
   upsertVehicleCompliance,
+  deleteVehicle,
   type FleetResult,
 } from "@/lib/fleet/actions";
 import type { FleetVehicle } from "@/lib/fleet/service";
@@ -31,6 +32,9 @@ const ERR: Record<string, string> = {
   maintenance_open: "Une intervention immobilisante est déjà ouverte pour ce véhicule.",
   already_closed: "Cette intervention est déjà clôturée.",
   not_found: "Véhicule introuvable.",
+  confirmation_mismatch: "L'immatriculation saisie ne correspond pas.",
+  vehicle_in_use: "Suppression refusée : ce véhicule est affecté à un transport ou a déjà servi. Mettez-le hors service.",
+  vehicle_has_history: "Suppression refusée : des interventions sont enregistrées pour ce véhicule. Mettez-le hors service.",
   generic: "L'action a échoué. Réessayez.",
 };
 
@@ -51,7 +55,18 @@ export function FleetConsole({ vehicles }: { vehicles: FleetVehicle[] }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const [target, setTarget] = useState<string>(vehicles[0]?.id ?? "");
+  const [picked, setPicked] = useState<string>(vehicles[0]?.id ?? "");
+  const [confirmDelete, setConfirmDelete] = useState("");
+  /**
+   * TMS-5C — THE PRODUCTION DEFECT this fixes. `useState(vehicles[0]?.id)` runs
+   * its initializer ONCE. An operator who opened an EMPTY parc got target="",
+   * and after adding the first vehicle React kept that stale "" — while the
+   * <select> visually showed the new vehicle. Every `!target` control stayed
+   * greyed out with no explanation, so compliance and intervention submissions
+   * never even reached the server (production confirms: zero child rows).
+   * Deriving it from the current list self-heals after any create or delete.
+   */
+  const target = vehicles.some((v) => v.id === picked) ? picked : (vehicles[0]?.id ?? "");
 
   function run(fn: () => Promise<FleetResult>, form?: HTMLFormElement) {
     setMsg(null);
@@ -116,7 +131,7 @@ export function FleetConsole({ vehicles }: { vehicles: FleetVehicle[] }) {
       {vehicles.length > 0 && (
         <div className="space-y-3 border-t border-slate-100 pt-3">
           <label className={lab}>Véhicule concerné
-            <select value={target} onChange={(e) => setTarget(e.target.value)} className={inp}>
+            <select value={target} onChange={(e) => setPicked(e.target.value)} className={inp}>
               {vehicles.map((v) => (
                 <option key={v.id} value={v.id}>
                   {v.registration}{v.internalCode ? ` — ${v.internalCode}` : ""}
@@ -222,17 +237,62 @@ export function FleetConsole({ vehicles }: { vehicles: FleetVehicle[] }) {
           {/* Availability */}
           <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
             <span className="text-xs text-slate-500">Disponibilité :</span>
-            {(["AVAILABLE", "OUT_OF_SERVICE"] as const).map((s) => (
-              <button
-                key={s}
-                disabled={pending || !target || selected?.status === s}
-                onClick={() => run(() => setVehicleStatus(target, s))}
-                className="rounded-md border border-slate-200 px-2 py-1 text-xs text-navy-700 disabled:opacity-40"
-              >
-                {s === "AVAILABLE" ? "Déclarer disponible" : "Mettre hors service"}
-              </button>
-            ))}
+            {(["AVAILABLE", "OUT_OF_SERVICE"] as const).map((s) => {
+              // A control that is off because the vehicle is ALREADY in that
+              // state says so, rather than being an unexplained grey button.
+              const already = selected?.status === s;
+              return (
+                <button
+                  key={s}
+                  disabled={pending || !target || already}
+                  title={already ? "Le véhicule est déjà dans cet état." : undefined}
+                  onClick={() => run(() => setVehicleStatus(target, s))}
+                  className="rounded-md border border-slate-200 px-2 py-1 text-xs text-navy-700 disabled:opacity-40"
+                >
+                  {s === "AVAILABLE" ? "Déclarer disponible" : "Mettre hors service"}
+                </button>
+              );
+            })}
+            {selected && (
+              <span className="text-xs text-slate-400">
+                État actuel : {selected.status === "AVAILABLE" ? "Disponible" : selected.status === "MAINTENANCE" ? "Maintenance" : "Hors service"}
+                {selected.openMaintenance ? " — une intervention est ouverte" : ""}
+              </span>
+            )}
           </div>
+
+          {/* TMS-5C — permanent removal of a vehicle that never served. The
+              server decides eligibility; this only asks for an unambiguous
+              confirmation naming the immatriculation being destroyed. */}
+          {selected && (
+            <div className="space-y-2 border-t border-red-100 pt-3">
+              <p className="text-xs font-medium text-red-700">Suppression définitive</p>
+              <p className="text-xs text-slate-500">
+                Un véhicule qui a servi à un transport ou qui porte des interventions ne peut pas être
+                supprimé : utilisez « Mettre hors service ». Pour confirmer la suppression définitive de
+                <strong> {selected.registration}</strong>, saisissez son immatriculation.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  value={confirmDelete}
+                  onChange={(e) => setConfirmDelete(e.target.value)}
+                  placeholder={selected.registration}
+                  className={inp}
+                  disabled={pending}
+                />
+                <button
+                  disabled={pending || confirmDelete.trim().toUpperCase() !== selected.registration.toUpperCase()}
+                  onClick={() => {
+                    run(() => deleteVehicle(target, confirmDelete.trim()));
+                    setConfirmDelete("");
+                  }}
+                  className="rounded-md border border-red-200 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-40"
+                >
+                  Supprimer définitivement
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
