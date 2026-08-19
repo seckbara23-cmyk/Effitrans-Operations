@@ -116,6 +116,7 @@ test suite never marks one PASS.**
 | --- | --- | --- |
 | UAT-01 | TMS-5B | Transport is a department in the sidebar, in the ratified order |
 | UAT-02 | TMS-5B/5A | Transport owns its four responsibilities; Transit no longer shows them |
+| UAT-03 | TMS-5 vehicle registry + **TMS-5C** stale-selection fix | **PASS** (operator, 2026-08-19) | `UAT-TMS7-01 / UAT-01` (Renault Midlum 2020, Camion, 5000 kg) created from an EMPTY parc; tiles auto-updated 1/1/0/0/0/0 without manual refresh; row Disponible / Non renseignée; vehicle became the active « Véhicule concerné »; conformité, intervention and « Mettre hors service » all ENABLED; « Déclarer disponible » correctly disabled with « État actuel : Disponible »; suppression area present | None — **the original TMS-5C production defect did not recur** | Closed |
 | UAT-03 | TMS-5 | A vehicle can be registered (Parc & Flotte) |
 | UAT-04 | TMS-5 | Compliance dates recorded; expiry state rendered |
 | UAT-05 | TMS-5/5C | Immobilising intervention → Maintenance; excluded from dispatch |
