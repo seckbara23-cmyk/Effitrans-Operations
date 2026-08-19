@@ -121,12 +121,13 @@ test suite never marks one PASS.**
 | UAT-05 | TMS-5 immobilising intervention + availability interlock; TMS-5A history rendered | **PASS** (operator, 2026-08-19) | « Imprévue » intervention `UAT-TMS7 — plaquettes de frein` opened; vehicle moved Disponible → **Maintenance automatically** (not set by hand); tiles Disponibles 0 / En maintenance 1; entry shown in « Historique des interventions » as En cours · Imprévue · immobilisante; **« Déclarer disponible » REFUSED** with « Une intervention immobilisante est déjà ouverte pour ce véhicule. » and État stayed Maintenance | None | Closed — interlock proven non-bypassable from the UI |
 | UAT-06 | TMS-5/5C close intervention → return to service | **PASS** (operator, 2026-08-19) | Intervention closed with a résolution; vehicle returned to **Disponible** | None | Closed |
 | UAT-06b | TMS-5 out-of-service and reinstatement | **PASS** (operator, 2026-08-19) | Full lifecycle demonstrated end-to-end: **Disponible → Maintenance → Disponible → Hors service → Disponible**; transitions, maintenance lifecycle, dispatch interlock and reinstatement coherent together | None | Closed |
+| UAT-07 | TMS-6 provider registry — external company, approved on creation | **PASS** (operator, 2026-08-19) | `UAT Transporteur SARL` (NINEA `UAT-NINEA-001`) registered directly in **Agréé** state; tiles 1/1/0/0; contact rendered; provider auto-became the active « Sous-traitant concerné » without reload (same self-healing selection as UAT-03); « Agréer » correctly disabled as already-agréé, « Suspendre » and « Retirer du répertoire » enabled; « Aucun transport confié à ce jour. » shown | None | Closed |
 | UAT-03 | TMS-5 | A vehicle can be registered (Parc & Flotte) |
 | UAT-04 | TMS-5 | Compliance dates recorded; expiry state rendered |
 | UAT-05 | TMS-5/5C | Immobilising intervention → Maintenance; excluded from dispatch |
 | UAT-06 | TMS-5/5C | Close intervention → return to service |
 | UAT-07 | TMS-6 | An external provider can be registered and approved |
-| UAT-08 | TMS-6 | A suspended provider cannot be assigned |
+| UAT-08 | TMS-6 | A suspended provider cannot be assigned — **RESEQUENCED after UAT-11**: it needs a transport_record to attempt an assignment against, which does not exist until the request is raised |
 | UAT-09 | QO-1 + TMS-1 | New dossier reads « Sans devis » and « À affecter » |
 | UAT-10 | TMS-1 | Operations Manager designates the Responsable client |
 | UAT-11 | TMS-4 | Transport request raised; Transport receives it |
