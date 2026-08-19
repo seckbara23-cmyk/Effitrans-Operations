@@ -24,6 +24,7 @@ import { EFFITRANS_PROCESS, PARALLEL_ACTIVITIES } from "@/lib/process/effitrans-
 import { STEP_APPLICABILITY, CUSTOMS_LEG_FILE_TYPES } from "@/lib/process/applicability";
 import { PROCESS_SLA_POLICIES } from "@/lib/process/sla-policies";
 import { mapRole } from "@/lib/process/roles";
+import { TENANT_ROLE_TEMPLATES } from "@/lib/platform/role-templates";
 import {
   POLICY_SCHEMA_VERSION,
   type ApplicabilityFact,
@@ -68,14 +69,48 @@ function defaultDepartments(): DepartmentBinding[] {
 }
 
 /**
+ * Roles the ratified role-templates already grant `document:approve` — the
+ * permission that governed document verification BEFORE WES-4H existed.
+ *
+ * Derived, never transcribed, and keyed on `key` rather than `genericName`:
+ * `key` is the code a tenant's `role` row actually carries, and the two differ
+ * for real roles (MANAGER/OPS_SUPERVISOR, COMPLIANCE/COMPLIANCE_HSSE). Binding
+ * the wrong vocabulary would produce a seat that silently matches nobody —
+ * from the operator's chair, indistinguishable from the bug this replaces.
+ */
+function documentApproverRoles(): string[] {
+  return TENANT_ROLE_TEMPLATES.filter((t) =>
+    t.permissions.includes("document:approve"),
+  ).map((t) => t.key);
+}
+
+/**
  * Seats. The registry names ONE official role per step; that role is the
  * assignee-eligible seat, and — for the three ratified maker-checker pairs — the
  * validator step's role is also the checker. Nothing beyond what the registry
  * already states is asserted here.
+ *
+ * VERIFIER (DEFECT-UAT15b). `defaultSeats` once emitted `assignee` bindings and
+ * nothing else, so `resolveSeatEligibility(..., "verifier")` returned an empty
+ * binding for every step of every dossier. An empty binding is refused by
+ * design, so document verification was structurally impossible: production
+ * carried 0 rows in `document_review` from the day WES-4H shipped.
+ *
+ * The default therefore binds the verifier seat to the roles that already hold
+ * `document:approve` — precisely the authority that governed verification
+ * before the seat check existed. That RESTORES ratified behaviour rather than
+ * deciding a new business rule, which is this module's whole contract. The
+ * permission check still runs first, maker-checker still forbids
+ * self-verification, and a tenant that pins a policy with narrower verifier
+ * seats overrides this completely.
  */
 function defaultSeats(): SeatBinding[] {
   const out: SeatBinding[] = [];
+  const verifiers = documentApproverRoles();
   for (const node of ALL_NODES) {
+    // Step-independent, because the permission it restores was: holding
+    // `document:approve` never depended on where the dossier had reached.
+    out.push({ stepKey: node.key, seat: "verifier", roles: [...verifiers] });
     if (!node.role) continue;
     // An official role with no tenant role behind it TODAY (mapping status
     // "missing") binds no seat — the default never invents a role code.
@@ -133,8 +168,9 @@ function defaultHandoffs(): HandoffBinding[] {
  * Supervisor authority. The platform default is the CONSERVATIVE reading of the
  * frozen architecture: a supervisor may reassign and request correction inside
  * their department, and may intervene — always with a reason, which policy
- * cannot switch off. Verification is NOT granted by default: WES-4 decides
- * verifier seats, and granting one here would pre-empt it.
+ * cannot switch off. Verification is NOT granted by default: a supervisor
+ * verifies only where `document:approve` already put them in the verifier seat
+ * (see `documentApproverRoles`), never by virtue of supervising.
  */
 function defaultSupervisors(): SupervisorPolicy[] {
   const departments = [...new Set(ALL_NODES.map((n) => n.department).filter(Boolean))];
