@@ -461,6 +461,17 @@ export const t = {
       not_approved: "Seuls les documents approuvés peuvent être partagés.",
       invalid_transition: "Transition non autorisée.",
       file_not_found: "Dossier introuvable.",
+      // TMS-7/UAT-15 — the three governance refusals used to collapse into
+      // `generic`, so a legitimate refusal looked like a broken button. Each now
+      // names itself and says what to do next.
+      not_a_verifier:
+        "Vérification impossible : aucun vérificateur n'est défini à ce stade du dossier. Ouvrez le dossier (Ouverture du dossier) pour activer son processus, puis réessayez.",
+      self_verification:
+        "Vous ne pouvez pas vérifier un document que vous avez vous-même téléversé. Un autre collaborateur habilité doit le vérifier.",
+      policy_unresolved:
+        "Vérification impossible : la politique de workflow applicable n'a pas pu être déterminée pour ce dossier.",
+      reason_required: "Un motif est obligatoire pour ce refus.",
+      review_failed: "La vérification a été refusée par le contrôle documentaire.",
       generic: "L'action a échoué. Veuillez réessayer.",
     },
   },
