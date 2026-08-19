@@ -74,6 +74,12 @@ export default async function LogisticsCommandCenterPage() {
             Véhicules, conformité, maintenance et disponibilité.
           </p>
         </Link>
+        <Link href="/transport/sous-traitants" className="surface block p-4 transition-colors hover:border-teal-300">
+          <p className="text-sm font-semibold text-navy-900">Sous-traitants</p>
+          <p className="mt-1 text-xs text-slate-500">
+            Transporteurs externes agréés, contacts et transports confiés.
+          </p>
+        </Link>
         <Link href="/journeys" className="surface block p-4 transition-colors hover:border-teal-300">
           <p className="text-sm font-semibold text-navy-900">Parcours des dossiers</p>
           <p className="mt-1 text-xs text-slate-500">
@@ -226,6 +232,7 @@ export default async function LogisticsCommandCenterPage() {
         <div className="flex flex-wrap gap-2 text-sm">
           <Link href="/transport" className="rounded-lg border border-slate-200 px-3 py-1.5 hover:border-teal-300">🚚 Transport routier</Link>
           <Link href="/transport/parc" className="rounded-lg border border-slate-200 px-3 py-1.5 hover:border-teal-300">🅿️ Parc &amp; Flotte</Link>
+          <Link href="/transport/sous-traitants" className="rounded-lg border border-slate-200 px-3 py-1.5 hover:border-teal-300">🤝 Sous-traitants</Link>
           <Link href="/shipping" className="rounded-lg border border-slate-200 px-3 py-1.5 hover:border-teal-300">🚢 Ocean Shipping</Link>
           <Link href="/air" className="rounded-lg border border-slate-200 px-3 py-1.5 hover:border-teal-300">✈️ Air Cargo</Link>
           <Link href="/customs/intelligence" className="rounded-lg border border-slate-200 px-3 py-1.5 hover:border-teal-300">🛃 Intelligence douanière</Link>

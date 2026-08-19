@@ -52,6 +52,8 @@ export const TENANT_SCOPED_TABLES = new Set<string>([
   "document",
   "customs_record",
   "transport_record",
+  // TMS-6 — external transport subcontractors (migration 118).
+  "transport_provider",
   // TMS-5 — Parc & Flotte (migration 117).
   "vehicle",
   "vehicle_compliance",

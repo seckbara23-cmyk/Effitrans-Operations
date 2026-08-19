@@ -1473,6 +1473,29 @@ export type Database = {
           },
         ];
       };
+      // TMS-6 — external transport providers (migration 119).
+      transport_provider: {
+        Row: {
+          id: string; tenant_id: string; name: string; ninea: string | null;
+          contact_name: string | null; email: string | null; phone: string | null;
+          address: string | null; status: string; is_active: boolean;
+          notes: string | null; created_by: string | null;
+          created_at: string; updated_at: string;
+        };
+        Insert: {
+          id?: string; tenant_id: string; name: string; ninea?: string | null;
+          contact_name?: string | null; email?: string | null; phone?: string | null;
+          address?: string | null; status?: string; is_active?: boolean;
+          notes?: string | null; created_by?: string | null;
+          created_at?: string; updated_at?: string;
+        };
+        Update: {
+          name?: string; ninea?: string | null; contact_name?: string | null;
+          email?: string | null; phone?: string | null; address?: string | null;
+          status?: string; is_active?: boolean; notes?: string | null; updated_at?: string;
+        };
+        Relationships: [];
+      };
       // TMS-5 — Parc & Flotte (migration 117).
       vehicle: {
         Row: {
@@ -1627,6 +1650,7 @@ export type Database = {
           driver_phone: string | null;
           vehicle_plate: string | null;
           vehicle_id: string | null;
+          provider_id: string | null;
           trailer_or_container: string | null;
           transport_company: string | null;
           delivery_reference: string | null;
@@ -1655,6 +1679,7 @@ export type Database = {
           driver_phone?: string | null;
           vehicle_plate?: string | null;
           vehicle_id?: string | null;
+          provider_id?: string | null;
           trailer_or_container?: string | null;
           transport_company?: string | null;
           delivery_reference?: string | null;
@@ -1683,6 +1708,7 @@ export type Database = {
           driver_phone?: string | null;
           vehicle_plate?: string | null;
           vehicle_id?: string | null;
+          provider_id?: string | null;
           trailer_or_container?: string | null;
           transport_company?: string | null;
           delivery_reference?: string | null;

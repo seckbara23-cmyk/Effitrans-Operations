@@ -191,12 +191,14 @@ describe("TMS-5C — the one schema change, and why it is not manufactured", () 
     expect(migration).not.toContain("update public.hr_org_unit");
   });
 
-  it("build-info advanced to 118 as the stable pair", () => {
+  // PIN MOVED (TMS-6, 2026-08-19): 119 now follows. The durable statement is
+  // that TMS-5C's migration sits where it always did, in ledger order, and that
+  // build-info stays consistent with the directory.
+  it("migration 118 sits in ledger order and the ledger stays self-consistent", () => {
     const migrations = fs.readdirSync(path.join(root, "supabase", "migrations")).filter((f) => f.endsWith(".sql")).sort();
     const idx = migrations.indexOf("20260908000001_fleet_registry.sql");
     expect(migrations[idx + 1]).toBe("20260910000001_canonical_transport_department.sql");
     const buildInfo = read("lib", "platform", "ops", "build-info.ts");
-    expect(buildInfo).toContain('LATEST_MIGRATION = "20260910000001_canonical_transport_department"');
-    expect(buildInfo).toContain("MIGRATION_COUNT = 118");
+    expect(Number(/MIGRATION_COUNT = (\d+)/.exec(buildInfo)![1])).toBe(migrations.length);
   });
 });

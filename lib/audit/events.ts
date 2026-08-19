@@ -83,6 +83,11 @@ export const AuditActions = {
   CUSTOMS_RELEASED: "customs.released",
   CUSTOMS_BLOCKED: "customs.blocked",
   CUSTOMS_DELETED: "customs.deleted",
+  // TMS-6 — external transport subcontractors. Master data, not a dossier
+  // fact, so the dossier-scoped business-event ledger is deliberately unused.
+  PROVIDER_CREATED: "transport_provider.created",
+  PROVIDER_UPDATED: "transport_provider.updated",
+  PROVIDER_STATUS_CHANGED: "transport_provider.status_changed",
   // Phase 1.10 — Transport
   // TMS-5 — Parc & Flotte. Vehicle master data is NOT a dossier fact, so the
   // business-event ledger (dossier-scoped) is deliberately not used: the

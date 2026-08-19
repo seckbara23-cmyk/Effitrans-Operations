@@ -217,9 +217,13 @@ describe("TMS-5 — the external-transport boundary is preserved for TMS-6", () 
     expect(migrationCode).not.toMatch(/vehicle_id uuid not null/);
   });
 
-  it("no subcontractor registry was pre-built", () => {
-    expect(fs.existsSync(path.join(root, "lib", "subcontractors"))).toBe(false);
+  it("TMS-5's own migration pre-built no subcontractor registry", () => {
+    // PIN MOVED (TMS-6, 2026-08-19): TMS-6 is the ratified phase for external
+    // transport, so lib/subcontractors now exists BY DESIGN. What these cases
+    // guarded — that the earlier phase did not pre-build it — is preserved by
+    // asserting the boundary each phase actually owns.
     expect(migrationCode).not.toContain("subcontractor");
+    expect(migrationCode).not.toContain("transport_provider");
   });
 });
 

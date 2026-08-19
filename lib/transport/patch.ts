@@ -43,6 +43,10 @@ export const TRANSPORT_ASSIGNMENT_FIELDS = [
   // TMS-5 — the INTERNAL fleet vehicle. vehiclePlate stays beside it: an
   // external/hired vehicle is still recorded as free text (TMS-6 boundary).
   "vehicleId",
+  // TMS-6 — the EXTERNAL subcontractor. Choosing who executes is the same act
+  // class as binding a vehicle, so it lives in the assignment lane; the CHECK
+  // makes the two mutually exclusive.
+  "providerId",
   "trailerOrContainer",
 ] as const;
 
@@ -63,6 +67,7 @@ export const TRANSPORT_COLUMN: Readonly<Record<TransportPatchField, string>> = {
   driverPhone: "driver_phone",
   vehiclePlate: "vehicle_plate",
   vehicleId: "vehicle_id",
+  providerId: "provider_id",
   trailerOrContainer: "trailer_or_container",
 };
 

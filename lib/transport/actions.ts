@@ -368,6 +368,23 @@ export async function assignTransport(
   if (isEmptyPatch(patch)) return { ok: true, id };
   patch.assigned_by = user.id;
 
+  // TMS-6 — HISTORICAL CARRIER IDENTITY. transport_company already means
+  // « Transporteur » on the ORDRE DE TRANSPORT, so binding a provider snapshots
+  // its name there: the printed order names the right carrier, and a later
+  // rename of the registry row never rewrites what a past order said. The FK
+  // carries the link; the text carries the history. (No new column: this is the
+  // column that already held exactly this fact as free text.)
+  const boundProvider = (patch as Record<string, unknown>).provider_id;
+  if (typeof boundProvider === "string" && boundProvider) {
+    const { data: provider } = await supabase
+      .from("transport_provider")
+      .select("name")
+      .eq("id", boundProvider)
+      .eq("tenant_id", user.tenantId)
+      .maybeSingle<{ name: string }>();
+    if (provider) (patch as Record<string, unknown>).transport_company = provider.name;
+  }
+
   if ((await casUpdate(supabase, id, user.tenantId, expectedUpdatedAt, patch)) === "stale") {
     return { ok: false, error: "stale_write" }; // rejected -> no success audit
   }

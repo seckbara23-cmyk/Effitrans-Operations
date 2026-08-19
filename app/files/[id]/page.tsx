@@ -35,6 +35,7 @@ import { getCustomsRecord, getMissingCustomsDocuments } from "@/lib/customs/serv
 import { isVerified } from "@/lib/documents/doctrine";
 import { TransportPanel } from "@/components/transport/transport-panel";
 import { listAssignableVehicles } from "@/lib/fleet/service";
+import { listAssignableProviders } from "@/lib/subcontractors/service";
 import { DeliveryProofPanel } from "@/components/transport/delivery-proof-panel";
 import { getTransportRecord } from "@/lib/transport/service";
 import { TrackingTimeline } from "@/components/transport/tracking-timeline";
@@ -110,6 +111,10 @@ export default async function FileDetailPage({ params }: { params: { id: string 
   // TMS-5 — bindable fleet vehicles, only for transport assigners.
   const fleetOptions = hasPermission(permissions, "transport:assign")
     ? await listAssignableVehicles()
+    : [];
+  // TMS-6 — approved external subcontractors, same authority as the fleet picker.
+  const providerOptions = hasPermission(permissions, "transport:assign")
+    ? await listAssignableProviders()
     : [];
   const canAssign = hasPermission(permissions, "file:assign");
   // TMS-1 — a DIFFERENT authority from file:assign: the Responsable client is
@@ -511,6 +516,7 @@ export default async function FileDetailPage({ params }: { params: { id: string 
             canDelete={hasPermission(permissions, "transport:delete")}
             canRequest={hasPermission(permissions, "transport:request")}
             fleetOptions={fleetOptions}
+            providerOptions={providerOptions}
           />
         </div>
       )}

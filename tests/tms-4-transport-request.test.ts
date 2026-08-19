@@ -165,10 +165,16 @@ describe("TMS-4 — scope guard (no TMS-5/TMS-6 pre-build)", () => {
     expect(migrations.some((f) => /transport_request|tms_?4/i.test(f))).toBe(false);
   });
 
-  it("the external boundary stays free text + TRANSPORT_ORDER — no registry pre-built", () => {
+  it("the external boundary keeps free text + TRANSPORT_ORDER; TMS-4 itself pre-built no registry", () => {
+    // PIN MOVED (TMS-6, 2026-08-19): TMS-6 is the ratified phase for external
+    // transport, so lib/subcontractors now exists BY DESIGN. What these cases
+    // guarded — that the earlier phase did not pre-build it — is preserved by
+    // asserting the boundary each phase actually owns.
     const migration = read("supabase", "migrations", "20260615000003_create_transport.sql");
     expect(migration).toContain("transport_company    text");
-    expect(fs.existsSync(path.join(root, "lib", "subcontractors"))).toBe(false);
+    // TMS-4 shipped no migration at all, so it cannot have created the registry.
+    const migrations = fs.readdirSync(path.join(root, "supabase", "migrations")).filter((f) => f.endsWith(".sql"));
+    expect(migrations.some((f) => /transport_request|tms_?4/i.test(f))).toBe(false);
   });
 
   // PIN NARROWED (TMS-5, 2026-08-18): TMS-5 is the ratified phase for the

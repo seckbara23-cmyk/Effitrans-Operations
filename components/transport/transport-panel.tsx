@@ -42,6 +42,7 @@ export function TransportPanel({
   canDelete,
   canRequest = false,
   fleetOptions = [],
+  providerOptions = [],
 }: {
   fileId: string;
   record: TransportRecord | null;
@@ -57,6 +58,12 @@ export function TransportPanel({
    * assign; the free-text plate below stays for external/hired vehicles.
    */
   fleetOptions?: { id: string; label: string }[];
+  /**
+   * TMS-6 — approved external subcontractors. Internal fleet and external
+   * provider are MUTUALLY EXCLUSIVE on one transport: choosing one clears the
+   * other here, and the database CHECK refuses the contradiction regardless.
+   */
+  providerOptions?: { id: string; label: string }[];
   /**
    * TMS-4 — transport:request. The REQUEST act (Account Manager raises the
    * need); rendered only when the viewer cannot already START execution
@@ -191,12 +198,14 @@ export function TransportPanel({
           // below is what actually unbinds it (WES-1A: empty never clears
           // implicitly).
           vehicleId: String(fd.get("vehicleId") ?? ""),
+          providerId: String(fd.get("providerId") ?? ""),
           trailerOrContainer: String(fd.get("trailerOrContainer") ?? ""),
           clearFields: clearedFields(fd, [
             ["driverName", r.driverName],
             ["driverPhone", r.driverPhone],
             ["vehiclePlate", r.vehiclePlate],
             ["vehicleId", r.vehicleId ?? null],
+            ["providerId", r.providerId ?? null],
             ["trailerOrContainer", r.trailerOrContainer],
           ]),
         },
@@ -216,6 +225,14 @@ export function TransportPanel({
             {tr.statuses[record.status]}
           </span>
           {record.customsOverride && <span className="text-xs text-amber-700">{tr.overrideOn}</span>}
+          {/* TMS-6 — the execution SOURCE, derived from which link is set. */}
+          <span className={record.driverName ? "text-xs text-slate-500" : "ml-auto text-xs text-slate-500"}>
+            {record.providerId
+              ? `Transport externe${record.providerLabel ? ` · ${record.providerLabel}` : ""}`
+              : record.vehicleId
+                ? `Flotte Effitrans${record.vehicleLabel ? ` · ${record.vehicleLabel}` : ""}`
+                : ""}
+          </span>
           {record.driverName && (
             <span className="ml-auto text-xs text-slate-500">
               {record.driverName}
@@ -288,6 +305,20 @@ export function TransportPanel({
                   )}
                   {fleetOptions
                     .filter((o) => o.id !== record.vehicleId)
+                    .map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+                </select>
+              </label>
+            )}
+            {(providerOptions.length > 0 || record.providerId) && (
+              <label className="flex flex-col gap-1 text-xs text-slate-600">
+                Sous-traitant (transport externe)
+                <select name="providerId" defaultValue={record.providerId ?? ""} className="rounded-md border border-slate-200 px-2 py-1 text-sm">
+                  <option value="">— Aucun (exécution interne) —</option>
+                  {record.providerId && record.providerLabel && (
+                    <option value={record.providerId}>{record.providerLabel}</option>
+                  )}
+                  {providerOptions
+                    .filter((o) => o.id !== record.providerId)
                     .map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
                 </select>
               </label>
