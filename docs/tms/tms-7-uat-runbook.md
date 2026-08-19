@@ -350,3 +350,45 @@ route use — so the invitation is never shown to someone who could not act on i
 no rollout rule is re-derived locally. **It opens nothing**: no write, no instance,
 no flag re-read. `transitionFile` is untouched and still creates no instance; the
 two concepts stay separate. 10 tests, mutations **M11–M14** all caught.
+
+## UAT-15 part 2 — operational-owner eligibility (2026-08-19): NOT a defect
+
+**The rule.** `eligibleOperationsOwners` (lib/process/engine/intake-actions.ts) returns
+tenant users who are `status = active` AND hold at least one role whose CANONICAL
+DEPARTMENT is `OPERATIONS` — `roleCanonicalDepartment(code) === "OPERATIONS"`.
+Department is DERIVED from roles, never stored, per the canonical registry doctrine.
+Eligible role codes: `COORDINATOR`, `OPS_SUPERVISOR`, `ACCOUNT_MANAGER`,
+`DOCUMENTATION_OFFICER`, `WAREHOUSE_COORDINATOR`.
+
+**Two different questions, deliberately separated:**
+
+| | Question | Mechanism | Operator account |
+| --- | --- | --- | --- |
+| **Permission to ASSIGN an owner** | may this user hand out the seat? | RBAC verbs `process:manage` + `process:owner:assign` | **YES** — this is what `canOpen = true` reported |
+| **Eligibility to BE the owner** | does this user hold operational authority? | organizational fact derived from role → canonical department | **NO** |
+
+**Why the operator is excluded.** `seckbara23@gmail.com` = « System Administrator »,
+holding `SYSTEM_ADMIN`, `HR_OFFICER`, `MAIL_ADMIN`. Their canonical departments are
+`null` (SYSTEM_ADMIN — "cross-cutting IT/config administration"), `HUMAN_RESOURCES`
+(HR_OFFICER) and `null` (MAIL_ADMIN). **None is OPERATIONS.**
+
+**Verdict: INTENDED under the ratified workflow.** An administrator may hand out the
+operational seat but does not occupy it — the same principle ratified in RQ-15b,
+where SYSTEM_ADMIN was confirmed as technical/break-glass authority and not a normal
+operating role. No code change; nothing to fix.
+
+**Selected for this UAT: « Superviseur Ops » — `ops.supervisor.demo@effitrans.sn`.**
+It holds exactly `OPS_SUPERVISOR` (« Superviseur opérations » / Operations
+Supervisor), which is the operational authority the Effitrans workflow places
+alongside the Account Manager in the assignment/coordination area. It is also a
+clearly identifiable DEMO account, so the UAT does not attach a genuine Effitrans
+employee to a test dossier — the intake action sends the owner a staff notification.
+
+⚠ Data observation only, NOT actioned: several people hold duplicate accounts across
+`@effitrans.sn` and `@effitrans.com` (Aminata Mbaye, Aida Rose SARR). Recorded for
+Effitrans; no change made.
+
+⚠ Note: the dossier`s `assigned_to_user_id` (« Responsable ») is currently System
+Administrator, set by the earlier `file.assigned`. That field is the FILE`s
+responsable and is independent of the process instance`s `owner_user_id`. The intake
+panel reads the latter, which is why the picker starts empty.
