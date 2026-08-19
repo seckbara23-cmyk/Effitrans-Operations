@@ -307,3 +307,46 @@ the PATH correct — a fair criticism, and the gap that let this recur. Six test
 pin the composed production path: resolver floor identity, the built-in fallback,
 the active-step state filter, COMPLETED/SKIPPED exclusion, live step-key coverage,
 and the ratified no-instance refusal. Mutations **M7–M10** all caught.
+
+## DEFECT-UAT15c — the opening surface was unreachable (2026-08-19)
+
+**Classification: navigation / action-wiring defect.** Same class as the TMS-5A
+Parc & Flotte reachability defect — the capability existed and worked; nothing led
+to it.
+
+### Control audit (what the operator clicked vs. what opens a process)
+
+| Control | Route / component | Server action | Effect |
+| --- | --- | --- | --- |
+| « Responsable » assignment | dossier page | `assignFile` | `file.assigned`. **No process instance** |
+| « Faire avancer → Ouvert » (under heading « Clôture du dossier ») | `components/files/file-workflow.tsx` | `transitionFile` | `file.transition`, sets `operational_file.status = OPENED`. **No process instance** |
+| **« Ouvrir le dossier »** — the REAL intake control | `/files/[id]/process` → `components/process/intake-panel.tsx` | **`openDossierWorkflow`** | Creates the `process_instance` |
+
+The two controls that ran are correctly labelled — neither claims to be the
+process-engine opening action, so this is **not** a mislabelling defect. They are
+simply the only opening-shaped controls that were *visible*.
+
+### Root cause
+
+`ProcessJourneyPanel` held the **only** link to `/files/{id}/process`, and it
+returned `null` whenever `getProcessState` returned null — which it does when the
+dossier has no instance (`service.ts`: `if (!snap?.instance) return null;`).
+
+**The catch-22:** to open a process you must reach the intake surface, and the only
+link to it appeared *after* the process already existed. For a dossier that had
+never been opened, that surface was reachable only by typing the URL. The other
+entry points (`/journeys`, `/queues/[key]`) list dossiers already in the process.
+
+This is why the environment/rollout/permission hypothesis was correctly eliminated
+by the diagnostics run: **everything was green because nothing was wrong with the
+action — the operator never reached it.**
+
+### Fix
+
+When a dossier has no instance, the panel now renders a signpost with a link to the
+intake surface, stating plainly that the dossier STATUS is not the process. It is
+gated by `getIntakeState` — the SAME resolver the process page and the diagnostics
+route use — so the invitation is never shown to someone who could not act on it, and
+no rollout rule is re-derived locally. **It opens nothing**: no write, no instance,
+no flag re-read. `transitionFile` is untouched and still creates no instance; the
+two concepts stay separate. 10 tests, mutations **M11–M14** all caught.

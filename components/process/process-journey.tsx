@@ -10,6 +10,7 @@
  */
 import Link from "next/link";
 import { getProcessState } from "@/lib/process/engine/service";
+import { getIntakeState } from "@/lib/process/engine/intake-actions";
 import { summarizeJourney } from "@/lib/navigation/journey";
 
 export async function ProcessJourneyPanel({ fileId }: { fileId: string }) {
@@ -18,7 +19,44 @@ export async function ProcessJourneyPanel({ fileId }: { fileId: string }) {
   // process:read, and returns null for anything it will not answer. A second flag
   // check here would be a second place to get the rollout rule wrong.
   const model = await getProcessState(fileId);
-  if (!model) return null;
+
+  // DEFECT-UAT15c — the catch-22 this closes.
+  //
+  // getProcessState returns null when the dossier has NO instance, and this
+  // panel held the ONLY link to /files/{id}/process. So the surface where a
+  // dossier's process is opened was unreachable from the dossier page for
+  // exactly the dossiers that still needed opening: the link appeared only
+  // once the process already existed.
+  //
+  // In production that cost three UAT-15 attempts. The operator used the
+  // controls that WERE visible — « Responsable » and « Faire avancer → Ouvert »
+  // — which move operational_file.status to OPENED and create no instance, and
+  // reasonably read that as having opened the dossier.
+  //
+  // The invitation must not be shown to someone who could not act on it, so the
+  // gate is `getIntakeState`: the SAME resolver the process page and the
+  // diagnostics route use, which enforces the intake flags, process:read and
+  // file visibility. Nothing is opened here — this is a signpost, not an action.
+  if (!model) {
+    const intake = await getIntakeState(fileId);
+    if (!intake || intake.hasInstance) return null;
+    return (
+      <section className="rounded-lg border border-slate-200 bg-white p-4">
+        <h2 className="text-sm font-semibold text-navy-900">Parcours officiel Effitrans</h2>
+        <p className="mt-1 text-xs text-slate-600">
+          Le processus officiel de ce dossier n&apos;est pas encore ouvert. Tant qu&apos;il ne
+          l&apos;est pas, les étapes, les responsables et la vérification des documents ne sont
+          pas disponibles — le statut du dossier ne suffit pas à l&apos;ouvrir.
+        </p>
+        <Link
+          href={`/files/${fileId}/process`}
+          className="mt-2 inline-block text-xs font-medium text-teal-700 hover:text-teal-900"
+        >
+          Ouvrir le processus officiel →
+        </Link>
+      </section>
+    );
+  }
 
   const j = summarizeJourney(model);
 
