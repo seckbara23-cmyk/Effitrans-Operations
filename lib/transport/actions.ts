@@ -67,13 +67,29 @@ async function loadTransport(supabase: Admin, id: string, tenantId: string) {
  */
 type TransportPatch = Database["public"]["Tables"]["transport_record"]["Update"];
 
+/**
+ * TMS-7/UAT-13 — a write can fail for two VERY different reasons, and this used
+ * to report both as « modifié par un autre utilisateur ». It collapsed every
+ * database error into "stale", so a refusal by the TMS-6 execution-source CHECK
+ * (or by a fleet/provider interlock trigger) told the operator to refresh — an
+ * action that could never help, because nothing had changed. The row was always
+ * correctly protected; only the explanation was wrong.
+ *
+ * REFUSED (a constraint said no) is now distinguished from STALE (someone really
+ * did change the row). Neither the CHECK nor the assignment semantics change.
+ */
+type CasResult =
+  | { status: "ok" }
+  | { status: "stale" }
+  | { status: "refused"; code: string; message: string };
+
 async function casUpdate(
   supabase: Admin,
   id: string,
   tenantId: string,
   expectedUpdatedAt: string,
   patch: TransportPatch,
-): Promise<"ok" | "stale"> {
+): Promise<CasResult> {
   const { data, error } = await supabase
     .from("transport_record")
     .update(patch)
@@ -81,8 +97,26 @@ async function casUpdate(
     .eq("tenant_id", tenantId)
     .eq("updated_at", expectedUpdatedAt)
     .select("id");
-  if (error) return "stale";
-  return (data?.length ?? 0) === 1 ? "ok" : "stale";
+  if (error) return { status: "refused", code: error.code ?? "", message: error.message ?? "" };
+  // No error and no row means the version predicate did not match: a REAL
+  // concurrent modification, the only case that warrants « rechargez la page ».
+  return (data?.length ?? 0) === 1 ? { status: "ok" } : { status: "stale" };
+}
+
+/**
+ * Name the reason the DATABASE gave. The database stays the authority; this only
+ * translates its refusal into something the operator can act on.
+ */
+function refusalReason(cas: { code: string; message: string }): string {
+  const m = (cas.message ?? "").toLowerCase();
+  // 23514 = check_violation — the TMS-6 invariant: one executor per transport.
+  if (cas.code === "23514" || m.includes("transport_execution_source_exclusive")) {
+    return "execution_source_conflict";
+  }
+  if (m.includes("pas disponible") || m.includes("retiré du parc")) return "vehicle_not_available";
+  if (m.includes("pas agréé") || m.includes("retiré du répertoire")) return "provider_not_approved";
+  if (m.includes("tenant mismatch")) return "not_found";
+  return "generic";
 }
 
 function revalidate(fileId: string) {
@@ -319,7 +353,9 @@ export async function updateTransport(
   // Nothing to write — succeed without touching the row or the audit log.
   if (isEmptyPatch(patch)) return { ok: true, id };
 
-  if ((await casUpdate(supabase, id, user.tenantId, expectedUpdatedAt, patch)) === "stale") {
+  const cas = await casUpdate(supabase, id, user.tenantId, expectedUpdatedAt, patch);
+  if (cas.status === "refused") return { ok: false, error: refusalReason(cas) };
+  if (cas.status === "stale") {
     return { ok: false, error: "stale_write" }; // rejected -> no success audit
   }
 
@@ -385,7 +421,9 @@ export async function assignTransport(
     if (provider) (patch as Record<string, unknown>).transport_company = provider.name;
   }
 
-  if ((await casUpdate(supabase, id, user.tenantId, expectedUpdatedAt, patch)) === "stale") {
+  const cas = await casUpdate(supabase, id, user.tenantId, expectedUpdatedAt, patch);
+  if (cas.status === "refused") return { ok: false, error: refusalReason(cas) };
+  if (cas.status === "stale") {
     return { ok: false, error: "stale_write" }; // rejected -> no success audit
   }
 

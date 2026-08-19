@@ -112,6 +112,57 @@ describe("TMS-6 — internal and external execution are mutually exclusive", () 
   });
 });
 
+// ================================================ refusal diagnosability ====
+
+describe("TMS-6/UAT-13 — a constraint refusal names itself, never « stale »", () => {
+  it("casUpdate distinguishes a REFUSED write from a genuine version conflict", () => {
+    // The UAT-13 defect: `if (error) return "stale"` collapsed every database
+    // error into a version conflict, so the execution-source CHECK told the
+    // operator to refresh — an action that could never help.
+    const cas = transportActions.slice(
+      transportActions.indexOf("async function casUpdate"),
+      transportActions.indexOf("function refusalReason"),
+    );
+    expect(cas).toContain('return { status: "refused", code: error.code ?? "", message: error.message ?? "" }');
+    expect(cas).not.toContain('if (error) return "stale";');
+    // stale is reserved for "no error, but the version predicate matched nothing"
+    expect(cas).toContain('(data?.length ?? 0) === 1 ? { status: "ok" } : { status: "stale" }');
+  });
+
+  it("the execution-source CHECK maps to its own French explanation", () => {
+    const mapper = transportActions.slice(
+      transportActions.indexOf("function refusalReason"),
+      transportActions.indexOf("function revalidate"),
+    );
+    expect(mapper).toContain('cas.code === "23514"');
+    expect(mapper).toContain("transport_execution_source_exclusive");
+    expect(mapper).toContain('return "execution_source_conflict"');
+    const i18n = read("lib", "i18n.ts");
+    expect(i18n).toContain("execution_source_conflict:");
+    expect(i18n).toContain("soit par la flotte Effitrans, soit par un sous-traitant");
+  });
+
+  it("the interlock refusals are named too, rather than reported as conflicts", () => {
+    const mapper = transportActions.slice(
+      transportActions.indexOf("function refusalReason"),
+      transportActions.indexOf("function revalidate"),
+    );
+    expect(mapper).toContain('return "vehicle_not_available"');
+    expect(mapper).toContain('return "provider_not_approved"');
+    const i18n = read("lib", "i18n.ts");
+    expect(i18n).toContain("vehicle_not_available:");
+    expect(i18n).toContain("provider_not_approved:");
+  });
+
+  it("BOTH write paths surface the refusal — assignment and planning alike", () => {
+    expect((transportActions.match(/if \(cas\.status === "refused"\) return \{ ok: false, error: refusalReason\(cas\) \};/g) ?? []).length).toBe(2);
+  });
+
+  it("the CHECK itself is untouched — only the explanation changed", () => {
+    expect(migrationCode).toContain("check (vehicle_id is null or provider_id is null)");
+  });
+});
+
 // ==================================================== historical identity ====
 
 describe("TMS-6 — the past keeps the carrier it actually had", () => {

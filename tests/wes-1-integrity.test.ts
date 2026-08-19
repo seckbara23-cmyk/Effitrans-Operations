@@ -141,9 +141,20 @@ describe("WES-1A — transport updates never erase what they were not asked to c
 // ==================== WES-1B — optimistic concurrency (15-21) ===============
 
 describe("WES-1B — concurrent transport edits cannot silently overwrite", () => {
+  // PIN MOVED (TMS-7/UAT-13, 2026-08-19): casUpdate now returns a discriminated
+  // result so a CONSTRAINT refusal is no longer reported as a version conflict.
+  // The WES-1B semantic this case protects is unchanged and still asserted: the
+  // write is constrained on the loaded updated_at, and a non-matching version
+  // yields "stale".
   it("15 — the update is constrained on the loaded updated_at (CAS)", () => {
     expect(TRANSPORT_ACTIONS).toMatch(/\.eq\("updated_at", expectedUpdatedAt\)/);
-    expect(TRANSPORT_ACTIONS).toMatch(/\(data\?\.length \?\? 0\) === 1 \? "ok" : "stale"/);
+    expect(TRANSPORT_ACTIONS).toMatch(
+      /\(data\?\.length \?\? 0\) === 1 \? \{ status: "ok" \} : \{ status: "stale" \}/,
+    );
+    // …and a stale result still refuses the write at BOTH call sites. (Counted
+    // on the CAS branch itself: `stale_write` is also returned by the two
+    // missing-token guards, so a bare string count would be 4.)
+    expect((TRANSPORT_ACTIONS.match(/if \(cas\.status === "stale"\) \{/g) ?? []).length).toBe(2);
   });
 
   it("16 — both material mutations REQUIRE the token", () => {

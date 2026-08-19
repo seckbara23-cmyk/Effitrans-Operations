@@ -646,6 +646,14 @@ export const t = {
       already_exists: "Un transport existe déjà pour ce dossier.",
       invalid_status: "Statut invalide.",
       invalid_transition: "Transition non autorisée.",
+      // TMS-7/UAT-13 — a constraint refusal must name itself, never masquerade
+      // as a version conflict.
+      execution_source_conflict:
+        "Un transport est exécuté soit par la flotte Effitrans, soit par un sous-traitant — jamais les deux. Retirez l'un des deux avant d'enregistrer.",
+      vehicle_not_available:
+        "Ce véhicule ne peut pas être affecté : il n'est pas disponible ou il est retiré du parc.",
+      provider_not_approved:
+        "Ce sous-traitant ne peut pas être affecté : il n'est pas agréé ou il est retiré du répertoire.",
       customs_not_released: "Enlèvement bloqué : dédouanement non libéré (BAE).",
       pod_required: "Un bon de livraison approuvé est requis pour le POD.",
       stale_write:
