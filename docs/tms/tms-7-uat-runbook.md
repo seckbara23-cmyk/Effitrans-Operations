@@ -154,3 +154,9 @@ workaround exists. **MINOR** — usability/presentation, no integrity impact.
 Filled in as results arrive; every inherited criterion appears with its test,
 result, evidence and disposition. TMS-7 is **not** complete until every row is
 resolved.
+
+| ID | Inherited criterion | Result | Evidence | Defect | Disposition |
+| --- | --- | --- | --- | --- | --- |
+| A (auto) | All 11 phase suites + full vitest + typecheck + build | **PASS** | 245/245 phase tests; 7029 vitest (1 known CRLF-local pin); tsc + build clean (2026-08-19) | — | Accepted as automated evidence only |
+| A (CI) | Every SQL suite against a real Postgres after 119 migrations | **PASS** | CI #519 on `6d0392b`, jobs `rls-tests` + `build` green | — | Accepted; does not substitute for human cases |
+| UAT-01 | TMS-5B — Transport is a first-class DÉPARTEMENTS entry, in the ratified order | **PASS** (operator, 2026-08-19) | Sidebar order observed Opérations → Transit → Transport → Finance; Transport not nested; `/departments/transport` loads with meta « DÉPARTEMENTS » and H1 « Transport »; no error boundary or unauthorized message; screenshot captured | None | Closed — no code change required |
