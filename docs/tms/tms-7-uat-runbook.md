@@ -1022,3 +1022,91 @@ All three are provisioning tasks. None requires code.
 
 The **UAT-15 delivery + POD half** is the only remaining item that needs neither a
 product decision nor code. Everything else is provisioning or ratification.
+
+---
+
+# TMS-7 LEDGER — RECONCILED 2026-08-20 (supersedes dff9e23)
+
+## Correction to the previous ledger
+
+The earlier report counted **UAT-15 as PASS while separately listing its delivery +
+POD half as unexecuted**. Both statements cannot be true, and the operator was right
+to challenge the arithmetic. UAT-15 was **PARTIAL**, not PASS.
+
+The POD run closes it. **The totals are unchanged at 21/24 — what changed is that the
+21 is now honest.** No case moved category; one row stopped overstating itself.
+
+## UAT-15 — CLOSED PASS (operator, 2026-08-20)
+
+On `EFT-IMP-2026-00004`: transport reached **Livré**; `05_POD_DEMO.pdf` uploaded as
+Bon de livraison / POD and left **pending verification**; « Vérifier » produced
+**« Preuve de livraison vérifiée ✓ »**; the UI reported **« Réception enregistrée
+automatiquement et dossier transmis à la Facturation. »**; the transport transitioned
+to **« POD reçu »** on its own; the Finance handoff showed **« prêt pour la
+facturation »**. **No manual POD_RECEIVED workaround was used.**
+
+This proves the ratified chain: **verified evidence drives the terminal state and the
+Finance handoff** — status is a consequence of evidence, never typed by a human.
+
+## Full inventory — every UAT number
+
+| # | Case | Status |
+| --- | --- | --- |
+| 1 | UAT-01 | ✅ PASS |
+| 2 | UAT-02 | ✅ PASS |
+| 3 | UAT-03 | ✅ PASS |
+| 4 | UAT-04 | ✅ PASS |
+| 5 | UAT-05 | ✅ PASS |
+| 6 | UAT-06 | ✅ PASS |
+| 7 | UAT-06b | ✅ PASS |
+| 8 | UAT-07 | ✅ PASS |
+| 9 | UAT-08 | ✅ PASS |
+| 10 | UAT-09 | ✅ PASS |
+| 11 | UAT-10 | ✅ PASS |
+| 12 | UAT-11a | ✅ PASS |
+| 13 | UAT-11b | ⏸ DEFERRED |
+| 14 | UAT-12 | ✅ PASS |
+| 15 | UAT-13 | ✅ PASS (re-run) |
+| 16 | UAT-14 | ✅ PASS |
+| 17 | UAT-15 | ✅ **PASS — CLOSED today** (customs interlock BOTH branches + delivery + POD) |
+| 18 | UAT-16 | ✅ PASS |
+| 19 | UAT-17 | ✅ PASS |
+| 20 | UAT-18 | ✅ PASS (V2; V1 preserved) |
+| 21 | UAT-19 | ✅ PASS |
+| 22 | UAT-20 | ✅ PASS |
+| 23 | UAT-21 | ⏸ DEFERRED |
+| 24 | UAT-22 | ⏸ DEFERRED |
+
+## Totals
+
+| Outcome | Count |
+| --- | --- |
+| **PASS** | **21** |
+| FAIL | **0** |
+| BLOCKED | **0** |
+| DEFERRED | **3** |
+| NOT RUN | **0** |
+| **Total** | **24** |
+
+## Deferred cases — what is ACTUALLY missing (verified read-only today)
+
+The previous ledger said « provisioning ». That was imprecise. **No role and no
+permission needs to be created — the required roles already exist.** What is missing
+is an authenticated SESSION as such a user, and for UAT-22 an environment variable.
+
+| Case | Requirement | Existing roles that satisfy it | Minimum safe setup |
+| --- | --- | --- | --- |
+| **UAT-21** | `transport:read` WITHOUT `transport:manage` | ACCOUNT_MANAGER, CEO, COMPLIANCE_HSSE, **DOCUMENTATION_OFFICER**, PICKUP_AGENT, WAREHOUSE_COORDINATOR | **NONE — executable now.** `documentation.demo@effitrans.sn` (« Agent Documentation », DOCUMENTATION_OFFICER, active) already qualifies and is a DEMO account. Only its credentials are needed |
+| **UAT-11b** | `transport:request` WITHOUT `transport:create` | **ACCOUNT_MANAGER only** | No demo ACCOUNT_MANAGER exists; all holders are real employees. Minimum: **one new UAT demo account granted the EXISTING ACCOUNT_MANAGER role** — no new role, no permission change |
+| **UAT-22** | Road tracking active | n/a | **`TRACKING_ENABLED=true`** in the production environment (`lib/tracking/config.ts`). Environment change, not data |
+
+## Open items — tracked SEPARATELY from UAT status
+
+| Ref | Kind | State |
+| --- | --- | --- |
+| **RQ-18b** | Product decision | OPEN — dossier mode vs execution mode on the order. `transportMode` **UNCHANGED** |
+| **Printed issue date vs PDF determinism** | Product decision | OPEN, un-costed. A printed generation date breaks byte-determinism; `generated_at` lives on the row |
+| **`lib/deposit/actions.ts:845`** | Technical debt | Legacy `APPROVED` write. Harmless today. **NO GO**; preconditions recorded |
+| **Customs panel error placement** | Technical debt | A correct refusal renders far from the control that triggered it |
+
+None of these blocks a UAT case or a release.
