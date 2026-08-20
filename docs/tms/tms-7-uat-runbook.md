@@ -870,3 +870,60 @@ said. The artifact pipeline still never reads the live provider name — pinned.
   execution party at all;
 * **M47** — `providerId` leaking into the document body as a raw UUID;
 * **M49** — the renderer printing blank lines instead of omitting them.
+
+## DEFECT-UAT18a / UAT18b — the ORDRE DE TRANSPORT made usable (2026-08-20)
+
+### UAT18b root cause — a coordinate-system inversion, live since WES-4G
+
+`PdfDoc` has a **TOP-LEFT origin** (`text()` converts via `this.height - y`). The
+renderer started at `let y = doc.height - M` and **decremented** — written for a
+bottom-left origin. So the header was drawn near the FOOT of the page and the body
+marched upward, leaving the large unexplained blank area at the top. Everything now
+measures y from the top and grows downward; the footer sits at `doc.height - M + 12`.
+
+### UAT18a — omission, not denial
+
+A Branch-B order printed « Aucun chauffeur affecté. » That ASSERTS an absence when
+the truth is merely not-yet-known. Note the line was **unreachable on the internal
+branch anyway** — readiness makes `driverName` mandatory there — so on an ORDRE DE
+TRANSPORT it could only ever describe a subcontracted transport. It is now suppressed
+for orders only; `DEMANDE_TRANSPORT` keeps it, and the LEGACY_TEXT_DRIVER warning is
+untouched because that one states something true.
+
+### Composition
+
+Sectioned A4: header (Effitrans / ORDRE DE TRANSPORT / Dossier N° / Version N) →
+**Client / Dossier → Transporteur → Enlèvement → Livraison → Marchandise et
+références → Exécution** → discreet footer. **A section with no present fields is
+skipped entirely** — that is the mechanism by which Branch B omits driver and vehicle.
+
+Dates render French — `21/08/2026`, `22/08/2026 à 10:00` — parsed **by pattern, never
+by `new Date`**, because a Date would make output depend on the machine timezone and
+determinism is a contract here.
+
+**Preserved:** determinism (same snapshot ⇒ byte-identical, pinned), no clock on the
+page, the UAT-17 carrier snapshot, RQ-18 branch-aware readiness, versioning and
+immutable prior versions, RBAC/RLS/audit. `RENDERER_VERSION` bumped to **`wes4g-2`**
+so identical snapshots rendered before and after remain explainable.
+
+21 tests. Mutations **M50–M56** caught: the order denying a driver again, empty
+sections drawn, composition reverting to bottom-up, the footer floating into the body,
+raw ISO dates, the formatter going through `Date`, and the renderer version not bumped.
+
+### ⚠ RQ-18b — MODE DE TRANSPORT semantics: REPORTED, NOT CHANGED
+
+`transportMode` comes from **`shipment.transport_mode`** — the DOSSIER`s international
+mode (SEA for this dossier). It is **not** the execution mode of the road movement
+being ordered. There is **no ratified distinction** between the two anywhere in the
+schema: `transport_record` has no modal column, and TMS-6`s "execution mode" means
+the SOURCE (fleet vs subcontractor), not sea/air/road.
+
+So « MODE DE TRANSPORT : SEA » on a subcontracted ROAD order does misdescribe what is
+being ordered. Per instruction the semantics are **unchanged pending ratification**.
+
+**Q-18b.1 :** « Sur un Ordre de Transport confié à un sous-traitant routier, la
+mention du mode doit-elle décrire le mode INTERNATIONAL du dossier (maritime/aérien)
+ou le mode d`EXÉCUTION de l`enlèvement commandé (routier) ? »
+
+Options once ratified: omit the field from the order; relabel it « Mode du dossier »;
+or record an execution mode on `transport_record`. None applied yet.

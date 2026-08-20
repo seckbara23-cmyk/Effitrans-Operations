@@ -27,7 +27,55 @@ import { SOURCE_FIELD_LABELS_FR, type ArtifactProvenance } from "./source";
  * the same source hash but different renderer versions may legitimately differ
  * in bytes; two with the same both must not.
  */
-export const RENDERER_VERSION = "wes4g-1";
+export const RENDERER_VERSION = "wes4g-2";
+
+/**
+ * DEFECT-UAT18b — `PdfDoc` has a TOP-LEFT origin (`text` converts via
+ * `this.height - y`). The original renderer started at `doc.height - M` and
+ * DECREMENTED, i.e. it was written for a bottom-left origin, so the header
+ * landed near the foot of the page and content marched upward — the large
+ * unexplained blank area the operator reported. Everything below measures y
+ * from the TOP and grows downward.
+ */
+
+/**
+ * ISO → French. « 2026-08-20 » ⇒ « 20/08/2026 », and with a time
+ * « 20/08/2026 à 10:00 ». Parsed by pattern, never by `new Date`: a Date would
+ * make the output depend on the machine's timezone, and determinism is a
+ * contract here. Anything unrecognised passes through untouched rather than
+ * being mangled into a wrong date.
+ */
+export function frDateTime(value: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/.exec(value.trim());
+  if (!m) return value;
+  const [, yyyy, mm, dd, hh, mi] = m;
+  const date = `${dd}/${mm}/${yyyy}`;
+  return hh && mi ? `${date} à ${hh}:${mi}` : date;
+}
+
+/** Fields rendered as dates rather than raw strings. */
+const DATE_FIELDS = new Set(["pickupPlanned", "deliveryPlanned", "requestedAt"]);
+
+const display = (field: string, value: string): string =>
+  DATE_FIELDS.has(field) ? frDateTime(value) : value;
+
+/**
+ * ORDRE DE TRANSPORT — an operational instruction handed to a carrier, so it is
+ * composed as SECTIONS rather than one flat list of labels.
+ *
+ * A section whose fields are all absent is skipped entirely. That is how
+ * Branch B omits driver and vehicle: not a blank row, not a placeholder — the
+ * « EXÉCUTION » block simply does not exist on an order whose carrier has not
+ * yet named a driver.
+ */
+const ORDER_SECTIONS: readonly { title: string; fields: readonly string[] }[] = [
+  { title: "Client / Dossier", fields: ["clientName", "fileNumber", "fileType", "transportMode"] },
+  { title: "Transporteur", fields: ["transportCompany"] },
+  { title: "Enlèvement", fields: ["pickupLocation", "pickupPlanned"] },
+  { title: "Livraison", fields: ["deliveryLocation", "deliveryPlanned"] },
+  { title: "Marchandise et références", fields: ["cargoType", "containerRef", "trailerOrContainer", "origin", "destination"] },
+  { title: "Exécution", fields: ["driverName", "vehiclePlate"] },
+];
 
 const NAVY: [number, number, number] = [0.06, 0.15, 0.29];
 const GREY: [number, number, number] = [0.45, 0.45, 0.45];
@@ -70,61 +118,96 @@ export function renderArtifact(input: {
 }): Uint8Array {
   const doc = new PdfDoc({ size: "A4", orientation: "portrait" });
   const M = 48;
-  let y = doc.height - M;
+  const isOrder = input.artifactCode === "TRANSPORT_ORDER";
+  // TOP-LEFT origin: y starts at the top margin and GROWS downward.
+  let y = M;
 
   // ---- header -------------------------------------------------------------
   doc.text(M, y, input.organizationName, { size: 10, bold: true, color: NAVY });
-  y -= 26;
+  y += 24;
   doc.text(M, y, TITLES[input.artifactCode] ?? input.artifactCode, {
     size: 18, bold: true, color: NAVY,
   });
-  y -= 8;
-  doc.line(M, y, doc.width - M, y, NAVY, 1);
-  y -= 8;
-
-  // Version is data, not a timestamp — it is stable for a given artifact row.
-  doc.text(doc.width - M, y, `Version ${input.artifactVersion}`, {
+  // Identity on the same line as the title, right-aligned: the dossier this
+  // order belongs to, and which version of it this sheet is.
+  const fileNumber = input.snapshot.fileNumber;
+  if (fileNumber) {
+    doc.text(doc.width - M, y - 10, `Dossier ${fileNumber}`, {
+      size: 9, bold: true, color: NAVY, align: "right",
+    });
+  }
+  // Version is data, not a timestamp — stable for a given artifact row. No
+  // generation date appears anywhere on the page: `generated_at` lives on the
+  // row, and printing it would break byte-determinism on regeneration.
+  doc.text(doc.width - M, y + 2, `Version ${input.artifactVersion}`, {
     size: 8, color: GREY, align: "right",
   });
-  y -= 22;
+  y += 8;
+  doc.line(M, y, doc.width - M, y, NAVY, 1);
+  y += 20;
 
-  // ---- body ---------------------------------------------------------------
-  const rows: Row[] = (LAYOUT[input.artifactCode] ?? [])
-    .filter((f) => input.snapshot[f] !== undefined)
-    .map((f) => ({ label: SOURCE_FIELD_LABELS_FR[f] ?? f, value: input.snapshot[f] }));
+  const rowsFor = (fields: readonly string[]): Row[] =>
+    fields
+      .filter((f) => input.snapshot[f] !== undefined)
+      .map((f) => ({
+        label: SOURCE_FIELD_LABELS_FR[f] ?? f,
+        value: display(f, input.snapshot[f]),
+      }));
 
-  for (const row of rows) {
-    doc.text(M, y, row.label.toUpperCase(), { size: 7, color: GREY });
-    doc.text(M + 150, y, row.value, { size: 10, color: NAVY });
-    y -= 10;
-    doc.line(M, y, doc.width - M, y, RULE, 0.4);
-    y -= 14;
-
-    if (y < M + 80) {
-      doc.addPage();
-      y = doc.height - M;
+  const drawRows = (rows: Row[]) => {
+    for (const row of rows) {
+      doc.text(M, y, row.label.toUpperCase(), { size: 7, color: GREY });
+      doc.text(M + 150, y, row.value, { size: 10, color: NAVY });
+      y += 12;
+      doc.line(M, y, doc.width - M, y, RULE, 0.4);
+      y += 12;
+      if (y > doc.height - M - 60) {
+        doc.addPage();
+        y = M;
+      }
     }
+  };
+
+  if (isOrder) {
+    // ---- sectioned composition (DEFECT-UAT18b) ----------------------------
+    for (const s of ORDER_SECTIONS) {
+      const rows = rowsFor(s.fields);
+      // An entirely absent section is SKIPPED — this is how Branch B omits
+      // « Exécution » when the carrier has not yet named a driver or a vehicle.
+      if (rows.length === 0) continue;
+      doc.text(M, y, s.title.toUpperCase(), { size: 8, bold: true, color: NAVY });
+      y += 6;
+      doc.line(M, y, doc.width - M, y, NAVY, 0.6);
+      y += 14;
+      drawRows(rows);
+      y += 10;
+    }
+  } else {
+    drawRows(rowsFor(LAYOUT[input.artifactCode] ?? []));
   }
 
   // ---- provenance ---------------------------------------------------------
   // WES-4G.4: when the driver is free text rather than an authenticated user,
   // the document says so. Silence here would let a legacy record read exactly
   // like a verified assignment.
-  y -= 10;
+  y += 6;
   if (input.provenance === "LEGACY_TEXT_DRIVER") {
     doc.text(M, y,
       "Chauffeur saisi en texte libre — non rattaché à un compte authentifié.",
       { size: 8, color: [0.6, 0.35, 0.05] });
-    y -= 14;
-  } else if (input.provenance === "NO_DRIVER") {
+  } else if (input.provenance === "NO_DRIVER" && !isOrder) {
+    // DEFECT-UAT18a — NOT on an ORDRE DE TRANSPORT. The internal-fleet branch
+    // cannot reach NO_DRIVER at all, because readiness makes `driverName`
+    // mandatory there; so on an order this line can only ever describe a
+    // subcontracted transport, where « Aucun chauffeur affecté » would ASSERT
+    // an absence that is merely not-yet-known. RQ-18 says omit, so we omit.
     doc.text(M, y, "Aucun chauffeur affecté.", { size: 8, color: GREY });
-    y -= 14;
   }
 
   // ---- footer -------------------------------------------------------------
-  // Deliberately carries NO generation date: the row holds `generated_at`, and
-  // printing it here would make every regeneration produce different bytes.
-  doc.text(M, M - 12,
+  // Discreet, at the foot of the page, and deliberately carrying NO generation
+  // date for the determinism reason above.
+  doc.text(M, doc.height - M + 12,
     "Document interne généré à partir des données structurées du dossier. " +
     "Toute correction se fait sur le dossier, puis par régénération.",
     { size: 7, color: GREY });
