@@ -713,3 +713,40 @@ is `transport_record_provider_id_fkey`; complete audit trail is two rows —
 the supported path** and therefore inert and unassignable. Retained as an audited UAT
 artifact by operator decision. The original `32a79f85…` is untouched: name intact,
 APPROVED, active, 1 transport bound, no `updated` row against it.
+
+## UAT-17 header fix — the carrier a transport was CONFIDED TO (2026-08-20)
+
+**Display-only. The snapshot model was already correct and the rename proved it.**
+
+After « UAT Transporteur SARL » became « … — RENOMME UAT17 », production showed the
+header naming the NEW registry name while the « Transporteur » field kept the old
+one. `transport_company` had survived exactly as designed; the header was reading
+`providerLabel`, a LIVE join on `transport_provider.name`.
+
+### Projection census (read-only, before any change)
+
+| Projection | Source | Verdict |
+| --- | --- | --- |
+| Transport panel HEADER | `providerLabel` (live join) | ❌ **the defect** |
+| Provider selector `<option>` | `providerLabel` | ✅ correct — it picks a CURRENT provider |
+| « Transporteur » field | `transportCompany` | ✅ snapshot |
+| **ORDRE DE TRANSPORT (printable)** | `transportCompany` | ✅ **snapshot — UAT-18 was never compromised** |
+| Copilot context/prompt | `transportCompany` | ✅ snapshot |
+| Portal projections | no carrier name at all | ✅ n/a |
+
+`providerLabel` has exactly THREE consumers, all in the transport panel: the header
+plus the selector`s two `<option>` lines. Nothing else reads the live name.
+
+### Fix
+
+`record.transportCompany ?? record.providerLabel` — snapshot first, live label as the
+fallback for rows bound before the snapshot existed. The selector is deliberately
+unchanged. `??` (not `||`) so an empty recorded value stays a recorded value.
+
+**Untouched:** snapshot semantics, assignment actions, `updateProvider`, selector
+behaviour, ORDRE DE TRANSPORT generation, Copilot projections, RBAC/RLS.
+
+13 tests. Mutations **M38–M42** caught: the header reverting to the live label,
+**precedence inverted** (the same defect wearing a fallback`s clothes), the legacy
+fallback dropped, the selector "helpfully" switched to the snapshot, and the snapshot
+no longer projected at all.

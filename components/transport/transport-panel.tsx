@@ -227,8 +227,19 @@ export function TransportPanel({
           {record.customsOverride && <span className="text-xs text-amber-700">{tr.overrideOn}</span>}
           {/* TMS-6 — the execution SOURCE, derived from which link is set. */}
           <span className={record.driverName ? "text-xs text-slate-500" : "ml-auto text-xs text-slate-500"}>
+            {/* UAT-17 — name the carrier this transport was CONFIDED TO, not the
+                one the registry happens to be called today. `transportCompany`
+                is the snapshot taken at assignment; `providerLabel` is a live
+                join and moves with a rename, which made an already-bound
+                transport appear to have been given to a carrier that did not
+                exist under that name at the time.
+
+                `providerLabel` is the FALLBACK only, for rows bound before the
+                snapshot existed. The provider SELECTOR below deliberately keeps
+                the live label: it chooses a current provider rather than
+                reporting a past one. */}
             {record.providerId
-              ? `Transport externe${record.providerLabel ? ` · ${record.providerLabel}` : ""}`
+              ? `Transport externe${record.transportCompany ?? record.providerLabel ? ` · ${record.transportCompany ?? record.providerLabel}` : ""}`
               : record.vehicleId
                 ? `Flotte Effitrans${record.vehicleLabel ? ` · ${record.vehicleLabel}` : ""}`
                 : ""}
