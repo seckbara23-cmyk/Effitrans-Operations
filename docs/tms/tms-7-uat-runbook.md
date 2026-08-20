@@ -538,3 +538,61 @@ deposit-generated documents are correctly recognised everywhere today.
    alias must stay permanently, and that must be stated rather than assumed.
 
 Not a defect today; a normalization debt with a real trap if changed carelessly.
+
+## UAT-15 Part 3 Step 1 — CORRECT ENFORCEMENT + missing UAT setup (2026-08-20)
+
+**Not a code defect.** The transition was refused by a ratified business gate.
+
+### The gate
+
+`changeCustomsStatus` (lib/customs/actions.ts:198-202):
+```
+// Gate: a declaration can be filed only when no prerequisite document is missing.
+if (toStatus === "DECLARED") {
+  const missing = await missingCustomsDocCodes(...);
+  if (!canDeclare(missing)) return { ok: false, error: "customs_docs_missing" };
+}
+```
+`canDeclare` requires **zero** missing prerequisites, and a document counts only when
+`isVerified(status)` — uploaded is not enough.
+
+### Required for THIS dossier (derived, live)
+
+Gating types (`document_type.gates_customs = true`, active): AIRWAY_BILL,
+BILL_OF_LADING, COMMERCIAL_INVOICE, CUSTOMS_DECLARATION, PACKING_LIST.
+Shipment `transport_mode = SEA` ⇒ `requiredCustomsDocCodes` drops AIRWAY_BILL.
+
+| Required | State |
+| --- | --- |
+| Facture commerciale | ✅ VERIFIED (UAT-15 part 2) |
+| Liste de colisage | ✅ VERIFIED (UAT-15 part 2) |
+| **Connaissement (BL)** | ❌ **absent** |
+| **Déclaration en douane** | ❌ **absent** |
+
+Exactly the two the UI reported. The refusal is correct.
+
+### Discrimination requested by the operator
+
+| Question | Answer |
+| --- | --- |
+| Transition/audit event written? | **NO.** Latest customs audit remains `customs.updated` 21:10:24Z (2026-08-19). No new row |
+| Business refusal the UI failed to surface? | Returned `customs_docs_missing`. The panel DOES map and render it (« Documents requis manquants pour déclarer. ») — but see the UX note below |
+| Required-document gating prevented it? | **YES — this is the cause** |
+| Customs authority prevented it? | **NO.** `customs:update` is held; the gate runs AFTER the permission check |
+| State machine accepted DECLARATION_PREPARED → DECLARED? | **ACCEPTED.** `canTransition` allows it; the refusal came from the document gate that runs after |
+| DB changed then reverted? | **NEVER CHANGED.** Status still DECLARATION_PREPARED, `updated_at` unchanged since 21:10:24Z. Clean pre-write refusal, no partial state |
+
+### ⚠ Minor UX observation (not the cause, not fixed)
+
+The panel renders its error paragraph at the BOTTOM of a long panel, while the
+workflow buttons sit near the top — with the GAINDE, attachment, validation and
+receivability sections in between. The refusal message is correct and was rendered,
+but it appears far from the control that triggered it and is easily off-screen.
+Recorded; no change made during UAT.
+
+### To proceed
+
+This is **UAT setup**, not a fix: a Connaissement (BL) and a Déclaration en douane
+must be uploaded AND verified on the dossier. Note the deliberate ordering — the
+declaration DOCUMENT must exist and be verified before the customs RECORD may be
+marked « Déclaré ». No prerequisite is to be weakened.
