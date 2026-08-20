@@ -511,3 +511,30 @@ vocabulary in NEW rows. Changing what status is written could affect the deposit
 workflow`s own state checks, so it is out of scope without its own GO.
 
 No other DB-level document-status filters exist.
+
+## TECHNICAL DEBT — canonical document-status normalization (opened 2026-08-20)
+
+**Item: `lib/deposit/actions.ts:845` writes the LEGACY spelling.**
+
+When a deposit proof is accepted it writes `status: "APPROVED"` to the document,
+minting legacy vocabulary in NEW rows. It is a WRITE, not a comparison.
+
+**Status: NO GO. Untouched during UAT-15, by operator decision (2026-08-20).**
+
+**Currently harmless:** `isVerified` accepts both spellings via `LEGACY_STATUS_ALIAS`,
+and the DEFECT-UAT15d analytics fix deliberately keeps counting `APPROVED`, so
+deposit-generated documents are correctly recognised everywhere today.
+
+**Preconditions for a future change — ALL required before touching it:**
+
+1. Trace EVERY reader of the deposit-generated document status — application
+   readers, RLS policies, SQL suites, analytics, portal projections and the deposit
+   workflow`s own state checks (`recordCustody`, the PROOF_ACCEPTED transition).
+2. Trace every TRANSITION that depends on that value, including anything asserting
+   the literal string rather than calling `canonicalStatus`/`isVerified`.
+3. PROVE the change from `APPROVED` to `VERIFIED` is behaviour-preserving for each
+   one — a code census is not a data census, so count existing rows too.
+4. Decide whether historic rows are migrated or left dual-spelled. If left, the
+   alias must stay permanently, and that must be stated rather than assumed.
+
+Not a defect today; a normalization debt with a real trap if changed carelessly.
