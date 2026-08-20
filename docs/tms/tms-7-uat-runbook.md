@@ -750,3 +750,67 @@ behaviour, ORDRE DE TRANSPORT generation, Copilot projections, RBAC/RLS.
 **precedence inverted** (the same defect wearing a fallback`s clothes), the legacy
 fallback dropped, the selector "helpfully" switched to the snapshot, and the snapshot
 no longer projected at all.
+
+## UAT-18 BLOCKED — ORDRE DE TRANSPORT readiness is branch-blind (2026-08-20)
+
+**Audit only. No code or production data changed.**
+
+### The mechanism
+
+`MANDATORY.TRANSPORT_ORDER` in `lib/documents/artifacts/source.ts` is a STATIC list:
+`fileNumber, clientName, pickupLocation, deliveryLocation, pickupPlanned,` **`driverName, vehiclePlate`**.
+`resolveArtifactSource` filters it against the input. It reads neither `providerId`
+nor `vehicleId` — **there is no branch awareness anywhere in the readiness path.**
+
+### Was this decided for subcontracted transport? NO — the question was never posed
+
+`source.ts` was authored **2026-07-27 (`a8e62eb`, WES-4G)** and **has never been
+modified since**. TMS-6 — `transport_provider`, `provider_id`, external execution —
+shipped in migration **119** on 2026-08-19, three weeks LATER. The list predates the
+existence of subcontracted transport entirely. Its comment (« An order without a
+driver and a vehicle is not an order ») was written when the internal fleet was the
+ONLY execution mode. **Branch-blindness here is an omission, not a ratified rule.**
+
+### Important nuance — no Effitrans ASSET is demanded
+
+`driverName` and `vehiclePlate` are **free-text fields** on the transport panel
+(`Field name="driverName"`, `Field name="vehiclePlate"`), written straight through
+`patch.ts` to `driver_name` / `vehicle_plate`. They are INDEPENDENT of the fleet
+`vehicle_id` FK, and `assignTransport` never derives one from the other. So the
+platform is not requiring an Effitrans vehicle — it is requiring **a driver name and
+a plate string**, which for Branch B would be the SUBCONTRACTOR`s.
+
+That narrows the defect but does not dissolve it: for subcontracted work those facts
+are typically supplied by the carrier LATER, so the order cannot be produced at the
+moment it is actually needed — to instruct the carrier.
+
+### The asymmetry that matters
+
+**`transportCompany` is NOT in the mandatory list.** For an external transport the
+carrier identity — the single most important execution-party fact, and the one
+UAT-17 just proved is snapshotted correctly — is OPTIONAL, while driver and plate
+are MANDATORY. For a subcontracted order that is backwards.
+
+### Verdict
+
+**Genuine Branch-B validation gap, narrower than it first appears.** Not
+"internal-fleet asset requirements applied to external transport", but "execution-party
+requirements written for one branch and never revisited when the second branch was
+built".
+
+### Recommendation — needs ratification (RQ-18), not a quiet code change
+
+Make MANDATORY resolution branch-aware:
+
+* **Internal fleet** (`vehicleId` set): `driverName` + `vehiclePlate` required — unchanged.
+* **External** (`providerId` set): **`transportCompany` required**; driver and plate
+  NOT required at generation time.
+
+The WES-4G doctrine must be preserved either way: « a PDF with a blank where the
+driver`s name belongs … is a document that says there is no driver, which is a
+different and false claim. » So the external template must not print an empty
+« Chauffeur » line — it should omit the field, or state that the carrier assigns it.
+
+**Q-18.1 for Effitrans:** must a subcontracted ORDRE DE TRANSPORT name a driver and a
+plate at issue, or is naming the agreed carrier sufficient, with driver and vehicle
+supplied by the carrier afterwards?
