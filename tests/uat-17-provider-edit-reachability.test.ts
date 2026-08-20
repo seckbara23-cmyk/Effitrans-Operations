@@ -96,6 +96,73 @@ describe("UAT-17 — the historical snapshot stays immutable", () => {
   });
 });
 
+/**
+ * The duplicate-provider incident. Both forms carried a field labelled exactly
+ * « Raison sociale », and the CREATE one was first on the page. An operator sent
+ * to rename an existing subcontractor typed into it and registered a duplicate.
+ *
+ * These pins keep the two blocks distinguishable — by ORDER, by LABEL and by
+ * BUTTON — because the failure mode is not a crash, it is a person reasonably
+ * confusing two things that look identical.
+ */
+describe("UAT-17 — create and edit cannot collapse into each other again", () => {
+  const iEdit = consoleCode.indexOf("Coordonnées du sous-traitant");
+  const iPicker = consoleCode.indexOf("Sous-traitant concerné");
+  const iCreate = consoleCode.indexOf("Ajouter un nouveau sous-traitant");
+
+  it("all three landmarks exist", () => {
+    expect(iPicker).toBeGreaterThan(-1);
+    expect(iEdit).toBeGreaterThan(-1);
+    expect(iCreate).toBeGreaterThan(-1);
+  });
+
+  it("the edit block follows the picker it belongs to", () => {
+    expect(iEdit).toBeGreaterThan(iPicker);
+  });
+
+  it("the CREATE form comes LAST — after the edit block", () => {
+    // The ordering is the primary fix: the first « Raison sociale » on the page
+    // must belong to the record the operator selected, not to a new one.
+    expect(iCreate).toBeGreaterThan(iEdit);
+  });
+
+  it("only ONE field is labelled bare « Raison sociale » — the create one", () => {
+    const bare = consoleCode.match(/>Raison sociale</g) ?? [];
+    expect(bare.length).toBe(1);
+    expect(consoleCode.indexOf(">Raison sociale<")).toBeGreaterThan(iEdit);
+  });
+
+  it("the edit field names the SELECTED provider explicitly", () => {
+    expect(consoleCode).toContain("Raison sociale du sous-traitant sélectionné");
+  });
+
+  it("the two submit buttons cannot be confused", () => {
+    expect(consoleCode).toContain("Enregistrer les modifications du sous-traitant");
+    expect(consoleCode).toContain("Ajouter au répertoire");
+    expect(consoleCode).not.toContain("Enregistrer les coordonnées");
+  });
+
+  it("the create block warns that it makes a NEW record", () => {
+    expect(consoleCode).toContain("Crée une NOUVELLE fiche au répertoire");
+  });
+
+  it("each form still calls its own action — the wiring did not swap", () => {
+    // Bounded on the FORMS, not the headings: in JSX the onSubmit handler comes
+    // before the heading it renders, so a heading-anchored slice misses it.
+    const iEditForm = consoleCode.indexOf("key={selected.id}");
+    const iLifecycle = consoleCode.indexOf("Agrément :");
+    expect(iEditForm).toBeGreaterThan(-1);
+    expect(iLifecycle).toBeGreaterThan(iEditForm);
+
+    const editBlock = consoleCode.slice(iEditForm, iLifecycle);
+    const createBlock = consoleCode.slice(iLifecycle);
+    expect(editBlock).toContain("updateProvider(target, {");
+    expect(editBlock).not.toContain("createProvider(");
+    expect(createBlock).toContain("createProvider({");
+    expect(createBlock).not.toContain("updateProvider(");
+  });
+});
+
 describe("UAT-17 — nothing else was touched", () => {
   it("authority is still transport:manage, asserted server-side", () => {
     expect(updateFn).toContain('assertPermission("transport:manage")');

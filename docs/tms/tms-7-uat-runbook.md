@@ -669,3 +669,47 @@ check, the audit row, the form key and the assignment-time snapshot.
 No production row was created or modified: `UAT Transporteur SARL` and
 `EFT-IMP-2026-00005` are untouched, and the rename is left for the operator to
 perform as the actual test.
+
+## UAT-17 blocker — the duplicate-provider incident (2026-08-20)
+
+**Cause: my own UI change plus my own ambiguous instruction.** Not a stale deploy.
+
+« Enregistrer les coordonnées » was present in the deployed production chunk
+(`.next/static/chunks/app/transport/sous-traitants/page-*.js`), the page renders
+`ProviderConsole` under `canManage`, `providers.length` was 1 and `selected` was
+truthy — so the edit form DID render. The problem was that the page then carried
+**two fields labelled exactly « Raison sociale »**, and the CREATE one came first.
+My test instruction said « change Raison sociale » without saying which form.
+
+### Presentation fix (no semantics touched)
+
+| Before | After |
+| --- | --- |
+| Create form FIRST, at the top | **Selector → « Coordonnées du sous-traitant — <nom> » → lifecycle → create form LAST**, behind a divider |
+| Edit label « Raison sociale » | **« Raison sociale du sous-traitant sélectionné »** |
+| Edit button « Enregistrer les coordonnées » | **« Enregistrer les modifications du sous-traitant »** (teal, distinct) |
+| Create heading « Ajouter un sous-traitant » | **« Ajouter un nouveau sous-traitant »** + « Crée une NOUVELLE fiche au répertoire… » |
+
+`createProvider`, `updateProvider`, `setProviderStatus`, `setProviderActive`, RBAC,
+RLS, audit and the transport snapshot are **unchanged**.
+
+### Regression coverage
+
+8 new pins hold the distinction: all three landmarks exist, the edit block follows
+its picker, **the create form comes last**, **exactly ONE field is labelled bare
+« Raison sociale » and it is the create one**, the submit labels differ, the create
+warning is present, and neither form is wired to the other`s action.
+
+Mutations **M34–M37** caught: reverting the edit label to the generic string,
+genericising the create heading, collapsing the two buttons to the same text, and
+deleting the NEW-record warning.
+
+### Duplicate row — no cleanup needed
+
+`acee8a2f-8faf-49b9-8acc-65c35da5c684` « UAT Transporteur SARL (renommé) ».
+Zero transport bindings; the ONLY FK to `transport_provider` anywhere in the schema
+is `transport_record_provider_id_fkey`; complete audit trail is two rows —
+`created` 13:50:39Z then `updated {is_active:false}` 13:51:48Z. **Already retired via
+the supported path** and therefore inert and unassignable. Retained as an audited UAT
+artifact by operator decision. The original `32a79f85…` is untouched: name intact,
+APPROVED, active, 1 transport bound, no `updated` row against it.
