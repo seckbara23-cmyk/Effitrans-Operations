@@ -1193,3 +1193,57 @@ build carried it. No redeploy was required and no variable was created or modifi
 | **Total** | **24** |
 
 **UAT-11b is the last open case in the ratified inventory.**
+
+## UAT-11b prerequisite — AUDIT (2026-08-20): provisioning gap, NOT an architecture defect
+
+### Findings
+
+| Question | Answer |
+| --- | --- |
+| Demo account`s effective permissions (via **`get_user_permissions`**, the app`s own resolver) | **EMPTY — zero permissions of any kind.** Not merely missing `file:read`: it holds nothing |
+| Roles held by the demo account | **NONE.** `user_role` has no row for it; the account is `active` but role-less |
+| What gates `/files/[id]` | `hasPermission(permissions, "file:read")` — otherwise « Vous n`avez pas l`autorisation de consulter les dossiers » |
+| Does the LIVE `ACCOUNT_MANAGER` role carry it? | **YES** — `file:read`, `file:read:all`, `file:assign`, `file:create`, `file:transition`, `file:update`. **Exactly matches the role template; no drift** |
+| Are real ACCOUNT_MANAGER users affected? | **NO.** `operations6@effitrans.sn` resolves `file:read = 1` |
+
+### Root cause
+
+The demo account was created and **designated Responsable client on the dossier**, but
+was **never granted the `ACCOUNT_MANAGER` role**. Setup step A did not complete.
+
+These are two different things and the platform is right to keep them apart:
+
+* **Designation** (`operational_file.assigned_to_user_id`) says WHICH dossier a person
+  is responsible for — it is per-dossier data;
+* **Role** (`user_role`) says WHAT that person may do at all — it is authority.
+
+A designation cannot confer authority, or assigning someone a dossier would silently
+grant them read access to the system. The « Dossier confié » notification fired
+because the designation succeeded; the refusal followed because the authority was
+never granted. **Both behaved correctly.**
+
+### Ratified-workflow check
+
+The workflow says the Operations Manager DESIGNATES the Responsable client, who then
+coordinates with Operations. That presumes the designee **already holds the
+ACCOUNT_MANAGER role** — designation selects among people who already have the
+authority. It is not a grant mechanism, and it should not become one.
+
+Access is therefore governed by the existing **`file:read`** role permission (plus
+visibility scoping for WHICH dossiers), not by assignment and not by a new permission.
+
+### Smallest architecture-consistent correction
+
+**Grant the EXISTING `ACCOUNT_MANAGER` role to the demo account.** No migration, no
+new permission, no role change, no ad-hoc grant, no code change. It completes the
+setup step that did not finish.
+
+### ⚠ Alternative that needs NO new account
+
+`operations6@effitrans.sn` (Aida Rose Sarr, ACCOUNT_MANAGER) already resolves the
+exact UAT-11b profile: **`file:read` = 1, `transport:request` = 1, `transport:create`
+= 0**. Using it would avoid creating anything — at the cost of involving a real
+employee`s account. Operator`s choice.
+
+(For contrast `aminata@effitrans.sn` resolves `transport:create` = 1 — she also holds
+COORDINATOR/OPS_SUPERVISOR — so she would NOT exercise the request lane.)
