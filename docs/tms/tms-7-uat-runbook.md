@@ -814,3 +814,22 @@ different and false claim. » So the external template must not print an empty
 **Q-18.1 for Effitrans:** must a subcontracted ORDRE DE TRANSPORT name a driver and a
 plate at issue, or is naming the agreed carrier sufficient, with driver and vehicle
 supplied by the carrier afterwards?
+
+## Status decisions (operator, 2026-08-20)
+
+| Case | Status |
+| --- | --- |
+| **UAT-17** | **CLOSED — PASS.** Header fix `5a06d70` verified in production: header and « Transporteur » show the historical carrier, selector and console show the renamed master |
+| **UAT-18** | **BLOCKED / RQ-18 — NOT FAILED.** No workaround with invented driver/plate data. **No change to `MANDATORY.TRANSPORT_ORDER`** until Effitrans answers. Audit preserved at `22b5df0` |
+
+### RQ-18 — for the Effitrans meeting, in operational language
+
+> « Lorsqu&apos;Effitrans confie un transport à un sous-traitant, l&apos;Ordre de
+> Transport peut-il être émis avec uniquement le transporteur désigné, avant de
+> connaître le nom du chauffeur et l&apos;immatriculation du véhicule ? Ou le
+> chauffeur et l&apos;immatriculation doivent-ils obligatoirement être connus avant
+> l&apos;émission de l&apos;ordre ? »
+
+Both answers are implementable; neither is assumed. Whichever is chosen, the WES-4G
+doctrine holds — the template must never print a blank « Chauffeur » line, because a
+blank asserts there is no driver.
