@@ -927,3 +927,98 @@ ou le mode d`EXÉCUTION de l`enlèvement commandé (routier) ? »
 
 Options once ratified: omit the field from the order; relabel it « Mode du dossier »;
 or record an execution mode on `transport_record`. None applied yet.
+
+---
+
+# TMS-7 AUTHORITATIVE LEDGER — recalculated 2026-08-20
+
+Supersedes the running notes above for STATUS. Evidence sections remain as recorded.
+
+## Completion against the original ratified roadmap
+
+**Category C (human production UAT): 21 of 24 executed, ALL PASS. 3 deferred.**
+
+| # | Case | Status |
+| --- | --- | --- |
+| 1 | UAT-01 sidebar order | ✅ PASS |
+| 2 | UAT-02 Transport owns its four responsibilities | ✅ PASS |
+| 3 | UAT-03 vehicle registry + stale-selection fix | ✅ PASS |
+| 4 | UAT-04 compliance dates | ✅ PASS |
+| 5 | UAT-05 immobilising intervention interlock | ✅ PASS |
+| 6 | UAT-06 close intervention → return to service | ✅ PASS |
+| 7 | UAT-06b hors service + reinstatement | ✅ PASS |
+| 8 | UAT-07 provider registry | ✅ PASS |
+| 9 | UAT-08 approval interlock | ✅ PASS |
+| 10 | UAT-09 « Sans devis » + « À affecter » | ✅ PASS |
+| 11 | UAT-10 designation is an immutable act | ✅ PASS |
+| 12 | UAT-11a request lane superseded | ✅ PASS |
+| — | **UAT-11b** request lane for a non-creator | ⏸ **DEFERRED** |
+| 13 | UAT-12 fleet assignment + derived « En mission » | ✅ PASS |
+| 14 | UAT-13 execution-source invariant (fleet XOR provider) | ✅ PASS (re-run) |
+| 15 | UAT-14 ineligible vehicle excluded from dispatch | ✅ PASS |
+| 16 | UAT-15 customs interlock — BOTH branches | ✅ PASS |
+| 17 | UAT-16 external branch assignment | ✅ PASS |
+| 18 | UAT-17 rename does not rewrite carrier history | ✅ PASS |
+| 19 | UAT-18 subcontracted ORDRE DE TRANSPORT | ✅ PASS (V2; V1 preserved) |
+| 20 | UAT-19 deletion REFUSED for a vehicle with history | ✅ PASS |
+| 21 | UAT-20 deletion PERMITTED for a pristine vehicle | ✅ PASS |
+| — | **UAT-21** read-only parc | ⏸ **DEFERRED** |
+| — | **UAT-22** road tracking honesty | ⏸ **DEFERRED** |
+
+UAT-19 + UAT-20 together prove **both sides** of the deletion invariant: history ⇒
+prohibited, pristine ⇒ permitted.
+
+## Category B — production database verification: 6 of 6 EVIDENCED (read-only, 2026-08-20)
+
+| Check | Result |
+| --- | --- |
+| B1 schema + interlocks live | `provider_table 1`, `exclusion_check 1`, `interlocks 2` ✅ |
+| B2 no transport claims two executors | **0 contradictions** ✅ |
+| B3 « En mission » is DERIVED, never stored | `UAT-TMS7-01` status **AVAILABLE** with `engaged_now = 1` ✅ |
+| B4 carrier history survives a rename | printed `UAT Transporteur SARL` ≠ registry `UAT Transporteur SARL — RENOMME UAT17` ✅ |
+| B5 audit trail of the UAT session | queried throughout; provider/vehicle/transport/customs/document actions all present ✅ |
+| B6 tenant isolation (structural) | **0 cross-tenant leaks** ✅ |
+
+**B4 is the strongest single piece of evidence in this phase**: the UAT-17 snapshot
+invariant proven in the DATA, not merely in the UI.
+
+## What remains — four DISTINCT categories
+
+### 1. Release / UAT blockers
+
+**NONE.** No code defect, no failed case, nothing awaiting a fix.
+
+### 2. Unexecuted ratified scope (executable NOW, no decision needed)
+
+| Item | Why it is open |
+| --- | --- |
+| **UAT-15 delivery + POD evidence** | UAT-15`s ratified scope was « customs interlock at PICKED_UP, **then delivery + POD evidence** ». The customs half PASSED on both branches; the delivery half was deliberately held by operator instruction (« Do not advance to En transit or Livré yet »). `EFT-IMP-2026-00004` sits at **PICKED_UP**. Requires no code and no product decision |
+
+### 3. Deferred tests (blocked on ENVIRONMENT, not on code)
+
+| Case | Blocked on |
+| --- | --- |
+| **UAT-11b** | An ACCOUNT_MANAGER account holding `transport:request` but NOT `transport:create` |
+| **UAT-21** | An account holding `transport:read` but NOT `transport:manage` |
+| **UAT-22** | `TRACKING_ENABLED=true` in the production environment |
+
+All three are provisioning tasks. None requires code.
+
+### 4. Open product decisions
+
+| Ref | Question | State |
+| --- | --- | --- |
+| **RQ-18b** | Should the order`s mode describe the DOSSIER`s international mode or the EXECUTION mode of the road movement? | **OPEN — `transportMode` deliberately UNCHANGED** |
+| **Issue date on the artifact** | A printed generation date would break byte-determinism; `generated_at` lives on the row. Not a defect — a trade-off nobody has been asked to make | **OPEN, un-costed** |
+
+### 5. Technical debt (not blocking, recorded)
+
+| Item | Note |
+| --- | --- |
+| `lib/deposit/actions.ts:845` writes legacy `APPROVED` | Harmless today (`isVerified` accepts both, analytics counts both). Preconditions for change recorded. **NO GO** |
+| Customs panel error placement | A correct refusal renders at the bottom of a long panel, far from the control that triggered it. Cost three UAT attempts to diagnose once |
+
+## Next executable item
+
+The **UAT-15 delivery + POD half** is the only remaining item that needs neither a
+product decision nor code. Everything else is provisioning or ratification.
