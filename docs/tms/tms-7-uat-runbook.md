@@ -833,3 +833,40 @@ supplied by the carrier afterwards?
 Both answers are implementable; neither is assumed. Whichever is chosen, the WES-4G
 doctrine holds — the template must never print a blank « Chauffeur » line, because a
 blank asserts there is no driver.
+
+## RQ-18 IMPLEMENTED — branch-aware ORDRE DE TRANSPORT readiness (2026-08-20)
+
+**Ratified:** a subcontracted order may be issued naming only the agreed carrier;
+driver and immatriculation are recorded later when the carrier supplies them.
+Internal-fleet requirements unchanged.
+
+| Branch | Signal | Mandatory execution party |
+| --- | --- | --- |
+| **Internal fleet** | `providerId` null | `driverName` + `vehiclePlate` — **unchanged** |
+| **External / sous-traitant** | `providerId` set | **`transportCompany`** (the assignment snapshot); driver + plate **optional** |
+
+`mandatoryFieldsFor(artifactCode, input)` decides from `providerId` — the SAME column
+the `transport_execution_source_exclusive` CHECK uses, so readiness can never
+disagree with the database about which branch a transport is on.
+
+**Blank lines were already impossible, and are now pinned.** `resolveArtifactSource`
+only puts non-null values into the snapshot, and `render.ts` filters to fields the
+snapshot actually has. An absent driver is OMITTED, never printed empty — WES-4G:
+a blank « Chauffeur » asserts there is no driver, which is a different and false claim.
+
+**`providerId` is provenance, not content** — excluded from the snapshot exactly like
+`driverUserId`, so no UUID can reach a document body.
+
+**UAT-17 invariant untouched:** the order names `transportCompany`, the
+assignment-time snapshot, so a later registry rename cannot rewrite what a past order
+said. The artifact pipeline still never reads the live provider name — pinned.
+
+17 tests across both branches. Mutations **M43–M49** caught, notably:
+
+* **M43** — the external rule applied to ALL branches (the loosening LEAKING, so an
+  internal order could be issued naming nobody who will drive it);
+* **M46** — the internal driver requirement quietly dropped;
+* **M45** — the carrier no longer mandatory, letting a subcontracted order name no
+  execution party at all;
+* **M47** — `providerId` leaking into the document body as a raw UUID;
+* **M49** — the renderer printing blank lines instead of omitting them.

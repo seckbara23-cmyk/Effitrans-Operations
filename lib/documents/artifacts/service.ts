@@ -61,7 +61,7 @@ export async function readArtifactSource(
       .eq("file_id", fileId).eq("tenant_id", tenantId)
       .maybeSingle<Record<string, string | null>>(),
     supabase.from("transport_record")
-      .select("pickup_location, delivery_location, pickup_planned, delivery_planned, driver_name, driver_user_id, vehicle_plate, trailer_or_container, transport_company, created_by, created_at")
+      .select("pickup_location, delivery_location, pickup_planned, delivery_planned, driver_name, driver_user_id, vehicle_plate, provider_id, trailer_or_container, transport_company, created_by, created_at")
       .eq("file_id", fileId).eq("tenant_id", tenantId)
       .maybeSingle<Record<string, string | null>>(),
   ]);
@@ -95,6 +95,9 @@ export async function readArtifactSource(
     driverName: t.driver_name ?? null,
     driverUserId: t.driver_user_id ?? null,
     vehiclePlate: t.vehicle_plate ?? null,
+    // RQ-18 — the branch signal. Never rendered; it only selects which
+    // readiness rule applies.
+    providerId: t.provider_id ?? null,
     trailerOrContainer: t.trailer_or_container ?? null,
     transportCompany: t.transport_company ?? null,
     requestedBy,

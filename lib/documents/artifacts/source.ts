@@ -32,6 +32,12 @@ export type ArtifactSourceInput = {
   /** Set when an AUTHENTICATED driver user is linked, not free text. */
   driverUserId: string | null;
   vehiclePlate: string | null;
+  /**
+   * RQ-18 — which BRANCH executes this transport. Set when a subcontractor is
+   * bound. Provenance, never content: it is excluded from the snapshot exactly
+   * like `driverUserId`, because a document body must not carry a UUID.
+   */
+  providerId: string | null;
   trailerOrContainer: string | null;
   transportCompany: string | null;
   requestedBy: string | null;
@@ -47,7 +53,8 @@ const MANDATORY: Readonly<Record<string, readonly (keyof ArtifactSourceInput)[]>
     "deliveryLocation",
     "pickupPlanned",
   ],
-  // An order without a driver and a vehicle is not an order.
+  // INTERNAL FLEET. An order Effitrans executes itself without a driver and a
+  // vehicle is not an order: both are ours to know at the moment we issue it.
   TRANSPORT_ORDER: [
     "fileNumber",
     "clientName",
@@ -58,6 +65,45 @@ const MANDATORY: Readonly<Record<string, readonly (keyof ArtifactSourceInput)[]>
     "vehiclePlate",
   ],
 };
+
+/**
+ * EXTERNAL / subcontracted transport (RQ-18, ratified 2026-08-20).
+ *
+ * This list was written under WES-4G on 2026-07-27, three weeks before TMS-6
+ * gave transports a second execution branch, so it required driver and plate of
+ * everyone — including carriers who had not yet named either. Effitrans ratified
+ * the operational answer: an order confided to a subcontractor may be ISSUED
+ * naming the agreed carrier, with the driver and the immatriculation recorded
+ * later when the carrier supplies them.
+ *
+ * So the execution party is still mandatory — it just IS the carrier here.
+ * `transportCompany` is the assignment-time snapshot (UAT-17), not the live
+ * registry name, so the order keeps naming the carrier it was actually given to.
+ *
+ * The internal-fleet rule above is deliberately untouched.
+ */
+const TRANSPORT_ORDER_EXTERNAL: readonly (keyof ArtifactSourceInput)[] = [
+  "fileNumber",
+  "clientName",
+  "pickupLocation",
+  "deliveryLocation",
+  "pickupPlanned",
+  "transportCompany",
+];
+
+/**
+ * The mandatory set for this artifact AND this transport's execution branch.
+ * Branch is decided by `providerId` — the same signal the execution-source
+ * exclusivity CHECK uses, so readiness can never disagree with the database
+ * about which branch a transport is on.
+ */
+export function mandatoryFieldsFor(
+  artifactCode: string,
+  input: Pick<ArtifactSourceInput, "providerId">,
+): readonly (keyof ArtifactSourceInput)[] | undefined {
+  if (artifactCode === "TRANSPORT_ORDER" && input.providerId) return TRANSPORT_ORDER_EXTERNAL;
+  return MANDATORY[artifactCode];
+}
 
 /** Human labels for the missing-field report the UI shows. */
 export const SOURCE_FIELD_LABELS_FR: Readonly<Record<string, string>> = {
@@ -112,7 +158,7 @@ export function resolveArtifactSource(
   artifactCode: string,
   input: ArtifactSourceInput,
 ): SourceResolution {
-  const mandatory = MANDATORY[artifactCode];
+  const mandatory = mandatoryFieldsFor(artifactCode, input);
   if (!mandatory) return { ok: false, missing: [{ field: "artifact", labelFr: "Type non générable" }] };
 
   const missing = mandatory
@@ -123,8 +169,10 @@ export function resolveArtifactSource(
   const snapshot: Record<string, string> = {};
   for (const [key, value] of Object.entries(input)) {
     // driverUserId is provenance, not content: it identifies a person and does
-    // not belong in a document body or its reproducible snapshot.
-    if (key === "driverUserId") continue;
+    // not belong in a document body or its reproducible snapshot. providerId is
+    // the same kind of fact — it selects the BRANCH; the carrier is named by
+    // transportCompany, which is the snapshot the document should carry.
+    if (key === "driverUserId" || key === "providerId") continue;
     const v = clean(value as string | null);
     if (v !== null) snapshot[key] = v;
   }

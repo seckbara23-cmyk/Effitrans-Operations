@@ -50,6 +50,7 @@ const FULL: ArtifactSourceInput = {
   driverName: "Moussa Diop",
   driverUserId: "driver-uuid",
   vehiclePlate: "DK-1234-AB",
+  providerId: null,
   trailerOrContainer: "REM-88",
   transportCompany: "Transports Diallo",
   requestedBy: "A. Ndiaye",

@@ -27,7 +27,7 @@ const FULL: ArtifactSourceInput = {
   cargoType: "Riz", containerRef: "MSKU1234567",
   pickupLocation: "Port de Dakar", deliveryLocation: "Bamako",
   pickupPlanned: "2026-08-01", deliveryPlanned: "2026-08-04",
-  driverName: "Moussa Diop", driverUserId: "d-1", vehiclePlate: "DK-1234-AB",
+  driverName: "Moussa Diop", driverUserId: "d-1", vehiclePlate: "DK-1234-AB", providerId: null,
   trailerOrContainer: "REM-88", transportCompany: "Diallo",
   requestedBy: "A. Ndiaye", requestedAt: "2026-07-27",
 };
