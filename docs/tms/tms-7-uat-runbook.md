@@ -596,3 +596,41 @@ This is **UAT setup**, not a fix: a Connaissement (BL) and a Déclaration en dou
 must be uploaded AND verified on the dossier. Note the deliberate ordering — the
 declaration DOCUMENT must exist and be verified before the customs RECORD may be
 marked « Déclaré ». No prerequisite is to be weakened.
+
+## UAT-15 — CLOSED, PASS (operator, 2026-08-20)
+
+**Both sides of the TMS-4 customs interlock proven in production.**
+
+| Branch | Evidence |
+| --- | --- |
+| **Negative (pre-BAE)** | Pickup REFUSED with « Enlèvement bloqué : dédouanement non libéré (BAE). » |
+| **Positive (post-BAE)** | Customs `RELEASED`, BAE `UAT-BAE-001` ⇒ `UAT-TMS7-01` moved **Chauffeur affecté → Enlevé** |
+
+Verified read-only: `customs_record.status = RELEASED`, `bae_reference = UAT-BAE-001`,
+`transport_record.status = PICKED_UP`, vehicle `UAT-TMS7-01`. The **Dérogation douane**
+checkbox remained UNCHECKED throughout — the gate was satisfied legitimately, never
+overridden. Held at Enlevé by operator instruction; En transit / Livré not advanced.
+
+Closes the whole chain: the pre-BAE gate (TMS-4), the governed document verification
+that unblocked it (DEFECT-UAT15 → 15b → 15c), the customs progression through the
+ratified state machine, and the positive pickup branch.
+
+## ⚠ SEQUENCING BLOCKER for UAT-16/17/18 (branch B)
+
+`transport_record` carries **`UNIQUE (file_id)`** — exactly ONE transport per dossier,
+enforced by the database. EFT-IMP-2026-00004`s single transport is now PICKED_UP and
+is UAT-15`s evidence.
+
+Therefore the external/provider branch **cannot** be exercised on 00004 without
+destroying that transport, which is forbidden and would erase UAT-15 evidence.
+Dossiers 00001 (DELIVERED), 00002 (DRAFT) and 00003 (CLOSED) are genuine records and
+are never modified.
+
+**UAT-16, UAT-17 and UAT-18 all require a NEW clearly-identifiable UAT dossier** with
+its own transport assigned to `UAT Transporteur SARL` (APPROVED, active, preserved).
+One new dossier serves all three. Operator authorization required before creating it.
+
+**UAT-19 needs no new data**: it asserts that a vehicle WITH history is REFUSED
+permanent deletion. `UAT-TMS7-01` now carries compliance records, a closed
+intervention and a live PICKED_UP transport, so the refusal is expected on the
+`vehicle_in_use` branch — non-destructive by construction.
