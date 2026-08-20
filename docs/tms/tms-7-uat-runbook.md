@@ -1160,3 +1160,36 @@ So UAT-11b cannot be run against existing objects. Minimum safe setup, requiring
 operator authorization: **one UAT demo account granted the EXISTING ACCOUNT_MANAGER
 role** (no new role, no permission change), and **one new clearly-marked UAT dossier** 
 left without a transport.
+
+## UAT-22 — CLOSED PASS (operator, 2026-08-20)
+
+**Subject:** `EFT-IMP-2026-00005`. Only `TRACKING_ENABLED` involved; driver-mobile,
+portal-live, realtime and geofence remain dark per DEC-B28.
+
+| Assertion | Evidence |
+| --- | --- |
+| Tracking surface live | « Suivi opérationnel » rendered; manual event « Départ effectué » recorded |
+| **Provenance is honest** | Entry displays **« MISE À JOUR MANUELLE PAR EFFITRANS »** |
+| Staff/customer projection separated | Visibility shown as **« Visible par le client »** |
+| **Never presented as telemetry** | No live / GPS / realtime representation of any kind |
+| **Tracking is EVIDENCE, not control (DEC-A02)** | Transport status **NON DÉMARRÉ before → NON DÉMARRÉ after**. The event changed nothing |
+
+The last row is the one that matters most: a tracking update is operational proof and
+must never move the lifecycle. It did not.
+
+**Deployment note:** production was serving `2f63cfa` (built 2026-08-20 22:42:29Z),
+i.e. AFTER `TRACKING_ENABLED` was configured in Vercel (Production + Preview), so the
+build carried it. No redeploy was required and no variable was created or modified.
+
+## Ledger after UAT-22
+
+| Outcome | Count |
+| --- | --- |
+| **PASS** | **23** |
+| FAIL | 0 |
+| BLOCKED | 0 |
+| DEFERRED | **1** (UAT-11b) |
+| NOT RUN | 0 |
+| **Total** | **24** |
+
+**UAT-11b is the last open case in the ratified inventory.**
