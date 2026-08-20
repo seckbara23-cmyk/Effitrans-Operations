@@ -14,6 +14,7 @@ import {
   createProvider,
   setProviderActive,
   setProviderStatus,
+  updateProvider,
   type ProviderResult,
 } from "@/lib/subcontractors/actions";
 import type { TransportProvider } from "@/lib/subcontractors/service";
@@ -100,6 +101,72 @@ export function ProviderConsole({ providers }: { providers: TransportProvider[] 
                 : `${selected.transportCount} transport${selected.transportCount > 1 ? "s" : ""} confié${selected.transportCount > 1 ? "s" : ""}.`}
               {selected.engagedFileNumbers.length > 0 && ` En cours : ${selected.engagedFileNumbers.join(", ")}.`}
             </p>
+          )}
+
+          {/* UAT-17 — the master record's OWN details. `updateProvider` existed,
+              fully gated and audited, but nothing called it: a contact or a
+              misspelled raison sociale could not be corrected at all, so the
+              only remedy was retiring the row and creating a duplicate, which
+              fragments the very history TMS-6 exists to keep.
+
+              It edits the MASTER only. `transport_company` on transports already
+              assigned is a snapshot taken at binding time and is deliberately
+              NOT touched here — the printed ORDRE DE TRANSPORT must keep naming
+              the carrier as it was called then. `key` resets the inputs when the
+              selection changes, so one provider's details can never be saved
+              onto another. */}
+          {selected && (
+            <form
+              key={selected.id}
+              onSubmit={(e) => {
+                e.preventDefault();
+                const d = new FormData(e.currentTarget);
+                run(() => updateProvider(target, {
+                  name: String(d.get("u_name") ?? ""),
+                  ninea: String(d.get("u_ninea") ?? "") || null,
+                  contactName: String(d.get("u_contactName") ?? "") || null,
+                  phone: String(d.get("u_phone") ?? "") || null,
+                  email: String(d.get("u_email") ?? "") || null,
+                  address: String(d.get("u_address") ?? "") || null,
+                  notes: String(d.get("u_notes") ?? "") || null,
+                }));
+              }}
+              className="grid grid-cols-1 gap-2 sm:grid-cols-3"
+            >
+              <p className="sm:col-span-3 text-xs font-medium text-slate-500">
+                Coordonnées du sous-traitant
+              </p>
+              <label className={lab}>Raison sociale
+                <input name="u_name" required defaultValue={selected.name} className={inp} />
+              </label>
+              <label className={lab}>NINEA
+                <input name="u_ninea" defaultValue={selected.ninea ?? ""} className={inp} />
+              </label>
+              <label className={lab}>Contact
+                <input name="u_contactName" defaultValue={selected.contactName ?? ""} className={inp} />
+              </label>
+              <label className={lab}>Téléphone
+                <input name="u_phone" defaultValue={selected.phone ?? ""} className={inp} />
+              </label>
+              <label className={lab}>E-mail
+                <input name="u_email" type="email" defaultValue={selected.email ?? ""} className={inp} />
+              </label>
+              <label className={lab}>Adresse
+                <input name="u_address" defaultValue={selected.address ?? ""} className={inp} />
+              </label>
+              <label className={`${lab} sm:col-span-3`}>Notes
+                <input name="u_notes" defaultValue={selected.notes ?? ""} className={inp} />
+              </label>
+              <div className="sm:col-span-3">
+                <button disabled={pending} className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-medium text-navy-700 hover:bg-slate-50 disabled:opacity-50">
+                  Enregistrer les coordonnées
+                </button>
+                <span className="ml-2 text-xs text-slate-400">
+                  Modifie la fiche du répertoire. Les transports déjà confiés gardent le
+                  transporteur inscrit au moment de l&apos;affectation.
+                </span>
+              </div>
+            </form>
           )}
 
           <div className="flex flex-wrap items-center gap-2">

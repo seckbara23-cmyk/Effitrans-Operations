@@ -634,3 +634,38 @@ One new dossier serves all three. Operator authorization required before creatin
 permanent deletion. `UAT-TMS7-01` now carries compliance records, a closed
 intervention and a live PICKED_UP transport, so the refusal is expected on the
 `vehicle_in_use` branch — non-destructive by construction.
+
+## UAT-17 enabler — subcontractor editing exposed (2026-08-20)
+
+**Reachability fix, not a redesign.** `updateProvider` was complete,
+`transport:manage`-gated, duplicate-name-validated and audited — and a repo-wide
+search found it **defined once and referenced nowhere**. Third instance of this class
+after TMS-5A (Parc & Flotte) and DEFECT-UAT15c (the intake surface).
+
+**Functional gap it closes.** With only Agréer / Suspendre / Retirer, an operator
+could not correct a phone number, a contact, a NINEA or a misspelled raison sociale.
+The only remedy was retiring the row and creating a duplicate — which fragments the
+carrier history TMS-6 exists to preserve.
+
+**What was added:** one « Coordonnées du sous-traitant » form in the console, calling
+the EXISTING action, offering exactly the seven fields `updateProvider` supports
+(name, NINEA, contact, phone, e-mail, address, notes). No competing mutation.
+`key={selected.id}` re-keys the form per provider, so one provider`s details can never
+be saved onto another after switching the selector.
+
+**The invariant UAT-17 tests, protected explicitly:** editing writes to
+`transport_provider` ONLY. `transport_record.transport_company` is the snapshot taken
+at assignment (`assignTransport`), and a rename must never rewrite it — a past ORDRE
+DE TRANSPORT has to keep naming the carrier as it was called then.
+
+**Not touched:** `setProviderStatus`, `setProviderActive`, provider assignment,
+transport state transitions, RBAC, RLS, historical rows.
+
+14 tests. Mutations **M27–M33** all caught — including **M27, a cascade that updates
+`transport_company` on every transport of the renamed provider**, which is exactly the
+defect UAT-17 exists to detect, plus removing the permission gate, the duplicate-name
+check, the audit row, the form key and the assignment-time snapshot.
+
+No production row was created or modified: `UAT Transporteur SARL` and
+`EFT-IMP-2026-00005` are untouched, and the rename is left for the operator to
+perform as the actual test.
