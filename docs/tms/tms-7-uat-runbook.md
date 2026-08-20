@@ -392,3 +392,50 @@ Effitrans; no change made.
 Administrator, set by the earlier `file.assigned`. That field is the FILE`s
 responsable and is independent of the process instance`s `owner_user_id`. The intake
 panel reads the latter, which is why the picker starts empty.
+
+## UAT-15 part 2 — the controls retired because the work was DONE (2026-08-19)
+
+**Not a defect, and not role separation: the verification SUCCEEDED.**
+
+| Evidence | Value |
+| --- | --- |
+| `document.status` — Facture commerciale | **VERIFIED** (23:56:15Z) |
+| `document.status` — Liste de colisage | **VERIFIED** (23:55:57Z) |
+| `document_review` rows | **2** — was **0 platform-wide** since WES-4H shipped 2026-07-27 |
+| Review actor | `seckbara23@gmail.com` |
+| `maker_checker_required` | `false` (correct: conditional for these types; only BAE is always maker-checked) |
+| `policy_version_id` | `null` (correct: LEGACY_DEFAULT records null honestly rather than fabricating a version id) |
+
+**Why the buttons disappeared.** `document-row.tsx`: `reviewable = canApprove &&
+canReview(doc.status)`, and `canReview` returns true ONLY for `UPLOADED` or
+`PENDING_REVIEW`. Once a document reaches VERIFIED there is nothing left to review,
+so « Vérifier » and « Rejeter » retire. Before initialization the documents were
+UPLOADED, so the controls showed and produced the governed refusal; after a
+successful verification they are gone because the state moved on.
+
+**UI vs server authority: they AGREE.** The UI predicate is `document:approve` +
+a reviewable status; the server path is `document:approve` (assertPermission in
+`runReview`) + `mayVerifyDocument` + a reviewable status enforced by the RPC. The UI
+is the strictly weaker of the two, which is the correct direction — it can never
+offer an action the server would refuse.
+
+**These are the first two governed document verifications in the platform`s
+production history.** The DEFECT-UAT15 → 15b → 15c chain is closed end to end:
+discriminated refusals (`c7fee6d`), a bound verifier seat (`1498e9f`), and a
+reachable intake surface (`9355966`).
+
+### ⚠ Separate latent defect found in the same component — NOT fixed, awaiting GO
+
+DEFECT-UAT15d (minor, non-blocking). In `components/documents/document-row.tsx` the
+share and notify controls are gated on `doc.status === "APPROVED"` — a RAW comparison
+against the LEGACY alias — while the platform now writes `VERIFIED`. Two lines above,
+the shared/not-shared indicator correctly uses `isVerified(doc.status)`, which
+normalizes via `LEGACY_STATUS_ALIAS`. So the row is internally inconsistent:
+
+* « Partager avec le client » never renders for a properly VERIFIED document;
+* the client-notification trigger never renders either.
+
+This is why only Télécharger and Supprimer remained visible. It does not block
+UAT-15, but it will block the customer-portal half of later cases. Recommended fix:
+use `isVerified(doc.status)` in both places, matching the indicator. Not implemented —
+out of scope for the blocked test.
