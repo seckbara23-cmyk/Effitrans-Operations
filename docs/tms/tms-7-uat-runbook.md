@@ -1110,3 +1110,53 @@ is an authenticated SESSION as such a user, and for UAT-22 an environment variab
 | **Customs panel error placement** | Technical debt | A correct refusal renders far from the control that triggered it |
 
 None of these blocks a UAT case or a release.
+
+## UAT-21 — CLOSED PASS (operator + verification, 2026-08-20)
+
+**Account:** `documentation.demo@effitrans.sn` (Chargé de documentation).
+
+| Evidence | Result |
+| --- | --- |
+| Effective authority via **`get_user_permissions`** — the SAME function `getEffectivePermissions` calls | **`transport:read` and nothing else.** No `manage`, `create`, `assign`, `update`, `complete`, `request` |
+| `/transport/parc` renders | Read-only fleet: `UAT-TMS7-01`, `UAT-TMS7-99` with status, compliance and intervention history |
+| Message shown | « Consultation seule : la modification du parc … relève du Responsable Transport. » |
+| Management surface | **No « Ajouter au parc » form, no console, and NO greyed-out controls** — hidden, not disabled |
+| Server-side denial | **Cited, not exercised.** `tests/tms-5-fleet.test.ts` pins **exactly 8** `assertPermission("transport:manage")` gates in `lib/fleet/actions.ts` and asserts the file contains **no** `assertPermission("transport:read")` — so no mutation can ride the read authority. The count being pinned means a ninth ungated mutation breaks the build |
+
+Authority does not depend on UI hiding: the UI is the weaker layer, as intended.
+No production mutation was performed to prove the refusal.
+
+**Neutral observation, not a defect claim:** `/transport` showed « Aucun transport »
+although five transport records exist. Most likely correct department-scoped
+visibility (this account owns none of those dossiers). Outside UAT-21`s criterion and
+not verified.
+
+## Ledger after UAT-21
+
+| Outcome | Count |
+| --- | --- |
+| **PASS** | **22** |
+| FAIL | 0 |
+| BLOCKED | 0 |
+| DEFERRED | **2** (UAT-11b, UAT-22) |
+| NOT RUN | 0 |
+| **Total** | **24** |
+
+## UAT-11b — prerequisites, verified read-only 2026-08-20
+
+The case proves the REQUEST lane: a user who may raise a transport need but may not
+create the execution record sees « Demander le transport » instead of the create
+button. The panel renders it under `{!canCreate && canRequest && …}`, so BOTH
+conditions must hold.
+
+**Two prerequisites, neither of which exists today:**
+
+| # | Requirement | Current state |
+| --- | --- | --- |
+| 1 | An account holding `transport:request` but NOT `transport:create` | **ACCOUNT_MANAGER is the ONLY qualifying role.** It exists and has many holders — but every holder is a REAL Effitrans employee. No demo account holds it |
+| 2 | A dossier with **NO** `transport_record` | **None exists.** All five dossiers (00001–00005) already carry exactly one transport, and `transport_record` has `UNIQUE (file_id)` |
+
+So UAT-11b cannot be run against existing objects. Minimum safe setup, requiring
+operator authorization: **one UAT demo account granted the EXISTING ACCOUNT_MANAGER
+role** (no new role, no permission change), and **one new clearly-marked UAT dossier** 
+left without a transport.
