@@ -13,6 +13,7 @@ import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { scopedFrom } from "@/lib/db/tenant-scope";
 import { assertPermission } from "@/lib/auth/require-permission";
 import { balanceDue, invoiceTotals, paidAmount } from "@/lib/finance/calc";
+import { VERIFIED_STORED_STATUSES } from "@/lib/documents/doctrine";
 import {
   blockedOperations,
   computeCustoms,
@@ -54,7 +55,11 @@ export const getAnalytics = cache(async (includeFinance: boolean): Promise<Analy
       scopedFrom(supabase, "client_user", tenant).select("status, client_id").returns<{ status: string; client_id: string }[]>(),
       scopedFrom(supabase, "invoice", tenant).select("id, status, issue_date, due_date, client_id").returns<{ id: string; status: string; issue_date: string | null; due_date: string | null; client_id: string | null }[]>(),
       scopedFrom(supabase, "file_state_transition", tenant).select("file_id, occurred_at, to_status").eq("to_status", "CLOSED").returns<{ file_id: string; occurred_at: string; to_status: string }[]>(),
-      scopedFrom(supabase, "document", tenant).select("id", { count: "exact", head: true }).eq("shared_with_client", true).eq("status", "APPROVED").is("deleted_at", null),
+      // DEFECT-UAT15d — was .eq("status", "APPROVED"), the legacy spelling only,
+      // so every canonically VERIFIED shared document was missing from this
+      // count. The list is DERIVED from the doctrine alias map, not written out
+      // here, because a hand-kept copy is what drifted in the first place.
+      scopedFrom(supabase, "document", tenant).select("id", { count: "exact", head: true }).eq("shared_with_client", true).in("status", [...VERIFIED_STORED_STATUSES]).is("deleted_at", null),
       scopedFrom(supabase, "audit_log", tenant).select("id", { count: "exact", head: true }).eq("action", "portal.document.downloaded"),
       scopedFrom(supabase, "audit_log", tenant).select("id", { count: "exact", head: true }).eq("action", "portal.invoice.viewed"),
     ]);

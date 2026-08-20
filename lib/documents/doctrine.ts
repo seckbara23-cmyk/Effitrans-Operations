@@ -132,9 +132,31 @@ export function canonicalStatus(status: string): DocumentStatus {
   return LEGACY_STATUS_ALIAS[status] ?? (status as DocumentStatus);
 }
 
+/**
+ * The CANONICAL statuses that count as verified. `isVerified` is derived from
+ * this rather than repeating the list, so the two can never disagree.
+ */
+export const VERIFIED_CANONICAL_STATUSES = ["VERIFIED", "CONSUMED_AS_EVIDENCE"] as const;
+
+/**
+ * Every STORED spelling `isVerified` accepts — the canonical ones above plus any
+ * legacy alias that maps onto them (today: APPROVED → VERIFIED).
+ *
+ * For database-level filters, which cannot call `isVerified` because the
+ * normalization lives in TypeScript. DERIVED from the alias map on purpose: a
+ * `.in("status", [...])` written by hand is exactly how the analytics count
+ * drifted out of step and silently under-reported (DEFECT-UAT15d).
+ */
+export const VERIFIED_STORED_STATUSES: readonly string[] = [
+  ...VERIFIED_CANONICAL_STATUSES,
+  ...Object.entries(LEGACY_STATUS_ALIAS)
+    .filter(([, canonical]) => (VERIFIED_CANONICAL_STATUSES as readonly string[]).includes(canonical))
+    .map(([stored]) => stored),
+];
+
 export function isVerified(status: string): boolean {
   const s = canonicalStatus(status);
-  return s === "VERIFIED" || s === "CONSUMED_AS_EVIDENCE";
+  return (VERIFIED_CANONICAL_STATUSES as readonly string[]).includes(s);
 }
 
 /**

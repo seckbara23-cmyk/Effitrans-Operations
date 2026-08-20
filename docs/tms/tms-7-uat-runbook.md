@@ -477,3 +477,37 @@ removing the client-safe and superseded checks.
 All other `"APPROVED"` hits belong to different domains (expense visas, quotations,
 finance requests, subcontractor approval, brand lifecycle, docintel field decisions)
 and are correctly unrelated to document status.
+
+## DEFECT-UAT15d (analytics half) — the shared-document undercount (2026-08-20)
+
+`lib/analytics/service.ts` filtered `.eq("status", "APPROVED")` at the DATABASE, so
+every canonically VERIFIED shared document was missing from the metric.
+
+**Fix.** The filter is now `.in("status", [...VERIFIED_STORED_STATUSES])`. A DB filter
+cannot call `isVerified` — the normalization lives in TypeScript — so the stored
+spellings are **DERIVED from the doctrine alias map**, not hand-listed:
+
+* `VERIFIED_CANONICAL_STATUSES` = the canonical set; **`isVerified` is now derived
+  from it** rather than repeating the list, so the two cannot disagree;
+* `VERIFIED_STORED_STATUSES` = that set PLUS every `LEGACY_STATUS_ALIAS` entry
+  pointing at it — so `APPROVED` appears automatically.
+
+A hand-kept `.in([...])` is exactly how this drifted in the first place; deriving it
+means the next status cannot be silently forgotten.
+
+**Scope held.** Only the status predicate widened. The metric still counts only
+`shared_with_client = true`, still excludes `deleted_at`, and is still tenant-scoped —
+each pinned and mutation-tested. Verification, sharing, RBAC, RLS, maker-checker and
+portal behaviour are untouched. 12 tests, mutations **M21–M26** caught, including
+both drift directions (back to legacy-only, and forward to canonical-only).
+
+### ⚠ Remaining stale site — reported, NOT fixed
+
+`lib/deposit/actions.ts:845` **WRITES** `status: "APPROVED"` to a document — the
+legacy spelling — when a deposit proof is accepted. It is a WRITE, not a comparison,
+and it still functions correctly because `isVerified` accepts both spellings (and the
+analytics fix above deliberately keeps counting it). But it perpetuates the legacy
+vocabulary in NEW rows. Changing what status is written could affect the deposit
+workflow`s own state checks, so it is out of scope without its own GO.
+
+No other DB-level document-status filters exist.
