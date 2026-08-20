@@ -14,6 +14,7 @@ import { assertPermission } from "@/lib/auth/require-permission";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
 import { invoiceTotals } from "@/lib/finance/calc";
+import { isVerified } from "@/lib/documents/doctrine";
 import { queueAndSend } from "./queue";
 import { dispatchMessage } from "./dispatch";
 import type { ActionResult } from "./types";
@@ -174,7 +175,12 @@ export async function emailDocumentShared(documentId: string): Promise<ActionRes
     .eq("tenant_id", user.tenantId)
     .maybeSingle<{ id: string; file_id: string; status: string; shared_with_client: boolean; doc_type: { label_fr: string } | null; file: { file_number: string; client_id: string | null } | null }>();
   if (!doc) return { ok: false, error: "not_found" };
-  if (!doc.shared_with_client || doc.status !== "APPROVED") return { ok: false, error: "not_shared" };
+  // DEFECT-UAT15d — the SERVER twin of the same stale comparison. Left raw, this
+  // refused `not_shared` for every canonically VERIFIED document, so fixing only
+  // the button would have made the UI offer an action this action then refused.
+  // `isVerified` accepts both spellings, so already-shared legacy APPROVED rows
+  // keep working.
+  if (!doc.shared_with_client || !isVerified(doc.status)) return { ok: false, error: "not_shared" };
 
   const clientId = doc.file?.client_id ?? null;
   const recipients = await clientRecipients(supabase, user.tenantId, clientId);

@@ -110,7 +110,14 @@ export function DocumentRow({
           >
             {t.documents.download}
           </button>
-          {canApprove && doc.status === "APPROVED" && (
+          {/* DEFECT-UAT15d — canonical status, not the raw legacy alias. The
+              platform writes VERIFIED; "APPROVED" is only the legacy spelling
+              that `canonicalStatus` maps onto it. Comparing raw hid this
+              control on every correctly-verified document, while the indicator
+              two lines above already normalized — so the row disagreed with
+              itself. `setDocumentShared` remains the stricter authority: it
+              also requires a client-safe type and a non-superseded version. */}
+          {canApprove && isVerified(doc.status) && (
             <button
               onClick={() => run(() => setDocumentShared(doc.id, !doc.sharedWithClient))}
               disabled={pending}
@@ -119,7 +126,7 @@ export function DocumentRow({
               {doc.sharedWithClient ? t.documents.unshare : t.documents.share}
             </button>
           )}
-          {canEmail && doc.status === "APPROVED" && doc.sharedWithClient && (
+          {canEmail && isVerified(doc.status) && doc.sharedWithClient && (
             <EmailTriggerButton kind="document" id={doc.id} label={t.communications.notifyClient} />
           )}
           {reviewable && (

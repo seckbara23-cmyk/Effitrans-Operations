@@ -439,3 +439,41 @@ This is why only Télécharger and Supprimer remained visible. It does not block
 UAT-15, but it will block the customer-portal half of later cases. Recommended fix:
 use `isVerified(doc.status)` in both places, matching the indicator. Not implemented —
 out of scope for the blocked test.
+
+## DEFECT-UAT15d — canonical document status for share/notify (2026-08-20)
+
+**Fixed (3 sites).** The platform writes `VERIFIED`; `APPROVED` is only the legacy
+spelling `canonicalStatus` maps onto it. Three gates still compared the raw string:
+
+| Site | Was | Now |
+| --- | --- | --- |
+| `components/documents/document-row.tsx` — share | `doc.status === "APPROVED"` | `isVerified(doc.status)` |
+| `components/documents/document-row.tsx` — notify | `doc.status === "APPROVED"` | `isVerified(doc.status)` |
+| **`lib/comms/actions.ts` — `notifyDocumentShared` (SERVER)** | `doc.status !== "APPROVED"` | `!isVerified(doc.status)` |
+
+**The server twin is why both halves had to move together.** Fixing only the button
+would have made the UI offer an action the server then refused with `not_shared` —
+the exact UI/authority disagreement this phase has spent three rounds hunting.
+
+**Compatibility preserved.** `isVerified` accepts BOTH spellings via
+`LEGACY_STATUS_ALIAS`, so historic `APPROVED` rows keep working: this widens
+recognition, it never narrows it. `CONSUMED_AS_EVIDENCE` counts as verified too.
+
+**Nothing loosened.** `setDocumentShared` remains the stricter authority — it also
+requires a client-safe type and a non-superseded version (`isShareable`), so the UI
+can never offer what the server would refuse. Verification semantics, RBAC, RLS and
+maker-checker are untouched. 13 tests; mutations **M15–M20** caught, including
+removing the client-safe and superseded checks.
+
+### Audit of other raw `"APPROVED"` document-status comparisons
+
+| Site | Verdict |
+| --- | --- |
+| `lib/portal/shipments.ts`, `lib/portal/tracking.ts` | ✅ already use `isVerified` |
+| `lib/documents/doctrine.ts` — `isShareable` | ✅ already uses `isVerified` |
+| **`lib/analytics/service.ts:57`** | ⚠ **STALE — reported, NOT fixed.** `.eq("status", "APPROVED")` on the shared-documents count, so every canonically VERIFIED shared document is **missing from the analytics total**. It is a DB-level filter, so the fix is `.in("status", ["APPROVED", "VERIFIED"])`. Left alone per instruction — it changes a number the business reads, and warrants its own GO |
+| `lib/ai/eval/harness.ts` | ⚠ synthetic eval fixtures only, no production effect. No action recommended |
+
+All other `"APPROVED"` hits belong to different domains (expense visas, quotations,
+finance requests, subcontractor approval, brand lifecycle, docintel field decisions)
+and are correctly unrelated to document status.
