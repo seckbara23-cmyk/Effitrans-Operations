@@ -211,3 +211,57 @@ printed label and no authority, no ownership and no assignment.
 
 No schema change is recommended, and none should be made without a business need
 that this audit did not find.
+
+---
+
+# RQ-18b — STATUS: RESOLVED / APPROVED (2026-08-21)
+
+**Decision:** APPROVED as recommended — the artifact-specific label change only.
+
+| | |
+| --- | --- |
+| ORDRE DE TRANSPORT label | « Mode de transport » → **« Mode de l`expédition »** |
+| Scope | **That artifact only**, via a per-artifact override in `render.ts` |
+| `RENDERER_VERSION` | `wes4g-2` → **`wes4g-3`** |
+
+## What was implemented
+
+`ARTIFACT_LABEL_OVERRIDES` in `lib/documents/artifacts/render.ts`, consulted ahead of
+the shared map: `label: overrides[f] ?? SOURCE_FIELD_LABELS_FR[f] ?? f`. One entry:
+`TRANSPORT_ORDER: { transportMode: "Mode de l`expédition" }`.
+
+## What was deliberately NOT done
+
+| Constraint | Held |
+| --- | --- |
+| `shipment.transport_mode` | **unchanged** — no migration, no backfill, no production data touched |
+| SEA / AIR / ROAD / MULTIMODAL vocabulary | **unchanged** |
+| `execution_mode` or any new modal column | **not added** |
+| Global label rename | **not done** — `SOURCE_FIELD_LABELS_FR.transportMode` is still « Mode de transport », and the DEMANDE DE TRANSPORT still renders it (pinned) |
+| The « segment routier » distinction | **preserved** — `transport_record` still carries no mode, because it only ever models one |
+
+## Verification
+
+12 new tests in `tests/rq-18b-shipment-mode-label.test.ts`, plus the existing
+composition suite updated for the version bump.
+
+Mutations **M57–M62** all caught:
+
+* **M57** the label regressing to « Mode de transport » (the defect);
+* **M58** the override leaking to every artifact — the global rename the decision forbade;
+* **M59** the override silently not consulted;
+* **M60** renaming the SHARED map instead, which would relabel the DEMANDE;
+* **M61** the renderer version not bumped;
+* **M62** the value replaced by an invented « ROUTIER » execution mode.
+
+M60 and M62 are the two wrong fixes the audit warned about, and both fail the suite.
+
+Full vitest **7185 passed** (+12; the one failure is the standing Windows
+line-ending pin, green in CI). Typecheck and production build clean.
+
+## Retained as future modelling debt — NOT expanded here
+
+`transport_record` has **`UNIQUE (file_id)`**, so a dossier can hold at most ONE road
+execution. A corridor run with several road legs — or a pre-carriage AND an
+on-carriage on the same dossier — cannot be modelled as separate records today.
+Observed during the RQ-18b audit, recorded, **scope not expanded**.

@@ -27,7 +27,34 @@ import { SOURCE_FIELD_LABELS_FR, type ArtifactProvenance } from "./source";
  * the same source hash but different renderer versions may legitimately differ
  * in bytes; two with the same both must not.
  */
-export const RENDERER_VERSION = "wes4g-2";
+export const RENDERER_VERSION = "wes4g-3";
+
+/**
+ * RQ-18b (ratified 2026-08-21) — PER-ARTIFACT label overrides.
+ *
+ * `transportMode` is the mode of the EXPÉDITION — how the principal shipment
+ * moves internationally — and every consumer treats it that way: air tracking
+ * gates on AIR, customs drops the airway bill or the bill of lading from it.
+ *
+ * On an ORDRE DE TRANSPORT it was printed under a bare « Mode de transport »,
+ * on a document whose whole purpose is to instruct a ROAD movement — so a
+ * reader could not tell whether « SEA » described the voyage the goods arrived
+ * on or the movement being ordered.
+ *
+ * The VALUE is right and stays: a carrier benefits from knowing the goods came
+ * off a vessel and may be containerised. Only the label stops overstating what
+ * it describes. Scoped to this artifact deliberately: on the DEMANDE DE
+ * TRANSPORT, a dossier-level document, « Mode de transport » is unambiguous.
+ *
+ * What this does NOT do, per the ratified decision: it does not touch
+ * `shipment.transport_mode`, its SEA/AIR/ROAD/MULTIMODAL vocabulary, or
+ * introduce any execution-mode column. The Effitrans road execution remains the
+ * « segment routier » modelled by `transport_record`, which carries no mode
+ * because it only ever models one.
+ */
+const ARTIFACT_LABEL_OVERRIDES: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  TRANSPORT_ORDER: { transportMode: "Mode de l'expédition" },
+};
 
 /**
  * DEFECT-UAT18b — `PdfDoc` has a TOP-LEFT origin (`text` converts via
@@ -146,11 +173,12 @@ export function renderArtifact(input: {
   doc.line(M, y, doc.width - M, y, NAVY, 1);
   y += 20;
 
+  const overrides = ARTIFACT_LABEL_OVERRIDES[input.artifactCode] ?? {};
   const rowsFor = (fields: readonly string[]): Row[] =>
     fields
       .filter((f) => input.snapshot[f] !== undefined)
       .map((f) => ({
-        label: SOURCE_FIELD_LABELS_FR[f] ?? f,
+        label: overrides[f] ?? SOURCE_FIELD_LABELS_FR[f] ?? f,
         value: display(f, input.snapshot[f]),
       }));
 

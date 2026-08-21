@@ -161,7 +161,7 @@ describe("UAT-18 — the guarantees that must survive a redesign", () => {
   });
 
   it("the renderer version was bumped, so old bytes stay explainable", () => {
-    expect(RENDERER_VERSION).toBe("wes4g-2");
+    expect(RENDERER_VERSION).toBe("wes4g-3");
   });
 
   it("the carrier printed is the assignment SNAPSHOT", () => {
