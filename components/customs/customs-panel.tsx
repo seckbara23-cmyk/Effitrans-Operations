@@ -5,7 +5,7 @@
  * workflow buttons, editable manual-reference metadata, and the missing-docs
  * warning. Invokes server-action proxies only.
  */
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { t } from "@/lib/i18n";
 import { nextStatuses } from "@/lib/customs/status";
@@ -28,6 +28,34 @@ import {
   type ReceivabilityOutcome,
 } from "@/lib/customs/receivability";
 import type { ActionResult, CustomsRecord, MissingCustomsDoc } from "@/lib/customs/types";
+
+/**
+ * Which control a failure belongs to. A closed union on purpose: a typo cannot
+ * silently address a scope nothing renders, which would hide the message
+ * entirely — the failure mode this whole change exists to end.
+ */
+type ErrorScope =
+  | "create"
+  | "workflow"
+  | "gainde"
+  | "attachment"
+  | "validation"
+  | "receivability"
+  | "metadata";
+
+type PanelError = { scope: ErrorScope; message: string };
+
+/**
+ * The message, rendered ONLY under the control that produced it.
+ *
+ * `role="alert"` is the accessibility half of this fix and the more serious one:
+ * the panel had no aria-live, no role and no focus move, so a screen-reader user
+ * got nothing at all when an action was refused.
+ */
+function ErrorLine({ error, scope }: { error: PanelError | null; scope: ErrorScope }) {
+  if (!error || error.scope !== scope) return null;
+  return <p role="alert" className="text-xs text-red-600">{error.message}</p>;
+}
 
 const STATUS_STYLE: Record<string, string> = {
   NOT_STARTED: "bg-slate-100 text-slate-600",
@@ -86,16 +114,29 @@ export function CustomsPanel({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
+  // SCOPED, not global. One `error` string served nine actions and was rendered
+  // once, at the very bottom of the panel — immediately below the metadata form's
+  // save button. That made the placement correct for exactly ONE action and, for
+  // the other eight, put the message beside an UNRELATED control: a refusal from
+  // « → Déclaré » read as "saving the metadata failed". The panel simply grew
+  // past its own error line as each phase appended a section above it.
+  const [error, setError] = useState<PanelError | null>(null);
+  // Race guard. `startTransition` is not cancellable, so a slow action's rejection
+  // could land after the user had moved on and attach itself to a newer
+  // interaction. Every run takes a ticket; a stale result is discarded rather
+  // than shown under the wrong control.
+  const runSeq = useRef(0);
   const c = t.customs;
 
-  function run(fn: () => Promise<ActionResult>) {
+  function run(fn: () => Promise<ActionResult>, scope: ErrorScope) {
+    const seq = ++runSeq.current;
     setError(null);
     startTransition(async () => {
       const res = await fn();
+      if (seq !== runSeq.current) return; // superseded — never speak for a newer action
       if (!res.ok) {
         const map = c.errors as Record<string, string>;
-        setError(map[res.error] ?? c.errors.generic);
+        setError({ scope, message: map[res.error] ?? c.errors.generic });
         return;
       }
       router.refresh();
@@ -116,7 +157,7 @@ export function CustomsPanel({
           <span>{c.empty}</span>
           {canCreate && (
             <button
-              onClick={() => run(() => createCustoms(fileId))}
+              onClick={() => run(() => createCustoms(fileId), "create")}
               disabled={pending}
               className="rounded-lg bg-navy-900 px-3 py-2 text-sm font-medium text-white hover:bg-navy-800 disabled:opacity-50"
             >
@@ -124,7 +165,7 @@ export function CustomsPanel({
             </button>
           )}
         </div>
-        {error && <p className="text-xs text-red-600">{error}</p>}
+        <ErrorLine error={error} scope="create" />
       </section>
     );
   }
@@ -145,6 +186,7 @@ export function CustomsPanel({
         notes: String(fd.get("notes") ?? ""),
         required: fd.get("required") === "on",
       }),
+      "metadata",
     );
   }
 
@@ -183,7 +225,7 @@ export function CustomsPanel({
                     key={s}
                     onClick={() => {
                       const bae = window.prompt(c.baePrompt);
-                      if (bae && bae.trim()) run(() => releaseCustoms(record.id, bae.trim()));
+                      if (bae && bae.trim()) run(() => releaseCustoms(record.id, bae.trim()), "workflow");
                     }}
                     disabled={pending}
                     className="rounded-md border border-teal-200 px-2 py-1 text-xs font-medium text-teal-700 hover:bg-teal-50 disabled:opacity-50"
@@ -197,7 +239,7 @@ export function CustomsPanel({
               return (
                 <button
                   key={s}
-                  onClick={() => run(() => changeCustomsStatus(record.id, s))}
+                  onClick={() => run(() => changeCustomsStatus(record.id, s), "workflow")}
                   disabled={pending}
                   className="rounded-md border border-slate-200 px-2 py-1 text-xs font-medium text-navy-700 hover:bg-slate-50 disabled:opacity-50"
                 >
@@ -207,7 +249,7 @@ export function CustomsPanel({
             })}
             {canDelete && (
               <button
-                onClick={() => run(() => deleteCustoms(record.id))}
+                onClick={() => run(() => deleteCustoms(record.id), "workflow")}
                 disabled={pending}
                 className="ml-auto rounded-md border border-slate-200 px-2 py-1 text-xs font-medium text-slate-500 hover:bg-slate-50 disabled:opacity-50"
               >
@@ -216,6 +258,7 @@ export function CustomsPanel({
             )}
           </div>
         )}
+        <ErrorLine error={error} scope="workflow" />
 
         {/* MAYA-P1.1 — CEO step 8 : enregistrement GAINDE par la Finance.
             A FINANCE act, gated on customs:register — the narrow capability the
@@ -245,7 +288,7 @@ export function CustomsPanel({
             <button
               onClick={() => {
                 const ref = window.prompt(c.gainde.prompt, record.externalRef ?? "");
-                if (ref && ref.trim()) run(() => recordGaindeRegistration(record.id, ref.trim()));
+                if (ref && ref.trim()) run(() => recordGaindeRegistration(record.id, ref.trim()), "gainde");
               }}
               disabled={pending}
               className="mt-2 rounded-md border border-teal-200 px-2 py-1 text-xs font-medium text-teal-700 hover:bg-teal-50 disabled:opacity-50"
@@ -254,6 +297,7 @@ export function CustomsPanel({
             </button>
           )}
           <p className="mt-2 text-[11px] text-slate-400">{c.gainde.hint}</p>
+          <ErrorLine error={error} scope="gainde" />
         </div>
 
         {/* MAYA-P1.11 — CEO step 9 : rattachement par le Déclarant.
@@ -286,7 +330,7 @@ export function CustomsPanel({
               {ATTACHMENT_SYSTEM_SETS.map((set) => (
                 <button
                   key={set.join("+")}
-                  onClick={() => run(() => recordCustomsAttachment(record.id, set))}
+                  onClick={() => run(() => recordCustomsAttachment(record.id, set), "attachment")}
                   disabled={pending}
                   className="rounded-md border border-teal-200 px-2 py-1 text-xs font-medium text-teal-700 hover:bg-teal-50 disabled:opacity-50"
                 >
@@ -296,6 +340,7 @@ export function CustomsPanel({
             </div>
           )}
           <p className="mt-2 text-[11px] text-slate-400">{c.attachment.hint}</p>
+          <ErrorLine error={error} scope="attachment" />
         </div>
 
         {/* MAYA-P0.8-A (PG-1) — validation Chef de Transit.
@@ -319,7 +364,7 @@ export function CustomsPanel({
           </div>
           {canValidate && !record.reviewedAt && (
             <button
-              onClick={() => run(() => recordCustomsValidation(record.id))}
+              onClick={() => run(() => recordCustomsValidation(record.id), "validation")}
               disabled={pending}
               className="mt-2 rounded-md border border-teal-200 px-2 py-1 text-xs font-medium text-teal-700 hover:bg-teal-50 disabled:opacity-50"
             >
@@ -327,6 +372,7 @@ export function CustomsPanel({
             </button>
           )}
           <p className="mt-2 text-[11px] text-slate-400">{c.validation.hint}</p>
+          <ErrorLine error={error} scope="validation" />
         </div>
 
         {/* MAYA-P0.7-A — Contrôle Qualité N°3 : recevabilité.
@@ -366,10 +412,10 @@ export function CustomsPanel({
                     if (reasonRequired(o)) {
                       const reason = window.prompt(c.receivability.reasonPrompt);
                       if (!reason || !reason.trim()) return;
-                      run(() => recordReceivability(record.id, o, reason.trim()));
+                      run(() => recordReceivability(record.id, o, reason.trim()), "receivability");
                       return;
                     }
-                    run(() => recordReceivability(record.id, o, null));
+                    run(() => recordReceivability(record.id, o, null), "receivability");
                   }}
                   disabled={pending}
                   className="rounded-md border border-slate-200 px-2 py-1 text-xs font-medium text-navy-700 hover:bg-slate-50 disabled:opacity-50"
@@ -380,6 +426,7 @@ export function CustomsPanel({
             </div>
           )}
           <p className="mt-2 text-[11px] text-slate-400">{c.receivability.hint}</p>
+          <ErrorLine error={error} scope="receivability" />
         </div>
 
         {/* Editable manual-reference metadata */}
@@ -442,7 +489,7 @@ export function CustomsPanel({
           </form>
         )}
 
-        {error && <p className="text-xs text-red-600">{error}</p>}
+        <ErrorLine error={error} scope="metadata" />
       </div>
     </section>
   );

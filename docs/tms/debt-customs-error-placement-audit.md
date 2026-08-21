@@ -204,3 +204,63 @@ one file is precisely that shape, so a whole-file `toContain` will prove nothing
 
 *(Noted for planning, not started: the next major workstream is the ICTD / ICAM /
 IPAM Formula-Parity Audit against the Effitrans methodology and workbooks.)*
+
+---
+
+# STATUS: IMPLEMENTED (2026-08-21)
+
+The full scoped-error correction, as recommended.
+
+## What changed
+
+| | |
+| --- | --- |
+| State | `string \| null` → **`{ scope, message } \| null`** |
+| Runner | `run(fn, scope)` — the scope is REQUIRED, so a call site cannot omit it |
+| Scope type | closed union of 7 — a typo cannot address a scope nothing renders |
+| Render | **7 `<ErrorLine>`**, one per section, replacing the single trailing render |
+| Accessibility | **`role="alert"`** on the message |
+| Race | **sequence ticket** — a superseded result is discarded, never shown under a newer action |
+
+The metadata error keeps its original position; it simply became the `metadata`
+scope — it was the one placement that was already correct.
+
+## Race handling
+
+`startTransition` is not cancellable, so a slow rejection could previously land after
+the user moved on. Each run now takes `++runSeq.current` and the result is dropped if
+a newer run started. The guard sits **between the await and the `setError`** — before
+the await it would guard nothing, and a mutation pins that ordering.
+
+## Untouched, and pinned as untouched
+
+Server actions · customs state transitions · permissions/RBAC/RLS · business-event and
+audit behaviour · customs document requirements · the i18n error vocabulary · the
+« documents manquants » business context. Tests assert the panel contains no
+`assertPermission`, no `canTransition(` and no `hasPermission(`, and that the error
+map is reused rather than re-invented.
+
+## Verification
+
+18 tests, **every assertion bounded to one section slice** — the file holds seven
+near-identical `<ErrorLine>` elements, exactly the shape where a whole-file
+`toContain` proves nothing. The slicer THROWS when a boundary moves, so a silently
+widened slice cannot quietly stop testing.
+
+The central guarantee is pinned as a cross-product: **for every pair of scopes, one
+section must not contain the other`s render** — the workflow refusal literally cannot
+appear under the metadata save button any more.
+
+Mutations **M89–M98** all caught:
+
+* **M89** a call site mis-scoped (the message reappears under an unrelated control);
+* **M90** a section`s error line deleted (its failures become invisible);
+* **M91** cross-talk — one section rendering another`s scope;
+* **M92** the scope comparison inverted (messages everywhere but the right place);
+* **M93** `role="alert"` removed (the accessibility half regressing silently);
+* **M94** clearing removed; **M95/M96** the race guard removed or moved before the await;
+* **M97** the shared French vocabulary bypassed for an invented string;
+* **M98** the « documents manquants » context dropped.
+
+Full vitest **7261 passed** (the one failure is the standing Windows line-ending pin,
+green in CI); typecheck and production build clean.
