@@ -1304,3 +1304,11 @@ Category C human UAT: **24/24 PASS**.
 Still open, tracked SEPARATELY from UAT status and untouched:
 RQ-18b (transport mode semantics) · printed issue-date vs PDF determinism ·
 deposit legacy `APPROVED` write (debt) · customs-panel error placement (debt).
+
+---
+
+# TMS-7 CLOSED — see `tms-7-closure.md`
+
+The formal closure report freezes the final status. This runbook remains the evidence
+detail. **Category A GREEN (CI #556) · Category B 6/6 · Category C 24/24 · 0 FAIL ·
+0 BLOCKED · 0 DEFERRED · 0 NOT RUN.**
