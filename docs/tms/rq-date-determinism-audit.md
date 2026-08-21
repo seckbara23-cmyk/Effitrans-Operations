@@ -301,3 +301,66 @@ green in CI). Typecheck and production build clean.
 
 ⚠ **Migration 120 requires operator application in production**, then
 `npx supabase migration repair --status applied 20260912000001`.
+
+---
+
+# STATUS: CLOSED — production-verified 2026-08-21
+
+## Production evidence — `EFT-IMP-2026-00005` / TRANSPORT_ORDER
+
+| Version | renderer | `generated_at` | Printed date | content sha | status |
+| --- | --- | --- | --- | --- | --- |
+| 1 | `wes4g-1` | `2026-08-20 19:09:26.198373+00` | — (none) | `d8c916db…` | SUPERSEDED |
+| 2 | `wes4g-2` | `2026-08-20 19:38:59.625029+00` | — (none) | `5f25f346…` | SUPERSEDED |
+| **3** | **`wes4g-4`** | **`2026-08-21 14:47:26.137+00`** | **« Émis le : 21/08/2026 »** | `7a3f91b5…` | VERIFIED |
+
+**The printed date equals `generated_at`.** V3 was generated at `2026-08-21 14:47`,
+the UI reported 14:47, and the PDF prints `21/08/2026`.
+
+## ⚠ The stronger proof: the PRECISION SIGNATURE
+
+Matching dates would only show the two values fell on the same day. The sub-second
+precision shows WHICH branch of `coalesce(p_generated_at, now())` actually executed:
+
+| Version | Fractional seconds | Digits | Source |
+| --- | --- | --- | --- |
+| 1 | `.198373` | **6** | Postgres `now()` — microsecond precision |
+| 2 | `.625029` | **6** | Postgres `now()` |
+| **3** | **`.137`** | **3** | **JavaScript `toISOString()` — millisecond precision** |
+
+V3 carries a **JavaScript millisecond signature**, which Postgres `now()` cannot
+produce. The application-minted timestamp was persisted verbatim — the RPC honoured
+the supplied value rather than stamping its own. Positive proof of ONE timestamp,
+not two that happened to agree.
+
+## Historical versions untouched
+
+V1 and V2 keep their **original** `renderer_version` (`wes4g-1`, `wes4g-2`), their
+original `generated_at` and their original content hashes — so neither was
+re-rendered. All three hashes differ: three distinct documents. Both are correctly
+SUPERSEDED; only V3 is VERIFIED.
+
+## Migration 120 — applied and verified in production
+
+| Assertion | Result |
+| --- | --- |
+| Exactly ONE `finalize_generated_artifact` (the ambiguity trap) | 1 ✅ |
+| `p_generated_at` is the final parameter | ✅ |
+| SECURITY DEFINER preserved | ✅ |
+| NOT executable by `anon` | false ✅ |
+| No data disturbed | 20 documents, 5 generated artifacts; the 15 NULL `generated_at` rows are UPLOADED documents, which never had one |
+
+## Item CLOSED
+
+Both properties the audit separated now hold together in production:
+
+* **business determinism** — the version`s facts live in `source_snapshot`;
+* **byte determinism** — identical inputs give identical bytes (verified empirically
+  before the change, pinned by test after it).
+
+Reproduction contract: **(`source_snapshot`, `renderer_version`, `artifactVersion`,
+`generated_at`)** — all four persisted per version.
+
+⚠ One honest limit: production evidence proves same-day agreement. The guarantee that
+the two can never diverge ACROSS MIDNIGHT rests on the code path and on mutation
+**M63**, which fails the build if the RPC ever takes its own clock reading.
