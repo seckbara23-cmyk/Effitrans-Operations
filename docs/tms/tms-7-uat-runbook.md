@@ -1247,3 +1247,60 @@ employee`s account. Operator`s choice.
 
 (For contrast `aminata@effitrans.sn` resolves `transport:create` = 1 — she also holds
 COORDINATOR/OPS_SUPERVISOR — so she would NOT exercise the request lane.)
+
+## UAT-11b — CLOSED PASS (operator + verification, 2026-08-21)
+
+### ⚠ Correction to the acceptance criterion I issued
+
+I told the operator « PASS = submitting raises the need WITHOUT creating a transport »
+and « FAIL = submitting creates a `transport_record` ». **That was wrong.**
+
+`requestTransport` (lib/transport/actions.ts) **inserts a `transport_record` with
+`status: "NOT_STARTED"`** and then notifies the TRANSPORT_OFFICER holders. The request
+IS the record, in a not-started state — which is precisely why the UI then reads
+« Non démarré ». Under my stated criterion a correct PASS would have been read as a
+FAIL, and `transport_record = 0` would in fact have meant the request FAILED.
+
+The ratified distinction is not record-vs-no-record. It is **who may START EXECUTION**:
+
+| Lane | Authority | Effect |
+| --- | --- | --- |
+| `requestTransport` | `transport:request` | Creates a NOT_STARTED record + notifies Transport. The requester does NOT execute |
+| `createTransport` | `transport:create` | Creates the record and the holder proceeds to plan and assign |
+
+### Verified postconditions (read-only)
+
+| Assertion | Evidence |
+| --- | --- |
+| Request recorded | `transport_record` on EFT-IMP-2026-00006, **`status = NOT_STARTED`**, `created_by = account.manager.demo@effitrans.sn`, `created_at 2026-08-21 00:19:41.579Z` |
+| **Execution NOT started by the requester** | `vehicle_id` NULL · `provider_id` NULL · `driver_name` NULL — a need was raised, nothing was dispatched |
+| Audit | **`transport.requested`** by the demo account at `00:19:41.719Z`, `after.file_id` present and **no `note` key** — exactly what the code writes when précision is blank |
+| Transport team notified | Notifications at `00:19:42–43Z` to multiple active TRANSPORT_OFFICER holders — `transport.demo@effitrans.sn`, `operations4@effitrans.com`, `logistics@effitrans.com` and others |
+| « Non démarré » means | The `NOT_STARTED` status of that record: the need exists, execution has not begun, nobody is assigned |
+| Omitted optional précision | `notes: precision ? … : null` — **optional by construction**. It left `notes` NULL and omitted `note` from the audit payload. **Not part of the acceptance criterion**; the criterion is the LANE and the authority boundary |
+
+Combined with the pre-submit UI evidence (« Aucun transport », request lane visible,
+« Demander le transport » available, **no create/start control**), the ratified
+criterion is fully met: a holder of `transport:request` WITHOUT `transport:create`
+sees the request lane, raises the need, and hands it to Transport — without starting
+execution.
+
+**UAT-11b = PASS.**
+
+## LEDGER — TMS-7 INVENTORY COMPLETE
+
+| Outcome | Count |
+| --- | --- |
+| **PASS** | **24** |
+| FAIL | 0 |
+| BLOCKED | 0 |
+| DEFERRED | **0** |
+| NOT RUN | 0 |
+| **Total** | **24** |
+
+Category A automated suites: green. Category B database checks: **6/6 evidenced**.
+Category C human UAT: **24/24 PASS**.
+
+Still open, tracked SEPARATELY from UAT status and untouched:
+RQ-18b (transport mode semantics) · printed issue-date vs PDF determinism ·
+deposit legacy `APPROVED` write (debt) · customs-panel error placement (debt).
