@@ -148,6 +148,7 @@ do $assert$
 declare
   v_count int;
   v_src   text;
+  v_args  text;
 begin
   -- 1. EXACTLY ONE function survives: the ambiguity trap the DROP exists to avoid.
   select count(*) into v_count from pg_proc
@@ -158,11 +159,21 @@ begin
   end if;
 
   -- 2. It takes the new parameter, appended last.
-  if pg_get_function_identity_arguments(
-       (select oid from pg_proc where proname = 'finalize_generated_artifact'
-          and pronamespace = 'public'::regnamespace))
-     not like '%, p_generated_at timestamptz' then
-    raise exception 'p_generated_at is not the final parameter';
+  --
+  -- Matched against BOTH spellings on purpose: `pg_get_function_identity_arguments`
+  -- returns the CANONICAL type name, so `timestamptz` comes back as
+  -- `timestamp with time zone`. The first version of this assertion checked only
+  -- the short spelling and aborted a correct migration — which is the assertion
+  -- doing its job (it refused to claim success on a state it could not verify),
+  -- but the check itself was wrong. The actual argument list is included in the
+  -- message so the next reader is not left guessing as I was.
+  select pg_get_function_identity_arguments(oid) into v_args
+    from pg_proc
+   where proname = 'finalize_generated_artifact'
+     and pronamespace = 'public'::regnamespace;
+  if v_args not like '%p_generated_at timestamp with time zone'
+     and v_args not like '%p_generated_at timestamptz' then
+    raise exception 'p_generated_at is not the final parameter (args: %)', v_args;
   end if;
 
   -- 3. The supplied timestamp is authoritative, with now() only as fallback.
