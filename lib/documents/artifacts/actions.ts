@@ -99,6 +99,14 @@ export async function generateArtifact(input: {
     .maybeSingle<{ version: number }>();
   const nextVersion = (current?.version ?? 0) + 1;
 
+  // RQ / Alternative B — MINTED ONCE, here, and used twice: printed on the PDF
+  // and persisted verbatim as `document.generated_at`. Reading the clock twice
+  // (once to render, once at INSERT) is precisely the bug this avoids — two
+  // reads moments apart can straddle midnight and put one date on the paper and
+  // another on the row. `now()` in the RPC remains only the fallback for callers
+  // that supply nothing; it is never a second source of truth for this path.
+  const generatedAt = new Date().toISOString();
+
   let bytes: Uint8Array;
   try {
     bytes = renderArtifact({
@@ -107,6 +115,7 @@ export async function generateArtifact(input: {
       provenance: resolved.provenance,
       organizationName: org?.name ?? "",
       artifactVersion: nextVersion,
+      generatedAt,
     });
   } catch {
     return { ok: false, error: "render_failed" };
@@ -139,6 +148,9 @@ export async function generateArtifact(input: {
     p_actor: user.id,
     p_size_bytes: bytes.byteLength,
     p_policy_id: null,
+    // The SAME value that was rendered onto the page. Migration 120 honours it
+    // via coalesce(p_generated_at, now()).
+    p_generated_at: generatedAt,
   });
 
   if (error) {

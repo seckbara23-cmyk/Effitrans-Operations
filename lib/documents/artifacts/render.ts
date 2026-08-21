@@ -27,7 +27,19 @@ import { SOURCE_FIELD_LABELS_FR, type ArtifactProvenance } from "./source";
  * the same source hash but different renderer versions may legitimately differ
  * in bytes; two with the same both must not.
  */
-export const RENDERER_VERSION = "wes4g-3";
+export const RENDERER_VERSION = "wes4g-4";
+
+/**
+ * Artifacts that print an issue date, and nothing else does.
+ *
+ * RQ / Alternative B (ratified 2026-08-21) — an ORDRE DE TRANSPORT is handed to
+ * a carrier and read later by whoever asks when it was issued, so it carries
+ * « Émis le : … ». The DEMANDE already prints « Date de la demande », a
+ * different and more useful business fact, so it is deliberately NOT included:
+ * the decision was to add this where the business document needs it, not to
+ * inject a date everywhere.
+ */
+const ARTIFACTS_WITH_ISSUE_DATE = new Set(["TRANSPORT_ORDER"]);
 
 /**
  * RQ-18b (ratified 2026-08-21) — PER-ARTIFACT label overrides.
@@ -78,6 +90,16 @@ export function frDateTime(value: string): string {
   const [, yyyy, mm, dd, hh, mi] = m;
   const date = `${dd}/${mm}/${yyyy}`;
   return hh && mi ? `${date} à ${hh}:${mi}` : date;
+}
+
+/**
+ * DATE ONLY — « 21/08/2026 », never a time. The issue date is a calendar fact
+ * about the document; printing an hour would invite the reader to treat it as a
+ * precise instant, and would differ across timezones for the same artifact.
+ * Same pattern parse as `frDateTime`, so it is equally timezone-free.
+ */
+export function frDate(value: string): string {
+  return frDateTime(value).split(" à ")[0];
 }
 
 /** Fields rendered as dates rather than raw strings. */
@@ -142,6 +164,17 @@ export function renderArtifact(input: {
   organizationName: string;
   /** Version number of this artifact, e.g. 2 for a regeneration. */
   artifactVersion: number;
+  /**
+   * The artifact's OWN generation timestamp, minted once by the caller and
+   * persisted verbatim as `document.generated_at`.
+   *
+   * It is an INPUT, never a clock read here: that is what lets an archived
+   * version be re-rendered byte-for-byte later. The reproduction contract is
+   * therefore (source_snapshot, renderer_version, artifactVersion, generatedAt).
+   * Omitted ⇒ no issue date is printed, which is what every pre-existing
+   * artifact has.
+   */
+  generatedAt?: string | null;
 }): Uint8Array {
   const doc = new PdfDoc({ size: "A4", orientation: "portrait" });
   const M = 48;
@@ -163,12 +196,20 @@ export function renderArtifact(input: {
       size: 9, bold: true, color: NAVY, align: "right",
     });
   }
-  // Version is data, not a timestamp — stable for a given artifact row. No
-  // generation date appears anywhere on the page: `generated_at` lives on the
-  // row, and printing it would break byte-determinism on regeneration.
+  // Version is data, not a timestamp — stable for a given artifact row.
   doc.text(doc.width - M, y + 2, `Version ${input.artifactVersion}`, {
     size: 8, color: GREY, align: "right",
   });
+  // RQ / Alternative B — the issue date. Printed from the SUPPLIED timestamp,
+  // never from a clock read here: the same inputs must always produce the same
+  // bytes, and this value is persisted verbatim as `document.generated_at`, so
+  // the printed document and the row can never disagree.
+  if (ARTIFACTS_WITH_ISSUE_DATE.has(input.artifactCode) && input.generatedAt) {
+    doc.text(doc.width - M, y + 14, `Émis le : ${frDate(input.generatedAt)}`, {
+      size: 8, color: GREY, align: "right",
+    });
+    y += 12;
+  }
   y += 8;
   doc.line(M, y, doc.width - M, y, NAVY, 1);
   y += 20;

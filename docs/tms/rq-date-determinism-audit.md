@@ -227,3 +227,77 @@ simply have no printed date, which is what they have today.
 
 deposit legacy `APPROVED` write · customs-panel error placement ·
 `UNIQUE (file_id)` multi-leg-road modelling debt · RQ-18b · TMS-7.
+
+---
+
+# STATUS: IMPLEMENTED (2026-08-21) — Alternative B
+
+**Decision:** APPROVED. The ORDRE DE TRANSPORT prints **« Émis le : DD/MM/YYYY »**,
+frozen from the artifact`s own generation timestamp.
+
+## What was implemented
+
+| Step | Detail |
+| --- | --- |
+| **Migration 120** | `20260912000001_artifact_generated_at.sql` — `finalize_generated_artifact` gains **`p_generated_at timestamptz default null`** as its LAST parameter; the INSERT uses `coalesce(p_generated_at, now())` |
+| **Mint once** | `actions.ts` mints `generatedAt` **exactly once** and passes the SAME value to the renderer AND to the RPC. `now()` is never a second source of truth on this path |
+| **Render** | `« Émis le : ${frDate(generatedAt)} »`, date only, in the header block, **ORDRE DE TRANSPORT only** (`ARTIFACTS_WITH_ISSUE_DATE`) |
+| **RENDERER_VERSION** | `wes4g-3` → **`wes4g-4`** |
+
+**Why DROP + CREATE, not CREATE OR REPLACE:** adding a parameter changes the
+identity arguments, so a replace would leave the 14-argument function beside the new
+one and every 14-argument call would become ambiguous. Both statements run inside the
+migration`s single transaction, so the function is never missing.
+
+## Reproduction contract (now documented)
+
+**(`source_snapshot`, `renderer_version`, `artifactVersion`, `generated_at`)**
+
+All four are persisted per version on `public.document`. An archived version can be
+re-rendered byte-for-byte from its own row.
+
+## Constraints held
+
+| Constraint | Held |
+| --- | --- |
+| No table change, no new column, no `issued_at`, no backfill | ✅ — asserted BY the migration itself, which raises if `issued_at` exists or if `generated_at` is missing |
+| Existing callers unbroken | ✅ — parameter appended last with a default; `now()` fallback preserves their exact prior behaviour |
+| Historical versions untouched | ✅ — they simply have no printed date, as today |
+| Byte determinism for identical inputs | ✅ pinned |
+| Scoped to ORDRE DE TRANSPORT | ✅ — the DEMANDE keeps « Date de la demande » and prints no issue date |
+
+## Verification
+
+24 tests in `tests/rq-issue-date-frozen.test.ts`. Mutations **M63–M71** all caught:
+
+* **M63** the RPC taking a SECOND clock read — the exact bug this change exists to
+  prevent, and the one that only misbehaves across midnight;
+* **M64** the renderer reading its own clock;
+* **M65** the timestamp never reaching the renderer;
+* **M66** `now()` outranking the supplied value in the INSERT;
+* **M67** the default removed, breaking existing callers;
+* **M68** the old 14-argument overload left in place (ambiguous calls);
+* **M69** the issue date leaking onto every artifact;
+* **M70** the hour printed alongside the date;
+* **M71** `anon`/`authenticated` regaining EXECUTE on the definer function.
+
+⚠ **M66 initially did NOT fail.** The pin `toContain("coalesce(p_generated_at, now())")`
+was satisfied by that string`s OTHER occurrence — inside the migration`s own
+self-assertion — so reverting the INSERT to plain `now()` stayed green. The pin is now
+bound to the VALUES clause. Recorded because it is the recurring
+"satisfied-by-neighbouring-text" trap, not a one-off.
+
+## Housekeeping caused by this migration
+
+* Build ledger registered: `LATEST_MIGRATION` → `20260912000001_artifact_generated_at`,
+  `MIGRATION_COUNT` → **120**.
+* `tests/tms-6-subcontractors.test.ts` pinned `LATEST_MIGRATION` to TMS-6`s own file and
+  the count to exactly 119 — a **frozen "latest" literal**, true the day it was written
+  and false the moment any later migration shipped. Rewritten to assert what TMS-6
+  actually needs: its migration exists and the counted ledger includes it.
+
+Full vitest **7209 passed** (the one failure is the standing Windows line-ending pin,
+green in CI). Typecheck and production build clean.
+
+⚠ **Migration 120 requires operator application in production**, then
+`npx supabase migration repair --status applied 20260912000001`.

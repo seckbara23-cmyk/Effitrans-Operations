@@ -304,9 +304,19 @@ describe("TMS-6 — lightweight: no vendor-management ERP appeared", () => {
     expect(read(".github", "workflows", "ci.yml")).toContain("-f supabase/tests/tms_6_subcontractor_test.sql");
   });
 
-  it("build-info advanced to migration 119", () => {
+  it("TMS-6's migration is shipped and counted in the build ledger", () => {
+    // Originally pinned LATEST_MIGRATION to TMS-6's own file and the count to
+    // exactly 119. That was true the day it was written and became false the
+    // moment ANY later migration shipped — a frozen "latest" literal, which
+    // says nothing about TMS-6 once it is no longer latest.
+    //
+    // What TMS-6 actually needs to guarantee is that its migration exists and
+    // is inside the counted ledger. That stays true forever.
     const buildInfo = read("lib", "platform", "ops", "build-info.ts");
-    expect(buildInfo).toContain('LATEST_MIGRATION = "20260911000001_transport_subcontractors"');
-    expect(buildInfo).toContain("MIGRATION_COUNT = 119");
+    const count = Number(/MIGRATION_COUNT = (\d+)/.exec(buildInfo)?.[1] ?? 0);
+    expect(count).toBeGreaterThanOrEqual(119);
+    expect(
+      fs.existsSync(path.join(root, "supabase", "migrations", "20260911000001_transport_subcontractors.sql")),
+    ).toBe(true);
   });
 });

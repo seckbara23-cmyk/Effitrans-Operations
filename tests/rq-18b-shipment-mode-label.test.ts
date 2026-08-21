@@ -113,8 +113,8 @@ describe("RQ-18b — nothing else was renamed", () => {
 });
 
 describe("RQ-18b — the guarantees that must survive", () => {
-  it("the renderer version was bumped to wes4g-3", () => {
-    expect(RENDERER_VERSION).toBe("wes4g-3");
+  it("the renderer version is bumped whenever rendered output changes", () => {
+    expect(RENDERER_VERSION).toBe("wes4g-4");
   });
 
   it("rendering is still deterministic for the same snapshot", () => {
