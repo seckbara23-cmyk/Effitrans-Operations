@@ -183,3 +183,89 @@ canonical value, keeping the intent.
 > governance at all?** Today it is governed by the deposit module's own
 > maker-checker and custody ledger. Changing that needs a decision about
 > ADMINISTRATIVE_OFFICER's authority, and is out of scope for this cleanup.
+
+---
+
+# STATUS: PARTIALLY IMPLEMENTED (2026-08-21)
+
+**Decision 1 APPROVED** — canonicalize the two legacy document-status writes.
+**Decision 2 DEFERRED** — deposit-proof verifier-seat governance unchanged.
+
+## ⚠ Only ONE of the two writes could move. The other is BLOCKED.
+
+| Write | Approved change | Shipped? |
+| --- | --- | --- |
+| `acceptProof` — `APPROVED` → **`VERIFIED`** | ✅ | **YES** |
+| proof upload — `PENDING_REVIEW` → `UNDER_REVIEW` | ✅ | **NO — it would have introduced a defect** |
+
+### Why the upload write could not move
+
+`canReview()` in **`lib/documents/status.ts`** — a **Phase 1.8 module carrying a
+PARALLEL legacy vocabulary** — compares the RAW string and accepts only `UPLOADED`
+or `PENDING_REVIEW`. Writing the canonical `UNDER_REVIEW` would have made every
+deposit proof **UNREVIEWABLE**: « Vérifier » would never render.
+
+**The first draft of this change did exactly that. The new tests caught it before
+it left the machine** — and the TYPECHECKER caught it independently, because the
+legacy `DocumentStatus` type does not even contain `UNDER_REVIEW`.
+
+The two vocabularies are disjoint:
+
+| Module | Vocabulary |
+| --- | --- |
+| `lib/documents/status.ts` (Phase 1.8) | `UPLOADED · PENDING_REVIEW · APPROVED · REJECTED · EXPIRED` |
+| `lib/documents/doctrine.ts` (WES-4) | `UPLOADED · UNDER_REVIEW · VERIFIED · CONSUMED_AS_EVIDENCE · SUPERSEDED · …` |
+
+`isDocumentStatus("UNDER_REVIEW")` returns **false**.
+
+### The accept write WAS safe — and for a specific reason
+
+It is a DIRECT update on `document`; the deposit module imports no
+document-status predicate at all. Nothing could reject `VERIFIED`. That asymmetry
+is exactly why one half moved and the other did not.
+
+## Constraints honoured
+
+No migration · no backfill · no RBAC/RLS change · `LEGACY_STATUS_ALIAS` preserved
+(both keys) · the 8 historic `LEGACY_VERIFIED` documents untouched · maker-checker,
+CAS, custody ledger and audit behaviour unchanged · acceptance NOT routed through
+`runReview`.
+
+The inaccurate comment is corrected: it now states plainly that this is a direct
+update and NOT the `verifyDocument → runReview` path, and says why.
+
+## Verification
+
+18 tests. Mutations **M72–M80** all caught, including:
+
+* **M79** — canonicalizing the upload while `canReview` is stale (**the defect this
+  change nearly shipped**);
+* **M78** — rerouting acceptance through `runReview` (would lock out ADMINISTRATIVE_OFFICER);
+* **M73/M74** — dropping either `LEGACY_STATUS_ALIAS` key (would strand the 8 historic rows);
+* **M75** — removing the self-review refusal.
+
+⚠ **M80 initially did NOT fail.** The pin `code.toContain(guard("admin_service:manage"))`
+was satisfied by `rejectProof`, which carries an identical guard line, so widening
+only `acceptProof` stayed green. Now bounded to a sliced `acceptProof`. **Third
+occurrence of the satisfied-by-neighbouring-text trap in this session** — it is a
+pattern, not bad luck.
+
+Full vitest **7227 passed**; typecheck and build clean.
+
+## NEW debt recorded (not actioned)
+
+**The Phase 1.8 `lib/documents/status.ts` vocabulary is the real blocker.** Until
+`canReview` normalizes via `canonicalStatus`, NO module can write `UNDER_REVIEW` and
+remain reviewable. Fixing it is a change to the shared review gate for EVERY
+document — strictly widening (zero `UNDER_REVIEW` rows exist today), but out of
+scope here and deserving its own audit.
+
+## Open product-governance question (Decision 2, DEFERRED)
+
+> Should deposit proofs eventually use the generic document verifier-seat model?
+> If so, should **ADMINISTRATIVE_OFFICER** receive appropriate approval authority,
+> or should another approval role perform the verification?
+
+Today the proof is governed by the deposit module`s own maker-checker, CAS state
+guard, custody ledger and audit action — a parallel lane, not an absence of control.
+NOT resolved here.

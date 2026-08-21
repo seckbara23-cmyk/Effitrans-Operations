@@ -727,6 +727,16 @@ export async function uploadProofOfDeposit(depositId: string, formData: FormData
     type_code: "PROOF_OF_DEPOSIT",
     title: file.name,
     // Enters the normal staff review queue. Administration validates it.
+    //
+    // ⚠ STILL THE LEGACY SPELLING, AND IT CANNOT MOVE YET. The canonical value
+    // is `UNDER_REVIEW`, but `canReview()` in lib/documents/status.ts — a Phase
+    // 1.8 module carrying a PARALLEL legacy vocabulary — tests the raw string
+    // and accepts only `UPLOADED` or `PENDING_REVIEW`. Writing `UNDER_REVIEW`
+    // here would make the proof UNREVIEWABLE: « Vérifier » would never appear.
+    //
+    // Canonicalizing this write therefore depends on `canReview` normalizing
+    // first, which is a change to the shared review gate for EVERY document and
+    // is out of scope here. Recorded as its own debt item.
     status: "PENDING_REVIEW",
     storage_path: path,
     mime_type: file.type || null,
@@ -839,10 +849,26 @@ export async function acceptProof(depositId: string): Promise<DepositResult> {
   });
   if (!ok) return fail("invalid_state");
 
-  // The proof becomes an APPROVED document through the EXISTING document workflow.
+  // The proof becomes a VERIFIED document.
+  //
+  // This is a DIRECT update, NOT the `verifyDocument → runReview` path — the
+  // previous comment claimed otherwise and that wording is what made this look
+  // like generic document governance. It is a PARALLEL lane, and deliberately so:
+  // acceptance is gated on `admin_service:manage`, which ADMINISTRATIVE_OFFICER
+  // holds and `document:approve` does not include. Routing this through
+  // `runReview` would assert `document:approve` and lock out the very role that
+  // exists to validate a courier's deposit proof.
+  //
+  // The two-person rule is enforced ABOVE (`self_review_forbidden`), the state
+  // guard by the CAS, and the history by `recordCustody` + the audit action —
+  // so the control lives here, in the deposit ledger, rather than in
+  // `document_review`. Whether it should eventually move is recorded as an open
+  // product-governance question, not decided here.
+  //
+  // CANONICAL spelling: `APPROVED` is the legacy alias of `VERIFIED`.
   await admin
     .from("document")
-    .update({ status: "APPROVED", reviewed_by: c.userId })
+    .update({ status: "VERIFIED", reviewed_by: c.userId })
     .eq("id", d.proofDocumentId)
     .eq("tenant_id", c.tenantId);
 
