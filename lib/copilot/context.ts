@@ -20,7 +20,7 @@
 // (below) so that the PURE `assembleCopilotContext` — and its unit tests — never
 // pull in server-only modules (e.g. the RSC `cache()` in lib/rbac/permissions).
 import { canonicalWorkflowInput } from "@/lib/workflow/canonical-input";
-import { isVerified } from "@/lib/documents/doctrine";
+import { isPendingReview, isVerified } from "@/lib/documents/doctrine";
 import { assessRisk, riskInputFromContext, type RiskAssessment } from "@/lib/copilot/risk-engine";
 import { capItems, isCriticalEventType, COMPRESS_LIMITS } from "@/lib/copilot/compress";
 import { deriveRealtimeEta } from "@/lib/tracking/eta";
@@ -347,9 +347,7 @@ export function assembleCopilotContext(input: AssembleInput): CopilotContext {
         data: {
           total: input.documents.length,
           approved: input.documents.filter((d) => isVerified(d.status)).length,
-          pendingReview: input.documents.filter(
-            (d) => d.status === "UPLOADED" || d.status === "PENDING_REVIEW",
-          ).length,
+          pendingReview: input.documents.filter((d) => isPendingReview(d.status)).length,
           missingRequired: input.missingDocuments.map((m) => m.label),
           items: input.documents.map((d) => ({
             type: d.typeLabel,

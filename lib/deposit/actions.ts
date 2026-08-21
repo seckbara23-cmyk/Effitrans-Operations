@@ -728,16 +728,12 @@ export async function uploadProofOfDeposit(depositId: string, formData: FormData
     title: file.name,
     // Enters the normal staff review queue. Administration validates it.
     //
-    // ⚠ STILL THE LEGACY SPELLING, AND IT CANNOT MOVE YET. The canonical value
-    // is `UNDER_REVIEW`, but `canReview()` in lib/documents/status.ts — a Phase
-    // 1.8 module carrying a PARALLEL legacy vocabulary — tests the raw string
-    // and accepts only `UPLOADED` or `PENDING_REVIEW`. Writing `UNDER_REVIEW`
-    // here would make the proof UNREVIEWABLE: « Vérifier » would never appear.
-    //
-    // Canonicalizing this write therefore depends on `canReview` normalizing
-    // first, which is a change to the shared review gate for EVERY document and
-    // is out of scope here. Recorded as its own debt item.
-    status: "PENDING_REVIEW",
+    // CANONICAL. This wrote `PENDING_REVIEW` until `canReview()` was normalized:
+    // that predicate compared the raw string, so writing `UNDER_REVIEW` here
+    // would have made the proof UNREVIEWABLE. With `canReview` now going through
+    // `canonicalStatus`, the canonical value is recognised and this module mints
+    // no legacy vocabulary at all.
+    status: "UNDER_REVIEW",
     storage_path: path,
     mime_type: file.type || null,
     size_bytes: file.size,

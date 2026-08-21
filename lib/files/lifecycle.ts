@@ -15,7 +15,7 @@
  * percentages over the same dossier is exactly what WES-2 exists to end.
  */
 import type { CanonicalWorkflowInput } from "@/lib/workflow/canonical-input";
-import { isVerified } from "@/lib/documents/doctrine";
+import { isPendingReview, isVerified } from "@/lib/documents/doctrine";
 import { t } from "@/lib/i18n";
 
 export type StepStatus = "completed" | "current" | "pending" | "blocked" | "skipped";
@@ -125,9 +125,7 @@ export function getDossierLifecycle(input: CanonicalWorkflowInput): DossierLifec
   // UAT-2A — the canonical engine must itself use canonical doctrine, or every
   // surface told to "converge on the lifecycle" converges on a stale answer.
   const approved = input.documents.filter((d) => isVerified(d.status)).length;
-  const pendingReview = input.documents.filter(
-    (d) => d.status === "UPLOADED" || d.status === "PENDING_REVIEW",
-  ).length;
+  const pendingReview = input.documents.filter((d) => isPendingReview(d.status)).length;
   const missing = input.missingRequired.length;
   const docsCollected = missing === 0 || pendingReview > 0 || approved > 0;
   const docsVerified = missing === 0;

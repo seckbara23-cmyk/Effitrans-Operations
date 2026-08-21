@@ -70,46 +70,39 @@ describe("deposit debt — the ACCEPT write is canonical", () => {
 });
 
 /**
- * ⚠ THE UPLOAD WRITE COULD NOT MOVE, AND THIS IS WHY.
+ * THE BLOCKER IS GONE — and these assertions are the ones that flipped.
  *
- * `canReview()` lives in lib/documents/status.ts — a Phase 1.8 module carrying a
- * PARALLEL legacy vocabulary (UPLOADED, PENDING_REVIEW, APPROVED, REJECTED,
- * EXPIRED) beside the WES-4 canonical one in doctrine.ts. It compares the RAW
- * string and accepts only UPLOADED or PENDING_REVIEW.
- *
- * So writing the canonical `UNDER_REVIEW` on upload would have made every
- * deposit proof UNREVIEWABLE — « Vérifier » would never render. The first draft
- * of this change did exactly that, and these tests caught it.
- *
- * These pins record the blocker in executable form: the day `canReview`
- * normalizes, the last assertion here fails and points at the work left to do.
+ * They previously read « canReview does NOT yet accept the canonical spelling »
+ * and « the upload deliberately still writes the legacy value ». That was
+ * deliberate: the pins were written to FAIL the moment `canReview` normalized,
+ * so the debt could not be silently forgotten. `canReview` now delegates to
+ * `isPendingReview`, so the upload write is canonical too and the deposit module
+ * mints no legacy vocabulary at all.
  */
-describe("deposit debt — the upload write is BLOCKED by a legacy predicate", () => {
-  it("canReview accepts the legacy spelling", () => {
+describe("deposit debt — the upload write is canonical now that canReview normalizes", () => {
+  it("canReview accepts the CANONICAL spelling", () => {
+    expect(canReview("UNDER_REVIEW")).toBe(true);
+  });
+
+  it("canReview still accepts the legacy spelling — historic rows keep working", () => {
     expect(canReview("PENDING_REVIEW")).toBe(true);
   });
 
-  it("the legacy vocabulary does not even CONTAIN the canonical spelling", () => {
-    // Stronger than a behavioural check, and it needs no cast: the Phase 1.8
-    // validator rejects `UNDER_REVIEW` outright. The two vocabularies are
-    // disjoint at the type level — TypeScript refuses `canReview("UNDER_REVIEW")`
-    // for the same reason.
+  it("the upload now writes UNDER_REVIEW", () => {
+    expect(code).toContain('status: "UNDER_REVIEW"');
+  });
+
+  it("the deposit module mints NO legacy document status any more", () => {
+    // Bounded to THIS file: a legacy spelling elsewhere must not satisfy it.
+    expect(code).not.toContain('status: "PENDING_REVIEW"');
+    expect(code).not.toContain('status: "APPROVED"');
+  });
+
+  it("the legacy TYPE is still a fossil — recorded, deliberately not removed", () => {
+    // The Phase 1.8 union cannot represent the canonical value, which is why
+    // `canReview` takes `string`. Removing it is separate fossil-cleanup debt.
     expect(isDocumentStatus("UNDER_REVIEW")).toBe(false);
     expect(isDocumentStatus("PENDING_REVIEW")).toBe(true);
-  });
-
-  it("canReview does NOT yet accept the canonical spelling", () => {
-    // The cast is the point: it is only reachable by lying to the compiler,
-    // which is what makes the upload write unsafe today.
-    expect(canReview("UNDER_REVIEW" as never)).toBe(false);
-  });
-
-  it("so the upload deliberately still writes the legacy value", () => {
-    expect(code).toContain('status: "PENDING_REVIEW"');
-  });
-
-  it("and the reason is recorded at the write site, not just here", () => {
-    expect(deposit).toContain("STILL THE LEGACY SPELLING, AND IT CANNOT MOVE YET");
   });
 });
 

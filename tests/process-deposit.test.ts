@@ -326,10 +326,10 @@ describe("proof upload (Deliverable 8)", () => {
     expect(actions).toContain("buildStoragePath");
     expect(actions).toContain('type_code: "PROOF_OF_DEPOSIT"');
     // The proof enters the NORMAL staff review queue. The INTENT is that it is
-    // REVIEWABLE. It still uses the legacy spelling because `canReview()` tests
-    // the raw string and does not accept the canonical `UNDER_REVIEW` — see
-    // tests/debt-deposit-canonical-status.test.ts, which pins that blocker.
-    expect(actions).toContain('status: "PENDING_REVIEW"');
+    // REVIEWABLE, not that it uses one particular spelling — so this asserts the
+    // canonical value now that `canReview` normalizes. `PENDING_REVIEW` remains
+    // a mapped alias for historic rows; it is simply no longer minted.
+    expect(actions).toContain('status: "UNDER_REVIEW"');
   });
 
   it("builds the storage path SERVER-side — never a client-supplied one", () => {

@@ -243,3 +243,64 @@ removed — that is what makes it a reminder rather than a comment.
 >
 > The §6b fossil cleanup (legacy type + dead machine) is **not** proposed here and
 > should be its own decision.
+
+---
+
+# STATUS: IMPLEMENTED (2026-08-21) — Steps 1 + 2 + the deposit unblock
+
+One coordinated commit, because the blocker test was written to FAIL the moment the
+blocker lifted.
+
+## What changed
+
+| Change | File |
+| --- | --- |
+| **`isPendingReview()`** — new alias-aware doctrine predicate, counterpart to `isVerified` | `lib/documents/doctrine.ts` |
+| **`canReview` normalized** — delegates to `isPendingReview`; parameter widened to `string` | `lib/documents/status.ts` |
+| **Deposit upload → `UNDER_REVIEW`** — the module now mints NO legacy vocabulary | `lib/deposit/actions.ts` |
+| **Three pending counters** routed through `isPendingReview` | `copilot/context.ts`, `departments/classify.ts`, `files/lifecycle.ts` |
+
+`canReview` delegates rather than duplicating the rule, so the review AFFORDANCE and
+the pending COUNTERS can never disagree about what awaiting-a-decision means. All
+three counters already sat beside an `isVerified()` call that normalized — they are
+now consistent with their own neighbours.
+
+## Recognition, not authorization
+
+Every authority layer is untouched and pinned: the row still requires `canApprove`
+before offering review; `runReview` still asserts `document:approve`;
+`mayVerifyDocument` still applies the verifier seat and maker-checker; the
+`review_document` RPC blocklist is unchanged. `canReview` takes only a status — it
+cannot express authority even by accident.
+
+## Constraints honoured
+
+No migration · no backfill · no RBAC/RLS change · verifier-seat governance untouched ·
+`LEGACY_STATUS_ALIAS` intact (both keys) · the 8 historic `LEGACY_VERIFIED` documents
+untouched and still non-reviewable · the fossil type and dead machine NOT removed.
+
+## Verification
+
+16 new tests plus the two updated deposit suites. Mutations **M81–M88** all caught:
+
+* **M87 — the row dropping `canApprove` and letting `canReview` alone decide.** The
+  one that must never pass: it would turn a recognition change into an
+  authorization change;
+* **M82** — `canReview` returning `true` always (the widening becoming a hole);
+* **M84** — a decided status leaking into the pending set;
+* **M81/M86/M88** — the predicate, the deposit write and a counter each reverting;
+* **M85** — the alias dropped, stranding every legacy row.
+
+Full vitest **7243 passed**; typecheck and build clean.
+
+## Deposit canonicalization debt — CLOSED
+
+Both writes are canonical: upload `UNDER_REVIEW`, accept `VERIFIED`. Zero production
+rows were affected — the deposit flow has still never executed.
+
+## Remaining: fossil-cleanup debt (recorded, NOT actioned)
+
+The Phase 1.8 legacy `DocumentStatus` union, `DOCUMENT_STATUSES`, `ALLOWED`,
+`canTransition`, `canSubmit` and `isDocumentStatus` remain. They have **zero live
+callers**, and the union cannot represent 11 of the 20 live documents. Removing them
+is a separate decision with no functional urgency.

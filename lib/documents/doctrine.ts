@@ -160,6 +160,21 @@ export function isVerified(status: string): boolean {
 }
 
 /**
+ * Awaiting a review decision — uploaded, or under review. ALIAS-AWARE, and the
+ * counterpart to `isVerified`.
+ *
+ * It lives here rather than in the Phase 1.8 module because this is where the
+ * vocabulary lives. Three "documents pending" counters previously compared the
+ * raw pair `UPLOADED || PENDING_REVIEW` — each of them sitting directly beside
+ * an `isVerified()` call that already normalized — so a canonical `UNDER_REVIEW`
+ * document would have been counted as verified-or-nothing while being neither.
+ */
+export function isPendingReview(status: string): boolean {
+  const s = canonicalStatus(status);
+  return s === "UPLOADED" || s === "UNDER_REVIEW";
+}
+
+/**
  * Legal transitions. Deliberately narrow, and note what is ABSENT:
  *   * nothing returns from SUPERSEDED — a superseded version never becomes
  *     current again by a status change; that would need an explicit governed
