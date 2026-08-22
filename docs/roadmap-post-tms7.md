@@ -53,6 +53,7 @@ aging workbook, not MAYA parity.
 | B3 | **Holiday calendar reference data** (needed by ICTD délais AND any jours-ouvrés SLA) | Decision D3 first; then a small HR reference table |
 | B4 | **MAYA historical-data apply path** — staging exists (migration 101) with NO apply path *by construction* | business decision to import + mapping ratification |
 | B5 | **Multi-leg road modelling** (pre-carriage + on-carriage same dossier) — `UNIQUE(file_id)` today | recorded debt; needs business need first |
+| B7 | **Official steps 18/19 — the two completeness checkpoints** (`coordinator_completeness`, `am_completeness`). Declared in the registry with required evidence, but **nothing writes that evidence and no UI submits the steps**, so `evaluateBillingGate` can never open and the governed billing lane cannot create an invoice. Blocks all of FIN-1 | discovered 2026-08-22 during FIN-1-01 preflight; needs ratification of the two review surfaces before build |
 | B6 | **Caisse operations UI** — 9.3A shipped nav + `caisse:manage` + stub page; the cash/cheque/Mobile Money operations themselves are unbuilt | scope on demand; FIN-UAT validates reconciliation independently |
 
 ## 4. WAITING ON BUSINESS — no executable work until answered

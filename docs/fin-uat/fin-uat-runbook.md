@@ -103,6 +103,51 @@ it stops at FIN-1-02 until (a) ships.
 **(c)** Effitrans decides physical deposit applies to a real client and configures
 it once (a) exists.
 
+### FIN-1-01 preflight (2026-08-22) — AM question ANSWERED, larger blocker FOUND
+
+**Q: does FIN-1 require an Account Manager assignment? → NO, not the column.**
+`client.account_manager_id` is **never read** by the billing or deposit lanes (grep
+over `lib/process/billing/` + `lib/deposit/`: zero matches). A dedicated UAT client
+with `account_manager_id = null` is therefore safe, and **DEFECT-CLIENT-AM-01 does
+NOT become a blocker** — on a new client with no AM, the form's clearing write is
+null → null, harmless. (It remains a real defect for *existing* clients: recorded,
+untouched, and a reason never to edit a genuine client.)
+
+**Client fixture requirements (verified):** `validateClient` requires **`name`
+only**; NINEA/email/phone are optional but format-checked (email
+`x@y.z`, NINEA 7–13 digits, phone 7–20 chars). **Recipient rule
+(`emailValidatedInvoice`):** primary *contact* email wins, else the *client* email;
+neither ⇒ `billing_contact_missing`, « we never guess a recipient ». So a UAT client
+with **no contacts** and a controlled `email` makes the recipient unambiguous.
+
+**⛔ DEFECT-FIN1-B — the governed billing lane cannot produce an invoice at all.**
+`prepareInvoiceDraft` refuses unless `billingReady`, and `evaluateBillingGate`
+(`lib/process/engine/gates.ts:118`) demands **three** satisfied requirements:
+`pod_received` (approved Bordereau de Livraison), `coordinator_completeness`
+(step 18) and `am_completeness` (step 19). Steps 18/19 complete only via
+`submitStep`, which first calls `evaluateStepEvidence` and returns
+**`evidence_missing`** unless their required evidence exists —
+`completeness_checked_by/at` and `billing_readiness_confirmed_by/at`. Those four
+keys appear **only in the registry declaration**: nothing in `app/`, `components/`
+or `lib/` ever writes them, and no UI exposes `submitStep` for these steps.
+
+⇒ The gate can never open ⇒ `dossier_not_billing_ready` always ⇒ **no
+deposit-eligible invoice can be created through governance.** The two completeness
+checkpoints are declared but unimplemented. (Here the registry's own
+`implementation.verdict: "missing"` agrees with the code — unusually, since that
+metadata is normally stale.)
+
+**Corroborating production evidence:** the one PAID invoice is `submitted=false,
+validated=false` — made through the simple `/finance` path. The governed lane has
+**never** been used in production, because it cannot be.
+
+⇒ **FIN-1-01 is BLOCKED — BUILD REQUIRED, not a UAT failure.** Nothing in FIN-1
+(13 cases) can run until steps 18/19 gain an implementation, or Effitrans ratifies
+a different route to a deposit-eligible invoice. Recorded in the roadmap as **B7**.
+Also newly required whenever FIN-1 does run: **B-5 — two distinct identities**, since
+`canValidateInvoice` refuses `self_approval_forbidden` when submitter = validator
+(both `finance.demo` and the operator's SYSTEM_ADMIN hold what is needed; no grant).
+
 ### FIN-1 — Deposit / courier custody (13 cases)
 Actors: FINANCE (issue) · ADMINISTRATION (`admin_service:manage`) · COURIER.
 *Blocked-by-staffing note: B-2 — Administration/Courier seats are real employees;
