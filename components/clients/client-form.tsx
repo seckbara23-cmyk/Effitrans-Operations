@@ -43,6 +43,11 @@ export function ClientForm({
   const [email, setEmail] = useState(initial?.email ?? "");
   const [phone, setPhone] = useState(initial?.phone ?? "");
   const [address, setAddress] = useState(initial?.address ?? "");
+  // FIN-UAT / DEFECT-FIN1-A — explicit, never inferred. Defaults to the stored
+  // value, and to false for a client that has never been configured.
+  const [requiresDeposit, setRequiresDeposit] = useState(
+    Boolean(initial?.requiresPhysicalInvoiceDeposit),
+  );
   const [contacts, setContacts] = useState<ClientContactInput[]>(
     initial?.contacts.map((c) => ({
       id: c.id,
@@ -79,9 +84,15 @@ export function ClientForm({
       contacts,
     };
     if (mode === "create") {
+      // The deposit requirement is deliberately NOT part of creation: its only
+      // write path is `client:update`, so a new client always starts at the
+      // database default (false) and must be configured as a separate act.
       run(() => createClient(payload), (r) => router.push(r.id ? `/clients/${r.id}` : "/clients"));
     } else if (clientId) {
-      run(() => updateClient(clientId, payload), () => router.refresh());
+      run(
+        () => updateClient(clientId, { ...payload, requiresPhysicalInvoiceDeposit: requiresDeposit }),
+        () => router.refresh(),
+      );
     }
   }
 
@@ -118,6 +129,29 @@ export function ClientForm({
             <input className={input} value={address} disabled={!editable} onChange={(e) => setAddress(e.target.value)} />
           </Field>
         </div>
+
+        {/* FIN-UAT / DEFECT-FIN1-A — the physical-deposit requirement. Edit-only:
+            it has no create-time write path, so showing it on the create form
+            would promise a persistence that does not happen. */}
+        {mode === "edit" && (
+          <label className="flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={requiresDeposit}
+              disabled={!editable}
+              onChange={(e) => setRequiresDeposit(e.target.checked)}
+            />
+            <span>
+              <span className="block text-sm font-medium text-navy-900">
+                {t.clients.form.requiresPhysicalInvoiceDeposit}
+              </span>
+              <span className="mt-0.5 block text-xs text-slate-500">
+                {t.clients.form.requiresPhysicalInvoiceDepositHint}
+              </span>
+            </span>
+          </label>
+        )}
 
         {/* Contacts */}
         <div>

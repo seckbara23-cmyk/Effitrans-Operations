@@ -1957,6 +1957,9 @@ export const t = {
       contactName: "Nom du contact",
       contactRole: "Fonction",
       primary: "Principal",
+      requiresPhysicalInvoiceDeposit: "Dépôt physique des factures requis",
+      requiresPhysicalInvoiceDepositHint:
+        "Les factures de ce client doivent être déposées physiquement (circuit Administration → coursier → preuve de dépôt). Jamais déduit du type de facture, du segment ni des conditions de paiement.",
     },
     errors: {
       forbidden: "Action non autorisée.",

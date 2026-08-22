@@ -44,7 +44,7 @@ export async function getClient(id: string): Promise<ClientDetail | null> {
   const { data: client } = await supabase
     .from("client")
     .select(
-      "id, tenant_id, name, ninea, segment, email, phone, address, account_manager_id, status, created_at, archived_at",
+      "id, tenant_id, name, ninea, segment, email, phone, address, account_manager_id, requires_physical_invoice_deposit, status, created_at, archived_at",
     )
     .eq("id", id)
     .maybeSingle();
@@ -68,6 +68,7 @@ export async function getClient(id: string): Promise<ClientDetail | null> {
     phone: client.phone,
     address: client.address,
     accountManagerId: client.account_manager_id,
+    requiresPhysicalInvoiceDeposit: Boolean(client.requires_physical_invoice_deposit),
     status: (client.status === "archived" ? "archived" : "active") as ClientStatus,
     createdAt: client.created_at,
     archivedAt: client.archived_at,

@@ -133,6 +133,13 @@ export async function updateClient(id: string, input: ClientInput): Promise<Acti
       phone: input.phone?.trim() || null,
       address: input.address?.trim() || null,
       account_manager_id: input.accountManagerId || null,
+      // FIN-UAT / DEFECT-FIN1-A — the ONLY write path for the physical-deposit
+      // requirement, under the EXISTING `client:update` gate: no new permission,
+      // no role, no migration. Coerced with Boolean(), so an omitted field is
+      // false rather than undefined — a payload that forgets the flag can never
+      // silently turn the circuit ON. It is never inferred from invoice type,
+      // segment or payment terms: only this deliberate toggle sets it.
+      requires_physical_invoice_deposit: Boolean(input.requiresPhysicalInvoiceDeposit),
     })
     .eq("id", id)
     .eq("tenant_id", admin.tenantId);
@@ -163,7 +170,10 @@ export async function updateClient(id: string, input: ClientInput): Promise<Acti
     tenantId: admin.tenantId,
     entity: "client",
     entityId: id,
-    after: { name: input.name.trim() },
+    after: {
+      name: input.name.trim(),
+      requires_physical_invoice_deposit: Boolean(input.requiresPhysicalInvoiceDeposit),
+    },
   });
 
   revalidatePath("/clients");

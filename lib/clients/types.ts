@@ -30,6 +30,14 @@ export type ClientInput = {
   address?: string | null;
   accountManagerId?: string | null;
   contacts?: ClientContactInput[];
+  /**
+   * FIN-UAT / DEFECT-FIN1-A — explicit client-level requirement for the physical
+   * invoice deposit circuit. OPTIONAL and never inferred: absent means "leave as
+   * is" on update and false at creation. The deposit chain refuses to start
+   * unless this is true (lib/deposit/actions.ts), so it must be a deliberate
+   * human decision, never derived from invoice type, segment or payment terms.
+   */
+  requiresPhysicalInvoiceDeposit?: boolean;
 };
 
 export type ClientListItem = {
@@ -52,6 +60,7 @@ export type ClientDetail = {
   phone: string | null;
   address: string | null;
   accountManagerId: string | null;
+  requiresPhysicalInvoiceDeposit: boolean;
   status: ClientStatus;
   createdAt: string;
   archivedAt: string | null;
