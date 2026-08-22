@@ -7,10 +7,13 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, it, expect } from "vitest";
+import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { navSections } from "@/lib/nav";
 
 const read = (p: string) => readFileSync(fileURLToPath(new URL(p, import.meta.url)), "utf8");
 const financeDept = read("../app/departments/finance/page.tsx");
+const rootDir = dirname(fileURLToPath(new URL("../package.json", import.meta.url)));
 
 describe("Finance hub workspace links (Scope E)", () => {
   it("lists the finance workspaces over EXISTING routes, each permission-gated", () => {
@@ -104,5 +107,80 @@ describe("HR under Management — now real (Phase HR-1)", () => {
     expect(depts).toContain('code: "HUMAN_RESOURCES"');
     expect(depts).toContain('labelFr: "Ressources humaines"');
     expect(depts).toMatch(/HR_OFFICER:\s*"HUMAN_RESOURCES"/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// FIN-UAT STEP 0bis — « Dépôts physiques » on the Finance hub (DISCOVERY ONLY)
+//
+// The operator ratified the incoming-money journey as
+// Facturation → Dépôts physiques → Recouvrement → Rapprochement → Balance âgée.
+// /deposits already admitted Finance readers: its gate is `admin_service:manage`
+// OR `collections:manage`, and FINANCE_OFFICER/COLLECTIONS_OFFICER hold the
+// latter. So this is navigation, not authorization — the tile grants REACH, and
+// every mutation stays re-asserted server-side under the existing custody model.
+//
+// The load-bearing case is the WES-3A.6 one: the tile must carry `available:`
+// bound to the SAME flag the route enforces, or it becomes a link to a 404 the
+// moment the flag is off — which is exactly the production state today.
+// ---------------------------------------------------------------------------
+describe("FIN-UAT — Dépôts physiques discovery from Finance", () => {
+  const nav = read("../lib/navigation/build.ts");
+  const route = read("../app/deposits/page.tsx");
+
+  it("places the tile between Facturation and Recouvrement, over the EXISTING route", () => {
+    expect(financeDept).toContain('label: "Dépôts physiques"');
+    expect(financeDept).toContain('href: "/deposits"');
+    const iFact = financeDept.indexOf('label: "Facturation"');
+    const iDep = financeDept.indexOf('label: "Dépôts physiques"');
+    const iRec = financeDept.indexOf('label: "Recouvrement"');
+    expect(iFact).toBeGreaterThan(-1);
+    expect(iDep).toBeGreaterThan(iFact);
+    expect(iRec).toBeGreaterThan(iDep);
+  });
+
+  it("gates the tile on EXACTLY what /deposits enforces — the WES-3A.6 mutation", () => {
+    // BOUNDED to the tile: a global toContain("depositsAvailable") would be
+    // satisfied by the declaration alone even after the tile lost its gate.
+    expect(financeDept).toMatch(/label: "Dépôts physiques"[\s\S]{0,220}available: depositsAvailable/);
+    // …and the value is the route's own resolved flag, not a lookalike.
+    expect(financeDept).toContain("const depositsAvailable = killSwitchOn && !!processFlags?.physicalDeposit;");
+    expect(route).toContain("if (!flags.physicalDeposit) notFound();");
+  });
+
+  it("reuses ONE flag resolution — no second mechanism, no extra fetch", () => {
+    // The env var is read only by the rollout module, never re-implemented here.
+    expect(financeDept).not.toContain("EFFITRANS_PHYSICAL_INVOICE_DEPOSIT_ENABLED");
+    expect(financeDept).toContain("getTenantProcessFlags");
+    // Both tiles read the SAME fetched flags object.
+    expect(financeDept).toContain("const collectionsAvailable = killSwitchOn && !!processFlags?.collections;");
+    expect((financeDept.match(/await getTenantProcessFlags\(/g) ?? []).length).toBe(1);
+    // The kill switch still short-circuits the fetch entirely.
+    expect(financeDept).toContain("killSwitchOn ? await getTenantProcessFlags(user.tenantId) : null");
+  });
+
+  it("transfers NO authority to Finance and duplicates no workflow", () => {
+    // The hub gates nothing on the Administration mutation permission. Asserted
+    // on the CODE forms, not on the string: the explanatory comment above the
+    // tile names `admin_service:manage` to say the route still demands it, and a
+    // bare not.toContain would fail on that prose while proving nothing.
+    expect(financeDept).not.toMatch(/permission: "admin_service:manage"/);
+    expect(financeDept).not.toContain('hasPermission(permissions, "admin_service:manage")');
+    // …and the route keeps BOTH audiences, unchanged: read for Finance,
+    // mutation authority still decided by the server per action.
+    expect(route).toContain('hasPermission(permissions, "admin_service:manage")');
+    expect(route).toContain('hasPermission(permissions, "collections:manage")');
+    // One workflow, two discovery contexts — no Finance-local re-implementation.
+    expect(financeDept).not.toContain("/finance/depots");
+    expect(existsSync(join(rootDir, "app/finance/depots"))).toBe(false);
+  });
+
+  it("leaves the Administration panel and the COURIER landing surface untouched", () => {
+    // Administration keeps its own entry, on its own permission.
+    expect(nav).toMatch(/has\("ADMINISTRATIVE_OFFICER"[\s\S]{0,120}physicalDeposit && can\("admin_service:manage"\)/);
+    expect(nav).toContain('href: "/deposits"');
+    // /courier is an identity landing surface, never a navigation item.
+    expect(nav).not.toContain('href: "/courier"');
+    expect(read("../lib/navigation/landing.ts")).toContain('LANDING_COURIER = "/courier"');
   });
 });

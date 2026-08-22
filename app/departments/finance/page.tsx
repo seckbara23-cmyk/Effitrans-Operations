@@ -46,8 +46,17 @@ export default async function FinanceDepartmentPage() {
 
   // WES-3A.6 — the Recouvrement tile must be gated on EXACTLY what /collections
   // requires, or it becomes a link to a 404. See the comment on financeLinks.
-  const collectionsAvailable =
-    globalKillSwitch().enabled && (await getTenantProcessFlags(user.tenantId)).collections;
+  const killSwitchOn = globalKillSwitch().enabled;
+  const processFlags = killSwitchOn ? await getTenantProcessFlags(user.tenantId) : null;
+  const collectionsAvailable = killSwitchOn && !!processFlags?.collections;
+  // FIN-UAT STEP 0bis — « Dépôts physiques » joins the Finance journey
+  // (Facturation → Dépôts physiques → Recouvrement → Rapprochement → Balance âgée)
+  // as DISCOVERY ONLY. It resolves the SAME flag /deposits itself enforces, from
+  // the SAME fetch as Recouvrement: no second flag mechanism, and the tile cannot
+  // outlive its route. Authority is untouched — the page still demands
+  // `admin_service:manage` OR `collections:manage`, and every mutation is
+  // re-asserted server-side, so Finance readers see a read-only custody view.
+  const depositsAvailable = killSwitchOn && !!processFlags?.physicalDeposit;
 
   const [queue, recon, revenueMonth, readyForBilling, slaCounts] = await Promise.all([
     getFinanceQueue(),
@@ -77,6 +86,7 @@ export default async function FinanceDepartmentPage() {
   const agingEnabled = agingWorkspaceEnabled();
   const financeLinks = [
     { label: "Facturation", href: "/finance", permission: "finance:read", desc: "Factures, encours et statuts de règlement." },
+    { label: "Dépôts physiques", href: "/deposits", permission: "collections:manage", available: depositsAvailable, desc: "Remise des factures papier et chaîne de garde." },
     { label: "Recouvrement", href: "/collections", permission: "collections:manage", available: collectionsAvailable, desc: "Balance âgée, relances et promesses." },
     { label: "Autorisations de dépenses", href: "/finance/autorisations-depenses", permission: "finance:expense:read", desc: "Établir, soumettre et imprimer les autorisations de dépenses." },
     { label: "Caisse", href: "/finance/caisse", permission: "caisse:manage", desc: "Opérations de caisse et de trésorerie (espèces, chèques, Mobile Money, banques)." },
