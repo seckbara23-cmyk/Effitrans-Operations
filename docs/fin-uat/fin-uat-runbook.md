@@ -120,7 +120,17 @@ only**; NINEA/email/phone are optional but format-checked (email
 neither ⇒ `billing_contact_missing`, « we never guess a recipient ». So a UAT client
 with **no contacts** and a controlled `email` makes the recipient unambiguous.
 
-**⛔ DEFECT-FIN1-B — the governed billing lane cannot produce an invoice at all.**
+**FIN-1-00 — PASS (operator + DB-verified, 2026-08-22).** UAT client created with
+controlled email, 0 contacts, `account_manager_id` null, flag persisted TRUE after
+reload; no unrelated field changed. The `32e1319` toggle is production-validated.
+
+**⛔→✅ DEFECT-FIN1-B — WITHDRAWN. See `b7-completeness-steps-audit.md`.** Steps
+18/19 are executable today via `/queues/coordination` and
+`/queues/account_management` (third maker-checker pair; evidence = one VERIFIED
+PAYMENT_RECEIPT; approval by a distinct identity). The paragraph below is kept as
+the record of what I claimed and why it was wrong:
+
+**~~DEFECT-FIN1-B — the governed billing lane cannot produce an invoice at all.~~**
 `prepareInvoiceDraft` refuses unless `billingReady`, and `evaluateBillingGate`
 (`lib/process/engine/gates.ts:118`) demands **three** satisfied requirements:
 `pod_received` (approved Bordereau de Livraison), `coordinator_completeness`
