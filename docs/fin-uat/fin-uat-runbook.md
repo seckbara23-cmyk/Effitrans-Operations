@@ -53,6 +53,56 @@ implemented/activated).
 | Caisse | **route live, STUB page** | « Fonctionnalité à venir » — see FIN-5 reclassification |
 | `EFFITRANS_PHYSICAL_INVOICE_DEPOSIT_ENABLED` | **STILL UNKNOWN** | resolved by STEP 0bis below — the « Dépôts physiques » panel is the observable |
 
+### STEP 0ter — Post-activation reachability — **PASS (operator, 2026-08-22)**
+
+Finance hub shows **Facturation → Dépôts physiques → Recouvrement** · `/deposits`
+renders with 0 active circuits · « Dépôts physiques » also appears in **Mon travail**
+· **no `/courier` navigation entry** · ⇒ `EFFITRANS_PHYSICAL_INVOICE_DEPOSIT_ENABLED`
+empirically **ON**. Deployed SHA `e98b3b5`, CI green.
+
+*Correction to my STEP 0bis wording:* the second discovery surface is a **« Mon
+travail » panel** (`lib/navigation/build.ts`, `kind: "panel"`), not a sidebar
+Administration section. Its gate is unchanged (ADMINISTRATIVE_OFFICER/oversight +
+`admin_service:manage` + flag); only my description of where it renders was wrong.
+
+### ⛔ FIN-1-01 BLOCKED — two preconditions found in pre-flight (read-only)
+
+**DEFECT-FIN1-A — the deposit chain has no reachable entry condition.**
+`handInvoiceToAdministration` refuses unless
+`client.requires_physical_invoice_deposit` is true (« a deposit is NEVER implicitly
+required », `lib/deposit/actions.ts:296`). That column is **read in 4 places and
+written in none**: `createClient`/`updateClient` (`lib/clients/actions.ts`) write
+explicit field lists that omit it, and no other UI or action sets it. Production:
+**0 of 3 clients configured.** So every deposit attempt returns
+`deposit_not_required`, and the whole 13-case lane is unreachable — **the TMS-7
+defect class: the capability works, but nothing leads to it.** Not a workflow bug.
+
+**PRECONDITION-B — only the billing lane produces a deposit-eligible invoice, and it
+sends a REAL EMAIL.** Eligibility needs `validated_at` **and** status `ISSUED`
+(`lib/deposit/status.ts:166`). Two issuance paths exist and only one qualifies:
+* `/finance` simple issue (`lib/finance/actions.ts`) — `canIssue` accepts **DRAFT
+  only**, sets no `validated_at`, sends no mail ⇒ output is **deposit-INELIGIBLE**
+  (this is how the existing PAID production invoice was made: numbered, never
+  validated);
+* **process-engine billing lane** (`lib/process/billing/actions.ts`) — submit →
+  validate (`VALIDATED` + `validated_at`) → **send by email**, and status becomes
+  `ISSUED` **only on successful delivery** (line 494) ⇒ the deposit-eligible path.
+
+⇒ FIN-1-01 must run the billing lane, which **emails the invoice to the client's
+address**. It must therefore target a **UAT client with a safe email** — never one
+of the 3 genuine clients. Recorded as an irreversible/outward-facing action
+(baseline §7 extended).
+
+**Resolution options (operator's decision — nothing implemented):**
+**(a) Recommended — expose the existing capability** (the ratified TMS-7 pattern
+used for `updateProvider`): add the client-level « Dépôt physique des factures
+requis » toggle to the client form, gated on the existing `client:update`. No new
+permission, no schema, no workflow change. Then FIN-1-01 runs cleanly.
+**(b)** Proceed with FIN-1-01 now on a new UAT client with a safe email, accepting
+it stops at FIN-1-02 until (a) ships.
+**(c)** Effitrans decides physical deposit applies to a real client and configures
+it once (a) exists.
+
 ### FIN-1 — Deposit / courier custody (13 cases)
 Actors: FINANCE (issue) · ADMINISTRATION (`admin_service:manage`) · COURIER.
 *Blocked-by-staffing note: B-2 — Administration/Courier seats are real employees;
