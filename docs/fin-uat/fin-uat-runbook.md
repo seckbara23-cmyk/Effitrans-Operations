@@ -26,12 +26,32 @@ provisioning, if chosen, is done by the operator in `/users` (existing roles onl
 
 ## Category C — human production UAT
 
-### STEP 0 — Reachability & gates sweep (read-only; the TMS-7 lesson first)
-Establishes the four unverifiable env flags empirically and proves each intended
-actor can REACH their surface before any workflow runs. Detailed as the first
-operator action (issued separately). Outputs: render/absent/forbidden matrix for
-`/deposits`, `/courier`, `/collections`, `/finance/aging`, `/finance/caisse`,
-`/finance/reconciliation` under SYSTEM_ADMIN and each demo actor.
+### STEP 0 — Reachability & gates sweep (read-only) — **RESULTS (operator, 2026-08-21/22) + ownership correction**
+
+**Operator observation:** the Finance UI exposes `/departments/finance`, `/finance`,
+`/collections`, `/finance/autorisations-depenses`, `/finance/aging`,
+`/finance/caisse`, `/finance/reconciliation`, `/reports` — and `/finance/caisse`
+renders **« Fonctionnalité à venir »** (route reachable, functionality not
+implemented/activated).
+
+**Ownership correction (repo-evidenced — my STEP 0 draft mis-assigned two routes):**
+* `/deposits` is **NOT Finance navigation.** It is the « Dépôts physiques »
+  **Administration panel** (`lib/navigation/build.ts:241`): rendered only for
+  ADMINISTRATIVE_OFFICER / OPS_SUPERVISOR / SYSTEM_ADMIN holding
+  `admin_service:manage`, AND only when the physical-deposit flag (env AND tenant)
+  is on.
+* `/courier` is **NOT navigation at all.** It is the **COURIER identity's landing
+  page** (`lib/navigation/landing.ts:32`; COURIER-only staff narrow to the
+  `courier` identity, `lib/auth/staff-identity.ts`). Staff never browse to it.
+
+**Empirical gate findings from the sweep:**
+| Gate | Verdict | Basis |
+| --- | --- | --- |
+| `EFFITRANS_FINANCE_AGING_ENABLED` | **ON** | `/finance/aging` renders for the operator — its nav entry exists only when env AND `finance:aging:read` both hold |
+| `EFFITRANS_COLLECTIONS_ENABLED` | **ON** | `/collections` (« Balance âgée ») renders — nav requires env AND tenant AND `collections:manage` |
+| Expense UI | **LIVE** | `/finance/autorisations-depenses` renders (`finance:expense:read`) |
+| Caisse | **route live, STUB page** | « Fonctionnalité à venir » — see FIN-5 reclassification |
+| `EFFITRANS_PHYSICAL_INVOICE_DEPOSIT_ENABLED` | **STILL UNKNOWN** | resolved by STEP 0bis below — the « Dépôts physiques » panel is the observable |
 
 ### FIN-1 — Deposit / courier custody (13 cases)
 Actors: FINANCE (issue) · ADMINISTRATION (`admin_service:manage`) · COURIER.
@@ -89,15 +109,23 @@ operator decides demo accounts vs real actors before FIN-1-03.*
 | FIN-4-06 | **Graphiques** renders from the same dataset (no divergent recalculation) | |
 | FIN-4-07 | Create DRAFT report; verify draft is mutable, NOT shared, NOT printable-as-final | finalize deliberately NOT attempted until B-1 resolves |
 
-### FIN-5 — Caisse / reconciliation (5 cases)
+### FIN-5 — Reconciliation (caisse RECLASSIFIED — see note)
+
+**⚠ Caisse reclassification (operator observation + `app/finance/caisse/page.tsx:63`):**
+the caisse route, nav entry and `caisse:manage` gating are live, but the page is a
+**declared stub** (« Fonctionnalité à venir » — 9.3A shipped the foundation, not the
+operations). FIN-5-01/02 are therefore **VOID — not executable, and NOT a defect**:
+recorded as BUILD REQUIRED in the roadmap, not as a FIN-UAT lane. FIN-2-08's
+« CASHIER executes » leg is likewise contingent on what the expense-execution UI
+offers, to be observed when FIN-2 unblocks.
 
 | # | Case | Expected |
 | --- | --- | --- |
-| FIN-5-01 | Reachability: `/finance/caisse` for CASHIER (`caisse.demo`); refused elsewhere | |
-| FIN-5-02 | Caisse records the FIN-2-08 execution (or a UAT movement if FIN-2 blocked) | balances update; audit |
+| FIN-5-01 | ~~Caisse reachability~~ **VOID** — stub confirmed; route renders, operations « à venir » | recorded |
+| FIN-5-02 | ~~Caisse movement~~ **VOID** — same | recorded |
 | FIN-5-03 | `/finance/reconciliation`: run WES-5 reconcile on the UAT payment picture | convergent AND idempotent — second run changes nothing (the WES-5 invariant, live) |
 | FIN-5-04 | Alerts surface (missing reference / pending) reflects reality | links land on the right rows |
-| FIN-5-05 | Authority separation: CASHIER cannot validate/void invoices; FINANCE cannot execute caisse | server refuses both directions |
+| FIN-5-05 | Authority separation: a non-holder cannot validate/void invoices or run reconcile | server refuses regardless of UI |
 
 ### Close-out
 Re-run FB-2..FB-8; produce the evidence matrix; genuine-record hashes unchanged

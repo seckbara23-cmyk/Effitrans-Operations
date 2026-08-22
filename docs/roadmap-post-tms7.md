@@ -38,7 +38,7 @@ aging workbook, not MAYA parity.
 | U2 | **Expense authorization → visa → voucher chain** (`/finance/autorisations-depenses`) | Built (11.0B–D), hash-chained visas; no accumulated production UAT |
 | U3 | **Collections** (`/collections`) | Tenant flag ON; no production UAT |
 | U4 | **Aging Balance** (`/finance/aging`) — NEW capability | Engine+schema+workspace built (migrations 72+); flag-gated tile; no production UAT |
-| U5 | **Caisse & reconciliation** (`/finance/caisse`, `/finance/reconciliation`) | Built (9.3A, WES-5); reconciliation core mutation-tested; no E2E production UAT |
+| U5 | **Reconciliation** (`/finance/reconciliation`) | Built (WES-5), mutation-tested; no E2E production UAT. ⚠ **Caisse reclassified 2026-08-22:** route/nav/permission live but the page is a declared STUB (« Fonctionnalité à venir », 9.3A foundation only) — moved to BUILD REQUIRED (B6) |
 | U6 | **HR-9 Reporting RH** | Code shipped; HR-9D operator UAT pending (migration 114 believed applied with the 115–119 batch — verify at phase start) |
 | U7 | **Enterprise Mail** (EMP-1..5H.1) | Built through activation-readiness; needs the operator activation session (mailbox lifecycle, 2 MAIL_ADMIN holders exist) + DNS caveats (six SPF records ⚠) |
 | U8 | **Messaging Center / customer portal surfaces** | Long-built; only incidental UAT coverage |
@@ -53,6 +53,7 @@ aging workbook, not MAYA parity.
 | B3 | **Holiday calendar reference data** (needed by ICTD délais AND any jours-ouvrés SLA) | Decision D3 first; then a small HR reference table |
 | B4 | **MAYA historical-data apply path** — staging exists (migration 101) with NO apply path *by construction* | business decision to import + mapping ratification |
 | B5 | **Multi-leg road modelling** (pre-carriage + on-carriage same dossier) — `UNIQUE(file_id)` today | recorded debt; needs business need first |
+| B6 | **Caisse operations UI** — 9.3A shipped nav + `caisse:manage` + stub page; the cash/cheque/Mobile Money operations themselves are unbuilt | scope on demand; FIN-UAT validates reconciliation independently |
 
 ## 4. WAITING ON BUSINESS — no executable work until answered
 
