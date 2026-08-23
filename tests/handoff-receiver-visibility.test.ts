@@ -37,12 +37,20 @@ describe("migration 121 — handoff-receiver visibility", () => {
 
   it("widens visibility without losing a single existing ground", () => {
     const fn = fnSlice();
+    // EXHAUSTIVE. The first draft of this migration reproduced only the four
+    // grounds from the ORIGINAL 2026-06 function and silently dropped the four
+    // added since; the migration's own assertions passed because they knew the
+    // same four. CI's WES-3 suite caught it. A subset proves a subset.
     for (const ground of [
       "gp.code = 'file:read:all'",
       "f.account_manager_id = p_user",
       "f.coordinator_id = p_user",
       "f.created_by = p_user",
+      "pi.owner_user_id = p_user",
       "t.assigned_to = p_user",
+      "e.assigned_user_id = p_user",
+      "assignment_event ae",
+      "CUSTOMS_FIELD_AGENT",
     ]) {
       expect(fn, ground).toContain(ground);
     }
@@ -52,7 +60,9 @@ describe("migration 121 — handoff-receiver visibility", () => {
     const fn = fnSlice();
     expect(fn).toContain("h.status = 'SENT'");
     // The dossier must be the one handed over — the join is on THIS file.
-    expect(fn).toContain("where pi.file_id = f.id");
+    // Suffixed alias again: `pi.file_id = f.id` also appears in the WES-3G
+    // ownership ground, so the bare form would pass even with this clause gone.
+    expect(fn).toContain("where pi2.file_id = f.id");
     // Role membership alone is insufficient: the handoff join is mandatory.
     expect(fn).toContain("public.process_handoff h");
     expect(fn).toContain("public.process_step_receiving_role sr");
@@ -67,10 +77,13 @@ describe("migration 121 — handoff-receiver visibility", () => {
   it("keeps tenant isolation on every join", () => {
     const fn = fnSlice();
     expect(fn).toContain("f.tenant_id = p_tenant");
+    // The NEW clause uses suffixed aliases (pi2/r2/ur2) so it cannot collide
+    // with the pre-existing body's own `pi`. Pin the suffixed ones: the bare
+    // names would be satisfied by the older clauses and prove nothing here.
     for (const pin of [
-      "pi.tenant_id = p_tenant",
-      "r.tenant_id = p_tenant",
-      "ur.tenant_id = p_tenant",
+      "pi2.tenant_id = p_tenant",
+      "r2.tenant_id = p_tenant",
+      "ur2.tenant_id = p_tenant",
       "h.tenant_id = p_tenant",
     ]) {
       expect(fn, pin).toContain(pin);

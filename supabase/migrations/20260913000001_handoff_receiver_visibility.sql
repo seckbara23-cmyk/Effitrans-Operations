@@ -80,29 +80,76 @@ as $$
   from public.operational_file f
   where f.tenant_id = p_tenant
     and (
+      -- explicit governance permission
       exists (select 1 from public.get_user_permissions(p_user) gp where gp.code = 'file:read:all')
+      -- commercial ownership
       or f.account_manager_id = p_user
       or f.coordinator_id = p_user
       or f.created_by = p_user
-      or exists (select 1 from public.task t where t.file_id = f.id and t.assigned_to = p_user)
-      -- Handoff-receiver visibility. OPEN handoff ('SENT') only, aimed at a step
-      -- whose receiving role this user holds IN THIS TENANT.
+      -- CANONICAL operational ownership (WES-3G)
+      or exists (
+        select 1 from public.process_instance pi
+         where pi.file_id = f.id and pi.owner_user_id = p_user)
+      -- current work assignment: task …
+      or exists (
+        select 1 from public.task t
+         where t.file_id = f.id and t.assigned_to = p_user)
+      -- … or step execution (WES-3B)
+      or exists (
+        select 1 from public.process_step_execution e
+          join public.process_instance pi on pi.id = e.process_instance_id
+         where pi.file_id = f.id and e.assigned_user_id = p_user)
+      -- BOUNDED historical relationship: this user was verifiably assigned work
+      -- on this dossier before. Read from the append-only ledger, so it cannot
+      -- be claimed by merely holding a role.
+      or exists (
+        select 1 from public.assignment_event ae
+         where ae.file_id = f.id
+           and (ae.new_user_id = p_user or ae.previous_user_id = p_user))
+      -- DEPARTMENT INVOLVEMENT — Customs only.
+      --
+      -- Legitimate involvement, not current responsibility: a customs officer
+      -- must find the dossiers their department's work touches, including ones
+      -- that have moved on to Finance or been archived. The role check is
+      -- tenant-scoped too, so a role held in another tenant grants nothing here.
+      or (
+        exists (
+          select 1
+            from public.user_role ur
+            join public.role r on r.id = ur.role_id
+           where ur.user_id = p_user
+             and ur.tenant_id = p_tenant
+             and r.code in ('CUSTOMS_DECLARANT', 'CHIEF_OF_TRANSIT', 'CUSTOMS_FIELD_AGENT')
+        )
+        and exists (
+          select 1
+            from public.customs_record c
+           where c.file_id = f.id
+             and c.tenant_id = p_tenant
+             and c.deleted_at is null
+             and c.required = true
+        )
+      )
+      -- ================= NEW (2026-08-23): handoff-receiver visibility =======
+      -- A user who staffs the authorized receiving role of a currently OPEN
+      -- ('SENT') handoff may READ that dossier, for as long as it stays open.
+      -- Read only, this dossier only, and it expires on reception.
       or exists (
         select 1
         from public.process_handoff h
-        join public.process_instance pi
-          on pi.id = h.process_instance_id
-         and pi.tenant_id = p_tenant
+        join public.process_instance pi2
+          on pi2.id = h.process_instance_id
+         and pi2.tenant_id = p_tenant
         join public.process_step_receiving_role sr
           on sr.step_key = h.to_step_key
-        join public.role r
-          on r.code = sr.role_code
-         and r.tenant_id = p_tenant
-        join public.user_role ur
-          on ur.role_id = r.id
-         and ur.user_id = p_user
-         and ur.tenant_id = p_tenant
-        where pi.file_id = f.id
+        join public.role r2
+          on r2.code = sr.role_code
+         and r2.tenant_id = p_tenant
+        join public.user_role ur2
+          on ur2.role_id = r2.id
+         and ur2.user_id = p_user
+         and ur2.tenant_id = p_tenant
+        where pi2.file_id = f.id
           and h.tenant_id = p_tenant
           and h.status = 'SENT'
       )
@@ -139,13 +186,39 @@ begin
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'public' and p.proname = 'user_readable_file_ids';
 
-  -- The four pre-existing grounds survive.
-  if v_src not like '%f.account_manager_id = p_user%'
-     or v_src not like '%f.coordinator_id = p_user%'
-     or v_src not like '%f.created_by = p_user%'
-     or v_src not like '%t.assigned_to = p_user%'
-     or v_src not like '%file:read:all%' then
-    raise exception 'MIGRATION FAILED: an existing visibility ground was lost';
+  -- EVERY pre-existing ground survives. This list is exhaustive on purpose:
+  -- the first version of this migration reproduced only the four grounds from
+  -- the ORIGINAL 2026-06 function and silently dropped the four added since
+  -- (WES-3G operational ownership, WES-3B step assignment, the assignment-event
+  -- history, and the customs-department clause). The self-assertions passed —
+  -- because they only knew about the four — and CI caught it instead, via the
+  -- WES-3 suite. An assertion that checks a subset proves a subset.
+  if v_src not like '%file:read:all%' then
+    raise exception 'MIGRATION FAILED: lost ground file:read:all';
+  end if;
+  if v_src not like '%f.account_manager_id = p_user%' then
+    raise exception 'MIGRATION FAILED: lost ground account_manager_id';
+  end if;
+  if v_src not like '%f.coordinator_id = p_user%' then
+    raise exception 'MIGRATION FAILED: lost ground coordinator_id';
+  end if;
+  if v_src not like '%f.created_by = p_user%' then
+    raise exception 'MIGRATION FAILED: lost ground created_by';
+  end if;
+  if v_src not like '%pi.owner_user_id = p_user%' then
+    raise exception 'MIGRATION FAILED: lost ground WES-3G process_instance.owner_user_id';
+  end if;
+  if v_src not like '%t.assigned_to = p_user%' then
+    raise exception 'MIGRATION FAILED: lost ground task.assigned_to';
+  end if;
+  if v_src not like '%e.assigned_user_id = p_user%' then
+    raise exception 'MIGRATION FAILED: lost ground WES-3B step execution assignee';
+  end if;
+  if v_src not like '%assignment_event ae%' then
+    raise exception 'MIGRATION FAILED: lost ground assignment_event history';
+  end if;
+  if v_src not like '%CUSTOMS_FIELD_AGENT%' or v_src not like '%customs_record c%' then
+    raise exception 'MIGRATION FAILED: lost ground customs department involvement';
   end if;
 
   -- The new clause is present, and bounded to OPEN handoffs.
