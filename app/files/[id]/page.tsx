@@ -51,6 +51,9 @@ import { LifecycleTracker } from "@/components/files/lifecycle-tracker";
 import { getDossierLifecycle } from "@/lib/files/lifecycle";
 import { buildCanonicalProjection } from "@/lib/workflow/projection";
 import { getOpenHandoffForFile } from "@/lib/handoffs/service";
+import { TransitHandoff } from "@/components/files/transit-handoff";
+import { getIntakeState } from "@/lib/process/engine/intake-actions";
+import { unmetTransitHandoffPrerequisites } from "@/lib/process/intake";
 import { getDossierStage } from "@/lib/sla/service";
 import { SlaPanel } from "@/components/files/sla-panel";
 import { CopilotPanel } from "@/components/copilot/copilot-panel";
@@ -299,6 +302,13 @@ export default async function FileDetailPage({ params }: { params: { id: string 
   const currentTask = tasks.find((t) => t.status === "TODO" || t.status === "IN_PROGRESS") ?? null;
 
   const openHandoff = await getOpenHandoffForFile(file.id);
+  // Operations → Transit handoff, surfaced on the dossier itself. `getIntakeState`
+  // returns null when the engine is dark, the dossier has no instance, or the
+  // caller may not read the process — in every one of those cases the section
+  // simply does not render. The prerequisites are resolved from the SAME state
+  // the server action re-checks; the UI is never more permissive than the action.
+  const canSendToTransit = hasPermission(permissions, "process:handoff:send");
+  const intakeState = await getIntakeState(file.id);
   const sla = await getDossierStage(file.id, lifecycle.currentDepartment, lifecycle.currentStep).catch(() => null);
 
   // Read-only derived risk assessment (Phase 3.1B) — same Risk Engine the
@@ -351,6 +361,18 @@ export default async function FileDetailPage({ params }: { params: { id: string 
           "where is this, who has it, what next". */}
       <ProcessJourneyPanel fileId={file.id} />
       <FileWorkflow file={file} canTransitionStatus={canTransitionStatus} />
+      {intakeState && (
+        <TransitHandoff
+          fileId={file.id}
+          handoffSent={intakeState.handoffSent}
+          canSend={canSendToTransit}
+          prerequisites={unmetTransitHandoffPrerequisites({
+            hasInstance: intakeState.hasInstance,
+            hasOwner: intakeState.owner !== null,
+            openBlockers: intakeState.openBlockers,
+          })}
+        />
+      )}
       <CommercialOrigin
         quotationId={commercialOrigin.quotationId}
         devisNumber={commercialOrigin.devisNumber}

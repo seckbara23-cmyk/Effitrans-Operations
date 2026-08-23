@@ -540,6 +540,12 @@ function dedupKey(instanceId: string, from: string, to: string, round: number): 
   return `${instanceId}:${from}->${to}:${round}`;
 }
 
+/** A registry node's department, or null when the node declares none (activities). */
+function nodeDepartment(stepKey: string): string | null {
+  const node = getNode(stepKey);
+  return node && "department" in node ? node.department : null;
+}
+
 export async function sendHandoff(
   fileId: string,
   fromStepKey: string,
@@ -584,13 +590,22 @@ export async function sendHandoff(
     return fail("invalid_state");
   }
 
+  // The audit answers "who moved this dossier, when, and BETWEEN WHICH
+  // DEPARTMENTS" without the reader having to resolve step keys against the
+  // registry. Timestamp and actor come from audit_log itself; the departments
+  // are derived from the registry nodes, `null` for a node that declares none.
   await writeAudit({
     action: AuditActions.PROCESS_HANDOFF_SENT,
     actorId: c.userId,
     tenantId: c.tenantId,
     entity: "process_handoff",
     entityId: data.id as string,
-    after: { from: fromStepKey, to: toStepKey },
+    after: {
+      from: fromStepKey,
+      to: toStepKey,
+      from_department: nodeDepartment(fromStepKey),
+      to_department: nodeDepartment(toStepKey),
+    },
   });
   revalidate(fileId);
   return { ok: true, id: data.id as string };

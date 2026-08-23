@@ -102,3 +102,31 @@ export function validateIntake(input: IntakeInput): IntakeValidation {
  * payment or supplier issue — do not gate this particular transmission.
  */
 export const HANDOFF_BLOCKING_CATEGORIES = ["MISSING_DOCUMENT", "CUSTOMER_RESPONSE_REQUIRED"] as const;
+
+/**
+ * The unmet prerequisites for « Transmettre au Transit », in the operator's
+ * language. PURE, and deliberately a MIRROR of what `handDossierToTransit`
+ * enforces server-side — the UI may never be more permissive than the action:
+ *   • the process instance must exist AND have an owner (the dossier is "opened");
+ *   • no OPEN/ACKNOWLEDGED blocker in HANDOFF_BLOCKING_CATEGORIES.
+ * An empty array means transmissible. The server re-checks regardless; this
+ * exists so a blocked dossier SHOWS WHY instead of offering a button that fails.
+ */
+export function unmetTransitHandoffPrerequisites(input: {
+  hasInstance: boolean;
+  hasOwner: boolean;
+  openBlockers: { title: string; category: string }[];
+}): { code: string; labelFr: string }[] {
+  const unmet: { code: string; labelFr: string }[] = [];
+  if (!input.hasInstance) {
+    unmet.push({ code: "workflow_not_opened", labelFr: "Le dossier n'a pas encore été ouvert dans le processus officiel." });
+  } else if (!input.hasOwner) {
+    unmet.push({ code: "owner_missing", labelFr: "Aucun responsable d'ouverture (Opérations) n'est assigné." });
+  }
+  for (const b of input.openBlockers) {
+    if ((HANDOFF_BLOCKING_CATEGORIES as readonly string[]).includes(b.category)) {
+      unmet.push({ code: `blocker:${b.category}`, labelFr: `Point bloquant ouvert : ${b.title}` });
+    }
+  }
+  return unmet;
+}
