@@ -30,9 +30,13 @@ function fnSlice(): string {
 }
 
 describe("migration 121 — handoff-receiver visibility", () => {
-  it("is registered in the build ledger", () => {
-    expect(LATEST_MIGRATION).toBe(MIGRATION);
-    expect(MIGRATION_COUNT).toBe(121);
+  it("exists and is counted by the build ledger", () => {
+    // NOT pinned as "the latest": 121 stopped being newest the moment F-1 landed
+    // as 122, and a frozen latest-migration literal is a test that expires. What
+    // matters is that THIS migration exists and the ledger counts it.
+    expect(sql.length).toBeGreaterThan(0);
+    expect(MIGRATION_COUNT).toBeGreaterThanOrEqual(121);
+    expect(LATEST_MIGRATION >= MIGRATION).toBe(true);
   });
 
   it("widens visibility without losing a single existing ground", () => {

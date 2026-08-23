@@ -13,10 +13,10 @@
  */
 
 /** The latest migration shipped in this build (pinned to the directory by test). */
-export const LATEST_MIGRATION = "20260913000001_handoff_receiver_visibility";
+export const LATEST_MIGRATION = "20260914000001_responsibility_visibility";
 
 /** Total migrations shipped in this build (pinned by test). */
-export const MIGRATION_COUNT = 121;
+export const MIGRATION_COUNT = 122;
 
 /** Newest DATA-probeable migration marker: this permission row proves migrations ≥ this point. */
 export const MIGRATION_PROBE = {
