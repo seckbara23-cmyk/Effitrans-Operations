@@ -155,6 +155,57 @@ export async function getDepartmentQueue(req: QueueRequest): Promise<QueueResult
 
   const { data: execRows } = await q.order("created_at", { ascending: true }).limit(500);
   let execs = (execRows ?? []) as Row[];
+
+  // (1b) UNION — dossiers awaiting this department's RECEPTION.
+  //
+  // A step that is waiting to be received is PENDING by construction: it is
+  // `receiveHandoff` that flips it to AVAILABLE. So the OPEN_STATES filter above
+  // could never surface one, and « À réceptionner » was structurally empty for
+  // the exact case it exists to show — while /departments/queue, which reads the
+  // HANDOFF rather than the step state, correctly showed one. Two surfaces, two
+  // truths.
+  //
+  // The authoritative fact is the OPEN HANDOFF, so that is what is unioned in —
+  // and ONLY that. PENDING is deliberately NOT added to OPEN_STATES: a pending
+  // step with no handoff behind it stays invisible, exactly as before.
+  if (!req.filters?.rejected) {
+    const { data: openHandoffRows } = await scopedFrom(admin, "process_handoff", req.tenantId)
+      .select("process_instance_id, to_step_key")
+      .eq("status", "SENT")
+      .in("to_step_key", req.filters?.stepKey ? [req.filters.stepKey] : stepKeys);
+
+    const awaited = new Map<string, Set<string>>();
+    for (const h of (openHandoffRows ?? []) as Row[]) {
+      const inst = h.process_instance_id as string;
+      if (!awaited.has(inst)) awaited.set(inst, new Set());
+      awaited.get(inst)!.add(h.to_step_key as string);
+    }
+
+    if (awaited.size > 0) {
+      const seen = new Set(execs.map((e) => `${e.process_instance_id}:${e.step_key}`));
+      let rq = scopedFrom(admin, "process_step_execution", req.tenantId)
+        .select("*")
+        .in("process_instance_id", [...awaited.keys()])
+        .in("step_key", [...new Set([...awaited.values()].flatMap((set) => [...set]))]);
+      if (req.filters?.assigneeId) rq = rq.eq("assigned_user_id", req.filters.assigneeId);
+      if (req.filters?.unassigned) rq = rq.is("assigned_user_id", null);
+      const { data: receptionRows } = await rq.limit(500);
+
+      for (const e of (receptionRows ?? []) as Row[]) {
+        const inst = e.process_instance_id as string;
+        const step = e.step_key as string;
+        // `.in(a).in(b)` is a CARTESIAN product: verify this row's own
+        // (instance, step) pair is genuinely the one a handoff points at.
+        if (!awaited.get(inst)?.has(step)) continue;
+        const key = `${inst}:${step}`;
+        if (seen.has(key)) continue;
+        if (e.state === "REJECTED" || e.state === "CANCELLED") continue;
+        execs.push(e);
+        seen.add(key);
+      }
+    }
+  }
+
   if (execs.length === 0) {
     return { ...empty, telemetry: { queueKey: req.queueKey, count: 0, durationMs: Date.now() - started } };
   }
