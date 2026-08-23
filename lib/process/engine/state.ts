@@ -29,6 +29,26 @@ export function getNode(key: string): ProcessStep | ProcessActivity | null {
   return getStep(key) ?? getActivity(key);
 }
 
+/**
+ * The permission that authorizes acting on a step: the step's OWN declared
+ * permission, falling back to the generic `process:manage` for nodes that
+ * declare none.
+ *
+ * A-1. `activateStep` and `submitStep` used to hard-code `process:manage`, which
+ * only ACCOUNT_MANAGER, COORDINATOR, OPS_SUPERVISOR and SYSTEM_ADMIN hold — so
+ * 17 of the 26 official steps could not be started or submitted by the very role
+ * the registry names as their owner, across 12 roles and the whole Finance lane.
+ * In every one of those cases the owning role already held the step's declared
+ * permission; the engine simply never asked. `approveStep` has always resolved it
+ * this way; activate and submit were the odd ones out.
+ *
+ * This grants nothing to anybody: it asks for the capability the registry itself
+ * says the step requires, instead of a blunt one that happens to be broader.
+ */
+export function stepPermission(stepKey: string): string {
+  return getNode(stepKey)?.permissions[0] ?? "process:manage";
+}
+
 export function isKnownStep(key: string): boolean {
   return getNode(key) !== null;
 }

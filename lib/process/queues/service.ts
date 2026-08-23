@@ -28,7 +28,7 @@ import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { scopedFrom } from "@/lib/db/tenant-scope";
 import { hasPermission } from "@/lib/rbac/permissions";
 import { resolveFileScope } from "@/lib/authz/visibility";
-import { getNode } from "../engine/state";
+import { getNode, stepPermission } from "../engine/state";
 import { evaluateBranch, liveByKey, missingPrerequisites, type ExecutionView } from "../engine/state";
 import { evaluatePickupGate } from "../engine/gates";
 import { evaluateStepEvidence, type EvidenceSnapshot } from "../engine/evidence";
@@ -61,6 +61,23 @@ export type QueueItem = {
   phase: string | null;
   department: string;
   requiredRole: string | null;
+  /**
+   * A-2. The permission the SERVER will demand to act on this step, resolved
+   * exactly as the engine resolves it, plus whether THIS caller holds it.
+   * Advisory only — every server action re-checks independently. It exists so a
+   * surface never offers a button its destination will categorically refuse,
+   * which is how « Action non autorisée » reached an operator who was looking at
+   * work the queue had just told them was theirs.
+   */
+  requiredPermission: string;
+  callerMayAct: boolean;
+  /**
+   * Reception is guarded by `process:handoff:receive`, NOT by the step's own
+   * permission, so it needs its own flag. ANDing the step permission onto the
+   * Réceptionner button would HIDE an action the server would have accepted —
+   * an over-correction of the very defect A-2 fixes.
+   */
+  callerMayReceive: boolean;
   assigneeId: string | null;
   /** Who handed this over, and when. Null when the work was not handed off. */
   handoffId: string | null;
@@ -404,6 +421,9 @@ export async function getDepartmentQueue(req: QueueRequest): Promise<QueueResult
       phase: node?.phase ?? null,
       department: req.queueKey,
       requiredRole: node?.role ?? null,
+      requiredPermission: stepPermission(stepKey),
+      callerMayAct: hasPermission(req.permissions, stepPermission(stepKey)),
+      callerMayReceive: hasPermission(req.permissions, "process:handoff:receive"),
       assigneeId: str(e.assigned_user_id),
       handoffId: openHandoff ? (openHandoff.id as string) : null,
       handoffSentBy: openHandoff ? str(openHandoff.sent_by) : receivedHandoff ? str(receivedHandoff.sent_by) : null,

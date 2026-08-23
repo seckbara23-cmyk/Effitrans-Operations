@@ -48,6 +48,7 @@ import {
   prerequisitesMet,
   isEntryStep,
   requiresIndependentReview,
+  stepPermission,
 } from "./state";
 import { evaluatePickupGate } from "./gates";
 import { evaluateStepEvidence } from "./evidence";
@@ -270,7 +271,7 @@ export async function activateEntryStep(fileId: string, stepKey: string): Promis
 
 /** PENDING/AVAILABLE -> ACTIVE. Enforces prerequisites and the pickup join gate. */
 export async function activateStep(fileId: string, stepKey: string): Promise<EngineResult> {
-  const c = await guard("process:manage", fileId);
+  const c = await guard(stepPermission(stepKey), fileId);
   if (isErr(c)) return fail(c);
   const st = await loadStep(c, fileId, stepKey);
   if (typeof st === "string") return fail(st);
@@ -329,7 +330,7 @@ export async function activateStep(fileId: string, stepKey: string): Promise<Eng
  * a document nobody approved.
  */
 export async function submitStep(fileId: string, stepKey: string): Promise<EngineResult> {
-  const c = await guard("process:manage", fileId);
+  const c = await guard(stepPermission(stepKey), fileId);
   if (isErr(c)) return fail(c);
   const st = await loadStep(c, fileId, stepKey);
   if (typeof st === "string") return fail(st);

@@ -62,7 +62,15 @@ export function QueueRowActions({ item, queue }: { item: QueueItem; queue: Queue
     run(() => fn(reason));
   };
 
-  const can = (a: string) => queue.actions.includes(a as never);
+  // A-2. TWO conditions, not one. `queue.actions` says the QUEUE offers this
+  // kind of action; `item.callerMayAct` says the SERVER will accept it from THIS
+  // caller, resolved from the step's own registry permission exactly as the
+  // engine resolves it. Offering on queue membership alone is what showed
+  // « Démarrer » to a Chef de Transit and then answered « Action non autorisée ».
+  //
+  // ADVISORY ONLY. Every server action re-checks independently; hiding a button
+  // is a courtesy, never a boundary.
+  const can = (a: string) => queue.actions.includes(a as never) && item.callerMayAct;
 
   // Work that arrived by handoff cannot be started until it is RECEIVED.
   const awaitingReception = queue.requiresReception && !item.received && item.handoffId !== null;
@@ -70,7 +78,7 @@ export function QueueRowActions({ item, queue }: { item: QueueItem; queue: Queue
   return (
     <div className="flex flex-col items-end gap-1">
       <div className="flex flex-wrap justify-end gap-1">
-        {awaitingReception && can("receive_handoff") && (
+        {awaitingReception && queue.actions.includes("receive_handoff" as never) && item.callerMayReceive && (
           <button
             className={`${btn} border-teal-300 bg-teal-50 text-teal-800 hover:bg-teal-100`}
             disabled={pending}
