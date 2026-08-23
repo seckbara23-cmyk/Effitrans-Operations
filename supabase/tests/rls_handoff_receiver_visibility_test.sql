@@ -33,7 +33,8 @@ insert into public.app_user (id, tenant_id, email) values
 on conflict (id) do nothing;
 
 -- Tenant B needs its own CHIEF_OF_TRANSIT role row.
-insert into public.role (id, tenant_id, code, name)
+-- `role` has no `name` column: it is (id, tenant_id, code, label_fr, label_en, ...).
+insert into public.role (id, tenant_id, code, label_fr)
 values ('00000000-0000-0000-0000-00000000e0b1', '00000000-0000-0000-0000-0000000000b9', 'CHIEF_OF_TRANSIT', 'Chef de Transit')
 on conflict do nothing;
 
@@ -54,12 +55,12 @@ on conflict (id) do nothing;
 
 -- F1: handed over (SENT). F2: unrelated. F3: handed over but RECEIVED.
 -- F4: tenant B, handed over. F5: created_by the creator (pre-existing ground).
-insert into public.operational_file (id, tenant_id, file_number, type, client_id, status, created_by) values
-  ('00000000-0000-0000-0000-00000000f901', '00000000-0000-0000-0000-000000000001', 'EFT-H9-0001', 'IMP', '00000000-0000-0000-0000-0000000c9a01', 'OPEN', null),
-  ('00000000-0000-0000-0000-00000000f902', '00000000-0000-0000-0000-000000000001', 'EFT-H9-0002', 'IMP', '00000000-0000-0000-0000-0000000c9a01', 'OPEN', null),
-  ('00000000-0000-0000-0000-00000000f903', '00000000-0000-0000-0000-000000000001', 'EFT-H9-0003', 'IMP', '00000000-0000-0000-0000-0000000c9a01', 'OPEN', null),
-  ('00000000-0000-0000-0000-00000000f904', '00000000-0000-0000-0000-0000000000b9', 'EFT-H9-0004', 'IMP', '00000000-0000-0000-0000-0000000c9b01', 'OPEN', null),
-  ('00000000-0000-0000-0000-00000000f905', '00000000-0000-0000-0000-000000000001', 'EFT-H9-0005', 'IMP', '00000000-0000-0000-0000-0000000c9a01', 'OPEN', '00000000-0000-0000-0000-00000000e004')
+insert into public.operational_file (id, tenant_id, file_number, type, client_id, created_by) values
+  ('00000000-0000-0000-0000-00000000f901', '00000000-0000-0000-0000-000000000001', 'EFT-H9-0001', 'IMP', '00000000-0000-0000-0000-0000000c9a01', null),
+  ('00000000-0000-0000-0000-00000000f902', '00000000-0000-0000-0000-000000000001', 'EFT-H9-0002', 'IMP', '00000000-0000-0000-0000-0000000c9a01', null),
+  ('00000000-0000-0000-0000-00000000f903', '00000000-0000-0000-0000-000000000001', 'EFT-H9-0003', 'IMP', '00000000-0000-0000-0000-0000000c9a01', null),
+  ('00000000-0000-0000-0000-00000000f904', '00000000-0000-0000-0000-0000000000b9', 'EFT-H9-0004', 'IMP', '00000000-0000-0000-0000-0000000c9b01', null),
+  ('00000000-0000-0000-0000-00000000f905', '00000000-0000-0000-0000-000000000001', 'EFT-H9-0005', 'IMP', '00000000-0000-0000-0000-0000000c9a01', '00000000-0000-0000-0000-00000000e004')
 on conflict (id) do nothing;
 
 insert into public.process_instance (id, tenant_id, file_id) values
@@ -68,10 +69,12 @@ insert into public.process_instance (id, tenant_id, file_id) values
   ('00000000-0000-0000-0000-0000000091a4', '00000000-0000-0000-0000-0000000000b9', '00000000-0000-0000-0000-00000000f904')
 on conflict (id) do nothing;
 
-insert into public.process_handoff (id, tenant_id, process_instance_id, from_step_key, to_step_key, status, dedup_key) values
-  ('00000000-0000-0000-0000-0000000092a1', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000091a1', 'am_dossier_opening', 'coordinator_reception', 'SENT',     'h9-1'),
-  ('00000000-0000-0000-0000-0000000092a3', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000091a3', 'am_dossier_opening', 'coordinator_reception', 'RECEIVED', 'h9-3'),
-  ('00000000-0000-0000-0000-0000000092a4', '00000000-0000-0000-0000-0000000000b9', '00000000-0000-0000-0000-0000000091a4', 'am_dossier_opening', 'coordinator_reception', 'SENT',     'h9-4')
+-- `sent_by` is NOT NULL: a handoff always records who sent it. The sender here
+-- is the creator user, who is deliberately NOT one of the receivers under test.
+insert into public.process_handoff (id, tenant_id, process_instance_id, from_step_key, to_step_key, status, sent_by, dedup_key) values
+  ('00000000-0000-0000-0000-0000000092a1', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000091a1', 'am_dossier_opening', 'coordinator_reception', 'SENT',     '00000000-0000-0000-0000-00000000e004', 'h9-1'),
+  ('00000000-0000-0000-0000-0000000092a3', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000091a3', 'am_dossier_opening', 'coordinator_reception', 'RECEIVED', '00000000-0000-0000-0000-00000000e004', 'h9-3'),
+  ('00000000-0000-0000-0000-0000000092a4', '00000000-0000-0000-0000-0000000000b9', '00000000-0000-0000-0000-0000000091a4', 'am_dossier_opening', 'coordinator_reception', 'SENT',     '00000000-0000-0000-0000-00000000e003', 'h9-4')
 on conflict (id) do nothing;
 
 -- A DELIBERATELY STALE execution row: the pre-ratification role code. If the
