@@ -159,6 +159,86 @@ UX-only, no authority change.
 **F-4 (RC-3) — documentation-only:** mark `requiredEvidence` and
 `implementation` as descriptive in the registry header. Zero runtime effect.
 
+## 5bis. FINANCE JOURNEY - in scope for Tuesday (added 2026-08-23)
+
+Treated as an Effitrans platform capability that must be operationally reliable,
+**not** as MAYA parity. Steps 18-26 plus the deposit chain, audited under the same
+invariant.
+
+### The good news, established by evidence
+
+**Finance-domain RLS is PERMISSION-based, not dossier-derived.** Read policies:
+
+| Table | SELECT predicate |
+| --- | --- |
+| `invoice` | `tenant AND has_permission('finance:read')` |
+| `payment` | `tenant AND has_permission('finance:read')` |
+| `invoice_deposit` | `admin_service:manage` OR `collections:manage` OR (`courier:deposit` AND `courier_user_id = auth.uid()`) |
+| `collection_follow_up` | `tenant AND has_permission('collections:manage')` |
+
+=> **The dossier-visibility gap (RC-1) does NOT propagate to invoices, payments,
+deposits or follow-ups.** A Finance actor can always open their financial object.
+This materially narrows Finance exposure: there is no Finance dead zone *on
+financial objects*.
+
+### The two Finance dead zones that DO exist - same class as Operations->Transit
+
+| # | Where | Why |
+| --- | --- | --- |
+| **FD-1** | **Step 18 `coordinator_completeness` (COORDINATOR)** | No read ground (matrix row 18). The Coordinator cannot open the dossier to perform the completeness control - and this is the **first half of the billing-readiness gate**, so it blocks the governed billing lane, which is the only deposit-eligible path. **This is on the critical path for Tuesday.** |
+| **FD-2** | **Step 24 `courier_deposit` (COURIER)** | No read ground. The courier CAN see the deposit row (RLS narrows to their own), but `components/deposit/deposit-row.tsx:43` links to `/files/{fileId}` - clicking it yields « Dossier introuvable ». A surface telling someone to act, linking to a page that denies them: the exact Operations->Transit pattern. |
+
+**F-1 closes both**, because both are "an open step owned by a role I hold".
+
+**Refinement worth ratifying with F-1:** where an open step already has an
+`assigned_user_id`, restrict the new ground to that assignee plus the step's
+managerial roles, rather than every holder of the owning role. Responsibility is
+then individual once individualised, and role-wide only while unclaimed. This
+keeps courier visibility as narrow as the deposit RLS already is.
+
+### Finance transitions against the invariant
+
+| Transition | Responsible | Work appears | Can open | Server authority | Verdict |
+| --- | --- | --- | --- | --- | --- |
+| POD prerequisite -> step 18 | COORDINATOR | queue OK | **NO - FD-1** | `process:manage` | **RED** |
+| 18 -> 19 AM completeness | ACCOUNT_MANAGER | OK | OK (read:all) | maker != checker on identity | OK |
+| Billing-readiness gate | - | - | - | `evaluateBillingGate`: POD + 18 + 19 | OK (once FD-1 clears) |
+| 20 `billing_draft` | BILLING_OFFICER | OK | OK | `finance:create` + `billingReady` | OK |
+| Submit | BILLING/FINANCE | OK | OK | `finance:create` | OK |
+| 21 Validation | FINANCE_OFFICER | OK | OK | `finance:validate` + **`self_approval_forbidden`** | OK - needs 2 identities (**B-5**) |
+| 22 Dispatch -> ISSUED | BILLING_OFFICER | OK | OK | `finance:issue`; **ISSUED only on successful email** | OK |
+| ISSUED + `validated_at` | - | - | - | governed lane sets both; simple `/finance` path sets neither | OK |
+| Client deposit config | - | - | - | shipped `32e1319`, prod-validated FIN-1-00 | OK |
+| 23 -> courier -> proof | ADMIN_OFFICER / COURIER | OK | OK / **NO - FD-2** | `admin_service:manage`, `courier:deposit`, maker-checker on proof | **AMBER** |
+| Payment / reconciliation | FINANCE/COLLECTIONS | OK | OK | `finance:payment`, WES-5 idempotent | OK |
+| Aging / receivables | FINANCE/DAF | OK | OK | `finance:aging:*` | OK read; **finalize blocked - DAF/DGA/TREASURER 0 holders (B-1)** |
+| 26 Collections | COLLECTIONS_OFFICER | OK | OK | `collections:manage` | OK |
+| Final closure | - | - | - | `closure-input.ts`: balance from lines-payments, `invoice.validated_at`, and deposit proof accepted **only when the client requires it** | Coherent |
+
+### Finance staffing for Tuesday (no new roles needed)
+
+* **Invoice validation needs two identities** - `finance.demo` (FINANCE_OFFICER)
+  holds both `finance:create` and `finance:validate`, so it cannot approve its
+  own submission. Second identity: the operator (SYSTEM_ADMIN) or another
+  FINANCE_OFFICER. Satisfiable today.
+* **BILLING_OFFICER has no demo account** (6 real holders). Either use
+  `finance.demo` (holds `finance:create`) for the draft, or grant BILLING_OFFICER
+  to a demo account via `/users`. Operator's call.
+* **B-1 unchanged**: DAF / DGA / TREASURER have **0 holders**, so aging
+  *finalize* and the full expense visa chain remain out of Tuesday's scope
+  unless staffed. Aging **read** is unaffected.
+* **Outward email**: only the controlled UAT mailbox
+  (`seckbara23@gmail.com`, already bound to the FIN-UAT client with **no
+  contacts**, so the recipient resolves unambiguously). No real client is
+  contacted.
+
+### Rehearsal constraint, recorded
+
+The deposit journey **must** run the governed lane (draft -> submit -> validate ->
+send). The simple `/finance` issue path produces `validated_at = null` and is
+therefore **deposit-INELIGIBLE** by construction - using it would silently
+invalidate the rehearsal.
+
 ## 6. Automated end-to-end journey proof (plan)
 
 A single deterministic SQL suite — `workflow_journey_test.sql`, in the CI
@@ -173,6 +253,17 @@ created in `BEGIN/ROLLBACK`, never in production.
 Paired TS suite for the projection layer: queue presence/absence and
 `classifyItem` category at each state, using the same fixture shapes.
 
+**Finance continuation (same suite, same fixture dossier):** completeness pair ->
+billing-readiness gate -> draft -> submit -> validate *(distinct identity)* -> send
+*(controlled mailbox)* -> assert `status = ISSUED` **and** `validated_at not null`
+together -> client deposit flag -> `handInvoiceToAdministration` -> prepare ->
+assign courier -> decline/accept -> deposit -> proof upload -> **maker-checker
+refusal of self-review** -> reject -> re-upload -> accept -> hand to collections ->
+payment recording -> reconciliation idempotency (second run changes nothing) ->
+closure prerequisites. After each: financial-object readability for the
+responsible role, dossier readability, queue presence, My Work category, and the
+next actor.
+
 Negative cases: unauthorized actor rejected; a role holder with no live step
 gets nothing; visibility disappears when the step completes; tenant B sees
 nothing throughout. Mutation coverage on each new invariant.
@@ -180,7 +271,11 @@ nothing throughout. Mutation coverage on each new invariant.
 ## 7. Tuesday readiness
 
 **Current: RED** — a live dossier stops being openable by the department that
-owns it, at 16 of 26 steps, without manual intervention.
+owns it, at 16 of 26 steps, without manual intervention. **With Finance in scope
+the verdict is unchanged and the critical path is now explicit: FD-1 (step 18,
+COORDINATOR) sits directly on the governed billing lane**, so the deposit-eligible
+invoice — and therefore the whole FIN-1 chain — cannot be reached on Tuesday
+until F-1 ships.
 
 **Projected after F-1 + F-2(scope filter) + the journey proof: GREEN**, on the
 evidence that F-1 is one disjunct over an existing bridge and one migration, and
