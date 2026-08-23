@@ -146,14 +146,27 @@ export const EFFITRANS_PROCESS: ProcessStep[] = [
   {
     stepNumber: 4,
     key: "coordinator_reception",
-    labelFr: "Coordinateur — confirmer la réception et transmettre au Chef de Transit",
-    internalLabel: "Coordination — accusé de réception explicite, puis transmission au Transit",
+    // KEY IS LEGACY, OWNERSHIP IS RATIFIED (2026-08-23). Effitrans ratified the
+    // receiving department for the Operations→Transit handoff as TRANSIT, with
+    // the Chef de Transit as primary receiver. This node's department/role said
+    // "coordination"/COORDINATOR while the ENTIRE rest of the platform already
+    // treated it as Transit's reception: `receiveDossierAtTransit` acts on this
+    // exact step key, the lifecycle map calls it « Réception Transit » and puts
+    // it in T1, `applicability.ts` lists it as generic Transit work, and the
+    // intake vocabulary calls the resulting state HANDED_TO_TRANSIT. The queue
+    // registry derives queues from `department`, so this ONE field was routing
+    // the dossier to the Coordination queue — invisible to the very role meant
+    // to receive it. The step KEY is deliberately NOT renamed: live
+    // `process_step_execution` rows reference it, and a rename would be a data
+    // migration with nothing to gain.
+    labelFr: "Chef de Transit — réceptionner le dossier transmis par les Opérations",
+    internalLabel: "Transit — accusé de réception explicite, puis affectation du Déclarant",
     clientStage: null,
     phase: "customs",
-    department: "coordination",
-    role: "COORDINATOR",
+    department: "transit",
+    role: "CHIEF_TRANSIT",
     description:
-      "Confirmer explicitement la réception du dossier, puis le transmettre au Chef de Transit. Aucun changement de statut silencieux : la réception est un acte tracé.",
+      "Confirmer explicitement la réception du dossier transmis par les Opérations, puis poursuivre par l'affectation du Déclarant. Aucun changement de statut silencieux : la réception est un acte tracé.",
     prerequisites: ["am_dossier_opening"],
     requiredDocuments: [],
     requiredEvidence: ["reception_confirmed_by", "reception_confirmed_at"],
