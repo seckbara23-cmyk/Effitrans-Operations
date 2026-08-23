@@ -115,6 +115,11 @@ jobs:
           PGPASSWORD: postgres
         run: psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/rls_visibility_test.sql
 
+      - name: Run RLS handoff-receiver visibility test (FIN-UAT Failure B)
+        env:
+          PGPASSWORD: postgres
+        run: psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/rls_handoff_receiver_visibility_test.sql
+
       - name: Run RLS documents test (Phase 1.8)
         env:
           PGPASSWORD: postgres
