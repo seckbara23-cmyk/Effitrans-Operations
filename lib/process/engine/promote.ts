@@ -55,7 +55,7 @@ import "server-only";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
-import { getNode, prerequisitesMet } from "./state";
+import { dependentsOf, prerequisitesMet } from "./state";
 import { loadProcessSnapshot, toViews } from "./snapshot";
 
 export class PromotionAuditUnrecoverableError extends Error {
@@ -77,7 +77,13 @@ export async function promoteSuccessors(
   /** F-α: the actor whose completion caused these promotions. Never null. */
   actorId: string,
 ): Promise<void> {
-  const successors = getNode(completedStepKey)?.nextSteps ?? [];
+  // C-1 — DEPENDENTS, not `nextSteps`. A step becomes reachable exactly when the
+  // thing it declares it waits for is done, so promotion and `prerequisitesMet`
+  // read the same relation and cannot disagree. Promoting from `nextSteps` left
+  // step 14 (`transport_assignment`, prerequisite step 3, named by nobody)
+  // permanently PENDING, which made the pickup convergence — and steps 15-26 —
+  // unreachable.
+  const successors = dependentsOf(completedStepKey);
   if (successors.length === 0) return;
 
   const snap = await loadProcessSnapshot(tenantId, fileId, permissions);

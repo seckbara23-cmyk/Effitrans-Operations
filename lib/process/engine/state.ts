@@ -133,6 +133,26 @@ export function liveByKey(executions: ExecutionView[]): Map<string, ExecutionVie
   return m;
 }
 
+/**
+ * DEPENDENTS INDEX (C-1) — every node that lists `stepKey` among its
+ * prerequisites.
+ *
+ * This is the AUTHORITY for successor promotion, and `nextSteps` is not.
+ * `nextSteps` is a narrative reading order: step 3 lists only step 4, while
+ * step 14 `transport_assignment` also declares step 3 as its prerequisite and is
+ * named by nobody. Promoting from `nextSteps` therefore left step 14 permanently
+ * PENDING, and because `pickup` requires BOTH the customs and transport legs,
+ * steps 15-26 became unreachable — found by the static reachability trace before
+ * any operator reached it.
+ *
+ * Reading the dependency the way the engine already reads it for
+ * `prerequisitesMet` means the two can never disagree: a step becomes reachable
+ * exactly when the thing it declares it waits for is done.
+ */
+export function dependentsOf(stepKey: string): string[] {
+  return ALL_NODES.filter((n) => n.prerequisites.includes(stepKey)).map((n) => n.key);
+}
+
 /** A step's prerequisites are met when every prerequisite step is DONE. */
 export function prerequisitesMet(stepKey: string, executions: ExecutionView[]): boolean {
   const node = getNode(stepKey);
