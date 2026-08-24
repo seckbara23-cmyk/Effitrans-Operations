@@ -14,7 +14,10 @@ import { fileURLToPath } from "node:url";
  *                          boundary to protect);
  *   • `next/cache`       — presentation plumbing that throws outside a request
  *                          context; calls are recorded, not swallowed;
- *   • `lib/auth/current-user` — THE stubbed boundary: who is signed in.
+ *   • `lib/auth/current-user` — THE stubbed boundary: who is signed in;
+ *   • `react`            — `cache()` passthrough (request-scoped memoisation is
+ *                          not callable outside a render; removing it makes the
+ *                          journey stricter, never laxer).
  *
  * Everything else — permissions, tenancy, the engine, gates, evidence, audit,
  * Finance, custody, closure — executes for real against the real database.
@@ -34,6 +37,10 @@ export default defineConfig({
       "server-only": fileURLToPath(new URL("./tests/stubs/server-only.ts", import.meta.url)),
       "next/cache": fileURLToPath(new URL("./tests/stubs/next-cache.ts", import.meta.url)),
       "@/lib/auth/current-user": fileURLToPath(new URL("./tests/stubs/current-user.ts", import.meta.url)),
+      // React's `cache()` is request-scoped memoisation and is not callable
+      // outside a render. Passing through removes only the memoisation, which
+      // makes the journey stricter, never laxer.
+      react: fileURLToPath(new URL("./tests/stubs/react.ts", import.meta.url)),
       "@": fileURLToPath(new URL("./", import.meta.url)),
     },
   },
