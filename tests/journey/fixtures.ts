@@ -38,15 +38,23 @@ export async function seedIdentity(
   const id = randomUUID();
   const email = `journey.${label}.${id.slice(0, 8)}@test.local`;
 
-  // auth.users first (app_user.id references it in the platform's model).
-  const { error: authErr } = await admin.schema("auth").from("users").insert({ id, email });
-  if (authErr && !/duplicate/i.test(authErr.message)) {
-    throw new Error(`seedIdentity(${label}): auth.users insert failed: ${authErr.message}`);
+  // The auth user first — through the ADMIN AUTH API, which is the same path the
+  // platform itself uses. PostgREST does not expose the `auth` schema (« Invalid
+  // schema: auth »), and reaching around it would be a test-only shortcut past
+  // the very boundary that makes an identity real.
+  const { data: authUser, error: authErr } = await admin.auth.admin.createUser({
+    email,
+    email_confirm: true,
+    password: `Journey!${id.slice(0, 12)}`,
+  });
+  if (authErr || !authUser?.user) {
+    throw new Error(`seedIdentity(${label}): auth user creation failed: ${authErr?.message}`);
   }
+  const authId = authUser.user.id;
 
   const { error: userErr } = await admin
     .from("app_user")
-    .insert({ id, tenant_id: TENANT_A, email, name: `Journey ${label}`, status: "active" });
+    .insert({ id: authId, tenant_id: TENANT_A, email, name: `Journey ${label}`, status: "active" });
   if (userErr) throw new Error(`seedIdentity(${label}): app_user insert failed: ${userErr.message}`);
 
   for (const code of roleCodes) {
@@ -59,11 +67,11 @@ export async function seedIdentity(
     if (roleErr || !role) throw new Error(`seedIdentity(${label}): role ${code} not found in tenant A`);
     const { error: urErr } = await admin
       .from("user_role")
-      .insert({ user_id: id, role_id: role.id, tenant_id: TENANT_A });
+      .insert({ user_id: authId, role_id: role.id, tenant_id: TENANT_A });
     if (urErr) throw new Error(`seedIdentity(${label}): grant ${code} failed: ${urErr.message}`);
   }
 
-  return { id, tenantId: TENANT_A, email, isSystemAdmin: false, roles: roleCodes };
+  return { id: authId, tenantId: TENANT_A, email, isSystemAdmin: false, roles: roleCodes };
 }
 
 /** Read an execution row — ASSERTION ONLY. The harness never writes these. */
