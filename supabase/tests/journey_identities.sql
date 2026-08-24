@@ -86,6 +86,16 @@ insert into public.client (id, tenant_id, name, email, requires_physical_invoice
   ('00000000-0000-0000-0000-0000000cc002', '00000000-0000-0000-0000-000000000001', 'Journey Client — sans dépôt',    'journey.client.nodeposit@test.local', false)
 on conflict (id) do nothing;
 
+-- CI-ONLY PRIVILEGES for the harness's service-role client.
+-- `grant_table_privileges.sql` scoped grants to `authenticated` and explicitly
+-- left service-role writes "out of scope … added per-table when write flows
+-- land". The journey's client needs to READ state to assert it and to seed
+-- nothing else. Granting here — in a test fixture, never in a migration — keeps
+-- production privileges exactly as they are.
+grant usage on schema public to service_role;
+grant select, insert, update, delete on all tables in schema public to service_role;
+grant usage, select on all sequences in schema public to service_role;
+
 do $$
 declare
   v_users int;

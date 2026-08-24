@@ -47,9 +47,11 @@ export async function identity(label: string): Promise<CurrentUser> {
     .eq("email", email)
     .maybeSingle();
   if (error || !user) {
+    // Surface the UNDERLYING cause. The first version of this message said only
+    // "not found", which hid a privilege error behind a fixture-ordering story.
     throw new Error(
-      `identity(${label}): ${email} not found. The CI step running ` +
-        `supabase/tests/journey_identities.sql must precede the journey.`,
+      `identity(${label}): could not resolve ${email}. ` +
+        `error=${error ? `${error.code ?? ""} ${error.message}` : "none"} row=${JSON.stringify(user)}`,
     );
   }
 
