@@ -44,6 +44,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Node (journey harness)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@v1
         with:
@@ -114,6 +120,18 @@ jobs:
         env:
           PGPASSWORD: postgres
         run: psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/rls_visibility_test.sql
+
+      - name: Install deps (journey harness)
+        run: npm ci
+
+      - name: C-4 journey — Creation to Closure against the real database
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+        run: |
+          set -e
+          KEY=$(supabase status -o env | sed -n 's/^SERVICE_ROLE_KEY=//p' | tr -d '"')
+          if [ -z "$KEY" ]; then echo "::error::could not resolve SERVICE_ROLE_KEY"; exit 1; fi
+          SUPABASE_SERVICE_ROLE_KEY="$KEY" npx vitest run --config vitest.journey.config.ts
 
       - name: Run RLS responsibility visibility test (F-1)
         env:
