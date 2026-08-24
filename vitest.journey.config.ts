@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
  * accident in an environment without one — a journey suite that silently skips
  * is worse than no journey suite.
  *
- * THREE aliases, and only three:
+ * FOUR aliases, and only four:
  *   • `server-only`      — the existing unit-suite stub (Node has no bundler
  *                          boundary to protect);
  *   • `next/cache`       — presentation plumbing that throws outside a request
