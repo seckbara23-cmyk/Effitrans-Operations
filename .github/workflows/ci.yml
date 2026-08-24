@@ -47,7 +47,11 @@ jobs:
       - name: Setup Node (journey harness)
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # 22, not 20: supabase-js needs a native WebSocket, which Node 20 lacks
+          # ("Node.js 20 detected without native WebSocket support"). Polyfilling
+          # it in the harness would be test-only plumbing around a real client;
+          # using the runtime that supports it keeps the client untouched.
+          node-version: 22
           cache: npm
 
       - name: Setup Supabase CLI
