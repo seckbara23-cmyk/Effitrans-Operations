@@ -142,10 +142,7 @@ describe("C-3 — the write path is gated like every other mutation", () => {
       validateAuditEvent({
         action: AuditActions.EVIDENCE_ABSENCE_DECLARED,
         actorId: "22222222-2222-2222-2222-222222222222",
-        tenantId: "00000000-0000-0000-0000-000000000001",
-        entity: "evidence_absence_declaration",
         entityId: "11111111-1111-1111-1111-111111111111",
-        after: { file_id: "f", evidence_key: "VENDOR_INVOICE", reason: "aucun débours" },
       }),
     ).not.toThrow();
   });

@@ -33,7 +33,7 @@
 
 create table if not exists public.evidence_absence_declaration (
   id           uuid primary key default gen_random_uuid(),
-  tenant_id    uuid not null references public.organization(tenant_id) on delete cascade,
+  tenant_id    uuid not null references public.organization (id) on delete cascade,
   file_id      uuid not null references public.operational_file(id) on delete cascade,
   evidence_key text not null,
   reason       text not null,
