@@ -326,6 +326,8 @@ export const AuditActions = {
   // tests/process-engine-compat.test.ts, which scans lib/process/engine/actions.ts.
   PROCESS_INITIALIZED: "process.initialized",
   PROCESS_STEP_ACTIVATED: "process.step.activated",
+  /** C-3 — an evidence type declared inapplicable to a dossier, with motif. */
+  EVIDENCE_ABSENCE_DECLARED: "evidence.absence.declared",
   PROCESS_STEP_SUBMITTED: "process.step.submitted",
   PROCESS_STEP_APPROVED: "process.step.approved",
   PROCESS_STEP_REJECTED: "process.step.rejected",

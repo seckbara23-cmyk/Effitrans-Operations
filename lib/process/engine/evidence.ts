@@ -65,7 +65,21 @@ export type EvidenceSnapshot = {
     driverUserId: string | null;
   } | null;
   invoices: { status: string; balance: number }[];
+  /**
+   * C-3 — evidence keys DECLARED inapplicable to this dossier, with their motif.
+   * A declaration satisfies exactly the key it names and fabricates no document.
+   *
+   * OPTIONAL by type, ALWAYS populated by the two paths that decide anything:
+   * `loadProcessSnapshot` (every gate, every submit) and the queue service
+   * (every queue/My Work row). Display-only projections that omit it simply show
+   * the stricter, undeclared view — they authorise nothing, so they cannot
+   * disagree with the engine about what is allowed, only about what is pretty.
+   * Recorded as bounded follow-up rather than left implicit.
+   */
+  declaredAbsences?: { key: string; reason: string }[];
 };
+
+import { absenceLabelFr, isDeclarableEvidence } from "../evidence-absence";
 
 const nonEmpty = (v: string | null | undefined): boolean => typeof v === "string" && v.trim().length > 0;
 
@@ -102,6 +116,16 @@ function rejectedDoc(snap: EvidenceSnapshot, typeCode: string): boolean {
 export function checkEvidence(key: string, snap: EvidenceSnapshot): EvidenceItem {
   const mapping = DOCUMENT_MAPPINGS.find((d) => d.key === key);
   const labelFr = mapping?.labelFr ?? key;
+
+  // C-3 — a DECLARED ABSENCE satisfies this one key, on this one dossier. The
+  // declarable set is closed (evidence-absence.ts + migration 123 CHECK), so a
+  // declaration can only exist for evidence the business ratified as
+  // conditional. The label carries the motif, so a later reviewer sees WHY it
+  // was waived rather than an unexplained pass.
+  const declared = (snap.declaredAbsences ?? []).find((d) => d.key === key);
+  if (declared && isDeclarableEvidence(key)) {
+    return { key, labelFr, status: "satisfied", detail: absenceLabelFr(declared.reason) };
+  }
 
   // Structured records, not uploads.
   if (key === "CUSTOMS_DOSSIER") {

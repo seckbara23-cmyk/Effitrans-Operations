@@ -19,6 +19,7 @@ const I = "inst-1";
 
 const snap: EvidenceSnapshot = {
   fileType: "IMP",
+  declaredAbsences: [],
   access: { documents: true, customs: true, transport: true, finance: true },
   documents: [],
   customs: null,

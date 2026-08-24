@@ -56,6 +56,7 @@ function done(...keys: string[]): Record<string, StepState> {
 
 const emptySnap: EvidenceSnapshot = {
   fileType: "IMP",
+  declaredAbsences: [],
   access: { documents: true, customs: true, transport: true, finance: true },
   documents: [],
   customs: null,
@@ -65,6 +66,7 @@ const emptySnap: EvidenceSnapshot = {
 
 const readySnap: EvidenceSnapshot = {
   fileType: "IMP",
+  declaredAbsences: [],
   access: { documents: true, customs: true, transport: true, finance: true },
   documents: [
     { typeCode: "BON_A_DELIVRER", status: "APPROVED" },
@@ -280,13 +282,15 @@ describe("pickup convergence gate (Deliverable 6)", () => {
   });
 
   it("does NOT fabricate a customs requirement for TRP/HND", () => {
-    const g = evaluatePickupGate({ ...readySnap, fileType: "TRP", customs: null });
+    const g = evaluatePickupGate({ ...readySnap, fileType: "TRP",
+  declaredAbsences: [], customs: null });
     expect(g.ready).toBe(true);
     expect(g.requirements.find((r) => r.key === "customs_released")!.notApplicable).toBe(true);
   });
 
   it("still requires customs for IMP/EXP", () => {
-    const g = evaluatePickupGate({ ...readySnap, fileType: "IMP", customs: { ...readySnap.customs!, status: "DECLARED" } });
+    const g = evaluatePickupGate({ ...readySnap, fileType: "IMP",
+  declaredAbsences: [], customs: { ...readySnap.customs!, status: "DECLARED" } });
     expect(g.ready).toBe(false);
   });
 

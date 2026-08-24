@@ -207,8 +207,28 @@ export async function loadProcessSnapshot(
   const customs = ((customsRes.data ?? []) as Row[])[0] ?? null;
   const transport = ((transportRes.data ?? []) as Row[])[0] ?? null;
 
+  // C-3 — declared absences for this dossier. Read unconditionally (cheap,
+  // one indexed lookup) so evidence resolution never has to ask twice.
+  // Explicit tenant filter: the generated Database type does not yet know this
+  // table, so `scopedFrom` cannot name it. The predicate is identical.
+  const { data: absenceRows } = await (admin as unknown as {
+    from: (t: string) => {
+      select: (c: string) => {
+        eq: (k: string, v: string) => { eq: (k: string, v: string) => Promise<{ data: Row[] | null }> };
+      };
+    };
+  })
+    .from("evidence_absence_declaration")
+    .select("evidence_key, reason")
+    .eq("tenant_id", tenantId)
+    .eq("file_id", fileId);
+
   const evidence: EvidenceSnapshot = {
     fileType: file.type as string,
+    declaredAbsences: ((absenceRows ?? []) as Row[]).map((r) => ({
+      key: r.evidence_key as string,
+      reason: r.reason as string,
+    })),
     access,
     documents: ((docRes.data ?? []) as Row[]).map((d) => ({
       typeCode: d.type_code as string,

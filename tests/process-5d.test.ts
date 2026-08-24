@@ -243,6 +243,7 @@ describe("aging model (Deliverable 11) — deterministic, no AI", () => {
 
 const snap = (o: Partial<EvidenceSnapshot> = {}): EvidenceSnapshot => ({
   fileType: "IMP",
+  declaredAbsences: [],
   access: { documents: true, customs: true, transport: true, finance: true },
   documents: [{ typeCode: "DELIVERY_NOTE", status: "APPROVED" }],
   customs: null,

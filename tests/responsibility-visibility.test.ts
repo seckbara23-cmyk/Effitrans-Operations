@@ -50,9 +50,13 @@ function seedSlice(): string {
 }
 
 describe("F-1 — the new ground and its two limits", () => {
-  it("is registered in the build ledger", () => {
-    expect(LATEST_MIGRATION).toBe(MIGRATION);
-    expect(MIGRATION_COUNT).toBe(122);
+  it("exists and is counted by the build ledger", () => {
+    // NOT pinned as "the latest": 122 stopped being newest when C-3 landed as
+    // 123, and a frozen latest-migration literal is a test that expires. What
+    // matters is that THIS migration exists and the ledger counts it.
+    expect(sql.length).toBeGreaterThan(0);
+    expect(MIGRATION_COUNT).toBeGreaterThanOrEqual(122);
+    expect(LATEST_MIGRATION >= MIGRATION).toBe(true);
   });
 
   it("grants on an OPEN step owned by a role the user holds — in this tenant", () => {

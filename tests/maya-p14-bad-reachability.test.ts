@@ -36,7 +36,7 @@ const activity = () => PARALLEL_ACTIVITIES.find((a) => a.key === "bon_a_delivrer
 
 /** A dossier ready for pickup in every respect except the documents given. */
 const snap = (documents: { typeCode: string; status: string }[]): EvidenceSnapshot => ({
-  fileType: "IMP",
+  fileType: "IMP", declaredAbsences: [],
   access: { documents: true, customs: true, transport: true, finance: true },
   documents,
   customs: {

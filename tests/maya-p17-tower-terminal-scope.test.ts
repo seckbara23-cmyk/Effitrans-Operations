@@ -38,7 +38,7 @@ const QUEUE = "lib/process/queues/service.ts";
 
 /** EFT-IMP-2026-00003's shape: everything done except BAD and pre-gate. */
 const closedDossierSnap = (): EvidenceSnapshot => ({
-  fileType: "IMP",
+  fileType: "IMP", declaredAbsences: [],
   access: { documents: true, customs: true, transport: true, finance: true },
   documents: [],
   customs: { required: true, status: "RELEASED", baeReference: "BAE-1", declarationNumber: "D-1", externalRef: null },

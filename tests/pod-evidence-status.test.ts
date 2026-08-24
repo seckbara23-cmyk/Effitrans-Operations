@@ -30,7 +30,7 @@ const podGateCodes = (docs: { type_code: string; status: string }[]) =>
   docs.filter((d) => isVerified(d.status)).map((d) => d.type_code);
 
 const snapshotWithPod = (status: string): EvidenceSnapshot => ({
-  fileType: "IMP",
+  fileType: "IMP", declaredAbsences: [],
   access: { documents: true, customs: true, transport: true, finance: true },
   documents: [{ typeCode: "DELIVERY_NOTE", status }],
   customs: null,

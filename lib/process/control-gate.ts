@@ -31,6 +31,9 @@ import type { StepState } from "./engine/types";
 /** Controls that belong to an official step, and which step owns each one. */
 export const CONTROL_OWNING_STEP: Record<string, string> = {
   // ---- Customs (Dédouanement workspace) --------------------------------
+  // C-3 — declaring evidence inapplicable is a mutation of what step 3 accepts,
+  // so it is gated on step 3 exactly like the evidence itself.
+  "evidence.declare_absence": "am_dossier_opening",
   "customs.create": "customs_preparation",
   "customs.update": "customs_preparation",
   "customs.status": "customs_preparation",

@@ -81,6 +81,8 @@ export const TENANT_SCOPED_TABLES = new Set<string>([
   "process_instance",
   "process_step_execution",
   "process_handoff",
+  // C-3 — audited declared absence of evidence (migration 123).
+  "evidence_absence_declaration",
   // post-delivery chain (Phase 5.0D)
   "invoice_deposit",
   "collection_follow_up",

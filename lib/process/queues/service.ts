@@ -262,6 +262,28 @@ export async function getDepartmentQueue(req: QueueRequest): Promise<QueueResult
     .in("id", clientIds);
   const clients = new Map(((clientRows ?? []) as Row[]).map((c) => [c.id as string, c.name as string]));
 
+  // C-3 — declared evidence absences for the page's dossiers, one batched read.
+  // The generated Database type does not yet know this table (migration 123 is
+  // not applied to the type source), so the tenant filter is written explicitly
+  // here rather than through `scopedFrom` — same predicate, stated in full.
+  const { data: absenceRows } = await (admin as unknown as {
+    from: (t: string) => {
+      select: (c: string) => {
+        eq: (k: string, v: string) => { in: (k: string, v: string[]) => Promise<{ data: Row[] | null }> };
+      };
+    };
+  })
+    .from("evidence_absence_declaration")
+    .select("file_id, evidence_key, reason")
+    .eq("tenant_id", req.tenantId)
+    .in("file_id", fileIds);
+  const absencesByFile = new Map<string, { key: string; reason: string }[]>();
+  for (const r of (absenceRows ?? []) as Row[]) {
+    const fid = r.file_id as string;
+    if (!absencesByFile.has(fid)) absencesByFile.set(fid, []);
+    absencesByFile.get(fid)!.push({ key: r.evidence_key as string, reason: r.reason as string });
+  }
+
   // (5) handoffs, (6) ALL executions for those instances (prereqs + branches).
   const [{ data: handoffRows }, { data: allExecRows }] = await Promise.all([
     scopedFrom(admin, "process_handoff", req.tenantId).select("*").in("process_instance_id", instanceIds),
@@ -325,6 +347,8 @@ export async function getDepartmentQueue(req: QueueRequest): Promise<QueueResult
     const snap: EvidenceSnapshot = {
       fileType: file.type as string,
       access,
+      // C-3 — declared absences, batched with the other per-file reads.
+      declaredAbsences: absencesByFile.get(fileId) ?? [],
       documents: (docsByFile.get(fileId) ?? []).map((d) => ({
         typeCode: d.type_code as string,
         status: d.status as string,
