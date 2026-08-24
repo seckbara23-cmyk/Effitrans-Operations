@@ -685,7 +685,7 @@ export async function skipStep(
   });
   // A SKIPPED step is terminal-done, so it hands work on exactly like a
   // completed one — this is what lets « Sans devis » open the intake chain.
-  await promoteSuccessors(ctx.tenantId, fileId, ctx.permissions, stepKey);
+  await promoteSuccessors(ctx.tenantId, fileId, ctx.permissions, stepKey, ctx.userId);
   revalidate(fileId);
   return { ok: true, id: exec.id };
 }

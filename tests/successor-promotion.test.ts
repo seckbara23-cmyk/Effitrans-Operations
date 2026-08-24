@@ -89,8 +89,8 @@ describe("D-1 — wired at exactly the three completion sites", () => {
 
   it("approveStep promotes both halves of the pair", () => {
     const s = fnSlice(actions, "approveStep");
-    expect(s).toContain("await promoteSuccessors(c.tenantId, fileId, c.permissions, preparerKey);");
-    expect(s).toContain("await promoteSuccessors(c.tenantId, fileId, c.permissions, validatorStepKey);");
+    expect(s).toContain("await promoteSuccessors(c.tenantId, fileId, c.permissions, preparerKey, c.userId);");
+    expect(s).toContain("await promoteSuccessors(c.tenantId, fileId, c.permissions, validatorStepKey, c.userId);");
   });
 
   it("skipStep promotes — a SKIPPED step is terminal-done", () => {

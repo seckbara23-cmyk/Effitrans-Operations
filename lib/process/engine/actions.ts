@@ -367,7 +367,7 @@ export async function submitStep(fileId: string, stepKey: string): Promise<Engin
   // Only a COMPLETED step hands work on. A SUBMITTED one is still awaiting its
   // independent checker — `approveStep` promotes when that review lands.
   if (target === "COMPLETED") {
-    await promoteSuccessors(c.tenantId, fileId, c.permissions, stepKey);
+    await promoteSuccessors(c.tenantId, fileId, c.permissions, stepKey, c.userId);
   }
   revalidate(fileId);
   return { ok: true, id: st.execId };
@@ -454,8 +454,8 @@ export async function approveStep(
     after: { step_key: preparerKey, validator_step: validatorStepKey, maker: st.submittedBy },
   });
   // Both halves of the pair are COMPLETED now, so both may hand work on.
-  await promoteSuccessors(c.tenantId, fileId, c.permissions, preparerKey);
-  await promoteSuccessors(c.tenantId, fileId, c.permissions, validatorStepKey);
+  await promoteSuccessors(c.tenantId, fileId, c.permissions, preparerKey, c.userId);
+  await promoteSuccessors(c.tenantId, fileId, c.permissions, validatorStepKey, c.userId);
   revalidate(fileId);
   return { ok: true, id: st.execId };
 }
