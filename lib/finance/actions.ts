@@ -12,6 +12,7 @@ import { ensureOfficialInvoiceArtifact } from "./invoice-artifact";
 import { validateIssuance, dueDateFromTerm, DEFAULT_PAYMENT_TERM_DAYS } from "./issuance";
 import { revalidatePath } from "next/cache";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
+import { assertControlStep } from "@/lib/process/control-gate-server";
 import { assertPermission } from "@/lib/auth/require-permission";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
@@ -201,6 +202,12 @@ export async function createInvoice(fileId: string): Promise<ActionResult> {
   const supabase = getAdminSupabaseClient();
   const file = await verifyFile(supabase, fileId, user.tenantId);
   if (!file) return { ok: false, error: "file_not_found" };
+  // RATIFIED 2026-08-24 — permission is necessary, not sufficient: the owning
+  // official step must also be open and not claimed by someone else.
+  {
+    const g = await assertControlStep("finance.invoice_create", fileId, user.tenantId, user.id);
+    if (g) return { ok: false, error: g };
+  }
 
   const { data, error } = await supabase
     .from("invoice")
@@ -277,6 +284,12 @@ export async function issueInvoice(id: string, dueDate?: string | null): Promise
   const inv = await loadInvoice(supabase, id, user.tenantId);
   if (!inv) return { ok: false, error: "not_found" };
   if (!canIssue(inv.status as InvoiceStatus)) return { ok: false, error: "not_draft" };
+  // RATIFIED 2026-08-24 — permission is necessary, not sufficient: the owning
+  // official step must also be open and not claimed by someone else.
+  {
+    const g = await assertControlStep("finance.invoice_issue", inv.file_id as string, user.tenantId, user.id);
+    if (g) return { ok: false, error: g };
+  }
 
   // UAT-2A — validate the PERSISTED lines BEFORE allocating a number. Issuance
   // consumes an official, immutable, never-reused invoice number; an invoice

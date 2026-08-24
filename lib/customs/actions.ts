@@ -14,6 +14,7 @@ import { revalidatePath } from "next/cache";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
 import { isFileVisible } from "@/lib/authz/visibility";
+import { assertControlStep } from "@/lib/process/control-gate-server";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
 import { onCustomsReleased } from "@/lib/handoffs/triggers";
@@ -75,6 +76,13 @@ export async function createCustoms(fileId: string): Promise<ActionResult> {
   }
   if (!(await isFileVisible(user.id, user.tenantId, fileId))) return { ok: false, error: "forbidden" };
 
+
+  // RATIFIED 2026-08-24 — permission is necessary, not sufficient: the
+  // owning official step must also be open and not claimed by someone else.
+  {
+    const gate = await assertControlStep("customs.create", fileId, user.tenantId, user.id);
+    if (gate) return { ok: false, error: gate };
+  }
   const supabase = getAdminSupabaseClient();
   const { data: file } = await supabase
     .from("operational_file")
@@ -146,6 +154,13 @@ export async function updateCustoms(id: string, input: CustomsInput): Promise<Ac
   if (!rec) return { ok: false, error: "not_found" };
   if (!(await isFileVisible(user.id, user.tenantId, rec.file_id))) return { ok: false, error: "forbidden" };
 
+
+  // RATIFIED 2026-08-24 — permission is necessary, not sufficient: the
+  // owning official step must also be open and not claimed by someone else.
+  {
+    const gate = await assertControlStep("customs.update", rec.file_id, user.tenantId, user.id);
+    if (gate) return { ok: false, error: gate };
+  }
   const { error } = await supabase
     .from("customs_record")
     .update({
@@ -192,6 +207,13 @@ export async function changeCustomsStatus(id: string, toStatus: string): Promise
   if (!rec) return { ok: false, error: "not_found" };
   if (!(await isFileVisible(user.id, user.tenantId, rec.file_id))) return { ok: false, error: "forbidden" };
 
+
+  // RATIFIED 2026-08-24 — permission is necessary, not sufficient: the
+  // owning official step must also be open and not claimed by someone else.
+  {
+    const gate = await assertControlStep("customs.status", rec.file_id, user.tenantId, user.id);
+    if (gate) return { ok: false, error: gate };
+  }
   const from = rec.status as CustomsStatus;
   if (!canTransition(from, toStatus)) return { ok: false, error: "invalid_transition" };
 
@@ -330,6 +352,13 @@ export async function recordGaindeRegistration(
   if (!(await isFileVisible(user.id, user.tenantId, rec.file_id))) {
     return { ok: false, error: "forbidden" };
   }
+
+  // RATIFIED 2026-08-24 — permission is necessary, not sufficient: the
+  // owning official step must also be open and not claimed by someone else.
+  {
+    const gate = await assertControlStep("customs.gainde_registration", rec.file_id, user.tenantId, user.id);
+    if (gate) return { ok: false, error: gate };
+  }
   // Fail before showing success; the RPC refuses the duplicate as well.
   if (rec.external_ref === ref) return { ok: false, error: "reference_unchanged" };
 
@@ -410,6 +439,13 @@ export async function recordCustomsAttachment(
     return { ok: false, error: "forbidden" };
   }
 
+  // RATIFIED 2026-08-24 — permission is necessary, not sufficient: the
+  // owning official step must also be open and not claimed by someone else.
+  {
+    const gate = await assertControlStep("customs.attachment", rec.file_id, user.tenantId, user.id);
+    if (gate) return { ok: false, error: gate };
+  }
+
   const { error } = await supabase.rpc("record_customs_attachment", {
     p_customs_id: id,
     p_systems: clean,
@@ -452,6 +488,13 @@ export async function recordCustomsValidation(id: string): Promise<ActionResult>
   if (!rec) return { ok: false, error: "not_found" };
   if (!(await isFileVisible(user.id, user.tenantId, rec.file_id))) {
     return { ok: false, error: "forbidden" };
+  }
+
+  // RATIFIED 2026-08-24 — permission is necessary, not sufficient: the
+  // owning official step must also be open and not claimed by someone else.
+  {
+    const gate = await assertControlStep("customs.validation", rec.file_id, user.tenantId, user.id);
+    if (gate) return { ok: false, error: gate };
   }
   // Fail before showing success. The RPC enforces all of these too.
   // BOTH halves of authorship disqualify: whoever wrote the information may not
@@ -501,6 +544,13 @@ export async function recordReceivability(
     return { ok: false, error: "forbidden" };
   }
 
+  // RATIFIED 2026-08-24 — permission is necessary, not sufficient: the
+  // owning official step must also be open and not claimed by someone else.
+  {
+    const gate = await assertControlStep("customs.receivability", rec.file_id, user.tenantId, user.id);
+    if (gate) return { ok: false, error: gate };
+  }
+
   const check = validateReceivability(
     { outcome, note },
     { outcome: rec.receivability_status ?? null, note: rec.receivability_note ?? null },
@@ -546,6 +596,13 @@ export async function recordBaeReference(
   if (!rec) return { ok: false, error: "not_found" };
   if (!(await isFileVisible(user.id, user.tenantId, rec.file_id))) {
     return { ok: false, error: "forbidden" };
+  }
+
+  // RATIFIED 2026-08-24 — permission is necessary, not sufficient: the
+  // owning official step must also be open and not claimed by someone else.
+  {
+    const gate = await assertControlStep("customs.bae", rec.file_id, user.tenantId, user.id);
+    if (gate) return { ok: false, error: gate };
   }
 
   const { error } = await supabase.rpc("record_bae_reference", {
@@ -601,6 +658,13 @@ export async function recordCustomsRelease(
   if (!rec) return { ok: false, error: "not_found" };
   if (!(await isFileVisible(user.id, user.tenantId, rec.file_id))) {
     return { ok: false, error: "forbidden" };
+  }
+
+  // RATIFIED 2026-08-24 — permission is necessary, not sufficient: the
+  // owning official step must also be open and not claimed by someone else.
+  {
+    const gate = await assertControlStep("customs.release", rec.file_id, user.tenantId, user.id);
+    if (gate) return { ok: false, error: gate };
   }
   if (!canTransition(rec.status as CustomsStatus, "RELEASED")) {
     return { ok: false, error: "invalid_transition" };
