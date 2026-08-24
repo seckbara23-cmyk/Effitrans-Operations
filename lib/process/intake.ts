@@ -116,12 +116,22 @@ export function unmetTransitHandoffPrerequisites(input: {
   hasInstance: boolean;
   hasOwner: boolean;
   openBlockers: { title: string; category: string }[];
+  /** D-2: whether official step 3 (am_dossier_opening) is terminal-done. */
+  amOpeningDone?: boolean;
 }): { code: string; labelFr: string }[] {
   const unmet: { code: string; labelFr: string }[] = [];
   if (!input.hasInstance) {
     unmet.push({ code: "workflow_not_opened", labelFr: "Le dossier n'a pas encore été ouvert dans le processus officiel." });
   } else if (!input.hasOwner) {
     unmet.push({ code: "owner_missing", labelFr: "Aucun responsable d'ouverture (Opérations) n'est assigné." });
+  }
+  // D-2 — the handoff's own from-step. Named explicitly so the operator reads a
+  // prerequisite instead of discovering a refusal after pressing the button.
+  if (input.amOpeningDone === false) {
+    unmet.push({
+      code: "am_opening_incomplete",
+      labelFr: "L'étape 3 — ouverture et préparation du dossier par l'Account Manager — n'est pas terminée.",
+    });
   }
   for (const b of input.openBlockers) {
     if ((HANDOFF_BLOCKING_CATEGORIES as readonly string[]).includes(b.category)) {

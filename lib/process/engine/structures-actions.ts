@@ -20,6 +20,7 @@ import { assertPermission } from "@/lib/auth/require-permission";
 import { getEffectivePermissions } from "@/lib/rbac/permissions";
 import { isFileVisible } from "@/lib/authz/visibility";
 import { writeAudit } from "@/lib/audit/log";
+import { promoteSuccessors } from "./promote";
 import { AuditActions } from "@/lib/audit/events";
 import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-server";
 import { roleCanonicalDepartment } from "@/lib/organization/departments";
@@ -682,6 +683,9 @@ export async function skipStep(
     before: { state: exec.state },
     after: { state: "SKIPPED", step_key: stepKey, source: input.source },
   });
+  // A SKIPPED step is terminal-done, so it hands work on exactly like a
+  // completed one — this is what lets « Sans devis » open the intake chain.
+  await promoteSuccessors(ctx.tenantId, fileId, ctx.permissions, stepKey);
   revalidate(fileId);
   return { ok: true, id: exec.id };
 }

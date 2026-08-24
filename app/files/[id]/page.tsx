@@ -370,6 +370,7 @@ export default async function FileDetailPage({ params }: { params: { id: string 
             hasInstance: intakeState.hasInstance,
             hasOwner: intakeState.owner !== null,
             openBlockers: intakeState.openBlockers,
+            amOpeningDone: intakeState.amOpeningDone,
           })}
         />
       )}

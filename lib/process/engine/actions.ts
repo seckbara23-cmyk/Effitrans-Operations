@@ -50,6 +50,7 @@ import {
   requiresIndependentReview,
   stepPermission,
 } from "./state";
+import { promoteSuccessors } from "./promote";
 import { evaluatePickupGate } from "./gates";
 import { evaluateStepEvidence } from "./evidence";
 import type { EngineError, EngineResult, StepState } from "./types";
@@ -363,6 +364,11 @@ export async function submitStep(fileId: string, stepKey: string): Promise<Engin
     entityId: st.execId,
     after: { step_key: stepKey, state: target, evidence: ev.satisfied },
   });
+  // Only a COMPLETED step hands work on. A SUBMITTED one is still awaiting its
+  // independent checker — `approveStep` promotes when that review lands.
+  if (target === "COMPLETED") {
+    await promoteSuccessors(c.tenantId, fileId, c.permissions, stepKey);
+  }
   revalidate(fileId);
   return { ok: true, id: st.execId };
 }
@@ -447,6 +453,9 @@ export async function approveStep(
     entityId: st.execId,
     after: { step_key: preparerKey, validator_step: validatorStepKey, maker: st.submittedBy },
   });
+  // Both halves of the pair are COMPLETED now, so both may hand work on.
+  await promoteSuccessors(c.tenantId, fileId, c.permissions, preparerKey);
+  await promoteSuccessors(c.tenantId, fileId, c.permissions, validatorStepKey);
   revalidate(fileId);
   return { ok: true, id: st.execId };
 }

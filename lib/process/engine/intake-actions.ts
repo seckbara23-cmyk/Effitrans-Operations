@@ -209,6 +209,8 @@ export type IntakeState = {
   hasInstance: boolean;
   owner: { name: string; roleLabel: string | null; departmentLabel: string | null; email: string; assignedAt: string | null } | null;
   handoffSent: boolean;
+  /** D-2 — official step 3 done? Drives the « prérequis » list on the dossier. */
+  amOpeningDone: boolean;
   openBlockers: { id: string; title: string; category: string; status: string; customerVisible: boolean }[];
 };
 
@@ -239,6 +241,7 @@ export async function getIntakeState(fileId: string, diag?: IntakeDiag): Promise
     let owner: IntakeState["owner"] = null;
     let openBlockers: IntakeState["openBlockers"] = [];
     let handoffSent = false;
+    let amOpeningDone = false;
 
     if (instance) {
       const { data: inst } = await admin
@@ -286,6 +289,9 @@ export async function getIntakeState(fileId: string, diag?: IntakeDiag): Promise
       }));
       if (diag) { diag.ownerLoaded = Boolean(owner); diag.blockersLoaded = true; }
 
+      amOpeningDone = (snap?.executions ?? []).some(
+        (e) => e.stepKey === "am_dossier_opening" && isDone(e.state),
+      );
       handoffSent = (snap?.handoffs ?? []).some(
         (h) => h.toStepKey === "coordinator_reception" && (h.status === "SENT" || h.status === "RECEIVED"),
       );
@@ -312,6 +318,7 @@ export async function getIntakeState(fileId: string, diag?: IntakeDiag): Promise
       fileStatus: file.status,
       validation,
       hasInstance: Boolean(instance),
+      amOpeningDone,
       owner,
       handoffSent,
       openBlockers,
@@ -487,6 +494,17 @@ export async function handDossierToTransit(fileId: string): Promise<HandoffActio
     .returns<{ id: string; title: string; category: string }[]>();
   if (blockers && blockers.length > 0) {
     return { ok: false, error: "blocked_by_intake_blockers", blockers };
+  }
+
+  // D-2 (ratified 2026-08-24) — the handoff's own FROM-step must be done first.
+  // The registry is explicit: step 3 ends « Transmettre au Coordinateur », step 4
+  // lists step 3 as its prerequisite, and this handoff is literally
+  // am_dossier_opening -> coordinator_reception. Transmitting earlier put a
+  // dossier in Transit's queue that Transit was then correctly forbidden to
+  // work — a deadlock, not an overlap. Refused here rather than discovered later.
+  const amOpening = snap.executions.find((e) => e.stepKey === "am_dossier_opening");
+  if (!amOpening || !isDone(amOpening.state)) {
+    return { ok: false, error: "am_opening_incomplete" };
   }
 
   const sent = await sendHandoff(fileId, "am_dossier_opening", "coordinator_reception");
