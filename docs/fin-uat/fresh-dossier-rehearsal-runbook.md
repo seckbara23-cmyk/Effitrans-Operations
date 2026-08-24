@@ -57,8 +57,8 @@ Verification after each: I read the execution/handoff/audit rows.
 
 | # | Official step | Identity | Where | Action | Expected mutation | Next owner → queue |
 | --- | --- | --- | --- | --- | --- | --- |
-| T1 | (create) | ops.supervisor.demo | `/files` → Nouveau dossier | Type IMP · **Client = UAT FIN-UAT (deposit-flagged, controlled email)** · Mode SEA · BL `REH-UAT-BL-001` | `operational_file` + `shipment`; no instance yet | — |
-| T2 | 2 `operations_intake` | ops.supervisor.demo | dossier → Processus | « Ouvrir le dossier » with owner + **« Sans devis »** (cotation → SKIPPED) | instance created; step 2 COMPLETED; step 3 AVAILABLE | AM → account_management |
+| T1 | (create) | **account.manager.demo** *(CORRECTED — `file:create` is held by ACCOUNT_MANAGER + SYSTEM_ADMIN only; the registry’s step 3 confirms the AM initiates the dossier, while step 2 is Operations’ SUPERVISION act. The UI correctly hid the button from ops.supervisor.demo — honest surface, not a defect)* | `/files` → Nouveau dossier | Type IMP · **Client = UAT FIN-UAT (deposit-flagged, controlled email)** · Mode SEA · BL `REH-UAT-BL-001` | `operational_file` + `shipment`; no instance yet | — |
+| T2 | 2 `operations_intake` | ops.supervisor.demo *(unchanged — `openDossierWorkflow` guards `process:manage`, which OPS_SUPERVISOR holds)* | dossier → Processus | « Ouvrir le dossier » with owner + **« Sans devis »** (cotation → SKIPPED) | instance created; step 2 COMPLETED; step 3 AVAILABLE | AM → account_management |
 | T3 | 3 `am_dossier_opening` | account.manager.demo | `/my-work` or `/queues/account_management` | Démarrer → Soumettre | step 3 COMPLETED | — |
 | T4 | (handoff) | account.manager.demo *(or ops.supervisor)* | dossier page | « Transmettre au Transit » | handoff SENT → `coordinator_reception`; depts audited | Chef de Transit → transit |
 | T5 | 4 reception | chef.transit.demo | `/my-work` « À réceptionner » | « Réceptionner le dossier » | handoff RECEIVED; step 4 PENDING→AVAILABLE | — |
