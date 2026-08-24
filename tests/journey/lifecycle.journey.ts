@@ -16,7 +16,7 @@
  */
 import { describe, it, expect, beforeAll } from "vitest";
 import { as, actAsNobody } from "./identity";
-import { seedIdentity, execution, auditFor, handoffs, db, TENANT_A } from "./fixtures";
+import { identity, execution, auditFor, handoffs, db, TENANT_A, CLIENT_DEPOSIT_REQUIRED } from "./fixtures";
 import type { CurrentUser } from "@/lib/auth/current-user";
 
 import { createFile } from "@/lib/files/actions";
@@ -33,10 +33,10 @@ let fileId = "";
 
 describe("C-4 slice 1 — Creation → Transit reception", () => {
   beforeAll(async () => {
-    ops = await seedIdentity("ops", ["OPS_SUPERVISOR"]);
-    am = await seedIdentity("am", ["ACCOUNT_MANAGER"]);
-    transit = await seedIdentity("transit", ["CHIEF_OF_TRANSIT"]);
-    stranger = await seedIdentity("courier", ["COURIER"]);
+    ops = await identity("ops");
+    am = await identity("am");
+    transit = await identity("transit");
+    stranger = await identity("courier");
   });
 
   it("T1 — the Account Manager creates the dossier; nobody else can", async () => {
@@ -46,18 +46,10 @@ describe("C-4 slice 1 — Creation → Transit reception", () => {
     );
     expect(refused.ok, "a COURIER must not create a dossier").toBe(false);
 
-    const { data: client } = await db()
-      .from("client")
-      .select("id")
-      .eq("tenant_id", TENANT_A)
-      .limit(1)
-      .maybeSingle();
-    expect(client, "tenant A needs at least one client from the seed").toBeTruthy();
-
     const created = await as(am, () =>
       createFile({
         type: "IMP",
-        clientId: client!.id,
+        clientId: CLIENT_DEPOSIT_REQUIRED,
         priority: "NORMAL",
         transportMode: "SEA",
         origin: "JOURNEY ORIGIN",

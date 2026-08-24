@@ -7,7 +7,6 @@
  * having created the accounts in `/users` before the rehearsal. Everything that
  * MOVES a dossier goes through a server action.
  */
-import { randomUUID } from "node:crypto";
 import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { CurrentUser } from "@/lib/auth/current-user";
 
@@ -26,53 +25,58 @@ export function db(): SupabaseClient {
 }
 
 /**
- * Seed a staff identity holding exactly `roleCodes` in tenant A, and return the
- * `CurrentUser` the harness will impersonate. Permissions are NOT stubbed: they
- * are resolved from these real role grants by the real RBAC code.
+ * Resolve one of the pre-seeded journey identities by label.
+ *
+ * The identities are created by `supabase/tests/journey_identities.sql` in the
+ * CI job — fixture CONFIGURATION, the equivalent of an administrator having made
+ * the accounts before a rehearsal. They are RESOLVED here, never created:
+ * PostgREST does not expose `auth`, and `service_role` holds no INSERT grant on
+ * `app_user`, so creating them from the harness would mean reaching around the
+ * very boundaries that make an identity real.
+ *
+ * Permissions are NOT stubbed. Whatever this identity can do is resolved from
+ * its real role grants by the real RBAC code, exactly as in production.
  */
-export async function seedIdentity(
-  label: string,
-  roleCodes: string[],
-): Promise<CurrentUser> {
+export async function identity(label: string): Promise<CurrentUser> {
+  const email = `journey.${label}@test.local`;
   const admin = db();
-  const id = randomUUID();
-  const email = `journey.${label}.${id.slice(0, 8)}@test.local`;
 
-  // The auth user first — through the ADMIN AUTH API, which is the same path the
-  // platform itself uses. PostgREST does not expose the `auth` schema (« Invalid
-  // schema: auth »), and reaching around it would be a test-only shortcut past
-  // the very boundary that makes an identity real.
-  const { data: authUser, error: authErr } = await admin.auth.admin.createUser({
-    email,
-    email_confirm: true,
-    password: `Journey!${id.slice(0, 12)}`,
-  });
-  if (authErr || !authUser?.user) {
-    throw new Error(`seedIdentity(${label}): auth user creation failed: ${authErr?.message}`);
-  }
-  const authId = authUser.user.id;
-
-  const { error: userErr } = await admin
+  const { data: user, error } = await admin
     .from("app_user")
-    .insert({ id: authId, tenant_id: TENANT_A, email, name: `Journey ${label}`, status: "active" });
-  if (userErr) throw new Error(`seedIdentity(${label}): app_user insert failed: ${userErr.message}`);
-
-  for (const code of roleCodes) {
-    const { data: role, error: roleErr } = await admin
-      .from("role")
-      .select("id")
-      .eq("tenant_id", TENANT_A)
-      .eq("code", code)
-      .maybeSingle();
-    if (roleErr || !role) throw new Error(`seedIdentity(${label}): role ${code} not found in tenant A`);
-    const { error: urErr } = await admin
-      .from("user_role")
-      .insert({ user_id: authId, role_id: role.id, tenant_id: TENANT_A });
-    if (urErr) throw new Error(`seedIdentity(${label}): grant ${code} failed: ${urErr.message}`);
+    .select("id, tenant_id, email")
+    .eq("email", email)
+    .maybeSingle();
+  if (error || !user) {
+    throw new Error(
+      `identity(${label}): ${email} not found. The CI step running ` +
+        `supabase/tests/journey_identities.sql must precede the journey.`,
+    );
   }
 
-  return { id: authId, tenantId: TENANT_A, email, isSystemAdmin: false, roles: roleCodes };
+  const { data: rows } = await admin
+    .from("user_role")
+    .select("role:role_id(code)")
+    .eq("user_id", user.id);
+  const roles = (rows ?? [])
+    .map((r) => (r as { role: { code: string } | { code: string }[] | null }).role)
+    .map((rel) => (Array.isArray(rel) ? rel[0] : rel))
+    .map((rel) => rel?.code)
+    .filter((c): c is string => Boolean(c));
+
+  if (roles.length === 0) throw new Error(`identity(${label}): no roles granted`);
+
+  return {
+    id: user.id as string,
+    tenantId: user.tenant_id as string,
+    email: user.email as string,
+    isSystemAdmin: false,
+    roles,
+  };
 }
+
+/** The two journey clients seeded alongside the identities. */
+export const CLIENT_DEPOSIT_REQUIRED = "00000000-0000-0000-0000-0000000cc001";
+export const CLIENT_NO_DEPOSIT = "00000000-0000-0000-0000-0000000cc002";
 
 /** Read an execution row — ASSERTION ONLY. The harness never writes these. */
 export async function execution(fileId: string, stepKey: string) {
