@@ -53,6 +53,7 @@ import {
 import { promoteSuccessors } from "./promote";
 import { evaluatePickupGate } from "./gates";
 import { evaluateStepEvidence } from "./evidence";
+import { isDone } from "./types";
 import type { EngineError, EngineResult, StepState } from "./types";
 
 type Ctx = {
@@ -567,6 +568,28 @@ export async function sendHandoff(
 
   const snap = await loadProcessSnapshot(c.tenantId, fileId, c.permissions);
   if (!snap?.instance) return fail("not_found");
+
+  // C-2 — A HANDOFF MAY NOT OUTRUN ITS OWN FROM-STEP.
+  //
+  // Generic, because the defect was generic: D-2 guarded the Operations→Transit
+  // call site alone, leaving 9→10, 22→23 and 25→26 able to send while their
+  // from-step was unfinished. That is what put a dossier into Transit's queue
+  // that Transit was then correctly forbidden to work — a deadlock manufactured
+  // by sequencing, not an intended overlap. Enforced here so every present and
+  // future handoff inherits it and no call site can opt out.
+  //
+  // Idempotency is preserved deliberately: an ALREADY-OPEN handoff is returned
+  // below without re-checking, so a retry of a legitimate send never fails
+  // merely because the from-step has since moved on.
+  const alreadyOpen = snap.handoffs.some(
+    (h) => h.status === "SENT" && h.fromStepKey === fromStepKey && h.toStepKey === toStepKey,
+  );
+  if (!alreadyOpen) {
+    const from = snap.executions.find(
+      (e) => e.stepKey === fromStepKey && e.state !== "REJECTED" && e.state !== "CANCELLED",
+    );
+    if (!from || !isDone(from.state)) return fail("from_step_incomplete");
+  }
 
   // Already open? Return it — idempotent send, no second handoff.
   const open = snap.handoffs.find(

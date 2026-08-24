@@ -149,5 +149,7 @@ export type EngineError =
   | "override_not_allowed"
   | "reason_required"
   | "handoff_not_open"
+  // C-2 — a handoff may not outrun its own from-step.
+  | "from_step_incomplete"
   | "already_initialized"
   | "cross_tenant";
