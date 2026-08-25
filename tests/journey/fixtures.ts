@@ -197,3 +197,43 @@ export async function fileRow(fileId: string) {
     .maybeSingle();
   return data;
 }
+
+// ---------------------------------------------------------------- mail sink ----
+
+type SinkMessage = { ID: string; To: { Address: string }[]; Subject: string };
+
+/**
+ * Ask the DISPOSABLE SMTP sink what it actually received.
+ *
+ * The point of asserting here rather than on the action's return value: the
+ * action reporting success and a message existing at the destination are two
+ * different claims, and step 22's whole contract rests on the second one. A
+ * provider that accepted and dropped would satisfy the first and not the second.
+ */
+export async function sinkMessagesFor(recipient: string): Promise<SinkMessage[]> {
+  const api = process.env.MAILPIT_API;
+  if (!api) throw new Error("MAILPIT_API is not set — the journey cannot verify delivery");
+  const res = await fetch(`${api}/api/v1/messages?limit=200`);
+  if (!res.ok) throw new Error(`mail sink unreachable: ${res.status}`);
+  const body = (await res.json()) as { messages?: SinkMessage[] };
+  return (body.messages ?? []).filter((m) =>
+    (m.To ?? []).some((t) => t.Address?.toLowerCase() === recipient.toLowerCase()),
+  );
+}
+
+/** The recipient the governed invoice lane resolves for a client. */
+export async function billingRecipientFor(clientId: string): Promise<string> {
+  const { data: contact } = await db()
+    .from("client_contact")
+    .select("email, is_primary")
+    .eq("client_id", clientId)
+    .not("email", "is", null)
+    .order("is_primary", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (contact?.email) return contact.email as string;
+
+  const { data: client } = await db().from("client").select("email").eq("id", clientId).maybeSingle();
+  if (!client?.email) throw new Error(`no billing recipient for client ${clientId}`);
+  return client.email as string;
+}

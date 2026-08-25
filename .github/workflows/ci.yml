@@ -40,6 +40,18 @@ jobs:
     # which (with ON_ERROR_STOP=1) fails this job. Guards tenant isolation (RLS-1)
     # and role-scope (RLS-2) so future schema changes can't silently weaken them.
     runs-on: ubuntu-latest
+    # C-4 — a DISPOSABLE mail sink, so the governed issuance path can perform a
+    # REAL SMTP transaction instead of being stubbed. Step 22 marks an invoice
+    # ISSUED only after a provider ACCEPTS the message; proving that with a fake
+    # success would have proved nothing. Mailpit accepts on 1025 and exposes the
+    # received mail over HTTP on 8025, so the journey asserts the SINK received
+    # it — not merely that the application said so. Nothing leaves the runner.
+    services:
+      mailpit:
+        image: axllent/mailpit:latest
+        ports:
+          - 1025:1025
+          - 8025:8025
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -1072,6 +1084,17 @@ jobs:
           EFFITRANS_FINANCE_EXECUTION_ENABLED: "true"
           EFFITRANS_PHYSICAL_INVOICE_DEPOSIT_ENABLED: "true"
           EFFITRANS_COLLECTIONS_ENABLED: "true"
+          # C-4 — the SMTP provider, pointed at the disposable sink. These are
+          # the ORDINARY provider variables, not test-only switches: the same
+          # names a deployment sets to relay through its own mail server.
+          COMMUNICATIONS_EMAIL_PROVIDER: "smtp"
+          COMMUNICATIONS_EMAIL_FROM: "facturation@journey.test.local"
+          SMTP_HOST: "127.0.0.1"
+          SMTP_PORT: "1025"
+          SMTP_SECURE: "false"
+          SMTP_REJECT_UNAUTHORIZED: "false"
+          # Where the journey verifies ARRIVAL, over Mailpit's HTTP API.
+          MAILPIT_API: "http://127.0.0.1:8025"
         run: |
           set -e
           KEY=$(supabase status -o env | sed -n 's/^SERVICE_ROLE_KEY=//p' | tr -d '"')

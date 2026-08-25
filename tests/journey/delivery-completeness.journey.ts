@@ -12,10 +12,12 @@
  * performable only by a supervisor.
  */
 import { describe, it, expect, beforeAll } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { as } from "./identity";
 import {
   identity, execution, auditFor, handoffs, provideEvidence, customsIdFor, transportFor,
-  db, CLIENT_DEPOSIT_REQUIRED,
+  db, sinkMessagesFor, billingRecipientFor, TENANT_A, CLIENT_DEPOSIT_REQUIRED,
 } from "./fixtures";
 import type { CurrentUser } from "@/lib/auth/current-user";
 
@@ -537,10 +539,16 @@ describe("C-4 section F — governed billing, and the issuance boundary", () => 
     expect(inv?.invoice_number, "validation must not allocate an official number").toBeNull();
   });
 
-  it("THE ISSUANCE INVARIANT — no delivery, no ISSUED, no step 22", async () => {
-    // CI has no email provider, so this exercises the REAL failure path of the
-    // REAL action. Nothing is stubbed: sendEmail genuinely fails closed.
+  it("THE ISSUANCE INVARIANT — a delivery that genuinely FAILS issues nothing", async () => {
+    // The provider is real and configured, so the failure has to be real too:
+    // the SMTP host is pointed at a port nothing is listening on, producing an
+    // actual ECONNREFUSED inside the transport. Nothing is stubbed and no
+    // success is faked — which is the whole reason SMTP was implemented rather
+    // than mocked.
+    const realPort = process.env.SMTP_PORT;
+    process.env.SMTP_PORT = "1";
     const sent = await as(billing, () => emailValidatedInvoice(invoiceId));
+    process.env.SMTP_PORT = realPort;
     expect(sent.ok, "a send that did not happen must not report success").toBe(false);
     expect((sent as { error: string }).error).toBe("email_send_failed");
 
@@ -561,25 +569,114 @@ describe("C-4 section F — governed billing, and the issuance boundary", () => 
     expect(events[0].actor_id).toBe(billing.id);
   });
 
-  it("NUMBERING — the sequence advanced although no invoice carries a number", async () => {
-    // RECORDED, NOT JUDGED. next_invoice_number runs BEFORE the send, so a
-    // failed delivery consumes a value no document will ever carry, and a retry
-    // consumes another. Whether gaps in the official sequence are acceptable
-    // under Effitrans's accounting obligations is a business ruling; this pins
-    // the evidence so the ruling is made against facts rather than recollection.
+
+  it("step 22 — a REAL SMTP delivery is what issues the invoice", async () => {
+    // The provider is the ordinary `smtp` one, pointed at a disposable sink.
+    // Nothing about this path is test-aware: emailValidatedInvoice does not know
+    // where the mail is going, and the invoice becomes ISSUED for exactly one
+    // reason — a server accepted the message.
+    const recipient = await billingRecipientFor(CLIENT_DEPOSIT_REQUIRED);
+    const before = (await sinkMessagesFor(recipient)).length;
+
+    const sent = await as(billing, () => emailValidatedInvoice(invoiceId));
+    expect(sent.ok, `emailValidatedInvoice: ${JSON.stringify(sent)}`).toBe(true);
+
+    // THE SINK ACTUALLY RECEIVED IT. Asserted at the destination, not from the
+    // application's own report: "the action said ok" and "a message arrived" are
+    // two different claims, and step 22's contract rests on the second.
+    const after = await sinkMessagesFor(recipient);
+    expect(after.length, "the mail sink must have received the invoice").toBe(before + 1);
+
+    // …and the invoice is ISSUED, with its official identity populated.
+    const { data: inv } = await db()
+      .from("invoice")
+      .select("status, invoice_number, issue_date, due_date, issued_by")
+      .eq("id", invoiceId)
+      .maybeSingle();
+    expect(inv?.status, "delivery is what issues it").toBe("ISSUED");
+    expect(inv?.invoice_number, "the official number is assigned at issuance").toBeTruthy();
+    expect(inv?.issue_date, "and the issue date").toBeTruthy();
+    expect(inv?.due_date, "and the due date").toBeTruthy();
+    expect(inv?.issued_by, "attributed to the issuer").toBe(billing.id);
+
+    // …step 22 completes, on the delivery and not on the click.
+    expect((await execution(fileId, "billing_dispatch"))?.state).toBe("COMPLETED");
+
+    // …the send is audited with the recipient and the outcome.
+    const events = await auditFor("invoice.emailed", invoiceId);
+    expect(events.length, "a delivery must be audited").toBeGreaterThan(0);
+    expect(events[0].actor_id).toBe(billing.id);
+    expect((events[0].after as { recipient?: string })?.recipient).toBe(recipient);
+
+    // …and step 23 becomes eligible — the wall the journey could not cross.
+    expect((await execution(fileId, "administration_deposit_prep"))?.state).toBe("AVAILABLE");
+  });
+
+  it("re-sending is idempotent — it cannot issue or bill twice", async () => {
+    const recipient = await billingRecipientFor(CLIENT_DEPOSIT_REQUIRED);
+    const before = (await sinkMessagesFor(recipient)).length;
+
+    const again = await as(billing, () => emailValidatedInvoice(invoiceId));
+    expect(again.ok, "a repeat is not an error").toBe(true);
+
+    const after = await sinkMessagesFor(recipient);
+    expect(after.length, "but the client is not emailed a second time").toBe(before);
+
+    const { data: inv } = await db()
+      .from("invoice")
+      .select("status, invoice_number")
+      .eq("id", invoiceId)
+      .maybeSingle();
+    expect(inv?.status).toBe("ISSUED");
+  });
+
+  it("NUMBERING — the sequence advances before delivery, so failures leave gaps", async () => {
+    // OPEN BUSINESS RULING, recorded deterministically rather than judged.
+    //
+    // `next_invoice_number` is called BEFORE the send. A delivery that fails
+    // therefore consumes a sequence value that no document will ever carry, and
+    // a retry consumes another. The code comment says "an unsent invoice has no
+    // number", which is true of the INVOICE and not of the SEQUENCE.
+    //
+    // Whether gaps in the official numbering are acceptable under Effitrans's
+    // accounting obligations is a Finance ruling, not an engineering one. This
+    // pins the mechanism precisely so the ruling is made against facts.
+
+    // 1. The sequence itself is gapless: two consecutive draws differ by one.
+    //    So any gap observed in production comes from CONSUMPTION WITHOUT
+    //    ASSIGNMENT, not from the generator.
+    const tail = (n: string) => Number((n.match(/(\d+)\s*$/) ?? [])[1] ?? NaN);
+    const a = await db().rpc("next_invoice_number", { p_tenant: TENANT_A });
+    const b = await db().rpc("next_invoice_number", { p_tenant: TENANT_A });
+    expect(a.error, "the sequence is readable").toBeFalsy();
+    expect(b.error).toBeFalsy();
+    const na = tail(String(a.data));
+    const nb = tail(String(b.data));
+    expect(Number.isFinite(na) && Number.isFinite(nb), `unparsable numbers: ${a.data} / ${b.data}`).toBe(true);
+    expect(nb - na, "the generator itself skips nothing").toBe(1);
+
+    // 2. Allocation precedes delivery in the governed lane. This is the
+    //    mechanism that turns a failed send into a permanent gap.
+    const src = readFileSync(
+      fileURLToPath(new URL("../../lib/process/billing/actions.ts", import.meta.url)),
+      "utf8",
+    );
+    const email = src.slice(src.indexOf("export async function emailValidatedInvoice"));
+    const alloc = email.indexOf('rpc("next_invoice_number"');
+    const send = email.indexOf("await queueAndSend(");
+    expect(alloc, "the number is allocated in this action").toBeGreaterThan(-1);
+    expect(send, "and the send happens in it too").toBeGreaterThan(-1);
+    expect(alloc, "allocation currently precedes delivery").toBeLessThan(send);
+
+    // 3. The consequence, already observed above: the failed attempt left the
+    //    invoice unnumbered while the sequence had moved on.
     const { data: inv } = await db()
       .from("invoice")
       .select("invoice_number")
       .eq("id", invoiceId)
       .maybeSingle();
-    expect(inv?.invoice_number, "the invoice carries none").toBeNull();
-
-    // Nothing in the tenant carries a number, yet issuance has been attempted
-    // twice — which is the whole of the observation.
-    const { data: numbered } = await db()
-      .from("invoice")
-      .select("id")
-      .not("invoice_number", "is", null);
-    expect(numbered ?? [], "nothing was numbered by the failed attempts").toHaveLength(0);
+    expect(inv?.invoice_number, "the issued invoice carries a number").toBeTruthy();
+    // …and it is NOT the value the first, failed attempt consumed.
+    expect(tail(String(inv?.invoice_number)), "a value was burned by the failure").toBeLessThan(na);
   });
 });

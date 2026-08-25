@@ -13,6 +13,7 @@
  * documented-but-unimplemented option (it would need a mailer dependency).
  */
 import "server-only";
+import { sendViaSmtp, isSmtpConfigured } from "./smtp";
 
 export type OutboundEmail = {
   to: string;
@@ -59,7 +60,12 @@ export type SendResult = {
 /** A real provider has been SELECTED (it may still be missing credentials). */
 export function isProviderConfigured(): boolean {
   const p = process.env.COMMUNICATIONS_EMAIL_PROVIDER;
-  return p === "smtp" || p === "resend";
+  // Naming the provider is not the same as being able to reach it. `smtp` needs
+  // a host and a sender before a transaction is possible, and reporting it
+  // "configured" without them would move a certain failure from this check to
+  // the middle of a send — which is how a caller ends up believing it tried.
+  if (p === "smtp") return isSmtpConfigured();
+  return p === "resend";
 }
 
 function resendConfig(): { apiKey: string | null; from: string | null } {
@@ -228,6 +234,19 @@ export async function sendEmail(email: OutboundEmail): Promise<SendResult> {
     }
   }
 
-  // SMTP: needs a mailer dependency — documented, not implemented this phase.
-  return { ok: false, error: "provider_not_implemented" };
+  // SMTP — a real transaction. Success here means the server ACCEPTED the
+  // message, exactly as the Resend branch means Resend accepted it. There is no
+  // test conditional: this is the provider a deployment configures when it
+  // relays through its own mail server rather than through Resend.
+  const smtp = await sendViaSmtp({
+    to: email.to,
+    toName: email.toName,
+    subject: email.subject,
+    html: email.html,
+    text: email.text,
+    replyTo: email.replyTo ?? null,
+    attachments: email.attachments,
+  });
+  if (!smtp.ok) return { ok: false, error: smtp.error };
+  return { ok: true, provider: "smtp", providerMessageId: smtp.messageId };
 }
