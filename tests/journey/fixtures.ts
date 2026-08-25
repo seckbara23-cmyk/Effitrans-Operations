@@ -134,7 +134,15 @@ export async function provideEvidence(
 
   const fd = new FormData();
   fd.set("typeCode", typeCode);
-  fd.set("file", new File([`journey evidence for ${typeCode}`], `${typeCode.toLowerCase()}.txt`, { type: "text/plain" }));
+  // A REAL allowed type. text/plain is refused by validateDocumentInput
+  // (invalid_mime), and the harness must satisfy the platform's rules rather
+  // than route around them — the upload path under test includes that check.
+  fd.set(
+    "file",
+    new File([`%PDF-1.4 journey evidence for ${typeCode}`], `${typeCode.toLowerCase()}.pdf`, {
+      type: "application/pdf",
+    }),
+  );
 
   const up = await as(uploader, () => uploadDocument(fileId, fd));
   if (!up.ok) throw new Error(`provideEvidence(${typeCode}): upload failed: ${JSON.stringify(up)}`);

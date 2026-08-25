@@ -207,9 +207,17 @@ describe("C-4 slice 1 — Creation → Transit reception", () => {
  * skip stand would have proven nothing while looking thorough.
  */
 describe("C-4 — a step cannot be closed on evidence its actor may not judge", () => {
-  let devisFile = "";
+  // TWO dossiers, deliberately. The blind actor CLAIMS step 1 when it activates
+  // it, and a claimed step is no longer an open unassigned step whose owning
+  // role you hold — so the responsibility ground stops making the dossier
+  // visible to the quotation lead. That refusal is CORRECT, but it would make
+  // the sighted cases fail with `forbidden` for a reason that has nothing to do
+  // with evidence. Each actor gets a dossier whose step 1 it can legitimately
+  // reach.
+  let devisFile = "";   // the blind actor's — refusal and unchanged state
+  let sightedFile = ""; // the quotation lead's — missing, then complete
 
-  beforeAll(async () => {
+  async function openDevisDossier(tag: string): Promise<string> {
     const created = await as(am, () =>
       createFile({
         type: "IMP",
@@ -219,19 +227,25 @@ describe("C-4 — a step cannot be closed on evidence its actor may not judge", 
           transportMode: "SEA",
           origin: "JOURNEY DEVIS",
           destination: "Dakar",
-          blAwbRef: `JRN-DEVIS-${Date.now()}`,
+          blAwbRef: `JRN-${tag}-${Date.now()}`,
         },
       }),
     );
-    if (!created.ok) throw new Error(`devis dossier creation failed: ${JSON.stringify(created)}`);
-    devisFile = (created as { id: string }).id;
+    if (!created.ok) throw new Error(`${tag} dossier creation failed: ${JSON.stringify(created)}`);
+    const id = (created as { id: string }).id;
 
     // skipCotation: false — the devis is REQUIRED on this dossier, so step 1
     // stays a live step with real evidence rather than a derived skip.
     const opened = await as(ops, () =>
-      openDossierWorkflow(devisFile, { ownerUserId: ops.id, skipCotation: false }),
+      openDossierWorkflow(id, { ownerUserId: ops.id, skipCotation: false }),
     );
-    if (!opened.ok) throw new Error(`devis workflow open failed: ${JSON.stringify(opened)}`);
+    if (!opened.ok) throw new Error(`${tag} workflow open failed: ${JSON.stringify(opened)}`);
+    return id;
+  }
+
+  beforeAll(async () => {
+    devisFile = await openDevisDossier("DEVIS");
+    sightedFile = await openDevisDossier("SIGHTED");
   });
 
   it("the devis dossier really does have a live cotation step", async () => {
@@ -267,7 +281,10 @@ describe("C-4 — a step cannot be closed on evidence its actor may not judge", 
   it("a sighted actor with NO evidence still gets evidence_missing", async () => {
     // The two refusals must stay distinguishable. The quotation lead CAN see
     // the evidence and there is none yet, so this is the other failure.
-    const refused = await as(quotation, () => submitStep(devisFile, "cotation"));
+    const started = await as(quotation, () => activateStep(sightedFile, "cotation"));
+    expect(started.ok, `quotation lead could not start step 1: ${JSON.stringify(started)}`).toBe(true);
+
+    const refused = await as(quotation, () => submitStep(sightedFile, "cotation"));
     expect(refused.ok).toBe(false);
     expect((refused as { error: string }).error).toBe("evidence_missing");
   });
@@ -276,17 +293,17 @@ describe("C-4 — a step cannot be closed on evidence its actor may not judge", 
     // The quotation lead holds document:read, NOT document:create — it reads
     // its evidence, it does not author it. So the documents arrive the real
     // way: uploaded by one person, verified by another.
-    await provideEvidence(devisFile, "QUOTATION", am, ops);
-    await provideEvidence(devisFile, "QUOTATION_APPROVAL", am, ops);
+    await provideEvidence(sightedFile, "QUOTATION", am, ops);
+    await provideEvidence(sightedFile, "QUOTATION_APPROVAL", am, ops);
 
-    const done = await as(quotation, () => submitStep(devisFile, "cotation"));
+    const done = await as(quotation, () => submitStep(sightedFile, "cotation"));
     expect(done.ok, `step 1 should complete once its evidence is verified: ${JSON.stringify(done)}`).toBe(true);
 
-    const cot = await execution(devisFile, "cotation");
+    const cot = await execution(sightedFile, "cotation");
     expect(cot?.state).toBe("COMPLETED");
 
     // …and completing step 1 promotes its dependent (C-1), so the fix did not
     // cost the promotion behaviour proved in slice 1.
-    expect((await execution(devisFile, "operations_intake"))?.state).toBe("AVAILABLE");
+    expect((await execution(sightedFile, "operations_intake"))?.state).toBe("AVAILABLE");
   });
 });
