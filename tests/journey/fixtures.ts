@@ -84,7 +84,7 @@ export const CLIENT_NO_DEPOSIT = "00000000-0000-0000-0000-0000000cc002";
 export async function execution(fileId: string, stepKey: string) {
   const { data } = await db()
     .from("process_step_execution")
-    .select("id, state, assigned_user_id, started_at, submitted_by, submitted_at, completed_at, reviewed_by, process_instance_id")
+    .select("id, state, assigned_user_id, started_at, submitted_by, submitted_at, completed_at, reviewed_by, completion_provenance, reconciled_fact, process_instance_id")
     .eq("step_key", stepKey)
     .in(
       "process_instance_id",

@@ -11,7 +11,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, it, expect } from "vitest";
-import { validateAuditEvent } from "@/lib/audit/validate";
+import { validateAuditEvent, isSystemAction } from "@/lib/audit/validate";
 import { AuditActions } from "@/lib/audit/events";
 import { canTransitionStep } from "@/lib/process/engine/state";
 
@@ -43,9 +43,13 @@ describe("F-γ — the emitted event runs through the REAL validator", () => {
 
   it("the source emits the same shape this test validates", () => {
     // Lockstep guard: if promote.ts changes its event, this file must follow.
-    expect(promote).toContain("action: AuditActions.PROCESS_STEP_ACTIVATED");
+    expect(promote).toContain("action: actorId");
+    expect(promote).toContain("? AuditActions.PROCESS_STEP_ACTIVATED");
     expect(promote).toContain('after: { step_key: key, state: "AVAILABLE", promoted_from: completedStepKey }');
-    expect(promote).toMatch(/writeAudit\(\{\s*\n\s*action: AuditActions\.PROCESS_STEP_ACTIVATED,\s*\n\s*actorId,/);
+    // C-4: the actor is now conditional, because reconciliation can promote with
+    // no authenticated principal. What matters is unchanged — a real actor still
+    // produces the attributed event — so this pins that branch specifically.
+    expect(promote).toContain("actorId: actorId ?? undefined,");
     // …and never the null that crashed production. Asserted on CODE ONLY: the
     // header comment legitimately QUOTES the incident (`actorId: null`), and a
     // whole-file check fails on that prose while proving nothing.
@@ -62,12 +66,28 @@ describe("F-α — the completing actor is the audit actor", () => {
     expect(structures).toContain("promoteSuccessors(ctx.tenantId, fileId, ctx.permissions, stepKey, ctx.userId)");
   });
 
-  it("the parameter is non-nullable and no system identity is invented", () => {
-    expect(promote).toContain("actorId: string,");
-    expect(promote).not.toMatch(/actorId[?]?:\s*string\s*\|\s*null/);
+  it("null is permitted ONLY as an explicit system event, and no identity is invented", () => {
+    // This pin used to read "the parameter is non-nullable". C-4 changed the
+    // letter and strengthened the rule.
+    //
+    // Reconciliation is a SECOND completion path and can run with no
+    // authenticated principal. Refusing null there would leave the promotion
+    // undone — the very defect being fixed. What F-alpha actually forbids is an
+    // UNATTRIBUTED NON-SYSTEM audit event, and that is still absolute: a null
+    // actor does not write a nameless `process.step.activated`, it writes the
+    // `system.`-prefixed event the audit layer already recognises as
+    // machine-caused. The two stay distinguishable in the ledger forever.
+    expect(promote).toContain("actorId: string | null,");
+    expect(promote).toContain("AuditActions.PROCESS_STEP_ACTIVATED_SYSTEM");
+    expect(isSystemAction(AuditActions.PROCESS_STEP_ACTIVATED_SYSTEM)).toBe(true);
+    expect(isSystemAction(AuditActions.PROCESS_STEP_ACTIVATED)).toBe(false);
+
+    // The prohibition that has not moved: no invented principal.
     for (const fake of ["SYSTEM_ACTOR", "system-user", "00000000-0000-0000-0000-000000000000"]) {
       expect(promote, fake).not.toContain(fake);
     }
+    // …and the non-system event still may never be written without an actor.
+    expect(() => validateAuditEvent(promotionEvent(null))).toThrow(/actorId/);
   });
 });
 

@@ -23,7 +23,7 @@ import type { CurrentUser } from "@/lib/auth/current-user";
 
 import { createFile } from "@/lib/files/actions";
 import { openDossierWorkflow, handDossierToTransit } from "@/lib/process/engine/intake-actions";
-import { submitStep, activateStep, approveStep } from "@/lib/process/engine/actions";
+import { submitStep, activateStep, approveStep, sendHandoff, receiveHandoff } from "@/lib/process/engine/actions";
 import { declareEvidenceAbsence } from "@/lib/process/evidence-absence-actions";
 import { receiveDossierAtTransit, assignTransitStep, recordBae } from "@/lib/process/engine/transit-actions";
 import { createCustoms, recordGaindeRegistration } from "@/lib/customs/actions";
@@ -45,6 +45,39 @@ async function runStep(actor: CurrentUser, stepKey: string) {
   const done = await as(actor, () => submitStep(fileId, stepKey));
   expect(done.ok, `submit ${stepKey}: ${JSON.stringify(done)}`).toBe(true);
   return done;
+}
+
+/**
+ * Hand a dossier from one department to the next the way the business does.
+ *
+ * HARNESS CORRECTION (not a platform defect): steps 8 and 10 were driven by
+ * completing the step alone, which moves the engine but sends nothing. Finance
+ * douane therefore never received the handoff, never gained handoff-receiver
+ * visibility, and was refused `forbidden` at step 9 — correctly. Sending is a
+ * real act with a real row, and receiving is a separate one.
+ */
+async function handOver(
+  sender: CurrentUser,
+  receiver: CurrentUser,
+  fromStepKey: string,
+  toStepKey: string,
+) {
+  const sent = await as(sender, () => sendHandoff(fileId, fromStepKey, toStepKey));
+  expect(sent.ok, `sendHandoff ${fromStepKey}->${toStepKey}: ${JSON.stringify(sent)}`).toBe(true);
+
+  const open = (await handoffs(fileId)).find(
+    (h) => h.status === "SENT" && h.to_step_key === toStepKey,
+  );
+  expect(open, `no open handoff to ${toStepKey}`).toBeTruthy();
+  expect(open!.sent_by).toBe(sender.id);
+
+  const got = await as(receiver, () => receiveHandoff(fileId, open!.id as string));
+  expect(got.ok, `receiveHandoff ${toStepKey}: ${JSON.stringify(got)}`).toBe(true);
+
+  const closed = (await handoffs(fileId)).find((h) => h.id === open!.id);
+  expect(closed!.status).toBe("RECEIVED");
+  expect(closed!.received_by, "the receiver is recorded").toBe(receiver.id);
+  expect(closed!.received_by, "and is not the sender").not.toBe(closed!.sent_by);
 }
 
 /** The activation audit for a step must name the actor who caused it. */
@@ -102,6 +135,17 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
 
     // Two real documents, uploaded by one person and verified by another…
     await provideEvidence(fileId, "BORDEREAU_LIVRAISON", am, ops);
+
+    // …and here is the defect this slice found, now closed. Verifying a
+    // document runs WES-5 reconciliation, whose rule for step 3 asks only
+    // whether the dossier is past DRAFT. It used to complete step 3 on that
+    // proxy alone — with three of its four required artefacts still outstanding
+    // — and promote nothing. Reconciliation now defers to the step's own
+    // evidence, so the step is still open and still the operator's to close.
+    const midway = await execution(fileId, "am_dossier_opening");
+    expect(midway?.state, "reconciliation must not close a step on a proxy").toBe("ACTIVE");
+    expect(midway?.completion_provenance).toBeNull();
+
     await provideEvidence(fileId, "TRANSPORT_REQUEST", am, ops);
     // …and two audited declared absences, which is the ratified way a
     // conditional artefact is accounted for rather than silently skipped.
@@ -264,6 +308,10 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     expect((await execution(fileId, "coordinator_to_finance"))?.state).toBe("COMPLETED");
     expect((await execution(fileId, "gainde_registration"))?.state).toBe("AVAILABLE");
     await assertActivationAttributedTo("gainde_registration", coordinator.id);
+
+    // Completing the step moves the engine; it does not deliver the dossier.
+    // Finance douane can only reach it once the handoff is sent AND received.
+    await handOver(coordinator, customsFinance, "coordinator_to_finance", "gainde_registration");
   });
 
   it("step 9 — GAINDE registration is recorded by Finance douane", async () => {
@@ -282,6 +330,8 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     await runStep(coordinator, "coordinator_to_declarant");
     expect((await execution(fileId, "coordinator_to_declarant"))?.state).toBe("COMPLETED");
     expect((await execution(fileId, "gainde_document_submission"))?.state).toBe("AVAILABLE");
+
+    await handOver(coordinator, declarant, "coordinator_to_declarant", "gainde_document_submission");
   });
 
   it("step 11 — the declarant cannot close without GAINDE submission evidence", async () => {
@@ -350,5 +400,117 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
 
     const blocked = await as(field, () => activateStep(fileId, "pickup"));
     expect(blocked.ok, "pickup cannot open on one branch alone").toBe(false);
+  });
+});
+
+/**
+ * C-4 — the OTHER completion path, proved end to end.
+ * ---------------------------------------------------------------------------
+ * Slice 2 above proves reconciliation no longer completes a step on a weak
+ * proxy. This block proves the other half: once the step's own evidence really
+ * is satisfied, reconciliation may complete it — and when it does, it opens
+ * what waits on it, through the same promotion authority the action path uses.
+ *
+ * Its own dossier, so the assertions are about reconciliation and nothing else.
+ */
+describe("C-4 — a RECONCILED completion promotes its dependents", () => {
+  let reconFile = "";
+
+  beforeAll(async () => {
+    const created = await as(am, () =>
+      createFile({
+        type: "IMP",
+        clientId: CLIENT_DEPOSIT_REQUIRED,
+        priority: "normal",
+        shipment: {
+          transportMode: "SEA",
+          origin: "JOURNEY RECON",
+          destination: "Dakar",
+          blAwbRef: `JRN-RECON-${Date.now()}`,
+        },
+      }),
+    );
+    if (!created.ok) throw new Error(`recon dossier creation failed: ${JSON.stringify(created)}`);
+    reconFile = (created as { id: string }).id;
+
+    const opened = await as(ops, () =>
+      openDossierWorkflow(reconFile, { ownerUserId: ops.id, skipCotation: true }),
+    );
+    if (!opened.ok) throw new Error(`recon workflow open failed: ${JSON.stringify(opened)}`);
+
+    const s2 = await as(ops, () => submitStep(reconFile, "operations_intake"));
+    if (!s2.ok) throw new Error(`recon step 2 failed: ${JSON.stringify(s2)}`);
+    const started = await as(am, () => activateStep(reconFile, "am_dossier_opening"));
+    if (!started.ok) throw new Error(`recon step 3 activate failed: ${JSON.stringify(started)}`);
+  });
+
+  it("with evidence outstanding, reconciliation leaves the step alone", async () => {
+    await provideEvidence(reconFile, "BORDEREAU_LIVRAISON", am, ops);
+
+    const exec = await execution(reconFile, "am_dossier_opening");
+    expect(exec?.state).toBe("ACTIVE");
+    expect(exec?.completion_provenance, "nothing was reconciled").toBeNull();
+    // …and nothing downstream was opened on the strength of it.
+    expect((await execution(reconFile, "transport_assignment"))?.state).toBe("PENDING");
+  });
+
+  it("with evidence satisfied, reconciliation COMPLETES the step and promotes", async () => {
+    // Complete the evidence WITHOUT completing the step: declarations are not
+    // uploads and trigger no reconciliation, so the step stays open and
+    // genuinely satisfied at the same time.
+    await provideEvidence(reconFile, "TRANSPORT_REQUEST", am, ops);
+    for (const key of ["VENDOR_INVOICE", "SPENDING_AUTHORIZATION"]) {
+      const d = await as(am, () =>
+        declareEvidenceAbsence(reconFile, key, `sans objet — ${key}`),
+      );
+      expect(d.ok, `declare ${key}: ${JSON.stringify(d)}`).toBe(true);
+    }
+    expect((await execution(reconFile, "am_dossier_opening"))?.state).toBe("ACTIVE");
+
+    // Now trigger reconciliation with an ordinary verification. A second
+    // version of an already-satisfied type changes no evidence verdict; it only
+    // causes the reconciliation pass to run.
+    await provideEvidence(reconFile, "TRANSPORT_REQUEST", am, ops);
+
+    const exec = await execution(reconFile, "am_dossier_opening");
+    expect(exec?.state, "satisfied evidence lets reconciliation close it").toBe("COMPLETED");
+    expect(exec?.completion_provenance, "and it says so honestly").toBe("RECONCILED");
+    expect(exec?.reconciled_fact, "naming the fact that proved it").toBeTruthy();
+
+    // THE DEFECT: this used to stay PENDING forever, with no other path to
+    // AVAILABLE, which made the whole transport-readiness branch unreachable.
+    expect((await execution(reconFile, "transport_assignment"))?.state).toBe("AVAILABLE");
+    expect((await execution(reconFile, "bon_a_delivrer"))?.state).toBe("AVAILABLE");
+    expect((await execution(reconFile, "pre_gate"))?.state).toBe("AVAILABLE");
+    expect((await execution(reconFile, "coordinator_reception"))?.state).toBe("AVAILABLE");
+  });
+
+  it("the reconciled promotion is audited and attributed to the causing actor", async () => {
+    const exec = await execution(reconFile, "transport_assignment");
+    const events = await auditFor("process.step.activated", exec!.id as string);
+    expect(events.length, "a promotion is never unaudited").toBeGreaterThan(0);
+    // ops verified the document that caused reconciliation, so ops is the
+    // principal — the same rule as F-α on the action path.
+    expect(events[0].actor_id).toBe(ops.id);
+
+    // …and it is NOT recorded as machine-caused, because a real actor caused it.
+    const systemEvents = await auditFor("system.process.step.activated", exec!.id as string);
+    expect(systemEvents, "a human-caused promotion must not hide behind system").toHaveLength(0);
+  });
+
+  it("promotion is exactly once, and only when the LAST prerequisite lands", async () => {
+    // pickup waits on customs_field_clearance AND transport_assignment. Only the
+    // transport branch has opened (not even completed), so pickup stays shut.
+    expect((await execution(reconFile, "pickup"))?.state).toBe("PENDING");
+
+    // Re-running reconciliation is idempotent: the step is already COMPLETED, so
+    // the RPC reports `already` and no second promotion is attempted. The
+    // promotion audit count must not grow.
+    const exec = await execution(reconFile, "transport_assignment");
+    const before = (await auditFor("process.step.activated", exec!.id as string)).length;
+    await provideEvidence(reconFile, "BORDEREAU_LIVRAISON", am, ops);
+    const after = (await auditFor("process.step.activated", exec!.id as string)).length;
+    expect(after, "a repeated reconciliation must not promote twice").toBe(before);
+    expect((await execution(reconFile, "transport_assignment"))?.state).toBe("AVAILABLE");
   });
 });

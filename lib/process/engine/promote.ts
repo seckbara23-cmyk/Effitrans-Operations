@@ -74,8 +74,16 @@ export async function promoteSuccessors(
   fileId: string,
   permissions: string[],
   completedStepKey: string,
-  /** F-α: the actor whose completion caused these promotions. Never null. */
-  actorId: string,
+  /**
+   * F-α: the actor whose completion caused these promotions.
+   *
+   * NULL is permitted for one case only — a genuinely system-caused
+   * reconciliation with no authenticated principal — and it is NOT written as an
+   * unattributed `process.step.activated`. It emits the `system.`-prefixed
+   * action instead, which the audit layer accepts as machine-caused. No
+   * principal is invented, and the two kinds stay distinguishable in the ledger.
+   */
+  actorId: string | null,
 ): Promise<void> {
   // C-1 — DEPENDENTS, not `nextSteps`. A step becomes reachable exactly when the
   // thing it declares it waits for is done, so promotion and `prerequisitesMet`
@@ -109,8 +117,10 @@ export async function promoteSuccessors(
 
     try {
       await writeAudit({
-        action: AuditActions.PROCESS_STEP_ACTIVATED,
-        actorId,
+        action: actorId
+          ? AuditActions.PROCESS_STEP_ACTIVATED
+          : AuditActions.PROCESS_STEP_ACTIVATED_SYSTEM,
+        actorId: actorId ?? undefined,
         tenantId,
         entity: "process_step_execution",
         entityId: exec.id,

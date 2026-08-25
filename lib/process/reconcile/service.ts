@@ -28,6 +28,11 @@
  *     caller knows it, else NULL with RECONCILED provenance.
  */
 import "server-only";
+import { promoteSuccessors, PromotionAuditUnrecoverableError } from "@/lib/process/engine/promote";
+import { writeAudit } from "@/lib/audit/log";
+import { AuditActions } from "@/lib/audit/events";
+import { loadProcessSnapshot } from "@/lib/process/engine/snapshot";
+import { evaluateStepEvidence } from "@/lib/process/engine/evidence";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import {
   FACT_PROVABLE_STEP_KEYS,
@@ -69,6 +74,18 @@ const EMPTY: ReconcileResult = {
  * the module action that triggered it — the model is convergent, and the next
  * run (or a manual one) picks up where this one could not.
  */
+/**
+ * Reconciliation judges the RECORD, not an observer.
+ *
+ * `loadProcessSnapshot` uses `permissions` for exactly one thing: which evidence
+ * domains the caller may SEE. Reconciliation is not a caller — it is the
+ * platform checking whether a fact is actually backed — so it evaluates with
+ * every domain readable. Anything narrower would make completeness depend on
+ * who happened to verify a document, which is the same mistake C-4 found in
+ * `submitStep`: an actor's blindness must never decide whether a step is done.
+ */
+const RECONCILE_FULL_READ = ["document:read", "customs:read", "transport:read", "finance:read"];
+
 export async function reconcileDossierProcess(input: {
   tenantId: string;
   fileId: string;
@@ -150,6 +167,12 @@ async function run(input: {
   // ---- evaluate + apply ---------------------------------------------------
   const result: ReconcileResult = { ...EMPTY, evaluations: [] };
 
+  // The CANONICAL evidence view, loaded once. A fact rule may say "this step
+  // looks done"; only the engine's own evidence rules may say it IS done.
+  const evidenceSnap = instance.data
+    ? await loadProcessSnapshot(input.tenantId, input.fileId, RECONCILE_FULL_READ)
+    : null;
+
   for (const stepKey of FACT_PROVABLE_STEP_KEYS) {
     const execution = byStep.get(stepKey) ?? null;
     const evaluation = evaluateStep({
@@ -173,6 +196,29 @@ async function run(input: {
     }
     if (!mayReconcileComplete(execution.state)) continue;
 
+    // ---------------------------------------------------------------- (2) ----
+    // CANONICAL EVIDENCE, or no completion. A fact rule is a PROXY: several are
+    // far weaker than the step they close. `am_dossier_opening` asked only "is
+    // the dossier past DRAFT", so verifying any document on any open dossier
+    // completed step 3 with its four required documents still outstanding.
+    //
+    // MAYA-P1.2 tightened one rule after a production dossier was completed on a
+    // registration Finance never made. Tightening rules one incident at a time
+    // leaves the next one waiting, so the deferral is general: whatever the
+    // proxy believes, the step's OWN evidence must be satisfied — the same
+    // evaluator, on the same registry requirements, that gates submitStep.
+    //
+    // Every distinction is preserved because none is re-implemented here:
+    // missing, invalid and pending_review each keep the step open, a ratified
+    // declared absence still satisfies its key (checkEvidence), and
+    // `unauthorized` cannot arise at all since this view reads every domain —
+    // asserted rather than assumed, because a silent `unauthorized` would
+    // otherwise pass straight through `complete`.
+    if (evidenceSnap) {
+      const ev = evaluateStepEvidence(stepKey, evidenceSnap.evidence);
+      if (ev.unauthorized.length > 0 || !ev.complete) continue;
+    }
+
     const { data, error } = await supabase.rpc("reconcile_step_completion", {
       p_execution_id: execution.id,
       p_tenant_id: input.tenantId,
@@ -190,6 +236,61 @@ async function run(input: {
     const applied = data as { already?: boolean } | null;
     if (applied && !applied.already) {
       result.completed.push({ stepKey, factFr: evaluation.factFr });
+
+      // ------------------------------------------------------------- (1) ----
+      // A step completed HERE must open what waits on it, exactly as a step
+      // completed through submitStep does. Promotion authority is not
+      // duplicated in SQL: this is the same promoteSuccessors the action path
+      // calls, so prerequisite-dependent promotion, the CAS on PENDING, the
+      // refusal to overwrite AVAILABLE/ACTIVE/terminal, branch convergence,
+      // idempotency and the mandatory audit all hold unchanged.
+      //
+      // Without it the RPC completed a step and opened nothing: `am_dossier_opening`
+      // left transport_assignment, bon_a_delivrer and pre_gate PENDING with no
+      // other path to AVAILABLE, so the whole transport-readiness branch — and
+      // the pickup convergence that depends on it — became unreachable on any
+      // dossier whose step 3 was reconciled rather than submitted.
+      //
+      // The actor is the one whose legitimate action caused the reconciliation
+      // (the verifier, the declarant recording a BAE). Where there is genuinely
+      // none, promoteSuccessors emits the `system.`-prefixed audit rather than
+      // an unattributed one.
+      try {
+        await promoteSuccessors(
+          input.tenantId,
+          input.fileId,
+          RECONCILE_FULL_READ,
+          stepKey,
+          input.actorId ?? null,
+        );
+      } catch (err) {
+        // F-β's hard error, handled where it happens rather than thrown at the
+        // caller. On the ACTION path an unrecoverable audit gap fails the
+        // request, which is right: the operator was completing that step. Here
+        // the operator was verifying a DOCUMENT, and reconciliation is a
+        // convergence that rides along — WES-5A ratified that it must never
+        // break the module action, and throwing would recreate the very shape
+        // F-α exists to prevent (a crash after the writes have committed).
+        //
+        // So the breach is neither thrown nor swallowed: it is written to the
+        // ledger as a machine-caused event and the run is reported not-ok.
+        if (err instanceof PromotionAuditUnrecoverableError) {
+          result.ok = false;
+          try {
+            await writeAudit({
+              action: AuditActions.PROMOTION_AUDIT_UNRECOVERABLE_SYSTEM,
+              tenantId: input.tenantId,
+              entity: "process_step_execution",
+              entityId: execution.id,
+              after: { step_key: stepKey, file_id: input.fileId, detail: err.message },
+            });
+          } catch {
+            // The audit layer is the thing that failed; nothing further to try.
+          }
+        } else {
+          throw err;
+        }
+      }
     }
   }
 

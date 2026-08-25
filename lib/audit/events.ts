@@ -326,6 +326,25 @@ export const AuditActions = {
   // tests/process-engine-compat.test.ts, which scans lib/process/engine/actions.ts.
   PROCESS_INITIALIZED: "process.initialized",
   PROCESS_STEP_ACTIVATED: "process.step.activated",
+  /**
+   * The SAME promotion, when no authenticated actor caused it.
+   *
+   * Reconciliation can in principle run without a signed-in principal. F-alpha
+   * forbids passing actorId:null into a non-system action, and
+   * RATIFY-OPSSEC2-2A forbids inventing a principal to fill the gap. The
+   * platform already has the third answer: a `system.`-prefixed action is
+   * legitimately unattributed (isSystemAction). Same fact, honestly labelled
+   * as machine-caused, so an auditor can tell the two apart.
+   */
+  PROCESS_STEP_ACTIVATED_SYSTEM: "system.process.step.activated",
+  /**
+   * F-β's documented hard error, recorded rather than thrown, when it happens
+   * on the RECONCILIATION path: a promotion survived, its audit failed, and
+   * it could not be safely reverted. The action path fails the request; the
+   * reconciliation path must not, because the operator was verifying a
+   * document, not promoting a step — so the breach is written down instead.
+   */
+  PROMOTION_AUDIT_UNRECOVERABLE_SYSTEM: "system.process.promotion.audit_unrecoverable",
   /** C-3 — an evidence type declared inapplicable to a dossier, with motif. */
   EVIDENCE_ABSENCE_DECLARED: "evidence.absence.declared",
   PROCESS_STEP_SUBMITTED: "process.step.submitted",
