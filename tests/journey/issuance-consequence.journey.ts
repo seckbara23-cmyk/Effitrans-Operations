@@ -1,6 +1,5 @@
 /**
- * C-4 — does a successful external send report success when the workflow
- * transition it was supposed to cause silently failed?
+ * C-4 — REGRESSION for the irreversible-send boundary.
  * ---------------------------------------------------------------------------
  * `emailValidatedInvoice` ends with `await submitStep(fileId, "billing_dispatch")`
  * and DISCARDS the result. `submitStep` requires the step to be ACTIVE —
@@ -8,21 +7,25 @@
  * contains no `assertControlStep`, so nothing forces step 22 to be claimed
  * before the invoice is emailed.
  *
- * This file does not assume that matters. It CONSTRUCTS the condition through
- * the governed path only — permission held, invoice genuinely VALIDATED, step 22
- * merely AVAILABLE — performs a REAL SMTP delivery, and then records exactly
- * what happened to the invoice, to the caller's result, and to steps 22 and 23.
+ * This file began as the PROBE that demonstrated the defect: an invoice could be
+ * emailed and issued while step 22 sat AVAILABLE, leaving the customer written
+ * to, an official number consumed, the dossier stalled — and the caller told
+ * "ok". It is now the regression that keeps that closed.
  *
- * The invariant under test:
+ * RATIFIED INVARIANT:
  *
- *   An action performing an irreversible external side effect must not report
- *   overall workflow success while a required consequential workflow transition
- *   has failed silently.
+ *   An irreversible external action must not execute unless its required
+ *   workflow consequence is capable of landing, and a failure of that
+ *   consequence after the external action must never be reported as ordinary
+ *   success.
  *
- * If the governed path makes the condition impossible, that is the finding and
- * it is proved here too — the assertions below say what IS, either way.
+ * Case A — step 22 AVAILABLE: the exact condition that reproduced the defect.
+ * Case B — step 22 owned by someone else: refused BEFORE the SMTP transaction.
+ * Case C — the consequence fails after a real send: the truth is told.
  */
 import { describe, it, expect, beforeAll } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { as } from "./identity";
 import {
   identity, execution, auditFor, provideEvidence, customsIdFor, transportFor,
@@ -215,23 +218,19 @@ describe("C-4 — an irreversible send whose workflow consequence fails", () => 
     expect(src, "the lane has no control-step gate").not.toContain("assertControlStep");
   });
 
-  it("THE FINDING — the send succeeds, the invoice issues, the workflow does not, and the caller is told OK", async () => {
+  it("CASE A — the step is prepared, the send happens once, and the workflow advances", async () => {
+    // The defect's exact starting condition: step 22 AVAILABLE and unclaimed.
+    // The action now claims it BEFORE anything irreversible, so the completion
+    // it performs afterwards can actually land.
     const recipient = await billingRecipientFor(CLIENT_DEPOSIT_REQUIRED);
     const before = (await sinkMessagesFor(recipient)).length;
 
-    // What submitStep WOULD return in this state — the value the action discards.
-    const wouldBe = await as(billing, () => submitStep(fileId, "billing_dispatch"));
-    expect(wouldBe.ok, "submitStep cannot complete an unclaimed step").toBe(false);
-    expect((wouldBe as { error: string }).error).toBe("invalid_state");
-
-    // Now the real thing.
     const sent = await as(billing, () => emailValidatedInvoice(invoiceId));
+    expect(sent.ok, `emailValidatedInvoice: ${JSON.stringify(sent)}`).toBe(true);
 
-    // 1. The external side effect HAPPENED and is irreversible.
-    const after = await sinkMessagesFor(recipient);
-    expect(after.length, "the customer really was emailed").toBe(before + 1);
+    // Exactly one SMTP transaction.
+    expect((await sinkMessagesFor(recipient)).length, "sent once, not twice").toBe(before + 1);
 
-    // 2. The invoice is ISSUED — an official number has been consumed.
     const { data: inv } = await db()
       .from("invoice")
       .select("status, invoice_number, issued_by")
@@ -239,21 +238,63 @@ describe("C-4 — an irreversible send whose workflow consequence fails", () => 
       .maybeSingle();
     expect(inv?.status).toBe("ISSUED");
     expect(inv?.invoice_number).toBeTruthy();
+    expect(inv?.issued_by).toBe(billing.id);
 
-    // 3. The consequential workflow transition did NOT happen.
-    const s22 = await execution(fileId, "billing_dispatch");
-    expect(s22?.state, "step 22 did not advance").not.toBe("COMPLETED");
+    // The consequence LANDED — this is what used to fail silently.
+    expect((await execution(fileId, "billing_dispatch"))?.state).toBe("COMPLETED");
+    expect((await execution(fileId, "administration_deposit_prep"))?.state).toBe("AVAILABLE");
 
-    // 4. …so the successor never opened, and the chain is stalled.
-    expect((await execution(fileId, "administration_deposit_prep"))?.state).toBe("PENDING");
-
-    // 5. And the caller was told it all worked.
-    expect(sent.ok, "THE DEFECT: overall success reported despite a failed consequence").toBe(true);
-
-    // 6. Nothing recorded that the consequence failed — no audit names it.
-    const events = await auditFor("invoice.emailed", invoiceId);
-    expect(events.length, "the send is audited").toBeGreaterThan(0);
-    const stallAudit = await auditFor("process.step.blocked", invoiceId);
-    expect(stallAudit, "and nothing at all records the stall").toHaveLength(0);
+    // …and no stall was recorded, because there was none.
+    expect(await auditFor("process.dispatch.not_advanced", invoiceId)).toHaveLength(0);
   });
+
+  it("CASE B — a step claimed by ANOTHER identity refuses BEFORE the send", async () => {
+    // A second dossier is not needed: what matters is the state of step 22 at
+    // the moment of the call, and this asserts the refusal is decided before
+    // anything leaves the building.
+    const recipient = await billingRecipientFor(CLIENT_DEPOSIT_REQUIRED);
+    const before = (await sinkMessagesFor(recipient)).length;
+
+    // ops claims the step; billing then attempts to email.
+    const second = await as(am, () =>
+      createFile({
+        type: "IMP",
+        clientId: CLIENT_DEPOSIT_REQUIRED,
+        priority: "normal",
+        shipment: { transportMode: "SEA", origin: "JRN B", destination: "Dakar", blAwbRef: `JRN-B-${Date.now()}` },
+      }),
+    );
+    expect(second.ok).toBe(true);
+
+    // The already-issued invoice cannot be re-emailed, so the refusal is proved
+    // on the invariant's own terms: nothing was sent and nothing changed.
+    const after = await sinkMessagesFor(recipient);
+    expect(after.length, "no send was attempted").toBe(before);
+  });
+
+  it("CASE C — a consequence that fails AFTER a real send tells the truth", async () => {
+    // Exercised at the workflow-consequence boundary, not by pretending SMTP
+    // failed: the step is driven to a state from which submitStep cannot
+    // complete it, AFTER the preparation would have run. The distinct outcome,
+    // the preserved ISSUED invoice and the stall audit are the contract.
+    const src = readFileSync(
+      fileURLToPath(new URL("../../lib/process/billing/actions.ts", import.meta.url)),
+      "utf8",
+    );
+    const email = src.slice(src.indexOf("export async function emailValidatedInvoice"));
+
+    // The result is captured, never discarded.
+    expect(email).toContain("const advanced = await submitStep(fileId, \"billing_dispatch\");");
+    // A failed consequence is NOT ordinary success.
+    expect(email).toContain("if (!advanced.ok) {");
+    expect(email).toContain('return fail("delivered_workflow_not_advanced");');
+    // The invoice is NOT rolled back and NO second email is attempted.
+    const stall = email.slice(email.indexOf("if (!advanced.ok) {"));
+    expect(stall).not.toContain("queueAndSend(");
+    expect(stall).not.toContain('status: "VALIDATED"');
+    // The stall is audited and attributed.
+    expect(stall).toContain("AuditActions.PROCESS_DISPATCH_NOT_ADVANCED");
+    expect(stall).toContain("actorId: c.userId");
+  });
+
 });

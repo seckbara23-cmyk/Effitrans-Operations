@@ -29,7 +29,7 @@ import { AuditActions } from "@/lib/audit/events";
 import { queueAndSend } from "@/lib/comms/queue";
 import { invoiceTotals } from "@/lib/finance/calc";
 import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-server";
-import { approveStep, rejectStep, submitStep } from "../engine/actions";
+import { activateStep, approveStep, rejectStep, submitStep } from "../engine/actions";
 import { loadProcessSnapshot, toViews } from "../engine/snapshot";
 import { authoritativeBillingReady } from "../engine/gate-authority";
 import {
@@ -127,6 +127,54 @@ async function billingReady(ctx: Ctx, fileId: string): Promise<boolean> {
   // The verdict is a fact about the DOSSIER. Whether this caller may act on it
   // was already decided by guard() before we got here.
   return authoritativeBillingReady(ctx.tenantId, fileId);
+}
+
+/**
+ * C-4 — make step 22 able to COMPLETE, or refuse before anything irreversible.
+ *
+ * `emailValidatedInvoice` ends by completing step 22, and `submitStep` requires
+ * the step to be ACTIVE: AVAILABLE -> COMPLETED is not a legal transition. The
+ * lane had no check at all, so an invoice could be emailed and issued while the
+ * step sat AVAILABLE — the customer written to, an official number consumed, and
+ * the dossier stalled with the caller told "ok".
+ *
+ * `assertControlStep` does NOT solve this and is deliberately not used here:
+ * its ACTIONABLE set includes AVAILABLE, so it passes in exactly the state that
+ * produces the stall.
+ *
+ * Claiming an AVAILABLE step for this actor confers NO authority. The caller
+ * has already passed `guard("finance:issue")`, and `finance:issue` IS step 22's
+ * canonical execution permission, so this is the same act the operator performs
+ * with « Démarrer » — done at the moment it becomes required rather than left as
+ * a precondition nobody stated.
+ */
+async function prepareDispatchStep(
+  ctx: Ctx,
+  fileId: string,
+): Promise<{ ready: true } | { ready: false; error: BillingError }> {
+  // Read through the ENGINE's own reader. The billing lane never touches
+  // process tables directly — not to write them, and not to read them either,
+  // so the boundary stays one-directional and obvious.
+  const snap = await loadProcessSnapshot(ctx.tenantId, fileId, ctx.permissions);
+  if (!snap?.instance) return { ready: false, error: "dispatch_step_not_reached" };
+
+  const exec = snap.executions.find(
+    (e) => e.stepKey === "billing_dispatch" && e.state !== "REJECTED" && e.state !== "CANCELLED",
+  );
+  if (!exec) return { ready: false, error: "dispatch_step_not_reached" };
+
+  // Someone else is doing this. Never take a claimed step from its owner.
+  if (exec.assignedUserId && exec.assignedUserId !== ctx.userId) {
+    return { ready: false, error: "dispatch_step_claimed_by_another" };
+  }
+  // Already open and ours — nothing to prepare.
+  if (exec.state === "ACTIVE") return { ready: true };
+  // Not reached yet, or already closed. Either way the completion cannot land.
+  if (exec.state !== "AVAILABLE") return { ready: false, error: "dispatch_step_not_reached" };
+
+  const opened = await activateStep(fileId, "billing_dispatch");
+  if (!opened.ok) return { ready: false, error: "dispatch_step_not_claimable" };
+  return { ready: true };
 }
 
 // ------------------------------------------------- 20. draft preparation ----
@@ -404,6 +452,13 @@ export async function emailValidatedInvoice(invoiceId: string): Promise<BillingR
   const check = canEmailInvoice(loaded.view);
   if (!check.ok) return fail(check.error!);
 
+  // C-4 — BEFORE anything irreversible. An external act must not run unless the
+  // workflow consequence it exists to cause is capable of landing. Refusing here
+  // costs nothing; discovering it afterwards costs an email to a customer and an
+  // official invoice number that cannot be returned.
+  const prepared = await prepareDispatchStep(c, fileId);
+  if (!prepared.ready) return fail(prepared.error);
+
   // Idempotency: already delivered => success, without sending a second email.
   const { data: alreadySent } = await admin
     .from("communication_message")
@@ -510,9 +565,13 @@ export async function emailValidatedInvoice(invoiceId: string): Promise<BillingR
     .eq("tenant_id", c.tenantId)
     .eq("status", "VALIDATED");
 
-  // Step 22 advances ONLY on a successful send.
-  await submitStep(fileId, "billing_dispatch");
+  // Step 22 advances ONLY on a successful send — and the result is KEPT. It used
+  // to be discarded, which is how a delivered, issued invoice could leave the
+  // dossier stalled with the caller told "ok".
+  const advanced = await submitStep(fileId, "billing_dispatch");
 
+  // The send is audited FIRST and unconditionally: it happened, whatever became
+  // of the workflow afterwards.
   await writeAudit({
     action: AuditActions.INVOICE_EMAILED,
     actorId: c.userId,
@@ -528,5 +587,31 @@ export async function emailValidatedInvoice(invoiceId: string): Promise<BillingR
     },
   });
   revalidate(fileId);
+
+  // C-4 — THE THIRD STATE. Delivery happened and the invoice is genuinely
+  // ISSUED, so neither is undone and no second email is ever attempted: those
+  // are the factual external outcomes and rolling them back would be a lie of a
+  // different kind. What must not happen is calling this ordinary success while
+  // the dossier is stalled. The stall is audited, attributed, and returned as
+  // its own outcome so an operator is told to CLOSE THE STEP rather than resend.
+  if (!advanced.ok) {
+    await writeAudit({
+      action: AuditActions.PROCESS_DISPATCH_NOT_ADVANCED,
+      actorId: c.userId,
+      tenantId: c.tenantId,
+      entity: "invoice",
+      entityId: invoiceId,
+      after: {
+        file_id: fileId,
+        step_key: "billing_dispatch",
+        invoice_number: invoiceNumber,
+        delivered: true,
+        invoice_issued: true,
+        reason: advanced.error,
+      },
+    });
+    return fail("delivered_workflow_not_advanced");
+  }
+
   return { ok: true, id: invoiceId, status: sent.status };
 }

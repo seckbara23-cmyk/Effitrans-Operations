@@ -338,6 +338,12 @@ export const AuditActions = {
    */
   PROCESS_STEP_ACTIVATED_SYSTEM: "system.process.step.activated",
   /**
+   * C-4 — an invoice was delivered and issued, and step 22 did not complete.
+   * A real external act with a failed workflow consequence: the dossier is
+   * stalled and someone must close the step. Never a resend.
+   */
+  PROCESS_DISPATCH_NOT_ADVANCED: "process.dispatch.not_advanced",
+  /**
    * F-β's documented hard error, recorded rather than thrown, when it happens
    * on the RECONCILIATION path: a promotion survived, its audit failed, and
    * it could not be safely reverted. The action path fails the request; the

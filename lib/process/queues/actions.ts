@@ -151,12 +151,30 @@ export async function queueRejectInvoice(
   return r;
 }
 
-/** Only a VALIDATED invoice may be emailed. A failed send stays retryable. */
+/**
+ * Only a VALIDATED invoice may be emailed. A failed send stays retryable.
+ *
+ * C-4 — this call now has FOUR outcomes and the operator must be able to tell
+ * them apart, because the right next action differs in every case:
+ *
+ *   ok                                  delivered AND the dossier advanced.
+ *   dispatch_step_*                     nothing was sent; open the step first.
+ *   email_send_failed                   nothing was issued; retrying is correct.
+ *   delivered_workflow_not_advanced     the client HAS the invoice and it IS
+ *                                       issued; the step must be closed by hand.
+ *                                       Retrying would email the client twice
+ *                                       and is never the remedy.
+ *
+ * The last one is not a success and must never be shown as one — but it DID
+ * change the dossier, so the view is refreshed for it as well. Refreshing only
+ * on `ok` would leave the operator looking at a stale screen that still shows
+ * an unissued invoice, which is how someone decides to press send again.
+ */
 export async function queueEmailInvoice(
   fileId: string,
   invoiceId: string,
 ): Promise<BillingResult<{ id: string; status: string }>> {
   const r = await emailValidatedInvoice(invoiceId);
-  if (r.ok) refresh("billing", fileId);
+  if (r.ok || r.error === "delivered_workflow_not_advanced") refresh("billing", fileId);
   return r;
 }

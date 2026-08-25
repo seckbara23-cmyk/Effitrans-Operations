@@ -36,6 +36,13 @@ export type BillingError =
   | "invoice_not_validated"
   | "billing_contact_missing"
   | "email_send_failed"
+  // C-4 — the irreversible-send boundary. Step 22 must be able to COMPLETE
+  // before the invoice leaves the building, and if it somehow fails afterwards
+  // the caller is told the truth rather than "ok".
+  | "dispatch_step_not_reached"
+  | "dispatch_step_claimed_by_another"
+  | "dispatch_step_not_claimable"
+  | "delivered_workflow_not_advanced"
   | "no_lines";
 
 export const BILLING_ERROR_FR: Record<BillingError, string> = {
@@ -56,6 +63,18 @@ export const BILLING_ERROR_FR: Record<BillingError, string> = {
   invoice_not_validated: "La facture doit être validée par la Finance avant d'être envoyée au client.",
   billing_contact_missing: "Aucun contact de facturation pour ce client.",
   email_send_failed: "L'envoi de la facture a échoué. Vous pouvez réessayer.",
+  dispatch_step_not_reached:
+    "L'étape « Émission de la facture » n'est pas encore ouverte sur ce dossier. Rien n'a été envoyé.",
+  dispatch_step_claimed_by_another:
+    "L'étape « Émission de la facture » est prise en charge par un autre intervenant. Rien n'a été envoyé.",
+  dispatch_step_not_claimable:
+    "L'étape « Émission de la facture » n'a pas pu être ouverte. Rien n'a été envoyé.",
+  // NOT a failure message and NOT a success message. The client HAS the invoice
+  // and the invoice IS issued — only the dossier did not advance. Resending
+  // would email the client twice and is never the remedy.
+  delivered_workflow_not_advanced:
+    "La facture a bien été envoyée au client et émise, mais l'étape « Émission de la facture » n'a pas pu être clôturée. "
+    + "Ne renvoyez pas la facture : ouvrez l'étape et clôturez-la, ou contactez un administrateur.",
   no_lines: "La facture ne contient aucune ligne.",
 };
 
