@@ -50,7 +50,12 @@ describe("draft preparation and submission (step 20)", () => {
     // The gate the platform never had: an invoice used to be creatable on any
     // dossier at any time, with no evidence.
     expect(actions).toContain("dossier_not_billing_ready");
-    expect(actions).toContain("evaluateBillingGate");
+    // C-4: the gate is still consulted, now through the authority that
+    // evaluates it on PLATFORM state. It used to be evaluated on a snapshot
+    // built from ctx.permissions, and BILLING_OFFICER holds no document:read —
+    // so podReceived read an empty array and the owner of step 20 could never
+    // open its own gate.
+    expect(actions).toContain("authoritativeBillingReady(ctx.tenantId, fileId)");
     expect(actions).toContain('if (!(await billingReady(c, fileId))) return fail("dossier_not_billing_ready")');
   });
 

@@ -15,6 +15,7 @@
  */
 import { revalidatePath } from "next/cache";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
+import { GATE_FULL_READ } from "@/lib/process/engine/gate-authority";
 import { assertPermission } from "@/lib/auth/require-permission";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
@@ -463,7 +464,13 @@ export async function evaluateClosureReadiness(fileId: string): Promise<ClosureE
   if (!(await isFileVisible(user.id, user.tenantId, fileId))) return null;
 
   const permissions = await getEffectivePermissions(user.id);
-  const input = await loadClosureInput(user.tenantId, fileId, permissions);
+  // AUTHORITATIVE, not the caller's view. The closure requirements consult
+  // documents, transport and finance, and loadClosureInput blanks whichever the
+  // caller cannot read — so a COLLECTIONS_OFFICER without document:read had the
+  // POD requirement resolve against an empty array. A gate states a fact about
+  // the dossier; this caller's authority to CLOSE it was already established by
+  // assertPermission("process:close") and isFileVisible above.
+  const input = await loadClosureInput(user.tenantId, fileId, [...GATE_FULL_READ]);
   if (!input) return null;
 
   return evaluateClosure(input);
@@ -511,7 +518,13 @@ export async function closeDossier(fileId: string): Promise<CollectionsResult> {
   // Idempotent: already closed => success, without a second closure.
   if (instance.status === "CLOSED") return { ok: true, id: fileId };
 
-  const input = await loadClosureInput(user.tenantId, fileId, permissions);
+  // AUTHORITATIVE, not the caller's view. The closure requirements consult
+  // documents, transport and finance, and loadClosureInput blanks whichever the
+  // caller cannot read — so a COLLECTIONS_OFFICER without document:read had the
+  // POD requirement resolve against an empty array. A gate states a fact about
+  // the dossier; this caller's authority to CLOSE it was already established by
+  // assertPermission("process:close") and isFileVisible above.
+  const input = await loadClosureInput(user.tenantId, fileId, [...GATE_FULL_READ]);
   if (!input) return fail("not_found");
   const evaluation = evaluateClosure(input);
 

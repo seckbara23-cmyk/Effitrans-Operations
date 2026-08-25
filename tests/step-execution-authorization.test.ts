@@ -134,7 +134,10 @@ describe("A-1 — every other guard is untouched", () => {
   it("state, prerequisites, gates, maker-checker and tenant checks all remain", () => {
     const act = fnSlice("activateStep");
     expect(act).toContain("prerequisitesMet(stepKey, views)");
-    expect(act).toContain("evaluatePickupGate");
+    // C-4: still gated, now on PLATFORM state rather than the caller's view.
+    // PICKUP_AGENT holds no customs:read, so the customs-release requirement
+    // read false for the very role that owns the step.
+    expect(act).toContain("authoritativePickupGate(c.tenantId, fileId)");
     const sub = fnSlice("submitStep");
     expect(sub).toContain("evaluateStepEvidence(stepKey");
     expect(sub).toContain("canTransitionStep(st.state, target)");

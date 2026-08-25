@@ -19,6 +19,7 @@ import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-s
 import { COMPATIBILITY_VERSION, planCompatibilityInit, type CompatibilityPlan } from "./init";
 import { buildReadModel, type ProcessReadModel } from "./read-model";
 import { loadProcessSnapshot } from "./snapshot";
+import { authoritativeGates } from "./gate-authority";
 
 /**
  * The consolidated process state for one dossier (Deliverable 11).
@@ -41,7 +42,26 @@ export async function getProcessState(fileId: string): Promise<ProcessReadModel 
   const snap = await loadProcessSnapshot(user.tenantId, fileId, permissions);
   if (!snap?.instance) return null;
 
-  return buildReadModel(snap.instance, snap.executions, snap.handoffs, snap.evidence);
+  const model = buildReadModel(snap.instance, snap.executions, snap.handoffs, snap.evidence);
+
+  // The three READINESS verdicts are facts about the dossier, so they are
+  // recomputed authoritatively rather than from this caller's filtered
+  // snapshot. Otherwise a Billing Officer's workspace would report "not
+  // billing-ready" while the action it offers succeeds — the display and the
+  // engine disagreeing about the same dossier.
+  //
+  // Only the VERDICTS are replaced. Every record in the model above is still
+  // the permission-filtered one this caller is entitled to see, so nothing
+  // restricted is disclosed by this substitution.
+  const gates = await authoritativeGates(user.tenantId, fileId);
+  return gates
+    ? {
+        ...model,
+        pickupReadiness: gates.pickup,
+        billingReadiness: gates.billing,
+        closureReadiness: gates.closure,
+      }
+    : model;
 }
 
 export type CompatibilityReport = {

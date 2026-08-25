@@ -51,7 +51,7 @@ import {
   stepPermission,
 } from "./state";
 import { promoteSuccessors } from "./promote";
-import { evaluatePickupGate } from "./gates";
+import { authoritativePickupGate } from "./gate-authority";
 import { evaluateStepEvidence } from "./evidence";
 import { isDone } from "./types";
 import type { EngineError, EngineResult, StepState } from "./types";
@@ -283,15 +283,21 @@ export async function activateStep(fileId: string, stepKey: string): Promise<Eng
 
   // The pickup convergence gate. Both branches must have landed.
   if (stepKey === "pickup") {
-    const gate = evaluatePickupGate(st.snapshot!.evidence, views);
-    if (!gate.ready) {
+    // AUTHORITATIVE, not `st.snapshot` — which is built from the CALLER's
+    // permissions. The pickup gate consults customs, documents and transport,
+    // and PICKUP_AGENT holds no customs:read, so the customs-release
+    // requirement read false for the very role that owns this step. A gate
+    // states a fact about the dossier; guard() above already decided whether
+    // this caller may act on it.
+    const gate = await authoritativePickupGate(c.tenantId, fileId);
+    if (!gate || !gate.ready) {
       await writeAudit({
         action: AuditActions.PROCESS_GATE_BLOCKED,
         actorId: c.userId,
         tenantId: c.tenantId,
         entity: "process_step_execution",
         entityId: st.execId,
-        after: { gate: gate.key, missing: gate.missing },
+        after: { gate: gate?.key ?? "pickup_readiness", missing: gate?.missing ?? ["no_process_instance"] },
       });
       return fail("gate_blocked");
     }

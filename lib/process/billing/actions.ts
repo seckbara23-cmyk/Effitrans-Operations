@@ -31,7 +31,7 @@ import { invoiceTotals } from "@/lib/finance/calc";
 import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-server";
 import { approveStep, rejectStep, submitStep } from "../engine/actions";
 import { loadProcessSnapshot, toViews } from "../engine/snapshot";
-import { evaluateBillingGate } from "../engine/gates";
+import { authoritativeBillingReady } from "../engine/gate-authority";
 import {
   canEmailInvoice,
   canSubmitInvoice,
@@ -118,9 +118,15 @@ async function loadInvoiceView(
 
 /** The dossier has passed BOTH completeness checkpoints (official steps 18 + 19). */
 async function billingReady(ctx: Ctx, fileId: string): Promise<boolean> {
-  const snap = await loadProcessSnapshot(ctx.tenantId, fileId, ctx.permissions);
-  if (!snap?.instance) return false;
-  return evaluateBillingGate(toViews(snap.executions), snap.evidence).ready;
+  // AUTHORITATIVE, not the caller's view. This used to build the snapshot from
+  // `ctx.permissions`, and the billing gate reads podReceived(snap.documents)
+  // directly — so a caller without document:read got an empty array and the
+  // gate read that silence as "no POD". BILLING_OFFICER holds no document:read,
+  // which meant the role that OWNS step 20 could never open its own gate.
+  //
+  // The verdict is a fact about the DOSSIER. Whether this caller may act on it
+  // was already decided by guard() before we got here.
+  return authoritativeBillingReady(ctx.tenantId, fileId);
 }
 
 // ------------------------------------------------- 20. draft preparation ----
