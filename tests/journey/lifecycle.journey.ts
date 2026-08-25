@@ -42,7 +42,7 @@ describe("C-4 slice 1 — Creation → Transit reception", () => {
   it("T1 — the Account Manager creates the dossier; nobody else can", async () => {
     // An actor without file:create is refused by the REAL RBAC lookup.
     const refused = await as(stranger, () =>
-      createFile({ type: "IMP", clientId: null as never, priority: "NORMAL" } as never),
+      createFile({ type: "IMP", clientId: CLIENT_DEPOSIT_REQUIRED, priority: "normal" } as never),
     );
     expect(refused.ok, "a COURIER must not create a dossier").toBe(false);
 
@@ -50,7 +50,7 @@ describe("C-4 slice 1 — Creation → Transit reception", () => {
       createFile({
         type: "IMP",
         clientId: CLIENT_DEPOSIT_REQUIRED,
-        priority: "NORMAL",
+        priority: "normal",
         transportMode: "SEA",
         origin: "JOURNEY ORIGIN",
         destination: "Dakar",

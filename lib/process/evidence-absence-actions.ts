@@ -77,8 +77,13 @@ export async function declareEvidenceAbsence(
     .single();
 
   // A second declaration for the same (dossier, type) hits the unique index —
-  // idempotent from the operator's point of view, not an error to explain.
-  if (error || !data) return { ok: false, error: "already_declared" };
+  // idempotent from the operator's point of view, not an error to explain. Any
+  // OTHER failure is reported as itself: mapping every insert error to
+  // "already_declared" once disguised a foreign-key failure as a duplicate.
+  if (error || !data) {
+    const duplicate = /duplicate key|unique constraint|uq_evidence_absence/i.test(error?.message ?? "");
+    return { ok: false, error: duplicate ? "already_declared" : (error?.message ?? "declaration_failed") };
+  }
 
   await writeAudit({
     action: AuditActions.EVIDENCE_ABSENCE_DECLARED,
