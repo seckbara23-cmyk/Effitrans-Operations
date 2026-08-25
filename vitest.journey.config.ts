@@ -33,19 +33,22 @@ export default defineConfig({
     hookTimeout: 60_000,
   },
   resolve: {
-    alias: {
-      "server-only": fileURLToPath(new URL("./tests/stubs/server-only.ts", import.meta.url)),
-      "next/cache": fileURLToPath(new URL("./tests/stubs/next-cache.ts", import.meta.url)),
-      "@/lib/auth/current-user": fileURLToPath(new URL("./tests/stubs/current-user.ts", import.meta.url)),
-      // React's `cache()` is request-scoped memoisation and is not callable
-      // outside a render. Passing through removes only the memoisation, which
-      // makes the journey stricter, never laxer.
-      react: fileURLToPath(new URL("./tests/stubs/react.ts", import.meta.url)),
-      // Part of the SAME session seam: the server client is built from request
-      // cookies, which do not exist in Node. Permission decisions stay real —
-      // get_user_permissions still resolves the acting user's true grants.
-      "@/lib/supabase/server": fileURLToPath(new URL("./tests/stubs/supabase-server.ts", import.meta.url)),
-      "@": fileURLToPath(new URL("./", import.meta.url)),
-    },
+    // ARRAY form with regexes, not an object of prefixes. The object form only
+    // matched the `@/...` specifier, but `require-permission.ts` imports
+    // `./current-user` RELATIVELY — so the session stub never applied, the real
+    // getCurrentUser found no cookies, and EVERY action returned "forbidden".
+    // That read like an authority failure and was a resolution failure.
+    alias: [
+      { find: "server-only", replacement: fileURLToPath(new URL("./tests/stubs/server-only.ts", import.meta.url)) },
+      { find: "next/cache", replacement: fileURLToPath(new URL("./tests/stubs/next-cache.ts", import.meta.url)) },
+      { find: /^react$/, replacement: fileURLToPath(new URL("./tests/stubs/react.ts", import.meta.url)) },
+      // Match the module however it is imported: "@/lib/auth/current-user",
+      // "./current-user" from within lib/auth, or any deeper relative form.
+      { find: /(^@\/lib\/auth\/current-user$)|(^\.\/current-user$)|(\/lib\/auth\/current-user$)/,
+        replacement: fileURLToPath(new URL("./tests/stubs/current-user.ts", import.meta.url)) },
+      { find: /(^@\/lib\/supabase\/server$)|(\/lib\/supabase\/server$)/,
+        replacement: fileURLToPath(new URL("./tests/stubs/supabase-server.ts", import.meta.url)) },
+      { find: /^@\//, replacement: fileURLToPath(new URL("./", import.meta.url)) },
+    ],
   },
 });
