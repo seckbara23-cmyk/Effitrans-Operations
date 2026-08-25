@@ -459,7 +459,13 @@ describe("C-4 section F — governed billing, and the issuance boundary", () => 
     );
     expect(line.ok, `addInvoiceLine: ${JSON.stringify(line)}`).toBe(true);
 
-    const submitted = await as(billing, () => submitInvoiceToFinance(invoiceId));
+    // Submitted by OPS_SUPERVISOR, and that choice is the whole point of the
+    // next case. BILLING_OFFICER holds no finance:validate, so a self-approval
+    // by the drafter would be refused for lack of PERMISSION and would prove
+    // nothing about identity. OPS_SUPERVISOR holds finance:create AND
+    // finance:validate by design — approveInvoice's own comment says so — and
+    // is the one identity that can demonstrate the rule the pair exists for.
+    const submitted = await as(ops, () => submitInvoiceToFinance(invoiceId));
     expect(submitted.ok, `submitInvoiceToFinance: ${JSON.stringify(submitted)}`).toBe(true);
 
     const { data: inv } = await db()
@@ -467,12 +473,38 @@ describe("C-4 section F — governed billing, and the issuance boundary", () => 
       .select("submitted_by, status")
       .eq("id", invoiceId)
       .maybeSingle();
-    expect(inv?.submitted_by).toBe(billing.id);
+    expect(inv?.submitted_by).toBe(ops.id);
     expect(inv?.status, "submission is not validation").toBe("DRAFT");
   });
 
-  it("20→21 MAKER ≠ CHECKER — the submitter cannot validate its own invoice", async () => {
+  it("issuance BEFORE validation is refused", async () => {
+    // Asserted HERE, while the invoice is still an unvalidated draft — the only
+    // moment this negative case is real.
+    const early = await as(billing, () => emailValidatedInvoice(invoiceId));
+    expect(early.ok).toBe(false);
+    expect((early as { error: string }).error).toBe("invoice_not_validated");
+
+    const { data: inv } = await db()
+      .from("invoice")
+      .select("status, invoice_number")
+      .eq("id", invoiceId)
+      .maybeSingle();
+    expect(inv?.status, "a refused issuance changes nothing").toBe("DRAFT");
+    expect(inv?.invoice_number).toBeNull();
+  });
+
+  it("an actor without finance:validate is refused for a DIFFERENT reason", async () => {
+    // The two refusals must stay distinguishable: the Billing Officer is not
+    // the maker here, it simply may not validate at all.
     const refused = await as(billing, () => approveInvoice(invoiceId));
+    expect(refused.ok).toBe(false);
+    expect((refused as { error: string }).error).toBe("forbidden");
+  });
+
+  it("20→21 MAKER ≠ CHECKER — the submitter cannot validate its own invoice", async () => {
+    // ops submitted it and ops holds finance:validate, so this refusal is about
+    // WHO is asking and not about what they may do.
+    const refused = await as(ops, () => approveInvoice(invoiceId));
     expect(refused.ok).toBe(false);
     expect((refused as { error: string }).error).toBe("self_approval_forbidden");
 
@@ -484,7 +516,7 @@ describe("C-4 section F — governed billing, and the issuance boundary", () => 
     expect(inv?.status, "still an unvalidated draft").toBe("DRAFT");
     expect(inv?.validated_by, "no validator identity may be recorded").toBeNull();
     expect(inv?.validated_at, "no validation timestamp may be recorded").toBeNull();
-    expect(inv?.submitted_by).toBe(billing.id);
+    expect(inv?.submitted_by).toBe(ops.id);
     expect((await execution(fileId, "finance_invoice_validation"))?.state).not.toBe("COMPLETED");
   });
 
@@ -503,22 +535,6 @@ describe("C-4 section F — governed billing, and the issuance boundary", () => 
     expect(inv?.validated_by, "maker ≠ checker, on identity").not.toBe(inv?.submitted_by);
     // NUMBERING: still not consumed. Validation is not issuance.
     expect(inv?.invoice_number, "validation must not allocate an official number").toBeNull();
-  });
-
-  it("issuance BEFORE validation is refused", async () => {
-    // On another dossier's draft, since this one is already validated.
-    const { data: drafts } = await db()
-      .from("invoice")
-      .select("id")
-      .eq("status", "DRAFT")
-      .neq("id", invoiceId)
-      .limit(1);
-    const draftId = (drafts ?? [])[0]?.id as string | undefined;
-    expect(draftId, "a DRAFT invoice is needed for this negative case").toBeTruthy();
-
-    const early = await as(billing, () => emailValidatedInvoice(draftId as string));
-    expect(early.ok).toBe(false);
-    expect((early as { error: string }).error).toBe("invoice_not_validated");
   });
 
   it("THE ISSUANCE INVARIANT — no delivery, no ISSUED, no step 22", async () => {
