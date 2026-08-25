@@ -84,7 +84,7 @@ export const CLIENT_NO_DEPOSIT = "00000000-0000-0000-0000-0000000cc002";
 export async function execution(fileId: string, stepKey: string) {
   const { data } = await db()
     .from("process_step_execution")
-    .select("state, assigned_user_id, started_at, submitted_by, submitted_at, completed_at, process_instance_id")
+    .select("id, state, assigned_user_id, started_at, submitted_by, submitted_at, completed_at, reviewed_by, process_instance_id")
     .eq("step_key", stepKey)
     .in(
       "process_instance_id",
@@ -151,4 +151,11 @@ export async function provideEvidence(
   const ver = await as(verifier, () => verifyDocument(docId));
   if (!ver.ok) throw new Error(`provideEvidence(${typeCode}): verify failed: ${JSON.stringify(ver)}`);
   return docId;
+}
+
+/** The customs record id for a dossier — ASSERTION/ACTION INPUT ONLY. */
+export async function customsIdFor(fileId: string): Promise<string> {
+  const { data } = await db().from("customs_record").select("id").eq("file_id", fileId).maybeSingle();
+  if (!data) throw new Error(`no customs record on ${fileId}`);
+  return data.id as string;
 }
