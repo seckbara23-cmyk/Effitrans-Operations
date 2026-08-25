@@ -338,6 +338,26 @@ export async function submitStep(fileId: string, stepKey: string): Promise<Engin
   if (typeof st === "string") return fail(st);
 
   const ev = evaluateStepEvidence(stepKey, st.snapshot!.evidence);
+
+  // C-4 — evidence the actor cannot SEE may not be evidence the actor CLOSES.
+  //
+  // `unauthorized` is neither satisfied nor missing: the caller lacks read
+  // access to that domain, so the evaluator honestly reports that it cannot
+  // say. `complete` deliberately ignores those items, which is right for
+  // DISPLAY — a queue should not paint a step red because the reader is not
+  // the auditor. It is wrong for a WRITE. Taken together the two meant a step
+  // whose whole evidence set was invisible to the actor reported complete on
+  // an empty `missing`, and closed having verified nothing.
+  //
+  // Checked BEFORE completeness, and with its own code, because the two
+  // refusals are different facts and the operator sentence must differ:
+  // `evidence_missing` says the artefact is not there, `evidence_unauthorized`
+  // says you are not the one who may judge it. Collapsing them would send an
+  // actor hunting for a document that exists and that someone else must sign.
+  if (ev.unauthorized.length > 0) {
+    return fail("evidence_unauthorized");
+  }
+
   if (!ev.complete) {
     return fail("evidence_missing");
   }

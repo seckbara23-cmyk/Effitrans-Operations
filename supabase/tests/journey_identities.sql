@@ -32,7 +32,9 @@ insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-00000000aa13', 'journey.admin@test.local'),
   ('00000000-0000-0000-0000-00000000aa14', 'journey.courier@test.local'),
   ('00000000-0000-0000-0000-00000000aa15', 'journey.collections@test.local'),
-  ('00000000-0000-0000-0000-00000000aa16', 'journey.driver@test.local')
+  ('00000000-0000-0000-0000-00000000aa16', 'journey.driver@test.local'),
+  ('00000000-0000-0000-0000-00000000aa17', 'journey.quotation@test.local'),
+  ('00000000-0000-0000-0000-00000000aa18', 'journey.blindquote@test.local')
 on conflict (id) do nothing;
 
 insert into public.app_user (id, tenant_id, email, name, status) values
@@ -51,7 +53,9 @@ insert into public.app_user (id, tenant_id, email, name, status) values
   ('00000000-0000-0000-0000-00000000aa13', '00000000-0000-0000-0000-000000000001', 'journey.admin@test.local',          'Journey Admin',        'active'),
   ('00000000-0000-0000-0000-00000000aa14', '00000000-0000-0000-0000-000000000001', 'journey.courier@test.local',        'Journey Courier',      'active'),
   ('00000000-0000-0000-0000-00000000aa15', '00000000-0000-0000-0000-000000000001', 'journey.collections@test.local',    'Journey Collections',  'active'),
-  ('00000000-0000-0000-0000-00000000aa16', '00000000-0000-0000-0000-000000000001', 'journey.driver@test.local',         'Journey Driver',       'active')
+  ('00000000-0000-0000-0000-00000000aa16', '00000000-0000-0000-0000-000000000001', 'journey.driver@test.local',         'Journey Driver',       'active'),
+  ('00000000-0000-0000-0000-00000000aa17', '00000000-0000-0000-0000-000000000001', 'journey.quotation@test.local',      'Journey Quotation',    'active'),
+  ('00000000-0000-0000-0000-00000000aa18', '00000000-0000-0000-0000-000000000001', 'journey.blindquote@test.local',     'Journey BlindQuote',   'active')
 on conflict (id) do nothing;
 
 -- Role grants: EXACTLY one canonical role each, so a maker/checker proof can
@@ -74,9 +78,51 @@ from (values
   ('00000000-0000-0000-0000-00000000aa13'::uuid, 'ADMINISTRATIVE_OFFICER'),
   ('00000000-0000-0000-0000-00000000aa14'::uuid, 'COURIER'),
   ('00000000-0000-0000-0000-00000000aa15'::uuid, 'COLLECTIONS_OFFICER'),
-  ('00000000-0000-0000-0000-00000000aa16'::uuid, 'DRIVER')
+  ('00000000-0000-0000-0000-00000000aa16'::uuid, 'DRIVER'),
+  ('00000000-0000-0000-0000-00000000aa17'::uuid, 'QUOTATION_MANAGER')
 ) as u(uid, code)
 join public.role r on r.code = u.code and r.tenant_id = '00000000-0000-0000-0000-000000000001'
+on conflict do nothing;
+
+-- ---------------------------------------------------------------------------
+-- NEGATIVE FIXTURE — an actor who may ACT on a step but cannot SEE its evidence.
+-- ---------------------------------------------------------------------------
+-- C-4 found that a step completed on evidence the actor had no access to:
+-- `unauthorized` items are neither satisfied nor missing, and the completeness
+-- test ignored them. The engine now refuses that case, and this role is how
+-- that refusal stays proven.
+--
+-- It mirrors NO production role and appears in no migration, in seed.sql or in
+-- role-templates.ts — it exists only here, in a test fixture. That is
+-- deliberate: the real gap (QUOTATION_MANAGER without document:read) is now
+-- FIXED, so a test written against real roles alone would pass for the wrong
+-- reason the moment every role holds the right grants. A permanent synthetic
+-- blind actor keeps the invariant honest no matter what the grant matrix does.
+--
+-- It holds exactly what it needs to REACH the step and nothing that would let
+-- it judge the evidence:
+--   quotation:create — the gating permission of step 1 (Cotation)
+--   file:read:all    — so the dossier is visible without depending on the
+--                      responsibility-visibility ground under test elsewhere
+--   NO document:read — the whole point
+insert into public.role (tenant_id, code, label_fr, label_en)
+values ('00000000-0000-0000-0000-000000000001', 'JOURNEY_EVIDENCE_BLIND',
+        'Fixture — acteur sans accès aux preuves', 'Fixture — evidence-blind actor')
+on conflict (tenant_id, code) do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code in ('quotation:create', 'file:read:all')
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code = 'JOURNEY_EVIDENCE_BLIND'
+on conflict do nothing;
+
+insert into public.user_role (user_id, role_id, tenant_id)
+select '00000000-0000-0000-0000-00000000aa18'::uuid, r.id, r.tenant_id
+from public.role r
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code = 'JOURNEY_EVIDENCE_BLIND'
 on conflict do nothing;
 
 -- Two clients: one REQUIRING physical deposit (primary journey), one not (the
@@ -119,6 +165,8 @@ declare
   v_users int;
   v_roles int;
   v_clients int;
+  v_blind int;
+  v_quote int;
 begin
   select count(*) into v_users from public.app_user where email like 'journey.%@test.local';
   select count(*) into v_roles from public.user_role ur
@@ -126,11 +174,37 @@ begin
   select count(*) into v_clients from public.client where id in
     ('00000000-0000-0000-0000-0000000cc001', '00000000-0000-0000-0000-0000000cc002');
 
-  if v_users <> 16 then raise exception 'JOURNEY FIXTURES: expected 16 identities, got %', v_users; end if;
-  if v_roles <> 16 then raise exception 'JOURNEY FIXTURES: expected 16 role grants, got % (a role code is missing from this tenant)', v_roles; end if;
+  if v_users <> 18 then raise exception 'JOURNEY FIXTURES: expected 18 identities, got %', v_users; end if;
+  if v_roles <> 18 then raise exception 'JOURNEY FIXTURES: expected 18 role grants, got % (a role code is missing from this tenant)', v_roles; end if;
   if v_clients <> 2 then raise exception 'JOURNEY FIXTURES: expected 2 clients, got %', v_clients; end if;
 
-  raise notice 'journey identities ready (% users, % grants, % clients)', v_users, v_roles, v_clients;
+  -- The negative fixture must actually BE blind, and the quotation lead must
+  -- actually be able to see. Asserted here rather than assumed: a fixture that
+  -- silently gained document:read would make the refusal test pass for the
+  -- wrong reason, and a quotation lead that silently lost it would fail the
+  -- happy path for a reason that looks like a product defect.
+  select count(*) into v_blind
+  from public.app_user u
+  join public.user_role ur on ur.user_id = u.id
+  join public.role_permission rp on rp.role_id = ur.role_id
+  join public.permission p on p.id = rp.permission_id
+  where u.email = 'journey.blindquote@test.local' and p.code = 'document:read';
+
+  select count(*) into v_quote
+  from public.app_user u
+  join public.user_role ur on ur.user_id = u.id
+  join public.role_permission rp on rp.role_id = ur.role_id
+  join public.permission p on p.id = rp.permission_id
+  where u.email = 'journey.quotation@test.local' and p.code = 'document:read';
+
+  if v_blind <> 0 then
+    raise exception 'JOURNEY FIXTURES: the evidence-blind actor HOLDS document:read (%) — the refusal test would pass for the wrong reason', v_blind;
+  end if;
+  if v_quote < 1 then
+    raise exception 'JOURNEY FIXTURES: the quotation lead lacks document:read — migration 124 did not apply';
+  end if;
+
+  raise notice 'journey identities ready (% users, % grants, % clients, blind=% quote_reads=%)', v_users, v_roles, v_clients, v_blind, v_quote;
 end $$;
 
 commit;

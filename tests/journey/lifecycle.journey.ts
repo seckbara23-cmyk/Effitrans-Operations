@@ -16,7 +16,7 @@
  */
 import { describe, it, expect, beforeAll } from "vitest";
 import { as, actAsNobody } from "./identity";
-import { identity, execution, auditFor, handoffs, db, TENANT_A, CLIENT_DEPOSIT_REQUIRED } from "./fixtures";
+import { identity, execution, auditFor, handoffs, db, provideEvidence, TENANT_A, CLIENT_DEPOSIT_REQUIRED } from "./fixtures";
 import type { CurrentUser } from "@/lib/auth/current-user";
 
 import { createFile } from "@/lib/files/actions";
@@ -29,16 +29,23 @@ let ops: CurrentUser;      // OPS_SUPERVISOR — intake, process:manage
 let am: CurrentUser;       // ACCOUNT_MANAGER — file:create, step 3
 let transit: CurrentUser;  // CHIEF_OF_TRANSIT — reception, step 4
 let stranger: CurrentUser; // COURIER — holds nothing relevant here
+let quotation: CurrentUser; // QUOTATION_MANAGER — owns step 1, reads its evidence
+let blind: CurrentUser;     // JOURNEY_EVIDENCE_BLIND — may act on step 1, cannot see its evidence
 let fileId = "";
 
-describe("C-4 slice 1 — Creation → Transit reception", () => {
-  beforeAll(async () => {
-    ops = await identity("ops");
-    am = await identity("am");
-    transit = await identity("transit");
-    stranger = await identity("courier");
-  });
+// Resolved once for the whole file, at file level rather than inside the first
+// describe: the later blocks use these too, and hanging them off one block's
+// hook would make those blocks depend on the order describes happen to run in.
+beforeAll(async () => {
+  ops = await identity("ops");
+  am = await identity("am");
+  transit = await identity("transit");
+  stranger = await identity("courier");
+  quotation = await identity("quotation");
+  blind = await identity("blindquote");
+});
 
+describe("C-4 slice 1 — Creation → Transit reception", () => {
   it("T1 — the Account Manager creates the dossier; nobody else can", async () => {
     // An actor without file:create is refused by the REAL RBAC lookup.
     const refused = await as(stranger, () =>
@@ -188,5 +195,98 @@ describe("C-4 slice 1 — Creation → Transit reception", () => {
     expect(state, "the dossier must be readable by its Account Manager").toBeTruthy();
     expect(state!.amOpeningDone, "step 3 is not done yet").toBe(false);
     expect(state!.handoffSent).toBe(false);
+  });
+});
+
+/**
+ * C-4 FINDING — evidence the actor cannot SEE is not evidence the actor CLOSES.
+ * ---------------------------------------------------------------------------
+ * These cases run on their OWN dossier, opened with `skipCotation: false` so
+ * that step 1 is genuinely live rather than derived-skipped. That matters: the
+ * defect was only reachable on the devis path, and a test that let the default
+ * skip stand would have proven nothing while looking thorough.
+ */
+describe("C-4 — a step cannot be closed on evidence its actor may not judge", () => {
+  let devisFile = "";
+
+  beforeAll(async () => {
+    const created = await as(am, () =>
+      createFile({
+        type: "IMP",
+        clientId: CLIENT_DEPOSIT_REQUIRED,
+        priority: "normal",
+        shipment: {
+          transportMode: "SEA",
+          origin: "JOURNEY DEVIS",
+          destination: "Dakar",
+          blAwbRef: `JRN-DEVIS-${Date.now()}`,
+        },
+      }),
+    );
+    if (!created.ok) throw new Error(`devis dossier creation failed: ${JSON.stringify(created)}`);
+    devisFile = (created as { id: string }).id;
+
+    // skipCotation: false — the devis is REQUIRED on this dossier, so step 1
+    // stays a live step with real evidence rather than a derived skip.
+    const opened = await as(ops, () =>
+      openDossierWorkflow(devisFile, { ownerUserId: ops.id, skipCotation: false }),
+    );
+    if (!opened.ok) throw new Error(`devis workflow open failed: ${JSON.stringify(opened)}`);
+  });
+
+  it("the devis dossier really does have a live cotation step", async () => {
+    // Guards the guard: if cotation were SKIPPED here, every refusal below
+    // would pass for the wrong reason.
+    const cot = await execution(devisFile, "cotation");
+    expect(cot?.state, "cotation must NOT be skipped on this dossier").not.toBe("SKIPPED");
+    // Step 1 materialises AVAILABLE (buildInitialExecutions), which is what
+    // makes the devis path executable at all: PENDING -> ACTIVE is illegal and
+    // activateEntryStep is restricted to operations_intake.
+    expect(cot?.state).toBe("AVAILABLE");
+  });
+
+  it("an actor who cannot see the evidence is REFUSED — evidence_unauthorized", async () => {
+    const started = await as(blind, () => activateStep(devisFile, "cotation"));
+    expect(started.ok, `blind actor could not start step 1: ${JSON.stringify(started)}`).toBe(true);
+
+    const before = await execution(devisFile, "cotation");
+    expect(before?.state).toBe("ACTIVE");
+
+    const refused = await as(blind, () => submitStep(devisFile, "cotation"));
+    expect(refused.ok, "a step must not close on evidence its actor cannot judge").toBe(false);
+    // The SPECIFIC code: "you may not judge this" is not "it is not there".
+    expect((refused as { error: string }).error).toBe("evidence_unauthorized");
+
+    // …and the refusal left NOTHING behind.
+    const after = await execution(devisFile, "cotation");
+    expect(after?.state, "state must be unchanged after a refusal").toBe("ACTIVE");
+    expect(after?.completed_at, "nothing may be marked complete").toBeNull();
+    expect(after?.submitted_at).toBeNull();
+  });
+
+  it("a sighted actor with NO evidence still gets evidence_missing", async () => {
+    // The two refusals must stay distinguishable. The quotation lead CAN see
+    // the evidence and there is none yet, so this is the other failure.
+    const refused = await as(quotation, () => submitStep(devisFile, "cotation"));
+    expect(refused.ok).toBe(false);
+    expect((refused as { error: string }).error).toBe("evidence_missing");
+  });
+
+  it("with both documents verified, the quotation lead completes step 1", async () => {
+    // The quotation lead holds document:read, NOT document:create — it reads
+    // its evidence, it does not author it. So the documents arrive the real
+    // way: uploaded by one person, verified by another.
+    await provideEvidence(devisFile, "QUOTATION", am, ops);
+    await provideEvidence(devisFile, "QUOTATION_APPROVAL", am, ops);
+
+    const done = await as(quotation, () => submitStep(devisFile, "cotation"));
+    expect(done.ok, `step 1 should complete once its evidence is verified: ${JSON.stringify(done)}`).toBe(true);
+
+    const cot = await execution(devisFile, "cotation");
+    expect(cot?.state).toBe("COMPLETED");
+
+    // …and completing step 1 promotes its dependent (C-1), so the fix did not
+    // cost the promotion behaviour proved in slice 1.
+    expect((await execution(devisFile, "operations_intake"))?.state).toBe("AVAILABLE");
   });
 });

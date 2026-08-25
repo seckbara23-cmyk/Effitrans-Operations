@@ -154,6 +154,17 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       ...BASE, "quotation:approve", "quotation:create", "quotation:send",
       // Phase 8.7 — Messaging Center. Direct/dossier threads only (no department inbox).
       "messaging:read", "messaging:send",
+      // C-4 — step 1 (Cotation) REQUIRES the quotation and its approval as
+      // evidence, and this is the role that owns that step. Without
+      // document:read it could not see the two documents it must produce, and
+      // the engine now refuses completion on evidence the actor cannot judge
+      // (evidence_unauthorized) — so the role would be hard-blocked from its
+      // own step. This grants the CAPABILITY only: document rows stay bounded
+      // by can_read_file in RLS and by resolveFileScope/isFileVisible in every
+      // admin-client read, and this role holds no file:read:all. It therefore
+      // sees documents on the dossiers it already legitimately reaches, and on
+      // no others.
+      "document:read",
     ],
   },
   {

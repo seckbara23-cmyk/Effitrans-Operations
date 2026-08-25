@@ -144,6 +144,9 @@ export type EngineError =
   | "invalid_state"
   | "prerequisites_unmet"
   | "evidence_missing"
+  // C-4 — the actor cannot SEE this evidence, so the actor may not close it.
+  // Distinct from evidence_missing: the artefact may well exist.
+  | "evidence_unauthorized"
   | "gate_blocked"
   | "self_validation_forbidden"
   | "override_not_allowed"

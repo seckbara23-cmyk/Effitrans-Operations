@@ -498,7 +498,14 @@ describe("the DB suite is wired into CI, last, with a readable failure", () => {
     // TMS-2 appended its shipment geography suite; the pin moves to it.
     // TMS-5 appended its fleet suite; the pin moves to it.
     // TMS-6 appended its subcontractor suite; the pin moves to it.
-    const mine = ci.indexOf("tms_6_subcontractor_test.sql");
+    // C-4 moved the journey harness and its fixture seed to the very end of the
+    // job, so the pin moves to the seed. The move SERVES this rule rather than
+    // bending it: the journey opens a real workflow in tenant A, and roughly
+    // fifty suites assert against a quiet tenant, so anything downstream of it
+    // was reading the journey's own dossier as its own violation (WES-4 did).
+    // Nothing runs after the seed except the journey itself, so a failure there
+    // still skips nothing.
+    const mine = ci.indexOf("journey_identities.sql");
     const others = [...ci.matchAll(/-f supabase\/tests\/(\w+)\.sql/g)]
       .map((m) => ci.indexOf(`${m[1]}.sql`))
       .filter((i) => i !== mine);

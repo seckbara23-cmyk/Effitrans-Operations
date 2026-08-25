@@ -672,6 +672,19 @@ where r.tenant_id = '00000000-0000-0000-0000-000000000001'
   and r.code = 'QUOTATION_MANAGER'
 on conflict do nothing;
 
+-- C-4 — the quotation lead must be able to READ the evidence its own official
+-- step requires. Step 1 (Cotation) requires QUOTATION and QUOTATION_APPROVAL,
+-- and the engine refuses to complete a step on evidence the actor cannot judge.
+-- Capability only: document rows remain bounded by can_read_file, and this role
+-- holds no file:read:all, so its reach is unchanged.
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'document:read'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code = 'QUOTATION_MANAGER'
+on conflict do nothing;
+
 -- Internal managerial validation ONLY. Not quotation:create — DEC-C32 refuses
 -- granting it to OPS_SUPERVISOR merely to make quotations readable; the SELECT
 -- policies were widened to `create OR validate` instead.

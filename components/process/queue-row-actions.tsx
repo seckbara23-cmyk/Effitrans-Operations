@@ -28,6 +28,9 @@ const ERROR_FR: Record<string, string> = {
   invalid_state: "L'étape a déjà changé d'état. Rafraîchissez la file.",
   prerequisites_unmet: "Prérequis non satisfaits.",
   evidence_missing: "Preuves requises manquantes.",
+  evidence_unauthorized:
+    "Vous n'avez pas accès aux preuves exigées par cette étape. "
+    + "Elle doit être clôturée par une personne habilitée à les consulter.",
   gate_blocked: "Porte de convergence bloquée.",
   self_validation_forbidden: "Vous ne pouvez pas valider votre propre travail.",
   override_not_allowed: "Dérogation non autorisée.",

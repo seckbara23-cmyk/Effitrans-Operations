@@ -113,3 +113,34 @@ export async function handoffs(fileId: string) {
     .in("process_instance_id", inst.map((r) => r.id));
   return data ?? [];
 }
+
+/**
+ * Put REAL verified evidence of `typeCode` on a dossier, the way the business
+ * does: one person uploads it, a DIFFERENT person verifies it.
+ *
+ * No SQL, no status forcing. The two-actor shape is not decoration — maker
+ * ≠ checker is enforced both in `verifyDocument` and by a trigger on
+ * `document_review`, so a helper that used one identity for both halves would
+ * be refused, and a helper that wrote the row directly would prove nothing.
+ */
+export async function provideEvidence(
+  fileId: string,
+  typeCode: string,
+  uploader: CurrentUser,
+  verifier: CurrentUser,
+): Promise<string> {
+  const { uploadDocument, verifyDocument } = await import("@/lib/documents/actions");
+  const { as } = await import("./identity");
+
+  const fd = new FormData();
+  fd.set("typeCode", typeCode);
+  fd.set("file", new File([`journey evidence for ${typeCode}`], `${typeCode.toLowerCase()}.txt`, { type: "text/plain" }));
+
+  const up = await as(uploader, () => uploadDocument(fileId, fd));
+  if (!up.ok) throw new Error(`provideEvidence(${typeCode}): upload failed: ${JSON.stringify(up)}`);
+  const docId = (up as { id: string }).id;
+
+  const ver = await as(verifier, () => verifyDocument(docId));
+  if (!ver.ok) throw new Error(`provideEvidence(${typeCode}): verify failed: ${JSON.stringify(ver)}`);
+  return docId;
+}
