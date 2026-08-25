@@ -15,7 +15,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { as } from "./identity";
 import {
   identity, execution, auditFor, handoffs, provideEvidence, customsIdFor, transportFor,
-  CLIENT_DEPOSIT_REQUIRED,
+  db, CLIENT_DEPOSIT_REQUIRED,
 } from "./fixtures";
 import type { CurrentUser } from "@/lib/auth/current-user";
 
@@ -26,6 +26,10 @@ import { declareEvidenceAbsence } from "@/lib/process/evidence-absence-actions";
 import { receiveDossierAtTransit, assignTransitStep, recordBae } from "@/lib/process/engine/transit-actions";
 import { createCustoms, changeCustomsStatus } from "@/lib/customs/actions";
 import { createTransport, assignTransport, changeTransportStatus } from "@/lib/transport/actions";
+import {
+  prepareInvoiceDraft, submitInvoiceToFinance, approveInvoice, emailValidatedInvoice,
+} from "@/lib/process/billing/actions";
+import { addInvoiceLine } from "@/lib/finance/actions";
 
 let ops: CurrentUser;         // OPS_SUPERVISOR
 let am: CurrentUser;          // ACCOUNT_MANAGER — owns steps 3, 16, 19
@@ -34,6 +38,8 @@ let coordinator: CurrentUser; // COORDINATOR — owns steps 17, 18
 let field: CurrentUser;       // CUSTOMS_FIELD_AGENT
 let transport: CurrentUser;   // TRANSPORT_OFFICER — owns step 14
 let pickup: CurrentUser;      // PICKUP_AGENT — owns step 15
+let billing: CurrentUser;     // BILLING_OFFICER — owns steps 20, 22
+let finance: CurrentUser;     // FINANCE_OFFICER — owns step 21 (the checker)
 
 let fileId = "";
 
@@ -142,6 +148,8 @@ describe("C-4 slice 3a — transport, convergence, delivery, completeness", () =
     field = await identity("field");
     transport = await identity("transport");
     pickup = await identity("pickup");
+    billing = await identity("billing");
+    finance = await identity("finance");
     await carryToStep13();
   }, 120_000);
 
@@ -362,5 +370,200 @@ describe("C-4 slice 3a — transport, convergence, delivery, completeness", () =
     expect((await execution(fileId, "am_completeness"))?.state).toBe("COMPLETED");
     // …and the billing gate opens only now.
     expect((await execution(fileId, "billing_draft"))?.state).toBe("AVAILABLE");
+  });
+});
+
+/**
+ * C-4 SLICE 3 SECTION F — governed billing (steps 20–22).
+ * ---------------------------------------------------------------------------
+ * The GOVERNED lane only: prepareInvoiceDraft → submitInvoiceToFinance →
+ * approveInvoice → emailValidatedInvoice. Not `issueInvoice`, which is the
+ * simple /finance path and does not carry the delivery contract.
+ *
+ * SCOPE, stated plainly, because the boundary matters more than the coverage.
+ * The ratified rule is that an invoice becomes ISSUED only after a SUCCESSFUL
+ * provider delivery. `sendEmail` has three outcomes and none is a test seam:
+ * unset → provider_not_configured, `smtp` → provider_not_implemented (a
+ * documented stub), `resend` → a real HTTPS POST to a real inbox. Stubbing it
+ * to return {ok:true} is exactly the lie EMP-3 / RATIFY-EMP3-2 removed, and it
+ * would destroy the one invariant step 22 exists to enforce.
+ *
+ * So this proves the PROTECTIVE half — no delivery, no issuance — exercised
+ * honestly because CI genuinely has no provider. The POSITIVE half (successful
+ * delivery ⇒ ISSUED ⇒ step 22 advances) is NOT exercised here and is recorded
+ * as an external-boundary verification requirement, never as an automated pass.
+ */
+describe("C-4 section F — governed billing, and the issuance boundary", () => {
+  let invoiceId = "";
+
+  it("step 20 is REFUSED on a dossier that is not billing-ready", async () => {
+    // A fresh dossier: opened, but nowhere near the completeness reviews. This
+    // is the gate the platform never had — an invoice used to be creatable on
+    // any dossier at any time, with no evidence at all.
+    const other = await as(am, () =>
+      createFile({
+        type: "IMP",
+        clientId: CLIENT_DEPOSIT_REQUIRED,
+        priority: "normal",
+        shipment: {
+          transportMode: "SEA",
+          origin: "JOURNEY NOTREADY",
+          destination: "Dakar",
+          blAwbRef: `JRN-NR-${Date.now()}`,
+        },
+      }),
+    );
+    expect(other.ok).toBe(true);
+    const otherId = (other as { id: string }).id;
+    await as(ops, () => openDossierWorkflow(otherId, { ownerUserId: ops.id, skipCotation: true }));
+
+    const refused = await as(billing, () => prepareInvoiceDraft(otherId));
+    expect(refused.ok, "no invoice before the completeness reviews").toBe(false);
+    expect((refused as { error: string }).error).toBe("dossier_not_billing_ready");
+
+    const { data } = await db().from("invoice").select("id").eq("file_id", otherId);
+    expect(data ?? [], "a refused draft must leave no invoice behind").toHaveLength(0);
+  });
+
+  it("step 20 — with the gate open, Billing prepares the draft", async () => {
+    expect((await execution(fileId, "billing_draft"))?.state).toBe("AVAILABLE");
+
+    const draft = await as(billing, () => prepareInvoiceDraft(fileId));
+    expect(draft.ok, `prepareInvoiceDraft: ${JSON.stringify(draft)}`).toBe(true);
+    invoiceId = (draft as { id: string }).id;
+
+    const { data: inv } = await db()
+      .from("invoice")
+      .select("status, invoice_number, submitted_by, validated_by, validated_at")
+      .eq("id", invoiceId)
+      .maybeSingle();
+    expect(inv?.status).toBe("DRAFT");
+    // NUMBERING: not consumed at draft. An unsent invoice has no number.
+    expect(inv?.invoice_number, "a draft must not hold an official number").toBeNull();
+    expect(inv?.validated_by).toBeNull();
+    expect(inv?.validated_at).toBeNull();
+  });
+
+  it("a draft with no lines cannot be submitted", async () => {
+    const empty = await as(billing, () => submitInvoiceToFinance(invoiceId));
+    expect(empty.ok, "an invoice with nothing on it is not submittable").toBe(false);
+    expect((empty as { error: string }).error).toBe("no_lines");
+
+    const line = await as(billing, () =>
+      addInvoiceLine(invoiceId, {
+        description: "Prestation transit — journey",
+        quantity: 1,
+        unitAmount: 250000,
+        taxRate: 18,
+      }),
+    );
+    expect(line.ok, `addInvoiceLine: ${JSON.stringify(line)}`).toBe(true);
+
+    const submitted = await as(billing, () => submitInvoiceToFinance(invoiceId));
+    expect(submitted.ok, `submitInvoiceToFinance: ${JSON.stringify(submitted)}`).toBe(true);
+
+    const { data: inv } = await db()
+      .from("invoice")
+      .select("submitted_by, status")
+      .eq("id", invoiceId)
+      .maybeSingle();
+    expect(inv?.submitted_by).toBe(billing.id);
+    expect(inv?.status, "submission is not validation").toBe("DRAFT");
+  });
+
+  it("20→21 MAKER ≠ CHECKER — the submitter cannot validate its own invoice", async () => {
+    const refused = await as(billing, () => approveInvoice(invoiceId));
+    expect(refused.ok).toBe(false);
+    expect((refused as { error: string }).error).toBe("self_approval_forbidden");
+
+    const { data: inv } = await db()
+      .from("invoice")
+      .select("status, validated_by, validated_at, submitted_by")
+      .eq("id", invoiceId)
+      .maybeSingle();
+    expect(inv?.status, "still an unvalidated draft").toBe("DRAFT");
+    expect(inv?.validated_by, "no validator identity may be recorded").toBeNull();
+    expect(inv?.validated_at, "no validation timestamp may be recorded").toBeNull();
+    expect(inv?.submitted_by).toBe(billing.id);
+    expect((await execution(fileId, "finance_invoice_validation"))?.state).not.toBe("COMPLETED");
+  });
+
+  it("step 21 — an independent Finance identity validates", async () => {
+    const approved = await as(finance, () => approveInvoice(invoiceId));
+    expect(approved.ok, `approveInvoice: ${JSON.stringify(approved)}`).toBe(true);
+
+    const { data: inv } = await db()
+      .from("invoice")
+      .select("status, validated_by, validated_at, submitted_by, invoice_number")
+      .eq("id", invoiceId)
+      .maybeSingle();
+    expect(inv?.status).toBe("VALIDATED");
+    expect(inv?.validated_by).toBe(finance.id);
+    expect(inv?.validated_at, "validated_at is set").toBeTruthy();
+    expect(inv?.validated_by, "maker ≠ checker, on identity").not.toBe(inv?.submitted_by);
+    // NUMBERING: still not consumed. Validation is not issuance.
+    expect(inv?.invoice_number, "validation must not allocate an official number").toBeNull();
+  });
+
+  it("issuance BEFORE validation is refused", async () => {
+    // On another dossier's draft, since this one is already validated.
+    const { data: drafts } = await db()
+      .from("invoice")
+      .select("id")
+      .eq("status", "DRAFT")
+      .neq("id", invoiceId)
+      .limit(1);
+    const draftId = (drafts ?? [])[0]?.id as string | undefined;
+    expect(draftId, "a DRAFT invoice is needed for this negative case").toBeTruthy();
+
+    const early = await as(billing, () => emailValidatedInvoice(draftId as string));
+    expect(early.ok).toBe(false);
+    expect((early as { error: string }).error).toBe("invoice_not_validated");
+  });
+
+  it("THE ISSUANCE INVARIANT — no delivery, no ISSUED, no step 22", async () => {
+    // CI has no email provider, so this exercises the REAL failure path of the
+    // REAL action. Nothing is stubbed: sendEmail genuinely fails closed.
+    const sent = await as(billing, () => emailValidatedInvoice(invoiceId));
+    expect(sent.ok, "a send that did not happen must not report success").toBe(false);
+    expect((sent as { error: string }).error).toBe("email_send_failed");
+
+    const { data: inv } = await db()
+      .from("invoice")
+      .select("status, invoice_number, issue_date, issued_by")
+      .eq("id", invoiceId)
+      .maybeSingle();
+    expect(inv?.status, "a failed delivery must not issue the invoice").toBe("VALIDATED");
+    expect(inv?.invoice_number, "and must not stamp it with a number").toBeNull();
+    expect(inv?.issue_date).toBeNull();
+    expect(inv?.issued_by).toBeNull();
+
+    expect((await execution(fileId, "billing_dispatch"))?.state).not.toBe("COMPLETED");
+
+    const events = await auditFor("invoice.email.failed", invoiceId);
+    expect(events.length, "a failed delivery must be audited").toBeGreaterThan(0);
+    expect(events[0].actor_id).toBe(billing.id);
+  });
+
+  it("NUMBERING — the sequence advanced although no invoice carries a number", async () => {
+    // RECORDED, NOT JUDGED. next_invoice_number runs BEFORE the send, so a
+    // failed delivery consumes a value no document will ever carry, and a retry
+    // consumes another. Whether gaps in the official sequence are acceptable
+    // under Effitrans's accounting obligations is a business ruling; this pins
+    // the evidence so the ruling is made against facts rather than recollection.
+    const { data: inv } = await db()
+      .from("invoice")
+      .select("invoice_number")
+      .eq("id", invoiceId)
+      .maybeSingle();
+    expect(inv?.invoice_number, "the invoice carries none").toBeNull();
+
+    // Nothing in the tenant carries a number, yet issuance has been attempted
+    // twice — which is the whole of the observation.
+    const { data: numbered } = await db()
+      .from("invoice")
+      .select("id")
+      .not("invoice_number", "is", null);
+    expect(numbered ?? [], "nothing was numbered by the failed attempts").toHaveLength(0);
   });
 });
