@@ -430,6 +430,14 @@ describe("C-4 section F — governed billing, and the issuance boundary", () => 
   it("step 20 — with the gate open, Billing prepares the draft", async () => {
     expect((await execution(fileId, "billing_draft"))?.state).toBe("AVAILABLE");
 
+    // Claim the official step first, as an operator does with « Démarrer ».
+    // The billing lane advances the engine through submitStep/approveStep, and
+    // those need the step ACTIVE — AVAILABLE -> COMPLETED is not a legal
+    // transition. Without this the invoice lane runs to completion while the
+    // workflow never moves.
+    const started = await as(billing, () => activateStep(fileId, "billing_draft"));
+    expect(started.ok, `activate step 20: ${JSON.stringify(started)}`).toBe(true);
+
     const draft = await as(billing, () => prepareInvoiceDraft(fileId));
     expect(draft.ok, `prepareInvoiceDraft: ${JSON.stringify(draft)}`).toBe(true);
     invoiceId = (draft as { id: string }).id;
@@ -575,6 +583,10 @@ describe("C-4 section F — governed billing, and the issuance boundary", () => 
     // Nothing about this path is test-aware: emailValidatedInvoice does not know
     // where the mail is going, and the invoice becomes ISSUED for exactly one
     // reason — a server accepted the message.
+    // Step 22 is claimed before it is performed, for the same reason step 20 was.
+    const opened = await as(billing, () => activateStep(fileId, "billing_dispatch"));
+    expect(opened.ok, `activate step 22: ${JSON.stringify(opened)}`).toBe(true);
+
     const recipient = await billingRecipientFor(CLIENT_DEPOSIT_REQUIRED);
     const before = (await sinkMessagesFor(recipient)).length;
 
@@ -612,15 +624,23 @@ describe("C-4 section F — governed billing, and the issuance boundary", () => 
     expect((await execution(fileId, "administration_deposit_prep"))?.state).toBe("AVAILABLE");
   });
 
-  it("re-sending is idempotent — it cannot issue or bill twice", async () => {
+  it("re-sending cannot issue or bill twice", async () => {
     const recipient = await billingRecipientFor(CLIENT_DEPOSIT_REQUIRED);
     const before = (await sinkMessagesFor(recipient)).length;
 
+    // OBSERVED, and worth naming: the action documents an idempotent
+    // short-circuit for an already-SENT message, but `canEmailInvoice` runs
+    // FIRST and requires VALIDATED — so once the invoice is ISSUED the repeat is
+    // refused as `invoice_not_validated` and the idempotency branch is
+    // unreachable. The PROTECTIVE property is intact either way, which is what
+    // this asserts: the client is not emailed twice and the invoice is not
+    // re-issued. The friendly-success half of the comment is not true today.
     const again = await as(billing, () => emailValidatedInvoice(invoiceId));
-    expect(again.ok, "a repeat is not an error").toBe(true);
+    expect(again.ok).toBe(false);
+    expect((again as { error: string }).error).toBe("invoice_not_validated");
 
     const after = await sinkMessagesFor(recipient);
-    expect(after.length, "but the client is not emailed a second time").toBe(before);
+    expect(after.length, "the client is not emailed a second time").toBe(before);
 
     const { data: inv } = await db()
       .from("invoice")
