@@ -130,33 +130,6 @@ jobs:
           PGPASSWORD: postgres
         run: psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/journey_identities.sql
 
-      - name: Install deps (journey harness)
-        run: npm ci
-
-      - name: C-4 journey — Creation to Closure against the real database
-        env:
-          NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
-          # The ENV half of every rollout flag. The TENANT half is seeded by
-          # journey_identities.sql; the engine requires BOTH, exactly as in
-          # production, so neither alone can switch the journey on.
-          EFFITRANS_PROCESS_ENGINE_ENABLED: "true"
-          EFFITRANS_PROCESS_WORKSPACES_ENABLED: "true"
-          EFFITRANS_PROCESS_STRUCTURES_ENABLED: "true"
-          EFFITRANS_OPERATIONS_INTAKE_ENABLED: "true"
-          EFFITRANS_TRANSIT_EXECUTION_ENABLED: "true"
-          EFFITRANS_FINANCE_EXECUTION_ENABLED: "true"
-          EFFITRANS_PHYSICAL_INVOICE_DEPOSIT_ENABLED: "true"
-          EFFITRANS_COLLECTIONS_ENABLED: "true"
-        run: |
-          set -e
-          KEY=$(supabase status -o env | sed -n 's/^SERVICE_ROLE_KEY=//p' | tr -d '"')
-          ANON=$(supabase status -o env | sed -n 's/^ANON_KEY=//p' | tr -d '"')
-          if [ -z "$KEY" ]; then echo "::error::could not resolve SERVICE_ROLE_KEY"; exit 1; fi
-          if [ -z "$ANON" ]; then echo "::error::could not resolve ANON_KEY"; exit 1; fi
-          # The env guard requires the anon key even where the harness never uses
-          # an anon client — it is validated at module load, not at first use.
-          SUPABASE_SERVICE_ROLE_KEY="$KEY" NEXT_PUBLIC_SUPABASE_ANON_KEY="$ANON"             npx vitest run --config vitest.journey.config.ts
-
       - name: Run RLS responsibility visibility test (F-1)
         env:
           PGPASSWORD: postgres
@@ -1076,6 +1049,38 @@ jobs:
             echo "::error::TMS-6 subcontractor suite failed (psql exit $code). ${err} ${note}"
           fi
           exit $code
+
+      # The journey creates a REAL dossier and opens a REAL workflow in tenant A.
+      # That is the point of it — but several SQL suites express "nothing advanced
+      # the engine" as a tenant-wide count, so the journey must run AFTER them,
+      # not before. Running it last also means a journey failure no longer hides
+      # the ~50 suite results behind it.
+      - name: Install deps (journey harness)
+        run: npm ci
+
+      - name: C-4 journey — Creation to Closure against the real database
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+          # The ENV half of every rollout flag. The TENANT half is seeded by
+          # journey_identities.sql; the engine requires BOTH, exactly as in
+          # production, so neither alone can switch the journey on.
+          EFFITRANS_PROCESS_ENGINE_ENABLED: "true"
+          EFFITRANS_PROCESS_WORKSPACES_ENABLED: "true"
+          EFFITRANS_PROCESS_STRUCTURES_ENABLED: "true"
+          EFFITRANS_OPERATIONS_INTAKE_ENABLED: "true"
+          EFFITRANS_TRANSIT_EXECUTION_ENABLED: "true"
+          EFFITRANS_FINANCE_EXECUTION_ENABLED: "true"
+          EFFITRANS_PHYSICAL_INVOICE_DEPOSIT_ENABLED: "true"
+          EFFITRANS_COLLECTIONS_ENABLED: "true"
+        run: |
+          set -e
+          KEY=$(supabase status -o env | sed -n 's/^SERVICE_ROLE_KEY=//p' | tr -d '"')
+          ANON=$(supabase status -o env | sed -n 's/^ANON_KEY=//p' | tr -d '"')
+          if [ -z "$KEY" ]; then echo "::error::could not resolve SERVICE_ROLE_KEY"; exit 1; fi
+          if [ -z "$ANON" ]; then echo "::error::could not resolve ANON_KEY"; exit 1; fi
+          # The env guard requires the anon key even where the harness never uses
+          # an anon client — it is validated at module load, not at first use.
+          SUPABASE_SERVICE_ROLE_KEY="$KEY" NEXT_PUBLIC_SUPABASE_ANON_KEY="$ANON"             npx vitest run --config vitest.journey.config.ts
 
       - name: Stop local Supabase
         if: always()

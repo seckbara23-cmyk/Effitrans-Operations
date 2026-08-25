@@ -87,6 +87,7 @@ declare
   no_reason_rejected int := 0;
   explanation_in_event int; event_reference int;
   bae_status_unchanged int; release_recorded int; engine_untouched int;
+  engine_before int;
   rollback_status text; rollback_review int;
   d3_sees int; d4_sees int;
   v_file uuid := '00000000-0000-0000-0000-00000000d410';
@@ -98,6 +99,16 @@ declare
   v_review uuid;
 begin
   perform set_config('role', 'postgres', true);
+
+  -- Engine baseline. This check asks "did review_document or the customs
+  -- release advance the process engine?", and it used to answer by counting
+  -- EVERY process_step_execution in the tenant and demanding zero. That was a
+  -- true proxy only while nothing else in the CI database had ever opened a
+  -- workflow — so the C-4 journey, which legitimately opens one, read as this
+  -- suite's own violation. A DELTA asks the real question and keeps the full
+  -- tenant-wide breadth: nothing anywhere may advance while these actions run.
+  select count(*) into engine_before from public.process_step_execution
+   where tenant_id = '00000000-0000-0000-0000-000000000001';
 
   insert into public.operational_file (id, tenant_id, file_number, type, client_id, status)
   values (v_file, '00000000-0000-0000-0000-000000000001', 'W4-TEST-0001', 'IMP',
@@ -225,7 +236,8 @@ begin
    where id = v_cust and status = 'RELEASED';
 
   -- Neither action may advance the process engine (WES-5 owns that).
-  select count(*) into engine_untouched from public.process_step_execution
+  select count(*) - engine_before into engine_untouched
+    from public.process_step_execution
    where tenant_id = '00000000-0000-0000-0000-000000000001';
 
   -- ------------------------------------------- FAILED EVENT ROLLS BACK ALL
@@ -290,9 +302,9 @@ begin
   raise notice 'WES-4 CHECKS: bytes=% reopen=% supchange=% rejpreserved=% rejverify=% fwd=% bwd=% xdossier=%',
     bytes_immutable, superseded_reopen, supersede_change, rejected_preserved,
     reject_then_verify, supersede_forward, supersede_backward, cross_dossier;
-  raise notice 'WES-4 CHECKS: bae_unchanged=% released=% engine=% rollback(status=% review=%) d3=% d4=%',
-    bae_status_unchanged, release_recorded, engine_untouched, rollback_status,
-    rollback_review, d3_sees, d4_sees;
+  raise notice 'WES-4 CHECKS: bae_unchanged=% released=% engine_delta=% (baseline %) rollback(status=% review=%) d3=% d4=%',
+    bae_status_unchanged, release_recorded, engine_untouched, engine_before,
+    rollback_status, rollback_review, d3_sees, d4_sees;
 
   insert into _r values
     ('atomic_status', atomic_status),
