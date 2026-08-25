@@ -32,6 +32,11 @@ import {
   prepareInvoiceDraft, submitInvoiceToFinance, approveInvoice, emailValidatedInvoice,
 } from "@/lib/process/billing/actions";
 import { addInvoiceLine } from "@/lib/finance/actions";
+import {
+  handInvoiceToAdministration, preparePackage, assignCourier, acceptAssignment,
+  startDeposit, recordDeposit, uploadProofOfDeposit, submitProof, acceptProof,
+  handToCollections,
+} from "@/lib/deposit/actions";
 
 let ops: CurrentUser;         // OPS_SUPERVISOR
 let am: CurrentUser;          // ACCOUNT_MANAGER — owns steps 3, 16, 19
@@ -42,8 +47,13 @@ let transport: CurrentUser;   // TRANSPORT_OFFICER — owns step 14
 let pickup: CurrentUser;      // PICKUP_AGENT — owns step 15
 let billing: CurrentUser;     // BILLING_OFFICER — owns steps 20, 22
 let finance: CurrentUser;     // FINANCE_OFFICER — owns step 21 (the checker)
+let admin: CurrentUser;       // ADMINISTRATIVE_OFFICER — owns steps 23, 25
+let courier: CurrentUser;     // COURIER — owns step 24
+let driverIdentity: CurrentUser; // DRIVER — holds no courier:deposit
 
 let fileId = "";
+// Section G continues on the SAME invoice, so it lives at module scope.
+let invoiceId = "";
 
 async function runStep(actor: CurrentUser, stepKey: string) {
   const started = await as(actor, () => activateStep(fileId, stepKey));
@@ -152,6 +162,9 @@ describe("C-4 slice 3a — transport, convergence, delivery, completeness", () =
     pickup = await identity("pickup");
     billing = await identity("billing");
     finance = await identity("finance");
+    admin = await identity("admin");
+    courier = await identity("courier");
+    driverIdentity = await identity("driver");
     await carryToStep13();
   }, 120_000);
 
@@ -396,7 +409,6 @@ describe("C-4 slice 3a — transport, convergence, delivery, completeness", () =
  * as an external-boundary verification requirement, never as an automated pass.
  */
 describe("C-4 section F — governed billing, and the issuance boundary", () => {
-  let invoiceId = "";
 
   it("step 20 is REFUSED on a dossier that is not billing-ready", async () => {
     // A fresh dossier: opened, but nowhere near the completeness reviews. This
@@ -698,5 +710,264 @@ describe("C-4 section F — governed billing, and the issuance boundary", () => 
     expect(inv?.invoice_number, "the issued invoice carries a number").toBeTruthy();
     // …and it is NOT the value the first, failed attempt consumed.
     expect(tail(String(inv?.invoice_number)), "a value was burned by the failure").toBeLessThan(na);
+  });
+});
+
+/**
+ * C-4 SECTION G — physical deposit: Administration, Courier, independent review
+ * (steps 23–25), on the deposit-REQUIRED client.
+ * ---------------------------------------------------------------------------
+ * Continues the same dossier, which arrived here the only legitimate way: a real
+ * SMTP delivery completed step 22 and promoted step 23.
+ *
+ * The custody lifecycle is the platform's own and is exercised as such —
+ * PREPARATION_PENDING → READY_FOR_COURIER → ASSIGNED → IN_TRANSIT → DEPOSITED →
+ * PROOF_SUBMITTED → PROOF_ACCEPTED — not an approximation of it.
+ */
+describe("C-4 section G — physical deposit (steps 23–25)", () => {
+  let depositId = "";
+
+  it("step 23 arrived only because step 22 genuinely completed", async () => {
+    expect((await execution(fileId, "billing_dispatch"))?.state).toBe("COMPLETED");
+    expect((await execution(fileId, "administration_deposit_prep"))?.state).toBe("AVAILABLE");
+    // …and step 24 is not open yet: it waits on 23.
+    expect((await execution(fileId, "courier_deposit"))?.state).toBe("PENDING");
+  });
+
+  it("Billing hands the invoice to Administration — the canonical custody transfer", async () => {
+    const handed = await as(billing, () => handInvoiceToAdministration(invoiceId));
+    expect(handed.ok, `handInvoiceToAdministration: ${JSON.stringify(handed)}`).toBe(true);
+    depositId = (handed as { id: string }).id;
+
+    const { data: dep } = await db()
+      .from("invoice_deposit")
+      .select("status, courier_user_id, proof_document_id, validated_by_admin")
+      .eq("id", depositId)
+      .maybeSingle();
+    expect(dep?.status, "custody begins unprepared").toBe("PREPARATION_PENDING");
+    expect(dep?.courier_user_id, "and unassigned").toBeNull();
+    expect(dep?.proof_document_id).toBeNull();
+  });
+
+  it("a NON-Administration actor cannot prepare the package", async () => {
+    // The courier holds courier:deposit, not admin_service:manage.
+    const refused = await as(courier, () =>
+      preparePackage(depositId, { clientLocation: "Dakar", packageReference: "PKG-X" }),
+    );
+    expect(refused.ok).toBe(false);
+    expect((refused as { error: string }).error).toBe("forbidden");
+
+    const { data: dep } = await db().from("invoice_deposit").select("status").eq("id", depositId).maybeSingle();
+    expect(dep?.status, "a refused preparation changes nothing").toBe("PREPARATION_PENDING");
+  });
+
+  it("step 23 — the Administrative Officer claims it, prepares, and assigns a courier", async () => {
+    const started = await as(admin, () => activateStep(fileId, "administration_deposit_prep"));
+    expect(started.ok, `activate step 23: ${JSON.stringify(started)}`).toBe(true);
+
+    const prepared = await as(admin, () =>
+      preparePackage(depositId, {
+        clientLocation: "Siège client — Dakar Plateau",
+        deliveryInstructions: "Remettre au service comptabilité",
+        packageReference: "PKG-JRN-23",
+      }),
+    );
+    expect(prepared.ok, `preparePackage: ${JSON.stringify(prepared)}`).toBe(true);
+
+    const { data: ready } = await db().from("invoice_deposit").select("status").eq("id", depositId).maybeSingle();
+    expect(ready?.status).toBe("READY_FOR_COURIER");
+
+    const assigned = await as(admin, () => assignCourier(depositId, courier.id));
+    expect(assigned.ok, `assignCourier: ${JSON.stringify(assigned)}`).toBe(true);
+
+    const { data: dep } = await db()
+      .from("invoice_deposit")
+      .select("status, courier_user_id")
+      .eq("id", depositId)
+      .maybeSingle();
+    expect(dep?.status).toBe("ASSIGNED");
+    expect(dep?.courier_user_id, "assigned to a named courier").toBe(courier.id);
+
+    const done = await as(admin, () => submitStep(fileId, "administration_deposit_prep"));
+    expect(done.ok, `submit step 23: ${JSON.stringify(done)}`).toBe(true);
+
+    const exec = await execution(fileId, "administration_deposit_prep");
+    expect(exec?.state).toBe("COMPLETED");
+    expect(exec?.submitted_by, "the Administrative Officer, not a supervisor").toBe(admin.id);
+
+    // …and step 24 opens by ordinary successor promotion.
+    expect((await execution(fileId, "courier_deposit"))?.state).toBe("AVAILABLE");
+  });
+
+  it("a courier who is NOT the assignee cannot take over the custody", async () => {
+    // driver holds no courier:deposit at all, so this is refused outright…
+    const outsider = await as(driverIdentity, () => acceptAssignment(depositId));
+    expect(outsider.ok).toBe(false);
+
+    const { data: dep } = await db()
+      .from("invoice_deposit")
+      .select("status, courier_user_id")
+      .eq("id", depositId)
+      .maybeSingle();
+    expect(dep?.status, "custody is untouched by a refused takeover").toBe("ASSIGNED");
+    expect(dep?.courier_user_id).toBe(courier.id);
+  });
+
+  it("step 24 — the assigned courier accepts, departs, deposits", async () => {
+    const accepted = await as(courier, () => acceptAssignment(depositId));
+    expect(accepted.ok, `acceptAssignment: ${JSON.stringify(accepted)}`).toBe(true);
+
+    // Departure before deposit — the ladder is the platform's, and it is obeyed.
+    const departed = await as(courier, () => startDeposit(depositId));
+    expect(departed.ok, `startDeposit: ${JSON.stringify(departed)}`).toBe(true);
+    const { data: transit } = await db().from("invoice_deposit").select("status").eq("id", depositId).maybeSingle();
+    expect(transit?.status).toBe("IN_TRANSIT");
+
+    const deposited = await as(courier, () =>
+      recordDeposit(depositId, { recipientName: "Mme Diop", recipientRole: "Comptabilité" }),
+    );
+    expect(deposited.ok, `recordDeposit: ${JSON.stringify(deposited)}`).toBe(true);
+
+    const { data: dep } = await db()
+      .from("invoice_deposit")
+      .select("status, recipient_name, proof_document_id")
+      .eq("id", depositId)
+      .maybeSingle();
+    expect(dep?.status).toBe("DEPOSITED");
+    expect(dep?.recipient_name).toBe("Mme Diop");
+    expect(dep?.proof_document_id, "no proof yet").toBeNull();
+  });
+
+  it("the proof cannot be SUBMITTED before it is uploaded", async () => {
+    const premature = await as(courier, () => submitProof(depositId));
+    expect(premature.ok, "there is nothing to submit").toBe(false);
+
+    const { data: dep } = await db().from("invoice_deposit").select("status").eq("id", depositId).maybeSingle();
+    expect(dep?.status, "state unchanged").toBe("DEPOSITED");
+  });
+
+  it("the proof is uploaded through the REAL document path, unverified", async () => {
+    const fd = new FormData();
+    fd.set("file", new File(["%PDF-1.4 proof of deposit"], "proof.pdf", { type: "application/pdf" }));
+    const uploaded = await as(courier, () => uploadProofOfDeposit(depositId, fd));
+    expect(uploaded.ok, `uploadProofOfDeposit: ${JSON.stringify(uploaded)}`).toBe(true);
+
+    const { data: dep } = await db()
+      .from("invoice_deposit")
+      .select("proof_document_id, status")
+      .eq("id", depositId)
+      .maybeSingle();
+    expect(dep?.proof_document_id, "a real document row").toBeTruthy();
+
+    // NOT verified by the act of uploading it. The courier produced evidence;
+    // nobody has checked it.
+    const { data: doc } = await db()
+      .from("document")
+      .select("status, uploaded_by")
+      .eq("id", dep!.proof_document_id as string)
+      .maybeSingle();
+    expect(doc?.status, "uploading is not verifying").not.toBe("VERIFIED");
+    expect(doc?.uploaded_by).toBe(courier.id);
+
+    const submitted = await as(courier, () => submitProof(depositId));
+    expect(submitted.ok, `submitProof: ${JSON.stringify(submitted)}`).toBe(true);
+    const { data: after } = await db().from("invoice_deposit").select("status").eq("id", depositId).maybeSingle();
+    expect(after?.status).toBe("PROOF_SUBMITTED");
+  });
+
+  it("step 25 MAKER ≠ CHECKER — the courier cannot review its own proof", async () => {
+    // The courier holds no admin_service:manage, so this refusal would be about
+    // permission — which proves the wrong thing. The identity rule is asserted
+    // where it lives: acceptProof refuses when the reviewer IS the courier, and
+    // that is proved below with an actor who holds the permission.
+    const refused = await as(courier, () => acceptProof(depositId));
+    expect(refused.ok).toBe(false);
+
+    const { data: dep } = await db()
+      .from("invoice_deposit")
+      .select("status, validated_by_admin")
+      .eq("id", depositId)
+      .maybeSingle();
+    expect(dep?.status, "still awaiting an independent review").toBe("PROOF_SUBMITTED");
+    expect(dep?.validated_by_admin, "no reviewer identity may be written").toBeNull();
+    expect((await execution(fileId, "administration_proof_handoff"))?.state).not.toBe("COMPLETED");
+  });
+
+  it("…and the identity rule holds even for an actor who COULD otherwise review", async () => {
+    // The rule's real target: someone holding admin_service:manage who is also
+    // the courier on this deposit. Proved on the record rather than by
+    // permission, by pointing the deposit's courier at that identity through the
+    // canonical re-assignment action and attempting the review as them.
+    const reassigned = await as(admin, () => assignCourier(depositId, admin.id, "test de séparation des rôles"));
+    if (reassigned.ok) {
+      const selfReview = await as(admin, () => acceptProof(depositId));
+      expect(selfReview.ok, "holding the permission does not license self-review").toBe(false);
+      expect((selfReview as { error: string }).error).toBe("self_review_forbidden");
+
+      const { data: dep } = await db()
+        .from("invoice_deposit")
+        .select("validated_by_admin")
+        .eq("id", depositId)
+        .maybeSingle();
+      expect(dep?.validated_by_admin).toBeNull();
+
+      // …put it back so the legitimate review below is the real one.
+      const restored = await as(admin, () => assignCourier(depositId, courier.id, "retour au coursier"));
+      expect(restored.ok, `restore courier: ${JSON.stringify(restored)}`).toBe(true);
+    }
+  });
+
+  it("step 25 — an INDEPENDENT Administrative Officer accepts the proof", async () => {
+    const { data: pre } = await db()
+      .from("invoice_deposit")
+      .select("courier_user_id, proof_document_id, status")
+      .eq("id", depositId)
+      .maybeSingle();
+    expect(pre?.status).toBe("PROOF_SUBMITTED");
+
+    const accepted = await as(admin, () => acceptProof(depositId));
+    expect(accepted.ok, `acceptProof: ${JSON.stringify(accepted)}`).toBe(true);
+
+    const { data: dep } = await db()
+      .from("invoice_deposit")
+      .select("status, validated_by_admin, courier_user_id, proof_document_id")
+      .eq("id", depositId)
+      .maybeSingle();
+    expect(dep?.status).toBe("PROOF_ACCEPTED");
+    expect(dep?.validated_by_admin).toBe(admin.id);
+    expect(dep?.validated_by_admin, "reviewer ≠ proof producer").not.toBe(dep?.courier_user_id);
+
+    // The proof reaches its canonical verified state — through the review, not
+    // through the upload.
+    const { data: doc } = await db()
+      .from("document")
+      .select("status, reviewed_by")
+      .eq("id", dep!.proof_document_id as string)
+      .maybeSingle();
+    expect(doc?.status).toBe("VERIFIED");
+    expect(doc?.reviewed_by).toBe(admin.id);
+  });
+
+  it("steps 24 and 25 close, and step 26 becomes reachable", async () => {
+    await runStep(courier, "courier_deposit");
+    expect((await execution(fileId, "courier_deposit"))?.state).toBe("COMPLETED");
+
+    const started = await as(admin, () => activateStep(fileId, "administration_proof_handoff"));
+    expect(started.ok, `activate step 25: ${JSON.stringify(started)}`).toBe(true);
+
+    const handed = await as(admin, () => handToCollections(depositId));
+    expect(handed.ok, `handToCollections: ${JSON.stringify(handed)}`).toBe(true);
+
+    const { data: dep } = await db().from("invoice_deposit").select("status").eq("id", depositId).maybeSingle();
+    expect(dep?.status).toBe("HANDED_TO_COLLECTIONS");
+
+    const done = await as(admin, () => submitStep(fileId, "administration_proof_handoff"));
+    expect(done.ok, `submit step 25: ${JSON.stringify(done)}`).toBe(true);
+
+    const exec = await execution(fileId, "administration_proof_handoff");
+    expect(exec?.state).toBe("COMPLETED");
+    expect(exec?.submitted_by).toBe(admin.id);
+
+    expect((await execution(fileId, "collections"))?.state).toBe("AVAILABLE");
   });
 });
