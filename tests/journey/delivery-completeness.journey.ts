@@ -276,7 +276,6 @@ describe("C-4 slice 3a — transport, convergence, delivery, completeness", () =
     const exec = await execution(fileId, "am_delivery_followup");
     expect(exec?.state).toBe("COMPLETED");
     expect(exec?.submitted_by, "the Account Manager, not a supervisor").toBe(am.id);
-    expect((await execution(fileId, "transport_pod_handoff"))?.state).toBe("AVAILABLE");
   });
 
   it("…and the Account Manager still cannot execute Transport's act", async () => {
@@ -294,15 +293,23 @@ describe("C-4 slice 3a — transport, convergence, delivery, completeness", () =
     expect((await transportFor(fileId)).updatedAt).toBe(before);
   });
 
-  it("step 17 — Coordination takes the POD across", async () => {
-    await runStep(coordinator, "transport_pod_handoff");
-    expect((await execution(fileId, "transport_pod_handoff"))?.state).toBe("COMPLETED");
+  it("step 17 — the POD fact closes the handoff; Coordination does not re-do it", async () => {
+    // The signed delivery note IS the POD, and `transport_pod_handoff` is
+    // fact-provable, so verifying that document closed step 17 by reconciliation
+    // — the same shape as steps 9 and 13. The handoff is the artefact moving
+    // across, not a second click, and asserting a manual completion here would
+    // have been asserting a click the platform does not ask for.
+    const s17 = await execution(fileId, "transport_pod_handoff");
+    expect(s17?.state).toBe("COMPLETED");
+    expect(s17?.completion_provenance).toBe("RECONCILED");
     expect((await execution(fileId, "coordinator_completeness"))?.state).toBe("AVAILABLE");
 
+    // …and the reconciled promotion is attributed to whoever caused it — the
+    // person who verified the POD, not the step's nominal owner.
     const exec = await execution(fileId, "coordinator_completeness");
     const events = await auditFor("process.step.activated", exec!.id as string);
     expect(events.length, "the promotion must be audited").toBeGreaterThan(0);
-    expect(events.some((e) => e.actor_id === coordinator.id)).toBe(true);
+    expect(events.some((e) => e.actor_id === ops.id), "attributed to the POD verifier").toBe(true);
   });
 
   // --------------------------------- E. 18 → 19 the second maker/checker ----
