@@ -248,6 +248,17 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     const created = await as(transit, () => createCustoms(fileId));
     expect(created.ok, `createCustoms: ${JSON.stringify(created)}`).toBe(true);
 
+    // The customs STATUS ladder is walked here, not later, because the control
+    // gate says so: `customs.status` is owned by customs_preparation, so once
+    // step 6 closes the record can no longer be moved. Release is legal only
+    // from INSPECTION or DUTIES_ASSESSED, so the declaration must reach one of
+    // them during preparation for step 13 to be reachable at all.
+    const customsId = await customsIdFor(fileId);
+    for (const status of ["DOCUMENTS_PENDING", "DECLARATION_PREPARED", "DECLARED", "DUTIES_ASSESSED"]) {
+      const moved = await as(transit, () => changeCustomsStatus(customsId, status));
+      expect(moved.ok, `customs -> ${status}: ${JSON.stringify(moved)}`).toBe(true);
+    }
+
     const submitted = await as(transit, () => submitStep(fileId, "customs_preparation"));
     expect(submitted.ok, `submit step 6: ${JSON.stringify(submitted)}`).toBe(true);
 
@@ -385,16 +396,10 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     expect((premature as { error: string }).error).toBe("evidence_missing");
 
     // BON_A_ENLEVER is not an upload: it is the BAE reference on the customs
-    // record. Release is only legal from INSPECTION or DUTIES_ASSESSED, so the
-    // record is walked through its real lifecycle rather than jumped to the end
-    // — the status ladder is a gate like any other and the harness obeys it.
-    const customsId = await customsIdFor(fileId);
-    for (const status of ["DOCUMENTS_PENDING", "DECLARATION_PREPARED", "DECLARED", "DUTIES_ASSESSED"]) {
-      const moved = await as(declarant, () => changeCustomsStatus(customsId, status));
-      expect(moved.ok, `customs -> ${status}: ${JSON.stringify(moved)}`).toBe(true);
-    }
-
-    const bae = await as(transit, () => recordBae(fileId, `BAE-JRN-${Date.now()}`));
+    // record, recorded by the person who CLAIMED this step. Not by the chief of
+    // transit — `customs.release` is gated on customs_field_clearance, and the
+    // field agent holds it, so anyone else would be refused assigned_to_another.
+    const bae = await as(field, () => recordBae(fileId, `BAE-JRN-${Date.now()}`));
     expect(bae.ok, `recordBae: ${JSON.stringify(bae)}`).toBe(true);
 
     // The release IS the fact that proves this step, so reconciliation closes it
