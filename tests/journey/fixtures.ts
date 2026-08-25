@@ -159,3 +159,24 @@ export async function customsIdFor(fileId: string): Promise<string> {
   if (!data) throw new Error(`no customs record on ${fileId}`);
   return data.id as string;
 }
+
+/** The transport record for a dossier — id + updated_at for the CAS write. */
+export async function transportFor(fileId: string): Promise<{ id: string; updatedAt: string }> {
+  const { data } = await db()
+    .from("transport_record")
+    .select("id, updated_at")
+    .eq("file_id", fileId)
+    .maybeSingle();
+  if (!data) throw new Error(`no transport record on ${fileId}`);
+  return { id: data.id as string, updatedAt: data.updated_at as string };
+}
+
+/** The dossier row itself — for closure assertions. */
+export async function fileRow(fileId: string) {
+  const { data } = await db()
+    .from("operational_file")
+    .select("id, file_number, status, closed_at")
+    .eq("id", fileId)
+    .maybeSingle();
+  return data;
+}
