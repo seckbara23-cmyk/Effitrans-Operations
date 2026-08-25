@@ -961,13 +961,17 @@ describe("C-4 section G — physical deposit (steps 23–25)", () => {
     const { data: dep } = await db().from("invoice_deposit").select("status").eq("id", depositId).maybeSingle();
     expect(dep?.status).toBe("HANDED_TO_COLLECTIONS");
 
-    const done = await as(admin, () => submitStep(fileId, "administration_proof_handoff"));
-    expect(done.ok, `submit step 25: ${JSON.stringify(done)}`).toBe(true);
-
+    // Handing to Recouvrement IS the step, as at 9, 13 and 17: the action sends
+    // the canonical handoff AND closes step 25 itself. A second submit would be
+    // a click the platform does not ask for.
     const exec = await execution(fileId, "administration_proof_handoff");
     expect(exec?.state).toBe("COMPLETED");
-    expect(exec?.submitted_by).toBe(admin.id);
 
+    // Step 26 is reached through the CANONICAL routing — a real handoff row,
+    // not a bare promotion.
+    const toCollections = (await handoffs(fileId)).find((h) => h.to_step_key === "collections");
+    expect(toCollections, "a handoff to Recouvrement must exist").toBeTruthy();
+    expect(toCollections!.sent_by).toBe(admin.id);
     expect((await execution(fileId, "collections"))?.state).toBe("AVAILABLE");
   });
 });
