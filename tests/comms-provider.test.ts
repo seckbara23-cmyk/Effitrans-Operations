@@ -29,8 +29,20 @@ describe("comms provider (Phase 1.18 — C3 Resend wiring)", () => {
       expect(isProviderConfigured()).toBe(false);
       process.env.COMMUNICATIONS_EMAIL_PROVIDER = "resend";
       expect(isProviderConfigured()).toBe(true);
+      // C-4: `smtp` is now a real transport, so naming it is not the same as
+      // being able to reach it. Reporting "configured" with no host moved a
+      // certain failure into the middle of a send, which is how a caller ends
+      // up believing it tried.
       process.env.COMMUNICATIONS_EMAIL_PROVIDER = "smtp";
-      expect(isProviderConfigured()).toBe(true);
+      const prevHost = process.env.SMTP_HOST;
+      const prevFrom = process.env.COMMUNICATIONS_EMAIL_FROM;
+      delete process.env.SMTP_HOST;
+      expect(isProviderConfigured(), "smtp without a host is not configured").toBe(false);
+      process.env.SMTP_HOST = "mail.example.test";
+      process.env.COMMUNICATIONS_EMAIL_FROM = "billing@example.test";
+      expect(isProviderConfigured(), "smtp with a host and sender is").toBe(true);
+      if (prevHost === undefined) delete process.env.SMTP_HOST; else process.env.SMTP_HOST = prevHost;
+      if (prevFrom === undefined) delete process.env.COMMUNICATIONS_EMAIL_FROM; else process.env.COMMUNICATIONS_EMAIL_FROM = prevFrom;
       process.env.COMMUNICATIONS_EMAIL_PROVIDER = "";
       expect(isProviderConfigured()).toBe(false);
     } finally {

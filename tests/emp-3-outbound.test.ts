@@ -670,12 +670,21 @@ describe("EMP-3 stays inside its scope", () => {
     }
   });
 
-  it("builds no SMTP", () => {
-    // The value is still accepted by the seam and still unimplemented.
-    expect(code(PROVIDER)).toContain('return { ok: false, error: "provider_not_implemented" }');
+  it("builds no SMTP — EMP-3's own modules, still", () => {
+    // C-4 RATIFIED: the smtp branch is now implemented, in its OWN module
+    // (lib/comms/smtp.ts), so an automated journey could prove step 22 against
+    // a real delivery instead of a stub. That supersedes the "still
+    // unimplemented" half of this pin and NOT the half that matters here.
+    //
+    // What EMP-3 scoped, and what this still defends: outbound EMP-3 did not
+    // grow a mail transport of its own. Its action, dispatch and compose
+    // modules go through the provider seam and know nothing about SMTP.
     for (const f of [ACTIONS, DISPATCH, COMPOSE]) {
       expect(read(f).toLowerCase()).not.toContain("nodemailer");
     }
+    // …and the transport lives behind the seam, not inside it.
+    expect(code(PROVIDER)).toContain("sendViaSmtp(");
+    expect(read(PROVIDER).toLowerCase()).not.toContain("nodemailer");
   });
 
   it("adds no autonomous retry", () => {
