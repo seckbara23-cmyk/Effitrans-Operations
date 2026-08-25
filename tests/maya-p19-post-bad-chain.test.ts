@@ -105,7 +105,13 @@ describe("the post-BAD chain is owned as the CEO document says", () => {
     const expected: [string, string, string][] = [
       ["transport_assignment", "TRANSPORT_OFFICER", "transport:assign"],
       ["pickup", "PICKUP_AGENT", "transport:update"],
-      ["am_delivery_followup", "ACCOUNT_MANAGER", "transport:complete"],
+      // C-4 RATIFIED: step 16's narrow permission is now the step's OWN act.
+      // The ownership this test defends is UNCHANGED — ACCOUNT_MANAGER, as the
+      // CEO document says. What changed is that the gate finally matches it:
+      // transport:complete is Transport's act (TMS-4 keeps it away from this
+      // role), so gating the Account Manager's follow-up on it locked the owner
+      // out of its own step. The permission is now narrower, not wider.
+      ["am_delivery_followup", "ACCOUNT_MANAGER", "process:delivery:followup"],
       ["transport_pod_handoff", "COORDINATOR", "document:create"],
     ];
     for (const [key, role, perm] of expected) {

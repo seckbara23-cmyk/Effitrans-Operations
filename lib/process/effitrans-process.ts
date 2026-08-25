@@ -558,7 +558,13 @@ export const EFFITRANS_PROCESS: ProcessStep[] = [
     nextSteps: ["transport_pod_handoff"],
     parallelGroup: "main",
     slaPolicyKey: "delivery_followup",
-    permissions: ["transport:complete", "communication:send"],
+    // C-4 — the step's OWN act, not Transport's. Step 16 is the Account
+    // Manager following the delivery to client reception and obtaining the
+    // signed BL; moving the transport record to DELIVERED/POD_RECEIVED is
+    // Transport's separate act, and TMS-4 ratified that split. Gating this step
+    // on transport:complete conflated the two and locked the owner out of its
+    // own step. `submitStep` needs only this permission and the step's evidence.
+    permissions: ["process:delivery:followup", "communication:send"],
     implementation: {
       verdict: "partial",
       existing: [

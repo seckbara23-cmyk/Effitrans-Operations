@@ -672,6 +672,30 @@ where r.tenant_id = '00000000-0000-0000-0000-000000000001'
   and r.code = 'QUOTATION_MANAGER'
 on conflict do nothing;
 
+-- C-4 — official step 16 is the Account Manager's, so the Account Manager must
+-- be able to perform it. Its gate was transport:complete, which TMS-4
+-- deliberately keeps away from this role — the AM requests transport, Transport
+-- executes it. The fault was the GATE, not the boundary: step 16 is « suivre la
+-- livraison jusqu'à réception client » and obtaining the signed BL, while
+-- moving the transport record to DELIVERED is Transport's separate act. This
+-- capability means the first and authorizes nothing of the second.
+--
+-- Granted to the roles that legitimately perform step 16 — NOT to every holder
+-- of the old gate. TRANSPORT_OFFICER is absent on purpose: holding the previous
+-- permission is not evidence of owning the step.
+insert into public.permission (code, module, action, data_scope, description) values
+  ('process:delivery:followup', 'process', 'followup', 'assigned',
+   'Perform the Account Manager official delivery follow-up (step 16): obtain the signed delivery note and complete that workflow step. Confers NO transport execution authority.')
+on conflict (code) do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'process:delivery:followup'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('ACCOUNT_MANAGER', 'OPS_SUPERVISOR', 'SYSTEM_ADMIN')
+on conflict do nothing;
+
 -- C-4 — the quotation lead must be able to READ the evidence its own official
 -- step requires. Step 1 (Cotation) requires QUOTATION and QUOTATION_APPROVAL,
 -- and the engine refuses to complete a step on evidence the actor cannot judge.

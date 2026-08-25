@@ -111,6 +111,9 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       // Phase 11.0B — Finance Expense Documents (full-admin convention; sign deferred to 11.0C/D).
       "finance:expense:read", "finance:expense:create", "finance:expense:submit",
       "finance:expense:export", "finance:expense:execute",
+      // C-4 — official step 16 (delivery follow-up). A WORKFLOW capability,
+      // not a Transport one. Administrative continuity, as elsewhere.
+      "process:delivery:followup",
     ],
   },
   {
@@ -182,6 +185,10 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "process:completeness:review", ...PROCESS_HANDOFF, "process:manage", "process:read",
       "report:read", "task:create", "task:delete", "task:read", "task:read:all", "task:update",
       "tracking:read", "transport:read", "transport:request", "logistics:copilot:read",
+      // C-4 — official step 16 (delivery follow-up). A WORKFLOW capability, not
+      // a Transport one: it authorizes completing that step and nothing about
+      // transport status, vehicles, carriers or pickup. TMS-4/TMS-5 stand.
+      "process:delivery:followup",
       // Phase 8.7 — Messaging Center. Owns dossiers/clients end to end: general + documentation + manage.
       "messaging:read", "messaging:send", "messaging:read:documentation", "messaging:read:general",
       "messaging:manage",
@@ -367,6 +374,9 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       // Phase 11.0B — Finance Expense Documents supervisory oversight (read/export +
       // execute, mirroring caisse:manage). No create/submit/sign.
       "finance:expense:read", "finance:expense:export", "finance:expense:execute",
+      // C-4 — official step 16 (delivery follow-up). A WORKFLOW capability,
+      // not a Transport one. Supervises the account-management queue and could perform step 16 before the fix; removing that would be a regression.
+      "process:delivery:followup",
     ],
   },
   {
