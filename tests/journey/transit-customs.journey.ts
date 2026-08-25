@@ -248,6 +248,15 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     const created = await as(transit, () => createCustoms(fileId));
     expect(created.ok, `createCustoms: ${JSON.stringify(created)}`).toBe(true);
 
+    // A declaration cannot be FILED while a prerequisite document is missing:
+    // for a SEA shipment that is the commercial invoice, the packing list, the
+    // customs declaration and the bill of lading (the AWB is dropped by mode).
+    // Each must be VERIFIED, so each arrives the real way — uploaded by the
+    // person preparing the step, verified by someone else.
+    for (const code of ["COMMERCIAL_INVOICE", "PACKING_LIST", "CUSTOMS_DECLARATION", "BILL_OF_LADING"]) {
+      await provideEvidence(fileId, code, transit, ops);
+    }
+
     // The customs STATUS ladder is walked here, not later, because the control
     // gate says so: `customs.status` is owned by customs_preparation, so once
     // step 6 closes the record can no longer be moved. Release is legal only
