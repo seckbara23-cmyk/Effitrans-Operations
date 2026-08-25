@@ -42,20 +42,25 @@ describe("C-4 slice 1 — Creation → Transit reception", () => {
   it("T1 — the Account Manager creates the dossier; nobody else can", async () => {
     // An actor without file:create is refused by the REAL RBAC lookup.
     const refused = await as(stranger, () =>
-      createFile({ type: "IMP", clientId: CLIENT_DEPOSIT_REQUIRED, priority: "normal" } as never),
+      createFile({ type: "IMP", clientId: CLIENT_DEPOSIT_REQUIRED, priority: "normal" }),
     );
     expect(refused.ok, "a COURIER must not create a dossier").toBe(false);
 
     const created = await as(am, () =>
+      // Shipment facts are NESTED under `shipment` — the flat form silently
+      // dropped them and intake then refused with « mode_missing ». Typed, not
+      // cast, so the shape is checked at compile time instead of at run time.
       createFile({
         type: "IMP",
         clientId: CLIENT_DEPOSIT_REQUIRED,
         priority: "normal",
-        transportMode: "SEA",
-        origin: "JOURNEY ORIGIN",
-        destination: "Dakar",
-        blAwbRef: `JRN-${Date.now()}`,
-      } as never),
+        shipment: {
+          transportMode: "SEA",
+          origin: "JOURNEY ORIGIN",
+          destination: "Dakar",
+          blAwbRef: `JRN-${Date.now()}`,
+        },
+      }),
     );
     expect(created.ok, `createFile failed: ${JSON.stringify(created)}`).toBe(true);
     fileId = (created as { id: string }).id;
