@@ -136,6 +136,17 @@ jobs:
       - name: C-4 journey — Creation to Closure against the real database
         env:
           NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+          # The ENV half of every rollout flag. The TENANT half is seeded by
+          # journey_identities.sql; the engine requires BOTH, exactly as in
+          # production, so neither alone can switch the journey on.
+          EFFITRANS_PROCESS_ENGINE_ENABLED: "true"
+          EFFITRANS_PROCESS_WORKSPACES_ENABLED: "true"
+          EFFITRANS_PROCESS_STRUCTURES_ENABLED: "true"
+          EFFITRANS_OPERATIONS_INTAKE_ENABLED: "true"
+          EFFITRANS_TRANSIT_EXECUTION_ENABLED: "true"
+          EFFITRANS_FINANCE_EXECUTION_ENABLED: "true"
+          EFFITRANS_PHYSICAL_INVOICE_DEPOSIT_ENABLED: "true"
+          EFFITRANS_COLLECTIONS_ENABLED: "true"
         run: |
           set -e
           KEY=$(supabase status -o env | sed -n 's/^SERVICE_ROLE_KEY=//p' | tr -d '"')

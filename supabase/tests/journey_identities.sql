@@ -96,6 +96,19 @@ grant usage on schema public to service_role;
 grant select, insert, update, delete on all tables in schema public to service_role;
 grant usage, select on all sequences in schema public to service_role;
 
+-- The pilot tenant's rollout row: the journey exercises the engine, so the
+-- TENANT half of every flag must be on, exactly as it is for the real pilot
+-- tenant in production. The ENV half is supplied by the CI step.
+insert into public.tenant_process_rollout
+  (tenant_id, process_engine, process_workspaces, physical_invoice_deposit, collections, note)
+values
+  ('00000000-0000-0000-0000-000000000001', true, true, true, true, 'C-4 journey harness')
+on conflict (tenant_id) do update set
+  process_engine = true,
+  process_workspaces = true,
+  physical_invoice_deposit = true,
+  collections = true;
+
 do $$
 declare
   v_users int;

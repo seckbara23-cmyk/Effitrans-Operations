@@ -41,6 +41,10 @@ export default defineConfig({
       // outside a render. Passing through removes only the memoisation, which
       // makes the journey stricter, never laxer.
       react: fileURLToPath(new URL("./tests/stubs/react.ts", import.meta.url)),
+      // Part of the SAME session seam: the server client is built from request
+      // cookies, which do not exist in Node. Permission decisions stay real —
+      // get_user_permissions still resolves the acting user's true grants.
+      "@/lib/supabase/server": fileURLToPath(new URL("./tests/stubs/supabase-server.ts", import.meta.url)),
       "@": fileURLToPath(new URL("./", import.meta.url)),
     },
   },
