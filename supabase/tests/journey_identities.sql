@@ -95,6 +95,11 @@ on conflict (id) do nothing;
 grant usage on schema public to service_role;
 grant select, insert, update, delete on all tables in schema public to service_role;
 grant usage, select on all sequences in schema public to service_role;
+-- FUNCTIONS TOO. get_user_permissions is granted to `authenticated` only, and
+-- getEffectivePermissions calls it through the session client — so without this
+-- every action returned "forbidden" and looked like an authority failure rather
+-- than a missing execute grant.
+grant execute on all functions in schema public to service_role;
 
 -- The pilot tenant's rollout row: the journey exercises the engine, so the
 -- TENANT half of every flag must be on, exactly as it is for the real pilot
