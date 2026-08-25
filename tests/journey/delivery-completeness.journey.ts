@@ -583,10 +583,10 @@ describe("C-4 section F — governed billing, and the issuance boundary", () => 
     // Nothing about this path is test-aware: emailValidatedInvoice does not know
     // where the mail is going, and the invoice becomes ISSUED for exactly one
     // reason — a server accepted the message.
-    // Step 22 is claimed before it is performed, for the same reason step 20 was.
-    const opened = await as(billing, () => activateStep(fileId, "billing_dispatch"));
-    expect(opened.ok, `activate step 22: ${JSON.stringify(opened)}`).toBe(true);
-
+    // Step 22 is NOT pre-claimed here. Since the irreversible-send correction,
+    // emailValidatedInvoice prepares the step itself before anything leaves the
+    // building — and the earlier failed-delivery case already left it ACTIVE, so
+    // claiming it again would be an illegal ACTIVE -> ACTIVE transition.
     const recipient = await billingRecipientFor(CLIENT_DEPOSIT_REQUIRED);
     const before = (await sinkMessagesFor(recipient)).length;
 

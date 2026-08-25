@@ -1,11 +1,10 @@
 /**
  * C-4 — REGRESSION for the irreversible-send boundary.
  * ---------------------------------------------------------------------------
- * `emailValidatedInvoice` ends with `await submitStep(fileId, "billing_dispatch")`
- * and DISCARDS the result. `submitStep` requires the step to be ACTIVE —
- * AVAILABLE → COMPLETED is not a legal transition — and the billing lane
- * contains no `assertControlStep`, so nothing forces step 22 to be claimed
- * before the invoice is emailed.
+ * `emailValidatedInvoice` used to end with `await submitStep(fileId,
+ * "billing_dispatch")` and DISCARD the result. `submitStep` requires the step to
+ * be ACTIVE — AVAILABLE → COMPLETED is not a legal transition — and nothing in
+ * the lane forced step 22 to be claimed before the invoice was emailed.
  *
  * This file began as the PROBE that demonstrated the defect: an invoice could be
  * emailed and issued while step 22 sat AVAILABLE, leaving the customer written
@@ -211,11 +210,11 @@ describe("C-4 — an irreversible send whose workflow consequence fails", () => 
     expect(s22?.state, "step 22 is open but unclaimed").toBe("AVAILABLE");
     expect(s22?.started_at).toBeNull();
 
-    // …and nothing in the billing lane requires it to be claimed.
-    const src = await import("node:fs").then((fs) =>
-      fs.readFileSync(new URL("../../lib/process/billing/actions.ts", import.meta.url), "utf8"),
-    );
-    expect(src, "the lane has no control-step gate").not.toContain("assertControlStep");
+    // This is the exact state that used to produce the defect: the invoice
+    // ready to send, and the step open but unclaimed. What changed is what
+    // happens NEXT — proved in case A. That the preparation does not lean on
+    // assertControlStep is pinned in tests/c4-issuance-consequence.test.ts,
+    // against the preparation function itself rather than the whole file.
   });
 
   it("CASE A — the step is prepared, the send happens once, and the workflow advances", async () => {
