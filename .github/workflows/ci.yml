@@ -150,8 +150,12 @@ jobs:
         run: |
           set -e
           KEY=$(supabase status -o env | sed -n 's/^SERVICE_ROLE_KEY=//p' | tr -d '"')
+          ANON=$(supabase status -o env | sed -n 's/^ANON_KEY=//p' | tr -d '"')
           if [ -z "$KEY" ]; then echo "::error::could not resolve SERVICE_ROLE_KEY"; exit 1; fi
-          SUPABASE_SERVICE_ROLE_KEY="$KEY" npx vitest run --config vitest.journey.config.ts
+          if [ -z "$ANON" ]; then echo "::error::could not resolve ANON_KEY"; exit 1; fi
+          # The env guard requires the anon key even where the harness never uses
+          # an anon client — it is validated at module load, not at first use.
+          SUPABASE_SERVICE_ROLE_KEY="$KEY" NEXT_PUBLIC_SUPABASE_ANON_KEY="$ANON"             npx vitest run --config vitest.journey.config.ts
 
       - name: Run RLS responsibility visibility test (F-1)
         env:
