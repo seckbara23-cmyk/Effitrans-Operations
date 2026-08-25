@@ -26,7 +26,7 @@ import { openDossierWorkflow, handDossierToTransit } from "@/lib/process/engine/
 import { submitStep, activateStep, approveStep, sendHandoff, receiveHandoff } from "@/lib/process/engine/actions";
 import { declareEvidenceAbsence } from "@/lib/process/evidence-absence-actions";
 import { receiveDossierAtTransit, assignTransitStep, recordBae } from "@/lib/process/engine/transit-actions";
-import { createCustoms, recordGaindeRegistration } from "@/lib/customs/actions";
+import { createCustoms, recordGaindeRegistration, changeCustomsStatus } from "@/lib/customs/actions";
 
 let ops: CurrentUser;            // OPS_SUPERVISOR — customs:validate (independent checker)
 let am: CurrentUser;             // ACCOUNT_MANAGER
@@ -314,16 +314,35 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     await handOver(coordinator, customsFinance, "coordinator_to_finance", "gainde_registration");
   });
 
-  it("step 9 — GAINDE registration is recorded by Finance douane", async () => {
+  it("step 9 — Finance's registration IS the step; reconciliation closes it", async () => {
     const customsId = await customsIdFor(fileId);
     const registered = await as(customsFinance, () =>
       recordGaindeRegistration(customsId, `GAINDE-JRN-${Date.now()}`),
     );
     expect(registered.ok, `GAINDE registration: ${JSON.stringify(registered)}`).toBe(true);
 
-    await runStep(customsFinance, "gainde_registration");
-    expect((await execution(fileId, "gainde_registration"))?.state).toBe("COMPLETED");
+    // Step 9 carries no required documents: the milestone IS its completion, and
+    // MAYA-P1.2 tightened the rule so that only FINANCE's own registration fact
+    // proves it. So Finance does not "close a step" afterwards — recording the
+    // registration is the act, and reconciliation converges the engine onto it.
+    const s9 = await execution(fileId, "gainde_registration");
+    expect(s9?.state).toBe("COMPLETED");
+    expect(s9?.completion_provenance).toBe("RECONCILED");
+
+    // …and, being a reconciled completion, it promotes — which before this
+    // slice's fix it did not.
     expect((await execution(fileId, "coordinator_to_declarant"))?.state).toBe("AVAILABLE");
+  });
+
+  it("once step 9 closes, Finance douane correctly stops seeing the dossier", async () => {
+    // Not a defect — the two grounds that let Finance reach this dossier are
+    // both narrow on purpose. Handoff-receiver visibility EXPIRES ON RECEPTION
+    // (migration 121), and owning-role visibility covers only an OPEN
+    // UNASSIGNED step (migration 122). With step 9 completed, neither applies,
+    // so Finance can no longer act on a dossier it has finished with.
+    const late = await as(customsFinance, () => activateStep(fileId, "gainde_registration"));
+    expect(late.ok).toBe(false);
+    expect((late as { error: string }).error).toBe("forbidden");
   });
 
   it("step 10 — Coordination hands it back to the declarant", async () => {
@@ -357,7 +376,7 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     expect((await execution(fileId, "customs_field_clearance"))?.state).toBe("AVAILABLE");
   });
 
-  it("step 13 — clearance refuses without a BAE reference, then releases with one", async () => {
+  it("step 13 — clearance refuses without a BAE, then the release closes it", async () => {
     const started = await as(field, () => activateStep(fileId, "customs_field_clearance"));
     expect(started.ok, `activate step 13: ${JSON.stringify(started)}`).toBe(true);
 
@@ -365,14 +384,24 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     expect(premature.ok, "no BON_A_ENLEVER without a BAE reference").toBe(false);
     expect((premature as { error: string }).error).toBe("evidence_missing");
 
-    // BON_A_ENLEVER is not an upload either: it is satisfied by the BAE
-    // reference on the customs record, recorded through the transit action.
+    // BON_A_ENLEVER is not an upload: it is the BAE reference on the customs
+    // record. Release is only legal from INSPECTION or DUTIES_ASSESSED, so the
+    // record is walked through its real lifecycle rather than jumped to the end
+    // — the status ladder is a gate like any other and the harness obeys it.
+    const customsId = await customsIdFor(fileId);
+    for (const status of ["DOCUMENTS_PENDING", "DECLARATION_PREPARED", "DECLARED", "DUTIES_ASSESSED"]) {
+      const moved = await as(declarant, () => changeCustomsStatus(customsId, status));
+      expect(moved.ok, `customs -> ${status}: ${JSON.stringify(moved)}`).toBe(true);
+    }
+
     const bae = await as(transit, () => recordBae(fileId, `BAE-JRN-${Date.now()}`));
     expect(bae.ok, `recordBae: ${JSON.stringify(bae)}`).toBe(true);
 
-    const done = await as(field, () => submitStep(fileId, "customs_field_clearance"));
-    expect(done.ok, `submit step 13: ${JSON.stringify(done)}`).toBe(true);
-    expect((await execution(fileId, "customs_field_clearance"))?.state).toBe("COMPLETED");
+    // The release IS the fact that proves this step, so reconciliation closes it
+    // — and now promotes from it.
+    const s13 = await execution(fileId, "customs_field_clearance");
+    expect(s13?.state).toBe("COMPLETED");
+    expect(s13?.completion_provenance).toBe("RECONCILED");
   });
 
   // --------------------------------------------------------- convergence ----
