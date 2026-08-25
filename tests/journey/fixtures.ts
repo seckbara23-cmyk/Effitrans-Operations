@@ -125,12 +125,21 @@ export async function handoffs(fileId: string) {
  */
 export async function provideEvidence(
   fileId: string,
-  typeCode: string,
+  keyOrTypeCode: string,
   uploader: CurrentUser,
   verifier: CurrentUser,
 ): Promise<string> {
   const { uploadDocument, verifyDocument } = await import("@/lib/documents/actions");
+  const { DOCUMENT_MAPPINGS } = await import("@/lib/process/documents");
   const { as } = await import("./identity");
+
+  // An EVIDENCE KEY is not a document TYPE CODE, and most of the time they
+  // happen to be spelled the same — which is why passing the key through
+  // worked until SIGNED_DELIVERY_NOTE (type DELIVERY_NOTE) and RECEIPT /
+  // PAYMENT_PROOF (both type PAYMENT_RECEIPT). The registry owns that mapping,
+  // so the harness reads it instead of restating it. A caller may pass either.
+  const mapped = DOCUMENT_MAPPINGS.find((d) => d.key === keyOrTypeCode)?.typeCode;
+  const typeCode = mapped ?? keyOrTypeCode;
 
   const fd = new FormData();
   fd.set("typeCode", typeCode);
@@ -145,11 +154,19 @@ export async function provideEvidence(
   );
 
   const up = await as(uploader, () => uploadDocument(fileId, fd));
-  if (!up.ok) throw new Error(`provideEvidence(${typeCode}): upload failed: ${JSON.stringify(up)}`);
+  if (!up.ok) {
+    throw new Error(
+      `provideEvidence(${keyOrTypeCode} -> type ${typeCode}): upload failed: ${JSON.stringify(up)}`,
+    );
+  }
   const docId = (up as { id: string }).id;
 
   const ver = await as(verifier, () => verifyDocument(docId));
-  if (!ver.ok) throw new Error(`provideEvidence(${typeCode}): verify failed: ${JSON.stringify(ver)}`);
+  if (!ver.ok) {
+    throw new Error(
+      `provideEvidence(${keyOrTypeCode} -> type ${typeCode}): verify failed: ${JSON.stringify(ver)}`,
+    );
+  }
   return docId;
 }
 
