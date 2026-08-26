@@ -50,6 +50,7 @@ let finance: CurrentUser;     // FINANCE_OFFICER — owns step 21 (the checker)
 let admin: CurrentUser;       // ADMINISTRATIVE_OFFICER — owns steps 23, 25
 let courier: CurrentUser;     // COURIER — owns step 24
 let driverIdentity: CurrentUser; // DRIVER — holds no courier:deposit
+let collections: CurrentUser; // COLLECTIONS_OFFICER — owns step 26
 
 let fileId = "";
 // Section G continues on the SAME invoice, so it lives at module scope.
@@ -165,6 +166,7 @@ describe("C-4 slice 3a — transport, convergence, delivery, completeness", () =
     admin = await identity("admin");
     courier = await identity("courier");
     driverIdentity = await identity("driver");
+    collections = await identity("collections");
     await carryToStep13();
   }, 120_000);
 
@@ -968,10 +970,45 @@ describe("C-4 section G — physical deposit (steps 23–25)", () => {
     expect(exec?.state).toBe("COMPLETED");
 
     // Step 26 is reached through the CANONICAL routing — a real handoff row,
-    // not a bare promotion.
+    // not a bare promotion. PROMOTION establishes eligibility; the HANDOFF
+    // establishes departmental custody. One must never silently stand in for
+    // the other, which is exactly what happened while this send was refused.
     const toCollections = (await handoffs(fileId)).find((h) => h.to_step_key === "collections");
     expect(toCollections, "a handoff to Recouvrement must exist").toBeTruthy();
-    expect(toCollections!.sent_by).toBe(admin.id);
+    expect(toCollections!.from_step_key).toBe("administration_proof_handoff");
+    expect(toCollections!.sent_by, "sent by the Administrative Officer").toBe(admin.id);
+    expect(toCollections!.status).toBe("SENT");
+    expect(toCollections!.received_by, "sending is not receiving").toBeNull();
+
+    // …and the custody record references the REAL handoff, not null.
+    const { data: custody } = await db()
+      .from("invoice_deposit_event")
+      .select("handoff_id, event")
+      .eq("deposit_id", depositId)
+      .eq("event", "HANDED_TO_COLLECTIONS")
+      .maybeSingle();
+    expect(custody?.handoff_id, "custody must reference the actual handoff").toBe(toCollections!.id);
+
     expect((await execution(fileId, "collections"))?.state).toBe("AVAILABLE");
+  });
+
+  it("step 26 — Recouvrement RECEIVES explicitly; nothing auto-receives", async () => {
+    const open = (await handoffs(fileId)).find(
+      (h) => h.to_step_key === "collections" && h.status === "SENT",
+    );
+    expect(open, "the handoff is waiting to be received").toBeTruthy();
+
+    const received = await as(collections, () => receiveHandoff(fileId, open!.id as string));
+    expect(received.ok, `receiveHandoff: ${JSON.stringify(received)}`).toBe(true);
+
+    const closed = (await handoffs(fileId)).find((h) => h.id === open!.id);
+    expect(closed!.status).toBe("RECEIVED");
+    expect(closed!.received_by, "received by Recouvrement").toBe(collections.id);
+    expect(closed!.received_by, "receiver ≠ sender").not.toBe(closed!.sent_by);
+
+    // …and the Collections officer can now act on its own step.
+    const started = await as(collections, () => activateStep(fileId, "collections"));
+    expect(started.ok, `activate step 26: ${JSON.stringify(started)}`).toBe(true);
+    expect((await execution(fileId, "collections"))?.state).toBe("ACTIVE");
   });
 });

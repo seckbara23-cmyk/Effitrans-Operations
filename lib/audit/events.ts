@@ -344,6 +344,13 @@ export const AuditActions = {
    */
   PROCESS_DISPATCH_NOT_ADVANCED: "process.dispatch.not_advanced",
   /**
+   * C-4 — the Administration to Recouvrement routing did not complete. Either
+   * step 25 could not be closed, or the departmental handoff could not be sent
+   * after it was. Recorded so a required transfer that did not happen is never
+   * merely absent.
+   */
+  DEPOSIT_ROUTING_FAILED: "deposit.routing.failed",
+  /**
    * F-β's documented hard error, recorded rather than thrown, when it happens
    * on the RECONCILIATION path: a promotion survived, its audit failed, and
    * it could not be safely reverted. The action path fails the request; the

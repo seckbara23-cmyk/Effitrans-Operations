@@ -71,6 +71,10 @@ export type DepositError =
   | "self_review_forbidden"
   | "invalid_courier"
   | "upload_failed"
+  // C-4 — the step 25 -> 26 routing. A required handoff may not degrade to
+  // nothing while the parent action claims success.
+  | "step_completion_failed"
+  | "handoff_not_sent"
   | "invalid_mime";
 
 export type DepositResult<T = { id: string }> = ({ ok: true } & T) | { ok: false; error: DepositError };
@@ -976,14 +980,56 @@ export async function handToCollections(depositId: string): Promise<DepositResul
   });
   if (!ok) return fail("invalid_state");
 
+  // ORDER MATTERS, and it used to be wrong. C-2 forbids a handoff from a step
+  // that is not finished, and this action sent the handoff one line BEFORE
+  // completing step 25. The send was therefore refused `from_step_incomplete`
+  // on every call since C-2 shipped, and the refusal was tolerated
+  // (`handoff.ok ? handoff.id : null`), so the canonical Administration ->
+  // Recouvrement handoff was never created and nothing said so. Step 26 opened
+  // by bare promotion instead.
+  //
+  // Completing the step FIRST satisfies C-2 on its own terms rather than
+  // weakening it: the from-step genuinely is done when the handoff is sent.
+  const completed = await submitStep(d.fileId, "administration_proof_handoff");
+  if (!completed.ok) {
+    // The deposit is already HANDED_TO_COLLECTIONS — committed and factual.
+    // What must not happen is inventing a custody record for a transfer the
+    // workflow never made.
+    await writeAudit({
+      action: AuditActions.DEPOSIT_ROUTING_FAILED,
+      actorId: c.userId,
+      tenantId: c.tenantId,
+      entity: "invoice_deposit",
+      entityId: depositId,
+      after: { file_id: d.fileId, stage: "step_completion", reason: completed.error },
+    });
+    return fail("step_completion_failed");
+  }
+
+  // Now the handoff, and its result is REQUIRED. A departmental custody
+  // transfer that did not happen may not be recorded as though it had.
   const handoff = await sendHandoff(d.fileId, "administration_proof_handoff", "collections");
+  if (!handoff.ok) {
+    await writeAudit({
+      action: AuditActions.DEPOSIT_ROUTING_FAILED,
+      actorId: c.userId,
+      tenantId: c.tenantId,
+      entity: "invoice_deposit",
+      entityId: depositId,
+      after: {
+        file_id: d.fileId,
+        stage: "handoff",
+        reason: handoff.error,
+        step_completed: true,
+      },
+    });
+    return fail("handoff_not_sent");
+  }
+
   await recordCustody(c, d, "HANDED_TO_COLLECTIONS", "PROOF_ACCEPTED", "HANDED_TO_COLLECTIONS", {
-    handoffId: handoff.ok ? handoff.id : null,
+    handoffId: handoff.id,
     evidenceDocumentId: d.proofDocumentId,
   });
-
-  // Official step 25 completes. Step 26 (Collections) becomes available.
-  await submitStep(d.fileId, "administration_proof_handoff");
 
   await writeAudit({
     action: AuditActions.DEPOSIT_HANDED_TO_COLLECTIONS,
