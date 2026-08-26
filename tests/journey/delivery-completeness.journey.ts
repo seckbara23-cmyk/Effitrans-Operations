@@ -850,6 +850,13 @@ describe("C-4 section G — physical deposit (steps 23–25)", () => {
   });
 
   it("step 24 — the assigned courier accepts, departs, deposits", async () => {
+    // The courier claims its own step first, as an operator does with
+    // « Démarrer ». submitProof completes step 24 at the end of the custody
+    // sequence, and since the discarded-consequence correction it REPORTS a
+    // failure to do so instead of swallowing it — so the step must be open.
+    const started = await as(courier, () => activateStep(fileId, "courier_deposit"));
+    expect(started.ok, `activate step 24: ${JSON.stringify(started)}`).toBe(true);
+
     const accepted = await as(courier, () => acceptAssignment(depositId));
     expect(accepted.ok, `acceptAssignment: ${JSON.stringify(accepted)}`).toBe(true);
 
@@ -985,7 +992,8 @@ describe("C-4 section G — physical deposit (steps 23–25)", () => {
   });
 
   it("steps 24 and 25 close, and step 26 becomes reachable", async () => {
-    await runStep(courier, "courier_deposit");
+    // Step 24 was completed by submitProof — returning the proof IS the act,
+    // as at steps 9, 13, 17 and 25. A second submit would be an illegal repeat.
     expect((await execution(fileId, "courier_deposit"))?.state).toBe("COMPLETED");
 
     const started = await as(admin, () => activateStep(fileId, "administration_proof_handoff"));
