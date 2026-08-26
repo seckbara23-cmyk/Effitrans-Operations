@@ -804,7 +804,28 @@ export async function submitProof(depositId: string): Promise<DepositResult> {
   if (!rec.ok) return fail(rec.error!);
 
   // Official step 24 completes only now — proof returned, not merely deposited.
-  await submitStep(d.fileId, "courier_deposit");
+  // The result is KEPT — the sixth site of this class, found by the generic
+  // sweep. The proof is already submitted and custody already recorded; if step
+  // 24 does not move with them, Administration sees a proof awaiting review
+  // while the workflow says the courier never finished.
+  const advanced = await submitStep(d.fileId, "courier_deposit");
+  if (!advanced.ok) {
+    await writeAudit({
+      action: AuditActions.DEPOSIT_ROUTING_FAILED,
+      actorId: c.userId,
+      tenantId: c.tenantId,
+      entity: "invoice_deposit",
+      entityId: depositId,
+      after: {
+        file_id: d.fileId,
+        stage: "step_completion",
+        step_key: "courier_deposit",
+        proof_submitted: true,
+        reason: advanced.error,
+      },
+    });
+    return fail("step_completion_failed");
+  }
 
   await writeAudit({
     action: AuditActions.DEPOSIT_PROOF_SUBMITTED,

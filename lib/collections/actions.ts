@@ -53,6 +53,10 @@ export type CollectionsError =
   | "note_too_long"
   | "dispute_not_open"
   | "closure_blocked"
+  // C-4 — the recurring discarded-consequence class: the business mutation
+  // committed, the workflow transition did not, and the caller must not be told
+  // it all worked.
+  | "step_completion_failed"
   | "not_found";
 
 export type CollectionsResult<T = { id: string }> =
@@ -434,7 +438,29 @@ export async function completeCollections(invoiceId: string): Promise<Collection
     .is("collections_completed_at", null);
 
   // Official step 26 completes. The DOSSIER is still open.
-  await submitStep(resolved.fileId, "collections");
+  //
+  // The result is KEPT. This is the same discarded-consequence pattern that let
+  // an invoice be emailed while step 22 stalled, and let a process close while
+  // its dossier did not: the business mutation commits, the workflow does not
+  // move, and success is reported anyway. Recouvrement would believe its work
+  // was recorded while step 26 stayed open and closure stayed blocked.
+  const advanced = await submitStep(resolved.fileId, "collections");
+  if (!advanced.ok) {
+    await writeAudit({
+      action: AuditActions.PROCESS_DISPATCH_NOT_ADVANCED,
+      actorId: c.userId,
+      tenantId: c.tenantId,
+      entity: "invoice",
+      entityId: invoiceId,
+      after: {
+        file_id: resolved.fileId,
+        step_key: "collections",
+        collections_marked: true,
+        reason: advanced.error,
+      },
+    });
+    return fail("step_completion_failed");
+  }
 
   await writeAudit({
     action: AuditActions.PROCESS_OPERATIONALLY_COMPLETED,
@@ -542,6 +568,28 @@ export async function closeDossier(fileId: string): Promise<CollectionsResult> {
     return fail("closure_blocked", [...evaluation.blockers, ...evaluation.unauthorized]);
   }
 
+  // ORDER MATTERS, and it used to be wrong. The process instance was closed
+  // FIRST and the dossier's own transition attempted afterwards with its result
+  // DISCARDED — so a refused transition left process = CLOSED and dossier
+  // != CLOSED while the caller was told ok. The two records disagreed about the
+  // same dossier and nothing said so.
+  //
+  // The dossier moves FIRST. Its seam re-checks guards this action does not
+  // (DELIVERED -> CLOSED, customs released, payments verified), so a refusal
+  // there now costs nothing: nothing has been closed yet.
+  const moved = await transitionFile(fileId, "CLOSED");
+  if (!moved.ok) {
+    await writeAudit({
+      action: AuditActions.DOSSIER_CLOSURE_BLOCKED,
+      actorId: user.id,
+      tenantId: user.tenantId,
+      entity: "operational_file",
+      entityId: fileId,
+      after: { stage: "file_transition", reason: moved.error },
+    });
+    return fail("closure_blocked", [moved.error]);
+  }
+
   // CAS: a concurrent close matches zero rows.
   const now = new Date().toISOString();
   const { data: closed } = await admin
@@ -552,11 +600,6 @@ export async function closeDossier(fileId: string): Promise<CollectionsResult> {
     .neq("status", "CLOSED")
     .select("id");
   if ((closed?.length ?? 0) !== 1) return { ok: true, id: fileId }; // a concurrent close won
-
-  // The dossier's own lifecycle moves through the EXISTING seam, which re-checks
-  // its own guards (DELIVERED -> CLOSED, customs released). We never write
-  // operational_file.status directly.
-  await transitionFile(fileId, "CLOSED");
 
   await writeAudit({
     action: AuditActions.PROCESS_CLOSED,

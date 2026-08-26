@@ -281,7 +281,28 @@ export async function submitInvoiceToFinance(invoiceId: string): Promise<Billing
 
   // Sync the official process: step 20 is now SUBMITTED, awaiting the checker.
   // The engine records the maker on the execution row and opens step 21.
-  await submitStep(fileId, "billing_draft");
+  // The result is KEPT — the fifth site of this class, found by the generic
+  // sweep rather than by a failing journey. The invoice is already marked
+  // submitted; if step 20 does not move with it, Finance sees an invoice
+  // awaiting validation while the workflow says nobody submitted anything.
+  const advanced = await submitStep(fileId, "billing_draft");
+  if (!advanced.ok) {
+    await writeAudit({
+      action: AuditActions.PROCESS_DISPATCH_NOT_ADVANCED,
+      actorId: c.userId,
+      tenantId: c.tenantId,
+      entity: "invoice",
+      entityId: invoiceId,
+      after: {
+        file_id: fileId,
+        step_key: "billing_draft",
+        // The submission mark IS committed; the audit records that, not a denial.
+        invoice_submitted: true,
+        reason: advanced.error,
+      },
+    });
+    return fail("step_completion_failed");
+  }
 
   await writeAudit({
     action: AuditActions.INVOICE_DRAFT_SUBMITTED,

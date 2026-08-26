@@ -43,6 +43,8 @@ export type BillingError =
   | "dispatch_step_claimed_by_another"
   | "dispatch_step_not_claimable"
   | "delivered_workflow_not_advanced"
+  // The business mutation committed and the workflow step did not move.
+  | "step_completion_failed"
   | "no_lines";
 
 export const BILLING_ERROR_FR: Record<BillingError, string> = {
@@ -72,6 +74,9 @@ export const BILLING_ERROR_FR: Record<BillingError, string> = {
   // NOT a failure message and NOT a success message. The client HAS the invoice
   // and the invoice IS issued — only the dossier did not advance. Resending
   // would email the client twice and is never the remedy.
+  step_completion_failed:
+    "L'étape officielle n'a pas pu être mise à jour. La facture porte bien votre soumission, "
+    + "mais l'étape reste ouverte : ouvrez-la et réessayez.",
   delivered_workflow_not_advanced:
     "La facture a bien été envoyée au client et émise, mais l'étape « Émission de la facture » n'a pas pu être clôturée. "
     + "Ne renvoyez pas la facture : ouvrez l'étape et clôturez-la, ou contactez un administrateur.",
