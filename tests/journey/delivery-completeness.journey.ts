@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
 import { as } from "./identity";
 import {
   identity, execution, auditFor, handoffs, provideEvidence, customsIdFor, transportFor,
-  db, sinkMessagesFor, billingRecipientFor, TENANT_A, CLIENT_DEPOSIT_REQUIRED,
+  db, sinkMessagesFor, billingRecipientFor, fileRow, invoiceMoney, TENANT_A, CLIENT_DEPOSIT_REQUIRED,
 } from "./fixtures";
 import type { CurrentUser } from "@/lib/auth/current-user";
 
@@ -37,6 +37,11 @@ import {
   startDeposit, recordDeposit, uploadProofOfDeposit, submitProof, acceptProof,
   handToCollections,
 } from "@/lib/deposit/actions";
+import {
+  assignCollector, recordFollowUp, completeCollections, evaluateClosureReadiness, closeDossier,
+} from "@/lib/collections/actions";
+import { recordPayment } from "@/lib/finance/actions";
+import { reconcileDossierProcess } from "@/lib/process/reconcile/service";
 
 let ops: CurrentUser;         // OPS_SUPERVISOR
 let am: CurrentUser;          // ACCOUNT_MANAGER — owns steps 3, 16, 19
@@ -56,6 +61,8 @@ let collections: CurrentUser; // COLLECTIONS_OFFICER — owns step 26
 let fileId = "";
 // Section G continues on the SAME invoice, so it lives at module scope.
 let invoiceId = "";
+// Sections G and H/I share the deposit record.
+let depositId = "";
 
 async function runStep(actor: CurrentUser, stepKey: string) {
   const started = await as(actor, () => activateStep(fileId, stepKey));
@@ -732,7 +739,6 @@ describe("C-4 section F — governed billing, and the issuance boundary", () => 
  * PROOF_SUBMITTED → PROOF_ACCEPTED — not an approximation of it.
  */
 describe("C-4 section G — physical deposit (steps 23–25)", () => {
-  let depositId = "";
 
   it("step 23 arrived only because step 22 genuinely completed", async () => {
     expect((await execution(fileId, "billing_dispatch"))?.state).toBe("COMPLETED");
@@ -1037,5 +1043,223 @@ describe("C-4 section G — physical deposit (steps 23–25)", () => {
     const started = await as(collections, () => activateStep(fileId, "collections"));
     expect(started.ok, `activate step 26: ${JSON.stringify(started)}`).toBe(true);
     expect((await execution(fileId, "collections"))?.state).toBe("ACTIVE");
+  });
+});
+
+/**
+ * C-4 SECTION H/I — Recouvrement, payment, reconciliation, closure.
+ * ---------------------------------------------------------------------------
+ * Continues the deposit-REQUIRED dossier, which reached Recouvrement the only
+ * legitimate way: an explicit handoff sent by Administration and received by
+ * Recouvrement itself.
+ *
+ * WHEN STEP 26 COMPLETES was read from the implementation rather than assumed:
+ * `completeCollections` requires a zero outstanding balance and no open
+ * dispute, and only then submits the step. So Recouvrement's step closes AFTER
+ * payment, not before it — the follow-up work happens while the balance stands.
+ *
+ * WHO CLOSES is likewise read rather than assumed: `closeDossier` requires
+ * `process:close`, held by SYSTEM_ADMIN and OPS_SUPERVISOR only, and the
+ * collections queue offers no close action. Closure is a supervisory act
+ * distinct from step 26, and this file follows that rather than granting
+ * anything to make Recouvrement do it.
+ */
+describe("C-4 section H/I — Recouvrement, payment, reconciliation, closure", () => {
+  it("step 26 — the Collections Officer works the dossier unaided", async () => {
+    // Claimed in Section G by the Collections Officer itself.
+    expect((await execution(fileId, "collections"))?.state).toBe("ACTIVE");
+
+    const assigned = await as(collections, () => assignCollector(invoiceId, collections.id));
+    expect(assigned.ok, `assignCollector: ${JSON.stringify(assigned)}`).toBe(true);
+
+    const followUp = await as(collections, () =>
+      recordFollowUp(invoiceId, {
+        channel: "PHONE",
+        outcome: "PROMISE_TO_PAY",
+        note: "Client confirme le règlement sous 48h.",
+      }),
+    );
+    expect(followUp.ok, `recordFollowUp: ${JSON.stringify(followUp)}`).toBe(true);
+
+    // …and step 26 does NOT imply the invoice is paid.
+    const money = await invoiceMoney(invoiceId);
+    expect(money.status, "still issued, not settled").toBe("ISSUED");
+    expect(money.balance, "the balance is untouched by follow-up work").toBe(money.total);
+  });
+
+  it("another actor cannot hijack the claimed step 26", async () => {
+    const before = await execution(fileId, "collections");
+    const hijack = await as(billing, () => submitStep(fileId, "collections"));
+    expect(hijack.ok).toBe(false);
+
+    const after = await execution(fileId, "collections");
+    expect(after?.state, "state unchanged").toBe("ACTIVE");
+    expect(after?.assigned_user_id).toBe(before?.assigned_user_id);
+  });
+
+  it("CLOSURE before payment is refused, and changes nothing", async () => {
+    const refused = await as(ops, () => closeDossier(fileId));
+    expect(refused.ok, "an unpaid dossier cannot close").toBe(false);
+
+    const file = await fileRow(fileId);
+    expect(file?.status, "the dossier stays open").not.toBe("CLOSED");
+    expect(file?.closed_at, "no closure timestamp").toBeNull();
+    expect((await execution(fileId, "collections"))?.state, "and no terminal workflow state").toBe("ACTIVE");
+  });
+
+  it("PARTIAL payment moves the balance exactly once and does not settle it", async () => {
+    const before = await invoiceMoney(invoiceId);
+    expect(before.paid).toBe(0);
+
+    const part = Math.round(before.total * 0.4 * 100) / 100;
+    const paid = await as(finance, () => recordPayment(invoiceId, { amount: part, method: "BANK_TRANSFER" }));
+    expect(paid.ok, `recordPayment: ${JSON.stringify(paid)}`).toBe(true);
+
+    const after = await invoiceMoney(invoiceId);
+    expect(after.payments, "exactly one payment row").toHaveLength(1);
+    expect(after.paid, "credited exactly once").toBe(part);
+    expect(after.balance, "and the remainder is exact").toBe(Math.round((before.total - part) * 100) / 100);
+    expect(after.status, "a partial payment does not settle the invoice").not.toBe("PAID");
+  });
+
+  it("…and closure is still refused on a partial payment", async () => {
+    const refused = await as(ops, () => closeDossier(fileId));
+    expect(refused.ok).toBe(false);
+    const file = await fileRow(fileId);
+    expect(file?.status).not.toBe("CLOSED");
+    expect(file?.closed_at).toBeNull();
+  });
+
+  it("OVERPAYMENT is refused by the governed rule, not invented here", async () => {
+    // recordPayment refuses `amount > balance`. Exercised rather than assumed,
+    // and asserted to leave the ledger untouched.
+    const before = await invoiceMoney(invoiceId);
+    const over = await as(finance, () =>
+      recordPayment(invoiceId, { amount: before.balance + 1000, method: "BANK_TRANSFER" }),
+    );
+    expect(over.ok, "an invoice cannot be over-credited").toBe(false);
+    expect((over as { error: string }).error).toBe("exceeds_balance");
+
+    const after = await invoiceMoney(invoiceId);
+    expect(after.paid, "nothing was credited").toBe(before.paid);
+    expect(after.payments).toHaveLength(before.payments.length);
+  });
+
+  it("FULL settlement clears the balance with no double counting", async () => {
+    const before = await invoiceMoney(invoiceId);
+    const paid = await as(finance, () =>
+      recordPayment(invoiceId, { amount: before.balance, method: "BANK_TRANSFER" }),
+    );
+    expect(paid.ok, `final payment: ${JSON.stringify(paid)}`).toBe(true);
+
+    const after = await invoiceMoney(invoiceId);
+    expect(after.payments, "two payments, no more").toHaveLength(2);
+    expect(after.paid, "cumulative payments equal the total").toBe(after.total);
+    expect(after.balance).toBe(0);
+  });
+
+  it("step 26 completes only once the balance is zero", async () => {
+    const done = await as(collections, () => completeCollections(invoiceId));
+    expect(done.ok, `completeCollections: ${JSON.stringify(done)}`).toBe(true);
+
+    const exec = await execution(fileId, "collections");
+    expect(exec?.state).toBe("COMPLETED");
+    expect(exec?.submitted_by, "closed by Recouvrement itself").toBe(collections.id);
+  });
+
+  it("RECONCILIATION is idempotent — the second run changes nothing", async () => {
+    const snapshot = async () => {
+      const money = await invoiceMoney(invoiceId);
+      const { data: execs } = await db()
+        .from("process_step_execution")
+        .select("step_key, state, completed_at")
+        .in(
+          "process_instance_id",
+          (await db().from("process_instance").select("id").eq("file_id", fileId)).data?.map((r) => r.id) ?? [],
+        );
+      const { data: audits } = await db().from("audit_log").select("id").eq("entity_id", invoiceId);
+      const { data: custody } = await db().from("invoice_deposit_event").select("id").eq("deposit_id", depositId);
+      return {
+        paid: money.paid,
+        payments: money.payments.length,
+        execs: (execs ?? []).map((e) => `${e.step_key}:${e.state}`).sort().join("|"),
+        audits: (audits ?? []).length,
+        custody: (custody ?? []).length,
+      };
+    };
+
+    const first = await snapshot();
+    const again = await as(finance, () => reconcileDossierProcess({ tenantId: TENANT_A, fileId, cause: "manual", actorId: finance.id }));
+    expect(again.ok, "a repeat reconciliation must not error").toBe(true);
+    const second = await snapshot();
+
+    // Not merely ok:true — the STATE is compared.
+    expect(second.paid, "no financial effect").toBe(first.paid);
+    expect(second.payments, "no duplicate payment").toBe(first.payments);
+    expect(second.execs, "no duplicate completion or promotion").toBe(first.execs);
+    expect(second.custody, "no duplicate custody event").toBe(first.custody);
+    expect(second.audits, "no duplicate one-time audit").toBe(first.audits);
+  });
+
+  it("the closure gate reports every requirement satisfied — including the deposit ones", async () => {
+    const readiness = await as(ops, () => evaluateClosureReadiness(fileId));
+    expect(readiness, "the gate is readable").toBeTruthy();
+    expect(readiness!.blockers, `still blocked by: ${JSON.stringify(readiness!.blockers)}`).toEqual([]);
+    expect(readiness!.ready).toBe(true);
+
+    // This client REQUIRES the physical deposit, so those requirements are
+    // genuinely satisfied rather than waived.
+    expect(readiness!.satisfied).toContain("deposit_proof_accepted");
+    expect(readiness!.satisfied).toContain("handed_to_collections");
+    expect(readiness!.notApplicable, "nothing was waived for this client").not.toContain("deposit_proof_accepted");
+  });
+
+  it("CLOSURE succeeds once, and preserves every fact behind it", async () => {
+    const before = await invoiceMoney(invoiceId);
+
+    const closed = await as(ops, () => closeDossier(fileId));
+    expect(closed.ok, `closeDossier: ${JSON.stringify(closed)}`).toBe(true);
+
+    const file = await fileRow(fileId);
+    expect(file?.status).toBe("CLOSED");
+    expect(file?.closed_at, "closure is timestamped").toBeTruthy();
+
+    // The process instance reaches its terminal condition too.
+    const { data: inst } = await db()
+      .from("process_instance")
+      .select("status")
+      .eq("file_id", fileId)
+      .maybeSingle();
+    expect(inst?.status).toBe("CLOSED");
+
+    // Closure is audited and attributed.
+    const events = await auditFor("process.closure.completed", fileId);
+    const anyClosure = events.length > 0 ? events : await auditFor("file.closed", fileId);
+    expect(anyClosure.length, "closure must be audited").toBeGreaterThan(0);
+    expect(anyClosure[0].actor_id).toBe(ops.id);
+
+    // Nothing behind it moved: money, proof and custody are as they were.
+    const after = await invoiceMoney(invoiceId);
+    expect(after.paid).toBe(before.paid);
+    expect(after.invoiceNumber).toBe(before.invoiceNumber);
+
+    const { data: dep } = await db()
+      .from("invoice_deposit")
+      .select("status, proof_document_id, validated_by_admin")
+      .eq("id", depositId)
+      .maybeSingle();
+    expect(dep?.status).toBe("HANDED_TO_COLLECTIONS");
+    expect(dep?.proof_document_id, "the accepted proof stays linked").toBeTruthy();
+    expect(dep?.validated_by_admin).toBe(admin.id);
+  });
+
+  it("a second closure is idempotent, per the implemented contract", async () => {
+    // Read from the implementation, not invented: closeDossier short-circuits
+    // on an already-CLOSED instance and returns success.
+    const again = await as(ops, () => closeDossier(fileId));
+    expect(again.ok).toBe(true);
+
+    const file = await fileRow(fileId);
+    expect(file?.status).toBe("CLOSED");
   });
 });

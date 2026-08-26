@@ -237,3 +237,34 @@ export async function billingRecipientFor(clientId: string): Promise<string> {
   if (!client?.email) throw new Error(`no billing recipient for client ${clientId}`);
   return client.email as string;
 }
+
+/** Invoice money facts, computed from the real lines and payments. ASSERTION ONLY. */
+export async function invoiceMoney(invoiceId: string) {
+  const { data: inv } = await db()
+    .from("invoice")
+    .select("status, invoice_number")
+    .eq("id", invoiceId)
+    .maybeSingle();
+  const { data: lines } = await db()
+    .from("invoice_line")
+    .select("quantity, unit_amount, tax_rate")
+    .eq("invoice_id", invoiceId);
+  const total = (lines ?? []).reduce((sum, l) => {
+    const net = Number(l.quantity) * Number(l.unit_amount);
+    return sum + net + (net * Number(l.tax_rate)) / 100;
+  }, 0);
+  const { data: pays } = await db()
+    .from("payment")
+    .select("amount, recorded_by")
+    .eq("invoice_id", invoiceId);
+  const paid = (pays ?? []).reduce((sum, p) => sum + Number(p.amount), 0);
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  return {
+    status: inv?.status as string | undefined,
+    invoiceNumber: (inv?.invoice_number as string | null | undefined) ?? null,
+    total: r2(total),
+    paid: r2(paid),
+    balance: r2(total - paid),
+    payments: pays ?? [],
+  };
+}
