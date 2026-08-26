@@ -40,7 +40,7 @@ import {
 import {
   assignCollector, recordFollowUp, completeCollections, evaluateClosureReadiness, closeDossier,
 } from "@/lib/collections/actions";
-import { recordPayment } from "@/lib/finance/actions";
+import { recordPayment, verifyPayment } from "@/lib/finance/actions";
 import { reconcileDossierProcess } from "@/lib/process/reconcile/service";
 
 let ops: CurrentUser;         // OPS_SUPERVISOR
@@ -1182,6 +1182,29 @@ describe("C-4 section H/I — Recouvrement, payment, reconciliation, closure", (
     expect(after.payments, "two payments, no more").toHaveLength(2);
     expect(after.paid, "cumulative payments equal the total").toBe(after.total);
     expect(after.balance).toBe(0);
+  });
+
+  it("payments must be VERIFIED — settlement is not the same as verification", async () => {
+    // « Verification is separate from settlement: a zero balance reached through
+    // an unverified payment is not a settled dossier. » The closure lane says so
+    // and refuses `payment_unverified`; the journey obeys it rather than
+    // reaching a zero balance and calling the dossier settled.
+    const { data: pays } = await db()
+      .from("payment")
+      .select("id, verification_status")
+      .eq("invoice_id", invoiceId);
+    expect(pays ?? [], "two payments to verify").toHaveLength(2);
+    for (const p of pays ?? []) {
+      expect(p.verification_status, "recorded, not yet verified").not.toBe("VERIFIED");
+      const verified = await as(finance, () => verifyPayment(p.id as string));
+      expect(verified.ok, `verifyPayment: ${JSON.stringify(verified)}`).toBe(true);
+    }
+
+    const { data: after } = await db()
+      .from("payment")
+      .select("verification_status")
+      .eq("invoice_id", invoiceId);
+    expect((after ?? []).every((p) => p.verification_status === "VERIFIED")).toBe(true);
   });
 
   it("step 26 completes only once the balance is zero", async () => {
