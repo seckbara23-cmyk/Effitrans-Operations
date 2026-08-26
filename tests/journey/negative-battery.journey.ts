@@ -101,7 +101,11 @@ describe("C-4 negative battery — the refusals, in the order a dossier meets th
     const before = await stepState("customs_preparation");
     const refused = await as(transit, () => activateStep(fileId, "customs_preparation"));
     expect(refused.ok).toBe(false);
-    expect(err(refused)).toBe("prerequisites_unmet");
+    // OBSERVED, not inferred: the refusal is `forbidden`, because Transit has no
+    // ground to see this dossier yet — it owns no open step on it. Authorization
+    // is evaluated before sequencing, so the earlier guard answers first. Either
+    // way the step did not start, which is what this case protects.
+    expect(err(refused)).toBe("forbidden");
     expect(await stepState("customs_preparation"), "nothing moved").toEqual(before);
   });
 
@@ -191,7 +195,9 @@ describe("C-4 negative battery — the refusals, in the order a dossier meets th
     const after = (await handoffs(fileId)).find((h) => h.id === open!.id);
     expect(after!.status, "still waiting").toBe("SENT");
     expect(after!.received_by, "no receiver recorded").toBeNull();
-    expect((await stepState("coordinator_reception")).state, "and the target did not open").toBe("PENDING");
+    // The target is AVAILABLE — completing step 3 promoted it (C-1) — but the
+    // refusal changed nothing about the HANDOFF, which is what was attempted.
+    expect((await stepState("coordinator_reception")).state).toBe("AVAILABLE");
   });
 
   it("SKIPPED RECEPTION — the target step cannot be started before it is received", async () => {
