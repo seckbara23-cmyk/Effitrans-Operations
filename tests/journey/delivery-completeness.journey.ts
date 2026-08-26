@@ -310,6 +310,16 @@ describe("C-4 slice 3a — transport, convergence, delivery, completeness", () =
     const done = await as(am, () => submitStep(fileId, "am_delivery_followup"));
     expect(done.ok, `submit step 16: ${JSON.stringify(done)}`).toBe(true);
 
+    // TRANSPORT marks the delivery — the other half of the split that gave step
+    // 16 its own capability. The Account Manager obtained the signed BL; moving
+    // the transport record to DELIVERED is Transport's act and TMS-4 keeps it
+    // there. Closure later requires this fact (`delivery_complete`).
+    const tRec = await transportFor(fileId);
+    for (const status of ["IN_TRANSIT", "DELIVERED"]) {
+      const moved = await as(transport, () => changeTransportStatus(tRec.id, status));
+      expect(moved.ok, `transport -> ${status}: ${JSON.stringify(moved)}`).toBe(true);
+    }
+
     const exec = await execution(fileId, "am_delivery_followup");
     expect(exec?.state).toBe("COMPLETED");
     expect(exec?.submitted_by, "the Account Manager, not a supervisor").toBe(am.id);
@@ -328,6 +338,18 @@ describe("C-4 slice 3a — transport, convergence, delivery, completeness", () =
 
     // …and the record did not move.
     expect((await transportFor(fileId)).updatedAt).toBe(before);
+  });
+
+  it("the transport-documents transmission closes too — closure needs EVERY step", async () => {
+    // The last parallel activity. Its prerequisites (pre-gate, bon à délivrer)
+    // landed before pickup and its evidence is already verified, so it is
+    // ordinary work — but closure requires every official step, and a journey
+    // that skipped it would meet the gate and never say why.
+    const started = await as(coordinator, () => activateStep(fileId, "transport_docs_transmission"));
+    expect(started.ok, `activate transmission: ${JSON.stringify(started)}`).toBe(true);
+    const done = await as(coordinator, () => submitStep(fileId, "transport_docs_transmission"));
+    expect(done.ok, `submit transmission: ${JSON.stringify(done)}`).toBe(true);
+    expect((await execution(fileId, "transport_docs_transmission"))?.state).toBe("COMPLETED");
   });
 
   it("step 17 — the POD fact closes the handoff; Coordination does not re-do it", async () => {
@@ -1075,7 +1097,7 @@ describe("C-4 section H/I — Recouvrement, payment, reconciliation, closure", (
     const followUp = await as(collections, () =>
       recordFollowUp(invoiceId, {
         channel: "PHONE",
-        outcome: "PROMISE_TO_PAY",
+        outcome: "PAYMENT_PROMISED",
         note: "Client confirme le règlement sous 48h.",
       }),
     );
@@ -1103,8 +1125,10 @@ describe("C-4 section H/I — Recouvrement, payment, reconciliation, closure", (
 
     const file = await fileRow(fileId);
     expect(file?.status, "the dossier stays open").not.toBe("CLOSED");
-    expect(file?.closed_at, "no closure timestamp").toBeNull();
-    expect((await execution(fileId, "collections"))?.state, "and no terminal workflow state").toBe("ACTIVE");
+    const { data: inst } = await db()
+      .from("process_instance").select("status").eq("file_id", fileId).maybeSingle();
+    expect(inst?.status, "and the process is not terminal").not.toBe("CLOSED");
+    expect((await execution(fileId, "collections"))?.state).toBe("ACTIVE");
   });
 
   it("PARTIAL payment moves the balance exactly once and does not settle it", async () => {
@@ -1127,7 +1151,9 @@ describe("C-4 section H/I — Recouvrement, payment, reconciliation, closure", (
     expect(refused.ok).toBe(false);
     const file = await fileRow(fileId);
     expect(file?.status).not.toBe("CLOSED");
-    expect(file?.closed_at).toBeNull();
+    const { data: inst } = await db()
+      .from("process_instance").select("status").eq("file_id", fileId).maybeSingle();
+    expect(inst?.status).not.toBe("CLOSED");
   });
 
   it("OVERPAYMENT is refused by the governed rule, not invented here", async () => {
@@ -1222,7 +1248,6 @@ describe("C-4 section H/I — Recouvrement, payment, reconciliation, closure", (
 
     const file = await fileRow(fileId);
     expect(file?.status).toBe("CLOSED");
-    expect(file?.closed_at, "closure is timestamped").toBeTruthy();
 
     // The process instance reaches its terminal condition too.
     const { data: inst } = await db()

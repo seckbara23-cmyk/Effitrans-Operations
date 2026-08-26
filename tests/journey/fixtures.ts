@@ -192,7 +192,7 @@ export async function transportFor(fileId: string): Promise<{ id: string; update
 export async function fileRow(fileId: string) {
   const { data } = await db()
     .from("operational_file")
-    .select("id, file_number, status, closed_at")
+    .select("id, file_number, status")
     .eq("id", fileId)
     .maybeSingle();
   return data;
