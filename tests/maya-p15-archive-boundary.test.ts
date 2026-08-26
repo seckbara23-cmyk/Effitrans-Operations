@@ -16,6 +16,25 @@
  * When Effitrans answers §8 of docs/maya/maya-p1-5-archive-audit.md, the
  * `archived_at`-is-unwritten guard is meant to be rewritten. The separation and
  * retention guards are not.
+ *
+ * AMENDED 2026-08-26 BY EXPLICIT BUSINESS RATIFICATION (C-4).
+ *
+ * The separation guard as originally written was STRONGER than the requirement
+ * it defends: it denied `process:close` to both end-stage roles, which made
+ * closure supervisory-only. C-4's journey showed the consequence — the last act
+ * of every dossier was an OPS_SUPERVISOR intervention, in a programme whose
+ * purpose is to prove the workflow runs without one.
+ *
+ * Effitrans ruled: Recouvrement performs the final dossier closure, after full
+ * VERIFIED settlement and once every closure gate is satisfied. Granting that
+ * authority does not let Recouvrement close early — closeDossier evaluates the
+ * whole closure gate first, and the dossier's own transition re-checks customs
+ * release, invoice settlement and payment verification besides.
+ *
+ * THE ENDURING INVARIANT IS UNCHANGED: archive and closure are distinct acts,
+ * and no single end-stage role may collapse both. Administration archives and
+ * may not close; Recouvrement closes and may not archive. Only the false
+ * corollary — that NEITHER may close — was retired.
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -52,19 +71,40 @@ describe("archive is not closure, and RBAC says so", () => {
 
   it("neither end-stage role can perform the other's act", () => {
     // Stronger than the sentence: the CEO separation is enforced by grants.
+    //
+    // BUSINESS RATIFICATION 2026-08-26 — this guard was STRONGER than the
+    // requirement it defends. It denied `process:close` to BOTH end-stage
+    // roles, which made closure supervisory-only and left the last act of every
+    // dossier an intervention. Effitrans has since ruled explicitly:
+    // Recouvrement performs the final dossier closure, after full verified
+    // settlement and once every closure gate is satisfied.
+    //
+    // The ENDURING invariant is unchanged and still asserted below: archive and
+    // closure are DISTINCT acts and no single end-stage role may collapse both.
+    // Administration archives and may not close; Recouvrement closes and may
+    // not archive. What moved is only the false corollary that neither may
+    // close — an amendment, not a weakening, and not a workaround for a test.
     const admin = rolePerms("ADMINISTRATIVE_OFFICER");
     const collections = rolePerms("COLLECTIONS_OFFICER");
 
+    // Administration archives — and still may NOT close.
     expect(admin).toContain("admin_service:manage");
     expect(admin).toContain("courier:assign");
     for (const denied of ["file:update", "process:close", "collections:manage"]) {
       expect(admin, `ADMINISTRATIVE_OFFICER must not hold ${denied}`).not.toContain(denied);
     }
 
+    // Recouvrement closes — and still may NOT perform Administration's acts.
     expect(collections).toContain("collections:manage");
-    for (const denied of ["admin_service:manage", "courier:assign", "process:close"]) {
+    expect(collections, "RATIFIED: Recouvrement performs the final closure").toContain("process:close");
+    for (const denied of ["admin_service:manage", "courier:assign"]) {
       expect(collections, `COLLECTIONS_OFFICER must not hold ${denied}`).not.toContain(denied);
     }
+
+    // The separation itself, stated as the property rather than as a list: the
+    // two roles' authorities do not overlap on either act.
+    expect(admin.includes("process:close"), "archive role must not close").toBe(false);
+    expect(collections.includes("admin_service:manage"), "closure role must not archive").toBe(false);
   });
 
   it("the product tells the operator the same thing", () => {

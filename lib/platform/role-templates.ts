@@ -545,6 +545,21 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       // narrow by construction: receiveHandoff now also requires routed-receiver
       // eligibility, so this permits receiving work routed HERE and nothing else.
       ...PROCESS_HANDOFF,
+      // C-4, BUSINESS-RATIFIED 2026-08-26 — Recouvrement performs the final
+      // dossier closure. It is the department that works a dossier to
+      // settlement, and closure was reachable only by a supervisor, which
+      // made the last act of every dossier an intervention.
+      //
+      // This grants no ability to close EARLY: closeDossier evaluates the
+      // whole closure gate first, and the dossier's own transition re-checks
+      // customs release, invoice settlement and payment VERIFICATION besides.
+      // The permission decides who may ask; the gates decide the answer.
+      //
+      // The archive/closure separation is UNCHANGED and still asserted in
+      // tests/maya-p15-archive-boundary.test.ts: this role holds no
+      // admin_service:manage and no courier:assign, and Administration
+      // still holds no process:close.
+      "process:close",
     ],
   },
 
