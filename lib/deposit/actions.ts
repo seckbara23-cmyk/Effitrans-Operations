@@ -887,36 +887,25 @@ export async function acceptProof(depositId: string): Promise<DepositResult> {
     .eq("id", d.proofDocumentId)
     .eq("tenant_id", c.tenantId);
 
-  // NOW step 24 may complete: the proof it requires is VERIFIED, so
-  // `evaluateStepEvidence` can finally satisfy PROOF_OF_DEPOSIT. Nothing is
-  // bypassed — the engine re-evaluates the same gate it always did, and the
-  // evidence has genuinely changed.
+  // Step 24 is deliberately NOT completed here — and the first attempt at this
+  // correction did try, which is how the reason came to light.
   //
-  // ATTRIBUTION. The reviewer becomes the step's `submitted_by`, because theirs
-  // is the act that satisfied the final completion condition. It does not claim
-  // they performed the delivery: the courier's identity stays on the deposit
-  // (`courier_user_id`), on the proof (`uploaded_by`) and across the custody
-  // chain, which is where the physical work is recorded.
-  const advanced = await submitStep(d.fileId, "courier_deposit");
-  if (!advanced.ok) {
-    await writeAudit({
-      action: AuditActions.DEPOSIT_ROUTING_FAILED,
-      actorId: c.userId,
-      tenantId: c.tenantId,
-      entity: "invoice_deposit",
-      entityId: depositId,
-      after: {
-        file_id: d.fileId,
-        stage: "step_completion",
-        step_key: "courier_deposit",
-        // The acceptance IS committed and the proof IS verified; only the step
-        // did not move. Said plainly rather than denied.
-        proof_accepted: true,
-        reason: advanced.error,
-      },
-    });
-    return fail("step_completion_failed");
-  }
+  // Step 24's execution permission is `courier:deposit`. An Administrative
+  // Officer does not hold it and should not: verifying a courier's evidence is
+  // not performing a courier's work, and Section G exists to keep those apart.
+  // So the reviewer cannot be the one to close it, and giving them the
+  // permission — or completing it under a system principal to dodge the
+  // question — would erase exactly the separation this step is built on.
+  //
+  // RATIFIED SEQUENCE: the courier deposits and returns the proof; Administration
+  // independently verifies it; the COURIER then completes its own step, on
+  // evidence someone else vouched for. Three acts, three authorities, one human
+  // owner per act. `submitted_by` on step 24 stays the courier, because the
+  // courier is who performed it.
+  //
+  // What this action does is make the completion POSSIBLE: PROOF_OF_DEPOSIT is
+  // now satisfied, so the courier's own `submitStep` will pass the gate that
+  // refused it a moment ago.
 
   await recordCustody(c, d, "PROOF_ACCEPTED", "PROOF_SUBMITTED", "PROOF_ACCEPTED", {
     evidenceDocumentId: d.proofDocumentId,

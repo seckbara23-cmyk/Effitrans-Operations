@@ -354,12 +354,30 @@ describe("proof upload (Deliverable 8)", () => {
 // ----------------------------------------------------- process + boundaries ----
 
 describe("process synchronization and boundaries (Deliverables 11, 15)", () => {
-  it("completes step 24 only when the PROOF IS RETURNED, not merely deposited", () => {
-    expect(actions).toContain('await submitStep(d.fileId, "courier_deposit");');
-    // The submitStep call lives in submitProof, after proofComplete() passes.
-    const idx = actions.indexOf("export async function submitProof");
-    const step = actions.indexOf('submitStep(d.fileId, "courier_deposit")', idx);
-    expect(step).toBeGreaterThan(idx);
+  it("step 24 completes on a RETURNED AND VERIFIED proof — not merely deposited", () => {
+    // C-4 RATIFIED 2026-08-26. This pin used to assert that submitProof
+    // completes step 24. That call could never succeed and never once did:
+    // step 24 requires PROOF_OF_DEPOSIT, which is satisfied only by a VERIFIED
+    // document, and at submitProof time the proof has been returned and nobody
+    // has reviewed it. The attempt's result was discarded, so the step silently
+    // stayed ACTIVE and somebody closed it later.
+    //
+    // The property this pin defends is UNCHANGED and now stronger: depositing
+    // is not enough. Returning the proof is not enough either — it must also be
+    // independently verified. Three acts, three authorities:
+    //   courier deposits and RETURNS the proof   (courier:deposit)
+    //   Administration VERIFIES it               (admin_service:manage)
+    //   the COURIER completes step 24            (courier:deposit)
+    //
+    // Administration does not close the courier's step: verifying evidence is
+    // not performing the work, and it holds no courier:deposit.
+    const code = actions.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    expect(code, "no action completes step 24 on the courier's behalf")
+      .not.toContain('submitStep(d.fileId, "courier_deposit")');
+
+    // Depositing still is not returning: the proof must be submitted first.
+    const submit = actions.slice(actions.indexOf("export async function submitProof"));
+    expect(submit).toContain('status: "PROOF_SUBMITTED"');
   });
 
   it("completes step 25 only on an accepted proof handed to Collections", () => {

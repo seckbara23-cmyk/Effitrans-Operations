@@ -68,7 +68,7 @@ describe("C-4 — submitProof returns the proof and claims nothing about step 24
   });
 });
 
-describe("C-4 — acceptProof verifies, THEN completes step 24", () => {
+describe("C-4 — acceptProof verifies, and leaves the step to its courier", () => {
   const accept = fn("acceptProof");
 
   it("independent review is unchanged — the courier may never verify its own proof", () => {
@@ -76,29 +76,34 @@ describe("C-4 — acceptProof verifies, THEN completes step 24", () => {
     expect(accept).toContain('if (!d.proofDocumentId) return fail("proof_required");');
   });
 
-  it("the completion happens AFTER the document becomes VERIFIED", () => {
-    const verified = accept.indexOf('.update({ status: "VERIFIED", reviewed_by: c.userId })');
-    const complete = accept.indexOf('await submitStep(d.fileId, "courier_deposit")');
-    expect(verified, "the proof is verified here").toBeGreaterThan(-1);
-    expect(complete, "and the step is completed here").toBeGreaterThan(-1);
-    expect(verified, "verification must precede completion — that is the whole fix").toBeLessThan(complete);
+  it("it verifies the proof", () => {
+    expect(accept).toContain('.update({ status: "VERIFIED", reviewed_by: c.userId })');
+    expect(accept).toContain('status: "PROOF_ACCEPTED"');
+    expect(accept).toContain("validated_by_admin: c.userId");
   });
 
-  it("the completion goes through the ENGINE, not around the gate", () => {
-    expect(accept).toContain('const advanced = await submitStep(d.fileId, "courier_deposit");');
-    // No hand-written state, no evidence bypass. CODE ONLY: the comments
-    // legitimately NAME the evaluator to explain that the engine re-runs it.
+  it("and does NOT complete step 24 — verifying is not performing", () => {
+    // Step 24's gate is courier:deposit. An Administrative Officer does not hold
+    // it and should not: Section G exists to keep verification and execution
+    // apart. Completing it here would have required granting Administration the
+    // courier's permission, or a system principal to dodge the question —
+    // either of which erases the separation the step is built on.
     const code = accept.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    expect(code).not.toContain('submitStep(d.fileId, "courier_deposit")');
     expect(code).not.toContain('state: "COMPLETED"');
-    expect(code).not.toContain("evaluateStepEvidence");
   });
 
-  it("a failed completion is not reported as ordinary success", () => {
-    expect(accept).toContain("if (!advanced.ok) {");
-    expect(accept).toContain('return fail("step_completion_failed");');
-    const branch = accept.slice(accept.indexOf("if (!advanced.ok) {"));
-    expect(branch).toContain("AuditActions.DEPOSIT_ROUTING_FAILED");
-    // The acceptance IS committed; the audit says so rather than denying it.
-    expect(branch).toContain("proof_accepted: true");
+  it("nobody bridged the sequence with borrowed authority", () => {
+    const deposit_ = read("lib/deposit/actions.ts");
+    const code = deposit_.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    // No system attribution, no invented principal, and Administration was
+    // never granted the courier's permission to make this work.
+    expect(code).not.toContain("PROCESS_STEP_ACTIVATED_SYSTEM");
+    const templates = read("lib/platform/role-templates.ts");
+    const i = templates.indexOf('key: "ADMINISTRATIVE_OFFICER"');
+    // Bounded at the NEXT role, or the slice runs into COURIER's own block and
+    // finds the permission there.
+    const block = templates.slice(i, templates.indexOf('key: "', i + 10));
+    expect(block, "Administration must not hold courier:deposit").not.toContain('"courier:deposit"');
   });
 });

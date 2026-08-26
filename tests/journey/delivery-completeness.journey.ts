@@ -925,6 +925,13 @@ describe("C-4 section G — physical deposit (steps 23–25)", () => {
     const { data: stillPending } = await db()
       .from("document").select("status").eq("id", dep!.proof_document_id as string).maybeSingle();
     expect(stillPending?.status, "and the proof is still awaiting review").not.toBe("VERIFIED");
+
+    // …and the courier cannot close it yet either. The step's evidence is a
+    // VERIFIED proof, and returning one is not verifying it.
+    const tooEarly = await as(courier, () => submitStep(fileId, "courier_deposit"));
+    expect(tooEarly.ok, "step 24 needs evidence somebody else vouched for").toBe(false);
+    expect((tooEarly as { error: string }).error).toBe("evidence_missing");
+    expect((await execution(fileId, "courier_deposit"))?.state).toBe("ACTIVE");
   });
 
   it("step 25 MAKER ≠ CHECKER — the courier cannot review its own proof", async () => {
@@ -999,22 +1006,59 @@ describe("C-4 section G — physical deposit (steps 23–25)", () => {
     expect(doc?.status).toBe("VERIFIED");
     expect(doc?.reviewed_by).toBe(admin.id);
 
-    // ONLY NOW does step 24 complete: its evidence is a VERIFIED proof, and the
-    // acceptance is what produced one. The engine re-evaluated the same gate;
-    // nothing was bypassed and nothing weakened.
+    // Verification does NOT silently complete the courier's step. Administration
+    // vouched for the evidence; performing the step is still the courier's.
     const s24 = await execution(fileId, "courier_deposit");
-    expect(s24?.state, "the courier's step closes on verified evidence").toBe("COMPLETED");
-    // Attribution: the reviewer's act satisfied the final condition, and the
-    // courier's work remains recorded where it belongs.
-    expect(s24?.submitted_by).toBe(admin.id);
-    const { data: custody } = await db()
-      .from("invoice_deposit").select("courier_user_id").eq("id", depositId).maybeSingle();
-    expect(custody?.courier_user_id, "the courier is still the courier").toBe(courier.id);
+    expect(s24?.state, "step 24 waits for its own actor").toBe("ACTIVE");
+    expect(s24?.submitted_by, "and nobody has submitted it").toBeNull();
+  });
+
+  it("Administration CANNOT complete the courier's step — verifying is not performing", async () => {
+    const before = await execution(fileId, "courier_deposit");
+    const refused = await as(admin, () => submitStep(fileId, "courier_deposit"));
+    expect(refused.ok, "admin_service:manage is not courier:deposit").toBe(false);
+    expect((refused as { error: string }).error).toBe("forbidden");
+
+    const after = await execution(fileId, "courier_deposit");
+    expect(after?.state).toBe(before?.state);
+    expect(after?.submitted_by).toBeNull();
+  });
+
+  it("another courier cannot hijack the claimed step 24", async () => {
+    const before = await execution(fileId, "courier_deposit");
+    const hijack = await as(driverIdentity, () => submitStep(fileId, "courier_deposit"));
+    expect(hijack.ok).toBe(false);
+    const after = await execution(fileId, "courier_deposit");
+    expect(after?.state).toBe(before?.state);
+    expect(after?.assigned_user_id).toBe(before?.assigned_user_id);
+  });
+
+  it("step 24 — the COURIER completes its own step on independently verified evidence", async () => {
+    const done = await as(courier, () => submitStep(fileId, "courier_deposit"));
+    expect(done.ok, `submit step 24: ${JSON.stringify(done)}`).toBe(true);
+
+    const s24 = await execution(fileId, "courier_deposit");
+    expect(s24?.state).toBe("COMPLETED");
+    // Three acts, three authorities, one human owner each: the courier
+    // performed it, Administration vouched for the evidence, and no supervisor
+    // appears anywhere.
+    expect(s24?.submitted_by, "the courier performed it").toBe(courier.id);
+
+    const { data: dep2 } = await db()
+      .from("invoice_deposit")
+      .select("courier_user_id, validated_by_admin, proof_document_id")
+      .eq("id", depositId)
+      .maybeSingle();
+    expect(dep2?.courier_user_id, "the courier is still the courier").toBe(courier.id);
+    expect(dep2?.validated_by_admin, "Administration is still the verifier").toBe(admin.id);
+    const { data: proof } = await db()
+      .from("document").select("status, reviewed_by").eq("id", dep2!.proof_document_id as string).maybeSingle();
+    expect(proof?.status).toBe("VERIFIED");
+    expect(proof?.reviewed_by).toBe(admin.id);
   });
 
   it("steps 24 and 25 close, and step 26 becomes reachable", async () => {
-    // Step 24 was completed by acceptProof — a VERIFIED proof is what its gate
-    // requires, so acceptance is the act that closes it.
+    // Step 24 was completed by the COURIER, on evidence Administration verified.
     expect((await execution(fileId, "courier_deposit"))?.state).toBe("COMPLETED");
 
     const started = await as(admin, () => activateStep(fileId, "administration_proof_handoff"));
