@@ -41,6 +41,7 @@ import {
 let ops: CurrentUser;         // OPS_SUPERVISOR
 let am: CurrentUser;          // ACCOUNT_MANAGER — owns steps 3, 16, 19
 let transit: CurrentUser;     // CHIEF_OF_TRANSIT
+let declarant: CurrentUser;   // CUSTOMS_DECLARANT — the customs-declaration queue
 let coordinator: CurrentUser; // COORDINATOR — owns steps 17, 18
 let field: CurrentUser;       // CUSTOMS_FIELD_AGENT
 let transport: CurrentUser;   // TRANSPORT_OFFICER — owns step 14
@@ -140,10 +141,13 @@ async function carryToStep13() {
   if (!reg.ok) throw new Error(`gainde: ${JSON.stringify(reg)}`);
 
   await runStep(coordinator, "coordinator_to_declarant");
-  await handOver(coordinator, transit, "coordinator_to_declarant", "gainde_document_submission");
-  await as(transit, () => activateStep(fileId, "gainde_document_submission"));
-  await provideEvidence(fileId, "GAINDE_SUBMISSION_EVIDENCE", transit, ops);
-  await as(transit, () => submitStep(fileId, "gainde_document_submission"));
+  // The DECLARANT receives work routed to the customs-declaration queue.
+  // Transit was accepted before reception eligibility was enforced; it is not
+  // that department and may no longer take it.
+  await handOver(coordinator, declarant, "coordinator_to_declarant", "gainde_document_submission");
+  await as(declarant, () => activateStep(fileId, "gainde_document_submission"));
+  await provideEvidence(fileId, "GAINDE_SUBMISSION_EVIDENCE", declarant, ops);
+  await as(declarant, () => submitStep(fileId, "gainde_document_submission"));
 
   await runStep(coordinator, "customs_followup");
 
@@ -157,6 +161,7 @@ describe("C-4 slice 3a — transport, convergence, delivery, completeness", () =
     ops = await identity("ops");
     am = await identity("am");
     transit = await identity("transit");
+    declarant = await identity("declarant");
     coordinator = await identity("coordinator");
     field = await identity("field");
     transport = await identity("transport");
@@ -990,6 +995,28 @@ describe("C-4 section G — physical deposit (steps 23–25)", () => {
     expect(custody?.handoff_id, "custody must reference the actual handoff").toBe(toCollections!.id);
 
     expect((await execution(fileId, "collections"))?.state).toBe("AVAILABLE");
+  });
+
+  it("a permission-holder who is NOT the routed receiver cannot take it", async () => {
+    // The proof that the new grant is NARROW. The Account Manager holds
+    // process:handoff:receive AND file:read:all, so permission and visibility
+    // are both satisfied — and it is not the department this work was routed
+    // to. Before eligibility was enforced, that was enough to take it.
+    const open = (await handoffs(fileId)).find(
+      (h) => h.to_step_key === "collections" && h.status === "SENT",
+    );
+    expect(open, "the collections handoff is waiting").toBeTruthy();
+
+    const refused = await as(am, () => receiveHandoff(fileId, open!.id as string));
+    expect(refused.ok, "seeing a dossier is not being its next department").toBe(false);
+    expect((refused as { error: string }).error).toBe("not_eligible_receiver");
+
+    // NOTHING moved.
+    const after = (await handoffs(fileId)).find((h) => h.id === open!.id);
+    expect(after!.status, "the handoff is still waiting").toBe("SENT");
+    expect(after!.received_by, "no receiver recorded").toBeNull();
+    expect((await execution(fileId, "collections"))?.state, "and the step was not opened by the refusal")
+      .toBe("AVAILABLE");
   });
 
   it("step 26 — Recouvrement RECEIVES explicitly; nothing auto-receives", async () => {

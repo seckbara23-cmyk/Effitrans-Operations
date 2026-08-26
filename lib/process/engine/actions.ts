@@ -54,12 +54,15 @@ import { promoteSuccessors } from "./promote";
 import { authoritativePickupGate } from "./gate-authority";
 import { evaluateStepEvidence } from "./evidence";
 import { isDone } from "./types";
+import { QUEUES } from "../queues/registry";
 import type { EngineError, EngineResult, StepState } from "./types";
 
 type Ctx = {
   userId: string;
   tenantId: string;
   permissions: string[];
+  /** Tenant role codes. Reception eligibility is a ROLE question, not a permission one. */
+  roles: string[];
 };
 
 const fail = (error: EngineError): EngineResult => ({ ok: false, error });
@@ -86,7 +89,41 @@ async function guard(permission: string, fileId: string): Promise<Ctx | EngineEr
   if (!(await getTenantProcessFlags(user.tenantId)).enabled) return "engine_disabled";
   if (!(await isFileVisible(user.id, user.tenantId, fileId))) return "forbidden";
   const permissions = await getEffectivePermissions(user.id);
-  return { userId: user.id, tenantId: user.tenantId, permissions };
+  return { userId: user.id, tenantId: user.tenantId, permissions, roles: user.roles ?? [] };
+}
+
+/**
+ * May this caller RECEIVE (or REJECT) work routed to `toStepKey`?
+ *
+ * THE DEFECT THIS CLOSES. The handoff handlers checked the permission, the
+ * tenant, dossier visibility and that the handoff was SENT — and never whether
+ * the caller was the department the work was routed TO. Any of the twelve
+ * holders of `process:handoff:receive` could accept any open handoff on any
+ * dossier they could see: a Pickup Agent could take the Transit reception, a
+ * Declarant the Administration deposit. The handoff was then stamped with their
+ * identity and the target step promoted by someone with no claim to it.
+ * Explicit reception was guaranteed at the routing and visibility layers, and
+ * nowhere in authorization.
+ *
+ * ELIGIBILITY COMES FROM THE REGISTRY, deliberately, and NOT from
+ * `process_step_receiving_role`. That table says of itself: "Registry
+ * projection ... mirrored from lib/process/queues/registry.ts ... Never a
+ * source of mutation authority." Reading it here would make it exactly that.
+ * It is also seeded only "for the handoff targets the platform actually sends
+ * to" — four steps — so enforcing against it would leave every other handoff
+ * target unreceivable by anyone at all.
+ *
+ * The registry answers for every step: a step declares its `department`, and
+ * the queue for that department declares the roles that staff it. The two
+ * agree where they overlap; this one is complete, and is the source the
+ * projection is copied from.
+ */
+function isRoutedReceiver(ctx: Ctx, toStepKey: string): boolean {
+  const department = getNode(toStepKey)?.department;
+  if (!department) return false;
+  const queue = QUEUES.find((q) => q.key === department);
+  if (!queue) return false;
+  return queue.roles.some((code) => ctx.roles.includes(code));
 }
 
 const isErr = (v: Ctx | EngineError): v is EngineError => typeof v === "string";
@@ -683,6 +720,10 @@ export async function receiveHandoff(fileId: string, handoffId: string): Promise
   const h = snap.handoffs.find((x) => x.id === handoffId);
   if (!h) return fail("not_found");
   if (h.status !== "SENT") return fail("handoff_not_open");
+  // Permission says you may receive SOMETHING. Routing says whether this is
+  // yours to receive. Both are required, and visibility is not a proxy for
+  // either — seeing a dossier has never meant being its next department.
+  if (!isRoutedReceiver(c, h.toStepKey)) return fail("not_eligible_receiver");
 
   const admin = getAdminSupabaseClient();
   const now = new Date().toISOString();
@@ -741,6 +782,10 @@ export async function rejectHandoff(
   const h = snap.handoffs.find((x) => x.id === handoffId);
   if (!h) return fail("not_found");
   if (h.status !== "SENT") return fail("handoff_not_open");
+  // Permission says you may receive SOMETHING. Routing says whether this is
+  // yours to receive. Both are required, and visibility is not a proxy for
+  // either — seeing a dossier has never meant being its next department.
+  if (!isRoutedReceiver(c, h.toStepKey)) return fail("not_eligible_receiver");
 
   const back = returnToStepKey ?? h.fromStepKey;
   if (!isKnownStep(back)) return fail("unknown_step");

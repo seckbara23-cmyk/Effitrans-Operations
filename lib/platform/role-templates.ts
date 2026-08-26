@@ -331,6 +331,11 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       // requester signs it), and requesters are finance agents, so the seat needs
       // the sign capability. VISA_AGENT on the BON remains 11.0E.
       "finance:expense:sign",
+      // C-4 — Recouvrement is a registered RECEIVER of the Administration
+      // handoff (queue `collections`), and could not accept it. The grant is
+      // narrow by construction: receiveHandoff now also requires routed-receiver
+      // eligibility, so this permits receiving work routed HERE and nothing else.
+      ...PROCESS_HANDOFF,
     ],
   },
   {
@@ -535,6 +540,11 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "logistics:copilot:read",
       // Phase 8.7 — Messaging Center. Finance department inbox.
       "messaging:read", "messaging:send", "messaging:read:finance",
+      // C-4 — Recouvrement is a registered RECEIVER of the Administration
+      // handoff (queue `collections`), and could not accept it. The grant is
+      // narrow by construction: receiveHandoff now also requires routed-receiver
+      // eligibility, so this permits receiving work routed HERE and nothing else.
+      ...PROCESS_HANDOFF,
     ],
   },
 

@@ -202,3 +202,93 @@ describe("C-4 — the step-16 capability, in all three authoritative sources", (
     expect(node.permissions).toContain("communication:send");
   });
 });
+
+/**
+ * C-4 — the RECEPTION twin of the ownership invariant.
+ * ---------------------------------------------------------------------------
+ * Ownership answers "can the actor EXECUTE its step". Reception answers "can the
+ * actor ACCEPT work routed to it". They are different tables, different
+ * permissions and different failure modes, so they are separate invariants —
+ * the ownership sweep was green while Recouvrement could not accept the handoff
+ * the platform routed to it.
+ */
+describe("C-4 — every routed receiver can actually receive", () => {
+  const RECEIVING_MIGRATION = "supabase/migrations/20260913000001_handoff_receiver_visibility.sql";
+
+  /** (step_key, role_code) exactly as the routing model registers them. */
+  function receivingRoles(): { stepKey: string; roleCode: string }[] {
+    const sql = read(RECEIVING_MIGRATION);
+    const start = sql.indexOf("insert into public.process_step_receiving_role");
+    expect(start, "the receiving-role seed must exist").toBeGreaterThan(-1);
+    const block = sql.slice(start, sql.indexOf(";", start));
+    return [...block.matchAll(/\('([a-z_]+)',\s*'([A-Z_]+)'/g)].map((m) => ({
+      stepKey: m[1],
+      roleCode: m[2],
+    }));
+  }
+
+  const rows = receivingRoles();
+
+  it("the routing table is real and non-empty, so this cannot pass by finding nothing", () => {
+    expect(rows.length).toBeGreaterThan(0);
+    for (const r of rows) {
+      expect(getTenantRoleTemplate(r.roleCode), `${r.roleCode} is not a real role`).toBeDefined();
+    }
+  });
+
+  it("EVERY registered receiver holds process:handoff:receive", () => {
+    const missing = rows.filter(
+      (r) => !getTenantRoleTemplate(r.roleCode)!.permissions.includes("process:handoff:receive"),
+    );
+    const detail = missing.map((m) => `  ${m.stepKey}: ${m.roleCode} cannot receive`).join("\n");
+    expect(
+      missing,
+      missing.length
+        ? `\n${missing.length} routed receiver(s) that cannot accept their own work:\n${detail}\n\n` +
+            "Grant process:handoff:receive in ALL THREE sources — or, if the role " +
+            "is not really the receiver, change the ROUTING after ratification. " +
+            "Do NOT relax receiveHandoff: eligibility is what keeps the grant narrow."
+        : "",
+    ).toEqual([]);
+  });
+
+  it("collections specifically — the case that produced this invariant", () => {
+    for (const role of ["COLLECTIONS_OFFICER", "FINANCE_OFFICER"] as const) {
+      expect(rows.some((r) => r.stepKey === "collections" && r.roleCode === role), role).toBe(true);
+      expect(getTenantRoleTemplate(role)!.permissions, role).toContain("process:handoff:receive");
+    }
+  });
+
+  it("THE INVERSE — holding the permission does NOT make a role eligible", () => {
+    // The half that keeps the grant narrow. Eligibility comes from routing; the
+    // permission only says the actor may receive SOMETHING.
+    const engine = read("lib/process/engine/actions.ts");
+    expect(engine).toContain('if (!isRoutedReceiver(c, h.toStepKey)) return fail("not_eligible_receiver");');
+    expect(engine).toContain("function isRoutedReceiver(ctx: Ctx, toStepKey: string): boolean");
+    // …resolved from the REGISTRY, not from the projection that calls itself
+    // "never a source of mutation authority".
+    expect(engine).toContain("QUEUES.find((q) => q.key === department)");
+    // CODE ONLY: the doc comment legitimately NAMES the projection table to
+    // explain why it is not read, and a whole-file check fails on that prose.
+    const engineCode = engine.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    expect(engineCode).not.toContain("process_step_receiving_role");
+    // …and rejecting is guarded too: refusing work routed elsewhere is equally
+    // not yours to do.
+    expect((engine.match(/isRoutedReceiver\(c, h\.toStepKey\)/g) ?? []).length).toBe(2);
+  });
+
+  it("the grant lives in all three authoritative sources", () => {
+    const seed = read("supabase/seed.sql");
+    const blocks = seed.match(/insert into public\.role_permission[\s\S]*?on conflict do nothing;/g) ?? [];
+    const granted = blocks.some(
+      (b) => b.includes("'process:handoff:receive'") && b.includes("COLLECTIONS_OFFICER") && b.includes("FINANCE_OFFICER"),
+    );
+    expect(granted, "seed.sql must grant it to both roles").toBe(true);
+
+    const m = read("supabase/migrations/20260918000001_collections_handoff_reception.sql");
+    expect(m).toContain("'process:handoff:receive'");
+    expect(m).toContain("COLLECTIONS_OFFICER");
+    expect(m).toContain("FINANCE_OFFICER");
+    expect(m).toMatch(/raise exception 'M126/);
+  });
+});

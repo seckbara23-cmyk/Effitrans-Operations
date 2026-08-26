@@ -152,6 +152,9 @@ export type EngineError =
   | "override_not_allowed"
   | "reason_required"
   | "handoff_not_open"
+  // C-4 — the caller may receive work, but not THIS work: routing sends this
+  // step to another department.
+  | "not_eligible_receiver"
   // C-2 — a handoff may not outrun its own from-step.
   | "from_step_incomplete"
   | "already_initialized"

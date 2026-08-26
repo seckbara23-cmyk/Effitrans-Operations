@@ -47,6 +47,7 @@ import { addInvoiceLine } from "@/lib/finance/actions";
 let ops: CurrentUser;
 let am: CurrentUser;
 let transit: CurrentUser;
+let declarant: CurrentUser;
 let coordinator: CurrentUser;
 let field: CurrentUser;
 let transport: CurrentUser;
@@ -130,10 +131,11 @@ async function carryToValidatedInvoice() {
   need(await as(coordinator, () => activateStep(fileId, "coordinator_to_declarant")), "activate 10");
   need(await as(coordinator, () => submitStep(fileId, "coordinator_to_declarant")), "step 10");
   const open2 = (await db().from("process_handoff").select("id, to_step_key, status").eq("to_step_key", "gainde_document_submission").eq("status", "SENT")).data ?? [];
-  if (open2.length > 0) need(await as(transit, () => receiveHandoff(fileId, open2[0].id as string)), "receive 11");
-  need(await as(transit, () => activateStep(fileId, "gainde_document_submission")), "activate 11");
-  await provideEvidence(fileId, "GAINDE_SUBMISSION_EVIDENCE", transit, ops);
-  need(await as(transit, () => submitStep(fileId, "gainde_document_submission")), "step 11");
+  // The declarant queue receives work routed to it; Transit is another department.
+  if (open2.length > 0) need(await as(declarant, () => receiveHandoff(fileId, open2[0].id as string)), "receive 11");
+  need(await as(declarant, () => activateStep(fileId, "gainde_document_submission")), "activate 11");
+  await provideEvidence(fileId, "GAINDE_SUBMISSION_EVIDENCE", declarant, ops);
+  need(await as(declarant, () => submitStep(fileId, "gainde_document_submission")), "step 11");
 
   need(await as(coordinator, () => activateStep(fileId, "customs_followup")), "activate 12");
   need(await as(coordinator, () => submitStep(fileId, "customs_followup")), "step 12");
@@ -189,6 +191,7 @@ describe("C-4 — an irreversible send whose workflow consequence fails", () => 
     ops = await identity("ops");
     am = await identity("am");
     transit = await identity("transit");
+    declarant = await identity("declarant");
     coordinator = await identity("coordinator");
     field = await identity("field");
     transport = await identity("transport");

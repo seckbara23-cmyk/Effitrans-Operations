@@ -577,7 +577,10 @@ select r.id, p.id
 from public.role r
 join public.permission p on p.code in ('process:handoff:send', 'process:handoff:receive')
 where r.tenant_id = '00000000-0000-0000-0000-000000000001'
-  and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR', 'ACCOUNT_MANAGER', 'COORDINATOR', 'CHIEF_OF_TRANSIT', 'CUSTOMS_DECLARANT', 'TRANSPORT_OFFICER', 'BILLING_OFFICER', 'CUSTOMS_FINANCE_OFFICER', 'CUSTOMS_FIELD_AGENT', 'PICKUP_AGENT', 'ADMINISTRATIVE_OFFICER')
+  -- C-4: COLLECTIONS_OFFICER and FINANCE_OFFICER are registered receivers of
+  -- the Administration handoff (queue `collections`) and could not accept it.
+  -- Safe because receiveHandoff now ALSO requires routed-receiver eligibility.
+  and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR', 'ACCOUNT_MANAGER', 'COORDINATOR', 'CHIEF_OF_TRANSIT', 'CUSTOMS_DECLARANT', 'TRANSPORT_OFFICER', 'BILLING_OFFICER', 'CUSTOMS_FINANCE_OFFICER', 'CUSTOMS_FIELD_AGENT', 'PICKUP_AGENT', 'ADMINISTRATIVE_OFFICER', 'COLLECTIONS_OFFICER', 'FINANCE_OFFICER')
 on conflict do nothing;
 
 insert into public.role_permission (role_id, permission_id)
