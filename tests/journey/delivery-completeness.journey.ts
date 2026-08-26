@@ -42,6 +42,7 @@ import {
 } from "@/lib/collections/actions";
 import { recordPayment, verifyPayment } from "@/lib/finance/actions";
 import { reconcileDossierProcess } from "@/lib/process/reconcile/service";
+import { AuditActions } from "@/lib/audit/events";
 
 let ops: CurrentUser;         // OPS_SUPERVISOR
 let am: CurrentUser;          // ACCOUNT_MANAGER — owns steps 3, 16, 19
@@ -1281,10 +1282,9 @@ describe("C-4 section H/I — Recouvrement, payment, reconciliation, closure", (
     expect(inst?.status).toBe("CLOSED");
 
     // Closure is audited and attributed.
-    const events = await auditFor("process.closure.completed", fileId);
-    const anyClosure = events.length > 0 ? events : await auditFor("file.closed", fileId);
-    expect(anyClosure.length, "closure must be audited").toBeGreaterThan(0);
-    expect(anyClosure[0].actor_id).toBe(ops.id);
+    const events = await auditFor(AuditActions.PROCESS_CLOSED, fileId);
+    expect(events.length, "closure must be audited").toBeGreaterThan(0);
+    expect(events[0].actor_id, "attributed to the closing actor").toBe(ops.id);
 
     // Nothing behind it moved: money, proof and custody are as they were.
     const after = await invoiceMoney(invoiceId);
