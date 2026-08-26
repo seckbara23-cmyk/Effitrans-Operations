@@ -675,22 +675,6 @@ where r.tenant_id = '00000000-0000-0000-0000-000000000001'
   and r.code = 'QUOTATION_MANAGER'
 on conflict do nothing;
 
--- C-4, BUSINESS-RATIFIED 2026-08-26 — Recouvrement performs the final dossier
--- closure. Closure was reachable only by a supervisor, which made the last act
--- of every dossier an intervention. No ability to close EARLY is granted:
--- closeDossier evaluates the whole closure gate first, and the dossier's own
--- transition re-checks customs release, invoice settlement and payment
--- verification besides. The archive/closure separation is unchanged —
--- Administration still holds no process:close, Recouvrement no
--- admin_service:manage.
-insert into public.role_permission (role_id, permission_id)
-select r.id, p.id
-from public.role r
-join public.permission p on p.code = 'process:close'
-where r.tenant_id = '00000000-0000-0000-0000-000000000001'
-  and r.code = 'COLLECTIONS_OFFICER'
-on conflict do nothing;
-
 -- C-4 — official step 16 is the Account Manager's, so the Account Manager must
 -- be able to perform it. Its gate was transport:complete, which TMS-4
 -- deliberately keeps away from this role — the AM requests transport, Transport

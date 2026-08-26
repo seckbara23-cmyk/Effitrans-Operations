@@ -1121,7 +1121,7 @@ describe("C-4 section H/I — Recouvrement, payment, reconciliation, closure", (
   });
 
   it("CLOSURE before payment is refused, and changes nothing", async () => {
-    const refused = await as(collections, () => closeDossier(fileId));
+    const refused = await as(ops, () => closeDossier(fileId));
     expect(refused.ok, "an unpaid dossier cannot close").toBe(false);
 
     const file = await fileRow(fileId);
@@ -1148,7 +1148,7 @@ describe("C-4 section H/I — Recouvrement, payment, reconciliation, closure", (
   });
 
   it("…and closure is still refused on a partial payment", async () => {
-    const refused = await as(collections, () => closeDossier(fileId));
+    const refused = await as(ops, () => closeDossier(fileId));
     expect(refused.ok).toBe(false);
     const file = await fileRow(fileId);
     expect(file?.status).not.toBe("CLOSED");
@@ -1252,7 +1252,7 @@ describe("C-4 section H/I — Recouvrement, payment, reconciliation, closure", (
   });
 
   it("the closure gate reports every requirement satisfied — including the deposit ones", async () => {
-    const readiness = await as(collections, () => evaluateClosureReadiness(fileId));
+    const readiness = await as(ops, () => evaluateClosureReadiness(fileId));
     expect(readiness, "the gate is readable").toBeTruthy();
     expect(readiness!.blockers, `still blocked by: ${JSON.stringify(readiness!.blockers)}`).toEqual([]);
     expect(readiness!.ready).toBe(true);
@@ -1264,10 +1264,10 @@ describe("C-4 section H/I — Recouvrement, payment, reconciliation, closure", (
     expect(readiness!.notApplicable, "nothing was waived for this client").not.toContain("deposit_proof_accepted");
   });
 
-  it("CLOSURE succeeds once, performed by RECOUVREMENT itself", async () => {
+  it("CLOSURE succeeds once, and preserves every fact behind it", async () => {
     const before = await invoiceMoney(invoiceId);
 
-    const closed = await as(collections, () => closeDossier(fileId));
+    const closed = await as(ops, () => closeDossier(fileId));
     expect(closed.ok, `closeDossier: ${JSON.stringify(closed)}`).toBe(true);
 
     const file = await fileRow(fileId);
@@ -1284,7 +1284,7 @@ describe("C-4 section H/I — Recouvrement, payment, reconciliation, closure", (
     // Closure is audited and attributed.
     const events = await auditFor(AuditActions.PROCESS_CLOSED, fileId);
     expect(events.length, "closure must be audited").toBeGreaterThan(0);
-    expect(events[0].actor_id, "attributed to Recouvrement, not a supervisor").toBe(collections.id);
+    expect(events[0].actor_id, "attributed to the closing actor").toBe(ops.id);
 
     // Nothing behind it moved: money, proof and custody are as they were.
     const after = await invoiceMoney(invoiceId);
@@ -1304,7 +1304,7 @@ describe("C-4 section H/I — Recouvrement, payment, reconciliation, closure", (
   it("a second closure is idempotent, per the implemented contract", async () => {
     // Read from the implementation, not invented: closeDossier short-circuits
     // on an already-CLOSED instance and returns success.
-    const again = await as(collections, () => closeDossier(fileId));
+    const again = await as(ops, () => closeDossier(fileId));
     expect(again.ok).toBe(true);
 
     const file = await fileRow(fileId);
