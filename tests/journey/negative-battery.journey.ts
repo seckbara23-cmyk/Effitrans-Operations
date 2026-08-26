@@ -200,20 +200,61 @@ describe("C-4 negative battery — the refusals, in the order a dossier meets th
     expect((await stepState("coordinator_reception")).state).toBe("AVAILABLE");
   });
 
-  it("SKIPPED RECEPTION — the target step cannot be started before it is received", async () => {
+  it("SKIPPED RECEPTION — promotion OPENS the step; only reception STARTS it", async () => {
+    // The two halves of the ratified rule, in one place. C-1 promoted step 4
+    // when step 3 completed, and that promotion stands — the step is genuinely
+    // AVAILABLE. What it is not is accepted.
     const before = await stepState("coordinator_reception");
+    expect(before.state, "promotion did its job").toBe("AVAILABLE");
+
+    const open = (await handoffs(fileId)).find(
+      (h) => h.status === "SENT" && h.to_step_key === "coordinator_reception",
+    );
+    expect(open, "and the handoff is still waiting").toBeTruthy();
+
     const refused = await as(transit, () => activateStep(fileId, "coordinator_reception"));
     expect(refused.ok, "reception is its own act").toBe(false);
+    expect(err(refused)).toBe("handoff_reception_required");
+
+    // The second door. Refusing activation alone would leave the invariant
+    // resting on which action the caller happened to choose.
+    const bypass = await as(transit, () => submitStep(fileId, "coordinator_reception"));
+    expect(bypass.ok, "nor may submit walk around it").toBe(false);
+    expect(err(bypass)).toBe("handoff_reception_required");
+
+    // Nothing moved, and nobody was attributed anything: no assignment, no
+    // start timestamp, no submitter.
     expect(await stepState("coordinator_reception")).toEqual(before);
+
+    // And the guard received nothing on anyone's behalf.
+    const still = (await handoffs(fileId)).find((h) => h.id === open!.id);
+    expect(still!.status, "still SENT").toBe("SENT");
+    expect(still!.received_by, "no receiver invented").toBeNull();
+  });
+
+  it("…and once Transit RECEIVES it, the identical activation succeeds", async () => {
+    need(await as(transit, () => receiveDossierAtTransit(fileId)), "receive");
+
+    const h = (await handoffs(fileId)).find((x) => x.to_step_key === "coordinator_reception");
+    expect(h!.status).toBe("RECEIVED");
+    expect(h!.received_by, "attributed to the actor who accepted it").toBe(transit.id);
+
+    const started = await as(transit, () => activateStep(fileId, "coordinator_reception"));
+    expect(started.ok, `activate 4 after reception: ${JSON.stringify(started)}`).toBe(true);
+
+    const now = await stepState("coordinator_reception");
+    expect(now.state).toBe("ACTIVE");
+    expect(now.assigned, "and the starter is the receiver").toBe(transit.id);
   });
 
   // ------------------------------------------------------------ customs ----
 
   it("MAKER = CHECKER 6→7 — the preparer cannot validate its own work", async () => {
-    need(await as(transit, () => receiveDossierAtTransit(fileId)), "receive");
-    need(await as(transit, () => activateStep(fileId, "coordinator_reception")), "activate 4");
     need(await as(transit, () => submitStep(fileId, "coordinator_reception")), "step 4");
     need(await as(transit, () => assignTransitStep(fileId, "customs_preparation", transit.id)), "assign");
+    // Step 5 is INTRA-QUEUE: its predecessor is Transit's own, no handoff is
+    // ever sent to it, and promotion alone is the whole invitation. It must
+    // still start on promotion — the reception rule does not reach it.
     need(await as(transit, () => activateStep(fileId, "transit_declarant_assignment")), "activate 5");
     need(await as(transit, () => submitStep(fileId, "transit_declarant_assignment")), "step 5");
     need(await as(transit, () => activateStep(fileId, "customs_preparation")), "activate 6");

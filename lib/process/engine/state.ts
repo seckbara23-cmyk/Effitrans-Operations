@@ -89,10 +89,31 @@ export function canTransitionStep(from: StepState, to: StepState): boolean {
 /**
  * ENTRY STEPS — the ONLY steps that may be opened straight out of PENDING.
  *
- * The ladder PENDING → AVAILABLE → ACTIVE is canonical and stays canonical:
- * every other step reaches AVAILABLE by an explicit handoff reception, which is
- * what makes "who handed this over" answerable. But a dossier's FIRST step has
- * no predecessor to hand it over — `buildInitialExecutions` opens step 1
+ * The ladder PENDING → AVAILABLE → ACTIVE is canonical and stays canonical.
+ *
+ * HOW A STEP REACHES AVAILABLE, as the engine actually works since C-1. Two
+ * writers, and they answer different questions. `promoteSuccessors` promotes a
+ * step whose prerequisites are satisfied — the work upstream is done, so this
+ * step is now reachable. `receiveHandoff` promotes the target of a handoff —
+ * somebody accepted it, so it is now this queue's work. Prerequisite completion
+ * may open a successor on its own; where an explicit handoff is addressed to
+ * that successor, the handoff must be RECEIVED before execution may begin, and
+ * `activateStep` and `submitStep` both refuse `handoff_reception_required`
+ * until it is. That is what keeps "who handed this over" answerable now that
+ * promotion, which records no provenance, can also open a step.
+ *
+ * This comment previously said reception was the ONLY way any non-entry step
+ * became AVAILABLE. C-1 made that false and nothing here was updated, so the
+ * guarantee it described quietly stopped holding for 23 of the 26 steps. The
+ * rule above is what replaced it.
+ *
+ * OUT OF SCOPE, deliberately: whether every cross-department transition ought
+ * to have an explicit send and receive. Four transitions have a sender today
+ * and seventeen do not, and the rule above imposes reception only where a
+ * handoff genuinely exists. Answering that is a workflow question for UAT, not
+ * an engine question — see docs/c4/c4-residual-findings.md.
+ *
+ * But a dossier's FIRST step has no predecessor to hand it over — `buildInitialExecutions` opens step 1
  * (`cotation`) and nothing else. When intake legitimately SKIPS cotation, step 2
  * satisfies its prerequisites yet has no one to open it, and the workflow stalls
  * with zero ACTIVE steps.

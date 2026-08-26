@@ -798,6 +798,22 @@ describe("C-4 section G — physical deposit (steps 23–25)", () => {
   });
 
   it("step 23 — the Administrative Officer claims it, prepares, and assigns a courier", async () => {
+    // C-4 — Billing's handoff is real, so it must be RECEIVED before Administration
+    // may begin. Promotion made step 23 AVAILABLE when step 22 completed; that is
+    // the invitation, not the acceptance. This journey used to walk straight past
+    // it, which is how the gap was found.
+    const open = (await handoffs(fileId)).find(
+      (h) => h.status === "SENT" && h.to_step_key === "administration_deposit_prep",
+    );
+    expect(open, "Billing's handoff is waiting to be accepted").toBeTruthy();
+
+    const tooSoon = await as(admin, () => activateStep(fileId, "administration_deposit_prep"));
+    expect(tooSoon.ok, "unreceived work cannot be started").toBe(false);
+    expect((tooSoon as { error: string }).error).toBe("handoff_reception_required");
+
+    const got = await as(admin, () => receiveHandoff(fileId, open!.id as string));
+    expect(got.ok, `receiveHandoff 23: ${JSON.stringify(got)}`).toBe(true);
+
     const started = await as(admin, () => activateStep(fileId, "administration_deposit_prep"));
     expect(started.ok, `activate step 23: ${JSON.stringify(started)}`).toBe(true);
 

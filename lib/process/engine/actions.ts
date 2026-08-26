@@ -35,7 +35,7 @@ import { AuditActions } from "@/lib/audit/events";
 import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-server";
 import { PROCESS_VERSION, buildInitialExecutions } from "./init";
 import { resolvePolicyVersionIdForPinning } from "@/lib/workflow/policy/resolver";
-import { loadProcessSnapshot, toViews } from "./snapshot";
+import { loadProcessSnapshot, toViews, type ProcessSnapshot } from "./snapshot";
 import {
   canTransitionStep,
   correctionStepFor,
@@ -305,6 +305,40 @@ export async function activateEntryStep(fileId: string, stepKey: string): Promis
   return activateStep(fileId, stepKey);
 }
 
+/**
+ * C-4 — RECEPTION IS ITS OWN ACT.
+ *
+ * Before C-1, reception was enforced by the shape of the ladder rather than by
+ * a check: `PENDING -> ACTIVE` is not a legal transition, and `receiveHandoff`
+ * was the only writer of AVAILABLE for a non-entry step. So a handoff target
+ * simply could not be started until somebody received it. C-1 added
+ * `promoteSuccessors` as a second writer of AVAILABLE — correctly, because
+ * steps that are neither entry steps nor handoff targets could otherwise never
+ * become reachable — and in doing so it dissolved that guarantee. The negative
+ * battery caught it: step 4 went straight to ACTIVE with its handoff still SENT.
+ *
+ * THE RATIFIED RULE (Option 1). Promotion may still make a step AVAILABLE. But
+ * where an explicit handoff addressed to that step is outstanding, execution
+ * waits for someone to RECEIVE it. Nothing here receives anything, invents a
+ * receiver, or writes provenance — `receiveHandoff` remains the sole reception
+ * authority, and its eligibility rules are untouched.
+ *
+ * DELIBERATELY NARROW. This asks only whether a handoff that ALREADY EXISTS has
+ * been received. It creates no handoffs and imposes reception on none of the
+ * transitions that have no sender today — whether those should acquire one is a
+ * workflow question, deferred out of C-4.
+ *
+ * The snapshot is authoritative here, unlike the evidence and gate reads that
+ * had to be re-fetched: `loadProcessSnapshot` gates documents, customs,
+ * transport and finance on the caller's permissions, but reads executions and
+ * handoffs unconditionally through the admin client. A test pins that, because
+ * if handoffs ever became permission-gated this guard would go quietly blind
+ * for exactly the callers it is meant to stop.
+ */
+function outstandingHandoffTo(snap: ProcessSnapshot, stepKey: string) {
+  return snap.handoffs.find((h) => h.toStepKey === stepKey && h.status === "SENT") ?? null;
+}
+
 /** PENDING/AVAILABLE -> ACTIVE. Enforces prerequisites and the pickup join gate. */
 export async function activateStep(fileId: string, stepKey: string): Promise<EngineResult> {
   const c = await guard(stepPermission(stepKey), fileId);
@@ -314,6 +348,10 @@ export async function activateStep(fileId: string, stepKey: string): Promise<Eng
 
   const views = toViews(st.snapshot!.executions);
   if (!prerequisitesMet(stepKey, views)) return fail("prerequisites_unmet");
+
+  // Asked before the pickup gate, which writes audit rows: a step that may not
+  // start yet should not leave a gate verdict behind explaining why it could.
+  if (outstandingHandoffTo(st.snapshot!, stepKey)) return fail("handoff_reception_required");
 
   // The pickup convergence gate. Both branches must have landed.
   if (stepKey === "pickup") {
@@ -376,6 +414,17 @@ export async function submitStep(fileId: string, stepKey: string): Promise<Engin
   if (isErr(c)) return fail(c);
   const st = await loadStep(c, fileId, stepKey);
   if (typeof st === "string") return fail(st);
+
+  // C-4 — the same outstanding handoff, closed at the second door.
+  //
+  // Activation is the door this normally comes through, and blocking it there
+  // would be enough for the sequence the battery walks. It is not enough as an
+  // invariant: a step can be ACTIVE already when a handoff arrives, and any
+  // future path that reaches SUBMITTED without going through `activateStep`
+  // would inherit none of the guarantee. Asked before evidence, because an
+  // actor should not be told which document is missing from work it has not
+  // yet accepted.
+  if (outstandingHandoffTo(st.snapshot!, stepKey)) return fail("handoff_reception_required");
 
   const ev = evaluateStepEvidence(stepKey, st.snapshot!.evidence);
 

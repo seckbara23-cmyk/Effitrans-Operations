@@ -157,5 +157,8 @@ export type EngineError =
   | "not_eligible_receiver"
   // C-2 — a handoff may not outrun its own from-step.
   | "from_step_incomplete"
+  // C-4 — an explicit handoff addressed to this step is still SENT. Promotion
+  // made the step AVAILABLE; reception is a separate act and has not happened.
+  | "handoff_reception_required"
   | "already_initialized"
   | "cross_tenant";
