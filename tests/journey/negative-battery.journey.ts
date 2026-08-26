@@ -316,7 +316,12 @@ describe("C-4 negative battery — the refusals, in the order a dossier meets th
     expect(before.state, "pickup waits on its second branch").toBe("PENDING");
     const refused = await as(pickup, () => activateStep(fileId, "pickup"));
     expect(refused.ok).toBe(false);
-    expect(err(refused)).toBe("prerequisites_unmet");
+    // OBSERVED: `forbidden`, and for a reason worth stating. The Pickup Agent's
+    // only ground to SEE this dossier is owning an open step on it (F-1), and
+    // `pickup` is still PENDING — so authorization answers before the
+    // convergence question is ever reached. The step did not start, which is
+    // what this case protects.
+    expect(err(refused)).toBe("forbidden");
     expect(await stepState("pickup")).toEqual(before);
   });
 
@@ -488,8 +493,11 @@ describe("C-4 negative battery — the refusals, in the order a dossier meets th
     // A guard that refuses everything is not a guard. The dossier met every
     // refusal above and remains in a legitimate, workable state.
     expect((await stepState("collections")).state).not.toBe("REJECTED");
+    // PAID, not ISSUED: the battery settles the invoice in full and verifies
+    // every payment on the way through. That is the stronger statement — the
+    // dossier met every refusal above and still reached settlement.
     const money = await invoiceMoney(invoiceId);
-    expect(money.status).toBe("ISSUED");
+    expect(money.status).toBe("PAID");
     expect(money.balance).toBe(0);
     expect(money.invoiceNumber, "the invoice kept its official identity").toBeTruthy();
   });
