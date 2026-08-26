@@ -13,7 +13,7 @@
  * No queue table exists and none should: a queue is a filtered view over
  * process_step_execution. Queue state is never persisted.
  */
-import { stepsForDepartment } from "../effitrans-process";
+import { getStep, getActivity, stepsForDepartment } from "../effitrans-process";
 import type { ProcessDepartment, ProcessRole } from "../types";
 
 /** Everything a queue row can offer. Each maps to a Phase 5.0B engine action. */
@@ -245,4 +245,28 @@ export function visibleQueues(roleCodes: string[], permissions: string[]): Queue
   if (!permissions.includes("process:read")) return [];
   const roles = new Set(roleCodes);
   return QUEUES.filter((q) => q.roles.some((r) => roles.has(r)));
+}
+
+/**
+ * May a caller holding these role codes RECEIVE work routed to `toStepKey`?
+ *
+ * PURE, and here rather than in the engine because it is registry knowledge: a
+ * step declares its `department`, and the queue for that department declares
+ * the roles that staff it. Keeping it pure is what makes it directly testable —
+ * a version of this rule that answered `true` for everybody once passed every
+ * source-level pin it had, because those pinned the CALL SITE and not the logic.
+ *
+ * Deliberately NOT derived from `process_step_receiving_role`. That table calls
+ * itself a "Registry projection ... Never a source of mutation authority", and
+ * it is seeded only for the handoff targets the platform sends to today — so
+ * enforcing against it would leave every other target unreceivable by anyone.
+ * This answers for every step, and is the source that projection is copied from.
+ */
+export function isRoutedReceiverRole(toStepKey: string, roleCodes: readonly string[]): boolean {
+  const node = getStep(toStepKey) ?? getActivity(toStepKey);
+  const department = (node as { department?: string } | null)?.department;
+  if (!department) return false;
+  const queue = QUEUES.find((q) => q.key === department);
+  if (!queue) return false;
+  return queue.roles.some((code) => roleCodes.includes(code));
 }

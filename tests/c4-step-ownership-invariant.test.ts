@@ -33,6 +33,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { getNode, ALL_NODE_KEYS } from "@/lib/process/engine/state";
 import { getTenantRoleTemplate } from "@/lib/platform/role-templates";
+import { isRoutedReceiverRole } from "@/lib/process/queues/registry";
 
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(`../${rel}`, import.meta.url)), "utf8");
 
@@ -267,7 +268,17 @@ describe("C-4 — every routed receiver can actually receive", () => {
     expect(engine).toContain("function isRoutedReceiver(ctx: Ctx, toStepKey: string): boolean");
     // …resolved from the REGISTRY, not from the projection that calls itself
     // "never a source of mutation authority".
-    expect(engine).toContain("QUEUES.find((q) => q.key === department)");
+    // …and the RULE ITSELF refuses an unrelated role. Pinned behaviourally, not
+    // by source: a version answering `true` for everybody passed every
+    // source-level check it had, because those pinned the call site.
+    expect(isRoutedReceiverRole("collections", ["COLLECTIONS_OFFICER"]), "routed receiver").toBe(true);
+    expect(isRoutedReceiverRole("collections", ["FINANCE_OFFICER"]), "second routed receiver").toBe(true);
+    expect(isRoutedReceiverRole("collections", ["ACCOUNT_MANAGER"]), "holds the permission, not the routing").toBe(false);
+    expect(isRoutedReceiverRole("collections", ["PICKUP_AGENT"]), "another department entirely").toBe(false);
+    expect(isRoutedReceiverRole("coordinator_reception", ["PICKUP_AGENT"]), "Pickup cannot take Transit's reception").toBe(false);
+    expect(isRoutedReceiverRole("administration_deposit_prep", ["CUSTOMS_DECLARANT"]), "Declarant cannot take Administration's").toBe(false);
+    expect(isRoutedReceiverRole("collections", []), "no roles at all").toBe(false);
+    expect(isRoutedReceiverRole("not_a_step", ["OPS_SUPERVISOR"]), "an unknown step routes to nobody").toBe(false);
     // CODE ONLY: the doc comment legitimately NAMES the projection table to
     // explain why it is not read, and a whole-file check fails on that prose.
     const engineCode = engine.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");

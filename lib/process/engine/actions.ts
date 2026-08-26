@@ -54,7 +54,7 @@ import { promoteSuccessors } from "./promote";
 import { authoritativePickupGate } from "./gate-authority";
 import { evaluateStepEvidence } from "./evidence";
 import { isDone } from "./types";
-import { QUEUES } from "../queues/registry";
+import { isRoutedReceiverRole } from "../queues/registry";
 import type { EngineError, EngineResult, StepState } from "./types";
 
 type Ctx = {
@@ -119,12 +119,9 @@ async function guard(permission: string, fileId: string): Promise<Ctx | EngineEr
  * projection is copied from.
  */
 function isRoutedReceiver(ctx: Ctx, toStepKey: string): boolean {
-  const department = getNode(toStepKey)?.department;
-  if (!department) return false;
-  const queue = QUEUES.find((q) => q.key === department);
-  if (!queue) return false;
-  return queue.roles.some((code) => ctx.roles.includes(code));
+  return isRoutedReceiverRole(toStepKey, ctx.roles);
 }
+
 
 const isErr = (v: Ctx | EngineError): v is EngineError => typeof v === "string";
 
