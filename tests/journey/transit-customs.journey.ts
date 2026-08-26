@@ -365,6 +365,26 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     expect((late as { error: string }).error).toBe("forbidden");
   });
 
+  it("the Finance clearance handoff (9-10) cannot hit the C-2 guard", async () => {
+    // clearFinance sends gainde_registration -> coordinator_to_declarant and
+    // degrades to a Coordinator notification if the send is refused. The
+    // question is whether that fallback is deliberate or permanent.
+    //
+    // C-2 refuses a handoff for exactly one reason: the from-step is not done.
+    // So the question is decidable here, without invoking clearFinance's own
+    // clearance gate: by the time any Finance clearing can run, step 9 has
+    // already been completed by Finance's own registration fact. The guard
+    // therefore cannot be what triggers the fallback.
+    const s9 = await execution(fileId, "gainde_registration");
+    expect(s9?.state, "step 9 is done before any Finance clearing").toBe("COMPLETED");
+    expect(s9?.completion_provenance).toBe("RECONCILED");
+
+    // NOT proved here: that clearFinance's OTHER preconditions
+    // (evaluateClearanceLive) are satisfiable in this journey. The fallback may
+    // still be reached for a different reason, which is a separate question
+    // from the C-2 regression and is recorded rather than assumed away.
+  });
+
   it("step 10 — Coordination hands it back to the declarant", async () => {
     await runStep(coordinator, "coordinator_to_declarant");
     expect((await execution(fileId, "coordinator_to_declarant"))?.state).toBe("COMPLETED");
