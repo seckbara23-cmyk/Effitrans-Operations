@@ -916,6 +916,15 @@ describe("C-4 section G — physical deposit (steps 23–25)", () => {
     expect(submitted.ok, `submitProof: ${JSON.stringify(submitted)}`).toBe(true);
     const { data: after } = await db().from("invoice_deposit").select("status").eq("id", depositId).maybeSingle();
     expect(after?.status).toBe("PROOF_SUBMITTED");
+
+    // RETURNING the proof is not COMPLETING the step. Step 24 requires a
+    // VERIFIED proof, and nobody has reviewed this one — so the step stays open
+    // and the action claims nothing about it. Submitting used to attempt that
+    // completion; it could never succeed and the failure was discarded.
+    expect((await execution(fileId, "courier_deposit"))?.state, "still the courier's open step").toBe("ACTIVE");
+    const { data: stillPending } = await db()
+      .from("document").select("status").eq("id", dep!.proof_document_id as string).maybeSingle();
+    expect(stillPending?.status, "and the proof is still awaiting review").not.toBe("VERIFIED");
   });
 
   it("step 25 MAKER ≠ CHECKER — the courier cannot review its own proof", async () => {
@@ -989,11 +998,23 @@ describe("C-4 section G — physical deposit (steps 23–25)", () => {
       .maybeSingle();
     expect(doc?.status).toBe("VERIFIED");
     expect(doc?.reviewed_by).toBe(admin.id);
+
+    // ONLY NOW does step 24 complete: its evidence is a VERIFIED proof, and the
+    // acceptance is what produced one. The engine re-evaluated the same gate;
+    // nothing was bypassed and nothing weakened.
+    const s24 = await execution(fileId, "courier_deposit");
+    expect(s24?.state, "the courier's step closes on verified evidence").toBe("COMPLETED");
+    // Attribution: the reviewer's act satisfied the final condition, and the
+    // courier's work remains recorded where it belongs.
+    expect(s24?.submitted_by).toBe(admin.id);
+    const { data: custody } = await db()
+      .from("invoice_deposit").select("courier_user_id").eq("id", depositId).maybeSingle();
+    expect(custody?.courier_user_id, "the courier is still the courier").toBe(courier.id);
   });
 
   it("steps 24 and 25 close, and step 26 becomes reachable", async () => {
-    // Step 24 was completed by submitProof — returning the proof IS the act,
-    // as at steps 9, 13, 17 and 25. A second submit would be an illegal repeat.
+    // Step 24 was completed by acceptProof — a VERIFIED proof is what its gate
+    // requires, so acceptance is the act that closes it.
     expect((await execution(fileId, "courier_deposit"))?.state).toBe("COMPLETED");
 
     const started = await as(admin, () => activateStep(fileId, "administration_proof_handoff"));

@@ -803,29 +803,23 @@ export async function submitProof(depositId: string): Promise<DepositResult> {
   });
   if (!rec.ok) return fail(rec.error!);
 
-  // Official step 24 completes only now — proof returned, not merely deposited.
-  // The result is KEPT — the sixth site of this class, found by the generic
-  // sweep. The proof is already submitted and custody already recorded; if step
-  // 24 does not move with them, Administration sees a proof awaiting review
-  // while the workflow says the courier never finished.
-  const advanced = await submitStep(d.fileId, "courier_deposit");
-  if (!advanced.ok) {
-    await writeAudit({
-      action: AuditActions.DEPOSIT_ROUTING_FAILED,
-      actorId: c.userId,
-      tenantId: c.tenantId,
-      entity: "invoice_deposit",
-      entityId: depositId,
-      after: {
-        file_id: d.fileId,
-        stage: "step_completion",
-        step_key: "courier_deposit",
-        proof_submitted: true,
-        reason: advanced.error,
-      },
-    });
-    return fail("step_completion_failed");
-  }
+  // Step 24 is deliberately NOT completed here, and this used to be the one
+  // place that tried.
+  //
+  // The step requires PROOF_OF_DEPOSIT as evidence, and that key is satisfied
+  // only by a VERIFIED document (`approvedDoc` → `isVerified`). At this moment
+  // the proof has been RETURNED and nobody has reviewed it — uploading is not
+  // verifying — so `evaluateStepEvidence` reports `pending_review` and the
+  // completion could never succeed. It never once did: the attempt's result was
+  // discarded, so the step silently stayed ACTIVE and somebody closed it later.
+  //
+  // The business sequence is the honest one: the courier returns the proof, it
+  // stays pending review, an independent Administration actor verifies it, and
+  // THEN step 24 may complete. `acceptProof` does that, once the document it
+  // just verified can actually satisfy the gate.
+  //
+  // So this action reports success for what it actually did — the proof is
+  // submitted, custody is recorded — and claims nothing about step 24.
 
   await writeAudit({
     action: AuditActions.DEPOSIT_PROOF_SUBMITTED,
@@ -892,6 +886,37 @@ export async function acceptProof(depositId: string): Promise<DepositResult> {
     .update({ status: "VERIFIED", reviewed_by: c.userId })
     .eq("id", d.proofDocumentId)
     .eq("tenant_id", c.tenantId);
+
+  // NOW step 24 may complete: the proof it requires is VERIFIED, so
+  // `evaluateStepEvidence` can finally satisfy PROOF_OF_DEPOSIT. Nothing is
+  // bypassed — the engine re-evaluates the same gate it always did, and the
+  // evidence has genuinely changed.
+  //
+  // ATTRIBUTION. The reviewer becomes the step's `submitted_by`, because theirs
+  // is the act that satisfied the final completion condition. It does not claim
+  // they performed the delivery: the courier's identity stays on the deposit
+  // (`courier_user_id`), on the proof (`uploaded_by`) and across the custody
+  // chain, which is where the physical work is recorded.
+  const advanced = await submitStep(d.fileId, "courier_deposit");
+  if (!advanced.ok) {
+    await writeAudit({
+      action: AuditActions.DEPOSIT_ROUTING_FAILED,
+      actorId: c.userId,
+      tenantId: c.tenantId,
+      entity: "invoice_deposit",
+      entityId: depositId,
+      after: {
+        file_id: d.fileId,
+        stage: "step_completion",
+        step_key: "courier_deposit",
+        // The acceptance IS committed and the proof IS verified; only the step
+        // did not move. Said plainly rather than denied.
+        proof_accepted: true,
+        reason: advanced.error,
+      },
+    });
+    return fail("step_completion_failed");
+  }
 
   await recordCustody(c, d, "PROOF_ACCEPTED", "PROOF_SUBMITTED", "PROOF_ACCEPTED", {
     evidenceDocumentId: d.proofDocumentId,
