@@ -120,8 +120,8 @@ begin
     join public.permission p on p.id = rp.permission_id
    where r.tenant_id = '00000000-0000-0000-0000-000000000001'
      and r.code = 'PERFORMANCE_MANAGEMENT';
-  insert into _r values ('role_holds_exactly_four_permissions', n);
-  if n <> 4 then raise exception 'PERF FAIL: the access role holds % permissions, expected 4', n; end if;
+  insert into _r values ('role_holds_exactly_five_permissions', n);
+  if n <> 5 then raise exception 'PERF FAIL: the access role holds % permissions, expected 5', n; end if;
 
   select count(*), min(p.code) into n, extra
     from public.role r
@@ -130,7 +130,10 @@ begin
    where r.tenant_id = '00000000-0000-0000-0000-000000000001'
      and r.code = 'PERFORMANCE_MANAGEMENT'
      and p.code not in ('profile:read:self', 'profile:update:self',
-                        'performance:read', 'performance:manage');
+                        'performance:read', 'performance:manage',
+                        -- Slice 1: drafting a report is the working half of the
+                        -- module. PUBLISHING is deliberately NOT here.
+                        'performance:report:create');
   insert into _r values ('role_holds_nothing_operational', case when n = 0 then 1 else 0 end);
   if n <> 0 then
     raise exception 'PERF FAIL: the access role holds % extra permission(s), e.g. % — it is not a super-role', n, extra;
@@ -144,15 +147,30 @@ end $$;
 do $$
 declare n int; offender text;
 begin
+  -- The two ACCESS roles hold DISJOINT halves of the namespace: study the data,
+  -- or freeze a report. Nothing else holds any of it.
   select count(*), min(r.code) into n, offender
     from public.role r
     join public.role_permission rp on rp.role_id = r.id
     join public.permission p on p.id = rp.permission_id
-   where p.code in ('performance:read', 'performance:manage')
+   where p.code in ('performance:read', 'performance:manage', 'performance:report:create')
      and r.code <> 'PERFORMANCE_MANAGEMENT';
   insert into _r values ('no_other_role_holds_performance', case when n = 0 then 1 else 0 end);
   if n <> 0 then
     raise exception 'PERF FAIL: % role(s) other than the access role hold performance access, e.g. %', n, offender;
+  end if;
+
+  -- …and publication is the publisher role's alone.
+  select count(*), min(r.code) into n, offender
+    from public.role r
+    join public.role_permission rp on rp.role_id = r.id
+    join public.permission p on p.id = rp.permission_id
+   where p.code = 'performance:report:publish'
+     and r.tenant_id = '00000000-0000-0000-0000-000000000001'
+     and r.code <> 'PERFORMANCE_PUBLISHER';
+  insert into _r values ('only_publisher_role_publishes', case when n = 0 then 1 else 0 end);
+  if n <> 0 then
+    raise exception 'PERF FAIL: % role(s) other than PERFORMANCE_PUBLISHER may publish (e.g. %)', n, offender;
   end if;
 
   for offender in select unnest(array['OPS_SUPERVISOR', 'CEO', 'SYSTEM_ADMIN']) loop
