@@ -358,16 +358,33 @@ begin
     raise exception 'M128: expected all five governed columns NULL on existing rows, found % populated', v_n;
   end if;
 
-  -- DPE must be unstorable, not merely discouraged (D1).
-  begin
-    insert into public.customs_record (id, tenant_id, file_id, declaration_type)
-    values (gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), 'DPE');
-    raise exception 'M128: a DPE declaration_type was accepted — the D1 CHECK is missing';
-  exception
-    when check_violation then null; -- exactly right
-    when foreign_key_violation then
-      raise exception 'M128: CHECK must reject DPE before FKs are consulted';
-  end;
+  -- DPE must be unstorable, not merely discouraged (D1). Asserted on the
+  -- CONSTRAINT rather than by attempting an insert: customs_record carries a
+  -- tenant-consistency trigger (migration 20260615000002) that fires before any
+  -- CHECK, so a throwaway probe row proves the trigger works, not the check.
+  -- The behavioural proof — an UPDATE to 'DPE' on a properly constituted row —
+  -- lives in supabase/tests/customs_d4_correction_test.sql.
+  select count(*) into v_n
+    from pg_constraint c
+    join pg_class t on t.oid = c.conrelid
+   where t.relname = 'customs_record'
+     and c.contype = 'c'
+     and pg_get_constraintdef(c.oid) like '%declaration_type%'
+     and pg_get_constraintdef(c.oid) like '%SIMPLE%';
+  if v_n <> 1 then
+    raise exception 'M128: expected exactly 1 declaration_type CHECK, found %', v_n;
+  end if;
+
+  select count(*) into v_n
+    from pg_constraint c
+    join pg_class t on t.oid = c.conrelid
+   where t.relname = 'customs_record'
+     and c.contype = 'c'
+     and pg_get_constraintdef(c.oid) like '%declaration_type%'
+     and pg_get_constraintdef(c.oid) like '%DPE%';
+  if v_n <> 0 then
+    raise exception 'M128: the declaration_type CHECK admits DPE — D1 forbids it';
+  end if;
 
   select count(*) into v_n from public.permission
    where code in ('customs:correct','customs:revalidate');
