@@ -38,12 +38,13 @@ intact and no write policy on either governed table.
 
 ```
 performance:read / performance:manage permissions ....... 0   (expected 2)
-performance:read grants ................................. 0   (expected 3)
-performance:manage grants ............................... 0   (expected 2)
+PERFORMANCE_MANAGEMENT role ............................. absent
+performance grants ...................................... 0   (expected 1 each,
+                                                              to that role only)
 ```
 
-**Consequence while it is missing:** nobody holds `performance:read`, so
-`/performance` returns 404 for every user — including the CEO. The module is
+**Consequence while it is missing:** the role does not exist, nobody holds
+`performance:read`, and `/performance` returns 404 for every user. The module is
 deployed and inert. That is the correct failure mode (a missing capability
 refuses rather than opens), but it means **UAT cannot begin until 129 is applied**.
 
@@ -98,23 +99,52 @@ env -u SUPABASE_ACCESS_TOKEN npx supabase db query --linked \
        where p.code = 'performance:manage') as manage_grants;"
 ```
 
-Expected: `perms = 2`, `read_grants = 3` (CEO, OPS_SUPERVISOR, SYSTEM_ADMIN),
-`manage_grants = 2` (CEO, SYSTEM_ADMIN).
+Expected: `perms = 2`, and **`read_grants = 1`, `manage_grants = 1`** — both held
+by `PERFORMANCE_MANAGEMENT` and by no other role. A count above 1 means an
+operational role acquired performance access, which the ruling forbids.
 
 ---
 
 ## 3. Granting access to real Effitrans users
 
-The migration grants the two capabilities to **role templates**. A named person
-receives them through the platform's ordinary user administration
-(Administration → Utilisateurs), by holding one of those roles. No parallel
-mechanism exists and none was created.
+**RATIFIED 2026-08-28.** Access is an explicit role assignment. Migration 129
+creates the role **`PERFORMANCE_MANAGEMENT`**, shown to operators as
+**« Gestion de la Performance »**, and grants the two capabilities to it and to
+nothing else. No job role carries performance access — not CEO, not
+OPS_SUPERVISOR, not SYSTEM_ADMIN.
 
-To give someone access without making them an OPS_SUPERVISOR, grant
-`performance:read` to their existing role through the normal permission
-management screen. The capability is deliberately thin: it opens the module and
-confers nothing else — not `hr:manage`, not `customs:update`, not correction
-authority. That separation is asserted in CI in both directions.
+### To give someone access
+
+1. Administration → **Utilisateurs** → open the person.
+2. **Ajouter un rôle…** → choose **Gestion de la Performance** → **Attribuer**.
+3. The role appears among their role chips, alongside whatever they already are.
+
+It is an *additional* access role: somebody stays CEO, Chargé RH or Operations
+and holds this as well. Removing it through the same screen removes module
+access and leaves every other role untouched — proven in CI against the real
+seeded roles (`before_assignment_no_access` → `assignment_grants_access` →
+`removal_revokes_access`, with `job_role_survives_assignment` and
+`job_role_survives_removal` on either side).
+
+### Verify an assignment took
+
+```bash
+env -u SUPABASE_ACCESS_TOKEN npx supabase db query --linked   "select u.email, r.code
+     from public.user_role ur
+     join public.app_user u on u.id = ur.user_id
+     join public.role r on r.id = ur.role_id
+    where r.code = 'PERFORMANCE_MANAGEMENT';"
+```
+
+### Who can assign it
+
+Any holder of `admin:roles:manage` / `admin:users:update` — SYSTEM_ADMIN in
+practice. SYSTEM_ADMIN can **assign** the role without **holding** it, which is
+deliberate: administering the platform is not a reason to read what a named
+colleague produced last month. That follows DEC-B61, which already withholds
+`hr:*` from SYSTEM_ADMIN because the data is personal; per-person indicators
+computed partly from that leave data are the same kind of fact. If a system
+administrator should read performance, assign them the role like anyone else.
 
 ---
 
