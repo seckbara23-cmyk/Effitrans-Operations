@@ -38,6 +38,8 @@ const ALL_ROLES = [
   // Ratified 2026-08-28: module access comes from an explicit assignment, never
   // from an operational role.
   "PERFORMANCE_MANAGEMENT",
+  // Slice 1 — publishing an official report is separated from reading.
+  "PERFORMANCE_PUBLISHER",
 ];
 // module 'finance' codes, as seeded (visible in seed.sql explicit lists).
 const FINANCE_CODES = ["finance:read", "finance:create", "finance:update", "finance:issue", "finance:payment", "finance:void"];
@@ -70,7 +72,7 @@ function parseSeed(): Record<string, string[]> {
 describe("tenant role templates — parity with seed.sql (no drift)", () => {
   const seeded = parseSeed();
 
-  it("covers exactly the 31 seeded roles", () => {
+  it("covers exactly the 32 seeded roles", () => {
     expect([...TENANT_ROLE_KEYS].sort()).toEqual([...ALL_ROLES].sort());
   });
 

@@ -12,7 +12,7 @@
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/ui/page-header";
 import { requireUser } from "@/lib/auth/require-user";
-import { monthPeriod, collaboratorPerformance } from "@/lib/performance/read";
+import { dakarToday, monthPeriod, collaboratorPerformance } from "@/lib/performance/read";
 import { MIN_DOSSIERS, type ReliabilityStatus } from "@/lib/performance/reliability";
 
 export const metadata: Metadata = { title: "Performance des collaborateurs" };
@@ -38,7 +38,7 @@ export default async function CollaboratorsPage({
 }) {
   const user = await requireUser();
   const sp = (await searchParams) ?? {};
-  const period = monthPeriod(sp.mois ?? new Date().toISOString().slice(0, 10));
+  const period = monthPeriod(sp.mois ?? dakarToday());
   const rows = await collaboratorPerformance(user.tenantId, period);
 
   return (

@@ -84,7 +84,7 @@ export const ROLE_DEPARTMENTS: readonly RoleDepartment[] = [
     // générale because that is where the module's audience sits and because
     // this taxonomy is presentation only — it groups the picker, it grants
     // nothing. The holder's real department still comes from their job role.
-    roleCodes: ["CEO", "DGA", "DAF", "PERFORMANCE_MANAGEMENT"],
+    roleCodes: ["CEO", "DGA", "DAF", "PERFORMANCE_MANAGEMENT", "PERFORMANCE_PUBLISHER"],
   },
   {
     key: "OPERATIONS",

@@ -11,7 +11,7 @@
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/ui/page-header";
 import { requireUser } from "@/lib/auth/require-user";
-import { monthPeriod, ictdDossiers } from "@/lib/performance/read";
+import { dakarToday, monthPeriod, ictdDossiers, ICTD_TERM_COUNT } from "@/lib/performance/read";
 import { CDP_COEFFICIENTS, DECLARATION_TYPES } from "@/lib/performance/declaration-type";
 
 export const metadata: Metadata = { title: "ICTD" };
@@ -24,7 +24,7 @@ export default async function IctdPage({
 }) {
   const user = await requireUser();
   const sp = (await searchParams) ?? {};
-  const period = monthPeriod(sp.mois ?? new Date().toISOString().slice(0, 10));
+  const period = monthPeriod(sp.mois ?? dakarToday());
   const rows = await ictdDossiers(user.tenantId, period);
 
   return (
@@ -62,6 +62,8 @@ export default async function IctdPage({
               <tr>
                 <th className="px-4 py-3">Dossier</th>
                 <th className="px-4 py-3">Type</th>
+                <th className="px-4 py-3 text-right">Factures</th>
+                <th className="px-4 py-3 text-right">Cotations</th>
                 <th className="px-4 py-3 text-right">Positions SH</th>
                 <th className="px-4 py-3 text-right">Délai (j. ouvrés)</th>
                 <th className="px-4 py-3 text-right">ICTD</th>
@@ -73,6 +75,8 @@ export default async function IctdPage({
                 <tr key={r.fileId}>
                   <td className="px-4 py-3 font-mono text-xs text-navy-900">{r.fileNumber}</td>
                   <td className="px-4 py-3">{r.declarationType ?? "—"}</td>
+                  <td className="px-4 py-3 text-right tabular-nums">{r.invoiceCount}</td>
+                  <td className="px-4 py-3 text-right tabular-nums">{r.cotationCount}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{r.shPositionCount ?? "—"}</td>
                   <td className="px-4 py-3 text-right tabular-nums">
                     {r.delaiJoursOuvres !== null ? r.delaiJoursOuvres : "—"}
@@ -81,7 +85,7 @@ export default async function IctdPage({
                     {r.ictd !== null ? (
                       <>
                         {r.ictd.toFixed(2)}
-                        {r.inputsCaptured < 5 ? (
+                        {r.inputsCaptured < ICTD_TERM_COUNT ? (
                           <span className="ml-1 text-[10px] text-amber-600">base partielle</span>
                         ) : null}
                       </>
@@ -112,8 +116,9 @@ export default async function IctdPage({
       <p className="text-[11px] text-slate-400">
         « Non calculable » signifie que le type de déclaration ou le régime DPI n&apos;a pas été
         saisi : la note de méthode laisse alors le dossier sans score plutôt que de lui en attribuer
-        un de zéro. « Base partielle » signale les deux termes — nombre de factures fournisseur et
-        nombre de cotations — que la plateforme ne collecte pas encore par dossier.
+        un de zéro. « Base partielle » signale un dossier dont un élément douanier gouverné manque
+        encore — les sept termes sont tous alimentés par la plateforme, mais tous ne sont pas
+        forcément saisis sur un dossier donné.
       </p>
     </div>
   );

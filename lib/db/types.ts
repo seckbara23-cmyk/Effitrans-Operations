@@ -3892,6 +3892,12 @@ export type Database = {
         Update: { status?: string; submitted_at?: string | null; decision_note?: string | null; evidence_document_id?: string | null };
         Relationships: [];
       };
+      performance_report: {
+        Row: { id: string; tenant_id: string; title: string; period_kind: string; period_start: string; period_end: string; period_label: string; status: string; executive_summary: string | null; management_commentary: string | null; snapshot: Json | null; parameter_set_version: string | null; engine_version: string | null; artifact_storage_path: string | null; artifact_sha256: string | null; artifact_renderer_version: string | null; artifact_generated_at: string | null; created_by: string; created_at: string; submitted_by: string | null; submitted_at: string | null; published_by: string | null; published_at: string | null };
+        Insert: { id?: string; tenant_id: string; title: string; period_kind: string; period_start: string; period_end: string; period_label: string; status?: string; executive_summary?: string | null; management_commentary?: string | null; created_by: string };
+        Update: { title?: string; executive_summary?: string | null; management_commentary?: string | null; status?: string; submitted_by?: string | null; submitted_at?: string | null; artifact_storage_path?: string | null; artifact_sha256?: string | null; artifact_renderer_version?: string | null; artifact_generated_at?: string | null };
+        Relationships: [];
+      };
       hr_calendar_day: {
         Row: { id: string; tenant_id: string; day: string; kind: string; label: string; created_by: string | null; created_at: string };
         Insert: { id?: string; tenant_id: string; day: string; kind: string; label: string; created_by?: string | null };
@@ -4950,6 +4956,15 @@ export type Database = {
       // D4 — recertification after a correction. Chef OR Déclarant; never the corrector.
       record_customs_revalidation: {
         Args: { p_customs_id: string; p_actor: string };
+        Returns: Json;
+      };
+      // Slice 1 — publication as ONE atomic act with database time: the status
+      // flip, the frozen snapshot and published_at = now() in one statement.
+      publish_performance_report: {
+        Args: {
+          p_report_id: string; p_actor: string; p_snapshot: Json;
+          p_parameter_set_version: string; p_engine_version: string;
+        };
         Returns: Json;
       };
       // MAYA-P1.1 — Finance GAINDE registration. Asserts customs:register;

@@ -21,6 +21,7 @@ export type PerformanceTab = {
 export const PERFORMANCE_TABS: readonly PerformanceTab[] = [
   { key: "overview", label: "Vue d'ensemble", href: "/performance", populated: true },
   { key: "collaborators", label: "Performance des collaborateurs", href: "/performance/collaborateurs", populated: true },
+  { key: "reports", label: "Rapports & BI", href: "/performance/rapports", populated: true },
   { key: "ictd", label: "ICTD", href: "/performance/ictd", populated: true },
   { key: "icam", label: "ICAM", href: "/performance/icam", populated: false },
   { key: "ipam", label: "IPAM", href: "/performance/ipam", populated: false },

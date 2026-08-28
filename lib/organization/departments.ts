@@ -162,6 +162,8 @@ export const ROLE_CANONICAL_DEPARTMENT: Readonly<Record<string, CanonicalDepartm
   // operational authority — see the capability diff in
   // tests/performance-module-access.test.ts.
   PERFORMANCE_MANAGEMENT: null,
+  // Same reasoning: an access role, held alongside a real job.
+  PERFORMANCE_PUBLISHER: null,
   CEO: null, // Direction = governance, not a department
   COMPLIANCE_HSSE: null, // cross-company audit/compliance
   CLIENT_USER: null, // external portal label — never staff

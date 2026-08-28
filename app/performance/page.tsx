@@ -14,10 +14,10 @@ import { PageHeader } from "@/components/ui/page-header";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import {
+  dakarToday,
   monthPeriod,
   collaboratorPerformance,
-  ICTD_TERMS_CAPTURED,
-  ICTD_TERMS_MISSING,
+  ICTD_TERMS,
   INDICATOR_READINESS,
 } from "@/lib/performance/read";
 
@@ -44,7 +44,7 @@ export default async function PerformanceOverviewPage({
   const canManage = hasPermission(permissions, "performance:manage");
 
   const sp = (await searchParams) ?? {};
-  const period = monthPeriod(sp.mois ?? new Date().toISOString().slice(0, 10));
+  const period = monthPeriod(sp.mois ?? dakarToday());
   const rows = await collaboratorPerformance(user.tenantId, period);
 
   const dossiers = rows.reduce((a, r) => a + r.dossierCount, 0);
@@ -89,30 +89,19 @@ export default async function PerformanceOverviewPage({
           <div className="surface p-5">
             <h2 className="text-sm font-semibold text-navy-900">Base de calcul</h2>
             <p className="mt-2 text-xs text-slate-500">
-              L&apos;ICTD par dossier compte sept termes. La plateforme en saisit aujourd&apos;hui
-              cinq ; les deux autres n&apos;ont pas encore de source par dossier, et les valeurs
-              affichées sont donc une <strong>base partielle</strong>.
+              L&apos;ICTD par dossier compte sept termes, et la plateforme les alimente tous : cinq
+              par la saisie douanière gouvernée, deux par dérivation — les factures commerciales
+              vérifiées du dossier et les cotations réellement envoyées au client.
             </p>
-            <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <p className="text-[11px] font-medium uppercase tracking-wide text-teal-700">Saisis</p>
-                <ul className="mt-1 space-y-0.5 text-xs text-slate-600">
-                  {ICTD_TERMS_CAPTURED.map((t) => (
-                    <li key={t}>{t}</li>
-                  ))}
-                </ul>
-              </div>
-              <div>
-                <p className="text-[11px] font-medium uppercase tracking-wide text-amber-700">
-                  Non saisis
-                </p>
-                <ul className="mt-1 space-y-0.5 text-xs text-slate-600">
-                  {ICTD_TERMS_MISSING.map((t) => (
-                    <li key={t}>{t}</li>
-                  ))}
-                </ul>
-              </div>
-            </div>
+            <ul className="mt-3 grid grid-cols-1 gap-0.5 text-xs text-slate-600 sm:grid-cols-2">
+              {ICTD_TERMS.map((t) => (
+                <li key={t}>{t}</li>
+              ))}
+            </ul>
+            <p className="mt-3 text-[11px] text-slate-400">
+              Une facture commerciale déposée mais pas encore vérifiée ne compte pas encore : elle
+              comptera à la vérification. Les rapports publiés sont figés et ne bougent pas.
+            </p>
           </div>
         </>
       )}

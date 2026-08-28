@@ -154,6 +154,7 @@ export const TENANT_SCOPED_TABLES = new Set<string>([
   "hr_leave_request",
   "hr_attendance_day",
   "hr_calendar_day",
+  "performance_report",
   // HR-6 performance (migration 78)
   "hr_performance_cycle",
   "hr_competency",

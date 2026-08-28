@@ -748,7 +748,31 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     // businessProfile. The role existing is what makes it appear in the
     // assignment picker; holding it stays an explicit act.
     requiredForEveryTenant: false,
-    permissions: [...BASE, "performance:read", "performance:manage"],
+    permissions: [...BASE, "performance:read", "performance:manage", "performance:report:create"],
+  },
+  {
+    // Publication des rapports de performance — the second half of the access
+    // model, and deliberately its own role.
+    //
+    // Reading the indicators and making a set of numbers the company's official
+    // record of a period are different acts. Since the administration screen
+    // grants ROLES rather than individual permissions, separating them means a
+    // second thin role: someone holds « Gestion de la Performance » to study
+    // the data and this one to freeze a report, and Effitrans decides per
+    // person whether those are the same someone.
+    //
+    // Three permissions. It publishes; it does not administer, and it does not
+    // even read the module on its own — a publisher who should also study the
+    // figures holds both roles, which is exactly the question the two-role
+    // model puts in front of whoever assigns them.
+    key: "PERFORMANCE_PUBLISHER",
+    labelFr: "Publication des rapports de performance",
+    labelEn: "Performance Report Publisher",
+    genericName: "PERFORMANCE_PUBLISHER",
+    description:
+      "Access role authorizing publication of official management performance reports. Held in addition to a job role; confers no operational authority.",
+    requiredForEveryTenant: false,
+    permissions: [...BASE, "performance:report:publish"],
   },
 ];
 

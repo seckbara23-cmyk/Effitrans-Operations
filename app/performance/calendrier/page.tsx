@@ -12,6 +12,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { listCalendarDays } from "@/lib/hr/calendar-actions";
+import { dakarToday } from "@/lib/performance/period";
 import { CalendarEditor } from "@/components/performance/calendar-editor";
 
 export const metadata: Metadata = { title: "Calendrier de travail" };
@@ -29,7 +30,7 @@ export default async function CalendarPage({
 
   const sp = (await searchParams) ?? {};
   const parsed = Number(sp.annee);
-  const year = Number.isInteger(parsed) && parsed > 2000 ? parsed : new Date().getUTCFullYear();
+  const year = Number.isInteger(parsed) && parsed > 2000 ? parsed : Number(dakarToday().slice(0, 4));
 
   // listCalendarDays asserts hr:read itself and returns [] otherwise. Saying so
   // beats rendering an empty calendar that looks like an empty year.

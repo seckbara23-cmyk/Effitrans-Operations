@@ -525,6 +525,10 @@ export const AuditActions = {
   // fields (salary/national-ID/medical) do not exist to log. Account
   // linking/unlinking is audited without asserting any grant (it grants nothing).
   // D3 — the working-day calendar is KPI time-base data; its maintenance is audited.
+  // Slice 1 — the management report lifecycle.
+  PERFORMANCE_REPORT_CREATED: "performance.report.created",
+  PERFORMANCE_REPORT_SUBMITTED: "performance.report.submitted",
+  PERFORMANCE_REPORT_PUBLISHED: "performance.report.published",
   HR_CALENDAR_DAY_ADDED: "hr.calendar_day.added",
   HR_CALENDAR_DAY_REMOVED: "hr.calendar_day.removed",
   HR_EMPLOYEE_CREATED: "hr.employee.created",

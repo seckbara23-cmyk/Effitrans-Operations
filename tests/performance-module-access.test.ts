@@ -186,8 +186,11 @@ describe("Gestion de la Performance — no operational role is a way in", () => 
   });
 
   it("no operational role acquired performance access by any route", () => {
+    // The two ACCESS roles are the only holders of anything in the namespace,
+    // and they hold disjoint halves of it: study the data, or freeze a report.
+    const ACCESS_ROLES = ["PERFORMANCE_MANAGEMENT", "PERFORMANCE_PUBLISHER"];
     for (const t of TENANT_ROLE_TEMPLATES) {
-      if (t.key === "PERFORMANCE_MANAGEMENT") continue;
+      if (ACCESS_ROLES.includes(t.key)) continue;
       const perf = t.permissions.filter((p) => p.startsWith("performance:"));
       expect(perf, `${t.key} must hold no performance capability`).toEqual([]);
     }
@@ -202,13 +205,22 @@ describe("Gestion de la Performance — the capability diff, exactly", () => {
   // because each is a boundary another phase spent effort establishing.
   const template = TENANT_ROLE_TEMPLATES.find((t) => t.key === "PERFORMANCE_MANAGEMENT")!;
 
-  it("introduces exactly four permissions — two module, two profile baseline", () => {
+  it("introduces exactly five permissions — three module, two profile baseline", () => {
+    // Slice 1 adds report DRAFTING to this role, because preparing the analysis
+    // is the working half of the module. PUBLISHING is deliberately absent —
+    // see the publisher-separation block below.
     expect([...template.permissions].sort()).toEqual([
       "performance:manage",
       "performance:read",
+      "performance:report:create",
       "profile:read:self",
       "profile:update:self",
     ]);
+  });
+
+  it("it can DRAFT a report but not publish one", () => {
+    expect(template.permissions).toContain("performance:report:create");
+    expect(template.permissions).not.toContain("performance:report:publish");
   });
 
   it("grants no HR authority — D3 keeps the calendar with HR", () => {

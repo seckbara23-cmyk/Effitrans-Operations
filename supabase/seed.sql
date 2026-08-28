@@ -774,6 +774,44 @@ where r.tenant_id = '00000000-0000-0000-0000-000000000001'
   and r.code = 'PERFORMANCE_MANAGEMENT'
 on conflict do nothing;
 
+-- Slice 1 — the management report lifecycle.
+--
+-- Drafting belongs with reading: preparing the analysis IS the working half of
+-- the module. PUBLISHING is separated, because making a set of numbers the
+-- company's official record of a period is a different act from studying them,
+-- and the person who studies them should not become the person who freezes them
+-- merely by holding one role. Since the administration screen grants ROLES, the
+-- separation is a second thin assignable role rather than a permission somebody
+-- would have to hand-attach.
+insert into public.permission (code, module, action, data_scope, description) values
+  ('performance:report:create', 'performance', 'report_create', 'tenant',
+   'Draft a management performance report: create it, edit it while it is a draft, and submit it for review. Confers no authority to publish.'),
+  ('performance:report:publish', 'performance', 'report_publish', 'tenant',
+   'Publish a management performance report, freezing its computed snapshot permanently. Confers no other performance or operational authority.')
+on conflict (code) do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'performance:report:create'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code = 'PERFORMANCE_MANAGEMENT'
+on conflict do nothing;
+
+insert into public.role (id, tenant_id, code, label_fr, label_en) values
+  ('00000000-0000-0000-0000-0000000001a2', '00000000-0000-0000-0000-000000000001',
+   'PERFORMANCE_PUBLISHER', 'Publication des rapports de performance', 'Performance Report Publisher')
+on conflict (tenant_id, code) do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p
+  on p.code in ('profile:read:self', 'profile:update:self', 'performance:report:publish')
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code = 'PERFORMANCE_PUBLISHER'
+on conflict do nothing;
+
 -- C-4 — the quotation lead must be able to READ the evidence its own official
 -- step requires. Step 1 (Cotation) requires QUOTATION and QUOTATION_APPROVAL,
 -- and the engine refuses to complete a step on evidence the actor cannot judge.

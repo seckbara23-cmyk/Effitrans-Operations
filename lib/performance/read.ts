@@ -7,15 +7,29 @@
  * `reliabilityStatus` (D2). This module reads rows and calls them. It invents no
  * formula, no threshold and no ranking.
  *
- * HONESTY ABOUT INPUTS is the design constraint. The ICTD dossier formula has
- * seven terms; the platform captures five of them today (the D4 governed
- * elements). NF — nombre de factures fournisseur — and the cotation count have
- * no per-dossier source in the schema: `quotation` is keyed on a request and a
- * client, never on a dossier, and no vendor-invoice table exists. The workbook's
- * own blank rule coerces an empty NF to zero, so the arithmetic is correct; but
- * a figure computed from five of seven inputs must SAY so, or management will
- * read a partial base as a complete one. Every row therefore carries
- * `inputsCaptured`, and the UI renders « base partielle » where it is short.
+ * ALL SEVEN ICTD TERMS ARE SOURCED (Q1 ratified 2026-08-28). Five come from the
+ * D4 governed capture; the last two are derived from data the platform already
+ * owned, which is why they needed no new field:
+ *
+ *   NF — the dossier's COMMERCIAL_INVOICE documents in a VERIFIED state. NOT
+ *   VENDOR_INVOICE: that is « facture tierce payable », a third-party payable
+ *   Effitrans owes, and it belongs to ICAM's NFACT. A commercial invoice is the
+ *   exporter's invoice for the goods, it gates customs, and each one is
+ *   declaration lines a declarant must file — which is what an Indicateur de
+ *   Charge de Travail DÉCLARANT measures at 0,50 per facture. An earlier draft
+ *   of this module named the wrong type; the frozen source map named the right
+ *   one all along.
+ *
+ *   Cotations — quotations of the dossier's originating request whose `sent_at`
+ *   is set. A timestamp, not a status: it states that the quote was actually
+ *   transmitted to the client, so drafts, pending validation, validated-but-
+ *   never-sent and cancelled-before-send are excluded by construction rather
+ *   than by a status list somebody must remember to maintain. A quote that was
+ *   sent and later superseded or declined still counts — the work was done.
+ *
+ * Uploaded-but-unverified commercial invoices deliberately do NOT count yet, so
+ * a live ICTD can rise when verification lands. Published reports freeze, so
+ * history never moves under a reader; only the live view does.
  *
  * ICAM and IPAM are deliberately absent from this file. Their inputs — claims
  * and imputability registers, critical incidents, the satisfaction survey — do
@@ -23,6 +37,7 @@
  * which is worse than an empty tab that names what is missing.
  */
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
+import { isVerified } from "@/lib/documents/doctrine";
 import {
   computeIctdDossier,
   type IctdDossierInput,
@@ -33,46 +48,38 @@ import {
 import { isDeclarationType, type DeclarationType } from "./declaration-type";
 import { reliabilityStatus, type ReliabilityStatus } from "./reliability";
 import { workedDaysInPeriod, delaiJoursOuvres, type ApprovedLeave } from "./working-days";
+import type { PerformancePeriod } from "./period";
 
-/** The seven ICTD terms, and which of them the platform can currently source. */
-export const ICTD_TERMS_CAPTURED = [
+export type { PerformancePeriod } from "./period";
+export { monthPeriod, quarterPeriod, yearPeriod, customPeriod, resolvePeriod, dakarToday } from "./period";
+
+/** The seven ICTD terms. All are sourced; the list is what a report cites. */
+export const ICTD_TERMS = [
+  "NF (factures commerciales vérifiées)",
   "NPSH (positions SH)",
   "CCT (origine du classement tarifaire)",
   "CDP (type de déclaration)",
   "U_DPI (DPI)",
   "U_TE (titre d'exonération)",
-] as const;
-export const ICTD_TERMS_MISSING = [
-  "NF (nombre de factures fournisseur)",
-  "Nombre de cotations",
+  "Cotations envoyées",
 ] as const;
 
-export type PerformancePeriod = { startISO: string; endISO: string; label: string };
-
-/** The month containing `anchorISO`, as an inclusive ISO span. */
-export function monthPeriod(anchorISO: string): PerformancePeriod {
-  const [y, m] = anchorISO.split("-").map(Number);
-  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
-  const mm = String(m).padStart(2, "0");
-  const MONTHS_FR = [
-    "janvier", "février", "mars", "avril", "mai", "juin",
-    "juillet", "août", "septembre", "octobre", "novembre", "décembre",
-  ];
-  return {
-    startISO: `${y}-${mm}-01`,
-    endISO: `${y}-${mm}-${String(last).padStart(2, "0")}`,
-    label: `${MONTHS_FR[m - 1]} ${y}`,
-  };
-}
+/** How many of the seven a dossier must have before it is a COMPLETE basis. */
+export const ICTD_TERM_COUNT = ICTD_TERMS.length;
 
 export type IctdDossierRow = {
   fileId: string;
   fileNumber: string;
+  clientId: string | null;
   declarantId: string | null;
   /** null when CDP or DPI is not captured — the workbook's blank, never a zero. */
   ictd: number | null;
   /** How many of the seven ICTD terms this dossier could actually source. */
   inputsCaptured: number;
+  /** NF — verified commercial invoices on the dossier. */
+  invoiceCount: number;
+  /** Cotations actually sent to the client for this dossier's request. */
+  cotationCount: number;
   declarationType: DeclarationType | null;
   shPositionCount: number | null;
   /** ICTD-D11, in working days, or null when a date is missing. */
@@ -141,6 +148,83 @@ async function loadApprovedLeave(
 }
 
 /**
+ * NF per dossier — VERIFIED commercial invoices (Q1 ratified).
+ *
+ * `isVerified` is the platform's shared doctrine and is alias-aware: legacy rows
+ * say APPROVED, and a document consumed as evidence reads CONSUMED_AS_EVIDENCE.
+ * Re-implementing "verified" here as `status = 'VERIFIED'` would silently
+ * undercount both, so the doctrine is imported rather than restated.
+ */
+async function verifiedCommercialInvoiceCounts(
+  tenantId: string,
+  fileIds: readonly string[],
+): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+  if (fileIds.length === 0) return counts;
+  const admin = getAdminSupabaseClient();
+  const { data } = await admin
+    .from("document")
+    .select("file_id, status")
+    .eq("tenant_id", tenantId)
+    .eq("type_code", "COMMERCIAL_INVOICE")
+    .is("deleted_at", null)
+    .in("file_id", fileIds);
+  for (const row of data ?? []) {
+    if (!isVerified(String(row.status))) continue;
+    const id = row.file_id as string;
+    counts.set(id, (counts.get(id) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/**
+ * Cotations per dossier — quotations of the dossier's ORIGINATING REQUEST that
+ * were actually sent (Q1 ratified).
+ *
+ * Two hops, and both matter. `converted_file_id` finds the quotation that became
+ * the dossier; its `request_id` then gathers the siblings, because successive
+ * quotes for the same client need are each a unit of work — U_COT is 1,00 *per
+ * cotation*, not per dossier. `sent_at is not null` is the qualifying fact: a
+ * timestamp that says the quote reached the client, which no status list can
+ * drift away from.
+ */
+async function sentCotationCounts(
+  tenantId: string,
+  fileIds: readonly string[],
+): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+  if (fileIds.length === 0) return counts;
+  const admin = getAdminSupabaseClient();
+
+  const { data: converted } = await admin
+    .from("quotation")
+    .select("request_id, converted_file_id")
+    .eq("tenant_id", tenantId)
+    .in("converted_file_id", fileIds);
+  if (!converted || converted.length === 0) return counts;
+
+  // request_id -> the dossier it produced. A request converts once, so this is
+  // a function rather than a grouping.
+  const fileOfRequest = new Map<string, string>();
+  for (const r of converted) {
+    fileOfRequest.set(r.request_id as string, r.converted_file_id as string);
+  }
+
+  const { data: siblings } = await admin
+    .from("quotation")
+    .select("request_id, sent_at")
+    .eq("tenant_id", tenantId)
+    .in("request_id", [...fileOfRequest.keys()])
+    .not("sent_at", "is", null);
+  for (const q of siblings ?? []) {
+    const fileId = fileOfRequest.get(q.request_id as string);
+    if (!fileId) continue;
+    counts.set(fileId, (counts.get(fileId) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/**
  * Per-dossier ICTD for the period. The declarant is `customs_record.created_by`
  * — whoever captured the declaration — which is the same attribution D4's
  * maker/checker separation is built on.
@@ -164,10 +248,11 @@ export async function ictdDossiers(
   const fileIds = [...new Set(data.map((r) => r.file_id as string))];
   const { data: files } = await admin
     .from("operational_file")
-    .select("id, file_number")
+    .select("id, file_number, client_id")
     .eq("tenant_id", tenantId)
     .in("id", fileIds);
   const numberOf = new Map((files ?? []).map((f) => [f.id as string, f.file_number as string]));
+  const clientOf = new Map((files ?? []).map((f) => [f.id as string, (f.client_id as string | null) ?? null]));
 
   // A record is « à revalider » when it was corrected and is not certified.
   const { data: corrections } = await admin
@@ -177,7 +262,11 @@ export async function ictdDossiers(
     .in("customs_id", data.map((r) => r.id as string));
   const corrected = new Set((corrections ?? []).map((c) => c.customs_id as string));
 
-  const calendar = await loadCalendar(tenantId, period);
+  const [calendar, nfCounts, cotationCounts] = await Promise.all([
+    loadCalendar(tenantId, period),
+    verifiedCommercialInvoiceCounts(tenantId, fileIds),
+    sentCotationCounts(tenantId, fileIds),
+  ]);
 
   return data.map((r) => {
     const declarationType = isDeclarationType(String(r.declaration_type ?? ""))
@@ -187,11 +276,13 @@ export async function ictdDossiers(
     const tariffOrigin = (r.tariff_classification_origin as TariffClassificationOrigin | null) ?? "CLIENT";
     const exemption = (r.exemption_title_origin as ExemptionTitleOrigin | null) ?? "SANS_OBJET";
 
+    const fileId = r.file_id as string;
+    const nf = nfCounts.get(fileId) ?? 0;
+    const cotations = cotationCounts.get(fileId) ?? 0;
+
     const input: IctdDossierInput = {
-      // NF and cotations have no per-dossier source: the workbook's N()
-      // coercion makes them 0, and `inputsCaptured` says the base is partial.
-      invoiceCount: null,
-      cotationCount: null,
+      invoiceCount: nf,
+      cotationCount: cotations,
       shPositionCount: r.sh_position_count as number | null,
       tariffOrigin,
       declarationType,
@@ -199,20 +290,29 @@ export async function ictdDossiers(
       exemptionTitleOrigin: exemption,
     };
 
+    // All seven terms, and the honest meaning of each: a term is CAPTURED when
+    // the platform could source it for this dossier. NF and cotations are
+    // always sourceable — the query ran — so a zero there is a measured zero,
+    // not an absence. The five governed elements can genuinely be unrecorded.
     const captured = [
+      true, // NF — counted
       r.sh_position_count !== null,
       r.tariff_classification_origin !== null,
       declarationType !== null,
       dpiRegime !== null,
       r.exemption_title_origin !== null,
+      true, // cotations — counted
     ].filter(Boolean).length;
 
     return {
-      fileId: r.file_id as string,
-      fileNumber: numberOf.get(r.file_id as string) ?? "—",
+      fileId,
+      fileNumber: numberOf.get(fileId) ?? "—",
+      clientId: clientOf.get(fileId) ?? null,
       declarantId: (r.created_by as string | null) ?? null,
       ictd: computeIctdDossier(input),
       inputsCaptured: captured,
+      invoiceCount: nf,
+      cotationCount: cotations,
       declarationType,
       shPositionCount: (r.sh_position_count as number | null) ?? null,
       delaiJoursOuvres: delaiJoursOuvres(
