@@ -25,13 +25,13 @@ below returns blank when `B` is blank (blank ≠ 0 ≠ success).
 | ICTD-D02 | Déclarant | constant per sheet (`"BAMBA"` …) | col E | §13.2 |
 | ICTD-D03 | Compteur dossier | `IF(B="","",1)` | col AE | — |
 | ICTD-D04 | **CCT** — coefficient classement tarifaire | `VLOOKUP(L, PARAMETRES!H2:I3, 2, FALSE)` → CLIENT 0,60 · EFFITRANS 1,20 | col AF | §5.2 |
-| ICTD-D05 | **CDP** — coefficient type de déclaration | `VLOOKUP(N, PARAMETRES!E2:F6, 2, FALSE)` → SIMPLE 1,00 · APE 1,40 · DEP 1,30 · **DPE 1,30 (workbook-only)** · OG 1,50 | col AG | §5.2 + DV-01 |
+| ICTD-D05 | **CDP** — coefficient type de déclaration | SIMPLE 1,00 · APE 1,40 · **DEP 1,30** · OG 1,50 — exactly four types. **D1 RATIFIED 2026-08-28**: DPE was a historical workbook label for DEP, never a type; it is accepted only at the import boundary and normalized DPE → DEP (`lib/performance/declaration-type.ts`) | col AG | §5.2 + DV-01 closed |
 | ICTD-D06 | **U_DPI** | `VLOOKUP(AA, PARAMETRES!K2:L5, 2, FALSE)` → SANS DPI 0 · CLIENT-EXPEDITION 0 · CLIENT-GLOBALE 0,50 · EFFITRANS 1,00 | col AH | §5.2 |
 | ICTD-D07 | **U_TE** | `IF(K="EFFITRANS", B12, 0)` → 0,80 if EFFITRANS, else 0 (CLIENT or SANS OBJET) | col AI | §5.2 |
 | ICTD-D08 | **U_COT** | `IF(W="",0, W × B11)` → 1,00 per cotation; empty count = 0 | col AJ | §5.2 |
 | ICTD-D09 | **UTD BASE** (bloc principal) | `ROUND(UD + UF×N(NF) + UA×N(NPSH)×N(CCT), 2)` = `ROUND(B8 + B9×I + B10×J×AF, 2)` | col AK | §5.2 |
 | ICTD-D10 | **ICTD dossier** | `IF(OR(U_DPI="",CDP=""),"", ROUND(AK×AG + AH + AI + AJ, 2))` | col AL | §5.2, §5.4 |
-| ICTD-D11 | Délai de traitement (jours ouvrés) | `IF(OR(Q="",V=""),"", MAX(0, NETWORKDAYS.INTL(Q, V, 1, FERIES!A2:A50) − 1))` — Q = DOSSIER COMPLET, V = DATE BAE; weekend Sat–Sun; same-day = 0 | col AM | §13.3 |
+| ICTD-D11 | Délai de traitement (jours ouvrés) | `IF(OR(Q="",V=""),"", MAX(0, NETWORKDAYS.INTL(Q, V, 1, FERIES!A2:A50) − 1))` — Q = DOSSIER COMPLET, V = DATE BAE; weekend Sat–Sun; same-day = 0. **D3 RATIFIED 2026-08-28**: FERIES = the HR-maintained calendar (`hr_calendar_day`: jours fériés + fermetures exceptionnelles). Employee LEAVE never enters this per-dossier formula — leave affects only per-agent capacity (jours actifs, demi-journée = 0,5). Engine: `lib/performance/working-days.ts` | col AM | §13.3 |
 | ICTD-D12 | Respect SLA (dossier) | `IF(OR(AM="",AD=""),"", −−(AM ≤ AD))` — AD = SLA cible saisi | col AN | §5.3 |
 | ICTD-D13 | Sans erreur (dossier) | `IF(X="","", −−(X="NON"))` | col AO | §5.3 |
 | ICTD-D14 | Sans redressement (dossier) | `IF(AB="","", −−(AB="NON"))` | col AP | §5.3 |
@@ -70,10 +70,10 @@ below returns blank when `B` is blank (blank ≠ 0 ≠ success).
 | ICTD-R13 | FP moyen | same evaluated-only average over AR | N | §6.3 |
 | ICTD-R14 | **Score global** | `IF(OR(I="",N=""),"", ROUND(0,40×I + 0,60×N×100, 1))` | O | §6.4 |
 | ICTD-R15 | Niveau | bands 90/75/60/40 → 5 labels | P | §11.3 |
-| ICTD-R16 | **Statut** | `B=0 → "Aucune donnée"; T<80% → "Non classé"; B<10 → "Provisoire"; else "Classé"` | Q | §11.1 + DV-15 |
+| ICTD-R16 | **Statut de fiabilité** | `B=0 → "Aucune donnée"; B<10 → "Provisoire"; else "Classé"` — **D2 RATIFIED 2026-08-28**: the `T<80% → "Non classé"` rung is RETIRED (it policed manual spreadsheet completion; the platform auto-populates). The volume rung stays: it is statistical reliability, not cell completeness (`lib/performance/reliability.ts`) | Q | §11.1 |
 | ICTD-R17 | Contribution ajustée (mensuelle) | `SUMIFS(tab!AS, in period)` | R | §5.3 |
 | ICTD-R18 | ICTD moyen / dossier | `IF(B=0,"", E/B)` | S | §5.3 |
-| ICTD-R19 | **Couverture qualité** | `COUNT(rows in period with numeric FP) ÷ B` — a dossier counts as covered only when **all four** quality inputs are filled | T | §10.1 |
+| ICTD-R19 | ~~Couverture qualité~~ | **RETIRED (D2, 2026-08-28)** as a status feeder — it existed to police manual completion. The évalué/éligible semantics survive only inside score denominators (evaluated-only rates) | T | §10.1 |
 | ICTD-R20 | Part de charge | `E ÷ Σ(E5:E10)` | U | §5.3 |
 | ICTD-R21 | Rang | `IF(Q≠"Classé","", 1 + Σ(Classé & score>mine))` — competition ranking, Classé only | V | §11.1 |
 
@@ -134,9 +134,9 @@ filled — open dossiers are tracked but not scored (§14.3).
 | AM-R21 | **C** | all 3 → `0,40/0,35/0,25` | U | §8.5 |
 | AM-R22..R24 | ECOUT/ECTRL/EFACT | AVERAGEIFS | V..X | §8.6 |
 | AM-R25 | **E** | all 3 → `0,50/0,30/0,20` | Y | §8.6 |
-| AM-R26 | **Couverture globale** | `Σ(13 coverage flags) ÷ Σ(13 eligible counts)` — eligible = coverage cell non-blank (N/A excluded); **13 sub-indicators pooled, P excluded** | Z | §10.1 |
+| AM-R26 | ~~Couverture globale~~ | **RETIRED (D2, 2026-08-28)** as a headline metric and status feeder. Eligible/évalué semantics remain inside score denominators; GOV-02/GOV-03 are unaffected | Z | §10.1 |
 | AM-R27 | Incident critique | echo EQUIPE M | AA | §11.2 |
-| AM-R28 | **Statut de fiabilité** | ladder: `C=0 → Aucune donnée`; `EQUIPE O="DOUBLON" → Non classé`; `AA="Oui" → Revue managériale — non classé`; `C<10 → Provisoire`; `Z<80 % → Non classé`; `G="" → Provisoire`; else `Classé` | AB | §11.2 + DV-15 |
+| AM-R28 | **Statut de fiabilité** | `C=0 → Aucune donnée`; `AA="Oui" → Revue managériale — non classé`; `C<10 → Provisoire`; else `Classé` — **D2 RATIFIED 2026-08-28**: the `Z<80%` coverage rung is RETIRED; the `DOUBLON` rung is superseded by construction (AM×month uniqueness is a database constraint, not a status); the pilot `G=""` rung is carried by pilot-state semantics, not the ladder | AB | §11.2 |
 | AM-R29 | **IPAM** | **all five** dimensions present → `0,25×P + 0,25×Q + 0,20×D + 0,20×C + 0,10×E` | AC | §8.1 |
 | AM-R30 | Niveau | bands 90/75/60/40 | AD | §11.3 |
 | AM-R31 | Rang | same month, Classé only, competition rank | AE | §11.2 |
@@ -155,9 +155,9 @@ filled — open dossiers are tracked but not scored (§14.3).
 | GOV-03 | **N/A excluded only under control** — « Non applicable » removes the item from the denominator; it is a selectable, auditable state, not a blank | AM coverage `=""` on N/A; list `Oui_Non_NonEval_NA` | §3.3, §10.1 |
 | GOV-04 | **Imputability before penalty** — CRECL truth table; QERR is « erreur imputable »; NINC adds charge only when NOT imputable; Imputabilité list has « En analyse » (→ not yet a fault) | AM-S CRECL/NINC; LISTES F | §3.4, §10.2 |
 | GOV-05 | **External causes not auto-attributed** — `Cause_Retard` list (9 causes incl. client, fournisseur, transporteur, administration, système, force majeure) is recorded for validation; no formula converts an external cause into a personal penalty | SAISIE L + K (input-only) | §3.4 |
-| GOV-06 | **Minimum dossiers = 10** (`MIN_DOSSIERS` both workbooks) → below: Provisoire | ICTD-R16, AM-R28 | §11.1/11.2 |
-| GOV-07 | **Coverage threshold = 80 %** (`COUVERTURE_MIN`/`SEUIL_COUVERTURE`) → below: Non classé | ICTD-R16/R19, AM-R26/R28 | §10.1 |
-| GOV-08 | **Status ladder** incl. Aucune donnée / Provisoire / Non classé / Revue managériale (AM only) / Classé; duplicate AM×month → Non classé | ICTD-R16, AM-R28, AM-E01 | §11 |
+| GOV-06 | **Minimum dossiers = 10** (`MIN_DOSSIERS`) → below: Provisoire — **KEPT by D2 ruling**: reliability of interpretation, independent of manual entry | ICTD-R16, AM-R28 | §11.1/11.2 |
+| GOV-07 | ~~Coverage threshold 80 %~~ | **RETIRED (D2, 2026-08-28)** — existed to encourage manual spreadsheet completion; the platform auto-populates. Q2 (ladder precedence) is void by elimination | §10.1 |
+| GOV-08 | **Status ladder** — Aucune donnée / Provisoire / Revue managériale / Classé (« Non classé »-par-couverture retired by D2; duplicate AM×month prevented by uniqueness constraint, not status) | ICTD-R16, AM-R28 | §11 |
 | GOV-09 | **Critical incident blocks classification** (AM): « Revue managériale — non classé » | AM-R28 | §11.2 |
 | GOV-10 | **Ranking eligibility** — Classé only; same-period comparison (AM rank filters on identical month) | ICTD-R21, AM-R31 | §11.2 |
 | GOV-11 | **Parameters are governed** — single PARAMETRES source, named ranges, change requires justification/date/validation/version/non-retroactivity. ⚠ Excel itself recomputes history on change (no version pinning) — a platform implementation MUST pin parameter versions per period (the platform already owns this pattern: workflow-policy pinning) | PARAMETRES sheets | §17.2 |

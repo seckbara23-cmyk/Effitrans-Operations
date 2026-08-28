@@ -15,6 +15,11 @@ termes métier ; les références techniques sont en annexe.
 
 ## Décision 1 — Le type de déclaration « DPE »
 
+> **✅ TRANCHÉ le 2026-08-28** — DPE n'est **pas** un type distinct : certains déclarants
+> écrivaient DPE au lieu de DEP et le classeur le tolérait pour protéger sa formule.
+> La plateforme utilise **DEP uniquement, coefficient 1,30**. Les données historiques
+> étiquetées DPE sont normalisées **DPE → DEP** à la frontière d'import.
+
 **Ce qu'Effitrans doit décider :** le type « DPE » fait-il partie des types de
 déclaration officiels, et si oui, avec quel coefficient de charge ?
 
@@ -53,6 +58,12 @@ déclarants et le coefficient appliqué. Rien d'autre ne change.
 
 ## Décision 2 — Priorité des statuts de fiabilité
 
+> **✅ TRANCHÉ le 2026-08-28** — le mécanisme de couverture (< 80 %) existait pour
+> encourager la saisie manuelle complète ; la plateforme automatisant ces données,
+> il est **supprimé**. La règle des **10 dossiers minimum (Provisoire)** est
+> **conservée** (fiabilité d'interprétation), ainsi que « incident critique →
+> Revue managériale ». La question de priorité disparaît avec le barreau supprimé.
+
 **Ce qu'Effitrans doit décider :** quand un collaborateur a À LA FOIS moins de
 10 dossiers ET une couverture de données inférieure à 80 %, quel statut s'affiche ?
 
@@ -87,6 +98,13 @@ pour déclarants et Account Managers. Aucun recalcul d'historique.
 
 ## Décision 3 — Calendrier officiel des jours ouvrés
 
+> **✅ TRANCHÉ le 2026-08-28** — les calculs de performance/capacité par employé
+> utilisent les **jours réellement travaillés** : on exclut les jours fériés
+> officiels du Sénégal, les fermetures exceptionnelles Effitrans et les congés de
+> l'employé ; une demi-journée de congé compte **0,5** jour. **Les RH possèdent et
+> maintiennent le calendrier.** La formule figée du délai par dossier (ICTD-D11)
+> n'est **pas** modifiée par les congés.
+
 **Ce qu'Effitrans doit décider :**
 1. Quel est le **calendrier officiel** des jours non ouvrés : jours fériés légaux du
    Sénégal uniquement, ou également les fermetures propres à Effitrans (ponts,
@@ -120,6 +138,13 @@ fiable ».
 ---
 
 ## Décision 4 — Les cinq faits douaniers à capter : source, preuve, validation, correction
+
+> **✅ TRANCHÉ le 2026-08-28** — « Déclarant saisit → Chef de Transit valide →
+> corrections après validation tracées. » Le Chef de Transit est autorisé à corriger
+> une information validée, avec **motif obligatoire**, traçabilité immuable
+> ancien → nouveau / acteur / horodatage, et événement `CUSTOMS_CORRECTED`.
+> L'information corrigée peut ensuite être **revalidée par le Chef de Transit ou
+> le Déclarant en Douane**, sous les contrôles maker≠checker existants.
 
 La plateforme sait déjà fournir la majorité des données du dispositif (cotations,
 BAE, documents, autorisations de dépense, factures fournisseurs, horodatages…).

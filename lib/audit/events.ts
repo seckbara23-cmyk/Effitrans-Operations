@@ -80,6 +80,9 @@ export const AuditActions = {
   CUSTOMS_UPDATED: "customs.updated",
   CUSTOMS_STATUS_CHANGED: "customs.status_changed",
   CUSTOMS_DECLARED: "customs.declared",
+  // D4 — the governed correction door and its recertification.
+  CUSTOMS_CORRECTED: "customs.corrected",
+  CUSTOMS_REVALIDATED: "customs.revalidated",
   CUSTOMS_RELEASED: "customs.released",
   CUSTOMS_BLOCKED: "customs.blocked",
   CUSTOMS_DELETED: "customs.deleted",
@@ -521,6 +524,9 @@ export const AuditActions = {
   // (phone/email), NEVER emergency-contact values, and the excluded-forever
   // fields (salary/national-ID/medical) do not exist to log. Account
   // linking/unlinking is audited without asserting any grant (it grants nothing).
+  // D3 — the working-day calendar is KPI time-base data; its maintenance is audited.
+  HR_CALENDAR_DAY_ADDED: "hr.calendar_day.added",
+  HR_CALENDAR_DAY_REMOVED: "hr.calendar_day.removed",
   HR_EMPLOYEE_CREATED: "hr.employee.created",
   HR_EMPLOYEE_UPDATED: "hr.employee.updated",
   HR_EMPLOYEE_STATUS_CHANGED: "hr.employee.status_changed",

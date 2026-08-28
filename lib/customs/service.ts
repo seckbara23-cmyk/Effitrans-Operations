@@ -38,6 +38,11 @@ type RecordRow = {
   status: string;
   required: boolean;
   declaration_number: string | null;
+  sh_position_count: number | null;
+  declaration_type: string | null;
+  dpi_regime: string | null;
+  exemption_title_origin: string | null;
+  tariff_classification_origin: string | null;
   customs_office: string | null;
   regime: string | null;
   declaration_date: string | null;
@@ -63,6 +68,12 @@ function toRecord(r: RecordRow): CustomsRecord {
     inspectionStatus: r.inspection_status as InspectionStatus,
     externalRef: r.external_ref,
     notes: r.notes,
+    // D4 — governed elements; null = not yet captured, never a default.
+    shPositionCount: r.sh_position_count ?? null,
+    declarationType: r.declaration_type ?? null,
+    dpiRegime: r.dpi_regime ?? null,
+    exemptionTitleOrigin: r.exemption_title_origin ?? null,
+    tariffClassificationOrigin: r.tariff_classification_origin ?? null,
     // MAYA-P0.7-A — QC N°3. Null means NOT YET ASSESSED, which is deliberately
     // distinct from every recorded outcome: an unassessed file is neither
     // receivable nor refused, and quality reporting must tell the three apart.
@@ -90,7 +101,7 @@ function toRecord(r: RecordRow): CustomsRecord {
 }
 
 const RECORD_COLS =
-  "id, file_id, status, required, declaration_number, customs_office, regime, declaration_date, bae_reference, release_date, inspection_status, external_ref, notes, receivability_status, receivability_at, receivability_note, provider_code, provider_synced_at, reviewed_at, reviewer:reviewed_by(email), gainde_registered_at, gainde_registrar:gainde_registered_by(email), attachment_completed_at, attachment_systems, attachment_recorder:attachment_completed_by(email)";
+  "id, file_id, status, required, declaration_number, sh_position_count, declaration_type, dpi_regime, exemption_title_origin, tariff_classification_origin, customs_office, regime, declaration_date, bae_reference, release_date, inspection_status, external_ref, notes, receivability_status, receivability_at, receivability_note, provider_code, provider_synced_at, reviewed_at, reviewer:reviewed_by(email), gainde_registered_at, gainde_registrar:gainde_registered_by(email), attachment_completed_at, attachment_systems, attachment_recorder:attachment_completed_by(email)";
 
 /** The (single) customs record for a dossier, or null. */
 export async function getCustomsRecord(fileId: string): Promise<CustomsRecord | null> {

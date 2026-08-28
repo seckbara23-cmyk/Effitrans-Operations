@@ -46,6 +46,8 @@ const doc = (typeCode: string, status: string, id = String(Math.random())): Docu
 });
 
 const customs = (over: Partial<CustomsRecord> = {}): CustomsRecord => ({
+  shPositionCount: null, declarationType: null, dpiRegime: null,
+  exemptionTitleOrigin: null, tariffClassificationOrigin: null,
   id: "c1", fileId: "f1", status: "RELEASED", required: true,
   declarationNumber: "IM4-2026-88123", customsOffice: "DKR", regime: null,
   declarationDate: "2026-08-10T08:00:00.000Z", baeReference: "BAE-2026-556",

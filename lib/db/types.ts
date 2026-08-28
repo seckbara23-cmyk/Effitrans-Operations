@@ -1237,8 +1237,19 @@ export type Database = {
         };
         Relationships: [];
       };
+      customs_correction: {
+        Row: { id: string; tenant_id: string; customs_id: string; file_id: string; corrected_by: string; corrected_at: string; reason: string; changes: Json; validated_by_before: string; validated_at_before: string };
+        Insert: { id?: string; tenant_id: string; customs_id: string; file_id: string; corrected_by: string; reason: string; changes: Json; validated_by_before: string; validated_at_before: string };
+        Update: never;
+        Relationships: [];
+      };
       customs_record: {
         Row: {
+          sh_position_count: number | null;
+          declaration_type: string | null;
+          dpi_regime: string | null;
+          exemption_title_origin: string | null;
+          tariff_classification_origin: string | null;
           id: string;
           tenant_id: string;
           file_id: string;
@@ -1282,6 +1293,11 @@ export type Database = {
           gainde_registered_by: string | null;
         };
         Insert: {
+          sh_position_count?: number | null;
+          declaration_type?: string | null;
+          dpi_regime?: string | null;
+          exemption_title_origin?: string | null;
+          tariff_classification_origin?: string | null;
           id?: string;
           tenant_id: string;
           file_id: string;
@@ -1319,6 +1335,11 @@ export type Database = {
           released_at?: string | null;
         };
         Update: {
+          sh_position_count?: number | null;
+          declaration_type?: string | null;
+          dpi_regime?: string | null;
+          exemption_title_origin?: string | null;
+          tariff_classification_origin?: string | null;
           id?: string;
           tenant_id?: string;
           file_id?: string;
@@ -3871,6 +3892,12 @@ export type Database = {
         Update: { status?: string; submitted_at?: string | null; decision_note?: string | null; evidence_document_id?: string | null };
         Relationships: [];
       };
+      hr_calendar_day: {
+        Row: { id: string; tenant_id: string; day: string; kind: string; label: string; created_by: string | null; created_at: string };
+        Insert: { id?: string; tenant_id: string; day: string; kind: string; label: string; created_by?: string | null };
+        Update: { kind?: string; label?: string };
+        Relationships: [];
+      };
       hr_attendance_day: {
         Row: { id: string; tenant_id: string; employee_id: string; work_date: string; worked_minutes: number; source: string; note: string | null; recorded_by: string | null; recorded_at: string };
         Insert: { id?: string; tenant_id: string; employee_id: string; work_date: string; worked_minutes: number; source?: string; note?: string | null; recorded_by?: string | null };
@@ -4906,6 +4933,22 @@ export type Database = {
       // MAYA-P0.8-A (PG-1) — records the Chef de Transit validation. Enforces
       // maker-checker and actor authority in the database; service_role only.
       record_customs_validation: {
+        Args: { p_customs_id: string; p_actor: string };
+        Returns: Json;
+      };
+      // D4 — the governed correction door: Chef de Transit, motif obligatoire,
+      // old→new computed server-side, validation cleared for recertification.
+      record_customs_correction: {
+        Args: {
+          p_customs_id: string; p_actor: string; p_reason: string;
+          p_sh_position_count: number | null; p_declaration_type: string | null;
+          p_dpi_regime: string | null; p_exemption_title_origin: string | null;
+          p_tariff_classification_origin: string | null;
+        };
+        Returns: Json;
+      };
+      // D4 — recertification after a correction. Chef OR Déclarant; never the corrector.
+      record_customs_revalidation: {
         Args: { p_customs_id: string; p_actor: string };
         Returns: Json;
       };

@@ -892,6 +892,36 @@ jobs:
           fi
           exit $code
 
+      - name: Run D4 customs correction test
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set +e
+          out=$(psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/customs_d4_correction_test.sql 2>&1)
+          code=$?
+          echo "$out"
+          if [ $code -ne 0 ]; then
+            err=$(echo "$out" | grep -m1 -E '^(psql:.*)?ERROR:')
+            note=$(echo "$out" | grep -m1 'D4')
+            echo "::error::D4 customs correction suite failed (psql exit $code). ${err} ${note}"
+          fi
+          exit $code
+
+      - name: Run D3 HR working-day calendar test
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set +e
+          out=$(psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/hr_calendar_day_test.sql 2>&1)
+          code=$?
+          echo "$out"
+          if [ $code -ne 0 ]; then
+            err=$(echo "$out" | grep -m1 -E '^(psql:.*)?ERROR:')
+            note=$(echo "$out" | grep -m1 'D3')
+            echo "::error::D3 HR calendar suite failed (psql exit $code). ${err} ${note}"
+          fi
+          exit $code
+
       - name: Run MAYA-P1.1 GAINDE registration test
         env:
           PGPASSWORD: postgres

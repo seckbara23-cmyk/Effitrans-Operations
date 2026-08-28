@@ -235,3 +235,24 @@ resolve)
 
 Out-of-scope discoveries: none that block D1–D4. Nothing outside this
 workstream was expanded into.
+
+---
+
+## RATIFIED — 2026-08-28 (implementation baseline)
+
+All five business questions came back answered; D1–D4 are CLOSED:
+
+- **BQ-1** — leave applies to **employee capacity only**. The frozen per-dossier
+  délai formula (ICTD-D11) is not changed by leave.
+- **BQ-2** — the **< 10 dossiers** reliability rule **stays** for
+  rankings/interpretation. Only the 80 % coverage mechanism retires.
+- **BQ-3** — **Effitrans exceptional closure days are excluded** from employee
+  capacity, alongside Senegal public holidays and leave.
+- **BQ-4** — the **Chef de Transit corrects** validated customs data, with a
+  mandatory motif, immutable old → new / actor / timestamp traceability and a
+  `CUSTOMS_CORRECTED` event. Revalidation afterwards by the **Chef or the
+  Déclarant en Douane**, under existing maker≠checker controls.
+- **BQ-5** — a half-day of leave counts **0,5** working day.
+
+Implementation of this matrix begins from this ruling; see the commits that
+follow this document for the delivered schema, engines, actions and proofs.

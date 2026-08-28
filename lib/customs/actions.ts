@@ -29,7 +29,7 @@ type Admin = ReturnType<typeof getAdminSupabaseClient>;
 async function loadCustoms(supabase: Admin, id: string, tenantId: string) {
   const { data } = await supabase
     .from("customs_record")
-    .select("id, file_id, status, required, bae_reference, declaration_number, declaration_date, receivability_status, receivability_note, created_by, updated_by, reviewed_at, external_ref")
+    .select("id, file_id, status, required, bae_reference, declaration_number, declaration_date, receivability_status, receivability_note, created_by, updated_by, reviewed_at, reviewed_by, external_ref")
     .eq("id", id)
     .eq("tenant_id", tenantId)
     .is("deleted_at", null)
@@ -161,6 +161,15 @@ export async function updateCustoms(id: string, input: CustomsInput): Promise<Ac
     const gate = await assertControlStep("customs.update", rec.file_id, user.tenantId, user.id);
     if (gate) return { ok: false, error: gate };
   }
+
+  // D4 — certified data does not change here. Once the Chef de Transit has
+  // validated the record, the only door is the governed correction path, which
+  // demands a motif and preserves old → new. Saying so explicitly matters: the
+  // control gate happens to refuse this today because the owning step is
+  // closed by then, but that is a side effect of sequencing, not a statement
+  // about certified data, and it would evaporate the moment a step reopened.
+  if (rec.reviewed_at) return { ok: false, error: "validated_use_correction" };
+
   const { error } = await supabase
     .from("customs_record")
     .update({
@@ -171,6 +180,16 @@ export async function updateCustoms(id: string, input: CustomsInput): Promise<Ac
       inspection_status: input.inspectionStatus ?? "NOT_REQUIRED",
       external_ref: input.externalRef?.trim() || null,
       notes: input.notes?.trim() || null,
+      // D4 — the five governed elements. Entered here by the Déclarant, on the
+      // ordinary step-gated path; `undefined` leaves a value alone so a partial
+      // form never silently erases a captured fact.
+      ...(input.shPositionCount === undefined ? {} : { sh_position_count: input.shPositionCount }),
+      ...(input.declarationType === undefined ? {} : { declaration_type: input.declarationType }),
+      ...(input.dpiRegime === undefined ? {} : { dpi_regime: input.dpiRegime }),
+      ...(input.exemptionTitleOrigin === undefined ? {} : { exemption_title_origin: input.exemptionTitleOrigin }),
+      ...(input.tariffClassificationOrigin === undefined
+        ? {}
+        : { tariff_classification_origin: input.tariffClassificationOrigin }),
       // MAYA-P0.8-B (PG-6) — attribute the EDIT. This is the information whose
       // exactitude the Chef de Transit later certifies, so whoever wrote it
       // must be excluded from validating it.
@@ -520,6 +539,139 @@ export async function recordCustomsValidation(id: string): Promise<ActionResult>
     entity: "customs_record",
     entityId: id,
     after: { reviewed_by: user.id },
+  });
+  revalidate(rec.file_id);
+  return { ok: true, id };
+}
+
+/**
+ * D4 — the governed correction door (RATIFIED 2026-08-28).
+ *
+ * « Toute correction après validation est tracée. » Before this existed,
+ * validated customs data was de-facto permanently immutable: `updateCustoms`
+ * is control-gated to open step states and the owning step is long closed by
+ * validation time. That is not what Effitrans asked for — neither free editing
+ * nor a locked record, but a correction that leaves a trace.
+ *
+ * The Chef de Transit corrects; a motif is obligatory; the RPC reads the OLD
+ * values itself inside the transaction, so what is recorded as "before" cannot
+ * be dictated by the caller. The correction clears the certification — the data
+ * is no longer validated, because it is no longer the data that was validated —
+ * and the record returns to certified through `revalidateCustoms`.
+ */
+export async function correctCustoms(
+  id: string,
+  input: {
+    reason: string;
+    shPositionCount: number | null;
+    declarationType: string | null;
+    dpiRegime: string | null;
+    exemptionTitleOrigin: string | null;
+    tariffClassificationOrigin: string | null;
+  },
+): Promise<ActionResult> {
+  let user;
+  try {
+    user = await assertPermission("customs:correct");
+  } catch {
+    return { ok: false, error: "forbidden" };
+  }
+
+  const reason = input.reason?.trim() ?? "";
+  if (!reason) return { ok: false, error: "reason_required" };
+
+  const supabase = getAdminSupabaseClient();
+  const rec = await loadCustoms(supabase, id, user.tenantId);
+  if (!rec) return { ok: false, error: "not_found" };
+  if (!(await isFileVisible(user.id, user.tenantId, rec.file_id))) {
+    return { ok: false, error: "forbidden" };
+  }
+
+  // This door is for CERTIFIED data. Uncertified data is corrected where it was
+  // entered, on the step-gated update path.
+  if (!rec.reviewed_at) return { ok: false, error: "not_validated" };
+
+  const { error } = await supabase.rpc("record_customs_correction", {
+    p_customs_id: id,
+    p_actor: user.id,
+    p_reason: reason,
+    p_sh_position_count: input.shPositionCount,
+    p_declaration_type: input.declarationType,
+    p_dpi_regime: input.dpiRegime,
+    p_exemption_title_origin: input.exemptionTitleOrigin,
+    p_tariff_classification_origin: input.tariffClassificationOrigin,
+  });
+  if (error) {
+    if (/must change something/i.test(error.message)) return { ok: false, error: "no_change" };
+    return { ok: false, error: "record_failed" };
+  }
+
+  // The correction history is the authoritative old→new record; this audit row
+  // is the platform-wide trail, and says what happened without duplicating it.
+  await writeAudit({
+    action: AuditActions.CUSTOMS_CORRECTED,
+    actorId: user.id,
+    tenantId: user.tenantId,
+    entity: "customs_record",
+    entityId: id,
+    before: { reviewed_by: rec.reviewed_by ?? null, reviewed_at: rec.reviewed_at },
+    after: { corrected_by: user.id, reason, validation: "cleared_pending_revalidation" },
+  });
+  revalidate(rec.file_id);
+  return { ok: true, id };
+}
+
+/**
+ * D4 — recertification after a governed correction.
+ *
+ * RATIFIED: either the Chef de Transit or the Déclarant en Douane may
+ * revalidate. That is not a weakening of PG-6 — first certification still
+ * requires `customs:validate`, which the Déclarant does not hold. It is the
+ * cleaner cross-check: the Chef made the change, so a different pair of eyes
+ * confirms it, and maker≠checker stays person-level — the corrector may never
+ * certify their own correction.
+ */
+export async function revalidateCustoms(id: string): Promise<ActionResult> {
+  let user;
+  try {
+    user = await assertPermission("customs:revalidate");
+  } catch {
+    return { ok: false, error: "forbidden" };
+  }
+
+  const supabase = getAdminSupabaseClient();
+  const rec = await loadCustoms(supabase, id, user.tenantId);
+  if (!rec) return { ok: false, error: "not_found" };
+  if (!(await isFileVisible(user.id, user.tenantId, rec.file_id))) {
+    return { ok: false, error: "forbidden" };
+  }
+  if (rec.reviewed_at) return { ok: false, error: "already_validated" };
+
+  // Fail before showing success; the RPC enforces this too, from the history.
+  const { data: last } = await supabase
+    .from("customs_correction")
+    .select("id, corrected_by")
+    .eq("customs_id", id)
+    .eq("tenant_id", user.tenantId)
+    .order("corrected_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!last) return { ok: false, error: "never_corrected" };
+  if (last.corrected_by === user.id) return { ok: false, error: "self_revalidation" };
+
+  const { error } = await supabase.rpc("record_customs_revalidation", {
+    p_customs_id: id,
+    p_actor: user.id,
+  });
+  if (error) return { ok: false, error: "record_failed" };
+
+  await writeAudit({
+    action: AuditActions.CUSTOMS_REVALIDATED,
+    actorId: user.id,
+    tenantId: user.tenantId,
+    entity: "customs_record",
+    entityId: id,
+    after: { reviewed_by: user.id, after_correction: last.id },
   });
   revalidate(rec.file_id);
   return { ok: true, id };

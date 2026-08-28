@@ -20,7 +20,7 @@ IPAM 25/25/20/20/10 with sub-weights per §8).
 | F-ICTD-03 — type SIMPLE | 2 | 5 | EFFITRANS | 1,00 | SANS DPI | — | 0 | **3,80** |
 | F-ICTD-04 — type APE | 2 | 5 | EFFITRANS | 1,40 | SANS DPI | — | 0 | **5,32** |
 | F-ICTD-05 — type DEP | 2 | 5 | EFFITRANS | 1,30 | SANS DPI | — | 0 | **4,94** |
-| F-ICTD-06 — type DPE *(workbook-only — voided if Q1 rejects)* | 2 | 5 | EFFITRANS | 1,30 | SANS DPI | — | 0 | **4,94** |
+| F-ICTD-06 — **normalization: historical « DPE » → DEP** *(repurposed by D1, 2026-08-28)* | 2 | 5 | EFFITRANS | 1,30 | SANS DPI | — | 0 | **4,94** — a historical row labelled DPE must land as DEP and produce exactly F-ICTD-05's value |
 | F-ICTD-07 — type OG | 2 | 5 | EFFITRANS | 1,50 | SANS DPI | — | 0 | **5,70** |
 | F-ICTD-08 — CCT CLIENT vs EFFITRANS (same dossier) | 2 | 5 | 0,60 / 1,20 | SIMPLE | SANS DPI | — | 0 | **2,90 / 3,80** (CCT touches only the SH term) |
 | F-ICTD-09 — DPI ladder (1 facture, 2 SH, EFFITRANS CCT, SIMPLE) | 1 | 2 | 1,20 | 1,00 | SANS DPI / CLIENT-EXPÉDITION / CLIENT-GLOBALE / EFFITRANS | — | 0 | **2,22 / 2,22 / 2,72 / 3,22** |
@@ -57,7 +57,7 @@ IPAM 25/25/20/20/10 with sub-weights per §8).
 | F-STAT-02 | 12 dossiers, coverage 70 % | **« Non classé »** |
 | F-STAT-03 | 6 dossiers, coverage 100 % | **« Provisoire »** |
 | F-STAT-04 | 12 dossiers, coverage 90 % | **« Classé »** |
-| F-STAT-05 — **the Q2 precedence case** | 5 dossiers AND coverage 70 % | ICTD workbook order: **« Non classé »** · AM workbook order would give « Provisoire » — frozen ONLY after Q2 |
+| F-STAT-05 — ~~the Q2 precedence case~~ | **VOID (D2, 2026-08-28)** — the coverage rung it ordered is retired, so there is nothing to order: 5 dossiers → « Provisoire » regardless of any coverage notion |
 | F-RANK-01 | scores {Classé 96,5; Classé 88; Provisoire 99; Classé 88} | ranks: 1, 2, —, 2 (ties share rank; Provisoire unranked) |
 | F-COV-01 | 10 dossiers, 8 with all four quality flags | couverture qualité = **0,80** → exactly at threshold ⇒ NOT below ⇒ eligible |
 
@@ -103,6 +103,6 @@ IPAM 25/25/20/20/10 with sub-weights per §8).
 | F-GOV-13 — trend needs 3 months | M-2 absent | moyenne blank; delta computed vs M-1 only if M-1 exists |
 | F-GOV-14 — ranking same-month | AM ranked only against same `Mois de clôture`, Classé only | per AM-R31 |
 
-**Freeze note:** F-ICTD-06 (DPE) and F-STAT-05 (precedence) are provisional pending
+**Freeze note (updated 2026-08-28):** F-ICTD-06 is repurposed as the D1 normalization fixture; F-STAT-05 is void under D2. Original text: F-ICTD-06 (DPE) and F-STAT-05 (precedence) were provisional pending
 Q1/Q2. Every other fixture is derivable from methodology + canonical workbook in
 agreement, and is frozen.

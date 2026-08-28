@@ -41,6 +41,8 @@ function actionBody(): string {
 }
 
 const customs = (over: Partial<CustomsRecord> = {}): CustomsRecord => ({
+  shPositionCount: null, declarationType: null, dpiRegime: null,
+  exemptionTitleOrigin: null, tariffClassificationOrigin: null,
   id: "c1", fileId: "f1", status: "DECLARED", required: true,
   declarationNumber: null, customsOffice: null, regime: null, declarationDate: null,
   baeReference: null, releaseDate: null, inspectionStatus: "NOT_REQUIRED",

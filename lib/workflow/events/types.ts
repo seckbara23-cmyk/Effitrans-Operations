@@ -111,6 +111,8 @@ export const EVENT_TYPES: readonly EventTypeDef[] = [
   // replacement. Internal: a customs reference is not customer-facing.
   { type: "GAINDE_REGISTRATION_RECORDED", domain: "customs", version: 1, emission: "rpc", metadataKeys: ["reference", "corrected"], clientSafe: false, labelFr: "Enregistrement GAINDE" },
   { type: "CUSTOMS_VALIDATED", domain: "customs", version: 1, emission: "rpc", metadataKeys: ["maker_checked"], clientSafe: false, labelFr: "Validation Chef de Transit" },
+  { type: "CUSTOMS_CORRECTED", domain: "customs", version: 1, emission: "rpc", metadataKeys: ["correction_id", "fields", "displaced_validation_by"], clientSafe: false, labelFr: "Correction après validation" },
+  { type: "CUSTOMS_REVALIDATED", domain: "customs", version: 1, emission: "rpc", metadataKeys: ["correction_id", "maker_checked"], clientSafe: false, labelFr: "Revalidation après correction" },
   // MAYA-P1.11 — CEO step 9. Emitted ONLY by record_customs_attachment. The
   // systems are business context (GAINDE/ORBUS), never personal data; `repeated`
   // marks the retry Effitrans described after a recevabilite rejection.

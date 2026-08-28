@@ -699,6 +699,41 @@ where r.tenant_id = '00000000-0000-0000-0000-000000000001'
   and r.code in ('ACCOUNT_MANAGER', 'OPS_SUPERVISOR', 'SYSTEM_ADMIN')
 on conflict do nothing;
 
+-- D4 (RATIFIED 2026-08-28) — the governed correction door for validated customs
+-- data, and its recertification.
+--
+-- Before this, validated customs data was de-facto permanently immutable: the
+-- ordinary update path is control-gated to open step states and the owning step
+-- is closed by validation time. Effitrans requires neither free editing nor a
+-- locked record, but a correction that leaves a trace.
+--
+-- customs:correct is the Chef de Transit's: correcting certified data is the
+-- checker role's accountability. customs:revalidate is BOTH the Chef's and the
+-- Déclarant's — the Chef corrects, a different pair of eyes confirms — and it
+-- is NOT customs:validate: first certification remains the Chef's alone (PG-6).
+insert into public.permission (code, module, action, data_scope, description) values
+  ('customs:correct', 'customs', 'correct', 'assigned',
+   'Correct VALIDATED customs information through the governed correction door: motif obligatoire, old→new traced, validation cleared for recertification. Confers no ordinary update authority.'),
+  ('customs:revalidate', 'customs', 'revalidate', 'assigned',
+   'Recertify a customs record after a governed correction. Person-level maker≠checker: the corrector may never revalidate their own correction. Confers no first-validation authority.')
+on conflict (code) do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'customs:correct'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('CHIEF_OF_TRANSIT', 'SYSTEM_ADMIN')
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'customs:revalidate'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('CHIEF_OF_TRANSIT', 'CUSTOMS_DECLARANT', 'SYSTEM_ADMIN')
+on conflict do nothing;
+
 -- C-4 — the quotation lead must be able to READ the evidence its own official
 -- step requires. Step 1 (Cotation) requires QUOTATION and QUOTATION_APPROVAL,
 -- and the engine refuses to complete a step on evidence the actor cannot judge.

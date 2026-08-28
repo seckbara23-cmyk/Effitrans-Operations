@@ -279,7 +279,9 @@ describe("P1.1 survives P1.2 intact", () => {
         providerCode: "manual", providerSyncedAt: null,
         reviewedAt: null, reviewedByEmail: null,
         gaindeRegisteredAt: REGISTERED, gaindeRegisteredByEmail: null,
-  attachmentCompletedAt: null, attachmentCompletedByEmail: null, attachmentSystems: [],
+        attachmentCompletedAt: null, attachmentCompletedByEmail: null, attachmentSystems: [],
+        shPositionCount: null, declarationType: null, dpiRegime: null,
+        exemptionTitleOrigin: null, tariffClassificationOrigin: null,
       } satisfies CustomsRecord,
       documents: [], missingRequiredCount: 0, timeZone: TZ,
     });

@@ -79,7 +79,8 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "admin:users:update",
       "audit:read:all", "client:create", "client:delete", "client:read", "client:update",
       "communication:manage", "communication:read", "communication:send", "customs:create",
-      "customs:delete", "customs:read", "customs:release", "customs:update", "document:approve",
+      "customs:correct", "customs:delete", "customs:read", "customs:release", "customs:revalidate",
+      "customs:update", "document:approve",
       "document:create", "document:delete", "document:read", "document:update",
       "executive:dashboard:read", "file:assign", "file:assign:commercial",
       "file:create", "file:delete", "file:read", "file:read:all", "file:transition", "file:update", "finance:create",
@@ -232,7 +233,13 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "customs:assign", "customs:create", "customs:read", "customs:release", "customs:update",
       // customs:validate — the CHECKER half of official step 7. Deliberately NOT
       // held by CUSTOMS_DECLARANT: the preparer must never be able to validate.
-      "customs:validate", "document:approve", "document:create", "document:read",
+      "customs:validate",
+      // D4 (RATIFIED 2026-08-28) — the governed correction door. Correcting
+      // certified customs data is the checker role's accountability: a motif is
+      // obligatory, old → new is traced, and the certification is cleared for
+      // recertification by someone else.
+      "customs:correct", "customs:revalidate",
+      "document:approve", "document:create", "document:read",
       "document:update", "file:read", ...BASE, ...PROCESS_HANDOFF, "process:read", "task:read",
       "task:update", "logistics:copilot:read",
       // Phase 8.7 — Messaging Center. Customs + transport department inboxes.
@@ -253,7 +260,13 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     requiredForEveryTenant: false,
     businessProfile: "customsBroker",
     permissions: [
-      "customs:create", "customs:read", "customs:update", "document:create", "document:read",
+      "customs:create", "customs:read", "customs:update",
+      // D4 (RATIFIED 2026-08-28) — may RECERTIFY a corrected record, and only
+      // that. This is not customs:validate and confers none of it: first
+      // certification remains the Chef's alone (PG-6). The Chef corrects, a
+      // different pair of eyes confirms — and the RPC refuses the corrector.
+      "customs:revalidate",
+      "document:create", "document:read",
       "document:update", "file:read", ...BASE, ...PROCESS_HANDOFF, "process:read", "task:read",
       "task:update", "logistics:copilot:read",
       // Phase 8.7 — Messaging Center. Customs department inbox.

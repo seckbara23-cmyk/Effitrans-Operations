@@ -94,6 +94,10 @@ export function rowToDeclaration(row: IntelRecordRow): Declaration {
     gaindeRegisteredAt: null,
     gaindeRegisteredByEmail: null,
     attachmentCompletedAt: null, attachmentCompletedByEmail: null, attachmentSystems: [],
+    // D4 — the provider lifecycle neither reads nor fabricates the governed
+    // elements; a reconstructed record honestly does not know them.
+    shPositionCount: null, declarationType: null, dpiRegime: null,
+    exemptionTitleOrigin: null, tariffClassificationOrigin: null,
   };
   const base = toDeclaration(record, {
     status: coerceDeclarationStatus(row.intel_status),

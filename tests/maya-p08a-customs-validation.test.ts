@@ -45,6 +45,8 @@ function actionBody(): string {
 }
 
 const customs = (over: Partial<CustomsRecord> = {}): CustomsRecord => ({
+  shPositionCount: null, declarationType: null, dpiRegime: null,
+  exemptionTitleOrigin: null, tariffClassificationOrigin: null,
   id: "c1", fileId: "f1", status: "DECLARED", required: true,
   declarationNumber: null, customsOffice: null, regime: null, declarationDate: null,
   baeReference: null, releaseDate: null, inspectionStatus: "NOT_REQUIRED",
@@ -312,13 +314,22 @@ describe("audit, timeline and blast radius", () => {
 
 // ===========================================================================
 describe("scope lock — nothing else moved", () => {
-  it("post-validation editing is NOT silently frozen", () => {
-    // §M: the repository never defined post-review immutability, so PG-1 does
-    // not invent it. updateCustoms still has no review guard, and that is
-    // recorded as unresolved rather than changed.
+  it("post-validation editing is now RESOLVED — refused here, routed to the correction door", () => {
+    // SUPERSEDED BY D4 (RATIFIED 2026-08-28). PG-1 deliberately left
+    // post-review immutability undefined, because the repository had never
+    // defined it, and recorded that as unresolved rather than inventing an
+    // answer. Effitrans has now answered: validated data changes only through
+    // the governed correction door — motif obligatoire, old → new traced,
+    // certification cleared for recertification.
+    //
+    // So the original assertion is not merely updated, it is INVERTED, and the
+    // PG-1 scope lock still holds in the sense that mattered: updateCustoms did
+    // not quietly acquire an undocumented freeze. It acquired a ratified one
+    // that names its alternative.
     const s = code("lib/customs/actions.ts");
     const upd = s.slice(s.indexOf("export async function updateCustoms"), s.indexOf("export async function changeCustomsStatus"));
-    expect(upd).not.toMatch(/reviewed_at|already_validated|frozen/);
+    expect(upd).toContain('if (rec.reviewed_at) return { ok: false, error: "validated_use_correction" };');
+    expect(code("lib/customs/actions.ts")).toContain("export async function correctCustoms");
   });
 
   it("QC1, QC2, QC3, QC5 and QC6 are untouched", () => {

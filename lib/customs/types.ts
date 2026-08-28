@@ -25,6 +25,15 @@ export type CustomsInput = {
   externalRef?: string | null;
   notes?: string | null;
   required?: boolean;
+  // D4 (RATIFIED 2026-08-28) — the five governed customs data elements. The
+  // Déclarant enters them through this ordinary step-gated path; the Chef de
+  // Transit certifies them; after certification they change only through the
+  // governed correction door (correctCustoms), never through updateCustoms.
+  shPositionCount?: number | null;
+  declarationType?: "SIMPLE" | "APE" | "DEP" | "OG" | null;
+  dpiRegime?: "SANS_DPI" | "CLIENT_EXPEDITION" | "CLIENT_GLOBALE" | "EFFITRANS" | null;
+  exemptionTitleOrigin?: "SANS_OBJET" | "CLIENT" | "EFFITRANS" | null;
+  tariffClassificationOrigin?: "CLIENT" | "EFFITRANS" | null;
 };
 
 export type CustomsRecord = {
@@ -41,6 +50,15 @@ export type CustomsRecord = {
   inspectionStatus: InspectionStatus;
   externalRef: string | null;
   notes: string | null;
+  /**
+   * D4 — the five governed elements (ICTD inputs: CDP, NPSH×CCT, U_DPI, U_TE).
+   * Null = not yet captured; existing dossiers predate the capture and say so.
+   */
+  shPositionCount: number | null;
+  declarationType: string | null;
+  dpiRegime: string | null;
+  exemptionTitleOrigin: string | null;
+  tariffClassificationOrigin: string | null;
   /**
    * MAYA-P0.7-A — Quality Control N°3 (Déclarant en Douane). The RECORDED
    * outcome only; the criteria that produced it are deliberately not modelled,
