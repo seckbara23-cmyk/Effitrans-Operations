@@ -14,7 +14,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { TENANT_ROLE_TEMPLATES } from "@/lib/platform/role-templates";
+import { TENANT_ROLE_TEMPLATES, selectTenantRoleTemplates } from "@/lib/platform/role-templates";
 import { BASE_SECTIONS } from "@/lib/nav";
 import { PERFORMANCE_TABS } from "@/lib/performance/tabs";
 import { reliabilityStatus } from "@/lib/performance/reliability";
@@ -97,57 +97,177 @@ describe("Gestion de la Performance — the route is the boundary, not the sideb
 
 // ============================================ what access does NOT give ====
 
-describe("Gestion de la Performance — reading performance confers no authority", () => {
-  const OPERATIONAL = [
-    "hr:manage",
-    "customs:update",
-    "customs:validate",
-    "customs:correct",
-    "customs:revalidate",
-  ] as const;
+describe("Gestion de la Performance — an ASSIGNABLE role, not a job role", () => {
+  // RATIFIED 2026-08-28. Access comes from an explicit assignment through the
+  // existing « Ajouter un rôle… → Attribuer » screen. Before this, three job
+  // roles carried performance:read by template: an Operations Supervisor read
+  // per-person indicators because of their job, and a CEO could not be
+  // un-granted without editing a template. Both are assignment questions now.
+  const ROLE = "PERFORMANCE_MANAGEMENT";
+  const template = TENANT_ROLE_TEMPLATES.find((t) => t.key === ROLE);
 
-  it("the CEO — the archetypal performance reader — gained no operational permission", () => {
+  it("the role exists, with the ratified French name", () => {
+    expect(template, "PERFORMANCE_MANAGEMENT template missing").toBeDefined();
+    expect(template!.labelFr).toBe("Gestion de la Performance");
+  });
+
+  it("it is assignable through the ordinary role architecture — no second system", () => {
+    // listAssignableRoles offers every tenant role row except CLIENT_USER, so a
+    // role that exists is a role the System Administrator can attribute. The
+    // only thing this needed was the row.
+    const service = strip(read("lib/users/service.ts"));
+    expect(service).toContain("NON_ASSIGNABLE_STAFF_ROLE_CODES");
+    expect(service).toContain("listAssignableRoles");
+    expect(
+      read("lib/users/service.ts"),
+      "the access role must not be excluded from the picker",
+    ).not.toContain(ROLE);
+    // …and assignment/removal are the EXISTING actions, not new ones.
+    const actions = strip(read("lib/users/actions.ts"));
+    expect(actions).toContain("export async function assignRole");
+    expect(actions).toContain("user_role");
+  });
+
+  it("it is provisioned for every tenant, so it can be assigned from day one", () => {
+    // Not via requiredForEveryTenant — that flag is SYSTEM_ADMIN's, and an
+    // invariant says so. A template with no businessProfile is selected for
+    // every tenant anyway.
+    expect(template!.requiredForEveryTenant).toBe(false);
+    expect(template!.businessProfile).toBeUndefined();
+    expect(selectTenantRoleTemplates({}).map((t) => t.key)).toContain(ROLE);
+  });
+
+  it("it can be held ALONGSIDE a job role — it replaces nothing", () => {
+    // The platform has always supported several roles per user. This asserts the
+    // access role does not overlap a job role's permissions, so holding both is
+    // purely additive.
+    for (const job of ["CEO", "HR_OFFICER", "CUSTOMS_DECLARANT", "OPS_SUPERVISOR"]) {
+      const j = TENANT_ROLE_TEMPLATES.find((t) => t.key === job)!;
+      const overlap = j.permissions.filter((p) => p.startsWith("performance:"));
+      expect(overlap, `${job} must carry no performance authority of its own`).toEqual([]);
+    }
+  });
+});
+
+describe("Gestion de la Performance — no operational role is a way in", () => {
+  it("performance:read is held by the access role and NOTHING else", () => {
+    expect(holders("performance:read")).toEqual(["PERFORMANCE_MANAGEMENT"]);
+  });
+
+  it("performance:manage likewise", () => {
+    expect(holders("performance:manage")).toEqual(["PERFORMANCE_MANAGEMENT"]);
+  });
+
+  it("OPS_SUPERVISOR no longer receives access automatically", () => {
+    const ops = TENANT_ROLE_TEMPLATES.find((t) => t.key === "OPS_SUPERVISOR")!;
+    expect(ops.permissions).not.toContain("performance:read");
+    expect(ops.permissions).not.toContain("performance:manage");
+  });
+
+  it("neither does the CEO — entitlement is an assignment, not a job title", () => {
     const ceo = TENANT_ROLE_TEMPLATES.find((t) => t.key === "CEO")!;
-    expect(ceo.permissions).toContain("performance:read");
-    for (const p of OPERATIONAL) {
-      expect(ceo.permissions, `CEO must not hold ${p}`).not.toContain(p);
+    expect(ceo.permissions).not.toContain("performance:read");
+  });
+
+  it("nor SYSTEM_ADMIN — DEC-B61 doctrine, not an exception invented here", () => {
+    // DEC-B61 already withholds hr:* from SYSTEM_ADMIN because the data is
+    // personal. Per-person performance indicators, computed partly FROM that
+    // leave data, are the same kind of fact, and administering the platform is
+    // not a reason to read what a named colleague produced last month.
+    // Assignment runs on admin:roles:manage, which SYSTEM_ADMIN keeps.
+    const sa = TENANT_ROLE_TEMPLATES.find((t) => t.key === "SYSTEM_ADMIN")!;
+    expect(sa.permissions).not.toContain("performance:read");
+    expect(sa.permissions).not.toContain("performance:manage");
+    expect(sa.permissions, "…and it can still ASSIGN the role").toContain("admin:roles:manage");
+  });
+
+  it("and the migration asserts the whole rule for itself", () => {
+    expect(strip(m)).toContain("access must come from an explicit role assignment");
+  });
+
+  it("no operational role acquired performance access by any route", () => {
+    for (const t of TENANT_ROLE_TEMPLATES) {
+      if (t.key === "PERFORMANCE_MANAGEMENT") continue;
+      const perf = t.permissions.filter((p) => p.startsWith("performance:"));
+      expect(perf, `${t.key} must hold no performance capability`).toEqual([]);
+    }
+  });
+});
+
+describe("Gestion de la Performance — the capability diff, exactly", () => {
+  // What does assigning this role introduce? This is the whole answer, and it is
+  // an EQUALITY rather than a list of "does not contain" checks: a permission
+  // slipped into the template later fails here even if nobody thought to forbid
+  // it by name. The named exclusions below are the ones worth stating anyway,
+  // because each is a boundary another phase spent effort establishing.
+  const template = TENANT_ROLE_TEMPLATES.find((t) => t.key === "PERFORMANCE_MANAGEMENT")!;
+
+  it("introduces exactly four permissions — two module, two profile baseline", () => {
+    expect([...template.permissions].sort()).toEqual([
+      "performance:manage",
+      "performance:read",
+      "profile:read:self",
+      "profile:update:self",
+    ]);
+  });
+
+  it("grants no HR authority — D3 keeps the calendar with HR", () => {
+    for (const p of ["hr:read", "hr:manage", "hr:leave:approve", "hr:reports:read"]) {
+      expect(template.permissions, p).not.toContain(p);
     }
   });
 
-  it("…and the migration asserts that for itself", () => {
-    expect(strip(m)).toContain("Gestion de la Performance must confer none");
-  });
-
-  it("the module's own capabilities are not implied by any operational one", () => {
-    // The converse direction: holding customs or HR authority is not a way in.
-    for (const key of ["CUSTOMS_DECLARANT", "CHIEF_OF_TRANSIT", "HR_OFFICER"]) {
-      const role = TENANT_ROLE_TEMPLATES.find((t) => t.key === key);
-      if (!role) continue;
-      expect(role.permissions, `${key} must not read performance by virtue of its job`).not.toContain(
-        "performance:read",
-      );
+  it("grants no Customs authority — D4 keeps capture and certification where they are", () => {
+    for (const p of [
+      "customs:read", "customs:create", "customs:update", "customs:validate",
+      "customs:correct", "customs:revalidate", "customs:release", "customs:register",
+    ]) {
+      expect(template.permissions, p).not.toContain(p);
     }
   });
 
-  it("performance:read is held by the management audience only", () => {
-    expect(holders("performance:read")).toEqual(["CEO", "OPS_SUPERVISOR", "SYSTEM_ADMIN"]);
+  it("grants no Finance, Collections or Transport execution", () => {
+    for (const p of [
+      "finance:read", "finance:validate", "finance:issue", "finance:payment",
+      "collections:manage", "transport:manage", "courier:deposit", "admin_service:manage",
+    ]) {
+      expect(template.permissions, p).not.toContain(p);
+    }
   });
 
-  it("performance:manage is narrower still", () => {
-    expect(holders("performance:manage")).toEqual(["CEO", "SYSTEM_ADMIN"]);
+  it("grants no process execution, handoff or closure", () => {
+    for (const p of [
+      "process:read", "process:close", "process:handoff:send", "process:handoff:receive",
+      "process:completeness:review", "process:delivery:followup", "file:transition", "file:update",
+    ]) {
+      expect(template.permissions, p).not.toContain(p);
+    }
   });
 
-  it("templates, migration and seed agree on both — three sources, one answer", () => {
-    for (const [perm, roles] of [
-      ["performance:read", ["CEO", "OPS_SUPERVISOR", "SYSTEM_ADMIN"]],
-      ["performance:manage", ["CEO", "SYSTEM_ADMIN"]],
-    ] as const) {
-      for (const src of [m, seed]) {
-        const block = src.slice(src.indexOf(`p.code = '${perm}'`));
-        const where = block.slice(0, block.indexOf("on conflict"));
-        for (const r of roles) expect(where, `${perm} → ${r}`).toContain(`'${r}'`);
+  it("grants no other Management or Administration capability", () => {
+    for (const p of [
+      "analytics:read", "executive:dashboard:read", "admin:users:manage",
+      "admin:roles:manage", "communication:manage",
+    ]) {
+      expect(template.permissions, p).not.toContain(p);
+    }
+  });
+
+  it("templates, migration and seed agree — three sources, one answer", () => {
+    for (const src of [m, seed]) {
+      const stripped = strip(src);
+      expect(stripped, "the role is created").toContain("PERFORMANCE_MANAGEMENT");
+      // Anchored on the ROLE, not on the first permission join in the file:
+      // both sources grant many roles, and slicing from the first join read
+      // somebody else's grant list.
+      const at = stripped.indexOf("r.code = 'PERFORMANCE_MANAGEMENT'");
+      expect(at, "the role receives a grant block").toBeGreaterThan(-1);
+      const grants = stripped.slice(stripped.lastIndexOf("join public.permission p", at), at);
+      for (const p of [
+        "profile:read:self", "profile:update:self", "performance:read", "performance:manage",
+      ]) {
+        expect(grants, p).toContain(`'${p}'`);
       }
-      expect(holders(perm)).toEqual([...roles].sort());
     }
   });
 });

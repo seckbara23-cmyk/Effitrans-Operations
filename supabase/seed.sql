@@ -736,13 +736,22 @@ on conflict do nothing;
 
 -- Gestion de la Performance — the module that presents ICTD / ICAM / IPAM.
 --
+-- RATIFIED 2026-08-28 (final access ruling): access comes from an EXPLICIT role
+-- assignment, never from an operational job role. The System Administrator
+-- assigns « Gestion de la Performance » through the existing
+-- « Ajouter un rôle… → Attribuer » screen and removes it the same way.
+--
 -- Two thin capabilities, and the thinness is the design: reading a number about
--- someone's work is not authority over the work. performance:read opens the
--- module; performance:manage configures what the governed implementation allows
--- to be configured. Neither implies hr:manage (D3 keeps the calendar with HR),
--- customs:update or customs:validate (D4 keeps capture with the Declarant and
--- certification with the Chef), and the converse holds too: an operational
--- customs or HR permission grants no access to this module.
+-- someone's work is not authority over the work. Neither implies hr:manage
+-- (D3 keeps the calendar with HR), customs:update or customs:validate (D4 keeps
+-- capture with the Déclarant and certification with the Chef), and no
+-- operational permission is a way into the module.
+--
+-- SYSTEM_ADMIN holds neither, following DEC-B61: it already receives no `hr:*`
+-- because the data is personal, and per-person performance indicators computed
+-- from that same leave data are the same kind of fact. Assigning the role runs
+-- on admin:roles:manage, which SYSTEM_ADMIN has; reading the numbers is a
+-- separate question with the same answer as for everyone else.
 insert into public.permission (code, module, action, data_scope, description) values
   ('performance:read', 'performance', 'read', 'tenant',
    'Open Gestion de la Performance and read the ICTD / ICAM / IPAM indicators. Confers NO mutation authority of any kind.'),
@@ -750,20 +759,19 @@ insert into public.permission (code, module, action, data_scope, description) va
    'Configure Gestion de la Performance where the governed implementation permits it. Confers no operational authority.')
 on conflict (code) do nothing;
 
-insert into public.role_permission (role_id, permission_id)
-select r.id, p.id
-from public.role r
-join public.permission p on p.code = 'performance:read'
-where r.tenant_id = '00000000-0000-0000-0000-000000000001'
-  and r.code in ('CEO', 'OPS_SUPERVISOR', 'SYSTEM_ADMIN')
-on conflict do nothing;
+insert into public.role (id, tenant_id, code, label_fr, label_en) values
+  ('00000000-0000-0000-0000-0000000001a1', '00000000-0000-0000-0000-000000000001',
+   'PERFORMANCE_MANAGEMENT', 'Gestion de la Performance', 'Performance Management')
+on conflict (tenant_id, code) do nothing;
 
 insert into public.role_permission (role_id, permission_id)
 select r.id, p.id
 from public.role r
-join public.permission p on p.code = 'performance:manage'
+join public.permission p
+  on p.code in ('profile:read:self', 'profile:update:self',
+                'performance:read', 'performance:manage')
 where r.tenant_id = '00000000-0000-0000-0000-000000000001'
-  and r.code in ('CEO', 'SYSTEM_ADMIN')
+  and r.code = 'PERFORMANCE_MANAGEMENT'
 on conflict do nothing;
 
 -- C-4 — the quotation lead must be able to READ the evidence its own official

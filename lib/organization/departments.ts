@@ -154,6 +154,14 @@ export const ROLE_CANONICAL_DEPARTMENT: Readonly<Record<string, CanonicalDepartm
   // like SYSTEM_ADMIN: every department has a shared mailbox, so belonging to one
   // of them would misdescribe the role. It carries no operational authority.
   MAIL_ADMIN: null,
+  // Gestion de la Performance — an ACCESS role, held IN ADDITION to a job role.
+  // NULL is not a gap here, it is the point: the holder already belongs to a
+  // department through their real role (CEO, Chargé RH, Operations…), and
+  // giving this one a department would either invent a second placement for
+  // them or claim performance reading is somebody's job. It carries no
+  // operational authority — see the capability diff in
+  // tests/performance-module-access.test.ts.
+  PERFORMANCE_MANAGEMENT: null,
   CEO: null, // Direction = governance, not a department
   COMPLIANCE_HSSE: null, // cross-company audit/compliance
   CLIENT_USER: null, // external portal label — never staff

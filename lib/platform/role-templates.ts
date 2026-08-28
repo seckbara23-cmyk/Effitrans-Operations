@@ -65,7 +65,6 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     description: "Tenant administrator — manages users, roles and configuration for the company. Full operational read + admin.",
     requiredForEveryTenant: true,
     permissions: [
-      "performance:read", "performance:manage",
       // FIN-AGING-2 — administers, does NOT approve. No import_approve, validate,
       // finalize, share or template_manage: platform administration is not
       // financial signoff authority (ratified D-11).
@@ -126,7 +125,6 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     description: "Governance — full company visibility (read-only across modules), no daily admin.",
     requiredForEveryTenant: false,
     permissions: [
-      "performance:read", "performance:manage",
       // FIN-AGING-2 — reads and exports; no sharing authority unless later ratified.
       "finance:aging:export", "finance:aging:print", "finance:aging:read",
       "analytics:read", "audit:read:all", "client:read", "communication:read", "customs:read",
@@ -361,7 +359,6 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     description: "Supervision + milestone validation across operations and finance.",
     requiredForEveryTenant: false,
     permissions: [
-      "performance:read",
       "analytics:read", "client:read", "communication:manage", "communication:read",
       "communication:send", "customs:create", "customs:delete", "customs:read", "customs:release",
       "customs:update", "document:approve", "document:create", "document:delete", "document:read",
@@ -723,6 +720,35 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "communication:read", "communication:manage",
       ...BASE,
     ],
+  },
+  {
+    // Gestion de la Performance — an ACCESS role, not a job or a department.
+    //
+    // RATIFIED 2026-08-28: reading the performance module comes from an
+    // explicit assignment, never from holding an operational role. Somebody
+    // holds this IN ADDITION to being CEO, Chargé RH or Operations — the
+    // platform has always supported several roles per user, and the System
+    // Administrator assigns and removes it through the existing
+    // « Ajouter un rôle… → Attribuer » screen.
+    //
+    // Four permissions and no more. The two module capabilities plus the
+    // profile baseline every role carries. It confers no hr:*, no customs:*,
+    // no finance, no process execution — a capability-diff test proves the
+    // exact set, so widening it means changing a test that says why it is
+    // narrow.
+    key: "PERFORMANCE_MANAGEMENT",
+    labelFr: "Gestion de la Performance",
+    labelEn: "Performance Management",
+    genericName: "PERFORMANCE_MANAGEMENT",
+    description:
+      "Access role for the Gestion de la Performance module (ICTD / ICAM / IPAM). Held in addition to a job role; confers no operational authority.",
+    // NOT `requiredForEveryTenant` — that flag is reserved for SYSTEM_ADMIN, and
+    // an invariant says so. It is provisioned everywhere regardless, because
+    // `selectTenantRoleTemplates` includes every template without a
+    // businessProfile. The role existing is what makes it appear in the
+    // assignment picker; holding it stays an explicit act.
+    requiredForEveryTenant: false,
+    permissions: [...BASE, "performance:read", "performance:manage"],
   },
 ];
 

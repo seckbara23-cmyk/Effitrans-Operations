@@ -79,7 +79,12 @@ export const ROLE_DEPARTMENTS: readonly RoleDepartment[] = [
     key: "EXECUTIVE",
     labelFr: "Direction générale",
     labelEn: "Executive Management",
-    roleCodes: ["CEO", "DGA", "DAF"],
+    // PERFORMANCE_MANAGEMENT is an ACCESS role, not a job: it is held IN
+    // ADDITION to whatever someone actually does. It appears under Direction
+    // générale because that is where the module's audience sits and because
+    // this taxonomy is presentation only — it groups the picker, it grants
+    // nothing. The holder's real department still comes from their job role.
+    roleCodes: ["CEO", "DGA", "DAF", "PERFORMANCE_MANAGEMENT"],
   },
   {
     key: "OPERATIONS",
