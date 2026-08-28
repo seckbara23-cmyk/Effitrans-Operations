@@ -31,6 +31,7 @@ import { listEligibleAssigneesForFile } from "@/lib/workflow/access/assignees";
 import { DocumentsPanel } from "@/components/documents/documents-panel";
 import { listDocuments, listDocumentTypes, getMissingRequiredDocuments } from "@/lib/documents/service";
 import { CustomsPanel } from "@/components/customs/customs-panel";
+import { correctionsForRecord } from "@/lib/customs/corrections";
 import { getCustomsRecord, getMissingCustomsDocuments } from "@/lib/customs/service";
 import { isVerified } from "@/lib/documents/doctrine";
 import { TransportPanel } from "@/components/transport/transport-panel";
@@ -180,6 +181,15 @@ export default async function FileDetailPage({ params }: { params: { id: string 
   const [customsRecord, missingCustomsDocs] = canReadCustoms
     ? await Promise.all([getCustomsRecord(file.id), getMissingCustomsDocuments(file.id)])
     : [null, []];
+
+  // D4 — « À revalider »: the record was corrected and is not certified again
+  // yet. Derived from the append-only correction history plus the certification
+  // instant, never stored as a status — a state that can drift from the facts
+  // it summarises is a state that will.
+  const customsAwaitingRevalidation =
+    canReadCustoms && customsRecord !== null && customsRecord.reviewedAt === null
+      ? (await correctionsForRecord(user.tenantId, customsRecord.id)).length > 0
+      : false;
 
   // MAYA-P0.7-D — Contrôle Qualité N°4. Pure derivation from facts already
   // loaded above. Both permission flags are passed through: without
@@ -500,6 +510,12 @@ export default async function FileDetailPage({ params }: { params: { id: string 
             canValidate={hasPermission(permissions, "customs:validate")}
             canRegisterGainde={hasPermission(permissions, "customs:register")}
             canAttach={hasPermission(permissions, "customs:update")}
+            // D4 — the governed correction door and its recertification. Each
+            // flag decides only what is DRAWN; both actions re-assert their own
+            // permission server-side and the RPCs re-prove it in the database.
+            canCorrect={hasPermission(permissions, "customs:correct")}
+            canRevalidate={hasPermission(permissions, "customs:revalidate")}
+            awaitingRevalidation={customsAwaitingRevalidation}
           />
         </div>
       )}

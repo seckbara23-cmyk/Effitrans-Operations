@@ -922,6 +922,21 @@ jobs:
           fi
           exit $code
 
+      - name: Run Gestion de la Performance access test
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set +e
+          out=$(psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/performance_access_test.sql 2>&1)
+          code=$?
+          echo "$out"
+          if [ $code -ne 0 ]; then
+            err=$(echo "$out" | grep -m1 -E '^(psql:.*)?ERROR:')
+            note=$(echo "$out" | grep -m1 'PERF')
+            echo "::error::Gestion de la Performance access suite failed (psql exit $code). ${err} ${note}"
+          fi
+          exit $code
+
       - name: Run MAYA-P1.1 GAINDE registration test
         env:
           PGPASSWORD: postgres

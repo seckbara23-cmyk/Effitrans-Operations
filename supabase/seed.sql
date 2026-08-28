@@ -734,6 +734,38 @@ where r.tenant_id = '00000000-0000-0000-0000-000000000001'
   and r.code in ('CHIEF_OF_TRANSIT', 'CUSTOMS_DECLARANT', 'SYSTEM_ADMIN')
 on conflict do nothing;
 
+-- Gestion de la Performance — the module that presents ICTD / ICAM / IPAM.
+--
+-- Two thin capabilities, and the thinness is the design: reading a number about
+-- someone's work is not authority over the work. performance:read opens the
+-- module; performance:manage configures what the governed implementation allows
+-- to be configured. Neither implies hr:manage (D3 keeps the calendar with HR),
+-- customs:update or customs:validate (D4 keeps capture with the Declarant and
+-- certification with the Chef), and the converse holds too: an operational
+-- customs or HR permission grants no access to this module.
+insert into public.permission (code, module, action, data_scope, description) values
+  ('performance:read', 'performance', 'read', 'tenant',
+   'Open Gestion de la Performance and read the ICTD / ICAM / IPAM indicators. Confers NO mutation authority of any kind.'),
+  ('performance:manage', 'performance', 'manage', 'tenant',
+   'Configure Gestion de la Performance where the governed implementation permits it. Confers no operational authority.')
+on conflict (code) do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'performance:read'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('CEO', 'OPS_SUPERVISOR', 'SYSTEM_ADMIN')
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'performance:manage'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('CEO', 'SYSTEM_ADMIN')
+on conflict do nothing;
+
 -- C-4 — the quotation lead must be able to READ the evidence its own official
 -- step requires. Step 1 (Cotation) requires QUOTATION and QUOTATION_APPROVAL,
 -- and the engine refuses to complete a step on evidence the actor cannot judge.

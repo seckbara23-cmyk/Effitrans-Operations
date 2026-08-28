@@ -56,6 +56,10 @@ const ALL_PERMS = [
   "executive:dashboard:read",
   // Phase HR-1 — « Ressources humaines » (MANAGEMENT) is gated on hr:read.
   "hr:read",
+  // Gestion de la Performance (MANAGEMENT). Its own capability, deliberately
+  // not analytics:read: reading company reports and reading an indicator about
+  // a named colleague are different audiences.
+  "performance:read",
 ];
 
 const ctx = (over: Partial<NavigationContext> = {}): NavigationContext => ({

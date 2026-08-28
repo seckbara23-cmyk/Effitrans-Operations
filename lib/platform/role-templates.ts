@@ -65,6 +65,7 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     description: "Tenant administrator — manages users, roles and configuration for the company. Full operational read + admin.",
     requiredForEveryTenant: true,
     permissions: [
+      "performance:read", "performance:manage",
       // FIN-AGING-2 — administers, does NOT approve. No import_approve, validate,
       // finalize, share or template_manage: platform administration is not
       // financial signoff authority (ratified D-11).
@@ -125,6 +126,7 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     description: "Governance — full company visibility (read-only across modules), no daily admin.",
     requiredForEveryTenant: false,
     permissions: [
+      "performance:read", "performance:manage",
       // FIN-AGING-2 — reads and exports; no sharing authority unless later ratified.
       "finance:aging:export", "finance:aging:print", "finance:aging:read",
       "analytics:read", "audit:read:all", "client:read", "communication:read", "customs:read",
@@ -359,6 +361,7 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     description: "Supervision + milestone validation across operations and finance.",
     requiredForEveryTenant: false,
     permissions: [
+      "performance:read",
       "analytics:read", "client:read", "communication:manage", "communication:read",
       "communication:send", "customs:create", "customs:delete", "customs:read", "customs:release",
       "customs:update", "document:approve", "document:create", "document:delete", "document:read",

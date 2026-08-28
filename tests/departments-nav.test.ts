@@ -61,14 +61,18 @@ describe("Phase 2.0 — department navigation", () => {
     expect(() => read("../app/departments/documentation/page.tsx")).not.toThrow();
   });
 
-  it("lists Direction, Ressources humaines, Rapports and Tableau exécutif under MANAGEMENT", () => {
+  it("lists Direction, RH, Gestion de la Performance, Rapports and Tableau exécutif under MANAGEMENT", () => {
     const mgmt = navSections.find((s) => s.label === "Management");
     expect(mgmt).toBeDefined();
     // Phase HR-1 — « Ressources humaines » (gated hr:read) sits between Direction and
     // Rapports. HR is a management support function, never a DÉPARTEMENTS entry.
+    // Gestion de la Performance sits between HR and Rapports: it reads people's
+    // work, so it belongs beside the people function, and it is deliberately
+    // NOT under Rapports — a per-person indicator is not a company report.
     expect((mgmt?.items ?? []).map((i) => i.href)).toEqual([
       "/departments/management",
       "/departments/hr",
+      "/performance",
       "/reports",
       "/dashboard/executive",
     ]);

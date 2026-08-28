@@ -27,6 +27,7 @@ import {
   RECEIVABILITY_OUTCOMES,
   type ReceivabilityOutcome,
 } from "@/lib/customs/receivability";
+import { GovernedCustomsFields } from "./governed-fields";
 import type { ActionResult, CustomsRecord, MissingCustomsDoc } from "@/lib/customs/types";
 
 /**
@@ -100,6 +101,9 @@ export function CustomsPanel({
   canValidate,
   canRegisterGainde,
   canAttach,
+  canCorrect,
+  canRevalidate,
+  awaitingRevalidation,
 }: {
   fileId: string;
   record: CustomsRecord | null;
@@ -111,6 +115,12 @@ export function CustomsPanel({
   canValidate: boolean;
   canRegisterGainde: boolean;
   canAttach: boolean;
+  /** D4 — may open the governed correction door on certified data. */
+  canCorrect: boolean;
+  /** D4 — may recertify after a correction (never one's own). */
+  canRevalidate: boolean;
+  /** D4 — corrected and not yet recertified. */
+  awaitingRevalidation: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -428,6 +438,18 @@ export function CustomsPanel({
           <p className="mt-2 text-[11px] text-slate-400">{c.receivability.hint}</p>
           <ErrorLine error={error} scope="receivability" />
         </div>
+
+        {/* D4 — the five governed elements, their certification state and the
+            correction door. Above the free-text metadata deliberately: these
+            are the facts a chef de transit certifies, not references anyone may
+            retype. */}
+        <GovernedCustomsFields
+          record={record}
+          canUpdate={canUpdate}
+          canCorrect={canCorrect}
+          canRevalidate={canRevalidate}
+          awaitingRevalidation={awaitingRevalidation}
+        />
 
         {/* Editable manual-reference metadata */}
         {canUpdate && (

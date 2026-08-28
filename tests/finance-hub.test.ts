@@ -73,6 +73,7 @@ describe("HR under Management — now real (Phase HR-1)", () => {
     expect(mgmt.items.map((i) => i.label)).toEqual([
       "Direction",
       "Ressources humaines",
+      "Gestion de la Performance",
       "Rapports",
       "Tableau exécutif",
     ]);

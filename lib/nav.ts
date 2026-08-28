@@ -195,6 +195,19 @@ export const BASE_SECTIONS: NavigationSection[] = [
         iconKey: "team",
         permission: "hr:read",
       },
+      // Gestion de la Performance — the ICTD / ICAM / IPAM module. Its own
+      // capability, deliberately not analytics:read: reading company reports and
+      // reading an indicator about a named colleague's work are different
+      // audiences, and conflating them would hand every analytics holder a
+      // per-person performance view nobody ratified. The /performance layout
+      // re-checks; this entry is cosmetic.
+      {
+        key: "performance",
+        label: "Gestion de la Performance",
+        href: "/performance",
+        iconKey: "report",
+        permission: "performance:read",
+      },
       { key: "reports", label: "Rapports", href: "/reports", iconKey: "report", permission: "analytics:read" },
       {
         key: "executive",
