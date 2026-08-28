@@ -116,39 +116,52 @@ end $$;
 
 -- ---------------------------------------------------------------------------
 -- 3. RLS reads: hr:read only, own tenant only.
+--
+-- Measured under each impersonated role, recorded after `reset role`: the temp
+-- results table belongs to the superuser session and `authenticated` cannot
+-- write to it. Transaction-local settings cross the role boundary, so the
+-- numbers below are the ones actually observed, not assumed.
 -- ---------------------------------------------------------------------------
 set local role authenticated;
 
-set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-0000000d3001"}';
+select set_config('request.jwt.claims',
+  json_build_object('sub', '00000000-0000-0000-0000-0000000d3001', 'role', 'authenticated')::text, true);
 do $$
 declare n int;
 begin
   select count(*) into n from public.hr_calendar_day;
-  insert into _r values ('hr_reader_sees_own_tenant_only', n);
+  perform set_config('d3.hr_reader', n::text, true);
   if n <> 2 then raise exception 'D3 RLS FAIL: hr:read holder saw % rows, expected 2', n; end if;
 end $$;
 
-set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-0000000d3002"}';
+select set_config('request.jwt.claims',
+  json_build_object('sub', '00000000-0000-0000-0000-0000000d3002', 'role', 'authenticated')::text, true);
 do $$
 declare n int;
 begin
   select count(*) into n from public.hr_calendar_day;
-  insert into _r values ('operational_role_sees_nothing', case when n=0 then 1 else 0 end);
+  perform set_config('d3.ops_reader', n::text, true);
   if n <> 0 then raise exception 'D3 RLS FAIL: an operational role saw % calendar rows', n; end if;
 end $$;
 
-set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-0000000d3003"}';
+select set_config('request.jwt.claims',
+  json_build_object('sub', '00000000-0000-0000-0000-0000000d3003', 'role', 'authenticated')::text, true);
 do $$
 declare n int;
 begin
   select count(*) into n from public.hr_calendar_day
    where tenant_id = '00000000-0000-0000-0000-000000000001';
-  insert into _r values ('cross_tenant_calendar_invisible', case when n=0 then 1 else 0 end);
+  perform set_config('d3.xtenant_reader', n::text, true);
   if n <> 0 then raise exception 'D3 RLS FAIL: cross-tenant leak of % rows', n; end if;
 end $$;
 
 reset role;
-set local request.jwt.claims = '';
+select set_config('request.jwt.claims', '', true);
+
+insert into _r values
+  ('hr_reader_sees_own_tenant_only', current_setting('d3.hr_reader')::int),
+  ('operational_role_sees_nothing', case when current_setting('d3.ops_reader')::int = 0 then 1 else 0 end),
+  ('cross_tenant_calendar_invisible', case when current_setting('d3.xtenant_reader')::int = 0 then 1 else 0 end);
 
 -- ---------------------------------------------------------------------------
 -- 4. No operational role acquired HR authority.
