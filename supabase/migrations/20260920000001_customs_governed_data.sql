@@ -344,7 +344,8 @@ grant  execute on function public.record_customs_revalidation(uuid, uuid) to ser
 -- ---------------------------------------------------------------------------
 do $$
 declare
-  v_n int;
+  v_n     int;
+  v_roles int;
 begin
   -- A CODE census is not a DATA census: prove no existing row violates the
   -- new vocabularies (they are all NULL today, and this proves it).
@@ -392,22 +393,32 @@ begin
     raise exception 'M128: expected 2 new permissions, found %', v_n;
   end if;
 
+  -- Grants are asserted against the roles that EXIST, not against a fixed
+  -- count: migrations run before the seed, so on a fresh database there are no
+  -- roles yet and every one of these is legitimately zero. The M125 idiom. The
+  -- absolute holder lists are pinned where the roles are real — the seed, the
+  -- role templates, and tests/customs-d4-governed-data.test.ts, which requires
+  -- all three to agree.
+  select count(*) into v_roles from public.role
+   where code in ('CHIEF_OF_TRANSIT', 'SYSTEM_ADMIN');
   select count(*) into v_n
     from public.role_permission rp
     join public.role r on r.id = rp.role_id
     join public.permission p on p.id = rp.permission_id
    where p.code = 'customs:correct';
-  if v_n <> 2 then
-    raise exception 'M128: customs:correct must have exactly 2 holders (CHIEF_OF_TRANSIT, SYSTEM_ADMIN), found %', v_n;
+  if v_n <> v_roles then
+    raise exception 'M128: expected % grants of customs:correct, got %', v_roles, v_n;
   end if;
 
+  select count(*) into v_roles from public.role
+   where code in ('CHIEF_OF_TRANSIT', 'CUSTOMS_DECLARANT', 'SYSTEM_ADMIN');
   select count(*) into v_n
     from public.role_permission rp
     join public.role r on r.id = rp.role_id
     join public.permission p on p.id = rp.permission_id
    where p.code = 'customs:revalidate';
-  if v_n <> 3 then
-    raise exception 'M128: customs:revalidate must have exactly 3 holders, found %', v_n;
+  if v_n <> v_roles then
+    raise exception 'M128: expected % grants of customs:revalidate, got %', v_roles, v_n;
   end if;
 
   -- The declarant did NOT acquire first-validation authority (PG-6 intact).
@@ -433,5 +444,5 @@ begin
     raise exception 'M128: customs_correction must have NO write policy, found %', v_n;
   end if;
 
-  raise notice 'M128 OK: five governed customs elements added; correction door (customs:correct ×2) and revalidation door (customs:revalidate ×3) created; WORM history in place; PG-6 intact';
+  raise notice 'M128 OK: five governed customs elements added; correction and revalidation doors catalogued and granted to the roles present; WORM history in place; PG-6 intact';
 end $$;
