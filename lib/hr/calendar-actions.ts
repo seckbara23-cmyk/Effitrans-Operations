@@ -18,19 +18,15 @@ import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
 
-export const CALENDAR_DAY_KINDS = ["PUBLIC_HOLIDAY", "COMPANY_CLOSURE"] as const;
-export type CalendarDayKind = (typeof CALENDAR_DAY_KINDS)[number];
-
-export type CalendarActionResult =
-  | { ok: true; id: string }
-  | { ok: false; error: string };
-
-export type CalendarDayRow = {
-  id: string;
-  day: string;
-  kind: CalendarDayKind;
-  label: string;
-};
+// Values and types live in ./calendar — a "use server" module may export only
+// async functions, and a constant array is an object export that fails at page
+// build rather than at typecheck.
+import {
+  CALENDAR_DAY_KINDS,
+  type CalendarActionResult,
+  type CalendarDayKind,
+  type CalendarDayRow,
+} from "./calendar";
 
 /** The tenant's calendar for one year, ordered. Read gate: hr:read via RLS-equivalent app check. */
 export async function listCalendarDays(year: number): Promise<CalendarDayRow[]> {

@@ -12,7 +12,8 @@
  */
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { addCalendarDay, removeCalendarDay, type CalendarDayRow } from "@/lib/hr/calendar-actions";
+import { addCalendarDay, removeCalendarDay } from "@/lib/hr/calendar-actions";
+import type { CalendarDayRow } from "@/lib/hr/calendar";
 
 const KIND_LABEL: Record<string, string> = {
   PUBLIC_HOLIDAY: "Jour férié",

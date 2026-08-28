@@ -12,7 +12,7 @@
  * authority model and the route boundary, which are source facts.
  */
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { TENANT_ROLE_TEMPLATES } from "@/lib/platform/role-templates";
 import { BASE_SECTIONS } from "@/lib/nav";
@@ -353,5 +353,54 @@ describe("Paramètres — read-only until version pinning exists", () => {
     // The manage capability changes the SENTENCE, not the affordance.
     expect(page).toContain("canManage");
     expect(page).toContain("performance:manage");
+  });
+});
+
+// ============================================ the build-only trap, closed ====
+
+describe('every "use server" module in the repository exports only async functions', () => {
+  // Phase 11.0C found this once and it recurred here: a "use server" file may
+  // export ONLY async functions, and a constant array is an object export. It
+  // passes tsc and dies at `next build` page-data collection, so the local
+  // suite says green and CI says nothing until ten minutes later.
+  //
+  // The existing guards each list their own files by hand, which is exactly why
+  // a NEW server module was not covered. This one walks the tree, so the class
+  // is closed rather than the instance.
+  const roots = ["lib", "app", "components"];
+  const files: string[] = [];
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir)) {
+      const full = `${dir}/${entry}`;
+      if (statSync(full).isDirectory()) walk(full);
+      else if (/\.tsx?$/.test(entry)) files.push(full);
+    }
+  };
+  for (const r of roots) walk(fileURLToPath(new URL(`../${r}`, import.meta.url)));
+
+  const serverModules = files.filter((f) => {
+    const head = readFileSync(f, "utf8").slice(0, 200);
+    return /^\s*["']use server["']/.test(head);
+  });
+
+  it("finds the server modules to check", () => {
+    expect(serverModules.length, "no \"use server\" module found — the walk is broken").toBeGreaterThan(5);
+  });
+
+  it("none of them exports a non-async function", () => {
+    for (const f of serverModules) {
+      const src = readFileSync(f, "utf8");
+      for (const m of src.match(/^export (?!type )(?:async )?function/gm) ?? []) {
+        expect(m, f).toContain("async");
+      }
+    }
+  });
+
+  it("none of them exports a const, class, or object", () => {
+    for (const f of serverModules) {
+      const src = readFileSync(f, "utf8");
+      const bad = src.match(/^export (?:const|let|var|class|enum) \w+/gm) ?? [];
+      expect(bad, `${f} exports a value from a "use server" module`).toEqual([]);
+    }
   });
 });
