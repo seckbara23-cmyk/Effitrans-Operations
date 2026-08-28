@@ -25,6 +25,8 @@ import {
 } from "@/lib/performance/period";
 import { buildSnapshot, PARAMETER_SET_VERSION, PERFORMANCE_ENGINE_VERSION } from "@/lib/performance/report";
 import { renderPerformanceReport } from "@/lib/performance/report-pdf";
+import { buildBriefing } from "@/lib/performance/briefing";
+import { networkDays, workedDaysInPeriod, delaiJoursOuvres } from "@/lib/performance/working-days";
 import { computeIctdDossier } from "@/lib/performance/ictd";
 
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(`../${rel}`, import.meta.url)), "utf8");
@@ -274,7 +276,16 @@ describe("the snapshot carries its own provenance", () => {
     const bytes = renderPerformanceReport({
       title: "Rapport de Performance — août 2026",
       snapshot: snap,
-      publishedAt: "2026-09-01T10:00:00.000Z",
+      provenance: {
+        preparedBy: "fary@effitrans.sn",
+        createdAt: "2026-09-01T09:00:00.000Z",
+        publishedBy: "direction@effitrans.sn",
+        publishedAt: "2026-09-01T10:00:00.000Z",
+        parameterSetVersion: PARAMETER_SET_VERSION,
+        engineVersion: PERFORMANCE_ENGINE_VERSION,
+      },
+      executiveSummary: "Activité stable sur la période.",
+      managementCommentary: "Renforcer la saisie douanière.",
     });
     expect(bytes.length).toBeGreaterThan(1000);
     expect(new TextDecoder().decode(bytes.slice(0, 5))).toBe("%PDF-");
@@ -444,5 +455,261 @@ describe("Rapports & BI is a tab of the module, under its gate", () => {
     expect(route).toContain("getReport(user.tenantId, id)");
     expect(strip(read("lib/performance/report-read.ts"))).toContain('.eq("tenant_id", tenantId)');
     expect(route).toContain("report.artifactStoragePath");
+  });
+});
+
+// ============================ Slice-1 hardening: the briefing and its lineage ====
+
+describe("the management briefing derives from the snapshot and concludes nothing", () => {
+  const snapOf = (over: Partial<Parameters<typeof buildSnapshot>[0]> = {}) =>
+    buildSnapshot({
+      period: monthPeriod("2026-08-10"),
+      collaborators: [],
+      dossiers: [],
+      clientNames: new Map(),
+      calendarDays: 0,
+      unavailable: [],
+      ...over,
+    });
+
+  it("it is a pure function of the snapshot — no database, no recomputation", () => {
+    const src = strip(read("lib/performance/briefing.ts"));
+    expect(src).not.toContain("getAdminSupabaseClient");
+    expect(src).not.toContain(".from(");
+    expect(src).not.toContain("await ");
+    // …and it must not re-derive an indicator either.
+    expect(src).not.toContain("computeIctdDossier");
+    expect(src).not.toContain("reliabilityStatus(");
+  });
+
+  it("the page and the PDF use the SAME derivation", () => {
+    expect(strip(read("app/performance/rapports/[id]/page.tsx"))).toContain("buildBriefing(");
+    expect(strip(read("lib/performance/report-pdf.ts"))).toContain("buildBriefing(");
+  });
+
+  it("the executive summary surfaces the facts management asked for", () => {
+    const b = buildBriefing(snapOf());
+    const labels = b.kpis.map((k) => k.label).join(" | ");
+    for (const required of [
+      "Période", "Dossiers analysés", "Collaborateurs évalués",
+      "Délai moyen", "ICTD total", "Fiabilité",
+    ]) {
+      expect(labels, required).toContain(required);
+    }
+  });
+
+  it("an unmeasurable figure says so instead of reading zero", () => {
+    const b = buildBriefing(snapOf());
+    const ictd = b.kpis.find((k) => k.label.startsWith("ICTD"))!;
+    expect(ictd.value).toBe("non calculable");
+    const delay = b.kpis.find((k) => k.label.startsWith("Délai"))!;
+    expect(delay.value).toBe("non calculable");
+  });
+
+  it("every attention finding carries a deterministic count or an explicit state", () => {
+    const b = buildBriefing(
+      snapOf({
+        dossiers: [
+          {
+            fileId: "f1", fileNumber: "EFT-1", clientId: null, declarantId: "u1",
+            ictd: null, inputsCaptured: 5, invoiceCount: 0, cotationCount: 0,
+            declarationType: null, shPositionCount: null, delaiJoursOuvres: null,
+            validated: false, awaitingRevalidation: true,
+          },
+        ],
+      }),
+    );
+    const byLabel = new Map(b.findings.map((f) => [f.label, f]));
+    expect(byLabel.get("Dossiers non calculables")?.count).toBe(1);
+    expect(byLabel.get("Dossiers à revalider")?.count).toBe(1);
+    // The calendar finding is a STATE, so its count is explicitly null rather
+    // than a misleading zero.
+    expect(byLabel.get("Calendrier de travail non renseigné")?.count).toBeNull();
+  });
+
+  it("attention counts equal the snapshot's own figures — no independent tally", () => {
+    const snap = snapOf({
+      dossiers: [
+        {
+          fileId: "f1", fileNumber: "EFT-1", clientId: null, declarantId: "u1",
+          ictd: null, inputsCaptured: 5, invoiceCount: 0, cotationCount: 0,
+          declarationType: null, shPositionCount: null, delaiJoursOuvres: null,
+          validated: false, awaitingRevalidation: false,
+        },
+      ],
+    });
+    const b = buildBriefing(snap);
+    expect(b.findings.find((f) => f.label === "Dossiers non calculables")?.count).toBe(
+      snap.attention.nonCalculable,
+    );
+  });
+
+  it("it draws no conclusion and issues no recommendation", () => {
+    const src = read("lib/performance/briefing.ts");
+    for (const word of ["recommand", "il faudrait", "suggère", "devrait être"]) {
+      expect(src.toLowerCase(), word).not.toContain(word);
+    }
+  });
+});
+
+describe("capacity basis — the 66,0 lineage, pinned", () => {
+  const EMPTY = new Set<string>();
+
+  it("T3 2026 is 66 weekdays: 23 juillet + 21 août + 22 septembre", () => {
+    expect(networkDays("2026-07-01", "2026-07-31", EMPTY)).toBe(23);
+    expect(networkDays("2026-08-01", "2026-08-31", EMPTY)).toBe(21);
+    expect(networkDays("2026-09-01", "2026-09-30", EMPTY)).toBe(22);
+    const q = quarterPeriod("2026-08-14");
+    expect(q.startISO).toBe("2026-07-01");
+    expect(q.endISO).toBe("2026-09-30");
+    expect(networkDays(q.startISO, q.endISO, EMPTY)).toBe(66);
+  });
+
+  it("…and with an empty calendar and no leave, workedDays IS that number", () => {
+    const q = quarterPeriod("2026-08-14");
+    expect(workedDaysInPeriod(q.startISO, q.endISO, EMPTY, [])).toBe(66);
+    // August independently, which is why the two views differ legitimately.
+    const a = monthPeriod("2026-08-14");
+    expect(workedDaysInPeriod(a.startISO, a.endISO, EMPTY, [])).toBe(21);
+  });
+
+  it("a populated calendar and leave move it exactly as ratified", () => {
+    const q = quarterPeriod("2026-08-14");
+    const holidays = new Set(["2026-08-20"]); // a Thursday
+    expect(workedDaysInPeriod(q.startISO, q.endISO, holidays, [])).toBe(65);
+    // Full day of leave.
+    expect(
+      workedDaysInPeriod(q.startISO, q.endISO, holidays, [
+        { startISO: "2026-08-05", endISO: "2026-08-05", dayTenths: 10 },
+      ]),
+    ).toBe(64);
+    // HALF day = 0,5.
+    expect(
+      workedDaysInPeriod(q.startISO, q.endISO, holidays, [
+        { startISO: "2026-08-06", endISO: "2026-08-06", dayTenths: 5 },
+      ]),
+    ).toBe(64.5);
+    // Leave ON the holiday must NOT deduct twice.
+    expect(
+      workedDaysInPeriod(q.startISO, q.endISO, holidays, [
+        { startISO: "2026-08-20", endISO: "2026-08-20", dayTenths: 10 },
+      ]),
+    ).toBe(65);
+  });
+
+  it("the briefing states which of the two the number means", () => {
+    const empty = buildBriefing(
+      buildSnapshot({
+        period: quarterPeriod("2026-08-14"),
+        collaborators: [], dossiers: [], clientNames: new Map(),
+        calendarDays: 0, unavailable: [],
+      }),
+    );
+    expect(empty.capacityBasis.calendarPopulated).toBe(false);
+    expect(empty.capacityBasis.label).toMatch(/non renseigné/);
+    expect(empty.capacityBasis.explanation).toMatch(/jours de semaine/);
+
+    const populated = buildBriefing(
+      buildSnapshot({
+        period: quarterPeriod("2026-08-14"),
+        collaborators: [], dossiers: [], clientNames: new Map(),
+        calendarDays: 4, unavailable: [],
+      }),
+    );
+    expect(populated.capacityBasis.calendarPopulated).toBe(true);
+    expect(populated.capacityBasis.label).toMatch(/fériés/);
+  });
+
+  it("the délai formula still refuses to see leave — the ratified separation", () => {
+    // THE function itself, not a restatement of it: three parameters —
+    // complete, BAE, calendar — so employee leave has no way in. A fourth
+    // parameter would fail here, which is the point.
+    expect(delaiJoursOuvres.length).toBe(3);
+    expect(workedDaysInPeriod.length, "capacity DOES take leave, as its fourth").toBe(4);
+  });
+});
+
+// ================================================ provenance and lifecycle ====
+
+describe("provenance is persisted, never derived from a browser", () => {
+  const prov = strip(read("components/performance/report-provenance.tsx"));
+
+  it("every displayed fact comes from the report row", () => {
+    for (const field of [
+      "createdByEmail", "createdAt", "periodLabel", "status",
+      "parameterSetVersion", "publishedByEmail", "publishedAt",
+      "engineVersion", "artifactSha256",
+    ]) {
+      expect(prov, field).toContain(field);
+    }
+  });
+
+  it("it computes no timestamp of its own", () => {
+    expect(prov).not.toContain("Date.now()");
+    expect(prov).not.toContain("new Date()");
+  });
+
+  it("a draft shows the version IN FORCE, a published report the FROZEN one", () => {
+    expect(prov).toContain("en vigueur");
+    expect(prov).toContain("figée");
+  });
+
+  it("the read service exposes those columns", () => {
+    const rr = strip(read("lib/performance/report-read.ts"));
+    for (const col of [
+      "created_by", "created_at", "published_by", "published_at",
+      "parameter_set_version", "engine_version", "artifact_sha256",
+    ]) {
+      expect(rr, col).toContain(col);
+    }
+  });
+
+  it("the PDF carries provenance too, sourced from the frozen row", () => {
+    const pdf = strip(read("lib/performance/report-pdf.ts"));
+    expect(pdf).toContain("provenance.preparedBy");
+    expect(pdf).toContain("provenance.publishedBy");
+    expect(pdf).toContain("provenance.parameterSetVersion");
+    expect(pdf).toContain("PERFORMANCE_REPORT_RENDERER_VERSION");
+    const publish = actions.slice(actions.indexOf("export async function publishReport"));
+    expect(publish).toContain("preparedBy:");
+    expect(publish).toContain("createdAt: row.created_at");
+  });
+});
+
+describe("lifecycle, as the existing contract defines it", () => {
+  it("the narrative stays editable through PRÊT POUR REVUE — refused only once published", () => {
+    // Read from the implementation rather than invented: the guard names PUBLIE
+    // and nothing else, and the database trigger agrees.
+    const upd = actions.slice(
+      actions.indexOf("export async function updateReportNarrative"),
+      actions.indexOf("export async function submitReportForReview"),
+    );
+    expect(upd).toContain('if (row.status === "PUBLIE") return { ok: false, error: "published_is_frozen" };');
+    expect(upd).not.toContain("PRET_POUR_REVUE");
+    expect(mCode).toContain("if old.status <> 'PUBLIE' then");
+  });
+
+  it("each transition is CAS-guarded on the state it comes from", () => {
+    expect(actions).toContain('.eq("status", "BROUILLON")');
+    expect(actions).toContain('.eq("status", "PRET_POUR_REVUE")');
+  });
+
+  it("a draft cannot masquerade as published — the page says which it is", () => {
+    const page = read("app/performance/rapports/[id]/page.tsx");
+    expect(page).toContain("Brouillon — les chiffres ci-dessous sont calculés en direct");
+    expect(page).toContain("report.snapshot ??");
+  });
+
+  it("the creator cannot gain publication authority by drafting", () => {
+    const t = TENANT_ROLE_TEMPLATES.find((r) => r.key === "PERFORMANCE_MANAGEMENT")!;
+    expect(t.permissions).toContain("performance:report:create");
+    expect(t.permissions).not.toContain("performance:report:publish");
+  });
+
+  it("SYSTEM_ADMIN still gains no automatic performance visibility", () => {
+    const sa = TENANT_ROLE_TEMPLATES.find((r) => r.key === "SYSTEM_ADMIN")!;
+    for (const p of sa.permissions) {
+      expect(p.startsWith("performance:"), `SYSTEM_ADMIN must not hold ${p}`).toBe(false);
+    }
   });
 });

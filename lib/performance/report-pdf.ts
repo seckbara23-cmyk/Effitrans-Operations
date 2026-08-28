@@ -11,6 +11,7 @@
  */
 import { PdfDoc, textWidth } from "@/lib/reports/pdf";
 import type { ReportSnapshot } from "./report";
+import { buildBriefing } from "./briefing";
 
 export const PERFORMANCE_REPORT_RENDERER_VERSION = "perf-1";
 
@@ -45,12 +46,26 @@ function wrap(s: string, size: number, maxWidth: number): string[] {
   return lines;
 }
 
+export type ReportProvenance = {
+  preparedBy: string | null;
+  createdAt: string;
+  publishedBy: string | null;
+  publishedAt: string | null;
+  parameterSetVersion: string;
+  engineVersion: string;
+};
+
 export function renderPerformanceReport(input: {
   title: string;
   snapshot: ReportSnapshot;
-  publishedAt: string | null;
+  provenance: ReportProvenance;
+  executiveSummary?: string | null;
+  managementCommentary?: string | null;
 }): Uint8Array {
-  const { title, snapshot: snap } = input;
+  const { title, snapshot: snap, provenance } = input;
+  // The SAME derivation the screen uses — a briefing on paper and a briefing on
+  // screen cannot say different things.
+  const briefing = buildBriefing(snap);
   const doc = new PdfDoc({ size: "A4" });
   let y = M;
 
@@ -92,28 +107,83 @@ export function renderPerformanceReport(input: {
   };
 
   // ------------------------------------------------------------- header ----
-  doc.text(M, y, "EFFITRANS", { size: 9, bold: true, color: TEAL });
-  y += 16;
+  doc.fillRect(0, 0, W, 4, TEAL);
+  y = M;
+  doc.text(M, y, "EFFITRANS", { size: 10, bold: true, color: TEAL });
+  doc.text(RIGHT, y, "Rapport de performance", { size: 8, color: SLATE, align: "right" });
+  y += 18;
   doc.text(M, y, title, { size: 17, bold: true, color: NAVY });
-  y += 24;
-  doc.text(M, y, `Période : ${snap.period.label}`, { size: 10, color: SLATE });
-  y += 14;
+  y += 22;
+  doc.text(M, y, `Période : ${snap.period.label}  (${snap.period.startISO} → ${snap.period.endISO})`, {
+    size: 10,
+    color: SLATE,
+  });
+  y += 16;
+
+  // Provenance, from the frozen record. Never recomputed, never a browser clock.
+  const day = (iso: string | null) => (iso ? iso.slice(0, 10) : "—");
+  doc.text(M, y, `Préparé par ${provenance.preparedBy ?? "—"} le ${day(provenance.createdAt)}`, {
+    size: 8,
+    color: SLATE,
+  });
+  y += 11;
+  if (provenance.publishedAt) {
+    doc.text(M, y, `Publié par ${provenance.publishedBy ?? "—"} le ${day(provenance.publishedAt)}`, {
+      size: 8,
+      color: SLATE,
+    });
+    y += 11;
+  }
   doc.text(
     M,
     y,
-    input.publishedAt
-      ? `Publié le ${new Date(input.publishedAt).toISOString().slice(0, 10)} · jeu de paramètres ${snap.parameterSetVersion}`
-      : `Jeu de paramètres ${snap.parameterSetVersion}`,
+    `Jeu de paramètres ${provenance.parameterSetVersion} · moteur ${provenance.engineVersion} · rendu ${PERFORMANCE_REPORT_RENDERER_VERSION}`,
     { size: 8, color: SLATE },
   );
-  y += 10;
+  y += 12;
   doc.line(M, y, RIGHT, y, RULE);
-  y += 8;
+  y += 6;
+
+  // ------------------------------------------------ synthèse exécutive ----
+  heading("Synthèse exécutive");
+  for (const k of briefing.kpis) {
+    row(k.label, k.qualifier ? `${k.value}  (${k.qualifier})` : k.value, true);
+  }
+
+  y += 4;
+  paragraph(`Base de capacité : ${briefing.capacityBasis.label}.`, NAVY, 8);
+  paragraph(briefing.capacityBasis.explanation, SLATE, 8);
+
+  if (input.executiveSummary) {
+    y += 2;
+    doc.text(M, y, "Lecture de la direction", { size: 9, bold: true, color: NAVY });
+    y += 13;
+    paragraph(input.executiveSummary, SLATE, 9);
+  }
+
+  // ---------------------------------------- points d'attention direction ----
+  heading("Points d'attention de la Direction");
+  if (briefing.findings.length === 0) {
+    paragraph("Aucun point d'attention sur cette période.");
+  } else {
+    for (const f of briefing.findings) {
+      newPageIfNeeded(34);
+      const head = f.count !== null ? `${f.count} · ${f.label}` : f.label;
+      doc.text(M, y, head, { size: 9, bold: true, color: f.severity === "INFO" ? NAVY : AMBER });
+      y += 12;
+      paragraph(f.detail, SLATE, 8);
+    }
+  }
+
+  // ------------------------------------------ commentaire de la direction ----
+  if (input.managementCommentary) {
+    heading("Commentaire de la Responsable Performance");
+    paragraph(input.managementCommentary, SLATE, 9);
+  }
 
   // --------------------------------------------------------- activité ----
-  heading("Activité globale");
+  heading("Détail — activité globale");
   row("Dossiers traités", String(snap.activity.dossierCount), true);
-  row("Collaborateurs évalués", String(snap.activity.collaboratorCount));
   row("ICTD total (UTD)", num(snap.activity.ictdTotal), true);
   row("ICTD moyen par dossier", num(snap.activity.ictdAverage));
 
@@ -132,7 +202,8 @@ export function renderPerformanceReport(input: {
   }
 
   // ---------------------------------------------------- collaborateurs ----
-  heading("Performance des collaborateurs");
+  heading("Performance des collaborateurs et capacité");
+  paragraph(`${briefing.capacityBasis.label}.`, SLATE, 8);
   if (snap.collaborators.length === 0) {
     paragraph("Aucun collaborateur évalué sur la période.");
   } else {
@@ -165,13 +236,6 @@ export function renderPerformanceReport(input: {
   for (const s of snap.delays.slowest) {
     row(s.fileNumber, `${s.days} jour(s) ouvré(s)`);
   }
-
-  // -------------------------------------------------------- attention ----
-  heading("Points d'attention management");
-  row("Dossiers non calculables (saisie incomplète)", String(snap.attention.nonCalculable));
-  row("Dossiers à revalider après correction", String(snap.attention.awaitingRevalidation));
-  row("Collaborateurs en fiabilité provisoire", String(snap.attention.provisoire));
-  row("Jours non travaillés au calendrier", String(snap.attention.calendarDays));
 
   // ------------------------------------------------------ méthodologie ----
   heading("Méthodologie et fiabilité");

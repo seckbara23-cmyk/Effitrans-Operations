@@ -1,10 +1,15 @@
 /**
- * One management report.
+ * One management report — a briefing above, the evidence below.
  *
- * A DRAFT renders live figures — that is what a draft is for, and they will
- * move until publication. A PUBLISHED report renders its frozen snapshot and
- * nothing else: the page does not recompute, so what a reader sees a year from
- * now is what management was briefed on.
+ * A DRAFT renders live figures; that is what a draft is for, and they move
+ * until publication. A PUBLISHED report renders its frozen snapshot and nothing
+ * else: the page does not recompute, so what a reader sees a year from now is
+ * what management was briefed on.
+ *
+ * The briefing block derives from the SAME snapshot the PDF uses
+ * (`buildBriefing`), so screen and paper cannot say different things. It draws
+ * no conclusions — every line is a count or a state the platform holds, and the
+ * interpretation belongs to the Responsable Performance, in her own section.
  */
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -15,8 +20,10 @@ import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { getReport } from "@/lib/performance/report-read";
 import { loadBiView } from "@/lib/performance/bi";
 import { customPeriod } from "@/lib/performance/period";
-import { REPORT_STATUS_FR } from "@/lib/performance/report";
+import { REPORT_STATUS_FR, PARAMETER_SET_VERSION } from "@/lib/performance/report";
+import { buildBriefing, type AttentionSeverity } from "@/lib/performance/briefing";
 import { ReportWorkflow } from "@/components/performance/report-workflow";
+import { ReportProvenance } from "@/components/performance/report-provenance";
 
 export const metadata: Metadata = { title: "Rapport de performance" };
 export const dynamic = "force-dynamic";
@@ -24,11 +31,18 @@ export const dynamic = "force-dynamic";
 const fr = (v: number | null, d = 2) =>
   v === null ? "non calculable" : v.toFixed(d).replace(".", ",");
 
-export default async function ReportDetailPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+const SEVERITY_STYLE: Record<AttentionSeverity, string> = {
+  QUALITE: "border-amber-300 bg-amber-50/50",
+  ATTENTION: "border-red-200 bg-red-50/40",
+  INFO: "border-slate-200 bg-slate-50/60",
+};
+const SEVERITY_LABEL: Record<AttentionSeverity, string> = {
+  QUALITE: "Qualité de donnée",
+  ATTENTION: "Action requise",
+  INFO: "Information",
+};
+
+export default async function ReportDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const user = await requireUser();
   const permissions = await getEffectivePermissions(user.id);
@@ -38,11 +52,10 @@ export default async function ReportDetailPage({
   const report = await getReport(user.tenantId, id);
   if (!report) notFound();
 
-  // Published → the frozen snapshot, always. Draft → live, because a draft is
-  // a working document and pretending otherwise would freeze nothing useful.
   const snapshot =
     report.snapshot ??
     (await loadBiView(user.tenantId, customPeriod(report.periodStart, report.periodEnd))).snapshot;
+  const briefing = buildBriefing(snapshot);
 
   return (
     <div className="space-y-6">
@@ -70,6 +83,115 @@ export default async function ReportDetailPage({
         }
       />
 
+      {report.status !== "PUBLIE" ? (
+        <p className="rounded-md border border-amber-200 bg-amber-50/50 px-3 py-2 text-[11px] text-amber-800">
+          Brouillon — les chiffres ci-dessous sont calculés en direct et peuvent encore évoluer. Ils
+          seront figés à la publication.
+        </p>
+      ) : null}
+
+      {/* ══════════════════════════ SYNTHÈSE EXÉCUTIVE ══════════════════════ */}
+      <section className="surface border-t-4 border-navy-900 p-6">
+        <h2 className="text-base font-semibold text-navy-900">Synthèse exécutive</h2>
+        <p className="mt-1 text-[11px] text-slate-400">
+          Chiffres établis par la plateforme à partir des données opérationnelles gouvernées.
+        </p>
+
+        <dl className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-3">
+          {briefing.kpis.map((k) => (
+            <div key={k.label}>
+              <dt className="text-[10px] uppercase tracking-wide text-slate-400">{k.label}</dt>
+              <dd className="mt-0.5 text-xl font-semibold text-navy-900">{k.value}</dd>
+              {k.qualifier ? (
+                <p className="text-[11px] text-slate-500">{k.qualifier}</p>
+              ) : null}
+            </div>
+          ))}
+        </dl>
+
+        <div
+          className={`mt-4 rounded-md border px-3 py-2 ${
+            briefing.capacityBasis.calendarPopulated
+              ? "border-slate-200 bg-slate-50/60"
+              : "border-amber-300 bg-amber-50/50"
+          }`}
+        >
+          <p className="text-[11px] font-medium text-navy-900">
+            Base de capacité : {briefing.capacityBasis.label}
+          </p>
+          <p className="mt-0.5 text-[11px] text-slate-600">{briefing.capacityBasis.explanation}</p>
+        </div>
+
+        {report.executiveSummary ? (
+          <div className="mt-4 border-t border-slate-100 pt-4">
+            <p className="text-[10px] uppercase tracking-wide text-slate-400">
+              Lecture de la direction
+            </p>
+            <p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">
+              {report.executiveSummary}
+            </p>
+          </div>
+        ) : null}
+      </section>
+
+      {/* ═════════════════ POINTS D'ATTENTION DE LA DIRECTION ═══════════════ */}
+      <section className="surface p-6">
+        <h2 className="text-base font-semibold text-navy-900">Points d&apos;attention de la Direction</h2>
+        <p className="mt-1 text-[11px] text-slate-400">
+          Constats déterministes issus des données. Aucune recommandation n&apos;est générée.
+        </p>
+
+        {briefing.findings.length === 0 ? (
+          <p className="mt-3 text-sm text-slate-600">
+            Aucun point d&apos;attention sur cette période : données complètes, aucun dossier en
+            attente de revalidation, calendrier renseigné.
+          </p>
+        ) : (
+          <ul className="mt-3 space-y-2">
+            {briefing.findings.map((f) => (
+              <li key={f.label} className={`rounded-md border px-3 py-2 ${SEVERITY_STYLE[f.severity]}`}>
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <p className="text-sm font-medium text-navy-900">
+                    {f.count !== null ? `${f.count} · ` : ""}
+                    {f.label}
+                  </p>
+                  <span className="text-[10px] uppercase tracking-wide text-slate-500">
+                    {SEVERITY_LABEL[f.severity]}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-slate-600">{f.detail}</p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {/* ═══════════ COMMENTAIRE DE LA RESPONSABLE PERFORMANCE ══════════════ */}
+      <section className="surface p-6">
+        <h2 className="text-base font-semibold text-navy-900">
+          Commentaire de la Responsable Performance
+        </h2>
+        <p className="mt-1 text-[11px] text-slate-400">
+          Rédigé par {report.createdByEmail ?? "l'auteur du rapport"} — la lecture managériale des
+          chiffres ci-dessus.
+        </p>
+        {report.managementCommentary ? (
+          <p className="mt-3 whitespace-pre-wrap text-sm text-slate-700">
+            {report.managementCommentary}
+          </p>
+        ) : (
+          <p className="mt-3 text-sm text-slate-400">
+            {report.status === "PUBLIE"
+              ? "Aucun commentaire n'a été joint à ce rapport."
+              : "Pas encore de commentaire — à rédiger ci-dessous avant la revue."}
+          </p>
+        )}
+      </section>
+
+      {/* ═══════════════════════════ PROVENANCE ════════════════════════════ */}
+      <ReportProvenance report={report} currentParameterSetVersion={PARAMETER_SET_VERSION} />
+
+      {/* ══════════════════════════ WORKFLOW ═══════════════════════════════ */}
       <ReportWorkflow
         id={report.id}
         status={report.status}
@@ -79,29 +201,15 @@ export default async function ReportDetailPage({
         canPublish={canPublish}
       />
 
-      {report.status !== "PUBLIE" ? (
-        <p className="text-[11px] text-amber-700">
-          Brouillon — les chiffres ci-dessous sont calculés en direct et peuvent encore évoluer. Ils
-          seront figés à la publication.
-        </p>
-      ) : (
-        <p className="text-[11px] text-slate-400">
-          Publié le {new Date(report.publishedAt!).toLocaleString("fr-FR")} par{" "}
-          {report.publishedByEmail ?? "—"} · jeu de paramètres {report.parameterSetVersion} · moteur{" "}
-          {report.engineVersion}
-          {report.artifactSha256 ? ` · empreinte ${report.artifactSha256.slice(0, 12)}…` : ""}
-        </p>
-      )}
-
-      {report.executiveSummary ? (
-        <section className="surface p-5">
-          <h2 className="text-sm font-semibold text-navy-900">Synthèse exécutive</h2>
-          <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{report.executiveSummary}</p>
-        </section>
-      ) : null}
+      {/* ═══════════════════════ DÉTAIL / PREUVES ══════════════════════════ */}
+      <div className="border-t border-slate-200 pt-4">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+          Détail et pièces justificatives
+        </h2>
+      </div>
 
       <section className="surface p-5">
-        <h2 className="text-sm font-semibold text-navy-900">Activité globale</h2>
+        <h3 className="text-sm font-semibold text-navy-900">Activité globale</h3>
         <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
           {[
             ["Dossiers", String(snapshot.activity.dossierCount)],
@@ -115,10 +223,39 @@ export default async function ReportDetailPage({
             </div>
           ))}
         </div>
+
+        {snapshot.activity.byDeclarationType.length > 0 ? (
+          <div className="mt-4">
+            <p className="text-xs font-medium text-navy-900">Typologie des déclarations</p>
+            <ul className="mt-1 space-y-0.5 text-xs text-slate-600">
+              {snapshot.activity.byDeclarationType.map((t) => (
+                <li key={t.type}>
+                  {t.type} — {t.dossiers} dossier(s) · {fr(t.ictd)} UTD
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        {snapshot.activity.byClient.length > 0 ? (
+          <div className="mt-4">
+            <p className="text-xs font-medium text-navy-900">Clients — charge générée</p>
+            <ul className="mt-1 space-y-0.5 text-xs text-slate-600">
+              {snapshot.activity.byClient.map((c) => (
+                <li key={c.client}>
+                  {c.client} — {c.dossiers} dossier(s) · {fr(c.ictd)} UTD
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
       </section>
 
       <section className="surface p-5">
-        <h2 className="text-sm font-semibold text-navy-900">Performance des collaborateurs</h2>
+        <h3 className="text-sm font-semibold text-navy-900">
+          Performance des collaborateurs et capacité
+        </h3>
+        <p className="mt-1 text-[11px] text-slate-400">{briefing.capacityBasis.label}.</p>
         <div className="mt-3 overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
@@ -127,6 +264,7 @@ export default async function ReportDetailPage({
                 <th className="py-2 text-right">Dossiers</th>
                 <th className="py-2 text-right">Jours trav.</th>
                 <th className="py-2 text-right">ICTD</th>
+                <th className="py-2 text-right">ICTD / jour</th>
                 <th className="py-2">Fiabilité</th>
               </tr>
             </thead>
@@ -137,6 +275,7 @@ export default async function ReportDetailPage({
                   <td className="py-2 text-right tabular-nums">{c.dossierCount}</td>
                   <td className="py-2 text-right tabular-nums">{c.workedDays.toFixed(1)}</td>
                   <td className="py-2 text-right tabular-nums">{fr(c.ictdTotal)}</td>
+                  <td className="py-2 text-right tabular-nums">{fr(c.ictdPerDay)}</td>
                   <td className="py-2 text-xs text-slate-600">{c.status}</td>
                 </tr>
               ))}
@@ -145,43 +284,31 @@ export default async function ReportDetailPage({
         </div>
       </section>
 
-      <section className="surface p-5">
-        <h2 className="text-sm font-semibold text-navy-900">Points d&apos;attention</h2>
-        <ul className="mt-2 space-y-1 text-xs text-slate-600">
-          <li>{snapshot.attention.nonCalculable} dossier(s) non calculables</li>
-          <li>{snapshot.attention.awaitingRevalidation} dossier(s) à revalider</li>
-          <li>{snapshot.attention.provisoire} collaborateur(s) en fiabilité provisoire</li>
-        </ul>
-      </section>
-
-      {report.managementCommentary ? (
+      {snapshot.delays.slowest.length > 0 ? (
         <section className="surface p-5">
-          <h2 className="text-sm font-semibold text-navy-900">Commentaire de direction</h2>
-          <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">
-            {report.managementCommentary}
+          <h3 className="text-sm font-semibold text-navy-900">Délais et goulots d&apos;étranglement</h3>
+          <p className="mt-1 text-[11px] text-slate-400">
+            Dossier complet → BAE, en jours ouvrés. Les congés d&apos;un collaborateur n&apos;entrent
+            pas dans ce calcul.
           </p>
+          <ul className="mt-2 space-y-1">
+            {snapshot.delays.slowest.map((d) => (
+              <li key={d.fileNumber} className="flex justify-between text-xs">
+                <span className="font-mono text-navy-900">{d.fileNumber}</span>
+                <span className="tabular-nums text-slate-600">{d.days} j.</span>
+              </li>
+            ))}
+          </ul>
         </section>
       ) : null}
 
       <section className="surface p-5">
-        <h2 className="text-sm font-semibold text-navy-900">Méthodologie et fiabilité</h2>
+        <h3 className="text-sm font-semibold text-navy-900">Méthodologie et fiabilité</h3>
         <ul className="mt-2 space-y-1 text-xs text-slate-600">
           {snapshot.methodology.notes.map((n) => (
             <li key={n}>{n}</li>
           ))}
         </ul>
-        {snapshot.methodology.unavailableIndicators.length > 0 ? (
-          <div className="mt-3">
-            <p className="text-xs font-medium text-navy-900">Indicateurs non encore calculables</p>
-            <ul className="mt-1 space-y-1 text-xs text-slate-600">
-              {snapshot.methodology.unavailableIndicators.map((u) => (
-                <li key={u.indicator}>
-                  {u.indicator} — sources manquantes : {u.missing.join(" ; ")}.
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
       </section>
     </div>
   );

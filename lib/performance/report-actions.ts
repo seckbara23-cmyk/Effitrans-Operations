@@ -236,7 +236,7 @@ export async function publishReport(id: string): Promise<ReportActionResult> {
   const admin = getAdminSupabaseClient();
   const { data: row } = await admin
     .from("performance_report")
-    .select("id, status, title, period_kind, period_start, period_end, executive_summary, management_commentary")
+    .select("id, status, title, period_kind, period_start, period_end, executive_summary, management_commentary, created_by, created_at")
     .eq("id", id)
     .eq("tenant_id", user.tenantId)
     .maybeSingle();
@@ -277,7 +277,29 @@ export async function publishReport(id: string): Promise<ReportActionResult> {
   // snapshot; the PDF is a rendering of it, and the report reads « PDF
   // indisponible » rather than pretending otherwise.
   try {
-    const bytes = renderPerformanceReport({ title: row.title as string, snapshot, publishedAt });
+    // Provenance comes from the FROZEN row and from the identity that just
+    // published — never recomputed, never a browser clock.
+    const { data: people } = await admin
+      .from("app_user")
+      .select("id, email")
+      .eq("tenant_id", user.tenantId)
+      .in("id", [row.created_by as string, user.id]);
+    const emailOf = new Map((people ?? []).map((u) => [u.id as string, u.email as string | null]));
+
+    const bytes = renderPerformanceReport({
+      title: row.title as string,
+      snapshot,
+      provenance: {
+        preparedBy: emailOf.get(row.created_by as string) ?? null,
+        createdAt: row.created_at as string,
+        publishedBy: emailOf.get(user.id) ?? null,
+        publishedAt,
+        parameterSetVersion: PARAMETER_SET_VERSION,
+        engineVersion: PERFORMANCE_ENGINE_VERSION,
+      },
+      executiveSummary: row.executive_summary as string | null,
+      managementCommentary: row.management_commentary as string | null,
+    });
     const path = `performance-reports/${user.tenantId}/${id}.pdf`;
     const up = await uploadObject(path, bytes, "application/pdf");
     if (up.ok) {
