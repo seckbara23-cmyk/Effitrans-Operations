@@ -32,9 +32,12 @@ intact and no write policy on either governed table.
 
 ---
 
-## 2. What production is missing — ONE migration
+## 2. What production is missing — TWO migrations
 
-**129 — `20260921000001_performance_management_access`** is genuinely not applied:
+**129 — `20260921000001_performance_management_access`** and
+**130 — `20260922000001_performance_report`** are both unapplied. 129 creates the
+access role and its capabilities; 130 adds the report table, its freeze, the
+publication RPC, the two report capabilities and the publisher role.
 
 ```
 performance:read / performance:manage permissions ....... 0   (expected 2)
@@ -103,6 +106,20 @@ Expected: `perms = 2`, and **`read_grants = 1`, `manage_grants = 1`** — both h
 by `PERFORMANCE_MANAGEMENT` and by no other role. A count above 1 means an
 operational role acquired performance access, which the ruling forbids.
 
+**Slice 1 adds a second check.** After 130:
+
+```bash
+env -u SUPABASE_ACCESS_TOKEN npx supabase db query --linked   "select
+     (select count(*) from public.permission
+       where code in ('performance:report:create','performance:report:publish')) as report_perms,
+     (select count(*) from public.role where code = 'PERFORMANCE_PUBLISHER') as publisher_role,
+     (select count(*) from pg_trigger
+       where tgname = 'performance_report_immutable' and not tgisinternal) as freeze_trigger;"
+```
+
+Expected: `report_perms = 2`, `publisher_role = 1`, `freeze_trigger = 1`. Without
+the trigger a published report would be editable, so this one is not cosmetic.
+
 ---
 
 ## 3. Granting access to real Effitrans users
@@ -135,6 +152,18 @@ env -u SUPABASE_ACCESS_TOKEN npx supabase db query --linked   "select u.email, r
      join public.role r on r.id = ur.role_id
     where r.code = 'PERFORMANCE_MANAGEMENT';"
 ```
+
+### The second role — publishing
+
+Slice 1 separates **drafting** from **publishing**. « Gestion de la Performance »
+gained `performance:report:create`; publication belongs to a second thin role,
+**« Publication des rapports de performance »** (`PERFORMANCE_PUBLISHER`),
+assigned the same way and to nobody by default.
+
+Someone who should both study the figures and publish the record holds **both**
+roles — two chips on their profile. That is the question the two-role model puts
+in front of whoever assigns them, and it is deliberate: making a set of numbers
+the company's record of a period is a different act from reading them.
 
 ### Who can assign it
 
