@@ -168,13 +168,11 @@ end $$;
 -- 3. A legitimate publication, with DATABASE time.
 -- ---------------------------------------------------------------------------
 do $$
-declare v_row record; v_before timestamptz; v_after timestamptz;
+declare v_row record;
 begin
-  v_before := clock_timestamp();
   perform public.publish_performance_report(
     '00000000-0000-0000-0000-0000000fb0e1', '00000000-0000-0000-0000-0000000fb002',
     '{"parameterSetVersion":"2026.1","activity":{"dossierCount":7}}'::jsonb, '2026.1', 'slice1-1');
-  v_after := clock_timestamp();
 
   select * into v_row from public.performance_report
    where id = '00000000-0000-0000-0000-0000000fb0e1';
@@ -184,14 +182,34 @@ begin
     ('publisher_recorded', case when v_row.published_by = '00000000-0000-0000-0000-0000000fb002' then 1 else 0 end),
     ('snapshot_frozen', case when v_row.snapshot->'activity'->>'dossierCount' = '7' then 1 else 0 end),
     ('parameter_version_recorded', case when v_row.parameter_set_version = '2026.1' then 1 else 0 end),
-    -- The timestamp came from the database: it lies inside the window this
-    -- transaction observed, so no application clock produced it.
+    -- DATABASE time, proved by identity rather than by a window: the RPC writes
+    -- now(), which is the TRANSACTION timestamp, so the stored value must equal
+    -- this transaction's own. `clock_timestamp()` would have been the wrong
+    -- comparison — now() is fixed at transaction start and therefore precedes
+    -- any clock reading taken inside it.
     ('published_at_is_database_time',
-     case when v_row.published_at between v_before and v_after then 1 else 0 end);
+     case when v_row.published_at = transaction_timestamp() then 1 else 0 end);
 
   if v_row.status <> 'PUBLIE' then raise exception 'REP FAIL: publication did not take'; end if;
-  if v_row.published_at is null or v_row.published_at not between v_before and v_after then
-    raise exception 'REP FAIL: published_at is not database time (%)', v_row.published_at;
+  if v_row.published_at is distinct from transaction_timestamp() then
+    raise exception 'REP FAIL: published_at is not the database transaction time (% vs %)',
+      v_row.published_at, transaction_timestamp();
+  end if;
+end $$;
+
+-- The structural half of the same guarantee: the RPC has no timestamp
+-- parameter, so no caller CAN supply one — a wrong client clock has nothing to
+-- reach through.
+do $$
+declare n int;
+begin
+  select count(*) into n
+    from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace
+   where ns.nspname = 'public' and p.proname = 'publish_performance_report'
+     and pg_get_function_arguments(p.oid) ilike '%timestamp%';
+  insert into _r values ('rpc_accepts_no_timestamp', case when n = 0 then 1 else 0 end);
+  if n <> 0 then
+    raise exception 'REP FAIL: the publication RPC accepts a timestamp argument';
   end if;
 end $$;
 
