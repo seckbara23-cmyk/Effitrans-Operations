@@ -137,6 +137,28 @@ export function GovernedCustomsFields({
   const [correcting, setCorrecting] = useState(false);
   const [reason, setReason] = useState("");
 
+  // UAT-ICTD-STATE-01 — RESYNC ON NEW SERVER TRUTH.
+  //
+  // The root cause of the stale panel was here, not in the mutation: `values`
+  // was seeded once from `record` and never looked at it again. So after a
+  // correction or a revalidation, `router.refresh()` fetched fresh props, the
+  // server had the new state, and this component went on rendering the old one
+  // from its own memory — which is exactly what "needs F5" looks like.
+  //
+  // Adjusting state during render on a changed input is React's documented
+  // pattern for this and needs no effect. The signature covers the governed
+  // values AND the certification instant, because a four-eyes revalidation
+  // changes only the latter and must still close the correction form.
+  const signature = `${JSON.stringify(toValues(record))}|${record.reviewedAt ?? ""}`;
+  const [seen, setSeen] = useState(signature);
+  if (seen !== signature) {
+    setSeen(signature);
+    setValues(toValues(record));
+    setCorrecting(false);
+    setReason("");
+    setError(null);
+  }
+
   const certified = record.reviewedAt !== null;
 
   function run(fn: () => Promise<{ ok: boolean; error?: string }>, after?: () => void) {

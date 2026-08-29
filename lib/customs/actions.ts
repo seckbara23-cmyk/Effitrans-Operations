@@ -40,6 +40,12 @@ async function loadCustoms(supabase: Admin, id: string, tenantId: string) {
 function revalidate(fileId: string) {
   revalidatePath(`/files/${fileId}`);
   revalidatePath("/customs");
+  // UAT-ICTD-STATE-01 — the governed customs elements ARE the ICTD inputs, so a
+  // customs mutation invalidates every performance surface derived from them:
+  // the indicators, the BI dashboards and any report DRAFT rendering live.
+  // Published reports are unaffected by construction — they render a frozen
+  // snapshot and never recompute — so this widens no history.
+  revalidatePath("/performance", "layout");
 }
 
 /** Codes of customs-prerequisite documents still missing (admin, no extra gate). */

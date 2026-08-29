@@ -20,7 +20,7 @@ import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { getReport } from "@/lib/performance/report-read";
 import { loadBiView } from "@/lib/performance/bi";
 import { customPeriod } from "@/lib/performance/period";
-import { REPORT_STATUS_FR, PARAMETER_SET_VERSION } from "@/lib/performance/report";
+import { REPORT_STATUS_FR, PARAMETER_SET_VERSION, type ReportStatus } from "@/lib/performance/report";
 import { buildBriefing, type AttentionSeverity } from "@/lib/performance/briefing";
 import { ReportWorkflow } from "@/components/performance/report-workflow";
 import { ReportProvenance } from "@/components/performance/report-provenance";
@@ -41,6 +41,37 @@ const SEVERITY_LABEL: Record<AttentionSeverity, string> = {
   ATTENTION: "Action requise",
   INFO: "Information",
 };
+
+/**
+ * What this report IS, in its own words. Status-aware so the banner, the
+ * heading and the available actions can never contradict one another.
+ */
+function LifecycleBanner({ status }: { status: ReportStatus }) {
+  if (status === "PUBLIE") {
+    return (
+      <p className="rounded-md border border-teal-200 bg-teal-50/60 px-3 py-2 text-[11px] text-teal-900">
+        <strong>Publié — figé.</strong> Les chiffres, le texte, l&apos;attribution et la
+        méthodologie de ce rapport ne changent plus : ils enregistrent ce qui a été présenté à la
+        direction. Pour une nouvelle analyse de la période, préparez un nouveau rapport plutôt que
+        de modifier celui-ci.
+      </p>
+    );
+  }
+  if (status === "PRET_POUR_REVUE") {
+    return (
+      <p className="rounded-md border border-amber-200 bg-amber-50/50 px-3 py-2 text-[11px] text-amber-800">
+        <strong>Prêt pour revue.</strong> Les chiffres restent calculés en direct et peuvent encore
+        évoluer ; ils seront figés au moment de la publication.
+      </p>
+    );
+  }
+  return (
+    <p className="rounded-md border border-slate-200 bg-slate-50/70 px-3 py-2 text-[11px] text-slate-700">
+      <strong>Brouillon.</strong> Les chiffres ci-dessous sont calculés en direct et peuvent encore
+      évoluer. Ils seront figés à la publication.
+    </p>
+  );
+}
 
 export default async function ReportDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -72,23 +103,29 @@ export default async function ReportDetailPage({ params }: { params: Promise<{ i
               Retour
             </Link>
             {report.artifactStoragePath ? (
-              <Link
+              // UAT-PERF-PDF-02 — a plain anchor, not next/link: the PDF is a
+              // RESOURCE, not a route in this application, and opening it must
+              // not take the reader out of Effitrans. `noopener` also severs
+              // window.opener, so the PDF tab can never reach back into the
+              // session that opened it.
+              <a
                 href={`/performance/rapports/${report.id}/pdf`}
+                target="_blank"
+                rel="noopener noreferrer"
                 className="rounded-lg bg-navy-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-navy-800"
               >
-                Télécharger le PDF
-              </Link>
+                Ouvrir le PDF
+                <span className="sr-only"> (nouvel onglet)</span>
+              </a>
             ) : null}
           </div>
         }
       />
 
-      {report.status !== "PUBLIE" ? (
-        <p className="rounded-md border border-amber-200 bg-amber-50/50 px-3 py-2 text-[11px] text-amber-800">
-          Brouillon — les chiffres ci-dessous sont calculés en direct et peuvent encore évoluer. Ils
-          seront figés à la publication.
-        </p>
-      ) : null}
+      {/* UAT-PERF-LIFECYCLE-01 — one sentence per state. The banner used to say
+          « Brouillon » for everything that was not published, which contradicted
+          the heading on a report already marked « Prêt pour revue ». */}
+      <LifecycleBanner status={report.status} />
 
       {/* ══════════════════════════ SYNTHÈSE EXÉCUTIVE ══════════════════════ */}
       <section className="surface border-t-4 border-navy-900 p-6">

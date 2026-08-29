@@ -57,15 +57,57 @@ const WIN_ANSI: Record<number, number> = {
   0x2014: 0x97, // —
 };
 
+/**
+ * Glyphs with no WinAnsi equivalent that still need to READ correctly, so they
+ * transliterate to several characters instead of collapsing to one.
+ *
+ * UAT-PERF-PDF-03: « ⚠ » silently became "?" in a published management report.
+ * The single-character remap above cannot express "this glyph is two letters",
+ * which is why the arrow and the warning sign both needed this table. A report
+ * that prints "?" where it meant "attention" is worse than one that prints
+ * nothing — it looks like corrupt data.
+ */
+const WIN_ANSI_TEXT: Record<number, string> = {
+  0x2192: "->", // →
+  0x2190: "<-", // ←
+  0x26a0: "!",  // ⚠
+  0x2713: "OK", // ✓
+  0x2717: "X",  // ✗
+};
+
+/**
+ * Characters this encoder cannot represent — for tests, so a new unsupported
+ * glyph fails a suite rather than reaching a published PDF as "?".
+ */
+export function pdfUnsupportedGlyphs(s: string): string[] {
+  const bad: string[] = [];
+  for (const ch of s) {
+    const code = ch.codePointAt(0)!;
+    if (code <= 0xff) continue;
+    if (WIN_ANSI[code] !== undefined || WIN_ANSI_TEXT[code] !== undefined) continue;
+    if (!bad.includes(ch)) bad.push(ch);
+  }
+  return bad;
+}
+
 /** Encode a JS string to WinAnsi bytes with PDF string escaping. */
 function pdfLiteral(s: string): string {
   let out = "";
+  const esc = (ch: string) =>
+    ch === "\\" || ch === "(" || ch === ")" ? "\\" + ch : ch;
   for (let i = 0; i < s.length; i++) {
-    let code = s.charCodeAt(i);
-    if (code > 0xff) code = WIN_ANSI[code] ?? 0x3f; // '?' for the unmappable
-    const ch = String.fromCharCode(code);
-    if (ch === "\\" || ch === "(" || ch === ")") out += "\\" + ch;
-    else out += ch;
+    const code = s.charCodeAt(i);
+    if (code <= 0xff) {
+      out += esc(String.fromCharCode(code));
+      continue;
+    }
+    const multi = WIN_ANSI_TEXT[code];
+    if (multi !== undefined) {
+      for (const c of multi) out += esc(c);
+      continue;
+    }
+    // Single-character remap, then the last resort.
+    out += esc(String.fromCharCode(WIN_ANSI[code] ?? 0x3f));
   }
   return out;
 }

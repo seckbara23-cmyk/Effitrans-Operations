@@ -116,7 +116,7 @@ export function buildSnapshot(input: {
   ];
   if (calendarDays === 0) {
     notes.push(
-      "⚠ Aucun jour férié ni fermeture n'est enregistré au calendrier de travail pour cette période : les délais et jours travaillés n'excluent que les samedis et dimanches.",
+      "Attention : aucun jour férié ni fermeture n'est enregistré au calendrier de travail pour cette période — les délais et jours travaillés n'excluent que les samedis et dimanches.",
     );
   }
 

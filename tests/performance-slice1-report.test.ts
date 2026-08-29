@@ -26,6 +26,7 @@ import {
 import { buildSnapshot, PARAMETER_SET_VERSION, PERFORMANCE_ENGINE_VERSION } from "@/lib/performance/report";
 import { renderPerformanceReport } from "@/lib/performance/report-pdf";
 import { buildBriefing } from "@/lib/performance/briefing";
+import { pdfUnsupportedGlyphs } from "@/lib/reports/pdf";
 import { networkDays, workedDaysInPeriod, delaiJoursOuvres } from "@/lib/performance/working-days";
 import { computeIctdDossier } from "@/lib/performance/ictd";
 
@@ -695,8 +696,14 @@ describe("lifecycle, as the existing contract defines it", () => {
   });
 
   it("a draft cannot masquerade as published — the page says which it is", () => {
+    // The wording moved into LifecycleBanner (UAT-PERF-LIFECYCLE-01), because
+    // one sentence for every unpublished state contradicted the heading. The
+    // property this case protects is unchanged: a draft renders LIVE figures
+    // and says so, and only a published report renders a frozen snapshot.
     const page = read("app/performance/rapports/[id]/page.tsx");
-    expect(page).toContain("Brouillon — les chiffres ci-dessous sont calculés en direct");
+    expect(page).toContain("<LifecycleBanner status={report.status} />");
+    expect(page).toContain("Brouillon.");
+    expect(page).toContain("calculés en direct");
     expect(page).toContain("report.snapshot ??");
   });
 
@@ -711,5 +718,230 @@ describe("lifecycle, as the existing contract defines it", () => {
     for (const p of sa.permissions) {
       expect(p.startsWith("performance:"), `SYSTEM_ADMIN must not hold ${p}`).toBe(false);
     }
+  });
+});
+
+// ══════════════════ Slice-1 UAT hardening — the four findings, pinned ══════
+
+describe("UAT-PERF-PDF-02 — the PDF opens beside Effitrans, never instead of it", () => {
+  const page = read("app/performance/rapports/[id]/page.tsx");
+
+  it("the link opens a new tab, with the opener severed", () => {
+    const anchor = page.slice(page.indexOf("rapports/${report.id}/pdf"));
+    const tag = anchor.slice(0, anchor.indexOf(">") + 1);
+    expect(tag).toContain('target="_blank"');
+    expect(tag).toContain('rel="noopener noreferrer"');
+  });
+
+  it("it is a plain anchor — a PDF is a resource, not a route in this app", () => {
+    expect(page).not.toMatch(/<Link[^>]*rapports\/\$\{report\.id\}\/pdf/);
+  });
+
+  it("and it announces the new tab to a screen reader", () => {
+    expect(page).toContain("(nouvel onglet)");
+  });
+
+  it("authorization is unchanged — the route still gates and still 404s", () => {
+    const route = strip(read("app/performance/rapports/[id]/pdf/route.ts"));
+    expect(route).toContain('hasPermission(permissions, "performance:read")');
+    expect(route).toContain('report.status !== "PUBLIE"');
+    expect(route).toContain("getReport(user.tenantId, id)");
+  });
+
+  it("opening it mutates nothing — the route only reads", () => {
+    const route = strip(read("app/performance/rapports/[id]/pdf/route.ts"));
+    for (const w of [".update(", ".insert(", ".delete(", "rpc(", "revalidatePath"]) {
+      expect(route, `the PDF route must not ${w}`).not.toContain(w);
+    }
+  });
+});
+
+describe("UAT-PERF-PDF-03 — no glyph is silently replaced by « ? »", () => {
+  it("the encoder transliterates instead of collapsing to a question mark", () => {
+    // → and ⚠ have no WinAnsi codepoint; both must still READ correctly.
+    expect(pdfUnsupportedGlyphs("→ ⚠ ✓")).toEqual([]);
+  });
+
+  it("…and it still reports a genuinely unsupported glyph, so this cannot recur silently", () => {
+    expect(pdfUnsupportedGlyphs("日本")).toEqual(["日", "本"]);
+  });
+
+  it("every string a snapshot can carry is PDF-safe", () => {
+    const snap = buildSnapshot({
+      period: customPeriod("2026-07-01", "2026-09-30"), // the label contains →
+      collaborators: [],
+      dossiers: [],
+      clientNames: new Map(),
+      calendarDays: 0, // triggers the warning note
+      unavailable: [{ indicator: "ICAM", missing: ["registre des réclamations"] }],
+    });
+    const all = [
+      snap.period.label,
+      ...snap.methodology.notes,
+      ...snap.methodology.unavailableIndicators.flatMap((u) => [u.indicator, ...u.missing]),
+    ].join(" ");
+    expect(pdfUnsupportedGlyphs(all)).toEqual([]);
+  });
+
+  it("the calendar warning is a readable marker, not a symbol", () => {
+    const snap = buildSnapshot({
+      period: monthPeriod("2026-08-10"),
+      collaborators: [], dossiers: [], clientNames: new Map(),
+      calendarDays: 0, unavailable: [],
+    });
+    const note = snap.methodology.notes.find((n) => /calendrier de travail/.test(n))!;
+    expect(note.startsWith("Attention :")).toBe(true);
+    expect(note).not.toContain("⚠");
+  });
+
+  it("THE ARTEFACT: the rendered PDF contains no « ? » and keeps its accents", () => {
+    // Verifying the bytes, not the source. Text is emitted as `(literal) Tj`
+    // in WinAnsi, so the printed characters are readable straight out of it.
+    const snap = buildSnapshot({
+      period: customPeriod("2026-07-01", "2026-09-30"),
+      collaborators: [], dossiers: [], clientNames: new Map(),
+      calendarDays: 0,
+      unavailable: [{ indicator: "ICAM", missing: ["registre des réclamations"] }],
+    });
+    const bytes = renderPerformanceReport({
+      title: "Rapport de Performance — T3 2026",
+      snapshot: snap,
+      provenance: {
+        preparedBy: "fary@effitrans.sn", createdAt: "2026-08-28T09:00:00.000Z",
+        publishedBy: "direction@effitrans.sn", publishedAt: "2026-08-29T10:00:00.000Z",
+        parameterSetVersion: PARAMETER_SET_VERSION, engineVersion: PERFORMANCE_ENGINE_VERSION,
+      },
+    });
+    const raw = Buffer.from(bytes).toString("latin1");
+    const printed = [...raw.matchAll(/\(((?:[^()\\]|\\.)*)\)\s*Tj/g)].map((m) => m[1]);
+    expect(printed.length).toBeGreaterThan(20);
+
+    // AC-GLYPH-01
+    expect(printed.filter((l) => l.includes("?"))).toEqual([]);
+    // AC-GLYPH-02 — the warning survived as words
+    expect(printed.some((l) => l.startsWith("Attention"))).toBe(true);
+    // AC-GLYPH-03 — French accents are latin-1 bytes and printed as such
+    expect(printed.some((l) => /[\xe9\xe8\xe0]/.test(l))).toBe(true);
+    // the arrow transliterated rather than vanishing
+    expect(printed.some((l) => l.includes("->"))).toBe(true);
+    // AC-GLYPH-04 — still a structurally valid multi-page document
+    expect(raw.startsWith("%PDF-")).toBe(true);
+    expect((raw.match(/\/Type \/Page[^s]/g) ?? []).length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("UAT-PERF-LIFECYCLE-01 — the banner never contradicts the heading", () => {
+  const page = read("app/performance/rapports/[id]/page.tsx");
+  const banner = page.slice(page.indexOf("function LifecycleBanner"), page.indexOf("export default"));
+
+  it("a report ready for review is NOT called a draft", () => {
+    const readyArm = banner.slice(banner.indexOf('status === "PRET_POUR_REVUE"'));
+    const arm = readyArm.slice(0, readyArm.indexOf("return (", readyArm.indexOf("return (") + 1));
+    expect(arm).toContain("Prêt pour revue");
+    expect(arm, "the old banner said Brouillon for everything unpublished").not.toContain("Brouillon");
+  });
+
+  it("a published report states that it is frozen and what to do instead", () => {
+    const pubArm = banner.slice(banner.indexOf('status === "PUBLIE"'), banner.indexOf('status === "PRET_POUR_REVUE"'));
+    expect(pubArm).toContain("figé");
+    expect(pubArm).toMatch(/ne changent plus/);
+    expect(pubArm).toMatch(/nouveau rapport/);
+  });
+
+  it("a draft still says draft", () => {
+    expect(banner).toContain("Brouillon.");
+  });
+
+  it("all three lifecycle states are covered, and only those", () => {
+    for (const st of ["PUBLIE", "PRET_POUR_REVUE"]) expect(banner).toContain(st);
+    // The third is the fallback return, so no state can render nothing.
+    expect(banner.match(/return \(/g)?.length).toBe(3);
+  });
+
+  it("the heading label and the banner come from the same status field", () => {
+    expect(page).toContain("REPORT_STATUS_FR[report.status]");
+    expect(page).toContain("<LifecycleBanner status={report.status} />");
+  });
+});
+
+describe("UAT-ICTD-STATE-01 — governed mutations refresh what they invalidate", () => {
+  const fields = strip(read("components/customs/governed-fields.tsx"));
+  const customs = strip(read("lib/customs/actions.ts"));
+
+  it("the panel resyncs when the server sends new values", () => {
+    // The root cause: local state seeded once and never re-read. The signature
+    // covers the governed values AND the certification instant, because a
+    // four-eyes revalidation changes only the latter.
+    expect(fields).toContain("const signature = ");
+    expect(fields).toContain("record.reviewedAt ??");
+    expect(fields).toContain("setValues(toValues(record));");
+    expect(fields).toContain("setCorrecting(false);");
+  });
+
+  it("every successful mutation asks the router for the server's state", () => {
+    expect(fields).toContain("router.refresh()");
+  });
+
+  it("correction and revalidation both revalidate their dossier server-side", () => {
+    for (const fn of ["correctCustoms", "revalidateCustoms"]) {
+      const i = customs.indexOf(`export async function ${fn}`);
+      const body = customs.slice(i, customs.indexOf("export async function", i + 1));
+      expect(body, `${fn} must revalidate`).toContain("revalidate(rec.file_id)");
+    }
+  });
+
+  it("…and the ICTD-facing surfaces are invalidated with them", () => {
+    const helper = customs.slice(customs.indexOf("function revalidate(fileId: string)"));
+    const body = helper.slice(0, helper.indexOf("\n}"));
+    expect(body).toContain('revalidatePath(`/files/${fileId}`)');
+    expect(body).toContain('revalidatePath("/performance", "layout")');
+  });
+
+  it("revalidation writes no audit event of its own — no duplicates from a refresh", () => {
+    // The UI refresh path performs no mutation, so it cannot append history.
+    expect(fields).not.toContain("writeAudit");
+    expect(fields).not.toContain(".insert(");
+  });
+
+  it("four-eyes remains server-side: the component decides nothing", () => {
+    expect(fields).not.toContain("hasPermission");
+    expect(fields).not.toContain("getEffectivePermissions");
+    const i = customs.indexOf("export async function revalidateCustoms");
+    const body = customs.slice(i, customs.indexOf("export async function", i + 1));
+    expect(body).toContain('assertPermission("customs:revalidate")');
+    expect(body).toContain('return { ok: false, error: "self_revalidation" }');
+  });
+
+  it("the correction door still refuses an unvalidated record and demands a motif", () => {
+    const i = customs.indexOf("export async function correctCustoms");
+    const body = customs.slice(i, customs.indexOf("export async function", i + 1));
+    expect(body).toContain('return { ok: false, error: "reason_required" }');
+    expect(body).toContain('return { ok: false, error: "not_validated" }');
+  });
+});
+
+describe("the governance contract is untouched by this hardening pass", () => {
+  it("published reports remain frozen and undeletable in the database", () => {
+    expect(mCode).toContain("may never be deleted");
+    expect(mCode).toContain("is frozen: reopen the period as a new report");
+  });
+
+  it("publication still writes database time through the RPC", () => {
+    expect(mCode).toContain("published_at          = now()");
+    const publish = actions.slice(actions.indexOf("export async function publishReport"));
+    expect(publish).toContain('admin.rpc("publish_performance_report"');
+  });
+
+  it("the PDF still consumes the frozen snapshot only", () => {
+    const pdf = strip(read("lib/performance/report-pdf.ts"));
+    expect(pdf).not.toContain("getAdminSupabaseClient");
+    expect(pdf).not.toContain(".from(");
+    const route = strip(read("app/performance/rapports/[id]/pdf/route.ts"));
+    expect(route).not.toContain("renderPerformanceReport");
+  });
+
+  it("the publisher boundary is unchanged", () => {
+    expect(holders("performance:report:publish")).toEqual(["PERFORMANCE_PUBLISHER"]);
+    expect(holders("performance:report:create")).toEqual(["PERFORMANCE_MANAGEMENT"]);
   });
 });
