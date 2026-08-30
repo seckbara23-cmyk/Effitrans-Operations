@@ -35,10 +35,11 @@ const page = read("app", "transport", "parc", "page.tsx");
 describe("TMS-5 — the authority is the ratified transport one, nothing invented", () => {
   it("registering, editing and immobilizing ride transport:manage", () => {
     const manageGates = actions.match(/assertPermission\("transport:manage"\)/g) ?? [];
-    // createVehicle, updateVehicle, setVehicleStatus, setVehicleActive,
-    // upsertVehicleCompliance, openVehicleMaintenance, closeVehicleMaintenance,
-    // and (TMS-5C) deleteVehicle — the destructive act rides the SAME authority.
-    expect(manageGates.length).toBe(8);
+    // createVehicle, updateVehicle, setVehicleStatus, retireVehicle,
+    // reactivateVehicle (TMS-1A split the retire/restore act in two — both
+    // stay transport:manage), upsertVehicleCompliance, openVehicleMaintenance,
+    // closeVehicleMaintenance, and (TMS-5C) deleteVehicle.
+    expect(manageGates.length).toBe(9);
     expect(actions).not.toContain('assertPermission("transport:read")');
   });
 
@@ -147,7 +148,7 @@ describe("TMS-5 — a non-available vehicle cannot be dispatched", () => {
   it("returning to service is refused while an immobilizing intervention is open", () => {
     const slice = actions.slice(
       actions.indexOf("export async function setVehicleStatus"),
-      actions.indexOf("export async function setVehicleActive"),
+      actions.indexOf("export async function retireVehicle"),
     );
     expect(slice).toContain('.eq("immobilizing", true)');
     expect(slice).toContain('return { ok: false, error: "maintenance_open" }');

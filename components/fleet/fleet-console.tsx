@@ -17,6 +17,8 @@ import {
   setVehicleStatus,
   upsertVehicleCompliance,
   deleteVehicle,
+  retireVehicle,
+  reactivateVehicle,
   type FleetResult,
 } from "@/lib/fleet/actions";
 import type { FleetVehicle } from "@/lib/fleet/service";
@@ -35,6 +37,10 @@ const ERR: Record<string, string> = {
   confirmation_mismatch: "L'immatriculation saisie ne correspond pas.",
   vehicle_in_use: "Suppression refusée : ce véhicule est affecté à un transport ou a déjà servi. Mettez-le hors service.",
   vehicle_has_history: "Suppression refusée : des interventions sont enregistrées pour ce véhicule. Mettez-le hors service.",
+  reason_required: "Un motif de retrait est obligatoire.",
+  vehicle_on_mission: "Retrait refusé : ce véhicule est affecté à une mission en cours. Terminez ou réaffectez la mission d'abord.",
+  already_retired: "Ce véhicule est déjà retiré du parc.",
+  not_retired: "Ce véhicule n'est pas retiré du parc.",
   generic: "L'action a échoué. Réessayez.",
 };
 
@@ -57,6 +63,8 @@ export function FleetConsole({ vehicles }: { vehicles: FleetVehicle[] }) {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [picked, setPicked] = useState<string>(vehicles[0]?.id ?? "");
   const [confirmDelete, setConfirmDelete] = useState("");
+  const [retireReason, setRetireReason] = useState("");
+  const [retireOpen, setRetireOpen] = useState(false);
   /**
    * TMS-5C — THE PRODUCTION DEFECT this fixes. `useState(vehicles[0]?.id)` runs
    * its initializer ONCE. An operator who opened an EMPTY parc got target="",
@@ -260,6 +268,75 @@ export function FleetConsole({ vehicles }: { vehicles: FleetVehicle[] }) {
               </span>
             )}
           </div>
+
+          {/* TMS-1A — « Retirer du parc » / « Réintégrer au parc ». The action
+              shown depends on the vehicle's real state; the server re-asserts
+              authority and the database refuses a mid-mission retirement. */}
+          {selected && selected.isActive && (
+            <div className="space-y-2 border-t border-slate-100 pt-3">
+              <p className="text-xs font-medium text-slate-600">Retirer du parc</p>
+              <p className="text-xs text-slate-500">
+                Pour un véhicule vendu, restitué ou définitivement retiré. L&apos;historique
+                (missions, interventions, conformité) reste consultable ; le véhicule ne peut
+                plus être affecté à une mission.
+              </p>
+              {!retireOpen ? (
+                <button
+                  disabled={pending || !target}
+                  onClick={() => { setRetireOpen(true); setMsg(null); }}
+                  className="rounded-md border border-slate-200 px-3 py-1.5 text-xs text-navy-700 disabled:opacity-40"
+                >
+                  Retirer du parc…
+                </button>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    value={retireReason}
+                    onChange={(e) => setRetireReason(e.target.value)}
+                    placeholder="Motif du retrait (obligatoire)"
+                    className={`${inp} min-w-[240px]`}
+                    disabled={pending}
+                  />
+                  <button
+                    disabled={pending || !retireReason.trim()}
+                    onClick={() => {
+                      run(() => retireVehicle(target, retireReason.trim()));
+                      setRetireReason("");
+                      setRetireOpen(false);
+                    }}
+                    className="rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-40"
+                  >
+                    Confirmer le retrait de {selected.registration}
+                  </button>
+                  <button
+                    disabled={pending}
+                    onClick={() => { setRetireOpen(false); setRetireReason(""); }}
+                    className="rounded-md px-2 py-1.5 text-xs text-slate-500"
+                  >
+                    Annuler
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+          {selected && !selected.isActive && (
+            <div className="space-y-2 border-t border-slate-100 pt-3">
+              <p className="text-xs font-medium text-slate-600">Véhicule retiré du parc</p>
+              <p className="text-xs text-slate-500">
+                Retiré le {selected.retiredAt ? new Date(selected.retiredAt).toLocaleDateString("fr-FR") : "—"}
+                {selected.retiredReason ? <> — motif : {selected.retiredReason}</> : null}.
+                La réintégration le remet dans son état précédent ; les règles habituelles
+                (maintenance, disponibilité) s&apos;appliquent à nouveau.
+              </p>
+              <button
+                disabled={pending || !target}
+                onClick={() => run(() => reactivateVehicle(target))}
+                className="rounded-md border border-teal-300 bg-teal-50 px-3 py-1.5 text-xs font-medium text-teal-800 hover:bg-teal-100 disabled:opacity-40"
+              >
+                Réintégrer au parc
+              </button>
+            </div>
+          )}
 
           {/* TMS-5C — permanent removal of a vehicle that never served. The
               server decides eligibility; this only asks for an unambiguous

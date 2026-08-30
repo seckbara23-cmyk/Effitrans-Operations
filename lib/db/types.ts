@@ -1533,6 +1533,9 @@ export type Database = {
           odometer_km: number | null;
           status: string;
           is_active: boolean;
+          retired_at: string | null;
+          retired_reason: string | null;
+          retired_by: string | null;
           notes: string | null;
           created_by: string | null;
           created_at: string;
@@ -1552,6 +1555,9 @@ export type Database = {
           odometer_km?: number | null;
           status?: string;
           is_active?: boolean;
+          retired_at?: string | null;
+          retired_reason?: string | null;
+          retired_by?: string | null;
           notes?: string | null;
           created_by?: string | null;
           created_at?: string;
@@ -1569,6 +1575,9 @@ export type Database = {
           odometer_km?: number | null;
           status?: string;
           is_active?: boolean;
+          retired_at?: string | null;
+          retired_reason?: string | null;
+          retired_by?: string | null;
           notes?: string | null;
           updated_at?: string;
         };

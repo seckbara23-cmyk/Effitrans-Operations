@@ -20,6 +20,7 @@ import { assertPermission } from "@/lib/auth/require-permission";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
+import { ENGAGED_TRANSPORT_STATUSES } from "@/lib/fleet/service";
 
 export type FleetResult = { ok: true; id?: string } | { ok: false; error: string };
 
@@ -189,24 +190,103 @@ export async function setVehicleStatus(id: string, status: string, reason?: stri
   return { ok: true, id };
 }
 
-/** Retire (or restore) a vehicle. Never deletes: history stays readable. */
-export async function setVehicleActive(id: string, isActive: boolean): Promise<FleetResult> {
+/**
+ * TMS-1A — « Retirer du parc ». The permanent-retirement act for a real
+ * vehicle (sold, returned, scrapped): history stays readable, dispatch refuses
+ * it (DB-side, migration 117), and the act carries its reason.
+ *
+ * The mission check runs twice ON PURPOSE: here, to name the blocking dossier
+ * in a friendly refusal, and in trg_vehicle_retirement_guard, where it is
+ * race-safe and cannot be bypassed by any other path. `retired_at` is stamped
+ * by the trigger with now() — this action never dates the act itself.
+ */
+export async function retireVehicle(id: string, reason: string): Promise<FleetResult> {
+  let user;
+  try { user = await assertPermission("transport:manage"); } catch { return { ok: false, error: "forbidden" }; }
+
+  const retiredReason = text(reason, 300);
+  if (!retiredReason) return { ok: false, error: "reason_required" };
+
+  const supabase = getAdminSupabaseClient();
+  const { data: vehicle } = await supabase
+    .from("vehicle")
+    .select("id, registration, is_active")
+    .eq("id", id)
+    .eq("tenant_id", user.tenantId)
+    .maybeSingle<{ id: string; registration: string; is_active: boolean }>();
+  if (!vehicle) return { ok: false, error: "not_found" };
+  if (!vehicle.is_active) return { ok: false, error: "already_retired" };
+
+  // Friendly pre-check — the SAME engaged vocabulary the fleet view derives
+  // « En mission » from. The trigger re-checks under lock.
+  const { data: engaged } = await supabase
+    .from("transport_record")
+    .select("file:file_id(file_number)")
+    .eq("tenant_id", user.tenantId)
+    .eq("vehicle_id", id)
+    .in("status", [...ENGAGED_TRANSPORT_STATUSES])
+    .is("deleted_at", null)
+    .limit(1)
+    .returns<{ file: { file_number: string } | null }[]>();
+  if ((engaged ?? []).length > 0) return { ok: false, error: "vehicle_on_mission" };
+
+  const { error } = await supabase
+    .from("vehicle")
+    .update({ is_active: false, retired_reason: retiredReason, retired_by: user.id })
+    .eq("id", id)
+    .eq("tenant_id", user.tenantId);
+  if (error) {
+    // The guard won the race against a concurrent binding.
+    if (error.message.includes("mission en cours")) return { ok: false, error: "vehicle_on_mission" };
+    return { ok: false, error: error.message };
+  }
+
+  await writeAudit({
+    action: AuditActions.VEHICLE_RETIRED,
+    actorId: user.id, tenantId: user.tenantId,
+    entity: "vehicle", entityId: id,
+    before: { registration: vehicle.registration, is_active: true },
+    after: { is_active: false, reason: retiredReason },
+  });
+  revalidate();
+  return { ok: true, id };
+}
+
+/**
+ * TMS-1A — « Réintégrer au parc ». Deliberately narrow: only the flag flips.
+ * The vehicle returns in whatever status it was retired with, so every
+ * existing rule keeps governing it — an open immobilizing intervention still
+ * blocks AVAILABLE, and binding still requires AVAILABLE. Reactivation
+ * bypasses nothing. The displaced reason survives in this audit event (the
+ * trigger clears the columns).
+ */
+export async function reactivateVehicle(id: string): Promise<FleetResult> {
   let user;
   try { user = await assertPermission("transport:manage"); } catch { return { ok: false, error: "forbidden" }; }
 
   const supabase = getAdminSupabaseClient();
+  const { data: vehicle } = await supabase
+    .from("vehicle")
+    .select("id, registration, is_active, retired_at, retired_reason")
+    .eq("id", id)
+    .eq("tenant_id", user.tenantId)
+    .maybeSingle<{ id: string; registration: string; is_active: boolean; retired_at: string | null; retired_reason: string | null }>();
+  if (!vehicle) return { ok: false, error: "not_found" };
+  if (vehicle.is_active) return { ok: false, error: "not_retired" };
+
   const { error } = await supabase
     .from("vehicle")
-    .update({ is_active: isActive })
+    .update({ is_active: true })
     .eq("id", id)
     .eq("tenant_id", user.tenantId);
   if (error) return { ok: false, error: error.message };
 
   await writeAudit({
-    action: AuditActions.VEHICLE_UPDATED,
+    action: AuditActions.VEHICLE_REACTIVATED,
     actorId: user.id, tenantId: user.tenantId,
     entity: "vehicle", entityId: id,
-    after: { is_active: isActive },
+    before: { is_active: false, retired_at: vehicle.retired_at, retired_reason: vehicle.retired_reason },
+    after: { is_active: true },
   });
   revalidate();
   return { ok: true, id };

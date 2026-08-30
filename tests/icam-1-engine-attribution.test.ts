@@ -736,13 +736,19 @@ describe("the ICAM-2 behaviour suite exists and is wired into CI", () => {
 });
 
 describe("the shipped build knows which migration it carries", () => {
-  it("build-info names migration 131", () => {
+  it("build-info tracks the migration directory — never a stale hardcode", () => {
+    // Directory parity is asserted absolutely elsewhere (finance-execution);
+    // here: the register's migration is on disk and build-info's LATEST names
+    // a real file, so the console can never claim an unshipped state.
+    const dir = fileURLToPath(new URL("../supabase/migrations", import.meta.url));
+    const files = readdirSync(dir).filter((f) => f.endsWith(".sql"));
+    expect(files).toContain("20260923000001_operational_incident.sql");
     const info = readFileSync(
       fileURLToPath(new URL("../lib/platform/ops/build-info.ts", import.meta.url)),
       "utf8",
     );
-    expect(info).toContain('LATEST_MIGRATION = "20260923000001_operational_incident"');
-    expect(info).toContain("MIGRATION_COUNT = 131");
+    const latest = /LATEST_MIGRATION = "([^"]+)"/.exec(info)![1];
+    expect(files).toContain(`${latest}.sql`);
   });
 });
 
@@ -963,20 +969,22 @@ describe("8 — Q13 disjointness: NPAY collides with nothing already sourced", (
 });
 
 describe("9 — ICAM-2B needed no migration, and stayed inside its slice", () => {
-  it("no migration was added for NPAY", () => {
+  it("no migration was added for NPAY — the vocabulary already persisted", () => {
     const migrations = readdirSync(fileURLToPath(new URL("../supabase/migrations", import.meta.url)));
     expect(migrations.filter((f) => /npay|payment_online|icam/i.test(f))).toEqual([]);
-    // 131 remains the newest — ICAM-2's register.
-    expect(migrations.filter((f) => f.endsWith(".sql")).sort().at(-1))
-      .toBe("20260923000001_operational_incident.sql");
+    // ICAM-2's register is the LAST performance migration; later migrations
+    // belong to other programs, never to ICAM-2B.
+    expect(migrations).toContain("20260923000001_operational_incident.sql");
   });
 
   it("the payment schema was not altered", () => {
-    const info = readFileSync(
-      fileURLToPath(new URL("../lib/platform/ops/build-info.ts", import.meta.url)),
-      "utf8",
-    );
-    expect(info).toContain("MIGRATION_COUNT = 131");
+    // The payment migration census: nothing after the 1.15A verification
+    // migration touches the payment table's columns.
+    const dir = fileURLToPath(new URL("../supabase/migrations", import.meta.url));
+    const later = readdirSync(dir)
+      .filter((f) => f.endsWith(".sql") && f > "20260615000010")
+      .filter((f) => /alter table public\.payment/.test(readFileSync(`${dir}/${f}`, "utf8")));
+    expect(later, "a later migration altered payment — NPAY's source moved").toEqual([]);
   });
 
   it("NREP and NCOORD were NOT implemented — they are still unruled", () => {

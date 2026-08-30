@@ -98,6 +98,9 @@ export const AuditActions = {
   VEHICLE_CREATED: "vehicle.created",
   VEHICLE_UPDATED: "vehicle.updated",
   VEHICLE_STATUS_CHANGED: "vehicle.status_changed",
+  // TMS-1A — retirement is a governed act, distinguishable from any edit.
+  VEHICLE_RETIRED: "vehicle.retired",
+  VEHICLE_REACTIVATED: "vehicle.reactivated",
   VEHICLE_COMPLIANCE_RECORDED: "vehicle.compliance_recorded",
   VEHICLE_MAINTENANCE_OPENED: "vehicle.maintenance_opened",
   VEHICLE_MAINTENANCE_CLOSED: "vehicle.maintenance_closed",

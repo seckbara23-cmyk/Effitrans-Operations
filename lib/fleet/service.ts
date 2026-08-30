@@ -57,6 +57,9 @@ export type FleetVehicle = {
   odometerKm: number | null;
   status: VehicleStatus;
   isActive: boolean;
+  /** TMS-1A — set only while retired; cleared by reactivation. */
+  retiredAt: string | null;
+  retiredReason: string | null;
   notes: string | null;
   /** DERIVED — a live transport references this vehicle. Never stored. */
   engaged: boolean;
@@ -66,11 +69,14 @@ export type FleetVehicle = {
 };
 
 export type FleetOverview = {
+  /** ACTIVE vehicles only — a retired vehicle is not operational fleet. */
   total: number;
   available: number;
   engaged: number;
   maintenance: number;
   outOfService: number;
+  /** TMS-1A — retired (« hors parc ») count, shown apart, never operational. */
+  retired: number;
   complianceExpiring: number;
   complianceExpired: number;
 };
@@ -80,10 +86,11 @@ type VehicleRow = {
   make: string | null; model: string | null; year: number | null;
   capacity_kg: number | null; capacity_m3: number | null; odometer_km: number | null;
   status: string; is_active: boolean; notes: string | null;
+  retired_at: string | null; retired_reason: string | null;
 };
 
 const VEHICLE_COLS =
-  "id, registration, internal_code, vehicle_type, make, model, year, capacity_kg, capacity_m3, odometer_km, status, is_active, notes";
+  "id, registration, internal_code, vehicle_type, make, model, year, capacity_kg, capacity_m3, odometer_km, status, is_active, notes, retired_at, retired_reason";
 
 /**
  * The whole parc, with derived engagement, compliance state and any open
@@ -152,6 +159,8 @@ export async function listFleet(nowIso?: string): Promise<FleetVehicle[]> {
       odometerKm: v.odometer_km,
       status: v.status as VehicleStatus,
       isActive: v.is_active,
+      retiredAt: v.retired_at,
+      retiredReason: v.retired_reason,
       notes: v.notes,
       engaged: engagedBy.has(v.id),
       engagedFileNumbers,
@@ -201,6 +210,7 @@ export function summarizeFleet(fleet: FleetVehicle[]): FleetOverview {
     engaged: active.filter((v) => v.engaged).length,
     maintenance: active.filter((v) => v.status === "MAINTENANCE").length,
     outOfService: active.filter((v) => v.status === "OUT_OF_SERVICE").length,
+    retired: fleet.length - active.length,
     complianceExpiring,
     complianceExpired,
   };

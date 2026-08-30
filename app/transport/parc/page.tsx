@@ -68,12 +68,13 @@ export default async function ParcPage() {
       {header}
       <Link href="/transport" className="text-sm text-teal-700 hover:underline">← Opérations de transport</Link>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
         <Stat label="Véhicules" value={overview.total} />
         <Stat label="Disponibles" value={overview.available} tone="text-teal-700" />
         <Stat label="En mission" value={overview.engaged} tone="text-navy-800" />
         <Stat label="En maintenance" value={overview.maintenance} tone="text-amber-700" />
         <Stat label="Hors service" value={overview.outOfService} tone="text-slate-500" />
+        <Stat label="Retirés du parc" value={overview.retired} tone="text-slate-400" />
         <Stat
           label="Conformité à surveiller"
           value={overview.complianceExpiring + overview.complianceExpired}
@@ -114,8 +115,17 @@ export default async function ParcPage() {
                   </td>
                   <td className="px-4 py-2">
                     {/* « En mission » is DERIVED from live transport records — it is
-                        never stored on the vehicle, so it cannot drift. */}
-                    {v.engaged ? (
+                        never stored on the vehicle, so it cannot drift. TMS-1A: a
+                        retired vehicle presents NO operational state — only the
+                        retirement fact, with its date and reason. */}
+                    {!v.isActive ? (
+                      <span
+                        className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500"
+                        title={v.retiredReason ?? undefined}
+                      >
+                        Retiré du parc{v.retiredAt ? ` · ${new Date(v.retiredAt).toLocaleDateString("fr-FR")}` : ""}
+                      </span>
+                    ) : v.engaged ? (
                       <span className="rounded-full bg-navy-50 px-2 py-0.5 text-xs font-medium text-navy-800">
                         En mission{v.engagedFileNumbers.length ? ` · ${v.engagedFileNumbers.join(", ")}` : ""}
                       </span>
@@ -126,7 +136,6 @@ export default async function ParcPage() {
                     ) : (
                       <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">Hors service</span>
                     )}
-                    {!v.isActive && <span className="ml-1 text-xs text-slate-400">retiré</span>}
                   </td>
                   <td className="px-4 py-2">
                     {v.compliance.length === 0 ? (

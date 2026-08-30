@@ -62,7 +62,7 @@ describe("TMS-5C/1 — the selected vehicle survives a refresh (the real defect)
 describe("TMS-5C/1 — authority is unchanged and server-side", () => {
   it("every fleet mutation still asserts transport:manage — the fix widened nothing", () => {
     // create, update, setStatus, setActive, compliance, openMaint, closeMaint, delete
-    expect((actions.match(/assertPermission\("transport:manage"\)/g) ?? []).length).toBe(8);
+    expect((actions.match(/assertPermission\("transport:manage"\)/g) ?? []).length).toBe(9); // TMS-1A: retire + reactivate replaced setVehicleActive
     expect(actions).not.toContain('assertPermission("transport:read")');
     expect(actions).not.toContain('assertPermission("hr:');
   });
@@ -151,7 +151,7 @@ describe("TMS-5C/2 — permanent deletion is controlled, not a Delete button", (
   });
 
   it("retirement stays the path for a vehicle with history — deletion did not replace it", () => {
-    expect(actions).toContain("export async function setVehicleActive");
+    expect(actions).toContain("export async function retireVehicle");
     expect(actions).toContain("export async function setVehicleStatus");
     expect(console_).toContain("vehicle_has_history");
   });
