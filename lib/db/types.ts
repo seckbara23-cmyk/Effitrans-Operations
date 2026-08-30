@@ -3892,6 +3892,18 @@ export type Database = {
         Update: { status?: string; submitted_at?: string | null; decision_note?: string | null; evidence_document_id?: string | null };
         Relationships: [];
       };
+      operational_incident: {
+        Row: { id: string; tenant_id: string; file_id: string; kind: string; description: string; status: string; imputability: string; recorded_by: string; recorded_at: string; imputability_decided_by: string | null; imputability_decided_at: string | null; treated_by: string | null; treated_at: string | null; cancelled_by: string | null; cancelled_at: string | null; cancellation_reason: string | null };
+        Insert: { id?: string; tenant_id: string; file_id: string; kind: string; description: string; status?: string; imputability?: string; recorded_by: string };
+        Update: never;
+        Relationships: [];
+      };
+      operational_incident_correction: {
+        Row: { id: string; tenant_id: string; incident_id: string; file_id: string; corrected_by: string; corrected_at: string; reason: string; changes: Json; imputability_before: string; decided_by_before: string | null; decided_at_before: string | null };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
       performance_report: {
         Row: { id: string; tenant_id: string; title: string; period_kind: string; period_start: string; period_end: string; period_label: string; status: string; executive_summary: string | null; management_commentary: string | null; snapshot: Json | null; parameter_set_version: string | null; engine_version: string | null; artifact_storage_path: string | null; artifact_sha256: string | null; artifact_renderer_version: string | null; artifact_generated_at: string | null; created_by: string; created_at: string; submitted_by: string | null; submitted_at: string | null; published_by: string | null; published_at: string | null };
         Insert: { id?: string; tenant_id: string; title: string; period_kind: string; period_start: string; period_end: string; period_label: string; status?: string; executive_summary?: string | null; management_commentary?: string | null; created_by: string };
@@ -4960,6 +4972,32 @@ export type Database = {
       };
       // Slice 1 — publication as ONE atomic act with database time: the status
       // flip, the frozen snapshot and published_at = now() in one statement.
+      // ICAM-2 — the operational incident register. Four-eyes and database time
+      // live in the functions; the app never writes these tables directly.
+      record_operational_incident: {
+        Args: { p_file_id: string; p_actor: string; p_kind: string; p_description: string };
+        Returns: Json;
+      };
+      adjudicate_operational_incident: {
+        Args: { p_incident_id: string; p_actor: string; p_imputability: string };
+        Returns: Json;
+      };
+      complete_operational_incident_treatment: {
+        Args: { p_incident_id: string; p_actor: string };
+        Returns: Json;
+      };
+      cancel_operational_incident: {
+        Args: { p_incident_id: string; p_actor: string; p_reason: string };
+        Returns: Json;
+      };
+      correct_operational_incident: {
+        Args: { p_incident_id: string; p_actor: string; p_reason: string; p_imputability: string };
+        Returns: Json;
+      };
+      revalidate_operational_incident: {
+        Args: { p_incident_id: string; p_actor: string };
+        Returns: Json;
+      };
       publish_performance_report: {
         Args: {
           p_report_id: string; p_actor: string; p_snapshot: Json;

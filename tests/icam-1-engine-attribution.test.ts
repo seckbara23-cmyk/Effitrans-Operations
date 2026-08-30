@@ -12,11 +12,14 @@
  *
  * The database-facing half (which column supplies each activity instant, the
  * closure population query, tenant isolation) is asserted against the source,
- * because those are joins rather than arithmetic and the suites that exercise
- * real Postgres belong to ICAM-3 when there is something to display.
+ * because those are joins rather than arithmetic. ICAM-2 added the NINC
+ * register, whose behaviour — four eyes, the correction door, and the
+ * eligibility gate — is proven against real Postgres in
+ * supabase/tests/operational_incident_test.sql.
  */
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
+import { TENANT_ROLE_TEMPLATES } from "@/lib/platform/role-templates";
 import { fileURLToPath } from "node:url";
 import {
   computeIcamDossier,
@@ -158,9 +161,9 @@ describe("a missing source is never a measured zero", () => {
     expect(r.unavailableTerms).toEqual([]);
   });
 
-  it("ICAM-1 sources exactly four terms and discloses the other four", () => {
-    expect([...ICAM1_SOURCED_TERMS].sort()).toEqual(["NAD", "NCOUR", "NDOC", "NFACT"]);
-    expect([...ICAM1_UNSOURCED_TERMS].sort()).toEqual(["NCOORD", "NINC", "NPAY", "NREP"]);
+  it("five terms are sourced and three are disclosed — NINC joined in ICAM-2", () => {
+    expect([...ICAM1_SOURCED_TERMS].sort()).toEqual(["NAD", "NCOUR", "NDOC", "NFACT", "NINC"]);
+    expect([...ICAM1_UNSOURCED_TERMS].sort()).toEqual(["NCOORD", "NPAY", "NREP"]);
     // Together they are the whole register, so no term can be forgotten.
     expect([...ICAM1_SOURCED_TERMS, ...ICAM1_UNSOURCED_TERMS].sort()).toEqual([...ICAM_TERMS].sort());
   });
@@ -178,7 +181,7 @@ describe("a missing source is never a measured zero", () => {
       icamRead.indexOf("];", icamRead.indexOf("ICAM1_UNSOURCED_TERMS")) + 2,
     );
     const rest = icamRead.replace(decl, "");
-    for (const term of ["NREP", "NPAY", "NCOORD", "NINC"]) {
+    for (const term of ["NREP", "NPAY", "NCOORD"]) {
       expect(rest, `${term} must not be assigned a count by the read service`).not.toContain(term);
     }
   });
@@ -423,9 +426,12 @@ describe("ICAM-1 stays inside its slice", () => {
     }
   });
 
-  it("it adds no incident register — that is ICAM-2", () => {
-    expect(icamRead).not.toContain("am_incident");
-    expect(icamRead).not.toContain("imputab");
+  it("it still adds no BI/report integration — ICAM-3 owns that", () => {
+    // ICAM-2 opened the incident register; it did not open the presentation.
+    expect(icamRead).toContain("operational_incident");
+    for (const forbidden of ["buildSnapshot", "buildBriefing", "renderPerformanceReport"]) {
+      expect(icamRead, forbidden).not.toContain(forbidden);
+    }
   });
 
   it("there is ONE ICAM formula, and only the engine holds it", () => {
@@ -434,5 +440,308 @@ describe("ICAM-1 stays inside its slice", () => {
       expect(src, `${name} must not hold coefficients`).not.toMatch(/0\.15|0\.25|0\.3\b/);
     }
     expect(icamRead).toContain("computeIcamDossier");
+  });
+});
+
+// ══════════════════════ ICAM-2 — the NINC register and its gate ═════════════
+
+const incidentMigration = readFileSync(
+  fileURLToPath(new URL("../supabase/migrations/20260923000001_operational_incident.sql", import.meta.url)),
+  "utf8",
+);
+const mIncident = incidentMigration
+  .replace(/\/\*[\s\S]*?\*\//g, "")
+  .replace(/^\s*--.*$/gm, "");
+
+describe("NINC eligibility — every word of the frozen term is a condition", () => {
+  it("the predicate lives in ONE place and reads exactly the frozen conditions", () => {
+    expect(icamRead).toContain("NINC_ELIGIBILITY");
+    expect(icamRead).toContain('status: "TRAITE"');
+    expect(icamRead).toContain('imputability: "NON"');
+    // …and finality, which EN_ANALYSE and an open correction both lack.
+    expect(icamRead).toContain('.not("imputability_decided_at", "is", null)');
+  });
+
+  it("EN_ANALYSE cannot count — it is not a decision, and the DB refuses it as one", () => {
+    expect(mIncident).toContain(
+      "imputability must be one of OUI, NON, NON_EVALUE",
+    );
+    // …and an EN_ANALYSE row can never carry a decision instant.
+    expect(mIncident).toContain("imputability <> 'EN_ANALYSE' or imputability_decided_at is null");
+  });
+
+  it("an untreated incident cannot count: TRAITE is required and implies its instant", () => {
+    expect(mIncident).toContain(
+      "(status = 'TRAITE') = (treated_at is not null and treated_by is not null)",
+    );
+  });
+
+  it("OUI never counts — an AM-caused rework must not increment (F-ICAM-06)", () => {
+    // The filter admits only NON, so OUI and NON_EVALUE are excluded by
+    // construction rather than by a list somebody must maintain.
+    const fn = icamRead.slice(icamRead.indexOf("async function incidentActivities"));
+    const body = fn.slice(0, fn.indexOf("\n}\n"));
+    expect(body).toContain("NINC_ELIGIBILITY.imputability");
+    expect(body).not.toContain('"OUI"');
+    expect(body).not.toContain('"NON_EVALUE"');
+  });
+
+  it("a cancelled incident never counts — ANNULE is not TRAITE, and treatment is cleared", () => {
+    expect(mIncident).toContain("status              = 'ANNULE'");
+    expect(mIncident).toContain("treated_at          = null");
+  });
+
+  it("each distinct incident counts once; the frozen cap does the bounding (Q10)", () => {
+    const fn = icamRead.slice(icamRead.indexOf("async function incidentActivities"));
+    expect(fn.slice(0, fn.indexOf("\n}\n"))).toContain("seen.has(id)");
+    // Two qualifying incidents on one dossier → 2 × 0,50 = 1,00, at the cap.
+    expect(computeIcamDossier(all({ NINC: 2 })).icam).toBe(2.0);
+    expect(computeIcamDossier(all({ NINC: 3 })).terms.find((t) => t.term === "NINC")!.contribution)
+      .toBe(1.0);
+  });
+});
+
+describe("NINC attribution — R2: the workload instant is TREATMENT completion", () => {
+  it("the activity instant is treated_at, not recorded_at and not the adjudication", () => {
+    const fn = icamRead.slice(icamRead.indexOf("async function incidentActivities"));
+    const body = fn.slice(0, fn.indexOf("\n}\n"));
+    expect(body).toContain("r.treated_at");
+    expect(body).not.toContain("recorded_at");
+    expect(body).not.toContain("r.imputability_decided_at");
+  });
+
+  it("treatment completion is stamped by the DATABASE, never an application", () => {
+    const fn = mIncident.slice(mIncident.indexOf("function public.complete_operational_incident_treatment"));
+    expect(fn.slice(0, fn.indexOf("$$;"))).toContain("treated_at = now()");
+  });
+
+  it("Q9 then resolves the owner AT that instant — the same path as every other term", () => {
+    expect(icamRead).toContain("attributeByActTime");
+    expect(icamRead).not.toContain("account_manager_id");
+  });
+
+  it("treatment in one month and closure in another: the dossier still lands on CLOSURE", () => {
+    // Structural: acts are gathered for the dossiers the CLOSURE query returned.
+    // A treatment instant can never select the monthly period — it only decides
+    // WHO gets the workload.
+    const fn = icamRead.slice(icamRead.indexOf("export async function icamDossiers"));
+    expect(fn.indexOf("closedDossiers(tenantId, period)")).toBeLessThan(
+      fn.indexOf("incidentActivities"),
+    );
+  });
+});
+
+describe("ICAM-2 governance — four eyes, in the database", () => {
+  it("the recorder may never adjudicate their own incident", () => {
+    expect(mIncident).toContain("the actor who recorded an incident may not adjudicate it");
+    expect(mIncident).toContain("if v_recorded = p_actor then");
+  });
+
+  it("the corrector may never revalidate their own correction", () => {
+    expect(mIncident).toContain("the corrector may not revalidate their own correction");
+  });
+
+  it("a final determination cannot be re-adjudicated — only corrected, with a reason", () => {
+    expect(mIncident).toContain("this incident is already adjudicated: use the governed correction");
+    expect(mIncident).toContain("a correction requires a reason");
+    expect(mIncident).toContain("only a final determination passes through the correction door");
+  });
+
+  it("a correction preserves the displaced determination and clears finality", () => {
+    expect(mIncident).toContain("imputability_before text not null");
+    expect(mIncident).toContain("decided_by_before");
+    expect(mIncident).toContain("decided_at_before");
+    const fn = mIncident.slice(mIncident.indexOf("function public.correct_operational_incident"));
+    const body = fn.slice(0, fn.indexOf("$$;"));
+    expect(body).toContain("imputability_decided_by = null");
+    expect(body).toContain("imputability_decided_at = null");
+  });
+
+  it("…so a corrected incident stops counting until somebody else confirms it", () => {
+    // Finality is part of the eligibility filter, so this follows by construction.
+    expect(icamRead).toContain('.not("imputability_decided_at", "is", null)');
+  });
+
+  it("the correction history is append-only", () => {
+    expect(mIncident).toContain("create trigger operational_incident_correction_worm");
+    expect(mIncident).toContain("before update or delete on public.operational_incident_correction");
+  });
+
+  it("every RPC verifies the caller's declared authority (INV-7)", () => {
+    const calls = mIncident.split("assert_actor_authority").length - 1;
+    expect(calls, "one per governed act").toBeGreaterThanOrEqual(6);
+  });
+
+  it("no RPC is browser-executable", () => {
+    for (const fn of [
+      "record_operational_incident",
+      "adjudicate_operational_incident",
+      "complete_operational_incident_treatment",
+      "cancel_operational_incident",
+      "correct_operational_incident",
+      "revalidate_operational_incident",
+    ]) {
+      expect(mIncident, fn).toContain(`revoke execute on function public.${fn}`);
+      expect(mIncident, fn).toContain(`grant execute on function public.${fn}`);
+    }
+    expect(mIncident).toContain("from public, anon, authenticated");
+  });
+});
+
+describe("ICAM-2 authority — existing roles, and nothing leaks", () => {
+  it("recording is the Superviseur's, adjudication the Responsable Qualité's", () => {
+    expect(mIncident).toContain("'incident:record'");
+    expect(mIncident).toContain("'incident:adjudicate'");
+    expect(mIncident).toContain("r.code = 'OPS_SUPERVISOR'");
+    expect(mIncident).toContain("r.code = 'COMPLIANCE_HSSE'");
+  });
+
+  it("no new role was created", () => {
+    expect(mIncident, "the governance matrix already names both actors").not.toContain(
+      "insert into public.role (",
+    );
+  });
+
+  it("PERFORMANCE_MANAGEMENT and SYSTEM_ADMIN hold neither — asserted by the migration", () => {
+    expect(mIncident).toContain("'PERFORMANCE_MANAGEMENT', 'PERFORMANCE_PUBLISHER', 'SYSTEM_ADMIN'");
+    expect(mIncident).toContain("neither decides who caused an incident");
+  });
+
+  it("the register has NO write policy — the RPCs are the boundary", () => {
+    expect(mIncident).toContain("must have NO write policy");
+    expect(mIncident).toContain("for select to authenticated");
+  });
+
+  it("an incident can never point at another tenant's dossier", () => {
+    expect(mIncident).toContain("incident tenant mismatch");
+    expect(mIncident).toContain("create trigger trg_operational_incident_tenant");
+  });
+
+  it("the tables are registered as tenant-scoped", () => {
+    const registry = readFileSync(
+      fileURLToPath(new URL("../lib/db/tenant-tables.ts", import.meta.url)),
+      "utf8",
+    );
+    expect(registry).toContain('"operational_incident"');
+    expect(registry).toContain('"operational_incident_correction"');
+  });
+});
+
+describe("the basis stays partial, and says so", () => {
+  it("NINC now counts, but three terms remain unavailable", () => {
+    const r = computeIcamDossier({ NDOC: 1, NFACT: 0, NAD: 0, NCOUR: 0, NINC: 1 });
+    expect(r.terms.find((t) => t.term === "NINC")!.state).toBe("COUNTED");
+    expect(r.basisComplete, "NREP/NPAY/NCOORD are still unsourced").toBe(false);
+    expect([...r.unavailableTerms].sort()).toEqual(["NCOORD", "NPAY", "NREP"]);
+  });
+
+  it("a qualifying NINC adds exactly the frozen coefficient", () => {
+    const without = computeIcamDossier({ NDOC: 1, NFACT: 0, NAD: 0, NCOUR: 0, NINC: 0 });
+    const with1 = computeIcamDossier({ NDOC: 1, NFACT: 0, NAD: 0, NCOUR: 0, NINC: 1 });
+    expect(Math.round((with1.icam - without.icam) * 100) / 100).toBe(0.5);
+  });
+
+  it("an imputable incident is simply absent from the count, never negative", () => {
+    // The register keeps it; the filter excludes it; ICAM is unchanged.
+    const r = computeIcamDossier({ NDOC: 1, NFACT: 0, NAD: 0, NCOUR: 0, NINC: 0 });
+    expect(r.icam).toBe(1.1);
+    expect(r.terms.find((t) => t.term === "NINC")!.contribution).toBe(0);
+  });
+});
+
+// ═══════════════ ICAM-2 — the three sources must agree on who may act ═══════
+//
+// A fresh tenant is provisioned from the role TEMPLATES; an existing tenant was
+// grandfathered by the MIGRATION; a local `supabase db reset` rebuilds from the
+// SEED. If they disagree, two companies running the same release disagree about
+// who may decide whether a colleague caused an incident — and nothing fails
+// loudly. So all three are pinned here together.
+
+const seedSql = readFileSync(fileURLToPath(new URL("../supabase/seed.sql", import.meta.url)), "utf8");
+const holders = (permission: string) =>
+  TENANT_ROLE_TEMPLATES.filter((t) => t.permissions.includes(permission)).map((t) => t.key).sort();
+
+describe("incident capabilities — migration, seed and role templates agree", () => {
+  it("incident:record belongs to OPS_SUPERVISOR alone", () => {
+    expect(holders("incident:record")).toEqual(["OPS_SUPERVISOR"]);
+    const block = mIncident.slice(mIncident.indexOf("p.code = 'incident:record'"));
+    expect(block.slice(0, block.indexOf("on conflict"))).toContain("r.code = 'OPS_SUPERVISOR'");
+    const seedBlock = seedSql.slice(seedSql.indexOf("p.code = 'incident:record'"));
+    expect(seedBlock.slice(0, seedBlock.indexOf("on conflict"))).toContain("r.code = 'OPS_SUPERVISOR'");
+  });
+
+  it("incident:adjudicate belongs to COMPLIANCE_HSSE alone", () => {
+    expect(holders("incident:adjudicate")).toEqual(["COMPLIANCE_HSSE"]);
+    const block = mIncident.slice(mIncident.indexOf("p.code = 'incident:adjudicate'"));
+    expect(block.slice(0, block.indexOf("on conflict"))).toContain("r.code = 'COMPLIANCE_HSSE'");
+    const seedBlock = seedSql.slice(seedSql.indexOf("p.code = 'incident:adjudicate'"));
+    expect(seedBlock.slice(0, seedBlock.indexOf("on conflict"))).toContain("r.code = 'COMPLIANCE_HSSE'");
+  });
+
+  it("the two are SPLIT — no template holds both, so four eyes is the default", () => {
+    const both = TENANT_ROLE_TEMPLATES.filter(
+      (t) => t.permissions.includes("incident:record") && t.permissions.includes("incident:adjudicate"),
+    );
+    expect(both.map((t) => t.key)).toEqual([]);
+  });
+
+  it("no template gives either capability to Performance or SYSTEM_ADMIN", () => {
+    for (const key of ["PERFORMANCE_MANAGEMENT", "PERFORMANCE_PUBLISHER", "SYSTEM_ADMIN"]) {
+      const t = TENANT_ROLE_TEMPLATES.find((x) => x.key === key);
+      if (!t) continue;
+      expect(t.permissions, `${key} must not record incidents`).not.toContain("incident:record");
+      expect(t.permissions, `${key} must not adjudicate imputability`).not.toContain("incident:adjudicate");
+    }
+  });
+
+  it("both capabilities are declared in the seed as well as the migration", () => {
+    for (const code of ["incident:record", "incident:adjudicate"]) {
+      expect(seedSql, code).toContain(`('${code}', 'incident'`);
+      expect(mIncident, code).toContain(`('${code}', 'incident'`);
+    }
+  });
+});
+
+describe("the ICAM-2 behaviour suite exists and is wired into CI", () => {
+  const suite = readFileSync(
+    fileURLToPath(new URL("../supabase/tests/operational_incident_test.sql", import.meta.url)),
+    "utf8",
+  );
+  const ci = readFileSync(fileURLToPath(new URL("../.github/workflows/ci.yml", import.meta.url)), "utf8");
+
+  it("CI runs it", () => {
+    expect(ci).toContain("supabase/tests/operational_incident_test.sql");
+  });
+
+  it("it runs BEFORE the journey harness, which must stay last", () => {
+    expect(ci.indexOf("operational_incident_test.sql")).toBeLessThan(ci.indexOf("journey_identities.sql"));
+  });
+
+  it("it proves the person-level rule with an actor holding BOTH capabilities", () => {
+    // A probe that lacks incident:adjudicate would be refused for the wrong
+    // reason and the four-eyes rule could be deleted without the suite noticing.
+    expect(suite).toContain("recorder_holding_BOTH_caps_cannot_adjudicate_own");
+    expect(suite).toContain("must hold BOTH capabilities");
+    expect(suite).toContain("a_colleague_can_adjudicate_the_same_incident");
+  });
+
+  it("it fails when any recorded check is not 1", () => {
+    expect(suite).toContain("from _r where value <> 1");
+  });
+
+  it("it is non-destructive", () => {
+    expect(suite.trimEnd().endsWith("rollback;")).toBe(true);
+    expect(suite).not.toContain("commit;");
+  });
+});
+
+describe("the shipped build knows which migration it carries", () => {
+  it("build-info names migration 131", () => {
+    const info = readFileSync(
+      fileURLToPath(new URL("../lib/platform/ops/build-info.ts", import.meta.url)),
+      "utf8",
+    );
+    expect(info).toContain('LATEST_MIGRATION = "20260923000001_operational_incident"');
+    expect(info).toContain("MIGRATION_COUNT = 131");
   });
 });

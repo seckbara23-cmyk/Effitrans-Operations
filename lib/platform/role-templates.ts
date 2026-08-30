@@ -380,6 +380,13 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "quotation:validate",
       "transport:request",
       "logistics:copilot:read",
+      // ICAM-2 (RATIFIED 2026-08-30) — the operational incident register. The
+      // Superviseur RECORDS a return / non-conformity and records its treatment
+      // completion. Deliberately NOT incident:adjudicate: the governance matrix
+      // rules that "anything that can blame is NOT entered by the person being
+      // measured", and the database refuses a recorder who rules on their own
+      // report regardless of what a role happens to hold.
+      "incident:record",
       // Phase 8.7 — Messaging Center. Full supervisory reach: every department + manage/moderate.
       "messaging:read", "messaging:send", "messaging:read:documentation", "messaging:read:customs",
       "messaging:read:transport", "messaging:read:finance", "messaging:read:general",
@@ -408,6 +415,11 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "audit:read:all", "customs:read", "document:approve", "document:read", "file:read",
       "file:read:all", ...BASE, "process:read", "task:read", "task:read:all", "tracking:read",
       "transport:read", "logistics:copilot:read",
+      // ICAM-2 (RATIFIED 2026-08-30) — imputabilité. Deciding whether an incident
+      // is imputable is non-conformity adjudication, which is this role's domain.
+      // It also owns the governed correction and its revalidation. Deliberately
+      // NOT incident:record: the adjudicator does not open the cases it rules on.
+      "incident:adjudicate",
       // Phase 8.7 — Messaging Center. Governance: read + redact, no department inbox.
       "messaging:read", "messaging:send", "messaging:moderate",
     ],

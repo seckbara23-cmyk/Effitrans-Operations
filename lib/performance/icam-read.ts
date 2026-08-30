@@ -3,16 +3,19 @@
  * qualifying act to the Account Manager who owned the dossier at the time, and
  * roll up by closure month.
  * ---------------------------------------------------------------------------
- * WHAT ICAM-1 DELIVERS AND WHAT IT DOES NOT. Four of the eight terms have
- * authoritative sources today — NDOC, NFACT, NAD, NCOUR. NREP, NPAY and NCOORD
- * await rulings; NINC awaits its register (ICAM-2). Those four are reported as
- * SOURCE_UNAVAILABLE, never as zero, and every result says whether its basis is
- * complete. It is not.
+ * WHAT THIS DELIVERS AND WHAT IT DOES NOT. Five of the eight terms have
+ * authoritative sources — NDOC, NFACT, NAD, NCOUR and, since ICAM-2, NINC.
+ * NREP, NPAY and NCOORD await rulings and are reported as SOURCE_UNAVAILABLE,
+ * never as zero, so every result still says its basis is incomplete. It is.
  *
  * THE ACTIVITY INSTANT IS THE HARD PART, and it differs per term:
  *
  *   NAD   `expense_visa.decided_at`         — the visa decision, on its own row
  *   NCOUR `invoice_deposit_event.occurred_at` — the custody event, on its own row
+ *   NINC  `operational_incident.treated_at`   — TREATMENT COMPLETION (R2), not
+ *         the recording and not the adjudication. « Traité » is a distinct act
+ *         (R1), so the instant that carries the workload is the moment the
+ *         Account Manager finished handling the return.
  *   NDOC  ⚠ `document` has NO `reviewed_at`. The verification instant lives in
  *   NFACT   `audit_log` (`document.approved`, `occurred_at`, DB time). Where no
  *           audit row exists the instant is genuinely unknown, so those
@@ -42,8 +45,8 @@ import {
 import type { PerformancePeriod } from "./period";
 
 /** Terms ICAM-1 can source. The rest are disclosed, never zeroed. */
-export const ICAM1_SOURCED_TERMS: readonly IcamTerm[] = ["NDOC", "NFACT", "NAD", "NCOUR"];
-export const ICAM1_UNSOURCED_TERMS: readonly IcamTerm[] = ["NREP", "NPAY", "NCOORD", "NINC"];
+export const ICAM1_SOURCED_TERMS: readonly IcamTerm[] = ["NDOC", "NFACT", "NAD", "NCOUR", "NINC"];
+export const ICAM1_UNSOURCED_TERMS: readonly IcamTerm[] = ["NREP", "NPAY", "NCOORD"];
 
 export type IcamDossierRow = {
   fileId: string;
@@ -206,6 +209,68 @@ async function visaActivities(
   }));
 }
 
+/**
+ * THE NINC ELIGIBILITY PREDICATE — one authoritative definition, here and
+ * nowhere else. The frozen term is « retours / non-conformités NON imputables
+ * traités », and every word of it is a condition:
+ *
+ *   status       = 'TRAITE'      — traité: the treatment-completion act (R1)
+ *   imputability = 'NON'         — NON imputable, definitively
+ *   decided_at  IS NOT NULL      — and that verdict is FINAL: EN_ANALYSE is not
+ *                                  a decision, and a governed correction clears
+ *                                  finality until someone else confirms it
+ *
+ * ANNULE is excluded by the status test. OUI and NON_EVALUE are excluded by the
+ * imputability test — an incident imputable to the Account Manager contributes
+ * nothing (F-ICAM-06), while remaining recorded and available to IPAM later.
+ *
+ * Expressed as a query filter rather than a TypeScript predicate so the
+ * database does the counting; the shape is asserted by tests so it cannot drift
+ * into the UI or into three different places.
+ */
+export const NINC_ELIGIBILITY = {
+  status: "TRAITE",
+  imputability: "NON",
+} as const;
+
+/**
+ * NINC — treated, definitively non-imputable incidents, at their TREATMENT
+ * instant. Each distinct incident counts once (Q10 allows several per dossier;
+ * the frozen 0,50/1,00 plafond does the bounding).
+ */
+async function incidentActivities(
+  tenantId: string,
+  fileIds: readonly string[],
+): Promise<TermActivity[]> {
+  if (fileIds.length === 0) return [];
+  const admin = getAdminSupabaseClient();
+  const { data } = await admin
+    .from("operational_incident")
+    .select("id, file_id, treated_at")
+    .eq("tenant_id", tenantId)
+    .in("file_id", fileIds)
+    .eq("status", NINC_ELIGIBILITY.status)
+    .eq("imputability", NINC_ELIGIBILITY.imputability)
+    .not("imputability_decided_at", "is", null);
+
+  // One row per incident already: the register holds one record per event, so
+  // there is nothing to de-duplicate — but the id is carried so a future join
+  // cannot silently multiply it.
+  const seen = new Set<string>();
+  const out: TermActivity[] = [];
+  for (const r of data ?? []) {
+    const id = r.id as string;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push({
+      fileId: r.file_id as string,
+      atISO: (r.treated_at as string | null) ?? null,
+      term: "NINC" as IcamTerm,
+    });
+  }
+  return out;
+}
+
 /** NCOUR — physical recoveries, at the custody event's own instant. */
 async function courierActivities(
   tenantId: string,
@@ -248,16 +313,17 @@ export async function icamDossiers(
   if (fileIds.length === 0) return [];
 
   const admin = getAdminSupabaseClient();
-  const [files, timelines, docActs, nadActs, courActs] = await Promise.all([
+  const [files, timelines, docActs, nadActs, courActs, nincActs] = await Promise.all([
     admin.from("operational_file").select("id, file_number").eq("tenant_id", tenantId).in("id", fileIds),
     ownershipTimelines(tenantId, fileIds),
     verifiedDocumentActivities(tenantId, fileIds),
     visaActivities(tenantId, fileIds),
     courierActivities(tenantId, fileIds),
+    incidentActivities(tenantId, fileIds),
   ]);
   const numberOf = new Map((files.data ?? []).map((f) => [f.id as string, f.file_number as string]));
 
-  const all = [...docActs, ...nadActs, ...courActs];
+  const all = [...docActs, ...nadActs, ...courActs, ...nincActs];
   const { byOwner, unattributable } = attributeByActTime(all, timelines);
 
   // Regroup: dossier → owner → per-term counts.
@@ -349,14 +415,15 @@ export async function provisionalIcamForFile(
     .maybeSingle();
   if (!file) return null;
 
-  const [timelines, docActs, nadActs, courActs] = await Promise.all([
+  const [timelines, docActs, nadActs, courActs, nincActs] = await Promise.all([
     ownershipTimelines(tenantId, [fileId]),
     verifiedDocumentActivities(tenantId, [fileId]),
     visaActivities(tenantId, [fileId]),
     courierActivities(tenantId, [fileId]),
+    incidentActivities(tenantId, [fileId]),
   ]);
   const { byOwner, unattributable } = attributeByActTime(
-    [...docActs, ...nadActs, ...courActs],
+    [...docActs, ...nadActs, ...courActs, ...nincActs],
     timelines,
   );
 

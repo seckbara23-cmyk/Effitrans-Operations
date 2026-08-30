@@ -1545,3 +1545,45 @@ join public.permission p
                 'communication:read', 'communication:manage')
 where r.tenant_id = '00000000-0000-0000-0000-000000000001' and r.code = 'MAIL_ADMIN'
 on conflict do nothing;
+
+-- ===========================================================================
+-- ICAM-2 (2026-08-30) — the operational incident register.
+--
+-- Two capabilities on two EXISTING roles. The governance matrix already names
+-- both actors, so no role is created: the « Superviseur » records a return or
+-- non-conformity (and its treatment completion), the « Responsable Qualité »
+-- decides imputability and owns the governed correction.
+--
+-- They are deliberately SPLIT ACROSS TWO ROLES. Imputability assigns
+-- responsibility for a named colleague's work, and the matrix rules that
+-- "anything that can blame is NOT entered by the person being measured". The
+-- database enforces the person-level rule independently — a recorder is
+-- refused on their own incident even if some future role holds both — but the
+-- default grants should not invite it.
+--
+-- SYSTEM_ADMIN receives NEITHER: it may assign these roles, which is not a
+-- reason to decide who caused an incident (same doctrine as hr:*).
+-- PERFORMANCE_MANAGEMENT and PERFORMANCE_PUBLISHER receive NEITHER: Gestion de
+-- la Performance consumes the derived NINC count; it never becomes an incident
+-- operator. Migration 20260923000001 asserts both exclusions.
+-- ===========================================================================
+insert into public.permission (code, module, action, data_scope, description) values
+  ('incident:record', 'incident', 'record', 'assigned',
+   'Enregistrer un retour / une non-conformité sur un dossier, et enregistrer la fin de son traitement. Ne confère aucune autorité sur l''imputabilité.'),
+  ('incident:adjudicate', 'incident', 'adjudicate', 'assigned',
+   'Statuer sur l''imputabilité d''un incident opérationnel, corriger une décision définitive et la revalider. Quatre yeux au niveau de la personne : jamais son propre enregistrement, jamais sa propre correction.')
+on conflict (code) do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'incident:record'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001' and r.code = 'OPS_SUPERVISOR'
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'incident:adjudicate'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001' and r.code = 'COMPLIANCE_HSSE'
+on conflict do nothing;
