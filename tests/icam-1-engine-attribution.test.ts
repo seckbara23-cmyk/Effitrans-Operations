@@ -18,7 +18,7 @@
  * supabase/tests/operational_incident_test.sql.
  */
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { TENANT_ROLE_TEMPLATES } from "@/lib/platform/role-templates";
 import { fileURLToPath } from "node:url";
 import {
@@ -161,9 +161,9 @@ describe("a missing source is never a measured zero", () => {
     expect(r.unavailableTerms).toEqual([]);
   });
 
-  it("five terms are sourced and three are disclosed — NINC joined in ICAM-2", () => {
-    expect([...ICAM1_SOURCED_TERMS].sort()).toEqual(["NAD", "NCOUR", "NDOC", "NFACT", "NINC"]);
-    expect([...ICAM1_UNSOURCED_TERMS].sort()).toEqual(["NCOORD", "NPAY", "NREP"]);
+  it("six terms are sourced and two are disclosed — NPAY joined in ICAM-2B", () => {
+    expect([...ICAM1_SOURCED_TERMS].sort()).toEqual(["NAD", "NCOUR", "NDOC", "NFACT", "NINC", "NPAY"]);
+    expect([...ICAM1_UNSOURCED_TERMS].sort()).toEqual(["NCOORD", "NREP"]);
     // Together they are the whole register, so no term can be forgotten.
     expect([...ICAM1_SOURCED_TERMS, ...ICAM1_UNSOURCED_TERMS].sort()).toEqual([...ICAM_TERMS].sort());
   });
@@ -181,7 +181,7 @@ describe("a missing source is never a measured zero", () => {
       icamRead.indexOf("];", icamRead.indexOf("ICAM1_UNSOURCED_TERMS")) + 2,
     );
     const rest = icamRead.replace(decl, "");
-    for (const term of ["NREP", "NPAY", "NCOORD"]) {
+    for (const term of ["NREP", "NCOORD"]) {
       expect(rest, `${term} must not be assigned a count by the read service`).not.toContain(term);
     }
   });
@@ -743,5 +743,251 @@ describe("the shipped build knows which migration it carries", () => {
     );
     expect(info).toContain('LATEST_MIGRATION = "20260923000001_operational_incident"');
     expect(info).toContain("MIGRATION_COUNT = 131");
+  });
+});
+
+// ═══════════ ICAM-2B — NPAY, the term that measures zero rather than nothing ══
+
+const npayFn = (() => {
+  const i = icamRead.indexOf("async function onlinePaymentActivities");
+  expect(i, "onlinePaymentActivities not found").toBeGreaterThan(-1);
+  const rest = icamRead.slice(i);
+  return rest.slice(0, rest.indexOf("\n}\n"));
+})();
+
+describe("1 — the authoritative completion state", () => {
+  it("VERIFIED is required: a PENDING payment is a claim, not a receipt", () => {
+    expect(icamRead).toContain('NPAY_ELIGIBILITY = { verificationStatus: "VERIFIED" }');
+    expect(npayFn).toContain('.eq("verification_status", NPAY_ELIGIBILITY.verificationStatus)');
+    expect(npayFn, "PENDING must never be admitted").not.toContain("PENDING");
+  });
+
+  it("a reversed payment never counts — and that also excludes REJECTED", () => {
+    // rejectPayment sets verification_status REJECTED *and* reversed_at, so one
+    // test covers both, and it matches the platform's own paid total.
+    expect(npayFn).toContain('.is("reversed_at", null)');
+  });
+
+  it("the qualifying state is declared ONCE, not re-typed at each call site", () => {
+    expect(icamRead.split("NPAY_ELIGIBILITY").length - 1).toBeGreaterThanOrEqual(2);
+    expect(icamRead.match(/verification_status/g)?.length ?? 0).toBe(1);
+  });
+});
+
+describe("2 — the activity timestamp", () => {
+  it("the instant is verified_at", () => {
+    expect(npayFn).toContain("r.verified_at");
+  });
+
+  it("NEVER paid_at — it is a DATE, user-supplied, and back-datable", () => {
+    // Back-dating paid_at would move a colleague's credit into a month they did
+    // not own the dossier. A data-entry field can never decide attribution.
+    expect(npayFn, "paid_at must not reach the derivation").not.toContain("paid_at");
+  });
+
+  it("NEVER the recording instant — recording a payment is not confirming it", () => {
+    expect(npayFn).not.toContain("created_at");
+    expect(npayFn).not.toContain("recorded_by");
+  });
+
+  it("no client or wall clock is consulted", () => {
+    expect(npayFn).not.toContain("Date.now");
+    expect(npayFn).not.toContain("new Date");
+  });
+
+  it("a VERIFIED payment with no instant is NOT_ATTRIBUTABLE, never guessed", () => {
+    // No CHECK binds VERIFIED to verified_at, so the null case is real.
+    expect(npayFn).toContain("?? null");
+    const r = computeIcamDossier({ NDOC: 0, NFACT: 0, NAD: 0, NCOUR: 0, NINC: 0, NPAY: 0,
+      unattributable: { NPAY: 1 } });
+    expect(r.terms.find((t) => t.term === "NPAY")!.contribution).toBe(0);
+  });
+});
+
+describe("3 — Q9 act-time attribution", () => {
+  it("NPAY goes through the same attributeByActTime path as every other term", () => {
+    for (const path of ["export async function icamDossiers", "npayActs"]) {
+      expect(icamRead, path).toContain(path);
+    }
+    const assembly = icamRead.slice(icamRead.indexOf("export async function icamDossiers"));
+    expect(assembly).toContain("...npayActs");
+    expect(assembly).toContain("attributeByActTime");
+  });
+
+  it("it is wired into BOTH assembly paths, not only the list", () => {
+    expect(icamRead.match(/onlinePaymentActivities\(tenantId, /g)?.length).toBe(2);
+    expect(icamRead.match(/\.\.\.npayActs/g)?.length).toBe(2);
+  });
+
+  it("it never falls back to the CURRENT owner", () => {
+    expect(icamRead).not.toContain("account_manager_id");
+  });
+
+  it("a payment verified before a reassignment stays with the previous owner", () => {
+    const timelines = buildTimelines([
+      { fileId: "F1", previousUserId: null, newUserId: "AM-A", atISO: "2026-01-01T00:00:00Z" },
+      { fileId: "F1", previousUserId: "AM-A", newUserId: "AM-B", atISO: "2026-03-01T00:00:00Z" },
+    ]);
+    // Verified in February; the dossier moved to AM-B in March.
+    const before = attributeByActTime(
+      [{ fileId: "F1", atISO: "2026-02-15T10:00:00Z", term: "NPAY" as const }],
+      timelines,
+    );
+    expect(before.byOwner.get("AM-A")?.length).toBe(1);
+    expect(before.byOwner.get("AM-B")).toBeUndefined();
+
+    // …and one verified after it belongs to AM-B, so this is attribution and
+    // not a constant.
+    const after = attributeByActTime(
+      [{ fileId: "F1", atISO: "2026-04-02T10:00:00Z", term: "NPAY" as const }],
+      timelines,
+    );
+    expect(after.byOwner.get("AM-B")?.length).toBe(1);
+    expect(after.byOwner.get("AM-A")).toBeUndefined();
+  });
+});
+
+describe("4 & 5 — the « en ligne » whitelist, and what it excludes", () => {
+  it("exactly WAVE and ORANGE_MONEY qualify (Q5-R)", () => {
+    expect(icamRead).toContain('NPAY_ONLINE_METHODS = ["WAVE", "ORANGE_MONEY"]');
+    expect(npayFn).toContain('.in("method", [...NPAY_ONLINE_METHODS])');
+  });
+
+  it("BANK_TRANSFER is excluded — the CBAO transfer is not an online payment", () => {
+    expect(icamRead, "bank transfers must not reach ICAM").not.toContain("BANK_TRANSFER");
+  });
+
+  it("CASH, CHEQUE and OTHER are excluded BY CONSTRUCTION, not by a blacklist", () => {
+    // A whitelist cannot rot: a method added to the CHECK constraint tomorrow
+    // does not silently start scoring.
+    for (const method of ["CASH", "CHEQUE", '"OTHER"']) {
+      expect(icamRead, method).not.toContain(method);
+    }
+    expect(npayFn, "no negative filter").not.toContain("neq");
+    expect(npayFn, "no negative filter").not.toContain("not.in");
+  });
+});
+
+describe("6 — measured zero semantics (Q14)", () => {
+  it("a dossier with no online payment reports NPAY = 0 COUNTED, not unavailable", () => {
+    const r = computeIcamDossier({ NDOC: 1, NFACT: 0, NAD: 0, NCOUR: 0, NINC: 0, NPAY: 0 });
+    const npay = r.terms.find((t) => t.term === "NPAY")!;
+    expect(npay.state).toBe("COUNTED");
+    expect(npay.count).toBe(0);
+    expect(r.unavailableTerms).not.toContain("NPAY");
+  });
+
+  it("the assembly emits 0 for every sourced term rather than omitting it", () => {
+    const assembly = icamRead.slice(icamRead.indexOf("export async function icamDossiers"));
+    expect(assembly).toContain("for (const t of ICAM1_SOURCED_TERMS) icamCounts[t] = counts[t] ?? 0;");
+  });
+
+  it("a measured 0 and an unavailable term are DIFFERENT states", () => {
+    const r = computeIcamDossier({ NDOC: 0, NFACT: 0, NAD: 0, NCOUR: 0, NINC: 0, NPAY: 0 });
+    expect(r.terms.find((t) => t.term === "NPAY")!.state).toBe("COUNTED");
+    expect(r.terms.find((t) => t.term === "NREP")!.state).toBe("SOURCE_UNAVAILABLE");
+    // …and the basis is still incomplete, because two terms remain unsourced.
+    expect(r.basisComplete).toBe(false);
+    expect([...r.unavailableTerms].sort()).toEqual(["NCOORD", "NREP"]);
+  });
+
+  it("a qualifying payment adds exactly the frozen coefficient, capped at 0,90", () => {
+    const base = { NDOC: 0, NFACT: 0, NAD: 0, NCOUR: 0, NINC: 0 };
+    expect(computeIcamDossier({ ...base, NPAY: 1 }).terms.find((t) => t.term === "NPAY")!.contribution).toBe(0.3);
+    expect(computeIcamDossier({ ...base, NPAY: 3 }).terms.find((t) => t.term === "NPAY")!.contribution).toBe(0.9);
+    expect(computeIcamDossier({ ...base, NPAY: 9 }).terms.find((t) => t.term === "NPAY")!.contribution).toBe(0.9);
+  });
+});
+
+describe("7 — duplicate handling", () => {
+  it("each payment counts once", () => {
+    expect(npayFn).toContain("seen.has(id)");
+    expect(npayFn).toContain("seen.add(id)");
+  });
+
+  it("the invoice join is many-to-one, so it cannot fan a payment out", () => {
+    // One payment carries one invoice_id; the map is keyed by invoice id.
+    expect(npayFn).toContain("fileOfInvoice.get(r.invoice_id as string)");
+  });
+
+  it("an invoice with no dossier contributes nothing (file_id is NULLABLE)", () => {
+    expect(npayFn).toContain("if (!fileId) continue;");
+  });
+
+  it("the dossier population bounds the query — no tenant-wide sweep", () => {
+    expect(npayFn).toContain('.eq("tenant_id", tenantId)');
+    expect(npayFn).toContain('.in("file_id", fileIds)');
+  });
+});
+
+describe("8 — Q13 disjointness: NPAY collides with nothing already sourced", () => {
+  it("the derivation reads ONLY payment and invoice", () => {
+    const tables = [...npayFn.matchAll(/\.from\("([a-z_]+)"\)/g)].map((m) => m[1]).sort();
+    expect(tables).toEqual(["invoice", "payment"]);
+  });
+
+  it("NAD vs NPAY — it never touches the expense lane", () => {
+    for (const t of ["expense_visa", "expense_authorization"]) {
+      expect(npayFn, t).not.toContain(t);
+    }
+  });
+
+  it("NDOC/NFACT vs NPAY — it cannot inherit a document verification", () => {
+    // A verified PAYMENT_RECEIPT is a documentation act by a document:approve
+    // holder; confirming the money is a finance act. Different decisions,
+    // different roles. This test pins that NPAY cannot pick up the first one.
+    for (const t of ["document", "audit_log"]) {
+      expect(npayFn, t).not.toContain(t);
+    }
+  });
+
+  it("NCOUR vs NPAY — depositing an invoice is not being paid for it", () => {
+    expect(npayFn).not.toContain("invoice_deposit_event");
+  });
+
+  it("NINC vs NPAY — no overlap", () => {
+    expect(npayFn).not.toContain("operational_incident");
+  });
+
+  it("each sourced term still has exactly one derivation function", () => {
+    for (const fn of [
+      "verifiedDocumentActivities",
+      "visaActivities",
+      "courierActivities",
+      "incidentActivities",
+      "onlinePaymentActivities",
+    ]) {
+      expect(icamRead.match(new RegExp(`async function ${fn}`, "g"))?.length, fn).toBe(1);
+    }
+  });
+});
+
+describe("9 — ICAM-2B needed no migration, and stayed inside its slice", () => {
+  it("no migration was added for NPAY", () => {
+    const migrations = readdirSync(fileURLToPath(new URL("../supabase/migrations", import.meta.url)));
+    expect(migrations.filter((f) => /npay|payment_online|icam/i.test(f))).toEqual([]);
+    // 131 remains the newest — ICAM-2's register.
+    expect(migrations.filter((f) => f.endsWith(".sql")).sort().at(-1))
+      .toBe("20260923000001_operational_incident.sql");
+  });
+
+  it("the payment schema was not altered", () => {
+    const info = readFileSync(
+      fileURLToPath(new URL("../lib/platform/ops/build-info.ts", import.meta.url)),
+      "utf8",
+    );
+    expect(info).toContain("MIGRATION_COUNT = 131");
+  });
+
+  it("NREP and NCOORD were NOT implemented — they are still unruled", () => {
+    for (const forbidden of ["client_notification", "communication_message", "process_handoff", "business_event"]) {
+      expect(icamRead, `${forbidden} must not appear — NREP/NCOORD are unruled`).not.toContain(forbidden);
+    }
+  });
+
+  it("ICAM-3 presentation is still untouched", () => {
+    for (const forbidden of ["buildSnapshot", "buildBriefing", "renderPerformanceReport"]) {
+      expect(icamRead, forbidden).not.toContain(forbidden);
+    }
   });
 });

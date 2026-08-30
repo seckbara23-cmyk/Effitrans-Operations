@@ -3,10 +3,18 @@
  * qualifying act to the Account Manager who owned the dossier at the time, and
  * roll up by closure month.
  * ---------------------------------------------------------------------------
- * WHAT THIS DELIVERS AND WHAT IT DOES NOT. Five of the eight terms have
- * authoritative sources — NDOC, NFACT, NAD, NCOUR and, since ICAM-2, NINC.
- * NREP, NPAY and NCOORD await rulings and are reported as SOURCE_UNAVAILABLE,
- * never as zero, so every result still says its basis is incomplete. It is.
+ * WHAT THIS DELIVERS AND WHAT IT DOES NOT. Six of the eight terms have
+ * authoritative sources — NDOC, NFACT, NAD, NCOUR, NINC (ICAM-2) and NPAY
+ * (ICAM-2B). NREP and NCOORD are blocked on business definitions Effitrans has
+ * not ratified, and are reported as SOURCE_UNAVAILABLE — never as zero — so
+ * every result still says its basis is incomplete. It is.
+ *
+ * NPAY IS THE ONE THAT MEASURES ZERO RATHER THAN NOTHING. « Paiements en
+ * ligne » is ratified as {WAVE, ORANGE_MONEY} (Q5-R), a vocabulary the payment
+ * register already carries. A dossier with no mobile-money payment therefore
+ * has NPAY = 0 OBSERVED, not NPAY unknown — the register's silence is a
+ * measurement, because the register is where an online payment would be. That
+ * distinction is the whole point of Q14 and must survive to the reader.
  *
  * THE ACTIVITY INSTANT IS THE HARD PART, and it differs per term:
  *
@@ -16,6 +24,12 @@
  *         the recording and not the adjudication. « Traité » is a distinct act
  *         (R1), so the instant that carries the workload is the moment the
  *         Account Manager finished handling the return.
+ *   NPAY  `payment.verified_at`               — the VERIFICATION instant, and
+ *         deliberately NOT `paid_at`. `paid_at` is a DATE, it is supplied by
+ *         whoever records the payment, and it can be back-dated — so using it
+ *         would let a data-entry choice move a colleague's credit into a month
+ *         they did not own the dossier. `verified_at` is written by the server
+ *         when Finance confirms the money, and it is paired with `verified_by`.
  *   NDOC  ⚠ `document` has NO `reviewed_at`. The verification instant lives in
  *   NFACT   `audit_log` (`document.approved`, `occurred_at`, DB time). Where no
  *           audit row exists the instant is genuinely unknown, so those
@@ -45,8 +59,8 @@ import {
 import type { PerformancePeriod } from "./period";
 
 /** Terms ICAM-1 can source. The rest are disclosed, never zeroed. */
-export const ICAM1_SOURCED_TERMS: readonly IcamTerm[] = ["NDOC", "NFACT", "NAD", "NCOUR", "NINC"];
-export const ICAM1_UNSOURCED_TERMS: readonly IcamTerm[] = ["NREP", "NPAY", "NCOORD"];
+export const ICAM1_SOURCED_TERMS: readonly IcamTerm[] = ["NDOC", "NFACT", "NAD", "NCOUR", "NINC", "NPAY"];
+export const ICAM1_UNSOURCED_TERMS: readonly IcamTerm[] = ["NREP", "NCOORD"];
 
 export type IcamDossierRow = {
   fileId: string;
@@ -271,6 +285,90 @@ async function incidentActivities(
   return out;
 }
 
+/**
+ * THE « EN LIGNE » VOCABULARY, ratified by Q5-R. A WHITELIST, never a blacklist:
+ * a payment method the methodology has not admitted must not start counting
+ * because somebody added it to a CHECK constraint. CASH, BANK_TRANSFER, CHEQUE
+ * and OTHER are excluded by construction rather than by being listed anywhere.
+ *
+ * This is the platform's own definition of an online rail, not an invention:
+ * `payment_intent.provider` admits exactly WAVE, ORANGE_MONEY and MOCK.
+ */
+export const NPAY_ONLINE_METHODS = ["WAVE", "ORANGE_MONEY"] as const;
+
+/**
+ * THE QUALIFYING PAYMENT STATE. Both conditions are required and neither
+ * implies the other:
+ *
+ *   verification_status = 'VERIFIED'  — Finance confirmed the money arrived.
+ *                                       PENDING is a claim, not a receipt.
+ *   reversed_at IS NULL              — and it was not undone. REJECTED sets
+ *                                       `reversed_at` too, so this single test
+ *                                       excludes both reversals and rejections,
+ *                                       and matches the platform's own paid
+ *                                       total (Σ non-reversed).
+ */
+export const NPAY_ELIGIBILITY = { verificationStatus: "VERIFIED" } as const;
+
+/**
+ * NPAY — verified, non-reversed online payments, at their VERIFICATION instant.
+ *
+ * A payment carries no dossier of its own: it belongs to an invoice, and the
+ * invoice carries `file_id` — which is NULLABLE, so an invoice with no dossier
+ * simply contributes nothing rather than being guessed at.
+ *
+ * DISJOINTNESS (Q13). This function reads `payment` and `invoice` and nothing
+ * else. It can therefore never inherit an act already counted elsewhere: NAD
+ * lives on `expense_visa` (an outgoing expense approval — `payment` rows are
+ * written in exactly one place, `recordPayment`, and never from the expense
+ * lane), NFACT on controlled vendor invoices, NCOUR on the physical custody
+ * event. Confirming that money arrived is its own decision, by its own role.
+ */
+async function onlinePaymentActivities(
+  tenantId: string,
+  fileIds: readonly string[],
+): Promise<TermActivity[]> {
+  if (fileIds.length === 0) return [];
+  const admin = getAdminSupabaseClient();
+  const { data: invoices } = await admin
+    .from("invoice")
+    .select("id, file_id")
+    .eq("tenant_id", tenantId)
+    .in("file_id", fileIds);
+  if (!invoices || invoices.length === 0) return [];
+
+  const fileOfInvoice = new Map(
+    invoices.map((i) => [i.id as string, i.file_id as string]),
+  );
+
+  const { data } = await admin
+    .from("payment")
+    .select("id, invoice_id, verified_at")
+    .eq("tenant_id", tenantId)
+    .in("invoice_id", [...fileOfInvoice.keys()])
+    .in("method", [...NPAY_ONLINE_METHODS])
+    .eq("verification_status", NPAY_ELIGIBILITY.verificationStatus)
+    .is("reversed_at", null);
+
+  const seen = new Set<string>();
+  const out: TermActivity[] = [];
+  for (const r of data ?? []) {
+    const id = r.id as string;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const fileId = fileOfInvoice.get(r.invoice_id as string);
+    if (!fileId) continue;
+    out.push({
+      fileId,
+      // No CHECK binds VERIFIED to an instant, so a verified payment without
+      // one is NOT_ATTRIBUTABLE. It is never dated from `paid_at` or `now`.
+      atISO: (r.verified_at as string | null) ?? null,
+      term: "NPAY" as IcamTerm,
+    });
+  }
+  return out;
+}
+
 /** NCOUR — physical recoveries, at the custody event's own instant. */
 async function courierActivities(
   tenantId: string,
@@ -313,17 +411,18 @@ export async function icamDossiers(
   if (fileIds.length === 0) return [];
 
   const admin = getAdminSupabaseClient();
-  const [files, timelines, docActs, nadActs, courActs, nincActs] = await Promise.all([
+  const [files, timelines, docActs, nadActs, courActs, nincActs, npayActs] = await Promise.all([
     admin.from("operational_file").select("id, file_number").eq("tenant_id", tenantId).in("id", fileIds),
     ownershipTimelines(tenantId, fileIds),
     verifiedDocumentActivities(tenantId, fileIds),
     visaActivities(tenantId, fileIds),
     courierActivities(tenantId, fileIds),
     incidentActivities(tenantId, fileIds),
+    onlinePaymentActivities(tenantId, fileIds),
   ]);
   const numberOf = new Map((files.data ?? []).map((f) => [f.id as string, f.file_number as string]));
 
-  const all = [...docActs, ...nadActs, ...courActs, ...nincActs];
+  const all = [...docActs, ...nadActs, ...courActs, ...nincActs, ...npayActs];
   const { byOwner, unattributable } = attributeByActTime(all, timelines);
 
   // Regroup: dossier → owner → per-term counts.
@@ -415,15 +514,16 @@ export async function provisionalIcamForFile(
     .maybeSingle();
   if (!file) return null;
 
-  const [timelines, docActs, nadActs, courActs, nincActs] = await Promise.all([
+  const [timelines, docActs, nadActs, courActs, nincActs, npayActs] = await Promise.all([
     ownershipTimelines(tenantId, [fileId]),
     verifiedDocumentActivities(tenantId, [fileId]),
     visaActivities(tenantId, [fileId]),
     courierActivities(tenantId, [fileId]),
     incidentActivities(tenantId, [fileId]),
+    onlinePaymentActivities(tenantId, [fileId]),
   ]);
   const { byOwner, unattributable } = attributeByActTime(
-    [...docActs, ...nadActs, ...courActs, ...nincActs],
+    [...docActs, ...nadActs, ...courActs, ...nincActs, ...npayActs],
     timelines,
   );
 

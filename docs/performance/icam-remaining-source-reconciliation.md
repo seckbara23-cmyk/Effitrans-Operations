@@ -1,6 +1,7 @@
 # ICAM remaining-source reconciliation — NREP · NPAY · NCOORD
 
-**Date:** 2026-08-30 · **Status:** AUDIT ONLY. No implementation, no migration,
+**Date:** 2026-08-30 · **Status:** AUDIT — **rulings received, see §10.**
+Original status: AUDIT ONLY. No implementation, no migration,
 no schema, no seed, no role change, no ICAM-3, no IPAM.
 **Predecessors:** ICAM-1 `ff15185` · ICAM-2 `7ee8c4b` (CI 687 green).
 **Production access:** read-only probes via `supabase db query --linked`.
@@ -301,3 +302,27 @@ build.
 
 **Two of the three are blocked on business meaning, and code must not settle
 it.** The third needs one sentence from Effitrans.
+
+---
+
+## 10. Rulings received (2026-08-30) — this audit's verdicts as settled
+
+Effitrans accepted §0–§9 as the factual basis and ruled:
+
+| | ruling | effect on this audit |
+|---|---|---|
+| **Q5-R** | **RATIFIED.** « Paiements en ligne » = **WAVE · ORANGE_MONEY**. Bank transfer, cash, cheque and other offline methods are excluded until a governed methodology revision adds them. A dossier with zero qualifying payments is **NPAY = 0 MEASURED**, not SOURCE_UNAVAILABLE. | §4 verdict confirmed. **Implemented as ICAM-2B.** |
+| **Q11** | **RATIFIED.** Internal/staff communications never count as NREP. | §3 candidate B narrowed; still insufficient. |
+| **Q12** | **RATIFIED.** A FAILED transmission does not satisfy « envoyé ». | §3 confirmed. |
+| **Q13** | **RATIFIED as a sourcing governance rule.** The eight terms are distinct workload categories. One business act must not earn credit under several terms because it leaves several technical records. Test every proposed source against every already-sourced term; **STOP rather than silently count**. Coefficients and caps unchanged. | §6/F2 promoted from inference to rule. Applied in ICAM-2B §8. |
+| **Q14** | **RATIFIED for ICAM-3.** « 0 — mesuré », « non mesuré / source indisponible » and « non attribuable » must never render as the same management fact. `basisComplete` keeps reflecting the distinction. | §7 Q14 answered; binds ICAM-3. |
+| **Q3-R** | **NOT RATIFIED.** Do not invent the definition of « reporting formel prévu ou justifié ». No substitute source. | **NREP stays SOURCE_UNAVAILABLE.** |
+| **Q7-R** | **NOT RATIFIED.** Do not invent « coordination documentée ». `process_handoff` is a candidate, not a ratification. | **NCOORD stays SOURCE_UNAVAILABLE.** |
+
+**Population.** F-ICAM-05 is unchanged and must not be weakened to obtain more
+data. Current management interpretation is explicitly **low-volume /
+provisional**: the platform may demonstrate that the measurement system is
+correct, but one closed dossier establishes no employee performance trend.
+
+**Post-ruling state:** 6 of 8 terms sourced (NDOC · NAD · NFACT · NCOUR · NINC ·
+**NPAY**); NREP and NCOORD remain unavailable; **`basisComplete` = false**.
