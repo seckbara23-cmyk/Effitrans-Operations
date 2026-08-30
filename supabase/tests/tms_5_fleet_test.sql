@@ -27,6 +27,15 @@ insert into public.client (id, tenant_id, name) values
   ('00000000-0000-0000-0000-00000000fec1', '00000000-0000-0000-0000-000000000001', 'Client (test TMS-5)')
 on conflict (id) do nothing;
 
+-- TMS-1A: retiring a vehicle is now a governed act (motif + actor, refused
+-- mid-mission) — the fixture retires the way the platform does.
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-00000000feaa', 'tms5-steward@test.local')
+on conflict (id) do nothing;
+insert into public.app_user (id, tenant_id, email, status) values
+  ('00000000-0000-0000-0000-00000000feaa', '00000000-0000-0000-0000-000000000001', 'tms5-steward@test.local', 'active')
+on conflict (id) do nothing;
+
 insert into public.operational_file (id, tenant_id, file_number, type, client_id, status) values
   ('00000000-0000-0000-0000-00000000fef1', '00000000-0000-0000-0000-000000000001', 'TMS5-0001', 'TRP',
    '00000000-0000-0000-0000-00000000fec1', 'OPENED')
@@ -86,8 +95,12 @@ begin
       end if;
   end;
 
-  -- retired from the parc
-  update public.vehicle set status = 'AVAILABLE', is_active = false
+  -- retired from the parc — through the governed act (TMS-1A): a bare flip
+  -- without motif and actor is itself refused now, which is the point.
+  update public.vehicle
+     set status = 'AVAILABLE', is_active = false,
+         retired_reason = 'Retrait (test TMS-5)',
+         retired_by = '00000000-0000-0000-0000-00000000feaa'
    where id = '00000000-0000-0000-0000-00000000fe01';
   begin
     update public.transport_record set vehicle_id = '00000000-0000-0000-0000-00000000fe01'
