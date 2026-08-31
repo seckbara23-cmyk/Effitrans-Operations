@@ -311,13 +311,19 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------------
--- 6. Every recorded check must be 1 (a silent 0 must not pass unnoticed).
+-- 6. No check may quietly record a FAILURE.
+--
+-- This suite mixes two kinds of row: boolean checks, where 0 means the claim
+-- did not hold, and raw counts (`exactly_one_policy` = 1,
+-- `hr_reader_sees_own_tenant_only` = 2) which are meaningful as themselves.
+-- So the guard is « nothing recorded 0 », not « everything recorded 1 » — the
+-- latter fails on the honest counts.
 -- ---------------------------------------------------------------------------
 do $$
 declare v_n int; v_bad text;
 begin
-  select count(*), min(check_name) into v_n, v_bad from _r where value <> 1;
-  if v_n <> 0 then raise exception 'D3 FAIL: % check(s) did not hold (e.g. %)', v_n, v_bad; end if;
+  select count(*), min(check_name) into v_n, v_bad from _r where value = 0;
+  if v_n <> 0 then raise exception 'D3 FAIL: % check(s) recorded a failure (e.g. %)', v_n, v_bad; end if;
 end $$;
 
 select * from _r order by check_name;

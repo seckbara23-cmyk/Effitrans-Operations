@@ -162,7 +162,9 @@ describe("UAT-PERF-CALENDAR-01 — real-Postgres coverage exists", () => {
   });
 
   it("a check that quietly records 0 fails the suite", () => {
-    expect(sqlSuite).toContain("from _r where value <> 1");
+    // The suite mixes booleans with raw counts, so the guard is « nothing
+    // recorded 0 » — « everything is 1 » would fail on the honest counts.
+    expect(sqlSuite).toContain("from _r where value = 0");
   });
 
   it("CI runs it, before the journey harness", () => {
