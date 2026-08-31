@@ -16,6 +16,9 @@
 --   * the role grants no hr:*, no customs:*, no finance/collections/transport,
 --     no process execution — a capability diff, computed not asserted
 --   * an operational holder does NOT thereby hold performance access
+--   * the reader SEES their own tenant's work calendar (UAT-PERF-CALENDAR-01,
+--     migration 134) while holding no hr:* — reading the basis of a figure is
+--     not authority over it, and the ratified boundary is MUTATION
 --   * cross-tenant isolation on the calendar and the correction history
 --   * neither governed table acquired a write policy
 --
@@ -271,7 +274,18 @@ end $$;
 -- ---------------------------------------------------------------------------
 set local role authenticated;
 
--- The performance reader holds no hr:read: the calendar is not disclosed.
+-- UAT-PERF-CALENDAR-01 (migration 134) — SUPERSEDES the earlier expectation
+-- that this reader saw nothing. The ratified boundary for this role is
+-- MUTATION, not disclosure: the migration that created it withholds
+-- `hr:manage`, customs:update/validate/correct/revalidate and every execution
+-- authority, and its own capability text says « no mutation authority of any
+-- kind — not calendar maintenance ». Reading the time base behind a délai one
+-- may already read is not authority over the work, and the module's page said
+-- so from the first line it ever shipped.
+--
+-- The reader still holds NO hr:* — the capability diff above proves it, and is
+-- the assertion that actually guards the boundary. What changed is one SELECT
+-- policy, not a grant.
 select set_config('request.jwt.claims',
   json_build_object('sub', '00000000-0000-0000-0000-0000000fe001', 'role', 'authenticated')::text, true);
 do $$
@@ -279,8 +293,8 @@ declare n int;
 begin
   select count(*) into n from public.hr_calendar_day;
   perform set_config('perf.reader_calendar', n::text, true);
-  if n <> 0 then
-    raise exception 'PERF FAIL: a performance reader without hr:read saw % calendar rows', n;
+  if n <> 1 then
+    raise exception 'PERF FAIL: the performance reader saw % calendar rows of its own tenant, expected 1', n;
   end if;
 end $$;
 
@@ -305,8 +319,8 @@ reset role;
 select set_config('request.jwt.claims', '', true);
 
 insert into _r values
-  ('reader_without_hr_read_sees_no_calendar',
-   case when current_setting('perf.reader_calendar')::int = 0 then 1 else 0 end),
+  ('reader_sees_own_tenant_calendar_without_hr',
+   case when current_setting('perf.reader_calendar')::int = 1 then 1 else 0 end),
   ('cross_tenant_corrections_invisible',
    case when current_setting('perf.xtenant_corrections')::int = 0 then 1 else 0 end),
   ('cross_tenant_calendar_invisible',
