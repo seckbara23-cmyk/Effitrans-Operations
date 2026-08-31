@@ -1,9 +1,15 @@
 /**
  * Calendrier de travail (D3).
  *
- * Visible to anyone holding performance:read — the calendar explains every
- * délai and every jours-travaillés figure in this module, so reading the
- * indicators without being able to see their time base would be opaque.
+ * Visible to anyone holding hr:read OR performance:read — the calendar
+ * explains every délai and every jours-travaillés figure in this module, so
+ * reading the indicators without being able to see their time base would be
+ * opaque. That was the INTENT from the start; until UAT-PERF-CALENDAR-01 the
+ * gate below said hr:read alone, so a Performance manager saw the numbers and
+ * not the holidays behind them. The rule now lives in ONE place conceptually —
+ * this gate, listCalendarDays and the RLS policy (migration 134) all state it,
+ * and a test pins them to each other so they cannot drift apart again.
+ *
  * Editable only by hr:manage: HR owns the calendar, and the actions assert it
  * server-side over a table with no RLS write policy.
  */
@@ -26,14 +32,16 @@ export default async function CalendarPage({
   const user = await requireUser();
   const permissions = await getEffectivePermissions(user.id);
   const canManage = hasPermission(permissions, "hr:manage");
-  const canRead = hasPermission(permissions, "hr:read");
+  // The ratified read lane. Kept identical to listCalendarDays' own gate.
+  const canRead =
+    hasPermission(permissions, "hr:read") || hasPermission(permissions, "performance:read");
 
   const sp = (await searchParams) ?? {};
   const parsed = Number(sp.annee);
   const year = Number.isInteger(parsed) && parsed > 2000 ? parsed : Number(dakarToday().slice(0, 4));
 
-  // listCalendarDays asserts hr:read itself and returns [] otherwise. Saying so
-  // beats rendering an empty calendar that looks like an empty year.
+  // listCalendarDays asserts the same lane itself and returns [] otherwise.
+  // Saying so beats rendering an empty calendar that looks like an empty year.
   const days = await listCalendarDays(year);
 
   return (
@@ -65,8 +73,9 @@ export default async function CalendarPage({
       ) : (
         <div className="surface p-6 text-sm text-slate-500">
           Le calendrier est maintenu par les Ressources humaines. Sa consultation demande
-          l&apos;autorisation <code className="text-xs">hr:read</code>, que votre profil ne porte
-          pas — les indicateurs ci-dessus restent lisibles.
+          l&apos;autorisation <code className="text-xs">hr:read</code> ou{" "}
+          <code className="text-xs">performance:read</code>, que votre profil ne porte pas — les
+          indicateurs ci-dessus restent lisibles.
         </div>
       )}
     </div>

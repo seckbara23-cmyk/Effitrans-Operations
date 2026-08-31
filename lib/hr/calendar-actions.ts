@@ -28,13 +28,25 @@ import {
   type CalendarDayRow,
 } from "./calendar";
 
-/** The tenant's calendar for one year, ordered. Read gate: hr:read via RLS-equivalent app check. */
+/**
+ * The tenant's calendar for one year, ordered.
+ *
+ * Read gate (UAT-PERF-CALENDAR-01, ratified): `hr:read OR performance:read` —
+ * an authorized Performance reader may see the time base behind figures they
+ * can already read. Mirrors the RLS select policy (migration 134) exactly, so
+ * the two layers cannot drift; a test pins this gate to the page's. Management
+ * below stays hr:manage — HR owns the calendar, Performance consumes it.
+ */
 export async function listCalendarDays(year: number): Promise<CalendarDayRow[]> {
   let user;
   try {
     user = await assertPermission("hr:read");
   } catch {
-    return [];
+    try {
+      user = await assertPermission("performance:read");
+    } catch {
+      return [];
+    }
   }
   const admin = getAdminSupabaseClient();
   const { data } = await admin
