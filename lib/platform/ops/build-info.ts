@@ -13,10 +13,10 @@
  */
 
 /** The latest migration shipped in this build (pinned to the directory by test). */
-export const LATEST_MIGRATION = "20260924000001_vehicle_retirement";
+export const LATEST_MIGRATION = "20260925000001_vehicle_plate_normalization";
 
 /** Total migrations shipped in this build (pinned by test). */
-export const MIGRATION_COUNT = 132;
+export const MIGRATION_COUNT = 133;
 
 /** Newest DATA-probeable migration marker: this permission row proves migrations ≥ this point. */
 export const MIGRATION_PROBE = {

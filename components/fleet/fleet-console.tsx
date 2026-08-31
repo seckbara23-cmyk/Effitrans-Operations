@@ -35,8 +35,14 @@ const ERR: Record<string, string> = {
   already_closed: "Cette intervention est déjà clôturée.",
   not_found: "Véhicule introuvable.",
   confirmation_mismatch: "L'immatriculation saisie ne correspond pas.",
-  vehicle_in_use: "Suppression refusée : ce véhicule est affecté à un transport ou a déjà servi. Mettez-le hors service.",
-  vehicle_has_history: "Suppression refusée : des interventions sont enregistrées pour ce véhicule. Mettez-le hors service.",
+  // TMS-1B (G1) — a vehicle with history is not « hors service » (temporary):
+  // its lifecycle is « Retirer du parc ». The ruled sentence, verbatim.
+  vehicle_in_use:
+    "Ce véhicule possède un historique opérationnel et ne peut pas être supprimé définitivement. Utilisez “Retirer du parc” pour le conserver dans l'historique tout en le retirant de la flotte active.",
+  vehicle_has_history:
+    "Ce véhicule possède un historique opérationnel et ne peut pas être supprimé définitivement. Utilisez “Retirer du parc” pour le conserver dans l'historique tout en le retirant de la flotte active.",
+  vehicle_retired:
+    "Suppression refusée : ce véhicule est retiré du parc. Si son enregistrement est une erreur, réintégrez-le d'abord, puis supprimez-le.",
   reason_required: "Un motif de retrait est obligatoire.",
   vehicle_on_mission: "Retrait refusé : ce véhicule est affecté à une mission en cours. Terminez ou réaffectez la mission d'abord.",
   already_retired: "Ce véhicule est déjà retiré du parc.",
@@ -340,13 +346,18 @@ export function FleetConsole({ vehicles }: { vehicles: FleetVehicle[] }) {
 
           {/* TMS-5C — permanent removal of a vehicle that never served. The
               server decides eligibility; this only asks for an unambiguous
-              confirmation naming the immatriculation being destroyed. */}
-          {selected && (
+              confirmation naming the immatriculation being destroyed.
+              TMS-1B — rendered for ACTIVE vehicles only: a retired vehicle is
+              never deleted (the server refuses independently), and its panel
+              above already offers the correct act, « Réintégrer au parc ». */}
+          {selected && selected.isActive && (
             <div className="space-y-2 border-t border-red-100 pt-3">
               <p className="text-xs font-medium text-red-700">Suppression définitive</p>
               <p className="text-xs text-slate-500">
-                Un véhicule qui a servi à un transport ou qui porte des interventions ne peut pas être
-                supprimé : utilisez « Mettre hors service ». Pour confirmer la suppression définitive de
+                Réservée à un enregistrement créé par erreur et jamais utilisé. Un véhicule qui possède
+                un historique opérationnel ne peut pas être supprimé définitivement : utilisez
+                « Retirer du parc » pour le conserver dans l&apos;historique tout en le retirant de la
+                flotte active. Pour confirmer la suppression définitive de
                 <strong> {selected.registration}</strong>, saisissez son immatriculation.
               </p>
               <div className="flex flex-wrap items-center gap-2">

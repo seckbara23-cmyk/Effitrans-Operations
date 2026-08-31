@@ -285,7 +285,9 @@ export async function reactivateVehicle(id: string): Promise<FleetResult> {
     action: AuditActions.VEHICLE_REACTIVATED,
     actorId: user.id, tenantId: user.tenantId,
     entity: "vehicle", entityId: id,
-    before: { is_active: false, retired_at: vehicle.retired_at, retired_reason: vehicle.retired_reason },
+    // TMS-1B (G5) — the registration travels in the event so the trail line
+    // answers WHICH vehicle without a join on entity_id.
+    before: { is_active: false, retired_at: vehicle.retired_at, retired_reason: vehicle.retired_reason, registration: vehicle.registration },
     after: { is_active: true },
   });
   revalidate();
@@ -320,11 +322,18 @@ export async function deleteVehicle(id: string, confirmation: string): Promise<F
   const supabase = getAdminSupabaseClient();
   const { data: vehicle } = await supabase
     .from("vehicle")
-    .select("id, registration")
+    .select("id, registration, is_active")
     .eq("id", id)
     .eq("tenant_id", user.tenantId)          // tenant ownership, server-side
-    .maybeSingle<{ id: string; registration: string }>();
+    .maybeSingle<{ id: string; registration: string; is_active: boolean }>();
   if (!vehicle) return { ok: false, error: "not_found" };
+
+  // TMS-1B — a RETIRED vehicle is never deleted. Retirement is the terminal
+  // lifecycle of a vehicle that legitimately existed; deletion is for
+  // erroneous records. A clean row retired by mistake travels
+  // « Réintégrer au parc » → « Supprimer définitivement », so each act keeps
+  // its own audit semantics. Server-side, not a hidden button.
+  if (!vehicle.is_active) return { ok: false, error: "vehicle_retired" };
 
   // The confirmation is re-checked HERE: the browser never decides whether a
   // destructive operation may proceed.

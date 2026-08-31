@@ -55,6 +55,11 @@ export default async function ParcPage() {
 
   const fleet = await listFleet();
   const overview = summarizeFleet(fleet);
+  // TMS-1B (G4) — the primary table is the OPERATIONAL fleet. Retired
+  // vehicles keep every record (missions, interventions, conformité, audit)
+  // and remain reachable below, but they are not the working view.
+  const activeFleet = fleet.filter((v) => v.isActive);
+  const retiredFleet = fleet.filter((v) => !v.isActive);
   // TMS-5A — TMS-5 built listVehicleMaintenance and never rendered it, so the
   // intervention history (« historique des interventions », including the
   // return to service) was unreachable. Loaded for the vehicles on screen.
@@ -82,9 +87,11 @@ export default async function ParcPage() {
         />
       </div>
 
-      {fleet.length === 0 ? (
+      {activeFleet.length === 0 ? (
         <div className="surface p-6 text-sm text-slate-500">
-          Aucun véhicule enregistré. {canManage ? "Ajoutez le premier véhicule ci-dessous." : "Un responsable Transport peut enregistrer les véhicules."}
+          {fleet.length === 0
+            ? <>Aucun véhicule enregistré. {canManage ? "Ajoutez le premier véhicule ci-dessous." : "Un responsable Transport peut enregistrer les véhicules."}</>
+            : "Aucun véhicule actif : le parc ne contient que des véhicules retirés (voir ci-dessous)."}
         </div>
       ) : (
         <div className="surface overflow-x-auto p-0">
@@ -99,8 +106,8 @@ export default async function ParcPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {fleet.map((v) => (
-                <tr key={v.id} className={v.isActive ? "" : "opacity-50"}>
+              {activeFleet.map((v) => (
+                <tr key={v.id}>
                   <td className="px-4 py-2">
                     <span className="font-medium text-navy-900">{v.registration}</span>
                     {v.internalCode && <span className="text-slate-500"> · {v.internalCode}</span>}
@@ -115,17 +122,10 @@ export default async function ParcPage() {
                   </td>
                   <td className="px-4 py-2">
                     {/* « En mission » is DERIVED from live transport records — it is
-                        never stored on the vehicle, so it cannot drift. TMS-1A: a
-                        retired vehicle presents NO operational state — only the
-                        retirement fact, with its date and reason. */}
-                    {!v.isActive ? (
-                      <span
-                        className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500"
-                        title={v.retiredReason ?? undefined}
-                      >
-                        Retiré du parc{v.retiredAt ? ` · ${new Date(v.retiredAt).toLocaleDateString("fr-FR")}` : ""}
-                      </span>
-                    ) : v.engaged ? (
+                        never stored on the vehicle, so it cannot drift. Retired
+                        vehicles are not in this table (TMS-1B G4): they present no
+                        operational state at all, only the retirement fact, below. */}
+                    {v.engaged ? (
                       <span className="rounded-full bg-navy-50 px-2 py-0.5 text-xs font-medium text-navy-800">
                         En mission{v.engagedFileNumbers.length ? ` · ${v.engagedFileNumbers.join(", ")}` : ""}
                       </span>
@@ -156,6 +156,47 @@ export default async function ParcPage() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {retiredFleet.length > 0 && (
+        <details className="surface p-4">
+          <summary className="cursor-pointer text-sm font-semibold text-navy-900">
+            Véhicules retirés ({retiredFleet.length})
+          </summary>
+          <p className="mt-1 text-xs text-slate-500">
+            Retirés définitivement de la flotte active. Leur historique (missions, interventions,
+            conformité, journal) reste intégralement consultable.
+          </p>
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full min-w-[560px] text-sm">
+              <thead className="border-b border-slate-100 text-left text-xs text-slate-500">
+                <tr>
+                  <th className="px-4 py-2">Véhicule</th>
+                  <th className="px-4 py-2">Type</th>
+                  <th className="px-4 py-2">Retiré le</th>
+                  <th className="px-4 py-2">Motif</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {retiredFleet.map((v) => (
+                  <tr key={v.id} className="opacity-70">
+                    <td className="px-4 py-2">
+                      <span className="font-medium text-navy-900">{v.registration}</span>
+                      {v.internalCode && <span className="text-slate-500"> · {v.internalCode}</span>}
+                    </td>
+                    <td className="px-4 py-2 text-slate-600">{TYPE_FR[v.vehicleType] ?? v.vehicleType}</td>
+                    <td className="px-4 py-2">
+                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">
+                        Retiré du parc{v.retiredAt ? ` · ${new Date(v.retiredAt).toLocaleDateString("fr-FR")}` : ""}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2 text-xs text-slate-600">{v.retiredReason ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
       )}
 
       {fleet.some((v) => (historyByVehicle.get(v.id) ?? []).length > 0) && (

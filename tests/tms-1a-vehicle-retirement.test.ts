@@ -172,11 +172,13 @@ describe("TMS-1A — a retired vehicle is not operational fleet", () => {
     expect(service).toContain("v.isActive && v.status === \"AVAILABLE\" && !v.engaged");
   });
 
-  it("the page shows « Retiré du parc » INSTEAD of any operational chip", () => {
-    // The retired branch is checked before engaged/status branches.
-    const cell = page.slice(page.indexOf("!v.isActive ? ("));
-    expect(page.indexOf("!v.isActive ? (")).toBeGreaterThan(-1);
-    expect(cell.indexOf("Retiré du parc")).toBeLessThan(cell.indexOf("En mission"));
+  it("retired vehicles present NO operational chip — their own surface (TMS-1B G4)", () => {
+    // The primary table iterates the ACTIVE subset only, so a retired row can
+    // never render an operational state; the retirement fact lives in the
+    // dedicated « Véhicules retirés » section, with date and motif.
+    expect(page).toContain("const activeFleet = fleet.filter((v) => v.isActive);");
+    expect(page).toContain("{activeFleet.map((v) => (");
+    expect(page).toContain("Véhicules retirés ({retiredFleet.length})");
     expect(page).toContain('label="Retirés du parc"');
   });
 });
