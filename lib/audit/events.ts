@@ -245,6 +245,12 @@ export const AuditActions = {
   TRACKING_INCIDENT_REPORTED: "tracking.incident.reported",
   TRACKING_PROVIDER_WEBHOOK_RECEIVED: "tracking.provider.webhook_received", // machine (reserved — no provider wired)
   // Phase 3.4C — Driver mobile execution + dispatcher assignment.
+  // TMS-1C — the external live-tracking reference. Bookkeeping acts: none of
+  // them moves the mission, and none is consulted by the workflow.
+  TRANSPORT_TRACKING_ATTACHED: "transport.tracking_attached",
+  TRANSPORT_TRACKING_UPDATED: "transport.tracking_updated",
+  TRANSPORT_TRACKING_ENDED: "transport.tracking_ended",
+  TRANSPORT_TRACKING_REMOVED: "transport.tracking_removed",
   TRANSPORT_DRIVER_ASSIGNED: "transport.driver.assigned",
   TRANSPORT_DRIVER_UNASSIGNED: "transport.driver.unassigned",
   TRACKING_BATCH_RECEIVED: "tracking.batch.received", // batch acceptance (NOT per GPS point)

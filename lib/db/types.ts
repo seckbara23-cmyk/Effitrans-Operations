@@ -1518,6 +1518,46 @@ export type Database = {
         Relationships: [];
       };
       // TMS-5 — Parc & Flotte (migration 117).
+      transport_tracking_reference: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          transport_id: string;
+          file_id: string;
+          provider: string;
+          external_reference: string | null;
+          tracking_url: string;
+          attached_by: string;
+          attached_at: string;
+          updated_by: string | null;
+          updated_at: string | null;
+          ended_by: string | null;
+          ended_at: string | null;
+          end_reason: string | null;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          transport_id: string;
+          file_id: string;
+          provider: string;
+          external_reference?: string | null;
+          tracking_url: string;
+          attached_by: string;
+          attached_at?: string;
+        };
+        Update: {
+          provider?: string;
+          external_reference?: string | null;
+          tracking_url?: string;
+          updated_by?: string | null;
+          updated_at?: string | null;
+          ended_by?: string | null;
+          ended_at?: string | null;
+          end_reason?: string | null;
+        };
+        Relationships: [];
+      };
       vehicle: {
         Row: {
           id: string;

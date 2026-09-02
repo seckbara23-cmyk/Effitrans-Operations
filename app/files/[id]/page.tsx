@@ -43,6 +43,8 @@ import { TrackingTimeline } from "@/components/transport/tracking-timeline";
 import { getTrackingTimeline } from "@/lib/tracking/service";
 import { trackingEnabled } from "@/lib/tracking/config";
 import { DriverAssign } from "@/components/transport/driver-assign";
+import { MissionTracking } from "@/components/transport/mission-tracking";
+import { getMissionTracking } from "@/lib/transport/tracking-service";
 import { listAssignableDrivers } from "@/lib/transport/drivers";
 import { FinancePanel } from "@/components/finance/finance-panel";
 import { getFinanceForFile } from "@/lib/finance/service";
@@ -260,6 +262,9 @@ export default async function FileDetailPage({ params }: { params: { id: string 
   // controlled who was authenticated. Identity is gated on transport:assign only;
   // TRACKING_ENABLED still gates GPS sessions, positions and the live map.
   const canAssignDriver = hasPermission(permissions, "transport:assign");
+  // TMS-1C — the mission's external tracking reference. Gated on
+  // transport:read inside the service; null when absent or unauthorized.
+  const missionTracking = transportRecord ? await getMissionTracking(transportRecord.id) : null;
   const assignableDrivers = canAssignDriver && transportRecord ? await listAssignableDrivers() : [];
 
   // Embedded finance (finance-role based — NOT inherited from file visibility).
@@ -568,6 +573,15 @@ export default async function FileDetailPage({ params }: { params: { id: string 
           drivers={assignableDrivers}
           canAssign={canAssignDriver}
         />
+      )}
+      {canReadTransport && transportRecord && (
+        <div id="mission-tracking" className="scroll-mt-24">
+          <MissionTracking
+            transportId={transportRecord.id}
+            reference={missionTracking}
+            canManage={canAssignDriver}
+          />
+        </div>
       )}
       {trackingOn && canReadTracking && (
         <div id="tracking" className="scroll-mt-24">
