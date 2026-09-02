@@ -65,11 +65,15 @@ insert into public.client (id, tenant_id, name) values
 on conflict (id) do nothing;
 
 -- TWO dossiers = TWO missions, and ONE vehicle that runs both (case B).
-insert into public.operational_file (id, tenant_id, file_number, type, client_id, status) values
+-- created_by = the transport officer: `can_read_file()` grants dossier
+-- visibility through a REAL relationship (TRANSPORT_OFFICER holds file:read,
+-- not file:read:all), so the RLS checks below exercise the tracking policy
+-- rather than accidentally testing dossier visibility.
+insert into public.operational_file (id, tenant_id, file_number, type, client_id, status, created_by) values
   ('00000000-0000-0000-0000-0000001c00f1', '00000000-0000-0000-0000-000000000001', 'TMS1C-0001', 'TRP',
-   '00000000-0000-0000-0000-0000001c00d1', 'OPENED'),
+   '00000000-0000-0000-0000-0000001c00d1', 'OPENED', '00000000-0000-0000-0000-0000001c0001'),
   ('00000000-0000-0000-0000-0000001c00f2', '00000000-0000-0000-0000-000000000001', 'TMS1C-0002', 'TRP',
-   '00000000-0000-0000-0000-0000001c00d1', 'OPENED')
+   '00000000-0000-0000-0000-0000001c00d1', 'OPENED', '00000000-0000-0000-0000-0000001c0001')
 on conflict (id) do nothing;
 
 insert into public.vehicle (id, tenant_id, registration, vehicle_type) values
@@ -131,14 +135,14 @@ end $$;
 do $$
 declare http_ boolean := false; js boolean := false;
 begin
+  -- An UPDATE on the EXISTING row, so only the CHECK can refuse it: an INSERT
+  -- would also hit the per-mission unique index and pass for the wrong reason.
   begin
-    insert into public.transport_tracking_reference
-      (tenant_id, transport_id, file_id, provider, tracking_url, attached_by)
-    values ('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000001c0d02',
-            '00000000-0000-0000-0000-0000001c00f2', 'X', 'http://tracker.example.sn/m/3',
-            '00000000-0000-0000-0000-0000001c0001');
+    update public.transport_tracking_reference
+       set tracking_url = 'http://tracker.example.sn/m/3'
+     where id = '00000000-0000-0000-0000-0000001c0a01';
     raise exception 'TMS1C-C failed: an http link was accepted';
-  exception when check_violation then http_ := true; when unique_violation then http_ := true;
+  exception when check_violation then http_ := true;
   end;
 
   begin
@@ -198,14 +202,21 @@ begin
   if n < 1 then raise exception 'TMS1C-E failed: a transport:read holder saw % references', n; end if;
 end $$;
 
--- The ASSIGNED DRIVER of mission 1 — holds tracking:read but not transport:read.
+-- The ASSIGNED DRIVER of mission 1. It sees nothing — and the reason is the
+-- policy's CHOICE of capability, not an accident: the same driver DOES hold
+-- `tracking:read`, so a policy written on that capability would have exposed
+-- the provider link to the person being tracked. Both facts are recorded.
 select set_config('request.jwt.claims',
   json_build_object('sub', '00000000-0000-0000-0000-0000001c0002', 'role', 'authenticated')::text, true);
 do $$
-declare n int;
+declare n int; has_tracking boolean; has_transport boolean;
 begin
   select count(*) into n from public.transport_tracking_reference;
   perform set_config('tms1c.driver', n::text, true);
+  select public.has_permission('tracking:read'), public.has_permission('transport:read')
+    into has_tracking, has_transport;
+  perform set_config('tms1c.driver_holds_tracking_read', case when has_tracking then '1' else '0' end, true);
+  perform set_config('tms1c.driver_holds_transport_read', case when has_transport then '1' else '0' end, true);
   if n <> 0 then
     raise exception 'TMS1C-E failed: the tracked driver saw % tracking reference(s) — a provider link can expose a whole fleet', n;
   end if;
@@ -228,6 +239,12 @@ select set_config('request.jwt.claims', '', true);
 insert into _r values
   ('staff_with_transport_read_sees_reference', case when current_setting('tms1c.staff')::int >= 1 then 1 else 0 end),
   ('assigned_driver_sees_nothing', case when current_setting('tms1c.driver')::int = 0 then 1 else 0 end),
+  -- The driver holds tracking:read and NOT transport:read: that difference is
+  -- exactly why the policy was written on transport:read.
+  ('driver_holds_tracking_read_yet_sees_nothing',
+   case when current_setting('tms1c.driver_holds_tracking_read') = '1' then 1 else 0 end),
+  ('driver_does_not_hold_transport_read',
+   case when current_setting('tms1c.driver_holds_transport_read') = '0' then 1 else 0 end),
   ('cross_tenant_sees_nothing', case when current_setting('tms1c.xtenant')::int = 0 then 1 else 0 end);
 
 -- ---- G. no write policy, and no portal/driver clause ----------------------
