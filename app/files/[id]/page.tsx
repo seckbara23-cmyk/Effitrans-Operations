@@ -56,7 +56,7 @@ import { buildCanonicalProjection } from "@/lib/workflow/projection";
 import { getOpenHandoffForFile } from "@/lib/handoffs/service";
 import { TransitHandoff } from "@/components/files/transit-handoff";
 import { getIntakeState } from "@/lib/process/engine/intake-actions";
-import { unmetTransitHandoffPrerequisites } from "@/lib/process/intake";
+import { evaluateTransitHandoffReadiness } from "@/lib/process/intake";
 import { getDossierStage } from "@/lib/sla/service";
 import { SlaPanel } from "@/components/files/sla-panel";
 import { CopilotPanel } from "@/components/copilot/copilot-panel";
@@ -324,6 +324,17 @@ export default async function FileDetailPage({ params }: { params: { id: string 
   // the server action re-checks; the UI is never more permissive than the action.
   const canSendToTransit = hasPermission(permissions, "process:handoff:send");
   const intakeState = await getIntakeState(file.id);
+  // Same evaluator as the « Processus officiel » screen and as the server
+  // action itself, so the two screens cannot disagree about what is missing.
+  const transitReadiness = intakeState
+    ? evaluateTransitHandoffReadiness({
+        hasInstance: intakeState.hasInstance,
+        hasOwner: intakeState.owner !== null,
+        openBlockers: intakeState.openBlockers,
+        amOpeningDone: intakeState.amOpeningDone,
+        steps: intakeState.steps,
+      })
+    : null;
   const sla = await getDossierStage(file.id, lifecycle.currentDepartment, lifecycle.currentStep).catch(() => null);
 
   // Read-only derived risk assessment (Phase 3.1B) — same Risk Engine the
@@ -381,12 +392,8 @@ export default async function FileDetailPage({ params }: { params: { id: string 
           fileId={file.id}
           handoffSent={intakeState.handoffSent}
           canSend={canSendToTransit}
-          prerequisites={unmetTransitHandoffPrerequisites({
-            hasInstance: intakeState.hasInstance,
-            hasOwner: intakeState.owner !== null,
-            openBlockers: intakeState.openBlockers,
-            amOpeningDone: intakeState.amOpeningDone,
-          })}
+          prerequisites={transitReadiness?.unmet ?? []}
+          firstActionable={transitReadiness?.firstActionable ?? null}
         />
       )}
       <CommercialOrigin

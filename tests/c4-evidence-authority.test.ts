@@ -80,9 +80,13 @@ describe("C-4 — the WRITE path refuses what the evaluator cannot vouch for", (
   });
 
   it("the two refusals stay distinct — neither is folded into the other", () => {
-    expect(submit).toContain('fail("evidence_missing")');
+    // `evidence_missing` now refuses THROUGH `failWithEvidence`, which names the
+    // outstanding artefacts; `evidence_unauthorized` deliberately does not, since
+    // the caller may not be told what it cannot see. Still exactly one of each.
+    expect(submit).toContain('failWithEvidence("evidence_missing", ev)');
     expect(submit.match(/fail\("evidence_unauthorized"\)/g) ?? []).toHaveLength(1);
-    expect(submit.match(/fail\("evidence_missing"\)/g) ?? []).toHaveLength(1);
+    expect(submit.match(/failWithEvidence\("evidence_missing"/g) ?? []).toHaveLength(1);
+    expect(submit).not.toContain('failWithEvidence("evidence_unauthorized"');
   });
 
   it("the operator sees a sentence, not a code", () => {

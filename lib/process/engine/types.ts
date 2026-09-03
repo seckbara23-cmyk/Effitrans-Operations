@@ -131,10 +131,27 @@ export function isOpen(state: StepState): boolean {
   return OPEN_STATES.includes(state);
 }
 
-/** The uniform result shape every engine mutation returns. */
+/**
+ * One piece of evidence a step still needs, named from the CATALOGUE — the
+ * evidence key and its French label, never a filename and never free text.
+ */
+export type MissingEvidence = {
+  key: string;
+  labelFr: string;
+  /** "missing" | "invalid" | "pending_review" — why it does not count yet. */
+  status: string;
+};
+
+/**
+ * The uniform result shape every engine mutation returns.
+ *
+ * A refusal may carry `missing`: the evaluator already knows exactly which
+ * artefacts are outstanding, and discarding that turned every evidence refusal
+ * into « Preuves requises manquantes » with nothing actionable in it.
+ */
 export type EngineResult<T = { id: string }> =
   | ({ ok: true } & T)
-  | { ok: false; error: EngineError };
+  | { ok: false; error: EngineError; missing?: MissingEvidence[] };
 
 export type EngineError =
   | "engine_disabled"

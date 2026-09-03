@@ -52,7 +52,7 @@ import {
 } from "./state";
 import { promoteSuccessors } from "./promote";
 import { authoritativePickupGate } from "./gate-authority";
-import { evaluateStepEvidence } from "./evidence";
+import { evaluateStepEvidence, type StepEvidence } from "./evidence";
 import { isDone } from "./types";
 import { isRoutedReceiverRole } from "../queues/registry";
 import type { EngineError, EngineResult, StepState } from "./types";
@@ -66,6 +66,19 @@ type Ctx = {
 };
 
 const fail = (error: EngineError): EngineResult => ({ ok: false, error });
+
+/**
+ * A refusal that carries the outstanding evidence. `unauthorized` items are
+ * deliberately EXCLUDED: the caller cannot see them, so naming them would leak
+ * what another department holds — that case has its own code and its own words.
+ */
+const failWithEvidence = (error: EngineError, ev: StepEvidence): EngineResult => ({
+  ok: false,
+  error,
+  missing: ev.items
+    .filter((i) => i.status === "missing" || i.status === "invalid" || i.status === "pending_review")
+    .map((i) => ({ key: i.key, labelFr: i.labelFr, status: i.status })),
+});
 
 function revalidate(fileId: string) {
   revalidatePath(`/files/${fileId}`);
@@ -448,7 +461,11 @@ export async function submitStep(fileId: string, stepKey: string): Promise<Engin
   }
 
   if (!ev.complete) {
-    return fail("evidence_missing");
+    // Name what is outstanding. The evaluator already computed it; reducing it
+    // to a bare code is what left an Account Manager guessing which of four
+    // documents the step wanted. Keys and labels come from the document
+    // CATALOGUE (type_code), never from a filename.
+    return failWithEvidence("evidence_missing", ev);
   }
 
   const needsReview = requiresIndependentReview(stepKey);

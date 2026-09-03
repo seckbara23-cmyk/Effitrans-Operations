@@ -16,6 +16,9 @@
  *   HANDED_TO_TRANSIT  an open/received process_handoff into coordinator_reception
  */
 
+import { getStep } from "./effitrans-process";
+import { isDone, type StepState } from "./engine/types";
+
 export type IntakeIssueCode =
   | "client_missing"
   | "type_missing"
@@ -103,23 +106,98 @@ export function validateIntake(input: IntakeInput): IntakeValidation {
  */
 export const HANDOFF_BLOCKING_CATEGORIES = ["MISSING_DOCUMENT", "CUSTOMER_RESPONSE_REQUIRED"] as const;
 
-/**
- * The unmet prerequisites for « Transmettre au Transit », in the operator's
- * language. PURE, and deliberately a MIRROR of what `handDossierToTransit`
- * enforces server-side — the UI may never be more permissive than the action:
- *   • the process instance must exist AND have an owner (the dossier is "opened");
- *   • no OPEN/ACKNOWLEDGED blocker in HANDOFF_BLOCKING_CATEGORIES.
- * An empty array means transmissible. The server re-checks regardless; this
- * exists so a blocked dossier SHOWS WHY instead of offering a button that fails.
- */
-export function unmetTransitHandoffPrerequisites(input: {
+/** One unmet prerequisite, already in the operator's language. */
+export type HandoffPrerequisite = { code: string; labelFr: string };
+
+/** A step named from the registry — number and label are never hand-written. */
+export type ActionableStep = { stepNumber: number; stepKey: string; labelFr: string };
+
+export type TransitHandoffReadiness = {
+  /** Every prerequisite currently unmet, not merely the first one. */
+  unmet: HandoffPrerequisite[];
+  /**
+   * The step that must be completed FIRST, derived from the official process
+   * dependency graph. Null whenever it cannot be derived with certainty — an
+   * operator is never sent to a step we are guessing at.
+   */
+  firstActionable: ActionableStep | null;
+  ready: boolean;
+};
+
+export type TransitHandoffInput = {
   hasInstance: boolean;
   hasOwner: boolean;
   openBlockers: { title: string; category: string }[];
   /** D-2: whether official step 3 (am_dossier_opening) is terminal-done. */
   amOpeningDone?: boolean;
-}): { code: string; labelFr: string }[] {
-  const unmet: { code: string; labelFr: string }[] = [];
+  /**
+   * Live step states, used ONLY to name the first actionable predecessor. The
+   * refusal itself still rests on `amOpeningDone`, exactly as the server
+   * enforces it — this input can add guidance, never remove a prerequisite.
+   */
+  steps?: { stepKey: string; state: string }[];
+};
+
+/** The handoff's own from-step. The registry graph is walked back from here. */
+export const TRANSIT_HANDOFF_FROM_STEP = "am_dossier_opening";
+
+/**
+ * THE step an operator should complete first, from the official dependency
+ * graph — never a hard-coded step for a particular dossier.
+ *
+ * Walks the transitive `prerequisites` closure of the handoff's from-step and
+ * returns the LOWEST-NUMBERED step that is (a) not terminal-done and (b) has
+ * every one of its own prerequisites done — i.e. the only work that can legally
+ * start right now. Returns null when no state is known or nothing qualifies,
+ * because a wrong instruction is worse than none.
+ */
+export function firstActionableStepFor(
+  fromStepKey: string,
+  steps: { stepKey: string; state: string }[],
+): ActionableStep | null {
+  if (steps.length === 0) return null;
+  const stateOf = new Map(steps.map((e) => [e.stepKey, e.state]));
+  const done = (key: string): boolean => {
+    const st = stateOf.get(key);
+    return st !== undefined && isDone(st as StepState);
+  };
+
+  // Transitive prerequisite closure, from-step included.
+  const closure = new Set<string>();
+  const walk = (key: string) => {
+    if (closure.has(key)) return;
+    closure.add(key);
+    for (const p of getStep(key)?.prerequisites ?? []) walk(p);
+  };
+  walk(fromStepKey);
+
+  const candidates: ActionableStep[] = [];
+  for (const key of closure) {
+    if (done(key)) continue;
+    const node = getStep(key);
+    if (!node) continue;
+    // Actionable = nothing it depends on is still outstanding.
+    if (!(node.prerequisites ?? []).every(done)) continue;
+    candidates.push({ stepNumber: node.stepNumber, stepKey: key, labelFr: node.labelFr });
+  }
+  candidates.sort((a, b) => a.stepNumber - b.stepNumber);
+  return candidates[0] ?? null;
+}
+
+/**
+ * THE authoritative readiness evaluation for « Transmettre au Transit ».
+ *
+ * PURE, and the single source both surfaces and the server action read, so the
+ * UI can never be more permissive than the action nor invent a blocker the
+ * server does not hold:
+ *   • the process instance must exist AND have an owner (the dossier is "opened");
+ *   • official step 3 (the handoff's own from-step, D-2) must be terminal-done;
+ *   • no OPEN/ACKNOWLEDGED blocker in HANDOFF_BLOCKING_CATEGORIES.
+ * Every unmet prerequisite is returned, not merely the first: an operator fixing
+ * one only to meet the next is how a UAT gets spent.
+ */
+export function evaluateTransitHandoffReadiness(input: TransitHandoffInput): TransitHandoffReadiness {
+  const unmet: HandoffPrerequisite[] = [];
   if (!input.hasInstance) {
     unmet.push({ code: "workflow_not_opened", labelFr: "Le dossier n'a pas encore été ouvert dans le processus officiel." });
   } else if (!input.hasOwner) {
@@ -128,9 +206,14 @@ export function unmetTransitHandoffPrerequisites(input: {
   // D-2 — the handoff's own from-step. Named explicitly so the operator reads a
   // prerequisite instead of discovering a refusal after pressing the button.
   if (input.amOpeningDone === false) {
+    const node = getStep(TRANSIT_HANDOFF_FROM_STEP);
     unmet.push({
       code: "am_opening_incomplete",
-      labelFr: "L'étape 3 — ouverture et préparation du dossier par l'Account Manager — n'est pas terminée.",
+      // Guillemets, not another dash: registry labels already contain an em dash
+      // (« Account Manager — ouverture… ») and stacking a third is unreadable.
+      labelFr: node
+        ? `Étape ${node.stepNumber} « ${node.labelFr} » : non terminée.`
+        : "L'étape d'ouverture et de préparation du dossier n'est pas terminée.",
     });
   }
   for (const b of input.openBlockers) {
@@ -138,5 +221,21 @@ export function unmetTransitHandoffPrerequisites(input: {
       unmet.push({ code: `blocker:${b.category}`, labelFr: `Point bloquant ouvert : ${b.title}` });
     }
   }
-  return unmet;
+
+  // Guidance, computed only when something is actually unmet and only from the
+  // registry graph. A satisfied dossier is never told to go and do something.
+  const firstActionable =
+    unmet.length > 0 && input.steps && input.steps.length > 0
+      ? firstActionableStepFor(TRANSIT_HANDOFF_FROM_STEP, input.steps)
+      : null;
+
+  return { unmet, firstActionable, ready: unmet.length === 0 };
+}
+
+/**
+ * The unmet prerequisites alone. Kept as the historical entry point so there is
+ * exactly ONE rule implementation behind both names.
+ */
+export function unmetTransitHandoffPrerequisites(input: TransitHandoffInput): HandoffPrerequisite[] {
+  return evaluateTransitHandoffReadiness(input).unmet;
 }

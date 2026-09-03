@@ -15,6 +15,7 @@ import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-s
 import { getProcessState } from "@/lib/process/engine/service";
 import { getIntakeState, listEligibleOperationsOwners, type EligibleOwner, type IntakeState } from "@/lib/process/engine/intake-actions";
 import { IntakePanel } from "@/components/process/intake-panel";
+import { evaluateTransitHandoffReadiness } from "@/lib/process/intake";
 import { getTransitState, listEligibleTransitAssignees, type TransitAssignee, type TransitState } from "@/lib/process/engine/transit-actions";
 import { TransitPanel } from "@/components/process/transit-panel";
 import { getFinanceState, type FinanceState } from "@/lib/finance/request-actions";
@@ -91,6 +92,19 @@ export default async function ProcessInspectorPage({ params }: { params: { id: s
     intake = await getIntakeState(params.id);
     if (intake && canOpen && !intake.owner) eligibleOwners = await listEligibleOperationsOwners();
   }
+  // ONE evaluator, both surfaces. The dossier page computes this identically —
+  // a screen may never be more permissive than `handDossierToTransit`, and the
+  // UAT that produced this wiring failed because this screen had no opinion at
+  // all and simply offered the button.
+  const handoffReadiness = intake
+    ? evaluateTransitHandoffReadiness({
+        hasInstance: intake.hasInstance,
+        hasOwner: intake.owner !== null,
+        openBlockers: intake.openBlockers,
+        amOpeningDone: intake.amOpeningDone,
+        steps: intake.steps,
+      })
+    : null;
   const intakePanel = intake ? (
     <IntakePanel
       fileId={params.id}
@@ -99,6 +113,8 @@ export default async function ProcessInspectorPage({ params }: { params: { id: s
       canOpen={canOpen}
       canHandoff={hasPermission(permissions, "process:handoff:send")}
       canManageBlockers={hasPermission(permissions, "process:blocker:manage")}
+      handoffPrerequisites={handoffReadiness?.unmet ?? []}
+      handoffFirstActionable={handoffReadiness?.firstActionable ?? null}
     />
   ) : null;
 

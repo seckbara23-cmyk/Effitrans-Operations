@@ -12,6 +12,8 @@ import { useRouter } from "next/navigation";
 import { openDossierWorkflow, handDossierToTransit } from "@/lib/process/engine/intake-actions";
 import { openProcessBlocker, resolveProcessBlocker } from "@/lib/process/engine/structures-actions";
 import type { IntakeState, EligibleOwner } from "@/lib/process/engine/intake-actions";
+import type { HandoffPrerequisite, ActionableStep } from "@/lib/process/intake";
+import { HandoffPrerequisites } from "./handoff-prerequisites";
 
 const ERROR_FR: Record<string, string> = {
   engine_disabled: "Le flux d'ouverture n'est pas activé.",
@@ -22,6 +24,13 @@ const ERROR_FR: Record<string, string> = {
   blocked_by_intake_blockers: "Transmission refusée : des points bloquants sont ouverts sur ce dossier.",
   owner_forbidden: "Le responsable choisi n'est pas un membre Opérations actif.",
   owner_not_found: "Le responsable choisi n'est pas un membre Opérations actif.",
+  // D-2 / C-2 — the handoff may not outrun its own from-step. Both codes reach
+  // this screen; neither had a sentence, which is why a real UAT saw only
+  // « L'action a échoué. Réessayez. »
+  am_opening_incomplete: "Transmission impossible : l'étape d'ouverture et de préparation du dossier n'est pas terminée.",
+  from_step_incomplete: "Transmission impossible : l'étape d'origine du transfert n'est pas terminée.",
+  unknown_step: "Étape inconnue.",
+  invalid_state: "L'état du dossier a changé. Rafraîchissez la page.",
 };
 
 const frError = (code: string) => ERROR_FR[code] ?? ERROR_FR[code.replace(/^owner_/, "")] ?? "L'action a échoué. Réessayez.";
@@ -33,6 +42,8 @@ export function IntakePanel({
   canOpen,
   canHandoff,
   canManageBlockers,
+  handoffPrerequisites,
+  handoffFirstActionable,
 }: {
   fileId: string;
   state: IntakeState;
@@ -40,6 +51,13 @@ export function IntakePanel({
   canOpen: boolean;
   canHandoff: boolean;
   canManageBlockers: boolean;
+  /**
+   * Unmet prerequisites from `evaluateTransitHandoffReadiness` — the SAME pure
+   * evaluator `handDossierToTransit` reads. Empty ⇒ transmissible.
+   */
+  handoffPrerequisites: HandoffPrerequisite[];
+  /** Registry-derived step to complete first; null when not derivable. */
+  handoffFirstActionable: ActionableStep | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -47,6 +65,7 @@ export function IntakePanel({
   const [cotationPrecision, setCotationPrecision] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [refusal, setRefusal] = useState<{ unmet: HandoffPrerequisite[]; firstActionable: ActionableStep | null } | null>(null);
   const [blockerTitle, setBlockerTitle] = useState("");
   const [blockerCustomerMessage, setBlockerCustomerMessage] = useState("");
   const [showBlockerForm, setShowBlockerForm] = useState(false);
@@ -54,10 +73,19 @@ export function IntakePanel({
   function run(fn: () => Promise<{ ok: boolean } & Record<string, unknown>>, successNotice: string) {
     setError(null);
     setNotice(null);
+    setRefusal(null);
     startTransition(async () => {
       const res = await fn();
-      if (!res.ok) setError(frError(String((res as { error?: string }).error ?? "generic")));
-      else {
+      if (!res.ok) {
+        // Prefer the server's own structured reasons — they come from the
+        // evaluator, so they cannot contradict what refused the action.
+        const r = res as { error?: string; unmet?: HandoffPrerequisite[]; firstActionable?: ActionableStep | null };
+        if (r.unmet && r.unmet.length > 0) {
+          setRefusal({ unmet: r.unmet, firstActionable: r.firstActionable ?? null });
+        } else {
+          setError(frError(String(r.error ?? "generic")));
+        }
+      } else {
         setNotice(successNotice);
         router.refresh();
       }
@@ -201,10 +229,10 @@ export function IntakePanel({
             Ouvrir le dossier
           </button>
         )}
-        {opened && canHandoff && !state.handoffSent && (
+        {opened && canHandoff && !state.handoffSent && handoffPrerequisites.length === 0 && (
           <button
             type="button"
-            disabled={pending || state.openBlockers.some((b) => b.category === "MISSING_DOCUMENT" || b.category === "CUSTOMER_RESPONSE_REQUIRED")}
+            disabled={pending}
             onClick={() => run(() => handDossierToTransit(fileId), "Dossier transmis au Transit — réception à confirmer.")}
             className="min-h-[36px] rounded-lg bg-navy-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-navy-800 disabled:opacity-50"
           >
@@ -222,6 +250,17 @@ export function IntakePanel({
           </button>
         )}
       </div>
+
+      {/* The evaluator's standing answer: why the transmission is not offered. */}
+      {opened && canHandoff && !state.handoffSent && (
+        <HandoffPrerequisites unmet={handoffPrerequisites} firstActionable={handoffFirstActionable} />
+      )}
+
+      {/* A refusal that still happened (a race, or a rule the screen could not
+          see) speaks with the same words, from the server's own evaluation. */}
+      {refusal && (
+        <HandoffPrerequisites unmet={refusal.unmet} firstActionable={refusal.firstActionable} />
+      )}
 
       {showBlockerForm && (
         <div className="mt-3 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">

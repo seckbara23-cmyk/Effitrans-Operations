@@ -39,6 +39,7 @@ function sendHandoffSlice(): string {
   const next = engine.indexOf("\nexport ", start + 1);
   return engine.slice(start, next === -1 ? engine.length : next);
 }
+const prereqUi = read("../components/process/handoff-prerequisites.tsx");
 
 describe("Transit handoff — ONE transition, two surfaces", () => {
   it("the dossier page calls the SAME action as the process screen (no second path)", () => {
@@ -74,7 +75,7 @@ describe("Transit handoff — ONE transition, two surfaces", () => {
     const s = handoffActionSlice();
     // Server: blocking-category blockers abort BEFORE any handoff is sent.
     expect(s).toContain("HANDOFF_BLOCKING_CATEGORIES");
-    expect(s).toContain('return { ok: false, error: "blocked_by_intake_blockers", blockers };');
+    expect(s).toMatch(/return \{ ok: false, error: "blocked_by_intake_blockers", blockers,[^}]*\};/);
     expect(s.indexOf("blocked_by_intake_blockers")).toBeLessThan(s.indexOf("sendHandoff"));
     // …and an un-opened dossier has no instance to hand over.
     expect(s).toContain('if (!snap?.instance) return { ok: false, error: "not_found" };');
@@ -106,7 +107,12 @@ describe("Transit handoff — ONE transition, two surfaces", () => {
     expect(unmetTransitHandoffPrerequisites({ hasInstance: true, hasOwner: true, openBlockers: [] })).toEqual([]);
     expect(component).toContain("const blocked = prerequisites.length > 0;");
     expect(component).toContain("{!blocked && (");
-    expect(component).toContain("Transmission impossible — prérequis non satisfaits");
+    // The sentence moved into the ONE presentation both surfaces render, so the
+    // dossier page and the process screen cannot word the same refusal
+    // differently. Assert the wiring here and the wording there.
+    expect(component).toContain("<HandoffPrerequisites unmet={prerequisites}");
+    expect(prereqUi).toContain("Transmission au Transit impossible — prérequis non satisfaits");
+    expect(prereqUi).toContain("Action à effectuer en premier");
   });
 
   it("duplicate transmission is prevented AND idempotent", () => {

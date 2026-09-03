@@ -20,6 +20,7 @@ import {
   queueStartStep,
   queueSubmitStep,
 } from "@/lib/process/queues/actions";
+import type { MissingEvidence } from "@/lib/process/engine/types";
 
 const ERROR_FR: Record<string, string> = {
   engine_disabled: "Moteur de processus désactivé.",
@@ -39,6 +40,18 @@ const ERROR_FR: Record<string, string> = {
   cross_tenant: "Action non autorisée.",
   unknown_step: "Étape inconnue.",
   already_initialized: "Processus déjà initialisé.",
+  // C-4 — work arrived by handoff and has not been accepted yet.
+  handoff_reception_required: "Réceptionnez d'abord le dossier : cette étape vous a été transmise.",
+  not_eligible_receiver: "Ce transfert ne vous est pas destiné.",
+  // C-2 — a handoff may not outrun its own from-step.
+  from_step_incomplete: "L'étape d'origine du transfert n'est pas terminée.",
+};
+
+/** Why a required artefact does not count yet — the evaluator's own vocabulary. */
+const EVIDENCE_STATUS_FR: Record<string, string> = {
+  missing: "manquant",
+  invalid: "rejeté ou expiré",
+  pending_review: "en attente de validation",
 };
 
 const btn =
@@ -47,12 +60,18 @@ const btn =
 export function QueueRowActions({ item, queue }: { item: QueueItem; queue: QueueDef }) {
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [missing, setMissing] = useState<MissingEvidence[]>([]);
 
-  const run = (fn: () => Promise<{ ok: boolean; error?: string }>) => {
+  const run = (fn: () => Promise<{ ok: boolean; error?: string; missing?: MissingEvidence[] }>) => {
     setError(null);
+    setMissing([]);
     start(async () => {
       const r = await fn();
-      if (!r.ok) setError(ERROR_FR[r.error ?? ""] ?? "Action refusée.");
+      if (r.ok) return;
+      setError(ERROR_FR[r.error ?? ""] ?? "Action refusée.");
+      // The engine now says WHICH artefacts are outstanding. Names come from the
+      // document catalogue (type_code), never from an uploaded filename.
+      setMissing(r.missing ?? []);
     });
   };
 
@@ -143,6 +162,15 @@ export function QueueRowActions({ item, queue }: { item: QueueItem; queue: Queue
       </div>
 
       {error && <p className="max-w-[16rem] text-right text-[11px] text-red-600">{error}</p>}
+      {missing.length > 0 && (
+        <ul className="max-w-[16rem] space-y-0.5 text-right text-[11px] text-red-600">
+          {missing.map((m) => (
+            <li key={m.key}>
+              {m.labelFr} — {EVIDENCE_STATUS_FR[m.status] ?? m.status}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

@@ -20,6 +20,7 @@ const code = (p: string) => read(p).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\
 const actions = code("../lib/process/engine/intake-actions.ts");
 const panel = code("../components/process/intake-panel.tsx");
 const page = code("../app/files/[id]/process/page.tsx");
+const intakeLib = code("../lib/process/intake.ts");
 const rollout = code("../lib/process/rollout.ts");
 const envExample = read("../.env.example");
 
@@ -353,8 +354,20 @@ describe("handDossierToTransit — formal transmission, blocker-gated", () => {
     expect(hand).not.toContain('from("process_handoff").insert');
   });
 
-  it("46 — Operations remains the owner: the handoff never touches owner columns", () => {
-    expect(hand).not.toContain("owner_user_id");
+  it("46 — Operations remains the owner: the handoff never WRITES an owner column", () => {
+    // The diagnostic reads the canonical owner so a refusal can say « aucun
+    // responsable assigné ». Reading is not moving: what must never appear is a
+    // write. Banning the mere mention stopped distinguishing the two.
+    expect(hand).not.toMatch(/owner_user_id\s*:/);
+    expect(hand).not.toMatch(/\.update\(|\.upsert\(/);
+    expect(hand).not.toContain("assignProcessOwner");
+    // Every owner reference must be a READ: either a projection column or a
+    // property read off the row. Anything else is a write in disguise.
+    const refs = [...hand.matchAll(/.{0,14}owner_user_id/g)].map((m) => m[0]);
+    expect(refs.length, "the diagnostic reads the owner exactly twice").toBe(2);
+    for (const r of refs) {
+      expect(r, r).toMatch(/select\("owner_user_id|\?\.owner_user_id/);
+    }
   });
 
   it("47 — the receiving Transit side is notified (Coordinator + Chef de Transit, active, not the actor)", () => {
@@ -420,8 +433,15 @@ describe("intake panel and page wiring", () => {
     expect(panel).toContain("pending || !ownerUserId || nonOwnerBlocking.length > 0");
   });
 
-  it("55 — the Transit button is disabled while a handoff-blocking category is open", () => {
-    expect(panel).toContain('b.category === "MISSING_DOCUMENT" || b.category === "CUSTOMER_RESPONSE_REQUIRED"');
+  it("55 — the Transit button is not OFFERED while any prerequisite is unmet", () => {
+    // Superseded by UAT-OPS-TRANSIT-00009: the panel used to inspect blocker
+    // categories itself and knew nothing about the from-step, so it offered a
+    // button the server refused. It now defers wholly to the shared evaluator.
+    expect(panel).toContain("handoffPrerequisites.length === 0 && (");
+    expect(panel).not.toContain('b.category === "MISSING_DOCUMENT" || b.category === "CUSTOMER_RESPONSE_REQUIRED"');
+    // Blocking categories still reach the evaluator — via the evaluator's own
+    // constant, not a copy of it in the component.
+    expect(intakeLib).toContain("HANDOFF_BLOCKING_CATEGORIES");
   });
 
   it("56 — a blocker is customer-visible ONLY when a customer message is written", () => {

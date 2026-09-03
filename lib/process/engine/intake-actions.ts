@@ -27,7 +27,14 @@ import { roleCanonicalDepartment, departmentLabelFr } from "@/lib/organization/d
 import { roleLabel, ROLE_DISPLAY_PRIORITY } from "@/lib/navigation/roles";
 import { createNotification } from "@/lib/notifications/create";
 import { notifyCustomer } from "@/lib/customer-notify/service";
-import { validateIntake, HANDOFF_BLOCKING_CATEGORIES, type IntakeValidation } from "../intake";
+import {
+  validateIntake,
+  HANDOFF_BLOCKING_CATEGORIES,
+  evaluateTransitHandoffReadiness,
+  type IntakeValidation,
+  type HandoffPrerequisite,
+  type ActionableStep,
+} from "../intake";
 import { initializeProcessForFile, activateEntryStep, sendHandoff } from "./actions";
 import { assignProcessOwner, skipStep } from "./structures-actions";
 import { transitionFile } from "@/lib/files/actions";
@@ -43,7 +50,18 @@ export type IntakeActionResult =
 
 export type HandoffActionResult =
   | { ok: true; handoffId: string }
-  | { ok: false; error: string; blockers?: { id: string; title: string; category: string }[] };
+  | {
+      ok: false;
+      error: string;
+      blockers?: { id: string; title: string; category: string }[];
+      /**
+       * Every unmet prerequisite, from the SAME pure evaluator the two screens
+       * read. `error` stays the machine code; this is what the operator is owed.
+       */
+      unmet?: HandoffPrerequisite[];
+      /** Registry-derived step to complete first. Absent when not derivable. */
+      firstActionable?: ActionableStep | null;
+    };
 
 async function intakeGuard(permission: string, fileId: string): Promise<Ctx | string> {
   const kill = globalKillSwitch();
@@ -211,6 +229,11 @@ export type IntakeState = {
   handoffSent: boolean;
   /** D-2 — official step 3 done? Drives the « prérequis » list on the dossier. */
   amOpeningDone: boolean;
+  /**
+   * Live step states, for naming the FIRST ACTIONABLE step in a refusal. Read
+   * by the shared evaluator only; nothing here decides authority.
+   */
+  steps: { stepKey: string; state: string }[];
   openBlockers: { id: string; title: string; category: string; status: string; customerVisible: boolean }[];
 };
 
@@ -242,6 +265,7 @@ export async function getIntakeState(fileId: string, diag?: IntakeDiag): Promise
     let openBlockers: IntakeState["openBlockers"] = [];
     let handoffSent = false;
     let amOpeningDone = false;
+    let steps: IntakeState["steps"] = [];
 
     if (instance) {
       const { data: inst } = await admin
@@ -295,6 +319,7 @@ export async function getIntakeState(fileId: string, diag?: IntakeDiag): Promise
       handoffSent = (snap?.handoffs ?? []).some(
         (h) => h.toStepKey === "coordinator_reception" && (h.status === "SENT" || h.status === "RECEIVED"),
       );
+      steps = (snap?.executions ?? []).map((e) => ({ stepKey: e.stepKey, state: e.state }));
     }
 
     const validation = validateIntake({
@@ -319,6 +344,7 @@ export async function getIntakeState(fileId: string, diag?: IntakeDiag): Promise
       validation,
       hasInstance: Boolean(instance),
       amOpeningDone,
+      steps,
       owner,
       handoffSent,
       openBlockers,
@@ -492,8 +518,33 @@ export async function handDossierToTransit(fileId: string): Promise<HandoffActio
     .in("status", ["OPEN", "ACKNOWLEDGED"])
     .in("category", [...HANDOFF_BLOCKING_CATEGORIES])
     .returns<{ id: string; title: string; category: string }[]>();
+
+  // The canonical owner is not on the snapshot row, and it is read here for the
+  // DIAGNOSTIC only — no guard consumes it, so this cannot add a prerequisite
+  // the action does not already enforce.
+  const { data: instRow } = await admin
+    .from("process_instance")
+    .select("owner_user_id")
+    .eq("tenant_id", ctx.tenantId)
+    .eq("id", snap.instance.id)
+    .maybeSingle();
+  const instanceOwner = (instRow?.owner_user_id as string | null | undefined) ?? null;
+
+  // ONE evaluation, shared with both screens. The sequential guards below are
+  // unchanged and remain the enforcement; this only decides what the refusal
+  // SAYS, so a diagnostic can never make a blocked dossier transmissible.
+  const amOpening = snap.executions.find((e) => e.stepKey === "am_dossier_opening");
+  const readiness = evaluateTransitHandoffReadiness({
+    hasInstance: true,
+    hasOwner: instanceOwner !== null,
+    openBlockers: (blockers ?? []).map((b) => ({ title: b.title, category: b.category })),
+    amOpeningDone: !!amOpening && isDone(amOpening.state),
+    steps: snap.executions.map((e) => ({ stepKey: e.stepKey, state: e.state })),
+  });
+  const reasons = { unmet: readiness.unmet, firstActionable: readiness.firstActionable };
+
   if (blockers && blockers.length > 0) {
-    return { ok: false, error: "blocked_by_intake_blockers", blockers };
+    return { ok: false, error: "blocked_by_intake_blockers", blockers, ...reasons };
   }
 
   // D-2 (ratified 2026-08-24) — the handoff's own FROM-step must be done first.
@@ -502,9 +553,8 @@ export async function handDossierToTransit(fileId: string): Promise<HandoffActio
   // am_dossier_opening -> coordinator_reception. Transmitting earlier put a
   // dossier in Transit's queue that Transit was then correctly forbidden to
   // work — a deadlock, not an overlap. Refused here rather than discovered later.
-  const amOpening = snap.executions.find((e) => e.stepKey === "am_dossier_opening");
   if (!amOpening || !isDone(amOpening.state)) {
-    return { ok: false, error: "am_opening_incomplete" };
+    return { ok: false, error: "am_opening_incomplete", ...reasons };
   }
 
   const sent = await sendHandoff(fileId, "am_dossier_opening", "coordinator_reception");

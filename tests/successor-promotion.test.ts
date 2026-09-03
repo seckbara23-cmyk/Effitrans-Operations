@@ -138,7 +138,9 @@ describe("the canonical chain, through prerequisitesMet", () => {
 describe("D-2 — transmission requires its own from-step", () => {
   it("the server refuses until step 3 is done, BEFORE sending anything", () => {
     const s = fnSlice(intake, "handDossierToTransit");
-    expect(s).toContain('return { ok: false, error: "am_opening_incomplete" };');
+    // The refusal now carries the evaluator's reasons alongside the code; what
+    // must not drift is that it IS this code and it fires before any send.
+    expect(s).toMatch(/return \{ ok: false, error: "am_opening_incomplete",[^}]*\};/);
     expect(s.indexOf("am_opening_incomplete")).toBeLessThan(s.indexOf("sendHandoff("));
     expect(s).toContain('(e) => e.stepKey === "am_dossier_opening"');
     expect(s).toContain("if (!amOpening || !isDone(amOpening.state))");
@@ -151,8 +153,14 @@ describe("D-2 — transmission requires its own from-step", () => {
       openBlockers: [],
       amOpeningDone: false,
     });
+    // The sentence is DERIVED from the registry (number + labelFr), never typed
+    // here, so it stays true if the official process is ever renumbered.
+    const step3 = getStep("am_dossier_opening")!;
     expect(unmet).toEqual([
-      { code: "am_opening_incomplete", labelFr: expect.stringContaining("étape 3") },
+      {
+        code: "am_opening_incomplete",
+        labelFr: `Étape ${step3.stepNumber} « ${step3.labelFr} » : non terminée.`,
+      },
     ]);
     // …and disappears once step 3 is done.
     expect(
