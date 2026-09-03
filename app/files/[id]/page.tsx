@@ -564,6 +564,21 @@ export default async function FileDetailPage({ params }: { params: { id: string 
           />
         </div>
       )}
+      {/* TMS-1C — « Suivi en direct de la mission », immediately beneath the
+          Transport card. It was previously rendered two panels lower, which
+          made it unfindable for a reviewer inspecting the transport panel —
+          the brief's own words put it here. Placement only: the render
+          condition, the gates and the data are unchanged, and a mission with
+          no reference still renders the neutral state. */}
+      {canReadTransport && transportRecord && (
+        <div id="mission-tracking" className="scroll-mt-24">
+          <MissionTracking
+            transportId={transportRecord.id}
+            reference={missionTracking}
+            canManage={canAssignDriver}
+          />
+        </div>
+      )}
       <QC5Panel evidence={qc5} />
       {canReadTransport && transportRecord && (
         <DriverAssign
@@ -573,15 +588,6 @@ export default async function FileDetailPage({ params }: { params: { id: string 
           drivers={assignableDrivers}
           canAssign={canAssignDriver}
         />
-      )}
-      {canReadTransport && transportRecord && (
-        <div id="mission-tracking" className="scroll-mt-24">
-          <MissionTracking
-            transportId={transportRecord.id}
-            reference={missionTracking}
-            canManage={canAssignDriver}
-          />
-        </div>
       )}
       {trackingOn && canReadTracking && (
         <div id="tracking" className="scroll-mt-24">

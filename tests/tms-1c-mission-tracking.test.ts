@@ -263,6 +263,58 @@ describe("TMS-1C — the link opens the provider, in a new tab, for staff only",
     }
   });
 
+  it("it renders IMMEDIATELY AFTER the Transport card — where a reviewer looks", () => {
+    // The production UI audit found it two panels lower (after QC5Panel and
+    // DriverAssign), which made it unfindable for anyone inspecting the
+    // transport panel. Order is pinned so it cannot drift back.
+    const iTransport = page.indexOf('<div id="transport"');
+    const iTracking = page.indexOf('<div id="mission-tracking"');
+    const iQc5 = page.indexOf("<QC5Panel");
+    const iDriver = page.indexOf("<DriverAssign");
+    for (const [name, i] of [["#transport", iTransport], ["#mission-tracking", iTracking],
+                             ["QC5Panel", iQc5], ["DriverAssign", iDriver]] as const) {
+      expect(i, `${name} not found`).toBeGreaterThan(-1);
+    }
+    expect(iTracking, "tracking must follow the Transport card").toBeGreaterThan(iTransport);
+    expect(iTracking, "…and precede QC5Panel").toBeLessThan(iQc5);
+    expect(iTracking, "…and precede DriverAssign").toBeLessThan(iDriver);
+  });
+
+  it("the neutral state does NOT require transport:assign", () => {
+    // The section's render condition names transport:read and the mission —
+    // never canManage — so a reader without dispatch authority still sees it.
+    const block = page.slice(page.indexOf('<div id="mission-tracking"') - 200,
+                             page.indexOf('<div id="mission-tracking"'));
+    expect(block).toContain("canReadTransport && transportRecord");
+    expect(block).not.toContain("canAssignDriver &&");
+    // …and inside the component only the MANAGEMENT block is gated.
+    const heading = ui.indexOf("Suivi en direct de la mission");
+    const manage = ui.indexOf("{canManage && (");
+    expect(heading).toBeGreaterThan(-1);
+    expect(manage, "management is gated").toBeGreaterThan(heading);
+    // The neutral sentence must not be CONDITIONED on canManage either — an
+    // ordering check alone let a `canManage ? … : null` mutation survive.
+    const start = ui.indexOf("canFollowLive(reference) && reference ?");
+    expect(start).toBeGreaterThan(-1);
+    const neutralBranch = ui.slice(ui.indexOf(") : (", start), ui.indexOf('state === "ENDED"'));
+    expect(neutralBranch).toContain("TRACKING_STATE_LABEL_FR[state]");
+    expect(neutralBranch, "the neutral state must render for a reader with no dispatch authority")
+      .not.toContain("canManage");
+    expect(ui.indexOf("TRACKING_STATE_LABEL_FR[state]")).toBeLessThan(manage);
+  });
+
+  it("management controls still require transport:assign", () => {
+    expect(page).toContain("canManage={canAssignDriver}");
+    expect(page).toContain('const canAssignDriver = hasPermission(permissions, "transport:assign")');
+    expect(ui).toContain("{canManage && (");
+  });
+
+  it("the zero-row lookup stays maybeSingle — a missing reference is normal", () => {
+    expect(service).toContain(".maybeSingle<Row>()");
+    expect(service, "a .single() would throw on the neutral state").not.toContain(".single()");
+    expect(service).toContain("if (!data) return null;");
+  });
+
   it("it is gated on transport:read in the page, and management on transport:assign", () => {
     expect(page).toContain("canReadTransport && transportRecord && (");
     expect(page).toContain("<MissionTracking");
