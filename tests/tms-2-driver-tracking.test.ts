@@ -307,9 +307,12 @@ describe("TMS-2 — the fleet map is Transport's, not the driver's", () => {
     expect(route).toContain('.order("recorded_at", { ascending: true })');
   });
 
-  it("a mission with no fix has no marker, and the map says so instead", () => {
+  it("a mission with no fix has no marker — and TMS-2D still renders the map", () => {
     expect(mapUi).toContain("m.lastPosition != null");
-    expect(mapUi).toContain("Aucune position enregistrée");
+    // Superseded by TMS-2D: the map no longer disappears when nothing is
+    // observed; it carries the ratified empty-state sentence instead.
+    expect(mapUi).toContain("Aucune mission suivie actuellement.");
+    expect(mapUi).not.toContain("La carte s'affichera");
   });
 
   it("the map uses the stack already present — no paid vendor, no key", () => {

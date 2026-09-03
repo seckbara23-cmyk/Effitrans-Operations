@@ -24,6 +24,13 @@ import type { LiveMission, LiveMissionPoint } from "./live-model";
 export type { LiveMission, LiveMissionPoint, LiveTrackingKpis } from "./live-model";
 export { summarizeLiveMissions } from "./live-model";
 
+type PositionRow = {
+  transport_id: string | null;
+  latitude: number;
+  longitude: number;
+  recorded_at: string;
+};
+
 type SessionRow = {
   id: string;
   transport_id: string | null;
@@ -62,6 +69,9 @@ export async function listLiveMissions(nowIso?: string): Promise<LiveMission[]> 
   if (open.length === 0) return [];
 
   const transportIds = open.map((s) => s.transport_id as string);
+  // One instant per mission that has ever transmitted; missions with no fix
+  // contribute nothing and simply render without a marker.
+  const lastInstants = [...new Set(open.map((s) => s.last_position_at).filter(Boolean) as string[])];
 
   const [missionsRes, positionsRes] = await Promise.all([
     admin
@@ -72,20 +82,29 @@ export async function listLiveMissions(nowIso?: string): Promise<LiveMission[]> 
       .eq("tenant_id", user.tenantId)
       .in("id", transportIds)
       .is("deleted_at", null),
-    admin
-      .from("tracking_position")
-      .select("transport_id, latitude, longitude, recorded_at")
-      .eq("tenant_id", user.tenantId)
-      .in("transport_id", transportIds)
-      .order("recorded_at", { ascending: false })
-      .limit(500),
+    // TMS-2D §11 — the LATEST fix per mission, bounded by the number of
+    // missions rather than by history.
+    //
+    // A global "newest 500 positions" scan is bounded but not correct: one
+    // chatty vehicle can crowd every other mission out of the window, and a
+    // mission whose signal was lost yesterday — exactly the one an operator
+    // needs to see — is the first to fall off. `tracking_session
+    // .last_position_at` already holds each mission's newest instant (the
+    // ingest maintains it), so asking for precisely those instants returns one
+    // row per mission, reads no history, and cannot starve anyone.
+    lastInstants.length > 0
+      ? admin
+          .from("tracking_position")
+          .select("transport_id, latitude, longitude, recorded_at")
+          .eq("tenant_id", user.tenantId)
+          .in("transport_id", transportIds)
+          .in("recorded_at", lastInstants)
+      : Promise.resolve({ data: [] as PositionRow[] }),
   ]);
 
   // Newest fix per mission — the ordered read above means the first seen wins.
   const latest = new Map<string, LiveMissionPoint>();
-  for (const p of (positionsRes.data ?? []) as {
-    transport_id: string | null; latitude: number; longitude: number; recorded_at: string;
-  }[]) {
+  for (const p of (positionsRes.data ?? []) as PositionRow[]) {
     if (!p.transport_id || latest.has(p.transport_id)) continue;
     latest.set(p.transport_id, { lat: Number(p.latitude), lng: Number(p.longitude), at: p.recorded_at });
   }
@@ -156,7 +175,12 @@ export async function countSessionsEndedToday(): Promise<number> {
  * The map draws a polyline through these and nothing else: no snapping to
  * roads, no interpolation, no inferred path between distant fixes.
  */
-export async function getObservedRoute(transportId: string, limit = 500): Promise<LiveMissionPoint[]> {
+export const MAX_ROUTE_POINTS = 500;
+
+export async function getObservedRoute(
+  transportId: string,
+  limit: number = MAX_ROUTE_POINTS,
+): Promise<LiveMissionPoint[]> {
   let user;
   try {
     user = await assertPermission("transport:read");

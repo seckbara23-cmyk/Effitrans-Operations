@@ -19,6 +19,7 @@ import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { listLiveMissions, summarizeLiveMissions, countSessionsEndedToday } from "@/lib/tracking/live-service";
 import { MISSION_LEG_LABEL_FR } from "@/lib/tracking/types";
 import { trackingEnabled } from "@/lib/tracking/config";
+import { LiveRefresh } from "@/components/transport/live-refresh";
 
 export const metadata: Metadata = { title: "Suivi en direct" };
 export const revalidate = 0;
@@ -88,7 +89,10 @@ export default async function TransportLiveTrackingPage() {
   return (
     <div className="animate-fade-in space-y-6">
       {header}
-      <Link href="/transport" className="text-sm text-teal-700 hover:underline">← Opérations de transport</Link>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <Link href="/transport" className="text-sm text-teal-700 hover:underline">← Opérations de transport</Link>
+        <LiveRefresh />
+      </div>
 
       {!trackingEnabled() && (
         <div className="surface border-l-4 border-amber-300 p-4 text-xs text-amber-800">
@@ -105,6 +109,10 @@ export default async function TransportLiveTrackingPage() {
         <Stat label="Terminées aujourd'hui" value={kpis.endedToday} tone="text-slate-500" />
       </div>
 
+      {/* TMS-2D — the map is PERMANENT. It renders with zero missions, carrying
+          its own empty-state card and a documented fallback viewport; only the
+          telemetry on it changes. It is deliberately outside the conditional
+          below, which governs the mission LIST alone. */}
       <TransportLiveMap missions={missions} />
 
       {missions.length === 0 ? (
