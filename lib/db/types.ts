@@ -1720,6 +1720,9 @@ export type Database = {
           driver_phone: string | null;
           vehicle_plate: string | null;
           vehicle_id: string | null;
+          return_location: string | null;
+          return_latitude: number | null;
+          return_longitude: number | null;
           provider_id: string | null;
           trailer_or_container: string | null;
           transport_company: string | null;
@@ -1749,6 +1752,9 @@ export type Database = {
           driver_phone?: string | null;
           vehicle_plate?: string | null;
           vehicle_id?: string | null;
+          return_location?: string | null;
+          return_latitude?: number | null;
+          return_longitude?: number | null;
           provider_id?: string | null;
           trailer_or_container?: string | null;
           transport_company?: string | null;
@@ -1778,6 +1784,9 @@ export type Database = {
           driver_phone?: string | null;
           vehicle_plate?: string | null;
           vehicle_id?: string | null;
+          return_location?: string | null;
+          return_latitude?: number | null;
+          return_longitude?: number | null;
           provider_id?: string | null;
           trailer_or_container?: string | null;
           transport_company?: string | null;
@@ -1814,6 +1823,7 @@ export type Database = {
           started_at: string;
           ended_at: string | null;
           last_position_at: string | null;
+          return_started_at: string | null;
           created_by: string | null;
           created_at: string;
           updated_at: string;
@@ -1830,6 +1840,7 @@ export type Database = {
           started_at?: string;
           ended_at?: string | null;
           last_position_at?: string | null;
+          return_started_at?: string | null;
           created_by?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -1846,6 +1857,7 @@ export type Database = {
           started_at?: string;
           ended_at?: string | null;
           last_position_at?: string | null;
+          return_started_at?: string | null;
           created_by?: string | null;
           created_at?: string;
           updated_at?: string;

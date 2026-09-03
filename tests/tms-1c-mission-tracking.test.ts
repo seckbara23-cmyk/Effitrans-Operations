@@ -288,7 +288,9 @@ describe("TMS-1C — the link opens the provider, in a new tab, for staff only",
     expect(block).toContain("canReadTransport && transportRecord");
     expect(block).not.toContain("canAssignDriver &&");
     // …and inside the component only the MANAGEMENT block is gated.
-    const heading = ui.indexOf("Suivi en direct de la mission");
+    // TMS-2 demoted this panel to « Suivi externe (optionnel) »; the guarantee
+    // under test is unchanged — the neutral state is not gated on canManage.
+    const heading = ui.indexOf("Suivi externe (optionnel)");
     const manage = ui.indexOf("{canManage && (");
     expect(heading).toBeGreaterThan(-1);
     expect(manage, "management is gated").toBeGreaterThan(heading);

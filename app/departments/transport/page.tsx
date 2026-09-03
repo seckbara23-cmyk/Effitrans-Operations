@@ -68,6 +68,14 @@ export default async function LogisticsCommandCenterPage() {
             Demandes de transport, planification, affectation, enlèvement, transit, livraison et POD.
           </p>
         </Link>
+        {/* TMS-2 — the live tracking control centre, beside the other Transport
+            surfaces. Gated on transport:read like the page it opens. */}
+        <Link href="/transport/suivi" className="surface block p-4 transition-colors hover:border-teal-300">
+          <p className="text-sm font-semibold text-navy-900">Suivi en direct</p>
+          <p className="mt-1 text-xs text-slate-500">
+            Missions, chauffeurs et véhicules suivis en temps réel.
+          </p>
+        </Link>
         <Link href="/transport/parc" className="surface block p-4 transition-colors hover:border-teal-300">
           <p className="text-sm font-semibold text-navy-900">Parc &amp; Flotte</p>
           <p className="mt-1 text-xs text-slate-500">
@@ -231,6 +239,7 @@ export default async function LogisticsCommandCenterPage() {
         <h2 className="mb-2 text-sm font-semibold text-navy-900">Accès rapide</h2>
         <div className="flex flex-wrap gap-2 text-sm">
           <Link href="/transport" className="rounded-lg border border-slate-200 px-3 py-1.5 hover:border-teal-300">🚚 Transport routier</Link>
+          <Link href="/transport/suivi" className="rounded-lg border border-slate-200 px-3 py-1.5 hover:border-teal-300">📍 Suivi en direct</Link>
           <Link href="/transport/parc" className="rounded-lg border border-slate-200 px-3 py-1.5 hover:border-teal-300">🅿️ Parc &amp; Flotte</Link>
           <Link href="/transport/sous-traitants" className="rounded-lg border border-slate-200 px-3 py-1.5 hover:border-teal-300">🤝 Sous-traitants</Link>
           <Link href="/shipping" className="rounded-lg border border-slate-200 px-3 py-1.5 hover:border-teal-300">🚢 Ocean Shipping</Link>

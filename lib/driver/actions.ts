@@ -151,6 +151,49 @@ export async function resumeTracking(sessionId: string): Promise<SessionActionRe
   return { ok: true, id: sessionId, sessionId };
 }
 
+/**
+ * TMS-2 — the driver declares the RETURN LEG: delivered, driving back to base.
+ *
+ * TELEMETRY ONLY, and the point of the whole slice. This reads no transport
+ * status and writes none: a mission the platform has not yet recorded as
+ * DELIVERED can still be on its return leg, and declaring the return leg never
+ * delivers anything, never creates a POD and never closes a dossier. Tracking
+ * continues — that is exactly why the state exists.
+ *
+ * Authority is ASSIGNMENT, like every other act here: `loadOwnSession` resolves
+ * the session only for the driver it belongs to.
+ */
+export async function startReturnLeg(sessionId: string): Promise<SessionActionResult> {
+  if (!driverMobileTrackingEnabled()) return { ok: false, error: "tracking_disabled" };
+  const user = await driverCtx();
+  if (!user) return { ok: false, error: "forbidden" };
+  const supabase = getAdminSupabaseClient();
+  const s = await loadOwnSession(supabase, user, sessionId);
+  if (!s) return { ok: false, error: "forbidden" };
+  // Only an outbound session turns around. A completed or cancelled one does
+  // not resurrect, and a second declaration is refused rather than re-stamped.
+  if (s.status !== "ACTIVE" && s.status !== "PAUSED") return { ok: false, error: "invalid_state" };
+
+  const { error } = await supabase
+    .from("tracking_session")
+    .update({ status: "RETURNING", return_started_at: new Date().toISOString() })
+    .eq("id", sessionId)
+    .eq("tenant_id", user.tenantId);
+  if (error) return { ok: false, error: error.message };
+
+  await writeAudit({
+    action: AuditActions.TRACKING_SESSION_RETURN_STARTED,
+    actorId: user.id,
+    tenantId: user.tenantId,
+    entity: "tracking_session",
+    entityId: sessionId,
+    before: { status: s.status },
+    after: { status: "RETURNING" },
+  });
+  if (s.transport_id) revalidate(s.transport_id);
+  return { ok: true, id: sessionId, sessionId };
+}
+
 export async function stopMission(sessionId: string): Promise<SessionActionResult> {
   if (!driverMobileTrackingEnabled()) return { ok: false, error: "tracking_disabled" };
   const user = await driverCtx();
@@ -158,7 +201,11 @@ export async function stopMission(sessionId: string): Promise<SessionActionResul
   const supabase = getAdminSupabaseClient();
   const s = await loadOwnSession(supabase, user, sessionId);
   if (!s) return { ok: false, error: "forbidden" };
-  if (s.status !== "ACTIVE" && s.status !== "PAUSED") return { ok: false, error: "invalid_state" };
+  // TMS-2 — a round trip ends FROM the return leg, so RETURNING is a legal
+  // predecessor of COMPLETED alongside the outbound states.
+  if (s.status !== "ACTIVE" && s.status !== "PAUSED" && s.status !== "RETURNING") {
+    return { ok: false, error: "invalid_state" };
+  }
 
   const { error } = await supabase.from("tracking_session").update({ status: "COMPLETED", ended_at: new Date().toISOString() }).eq("id", sessionId).eq("tenant_id", user.tenantId);
   if (error) return { ok: false, error: error.message };

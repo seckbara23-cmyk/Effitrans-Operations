@@ -13,7 +13,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { t } from "@/lib/i18n";
-import { startMission, pauseTracking, resumeTracking, stopMission, type SessionActionResult } from "@/lib/driver/actions";
+import { startMission, pauseTracking, resumeTracking, stopMission, startReturnLeg, type SessionActionResult } from "@/lib/driver/actions";
 import { isValidCoordinate, shouldRecordPosition, DEFAULT_POSITION_THRESHOLDS } from "@/lib/tracking/position";
 import { enqueue, loadQueue, removeKeys, type QueuedPosition } from "./queue";
 import type { TrackingSessionStatus } from "@/lib/tracking/types";
@@ -118,7 +118,7 @@ export function MissionTracker({ transportId, initialSessionId, initialSessionSt
   // Reflect queue; if the mission is already ACTIVE, resume watching + flush.
   useEffect(() => {
     refreshPending(sessionId);
-    if (sessionId && status === "ACTIVE" && trackingEnabled) {
+    if (sessionId && (status === "ACTIVE" || status === "RETURNING") && trackingEnabled) {
       startWatch(sessionId);
       void flush(sessionId);
     }
@@ -181,8 +181,20 @@ export function MissionTracker({ transportId, initialSessionId, initialSessionSt
     await act(() => stopMission(sessionId), () => setStatus("COMPLETED"));
   }
 
+  /**
+   * TMS-2 — the driver declares the RETURN LEG. Tracking continues: the watch
+   * keeps running and positions keep flowing, which is the entire point. This
+   * records nothing about delivery — the POD and the mission status stay with
+   * the governed workflow.
+   */
+  async function onStartReturn() {
+    if (!sessionId) return;
+    await act(() => startReturnLeg(sessionId), () => setStatus("RETURNING"));
+  }
+
   const tk = d.tracking;
   const active = status === "ACTIVE";
+  const returning = status === "RETURNING";
   const paused = status === "PAUSED";
   const completed = status === "COMPLETED";
 
@@ -193,10 +205,10 @@ export function MissionTracker({ transportId, initialSessionId, initialSessionSt
           <span className="text-sm font-semibold text-navy-900">{tk.statusLabel}</span>
           <span
             className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-              active ? "bg-teal-50 text-teal-700" : paused ? "bg-amber-50 text-amber-700" : completed ? "bg-slate-100 text-slate-500" : "bg-slate-100 text-slate-600"
+              active ? "bg-teal-50 text-teal-700" : returning ? "bg-navy-50 text-navy-800" : paused ? "bg-amber-50 text-amber-700" : completed ? "bg-slate-100 text-slate-500" : "bg-slate-100 text-slate-600"
             }`}
           >
-            {active ? tk.active : paused ? d.health.paused : completed ? d.health.completed : d.health.not_started}
+            {active ? tk.active : returning ? "Retour base" : paused ? d.health.paused : completed ? d.health.completed : d.health.not_started}
           </span>
         </div>
 
@@ -215,12 +227,34 @@ export function MissionTracker({ transportId, initialSessionId, initialSessionSt
             )}
 
             {active && (
-              <div className="flex gap-2">
-                <button onClick={onPause} disabled={pending} className="flex-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm font-medium text-amber-800 disabled:opacity-50">
-                  {tk.pause}
+              <>
+                <div className="flex gap-2">
+                  <button onClick={onPause} disabled={pending} className="flex-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm font-medium text-amber-800 disabled:opacity-50">
+                    {tk.pause}
+                  </button>
+                  <button onClick={onStop} disabled={pending} className="flex-1 rounded-lg border border-slate-200 px-3 py-3 text-sm font-medium text-slate-600 disabled:opacity-50">
+                    {tk.stop}
+                  </button>
+                </div>
+                {/* The round trip: livraison faite, on rentre. Tracking keeps
+                    running — this declares the leg, it does not deliver. */}
+                <button
+                  onClick={onStartReturn}
+                  disabled={pending}
+                  className="w-full rounded-lg border border-navy-200 bg-navy-50 px-3 py-3 text-sm font-medium text-navy-800 disabled:opacity-50"
+                >
+                  Démarrer le retour vers la base
                 </button>
-                <button onClick={onStop} disabled={pending} className="flex-1 rounded-lg border border-slate-200 px-3 py-3 text-sm font-medium text-slate-600 disabled:opacity-50">
-                  {tk.stop}
+              </>
+            )}
+
+            {returning && (
+              <div className="space-y-2">
+                <p className="rounded-lg border border-navy-100 bg-navy-50 p-2 text-xs text-navy-800">
+                  Retour vers la base en cours. Le suivi reste actif jusqu&apos;à votre arrivée.
+                </p>
+                <button onClick={onStop} disabled={pending} className="w-full rounded-lg border border-slate-200 px-3 py-3 text-sm font-medium text-slate-600 disabled:opacity-50">
+                  Arrivé à la base — terminer le suivi
                 </button>
               </div>
             )}
@@ -235,7 +269,7 @@ export function MissionTracker({ transportId, initialSessionId, initialSessionSt
               </div>
             )}
 
-            {(active || paused) && (
+            {(active || returning || paused) && (
               <div className="flex items-center justify-between text-xs text-slate-500">
                 <span>
                   {tk.pending} : <strong className="text-navy-800">{pendingCount}</strong>

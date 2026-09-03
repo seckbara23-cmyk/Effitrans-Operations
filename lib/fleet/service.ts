@@ -14,13 +14,39 @@ import { assertPermission } from "@/lib/auth/require-permission";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { classifyExpiry, type ExpiryState } from "@/lib/documents/expiry";
 
-/** Transport states that mean the vehicle is engaged right now. */
+/**
+ * Transport states that mean the vehicle is engaged right now.
+ *
+ * ⚠ THIS LIST IS A SHARED CONTRACT. Migration 132's retirement guard names the
+ * same four statuses to decide « mission en cours », and a test pins the two
+ * to each other. Changing it changes who may be retired mid-mission — so the
+ * TMS-2 return-leg fix below deliberately does NOT touch it.
+ */
 export const ENGAGED_TRANSPORT_STATUSES = [
   "PLANNED",
   "DRIVER_ASSIGNED",
   "PICKED_UP",
   "IN_TRANSIT",
 ] as const;
+
+/**
+ * TMS-2 §22 — THE EARLY-RELEASE FINDING, and the narrow fix.
+ *
+ * `ENGAGED_TRANSPORT_STATUSES` stops at IN_TRANSIT, so the moment a mission is
+ * recorded DELIVERED the vehicle stopped counting as « en mission » and became
+ * bindable again — while the truck may still be hours from base on its return
+ * leg. Fleet said available; reality said driving back.
+ *
+ * The fix does NOT widen the list above, because that list is also migration
+ * 132's mid-mission retirement vocabulary and widening it would silently change
+ * who may be retired. Instead engagement gains a SECOND, independent source:
+ * a tracking session that is still open. A vehicle is engaged if its mission is
+ * in an engaged status OR its mission is still being tracked — outbound,
+ * paused or returning.
+ *
+ * Telemetry informs AVAILABILITY here; it still decides no workflow state.
+ */
+export const OPEN_TRACKING_SESSION_STATUSES = ["ACTIVE", "PAUSED", "RETURNING"] as const;
 
 export type VehicleStatus = "AVAILABLE" | "MAINTENANCE" | "OUT_OF_SERVICE";
 
@@ -135,11 +161,35 @@ export async function listFleet(nowIso?: string): Promise<FleetVehicle[]> {
       .returns<{ vehicle_id: string | null; file: { file_number: string } | null }[]>(),
   ]);
 
+  // TMS-2 §22 — the second engagement source: a mission still being tracked,
+  // which is how a vehicle on its RETURN leg stays « en mission » instead of
+  // appearing free the instant delivery was recorded.
+  const { data: trackedRows } = await supabase
+    .from("tracking_session")
+    .select("transport_id")
+    .eq("tenant_id", user.tenantId)
+    .in("status", [...OPEN_TRACKING_SESSION_STATUSES])
+    .not("transport_id", "is", null)
+    .returns<{ transport_id: string | null }[]>();
+  const trackedTransportIds = new Set((trackedRows ?? []).map((r) => r.transport_id).filter(Boolean) as string[]);
+
+  const { data: trackedMissions } = trackedTransportIds.size
+    ? await supabase
+        .from("transport_record")
+        .select("vehicle_id, file:file_id(file_number)")
+        .eq("tenant_id", user.tenantId)
+        .in("id", [...trackedTransportIds])
+        .in("vehicle_id", ids)
+        .is("deleted_at", null)
+        .returns<{ vehicle_id: string | null; file: { file_number: string } | null }[]>()
+    : { data: [] as { vehicle_id: string | null; file: { file_number: string } | null }[] };
+
   const engagedBy = new Map<string, string[]>();
-  for (const r of engagedRes.data ?? []) {
+  for (const r of [...(engagedRes.data ?? []), ...(trackedMissions ?? [])]) {
     if (!r.vehicle_id) continue;
     const list = engagedBy.get(r.vehicle_id) ?? [];
-    if (r.file?.file_number) list.push(r.file.file_number);
+    // Both sources can name the same mission; the dossier is listed once.
+    if (r.file?.file_number && !list.includes(r.file.file_number)) list.push(r.file.file_number);
     engagedBy.set(r.vehicle_id, list);
   }
 

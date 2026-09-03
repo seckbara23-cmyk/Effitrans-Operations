@@ -237,6 +237,8 @@ export const AuditActions = {
   TRACKING_SESSION_STARTED: "tracking.session.started",
   TRACKING_SESSION_PAUSED: "tracking.session.paused",
   TRACKING_SESSION_RESUMED: "tracking.session.resumed",
+  // TMS-2 — the return leg. A telemetry act: it moves no mission.
+  TRACKING_SESSION_RETURN_STARTED: "tracking.session.return_started",
   TRACKING_SESSION_COMPLETED: "tracking.session.completed",
   TRACKING_SESSION_CANCELLED: "tracking.session.cancelled",
   TRACKING_POSITION_MANUAL_RECORDED: "tracking.position.manual_recorded",

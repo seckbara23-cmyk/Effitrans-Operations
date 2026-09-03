@@ -1,7 +1,18 @@
 "use client";
 
 /**
- * TMS-1C — « Suivre la mission en direct ». Client component.
+ * TMS-1C — external provider link. SECONDARY since TMS-2.
+ * ---------------------------------------------------------------------------
+ * DEMOTED, NOT DELETED (TMS-2 §18, option A+C). The normal Effitrans tracking
+ * workflow is now the chauffeur's own GPS: Transport assigns, the driver taps
+ * « Démarrer la mission », and the live map follows the vehicle. No operator
+ * should have to type a provider name or paste a URL to track a mission.
+ *
+ * This panel survives as an OPTIONAL FALLBACK for a fleet-GPS provider
+ * integration, folded into a collapsed « Suivi externe (optionnel) »
+ * disclosure so it never competes with the primary flow. Migration 135, the
+ * table, its RLS and every TMS-1C security property are untouched — the data
+ * and its guarantees are still there, only the prominence changed.
  * ---------------------------------------------------------------------------
  * The provider platform stays the live view; this is the governed doorway to
  * it. The link opens in a NEW TAB so the Effitrans tab — the system of record —
@@ -75,13 +86,16 @@ export function MissionTracking({
   }
 
   return (
-    <section className="surface space-y-3 p-4">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-sm font-semibold text-navy-900">Suivi en direct de la mission</h2>
-        <span className="text-xs text-slate-400">
-          Le suivi est assuré par le prestataire ; il ne détermine ni la livraison ni le POD.
-        </span>
-      </div>
+    <details className="surface p-4">
+      <summary className="cursor-pointer text-sm font-semibold text-navy-900">
+        Suivi externe (optionnel)
+      </summary>
+      <div className="mt-3 space-y-3">
+      <p className="text-xs text-slate-500">
+        Le suivi Effitrans se fait normalement par l&apos;application chauffeur
+        (« Démarrer la mission »). Ce bloc ne sert qu&apos;au rattachement d&apos;un
+        prestataire GPS externe, et ne détermine ni la livraison ni le POD.
+      </p>
 
       {/* AVAILABLE — the doorway. */}
       {canFollowLive(reference) && reference ? (
@@ -198,6 +212,7 @@ export function MissionTracking({
       )}
 
       {msg && <p className={`text-xs ${msg.ok ? "text-teal-700" : "text-red-600"}`}>{msg.text}</p>}
-    </section>
+      </div>
+    </details>
   );
 }

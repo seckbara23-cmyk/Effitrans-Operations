@@ -29,7 +29,35 @@ export function isTrackingSource(v: string): v is TrackingSource {
   return (TRACKING_SOURCES as string[]).includes(v);
 }
 
-export type TrackingSessionStatus = "ACTIVE" | "PAUSED" | "COMPLETED" | "CANCELLED";
+/**
+ * TMS-2 — RETURNING is the round trip's missing fact: delivered, still driving
+ * back to point A. It is TELEMETRY, never workflow: it is not set by delivery
+ * and it does not set delivery.
+ */
+export type TrackingSessionStatus =
+  | "ACTIVE"
+  | "PAUSED"
+  | "RETURNING"
+  | "COMPLETED"
+  | "CANCELLED";
+
+/** The leg a mission is on, for the live map and the driver screen. */
+export type MissionLeg = "OUTBOUND" | "RETURN" | "ENDED" | "NOT_STARTED";
+
+export const MISSION_LEG_LABEL_FR: Readonly<Record<MissionLeg, string>> = {
+  NOT_STARTED: "Suivi non démarré",
+  OUTBOUND: "Aller — livraison",
+  RETURN: "Retour base",
+  ENDED: "Terminé",
+};
+
+/** The leg, derived from the session status alone. No workflow state is read. */
+export function missionLeg(status: TrackingSessionStatus | null): MissionLeg {
+  if (status === null || status === "CANCELLED") return "NOT_STARTED";
+  if (status === "COMPLETED") return "ENDED";
+  if (status === "RETURNING") return "RETURN";
+  return "OUTBOUND"; // ACTIVE and PAUSED are both outbound legs
+}
 
 /** The tracking_event.type domain (mirrors the DB CHECK constraint exactly). */
 export type TrackingEventType =
