@@ -76,10 +76,22 @@ describe("UAT-00009 — one evaluator answers for every surface", () => {
     // The panel used to inspect blocker categories itself; that copy is what
     // let the UI and the server hold different opinions.
     for (const ui of [panel, dossierUi]) {
-      expect(ui).not.toContain('category === "MISSING_DOCUMENT"');
+      // Category literals may only be WRITTEN (« Signaler un document
+      // manquant » opens a blocker of that category); they may never be READ to
+      // decide anything — that read is the duplicated rule. Checked by shape,
+      // not by one spelling of one comparison: a probe slipped `==` past an
+      // exact-string ban.
+      for (const m of ui.matchAll(/MISSING_DOCUMENT|CUSTOMER_RESPONSE_REQUIRED/g)) {
+        const before = ui.slice(Math.max(0, m.index! - 24), m.index!);
+        expect(before, `category literal read, not written: …${before}`).toMatch(/category:\s*"?$/);
+      }
       expect(ui).not.toContain("am_dossier_opening");
       expect(ui).not.toContain("isDone(");
     }
+    // …and the transmit button's own enablement is nothing but "in flight".
+    const btn = panel.slice(panel.indexOf("handoffPrerequisites.length === 0 && ("));
+    expect(btn.slice(0, btn.indexOf("Transmettre au Transit"))).toMatch(/disabled=\{pending\}/);
+    expect(btn.slice(0, btn.indexOf("Transmettre au Transit"))).not.toMatch(/disabled=\{pending \|\|/);
   });
 
   it("the legacy entry point delegates rather than duplicating the rules", () => {
