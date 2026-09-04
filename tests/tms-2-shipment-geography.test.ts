@@ -156,7 +156,10 @@ describe("TMS-2 write path — validated before any write, label text preserved"
       actions.indexOf("export async function cancelFile"),
     );
     const geo = update.indexOf("validateShipmentGeography(supabase, admin.tenantId, input.shipment)");
-    const write = update.indexOf('.from("operational_file")\n    .update(');
+    // Newline-tolerant on purpose: a literal newline here silently returns -1
+    // on a CRLF checkout, and an ordering assertion that cannot find its
+    // anchor proves nothing about ordering.
+    const write = update.search(/\.from\("operational_file"\)\s*\.update\(/);
     expect(geo).toBeGreaterThan(-1);
     expect(geo).toBeLessThan(write);
   });

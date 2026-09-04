@@ -123,34 +123,6 @@ describe("C-4 negative battery — the refusals, in the order a dossier meets th
     expect(await stepState("operations_intake"), "neither attempt moved it").toEqual(before);
   });
 
-  it("MISSING EVIDENCE — a step with required documents refuses, and stays as it was", async () => {
-    // Re-pointed 2026-09-03. This proved the evidence gate using step 3's four
-    // required documents; H-3..H-6 ratified those away (they belonged to
-    // Finance, the transport lane and pickup), so step 3 no longer carries any.
-    // The INVARIANT under test is the gate itself, so it now uses an activity
-    // that genuinely requires evidence — the Pre-Gate/Bordereau transmission,
-    // which is exactly where the Bordereau control still lives.
-    const activity = "transport_docs_transmission";
-    expect(getActivity(activity)!.requiredDocuments.length).toBeGreaterThan(0);
-    need(await as(am, () => activateStep(fileId, activity)), `activate ${activity}`);
-
-    const before = await stepState(activity);
-    const refused = await as(am, () => submitStep(fileId, activity));
-    expect(refused.ok).toBe(false);
-    expect(err(refused)).toBe("evidence_missing");
-    expect(await stepState(activity)).toEqual(before);
-  });
-
-  it("STEP 3 — now completes on the Account Manager's own act, and only theirs", async () => {
-    // H-1/H-2: preparation readiness IS the act. No document gate stands in for
-    // it, and no fact rule completes it — reconciliation no longer touches it.
-    const wrongActor = await as(courier, () => submitStep(fileId, "am_dossier_opening"));
-    expect(wrongActor.ok, "a courier may not declare AM readiness").toBe(false);
-    need(await as(am, () => activateStep(fileId, "am_dossier_opening")), "activate 3");
-    need(await as(am, () => submitStep(fileId, "am_dossier_opening")), "step 3");
-    expect(await stepState("am_dossier_opening")).toBe("COMPLETED");
-  });
-
   it("INVALID « sans objet » — a non-declarable type, and a blank motif", async () => {
     const countBefore = async () =>
       ((await db().from("evidence_absence_declaration").select("id").eq("file_id", fileId)).data ?? []).length;
@@ -200,6 +172,22 @@ describe("C-4 negative battery — the refusals, in the order a dossier meets th
     const rows = await handoffs(fileId);
     expect(rows).toHaveLength(1);
     expect(rows[0].status).toBe("SENT");
+  });
+
+  it("MISSING EVIDENCE — a step that still requires documents refuses, and stays as it was", async () => {
+    // Re-pointed 2026-09-03. This proved the evidence gate through step 3's four
+    // required documents; H-3..H-6 ratified those away, so step 3 carries none.
+    // The INVARIANT is the gate itself, and it is proven where evidence still
+    // genuinely lives: `pre_gate`, which opens from step 3 and requires the
+    // Pre-Gate authorization.
+    expect(getActivity("pre_gate")!.requiredDocuments).toEqual(["PRE_GATE_AUTHORIZATION"]);
+    need(await as(am, () => activateStep(fileId, "pre_gate")), "activate pre_gate");
+
+    const before = await stepState("pre_gate");
+    const refused = await as(am, () => submitStep(fileId, "pre_gate"));
+    expect(refused.ok).toBe(false);
+    expect(err(refused)).toBe("evidence_missing");
+    expect(await stepState("pre_gate")).toEqual(before);
   });
 
   it("PERMISSION WITHOUT ELIGIBILITY — a holder who is not the routed receiver", async () => {

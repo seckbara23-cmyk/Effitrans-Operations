@@ -23,6 +23,8 @@ import { createFile } from "@/lib/files/actions";
 import { openDossierWorkflow, handDossierToTransit, getIntakeState } from "@/lib/process/engine/intake-actions";
 import { submitStep, activateStep, receiveHandoff } from "@/lib/process/engine/actions";
 import { declareEvidenceAbsence } from "@/lib/process/evidence-absence-actions";
+import { DECLARABLE_EVIDENCE_KEYS } from "@/lib/process/evidence-absence";
+import { getStep, getActivity } from "@/lib/process/effitrans-process";
 import { receiveDossierAtTransit } from "@/lib/process/engine/transit-actions";
 
 let ops: CurrentUser;      // OPS_SUPERVISOR — intake, process:manage
@@ -129,14 +131,16 @@ describe("C-4 slice 1 — Creation → Transit reception", () => {
     expect(await handoffs(fileId), "no handoff row may exist yet").toHaveLength(0);
   });
 
-  it("step 3 cannot be COMPLETED without its evidence", async () => {
+  it("step 3 opens for the Account Manager, and nothing else closes it", async () => {
+    // H-1/H-3..H-6 (2026-09-03): step 3 carries no required documents — they
+    // belonged to Finance, the transport lane and pickup — so its completion is
+    // the Account Manager's own readiness act. What this proves is that the act
+    // is still REQUIRED: the step opens, and until the AM performs it the
+    // transmission stays refused (asserted above, C-2).
     const started = await as(am, () => activateStep(fileId, "am_dossier_opening"));
     expect(started.ok, `activate step 3 failed: ${JSON.stringify(started)}`).toBe(true);
     expect((await execution(fileId, "am_dossier_opening"))?.state).toBe("ACTIVE");
-
-    const premature = await as(am, () => submitStep(fileId, "am_dossier_opening"));
-    expect(premature.ok, "step 3 must refuse without its documents").toBe(false);
-    expect((premature as { error: string }).error).toBe("evidence_missing");
+    expect(getStep("am_dossier_opening")!.requiredDocuments, "ratified empty").toEqual([]);
   });
 
   it("C-3 — « Sans objet » is refused for a non-declarable type and without a motif", async () => {
@@ -183,9 +187,11 @@ describe("C-4 slice 1 — Creation → Transit reception", () => {
       .eq("type_code", "VENDOR_INVOICE");
     expect(docs ?? [], "a declaration must never create a document row").toHaveLength(0);
 
-    // …and it satisfies ONLY that key: step 3 still refuses on the others.
-    const still = await as(am, () => submitStep(fileId, "am_dossier_opening"));
-    expect(still.ok, "one declaration must not satisfy the whole step").toBe(false);
+    // …and it satisfies ONLY that key. Step 3 no longer requires any document
+    // (H-3..H-6), so the declaration proves the C-3 MECHANISM rather than a
+    // gate: the row exists, attributed and audited, and no document was
+    // fabricated to stand in for it.
+    expect(DECLARABLE_EVIDENCE_KEYS).toContain("VENDOR_INVOICE");
   });
 
   it("an unauthorised actor cannot act on step 3, and nobody can act signed out", async () => {
@@ -202,6 +208,33 @@ describe("C-4 slice 1 — Creation → Transit reception", () => {
     expect(state, "the dossier must be readable by its Account Manager").toBeTruthy();
     expect(state!.amOpeningDone, "step 3 is not done yet").toBe(false);
     expect(state!.handoffSent).toBe(false);
+  });
+
+  it("step 3 completes on the Account Manager's own act, and promotes", async () => {
+    const done = await as(am, () => submitStep(fileId, "am_dossier_opening"));
+    expect(done.ok, `step 3: ${JSON.stringify(done)}`).toBe(true);
+    expect((await execution(fileId, "am_dossier_opening"))?.state).toBe("COMPLETED");
+    // Its dependents open — including the two parallel activities and step 14,
+    // which is the C-1 guarantee.
+    for (const key of ["coordinator_reception", "transport_assignment", "pre_gate", "bon_a_delivrer"]) {
+      expect((await execution(fileId, key))?.state, key).toBe("AVAILABLE");
+    }
+  });
+
+  it("the evidence gate is intact wherever evidence is still required", async () => {
+    // Re-pointed from step 3, which no longer carries documents. `pre_gate`
+    // opens from step 3 and genuinely requires PRE_GATE_AUTHORIZATION, so it is
+    // the honest place to prove that a step refuses without its evidence and
+    // stays exactly as it was.
+    expect(getActivity("pre_gate")!.requiredDocuments).toEqual(["PRE_GATE_AUTHORIZATION"]);
+    const started = await as(am, () => activateStep(fileId, "pre_gate"));
+    expect(started.ok, `activate pre_gate: ${JSON.stringify(started)}`).toBe(true);
+
+    const before = await execution(fileId, "pre_gate");
+    const premature = await as(am, () => submitStep(fileId, "pre_gate"));
+    expect(premature.ok, "a step with evidence must refuse without it").toBe(false);
+    expect((premature as { error: string }).error).toBe("evidence_missing");
+    expect((await execution(fileId, "pre_gate"))?.state).toBe(before?.state);
   });
 });
 

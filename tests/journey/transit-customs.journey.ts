@@ -352,6 +352,10 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     // …and, being a reconciled completion, it promotes — which before this
     // slice's fix it did not.
     expect((await execution(fileId, "coordinator_to_declarant"))?.state).toBe("AVAILABLE");
+    // The reconciled promotion is audited and attributed to the actor whose
+    // fact caused it (F-α). Proven here now that step 3 — the old vehicle for
+    // this guarantee — is no longer fact-provable.
+    await assertActivationAttributedTo("coordinator_to_declarant", customsFinance.id);
   });
 
   it("once step 9 closes, Finance douane correctly stops seeing the dossier", async () => {
@@ -506,38 +510,32 @@ describe("C-4 — a RECONCILED completion promotes its dependents", () => {
     if (!started.ok) throw new Error(`recon step 3 activate failed: ${JSON.stringify(started)}`);
   });
 
-  it("with evidence outstanding, reconciliation leaves the step alone", async () => {
+  it("reconciliation never closes step 3 — readiness is the Account Manager's act", async () => {
+    // H-1/H-2 (2026-09-03). Step 3's fact rule asked only whether the dossier
+    // had left DRAFT, and was held back solely by its four required documents.
+    // Those were ratified away, so the proxy was REMOVED rather than left
+    // standing alone: otherwise verifying any document on any opened dossier
+    // would have completed the Account Manager's readiness act for them.
     await provideEvidence(reconFile, "BORDEREAU_LIVRAISON", am, ops);
+    await provideEvidence(reconFile, "TRANSPORT_REQUEST", am, ops);
 
     const exec = await execution(reconFile, "am_dossier_opening");
-    expect(exec?.state).toBe("ACTIVE");
+    expect(exec?.state, "no document verification may close step 3").toBe("ACTIVE");
     expect(exec?.completion_provenance, "nothing was reconciled").toBeNull();
     // …and nothing downstream was opened on the strength of it.
     expect((await execution(reconFile, "transport_assignment"))?.state).toBe("PENDING");
   });
 
-  it("with evidence satisfied, reconciliation COMPLETES the step and promotes", async () => {
-    // Complete the evidence WITHOUT completing the step: declarations are not
-    // uploads and trigger no reconciliation, so the step stays open and
-    // genuinely satisfied at the same time.
-    await provideEvidence(reconFile, "TRANSPORT_REQUEST", am, ops);
-    for (const key of ["VENDOR_INVOICE", "SPENDING_AUTHORIZATION"]) {
-      const d = await as(am, () =>
-        declareEvidenceAbsence(reconFile, key, `sans objet — ${key}`),
-      );
-      expect(d.ok, `declare ${key}: ${JSON.stringify(d)}`).toBe(true);
-    }
-    expect((await execution(reconFile, "am_dossier_opening"))?.state).toBe("ACTIVE");
-
-    // Now trigger reconciliation with an ordinary verification. A second
-    // version of an already-satisfied type changes no evidence verdict; it only
-    // causes the reconciliation pass to run.
-    await provideEvidence(reconFile, "TRANSPORT_REQUEST", am, ops);
+  it("the Account Manager's own completion promotes every dependent", async () => {
+    // The C-1 guarantee, unchanged and still proven against a real database —
+    // only its driver moved. It used to be reached by reconciliation; step 3 is
+    // no longer fact-provable, so the human act drives it, which is the point.
+    const done = await as(am, () => submitStep(reconFile, "am_dossier_opening"));
+    expect(done.ok, `step 3: ${JSON.stringify(done)}`).toBe(true);
 
     const exec = await execution(reconFile, "am_dossier_opening");
-    expect(exec?.state, "satisfied evidence lets reconciliation close it").toBe("COMPLETED");
-    expect(exec?.completion_provenance, "and it says so honestly").toBe("RECONCILED");
-    expect(exec?.reconciled_fact, "naming the fact that proved it").toBeTruthy();
+    expect(exec?.state).toBe("COMPLETED");
+    expect(exec?.completion_provenance, "a human act, never RECONCILED").not.toBe("RECONCILED");
 
     // THE DEFECT: this used to stay PENDING forever, with no other path to
     // AVAILABLE, which made the whole transport-readiness branch unreachable.
@@ -547,13 +545,12 @@ describe("C-4 — a RECONCILED completion promotes its dependents", () => {
     expect((await execution(reconFile, "coordinator_reception"))?.state).toBe("AVAILABLE");
   });
 
-  it("the reconciled promotion is audited and attributed to the causing actor", async () => {
+  it("the promotion is audited and attributed to the causing actor", async () => {
     const exec = await execution(reconFile, "transport_assignment");
     const events = await auditFor("process.step.activated", exec!.id as string);
     expect(events.length, "a promotion is never unaudited").toBeGreaterThan(0);
-    // ops verified the document that caused reconciliation, so ops is the
-    // principal — the same rule as F-α on the action path.
-    expect(events[0].actor_id).toBe(ops.id);
+    // The AM completed step 3, so the AM is the principal — F-α, unchanged.
+    expect(events[0].actor_id).toBe(am.id);
 
     // …and it is NOT recorded as machine-caused, because a real actor caused it.
     const systemEvents = await auditFor("system.process.step.activated", exec!.id as string);
