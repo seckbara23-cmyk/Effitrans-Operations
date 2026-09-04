@@ -186,7 +186,10 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     expect(rows).toHaveLength(1);
     expect(rows[0].status).toBe("SENT");
     expect(rows[0].to_step_key).toBe("coordinator_reception");
-    expect(rows[0].sent_by).toBe(am.id);
+    // UAT-WF-HANDOFF-01B: Operations owns this custody transfer, so Operations
+    // is the recorded sender. The point of the assertion is unchanged — the
+    // handoff names WHO handed the dossier over.
+    expect(rows[0].sent_by).toBe(ops.id);
     expect(rows[0].received_by, "sending is not receiving").toBeNull();
   });
 
