@@ -44,6 +44,12 @@ export function HandoffPrerequisites({
           <p className="mt-0.5 text-xs text-amber-800">
             Étape {firstActionable.stepNumber} « {firstActionable.labelFr} »
           </p>
+          {/* The step is performed on THIS page, in « Étapes actives » below,
+              by whoever is authorized for it. The pointer exists because naming
+              a step without saying where to do it is how a real UAT stalled. */}
+          <p className="mt-0.5 text-[11px] text-amber-700">
+            À effectuer dans « Étapes actives », plus bas sur cette page.
+          </p>
         </div>
       )}
     </div>

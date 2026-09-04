@@ -20,6 +20,10 @@ import { getTransitState, listEligibleTransitAssignees, type TransitAssignee, ty
 import { TransitPanel } from "@/components/process/transit-panel";
 import { getFinanceState, type FinanceState } from "@/lib/finance/request-actions";
 import { FinancePanel } from "@/components/process/finance-panel";
+import { StepActions } from "@/components/process/step-actions";
+import { evaluateStepAction } from "@/lib/process/step-eligibility";
+import { queueForStep } from "@/lib/process/queues/registry";
+import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
@@ -81,6 +85,45 @@ export default async function ProcessInspectorPage({ params }: { params: { id: s
   if (!hasPermission(permissions, "process:read")) notFound();
 
   const state = await getProcessState(params.id);
+
+  // Two facts the action rows need, read once and only when there is something
+  // to render. Neither decides authority — `activateStep`/`submitStep` re-check
+  // everything — they decide what the page may honestly OFFER and SAY.
+  //
+  //  * every step with an outstanding (SENT) handoff addressed to it. The read
+  //    model exposes only the first such handoff, and offering work on a second
+  //    one would reproduce exactly the "UI says ready, server refuses" defect.
+  //  * the display name of whoever holds a claimed step, so an absent button is
+  //    legible as « someone else has this » rather than as a broken page.
+  const pendingHandoffTargets = new Set<string>();
+  const assigneeNames = new Map<string, string>();
+  if (state) {
+    const admin = getAdminSupabaseClient();
+    const claimedIds = [
+      ...new Set(state.activeSteps.map((s) => s.assignedUserId).filter((v): v is string => !!v)),
+    ];
+    const [handoffRows, userRows] = await Promise.all([
+      admin
+        .from("process_handoff")
+        .select("to_step_key")
+        .eq("tenant_id", user.tenantId)
+        .eq("status", "SENT")
+        .in("to_step_key", state.activeSteps.map((s) => s.stepKey)),
+      claimedIds.length
+        ? admin
+            .from("app_user")
+            .select("id, full_name, email")
+            .eq("tenant_id", user.tenantId)
+            .in("id", claimedIds)
+        : Promise.resolve({ data: [] as { id: string; full_name: string | null; email: string }[] }),
+    ]);
+    for (const h of (handoffRows.data ?? []) as { to_step_key: string }[]) {
+      pendingHandoffTargets.add(h.to_step_key);
+    }
+    for (const u of (userRows.data ?? []) as { id: string; full_name: string | null; email: string }[]) {
+      assigneeNames.set(u.id, u.full_name || u.email);
+    }
+  }
 
   // Phase 9.0C — the Operations intake panel. Only when the intake flag is on;
   // getIntakeState degrades to null (panel hidden) if the 9.0B structures are
@@ -234,25 +277,62 @@ export default async function ProcessInspectorPage({ params }: { params: { id: s
         <h2 className="mb-3 text-sm font-semibold text-slate-900">Étapes actives</h2>
         {state.activeSteps.length === 0 && <p className="text-sm text-slate-500">Aucune étape active.</p>}
         <ul className="space-y-2">
-          {state.activeSteps.map((s) => (
-            <li key={s.stepKey} className="flex items-start justify-between gap-3 border-b border-slate-100 pb-2 last:border-0">
-              <div>
-                <div className="text-sm font-medium text-slate-900">
-                  {s.stepNumber ? `${s.stepNumber}. ` : ""}
-                  {s.labelFr}
-                </div>
-                <div className="text-xs text-slate-500">
-                  {s.department} · {s.role} · SLA : {s.sla.label}
-                </div>
-                {s.missingPrerequisites.length > 0 && (
-                  <div className="text-xs text-red-600">
-                    Prérequis manquants : {s.missingPrerequisites.join(", ")}
+          {state.activeSteps.map((s) => {
+            // ONE eligibility derivation, shared with /queues/[queueKey]. The
+            // page never re-implements the conditions; it reads the same
+            // function on the same facts, so the two surfaces cannot disagree.
+            const queueKey = queueForStep(s.stepKey);
+            const eligibility = evaluateStepAction(
+              {
+                stepKey: s.stepKey,
+                state: s.state,
+                assignedUserId: s.assignedUserId,
+                // The engine refuses `handoff_reception_required` while a
+                // handoff addressed to this step is still SENT, so the page must
+                // not offer work before the receiving department accepts it.
+                awaitingReception: pendingHandoffTargets.has(s.stepKey),
+                blockedReason:
+                  s.missingPrerequisites.length > 0
+                    ? `Prérequis manquants : ${s.missingPrerequisites.join(", ")}`
+                    : null,
+              },
+              { userId: user.id, permissions },
+            );
+            return (
+              <li key={s.stepKey} className="flex items-start justify-between gap-3 border-b border-slate-100 pb-2 last:border-0">
+                <div>
+                  <div className="text-sm font-medium text-slate-900">
+                    {s.stepNumber ? `${s.stepNumber}. ` : ""}
+                    {s.labelFr}
                   </div>
-                )}
-              </div>
-              <Badge state={s.state} />
-            </li>
-          ))}
+                  <div className="text-xs text-slate-500">
+                    {s.department} · {s.role} · SLA : {s.sla.label}
+                  </div>
+                  {s.missingPrerequisites.length > 0 && (
+                    <div className="text-xs text-red-600">
+                      Prérequis manquants : {s.missingPrerequisites.join(", ")}
+                    </div>
+                  )}
+                </div>
+                <div className="flex flex-col items-end gap-1">
+                  <Badge state={s.state} />
+                  {queueKey && (
+                    <StepActions
+                      fileId={params.id}
+                      queueKey={queueKey}
+                      stepKey={s.stepKey}
+                      eligibility={eligibility}
+                      assigneeLabel={
+                        s.assignedUserId
+                          ? assigneeNames.get(s.assignedUserId) ?? "une autre personne"
+                          : null
+                      }
+                    />
+                  )}
+                </div>
+              </li>
+            );
+          })}
         </ul>
       </section>
 

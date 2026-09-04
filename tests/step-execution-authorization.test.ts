@@ -151,8 +151,19 @@ describe("A-1 — every other guard is untouched", () => {
 
 describe("A-2 — the surface never offers what the server refuses", () => {
   it("the row ANDs queue availability with the caller's own capability", () => {
-    expect(row).toContain('const can = (a: string) => queue.actions.includes(a as never) && item.callerMayAct;');
+    // A-2's invariant is unchanged; its expression moved. `queue.actions` still
+    // says what the QUEUE offers, and the caller's own capability still gates
+    // it — but that capability now comes from the SHARED derivation the
+    // dossier's official-process page also reads (UAT-WF-STEP3-001), so two
+    // execution surfaces cannot hold two opinions about one server rule.
+    expect(row).toContain('const offers = (a: string) => queue.actions.includes(a as never);');
+    expect(row).toContain("const el = item.eligibility;");
+    expect(row).toContain('offers("start") && el.canStart');
+    expect(row).toContain('offers("submit") && el.canSubmit');
     expect(row).toContain("ADVISORY ONLY");
+    // …and the row does not re-derive any of it locally.
+    expect(row).not.toContain("item.callerMayAct");
+    expect(row).not.toMatch(/item\.state === "(AVAILABLE|ACTIVE)"/);
   });
 
   it("capability is computed SERVER-side, from the same resolution the engine uses", () => {

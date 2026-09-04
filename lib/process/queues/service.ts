@@ -33,6 +33,7 @@ import { evaluateBranch, liveByKey, missingPrerequisites, type ExecutionView } f
 import { evaluatePickupGate } from "../engine/gates";
 import { evaluateStepEvidence, type EvidenceSnapshot } from "../engine/evidence";
 import { OPEN_STATES } from "../engine/types";
+import { evaluateStepAction, type StepEligibility } from "../step-eligibility";
 import { isActiveFile } from "@/lib/files/filter";
 import { getQueue, queueStepKeys } from "./registry";
 import { compareQueueItems, evaluatePriority, type PriorityResult } from "./priority";
@@ -70,6 +71,8 @@ export type QueueItem = {
    * work the queue had just told them was theirs.
    */
   requiredPermission: string;
+  /** The shared answer to "may this person act now" — see step-eligibility.ts. */
+  eligibility: StepEligibility;
   callerMayAct: boolean;
   /**
    * Reception is guarded by `process:handoff:receive`, NOT by the step's own
@@ -446,6 +449,21 @@ export async function getDepartmentQueue(req: QueueRequest): Promise<QueueResult
       department: req.queueKey,
       requiredRole: node?.role ?? null,
       requiredPermission: stepPermission(stepKey),
+      // ONE eligibility derivation, shared with the dossier's official-process
+      // page. Neither surface reproduces these conditions: they read the same
+      // function on the same facts, so they cannot come to hold different
+      // opinions about one server rule (the UAT-00009 lesson, applied here
+      // before the second surface existed rather than after).
+      eligibility: evaluateStepAction(
+        {
+          stepKey,
+          state,
+          assignedUserId: str(e.assigned_user_id),
+          awaitingReception: Boolean(openHandoff),
+          blockedReason: blockerSummary,
+        },
+        { userId: req.userId, permissions: req.permissions },
+      ),
       callerMayAct: hasPermission(req.permissions, stepPermission(stepKey)),
       callerMayReceive: hasPermission(req.permissions, "process:handoff:receive"),
       assigneeId: str(e.assigned_user_id),

@@ -85,22 +85,31 @@ export function QueueRowActions({ item, queue }: { item: QueueItem; queue: Queue
   };
 
   // A-2. TWO conditions, not one. `queue.actions` says the QUEUE offers this
-  // kind of action; `item.callerMayAct` says the SERVER will accept it from THIS
-  // caller, resolved from the step's own registry permission exactly as the
-  // engine resolves it. Offering on queue membership alone is what showed
+  // kind of action; `item.eligibility` says whether THIS caller may perform it
+  // on THIS step, resolved from the step's own registry permission exactly as
+  // the engine resolves it. Offering on queue membership alone is what showed
   // « Démarrer » to a Chef de Transit and then answered « Action non autorisée ».
+  //
+  // The second condition now comes from the SHARED derivation
+  // (`evaluateStepAction`) that the dossier's official-process page also reads
+  // — UAT-WF-STEP3-001. It used to live here as its own expressions, and two
+  // execution surfaces cannot be kept honest by two copies of one rule.
   //
   // ADVISORY ONLY. Every server action re-checks independently; hiding a button
   // is a courtesy, never a boundary.
-  const can = (a: string) => queue.actions.includes(a as never) && item.callerMayAct;
+  const offers = (a: string) => queue.actions.includes(a as never);
+  const el = item.eligibility;
 
-  // Work that arrived by handoff cannot be started until it is RECEIVED.
-  const awaitingReception = queue.requiresReception && !item.received && item.handoffId !== null;
+  // Work that arrived by handoff cannot be started until it is RECEIVED. The
+  // authority is the OPEN HANDOFF itself, not the queue's display flag: a queue
+  // that declares no reception step still must not offer work the engine will
+  // refuse with `handoff_reception_required`.
+  const awaitingReception = el.awaitingReception;
 
   return (
     <div className="flex flex-col items-end gap-1">
       <div className="flex flex-wrap justify-end gap-1">
-        {awaitingReception && queue.actions.includes("receive_handoff" as never) && item.callerMayReceive && (
+        {awaitingReception && queue.requiresReception && offers("receive_handoff") && item.callerMayReceive && (
           <button
             className={`${btn} border-teal-300 bg-teal-50 text-teal-800 hover:bg-teal-100`}
             disabled={pending}
@@ -110,7 +119,7 @@ export function QueueRowActions({ item, queue }: { item: QueueItem; queue: Queue
           </button>
         )}
 
-        {!awaitingReception && item.state === "AVAILABLE" && can("start") && (
+        {offers("start") && el.canStart && (
           <button
             className={`${btn} border-slate-300 bg-white text-slate-700 hover:bg-slate-50`}
             disabled={pending}
@@ -120,11 +129,11 @@ export function QueueRowActions({ item, queue }: { item: QueueItem; queue: Queue
           </button>
         )}
 
-        {item.state === "ACTIVE" && can("submit") && (
+        {offers("submit") && el.canSubmit && (
           <button
             className={`${btn} border-navy-300 bg-navy-50 text-navy-800 hover:bg-navy-100`}
-            disabled={pending || item.blockerSummary !== null}
-            title={item.blockerSummary ?? undefined}
+            disabled={pending}
+            title={undefined}
             onClick={() => run(() => queueSubmitStep(queue.key, item.fileId, item.stepKey))}
           >
             Soumettre
@@ -132,7 +141,7 @@ export function QueueRowActions({ item, queue }: { item: QueueItem; queue: Queue
         )}
 
         {/* The CHECKER half. The engine still refuses if this user is the maker. */}
-        {item.state === "SUBMITTED" && can("approve") && (
+        {item.state === "SUBMITTED" && (offers("approve") && el.mayAct) && (
           <>
             <button
               className={`${btn} border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100`}
