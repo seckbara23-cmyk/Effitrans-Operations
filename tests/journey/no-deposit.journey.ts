@@ -98,7 +98,7 @@ async function carryToValidatedInvoice() {
   }
   need(await as(am, () => submitStep(fileId, "am_dossier_opening")), "step 3");
 
-  need(await as(am, () => handDossierToTransit(fileId)), "handoff transit");
+  need(await as(ops, () => handDossierToTransit(fileId)), "handoff transit");
   need(await as(transit, () => receiveDossierAtTransit(fileId)), "receive transit");
   need(await as(transit, () => activateStep(fileId, "coordinator_reception")), "activate 4");
   need(await as(transit, () => submitStep(fileId, "coordinator_reception")), "step 4");

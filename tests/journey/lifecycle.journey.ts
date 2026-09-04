@@ -126,7 +126,9 @@ describe("C-4 slice 1 — Creation → Transit reception", () => {
   });
 
   it("C-2 — the Transit handoff is REFUSED while step 3 is unfinished", async () => {
-    const early = await as(am, () => handDossierToTransit(fileId));
+    // Sent by OPERATIONS, which owns this route (UAT-WF-HANDOFF-01B) — so the
+    // refusal proves the SEQUENCING rule and not merely an entitlement one.
+    const early = await as(ops, () => handDossierToTransit(fileId));
     expect(early.ok, "transmission must not outrun step 3").toBe(false);
     expect(await handoffs(fileId), "no handoff row may exist yet").toHaveLength(0);
   });

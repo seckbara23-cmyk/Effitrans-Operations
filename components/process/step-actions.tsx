@@ -34,6 +34,8 @@ const ERROR_FR: Record<string, string> = {
   forbidden: "Action non autorisée.",
   not_found: "Dossier ou étape introuvable.",
   unknown_step: "Étape inconnue.",
+  handoff_not_sent: "Le dossier doit d'abord être formellement transmis au service suivant.",
+  not_authorized_sender: "Vous n'êtes pas habilité à effectuer cette transmission.",
   invalid_state: "L'étape a changé d'état. Rafraîchissez la page.",
   prerequisites_unmet: "Prérequis non satisfaits.",
   evidence_missing: "Preuves requises manquantes.",

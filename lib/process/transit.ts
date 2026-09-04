@@ -16,11 +16,30 @@
  * not exist (tests validate every key against the registry).
  */
 import { isDone, isOpen, type StepState } from "./engine/types";
+import { custodyStateFor, type RouteHandoffView } from "./handoff-routes";
 
 // ============================================================ T1–T10 stages ====
 
 /** Per-stage rollup status, derived purely from the live step executions. */
-export type TransitStageStatus = "pending" | "active" | "blocked" | "done";
+/**
+ * UAT-WF-HANDOFF-01B added the two custody answers. « En cours » used to be
+ * shown for any OPEN step, and AVAILABLE is open — so a step that Operations
+ * had not yet transmitted, or that Transit had not yet accepted, read as work
+ * in progress on the same page that said the transfer must be received first.
+ * Reachable is not the same as held, and held is not the same as started.
+ */
+export type TransitStageStatus =
+  | "pending"
+  /** A governed route targets this stage and nothing has been transmitted. */
+  | "awaiting_transmission"
+  /** Transmitted; the receiving department has not accepted it yet. */
+  | "awaiting_reception"
+  /** Custody held (or never required) and the work is open but unclaimed. */
+  | "available"
+  /** Somebody has started it. */
+  | "active"
+  | "blocked"
+  | "done";
 
 /**
  * The seven customer-safe stages the business names (Workflow PDF §customer
@@ -167,7 +186,15 @@ export type TransitStageView = TransitStage & {
  * The T3 correction MECHANISM has no steps; its status is supplied separately
  * (an open correction blocker) by the caller, so here it stays "pending".
  */
-export function deriveTransitStages(executions: TransitExecutionView[]): TransitStageView[] {
+export function deriveTransitStages(
+  executions: TransitExecutionView[],
+  /**
+   * The dossier's handoff rows. Optional so existing callers keep working, but
+   * without them a stage whose step awaits a custody transfer cannot be
+   * distinguished from one being worked — which is the defect this closes.
+   */
+  handoffs: readonly RouteHandoffView[] = [],
+): TransitStageView[] {
   const byKey = new Map<string, StepState>();
   for (const e of executions) byKey.set(e.stepKey, e.state);
 
@@ -180,8 +207,17 @@ export function deriveTransitStages(executions: TransitExecutionView[]): Transit
     let status: TransitStageStatus;
     if (states.every((s) => isDone(s))) status = "done";
     else if (states.some((s) => s === "BLOCKED")) status = "blocked";
-    else if (states.some((s) => isOpen(s))) status = "active";
-    else status = "pending";
+    else if (states.some((s) => s === "ACTIVE" || s === "SUBMITTED")) status = "active";
+    else if (states.some((s) => isOpen(s))) {
+      // Open but unstarted. If a governed custody route targets one of these
+      // steps, say where the transfer stands instead of calling it progress.
+      const awaiting = stage.stepKeys
+        .filter((k) => { const st = byKey.get(k); return st !== undefined && isOpen(st) && !isDone(st); })
+        .map((k) => custodyStateFor(k, handoffs));
+      if (awaiting.includes("awaiting_transmission")) status = "awaiting_transmission";
+      else if (awaiting.includes("awaiting_reception")) status = "awaiting_reception";
+      else status = "available";
+    } else status = "pending";
     return { ...stage, status };
   });
 }

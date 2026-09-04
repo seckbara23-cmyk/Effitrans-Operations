@@ -51,6 +51,7 @@ import {
   stepPermission,
 } from "./state";
 import { promoteSuccessors } from "./promote";
+import { custodyRefusal, maySendRoute, routeFor } from "../handoff-routes";
 import { authoritativePickupGate } from "./gate-authority";
 import { evaluateStepEvidence, type StepEvidence } from "./evidence";
 import { isDone } from "./types";
@@ -348,10 +349,6 @@ export async function activateEntryStep(fileId: string, stepKey: string): Promis
  * if handoffs ever became permission-gated this guard would go quietly blind
  * for exactly the callers it is meant to stop.
  */
-function outstandingHandoffTo(snap: ProcessSnapshot, stepKey: string) {
-  return snap.handoffs.find((h) => h.toStepKey === stepKey && h.status === "SENT") ?? null;
-}
-
 /** PENDING/AVAILABLE -> ACTIVE. Enforces prerequisites and the pickup join gate. */
 export async function activateStep(fileId: string, stepKey: string): Promise<EngineResult> {
   const c = await guard(stepPermission(stepKey), fileId);
@@ -362,9 +359,14 @@ export async function activateStep(fileId: string, stepKey: string): Promise<Eng
   const views = toViews(st.snapshot!.executions);
   if (!prerequisitesMet(stepKey, views)) return fail("prerequisites_unmet");
 
-  // Asked before the pickup gate, which writes audit rows: a step that may not
-  // start yet should not leave a gate verdict behind explaining why it could.
-  if (outstandingHandoffTo(st.snapshot!, stepKey)) return fail("handoff_reception_required");
+  // CUSTODY, asked before the pickup gate — which writes audit rows, and a step
+  // that may not start yet should not leave a verdict behind explaining why it
+  // could. UAT-WF-HANDOFF-01B widened this from "refused while a transfer is
+  // outstanding" to "refused until custody is actually held": a step that a
+  // governed route targets is not workable merely because promotion made it
+  // reachable. Reception UNLOCKS it; it never starts it.
+  const custody = custodyRefusal(stepKey, st.snapshot!.handoffs);
+  if (custody) return fail(custody);
 
   // The pickup convergence gate. Both branches must have landed.
   if (stepKey === "pickup") {
@@ -437,7 +439,8 @@ export async function submitStep(fileId: string, stepKey: string): Promise<Engin
   // would inherit none of the guarantee. Asked before evidence, because an
   // actor should not be told which document is missing from work it has not
   // yet accepted.
-  if (outstandingHandoffTo(st.snapshot!, stepKey)) return fail("handoff_reception_required");
+  const custodySubmit = custodyRefusal(stepKey, st.snapshot!.handoffs);
+  if (custodySubmit) return fail(custodySubmit);
 
   const ev = evaluateStepEvidence(stepKey, st.snapshot!.evidence);
 
@@ -707,6 +710,19 @@ export async function sendHandoff(
   // Idempotency is preserved deliberately: an ALREADY-OPEN handoff is returned
   // below without re-checking, so a retry of a legitimate send never fails
   // merely because the from-step has since moved on.
+  // ROUTE ENTITLEMENT (UAT-WF-HANDOFF-01B). `process:handoff:send` is generic —
+  // fourteen roles hold it because each needs it for its OWN route — so holding
+  // it says nothing about being entitled to perform this custody transfer.
+  // Enforced here rather than at the call site, for the same reason C-2 is:
+  // every present and future sender inherits it.
+  //
+  // Checked AFTER the idempotency lookup below would have returned? No —
+  // before, deliberately: an unentitled caller must not learn whether a
+  // transfer already exists by being handed its id.
+  if (!maySendRoute(routeFor(fromStepKey, toStepKey), c.roles)) {
+    return fail("not_authorized_sender");
+  }
+
   const alreadyOpen = snap.handoffs.some(
     (h) => h.status === "SENT" && h.fromStepKey === fromStepKey && h.toStepKey === toStepKey,
   );

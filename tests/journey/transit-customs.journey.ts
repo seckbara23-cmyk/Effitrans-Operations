@@ -179,7 +179,7 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
   // --------------------------------------------------- 4. explicit reception ----
 
   it("the handoff to Transit is SENT — and sending does not open the step", async () => {
-    const sent = await as(am, () => handDossierToTransit(fileId));
+    const sent = await as(ops, () => handDossierToTransit(fileId));
     expect(sent.ok, `handoff: ${JSON.stringify(sent)}`).toBe(true);
 
     const rows = await handoffs(fileId);

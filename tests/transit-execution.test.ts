@@ -106,9 +106,14 @@ describe("deriveTransitStages — pure rollup", () => {
     for (const s of stages) expect(s.status).toBe("pending");
   });
 
-  it("14 — a multi-step stage is done only when ALL its steps are done", () => {
+  // UAT-WF-HANDOFF-01B split the old « active » in two: a step somebody has
+  // STARTED is « active »; one that is merely open and unclaimed is
+  // « available ». The invariant here — a multi-step stage is not done until
+  // every step is — is unchanged; only the not-done answer got more precise.
+  it("14 — a multi-step stage is not done until ALL its steps are done", () => {
     const stages = deriveTransitStages(ev({ gainde_document_submission: "COMPLETED", customs_followup: "COMPLETED", customs_field_clearance: "AVAILABLE" }));
-    expect(stages.find((s) => s.key === "T8")!.status).toBe("active");
+    expect(stages.find((s) => s.key === "T8")!.status).not.toBe("done");
+    expect(stages.find((s) => s.key === "T8")!.status).toBe("available");
   });
 
   it("15 — the T3 correction mechanism stays pending (no steps to roll up)", () => {

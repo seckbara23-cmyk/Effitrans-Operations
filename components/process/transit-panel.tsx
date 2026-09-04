@@ -36,12 +36,18 @@ const frError = (code: string) => ERROR_FR[code] ?? "L'action a échoué. Réess
 const STATUS_TONE: Record<string, string> = {
   done: "bg-emerald-50 text-emerald-700 border-emerald-200",
   active: "bg-blue-50 text-blue-700 border-blue-200",
+  available: "bg-teal-50 text-teal-700 border-teal-200",
+  awaiting_transmission: "bg-amber-50 text-amber-800 border-amber-200",
+  awaiting_reception: "bg-amber-50 text-amber-800 border-amber-200",
   blocked: "bg-red-50 text-red-700 border-red-200",
   pending: "bg-slate-50 text-slate-500 border-slate-200",
 };
 const STATUS_LABEL: Record<string, string> = {
   done: "Terminé",
   active: "En cours",
+  available: "Disponible",
+  awaiting_transmission: "À transmettre au Transit",
+  awaiting_reception: "En attente de réception",
   blocked: "Bloqué",
   pending: "En attente",
 };

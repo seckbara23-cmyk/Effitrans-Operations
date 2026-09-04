@@ -120,7 +120,7 @@ async function carryToStep13() {
   }
   await as(am, () => submitStep(fileId, "am_dossier_opening"));
 
-  await as(am, () => handDossierToTransit(fileId));
+  await as(ops, () => handDossierToTransit(fileId));
   await as(transit, () => receiveDossierAtTransit(fileId));
   await runStep(transit, "coordinator_reception");
 

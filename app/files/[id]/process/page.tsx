@@ -23,6 +23,7 @@ import { FinancePanel } from "@/components/process/finance-panel";
 import { StepActions } from "@/components/process/step-actions";
 import { evaluateStepAction } from "@/lib/process/step-eligibility";
 import { queueForStep } from "@/lib/process/queues/registry";
+import { custodyStateFor, maySendRoute, routeFor, type CustodyState, type RouteHandoffView } from "@/lib/process/handoff-routes";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -39,7 +40,25 @@ const STATE_TONE: Record<string, string> = {
   PENDING: "bg-slate-50 text-slate-500 border-slate-200",
 };
 
-function Badge({ state }: { state: string }) {
+/**
+ * The badge says where the step actually stands, custody included. An AVAILABLE
+ * step that Operations has not transmitted — or that Transit has not accepted —
+ * used to read as raw « AVAILABLE » next to a sentence saying the transfer must
+ * be received first. Same facts as `custodyRefusal`, so the badge and the action
+ * row cannot disagree.
+ */
+const CUSTODY_BADGE: Record<string, { label: string; tone: string }> = {
+  awaiting_transmission: { label: "À transmettre", tone: "bg-amber-50 text-amber-800 border-amber-200" },
+  awaiting_reception: { label: "En attente de réception", tone: "bg-amber-50 text-amber-800 border-amber-200" },
+};
+
+function Badge({ state, custody }: { state: string; custody?: CustodyState }) {
+  const c = state === "AVAILABLE" && custody ? CUSTODY_BADGE[custody] : undefined;
+  if (c) {
+    return (
+      <span className={`rounded border px-2 py-0.5 text-xs font-medium ${c.tone}`}>{c.label}</span>
+    );
+  }
   return (
     <span className={`rounded border px-2 py-0.5 text-xs font-medium ${STATE_TONE[state] ?? STATE_TONE.PENDING}`}>
       {state}
@@ -96,6 +115,7 @@ export default async function ProcessInspectorPage({ params }: { params: { id: s
   //  * the display name of whoever holds a claimed step, so an absent button is
   //    legible as « someone else has this » rather than as a broken page.
   const pendingHandoffTargets = new Set<string>();
+  const handoffViews: RouteHandoffView[] = [];
   const assigneeNames = new Map<string, string>();
   if (state) {
     const admin = getAdminSupabaseClient();
@@ -105,9 +125,9 @@ export default async function ProcessInspectorPage({ params }: { params: { id: s
     const [handoffRows, userRows] = await Promise.all([
       admin
         .from("process_handoff")
-        .select("to_step_key")
+        .select("to_step_key, status")
         .eq("tenant_id", user.tenantId)
-        .eq("status", "SENT")
+        .in("status", ["SENT", "RECEIVED"])
         .in("to_step_key", state.activeSteps.map((s) => s.stepKey)),
       claimedIds.length
         ? admin
@@ -117,8 +137,9 @@ export default async function ProcessInspectorPage({ params }: { params: { id: s
             .in("id", claimedIds)
         : Promise.resolve({ data: [] as { id: string; full_name: string | null; email: string }[] }),
     ]);
-    for (const h of (handoffRows.data ?? []) as { to_step_key: string }[]) {
-      pendingHandoffTargets.add(h.to_step_key);
+    for (const h of (handoffRows.data ?? []) as { to_step_key: string; status: string }[]) {
+      handoffViews.push({ toStepKey: h.to_step_key, status: h.status });
+      if (h.status === "SENT") pendingHandoffTargets.add(h.to_step_key);
     }
     for (const u of (userRows.data ?? []) as { id: string; full_name: string | null; email: string }[]) {
       assigneeNames.set(u.id, u.full_name || u.email);
@@ -154,7 +175,10 @@ export default async function ProcessInspectorPage({ params }: { params: { id: s
       state={intake}
       eligibleOwners={eligibleOwners}
       canOpen={canOpen}
-      canHandoff={hasPermission(permissions, "process:handoff:send")}
+      canHandoff={
+        hasPermission(permissions, "process:handoff:send") &&
+        maySendRoute(routeFor("am_dossier_opening", "coordinator_reception"), user.roles ?? [])
+      }
       canManageBlockers={hasPermission(permissions, "process:blocker:manage")}
       handoffPrerequisites={handoffReadiness?.unmet ?? []}
       handoffFirstActionable={handoffReadiness?.firstActionable ?? null}
@@ -315,7 +339,7 @@ export default async function ProcessInspectorPage({ params }: { params: { id: s
                   )}
                 </div>
                 <div className="flex flex-col items-end gap-1">
-                  <Badge state={s.state} />
+                  <Badge state={s.state} custody={custodyStateFor(s.stepKey, handoffViews)} />
                   {queueKey && (
                     <StepActions
                       fileId={params.id}

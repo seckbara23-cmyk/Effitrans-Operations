@@ -36,7 +36,13 @@ const fn = (name: string) => {
   const j = engine.indexOf("\nexport ", i + 1);
   return engine.slice(i, j === -1 ? engine.length : j);
 };
-const GUARD_CALL = 'if (outstandingHandoffTo(st.snapshot!, stepKey)) return fail("handoff_reception_required");';
+// UAT-WF-HANDOFF-01B: the question the two doors ask WIDENED — from « is a
+// transfer outstanding » to « is custody actually held » — and moved into
+// `custodyRefusal`, so both doors and the display read one rule. C-4's
+// invariant is unchanged and now strictly stronger: a step a governed route
+// targets is refused BOTH while a transfer is outstanding AND when none was
+// ever sent.
+const GUARD_CALL = "custodyRefusal(stepKey, st.snapshot!.handoffs)";
 
 describe("C-4 — the guard is asked at every door that starts work", () => {
   it("activateStep asks it", () => {
@@ -49,29 +55,36 @@ describe("C-4 — the guard is asked at every door that starts work", () => {
 
   it("activateStep asks BEFORE the pickup gate, which writes audit rows", () => {
     const a = fn("activateStep");
-    expect(a.indexOf("handoff_reception_required")).toBeLessThan(a.indexOf("PROCESS_GATE_BLOCKED"));
+    expect(a.indexOf("custodyRefusal")).toBeLessThan(a.indexOf("PROCESS_GATE_BLOCKED"));
   });
 
   it("submitStep asks BEFORE evidence — you are not told what is missing from work you have not accepted", () => {
     const s = fn("submitStep");
-    expect(s.indexOf("handoff_reception_required")).toBeLessThan(s.indexOf("evidence_unauthorized"));
+    expect(s.indexOf("custodyRefusal")).toBeLessThan(s.indexOf("evidence_unauthorized"));
   });
 });
 
 describe("C-4 — the rule is exactly « an unreceived handoff addressed to THIS step »", () => {
-  const guard = engine.slice(engine.indexOf("function outstandingHandoffTo"));
+  const routes = code("lib/process/handoff-routes.ts");
+  const guard = routes.slice(routes.indexOf("export function custodyStateFor"));
   const body = guard.slice(0, guard.indexOf("\n}"));
 
   it("it matches on the TARGET step, not the source", () => {
-    expect(body).toContain("h.toStepKey === stepKey");
+    expect(body).toContain("h.toStepKey === toStepKey");
     expect(body, "matching fromStepKey would block the sender's own step").not.toContain("h.fromStepKey");
   });
 
-  it("it matches SENT only — a settled handoff blocks nothing", () => {
+  it("SENT blocks; RECEIVED unlocks; a settled transfer is not custody", () => {
     expect(body).toContain('h.status === "SENT"');
-    for (const settled of ["RECEIVED", "REJECTED", "CANCELLED"]) {
-      expect(body, `${settled} must not block`).not.toContain(settled);
+    expect(body).toContain('h.status === "RECEIVED"');
+    // REJECTED/CANCELLED leave the step awaiting transmission again — the
+    // default branch — rather than counting as custody either way.
+    for (const settled of ["REJECTED", "CANCELLED"]) {
+      expect(body, `${settled} must not be treated as custody`).not.toContain(settled);
     }
+    const refusal = routes.slice(routes.indexOf("export function custodyRefusal"));
+    expect(refusal).toContain('return "handoff_reception_required"');
+    expect(refusal).toContain('return "handoff_not_sent"');
   });
 
   it("it is a QUESTION — it receives nothing, writes nothing, invents no provenance", () => {
@@ -152,7 +165,10 @@ describe("C-4 — the refusal is a distinct, stable code", () => {
     // activateStep names itself must stay three distinct facts: you may not act
     // yet, you have not accepted the work, the dossier is not ready.
     const a = fn("activateStep");
-    expect(a).toContain("handoff_reception_required");
+    expect(a).toContain("custodyRefusal");
+    const routes2 = code("lib/process/handoff-routes.ts");
+    expect(routes2).toContain('"handoff_reception_required"');
+    expect(routes2).toContain('"handoff_not_sent"');
     expect(a).toContain("prerequisites_unmet");
     expect(a).toContain("gate_blocked");
   });

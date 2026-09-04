@@ -244,7 +244,7 @@ export async function getTransitState(fileId: string): Promise<TransitState | nu
       .returns<{ step_key: string; state: string; assigned_user_id: string | null; assigned_team_code: string | null }[]>();
     const execs = execRows ?? [];
 
-    const stages = deriveTransitStages(execs.map((e) => ({ stepKey: e.step_key, state: e.state as never })));
+    const execViews = execs.map((e) => ({ stepKey: e.step_key, state: e.state as never }));
 
     // Reception: the open/received handoff into coordinator_reception.
     const { data: handoffs } = await admin
@@ -255,6 +255,12 @@ export async function getTransitState(fileId: string): Promise<TransitState | nu
       .eq("to_step_key", "coordinator_reception")
       .returns<{ id: string; to_step_key: string; status: string }[]>();
     const sent = (handoffs ?? []).find((h) => h.status === "SENT") ?? null;
+    // Custody-aware stage roll-up: « À transmettre » / « En attente de
+    // réception » instead of « En cours » for a step nobody may work yet.
+    const stages = deriveTransitStages(
+      execViews,
+      (handoffs ?? []).map((h) => ({ toStepKey: h.to_step_key, status: h.status })),
+    );
     const received = (handoffs ?? []).some((h) => h.status === "RECEIVED");
 
     // Declarant: whoever owns the preparation step.

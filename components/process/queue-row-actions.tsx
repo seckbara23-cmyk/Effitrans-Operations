@@ -39,6 +39,8 @@ const ERROR_FR: Record<string, string> = {
   handoff_not_open: "Ce transfert n'est plus en attente.",
   cross_tenant: "Action non autorisée.",
   unknown_step: "Étape inconnue.",
+  handoff_not_sent: "Le dossier doit d'abord être formellement transmis au service suivant.",
+  not_authorized_sender: "Vous n'êtes pas habilité à effectuer cette transmission.",
   already_initialized: "Processus déjà initialisé.",
   // C-4 — work arrived by handoff and has not been accepted yet.
   handoff_reception_required: "Réceptionnez d'abord le dossier : cette étape vous a été transmise.",

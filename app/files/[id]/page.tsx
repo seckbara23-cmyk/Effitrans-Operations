@@ -57,6 +57,7 @@ import { getOpenHandoffForFile } from "@/lib/handoffs/service";
 import { TransitHandoff } from "@/components/files/transit-handoff";
 import { getIntakeState } from "@/lib/process/engine/intake-actions";
 import { evaluateTransitHandoffReadiness } from "@/lib/process/intake";
+import { maySendRoute, routeFor } from "@/lib/process/handoff-routes";
 import { getDossierStage } from "@/lib/sla/service";
 import { SlaPanel } from "@/components/files/sla-panel";
 import { CopilotPanel } from "@/components/copilot/copilot-panel";
@@ -322,7 +323,14 @@ export default async function FileDetailPage({ params }: { params: { id: string 
   // caller may not read the process — in every one of those cases the section
   // simply does not render. The prerequisites are resolved from the SAME state
   // the server action re-checks; the UI is never more permissive than the action.
-  const canSendToTransit = hasPermission(permissions, "process:handoff:send");
+  // Permission AND route entitlement. `process:handoff:send` is generic — the
+  // Account Manager holds it for other reasons — but this custody transfer is
+  // Operations' (UAT-WF-HANDOFF-01B), and `sendHandoff` refuses anyone else.
+  // Offering the button to someone the server will refuse is the defect
+  // UAT-00009 was about.
+  const canSendToTransit =
+    hasPermission(permissions, "process:handoff:send") &&
+    maySendRoute(routeFor("am_dossier_opening", "coordinator_reception"), user.roles ?? []);
   const intakeState = await getIntakeState(file.id);
   // Same evaluator as the « Processus officiel » screen and as the server
   // action itself, so the two screens cannot disagree about what is missing.

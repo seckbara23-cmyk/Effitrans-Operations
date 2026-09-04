@@ -192,7 +192,13 @@ describe("H-2 — readiness for Transit: lighter content, identical shape", () =
 
   it("the send is explicit and the reception is explicit", () => {
     expect(handoff).toContain('sendHandoff(fileId, "am_dossier_opening", "coordinator_reception")');
-    expect(engineActions).toContain('fail("handoff_reception_required")');
+    // Reception is enforced through the route-aware custody rule
+    // (UAT-WF-HANDOFF-01B), which is strictly stronger than the previous
+    // outstanding-transfer check it replaced.
+    expect(engineActions).toContain("custodyRefusal(");
+    const routes = strip(read("lib/process/handoff-routes.ts"));
+    expect(routes).toContain('"handoff_reception_required"');
+    expect(routes).toContain("requiresReception: true");
   });
 
   it("the sender is still authorized, and no new document gate was invented", () => {

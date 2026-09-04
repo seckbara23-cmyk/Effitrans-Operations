@@ -30,6 +30,8 @@ const ERROR_FR: Record<string, string> = {
   am_opening_incomplete: "Transmission impossible : l'étape d'ouverture et de préparation du dossier n'est pas terminée.",
   from_step_incomplete: "Transmission impossible : l'étape d'origine du transfert n'est pas terminée.",
   unknown_step: "Étape inconnue.",
+  handoff_not_sent: "Le dossier doit d'abord être formellement transmis au service suivant.",
+  not_authorized_sender: "Vous n'êtes pas habilité à effectuer cette transmission.",
   invalid_state: "L'état du dossier a changé. Rafraîchissez la page.",
 };
 

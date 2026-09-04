@@ -169,7 +169,11 @@ describe("UAT-WF-STEP3-001 — one model, two surfaces", () => {
   it("the page passes the ENGINE's facts, not its own opinion of them", () => {
     expect(processPage).toContain("assignedUserId: s.assignedUserId");
     expect(processPage).toContain("awaitingReception: pendingHandoffTargets.has(s.stepKey)");
-    expect(processPage).toContain('.eq("status", "SENT")');
+    // The page now reads SENT *and* RECEIVED, because custody needs both:
+    // « nothing transmitted » and « transmitted, not accepted » are different
+    // facts requiring different acts (UAT-WF-HANDOFF-01B).
+    expect(processPage).toContain('.in("status", ["SENT", "RECEIVED"])');
+    expect(processPage).toContain('if (h.status === "SENT") pendingHandoffTargets.add(h.to_step_key);');
   });
 });
 
@@ -213,14 +217,17 @@ describe("UAT-WF-STEP3-001 — nothing was weakened", () => {
     const body = fn.slice(0, fn.indexOf("\nexport "));
     expect(body).toContain("guard(stepPermission(stepKey), fileId)");
     expect(body).toContain('if (!prerequisitesMet(stepKey, views)) return fail("prerequisites_unmet")');
-    expect(body).toContain('return fail("handoff_reception_required")');
+    // The custody question widened (UAT-WF-HANDOFF-01B) and moved into
+    // `custodyRefusal`: refused while a transfer is outstanding AND when a
+    // governed route was never transmitted at all.
+    expect(body).toContain("custodyRefusal(stepKey, st.snapshot!.handoffs)");
   });
 
   it("submitStep still checks permission, reception, evidence and legality", () => {
     const fn = engineActions.slice(engineActions.indexOf("export async function submitStep"));
     const body = fn.slice(0, fn.indexOf("\nexport "));
     expect(body).toContain("guard(stepPermission(stepKey), fileId)");
-    expect(body).toContain('return fail("handoff_reception_required")');
+    expect(body).toContain("custodyRefusal(stepKey, st.snapshot!.handoffs)");
     expect(body).toContain('failWithEvidence("evidence_missing", ev)');
     expect(body).toContain('if (!canTransitionStep(st.state, target)) return fail("invalid_state")');
   });

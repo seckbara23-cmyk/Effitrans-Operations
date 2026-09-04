@@ -169,9 +169,22 @@ describe("C-4 negative battery — the refusals, in the order a dossier meets th
   // ----------------------------------------------------------- handoff ----
 
   it("EARLY HANDOFF — a handoff may not outrun its own from-step (C-2)", async () => {
-    const early = await as(am, () => handDossierToTransit(fileId));
+    // Operations sends this route; using the entitled sender keeps the refusal
+    // about SEQUENCING rather than entitlement.
+    const early = await as(ops, () => handDossierToTransit(fileId));
     expect(early.ok, "step 3 is not finished").toBe(false);
     expect(await handoffs(fileId), "no handoff row exists").toHaveLength(0);
+  });
+
+  it("UNENTITLED SENDER — this custody transfer is Operations', not anyone with the permission", async () => {
+    // UAT-WF-HANDOFF-01B. The Account Manager prepares the dossier and holds
+    // `process:handoff:send` for other routes; the Chef de Transit RECEIVES this
+    // one. Neither performs the transfer, and the refusal is server-side.
+    for (const actor of [am, transit]) {
+      const refused = await as(actor, () => handDossierToTransit(fileId));
+      expect(refused.ok, "only Operations transmits to Transit").toBe(false);
+    }
+    expect(await handoffs(fileId), "an unentitled send creates nothing").toHaveLength(0);
   });
 
   it("…then step 3 completes legitimately and the handoff is sent", async () => {
@@ -181,10 +194,19 @@ describe("C-4 negative battery — the refusals, in the order a dossier meets th
       need(await as(am, () => declareEvidenceAbsence(fileId, key, `sans objet — ${key}`)), `declare ${key}`);
     }
     need(await as(am, () => submitStep(fileId, "am_dossier_opening")), "step 3");
-    need(await as(am, () => handDossierToTransit(fileId)), "handoff");
+    need(await as(ops, () => handDossierToTransit(fileId)), "handoff");
     const rows = await handoffs(fileId);
     expect(rows).toHaveLength(1);
     expect(rows[0].status).toBe("SENT");
+  });
+
+  it("NO CUSTODY — step 4 is reachable but not workable before it is received", async () => {
+    // The dossier has just been transmitted, so custody sits with Operations
+    // until Transit accepts. Reachable (AVAILABLE) is not held.
+    expect((await stepState("coordinator_reception")).state).toBe("AVAILABLE");
+    const early = await as(transit, () => activateStep(fileId, "coordinator_reception"));
+    expect(early.ok).toBe(false);
+    expect(err(early)).toBe("handoff_reception_required");
   });
 
   it("PERMISSION WITHOUT ELIGIBILITY — a holder who is not the routed receiver", async () => {

@@ -174,6 +174,13 @@ export type EngineError =
   | "not_eligible_receiver"
   // C-2 — a handoff may not outrun its own from-step.
   | "from_step_incomplete"
+  // UAT-WF-HANDOFF-01B — a governed custody route targets this step and nothing
+  // has been transmitted yet. Distinct from `handoff_reception_required`, which
+  // means it WAS transmitted and the receiving department has not accepted it:
+  // the two need different sentences because they need different acts.
+  | "handoff_not_sent"
+  // The caller holds `process:handoff:send` but is not entitled to THIS route.
+  | "not_authorized_sender"
   // C-4 — an explicit handoff addressed to this step is still SENT. Promotion
   // made the step AVAILABLE; reception is a separate act and has not happened.
   | "handoff_reception_required"
