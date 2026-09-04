@@ -181,6 +181,16 @@ export type EngineError =
   | "handoff_not_sent"
   // The caller holds `process:handoff:send` but is not entitled to THIS route.
   | "not_authorized_sender"
+  // TRANSIT-CUSTODY-03 — the step is assigned to somebody else. Distinct from
+  // `forbidden`: the caller holds the right permission, the work is simply not
+  // theirs, and the remedy is a reassignment rather than a grant.
+  | "step_assigned_to_other"
+  // The act belongs to a supervisory seat this caller does not hold — e.g.
+  // assigning a Déclarant, which is the Chef de Transit's.
+  | "not_authorized_assigner"
+  // Transit does not hold this dossier yet: the Operations handoff has not been
+  // received, or its reception step is not finished.
+  | "transit_custody_required"
   // C-4 — an explicit handoff addressed to this step is still SENT. Promotion
   // made the step AVAILABLE; reception is a separate act and has not happened.
   | "handoff_reception_required"

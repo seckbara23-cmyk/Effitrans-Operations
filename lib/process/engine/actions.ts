@@ -51,7 +51,7 @@ import {
   stepPermission,
 } from "./state";
 import { promoteSuccessors } from "./promote";
-import { custodyRefusal, maySendRoute, routeFor } from "../handoff-routes";
+import { custodyRefusal, maySendRoute, routeFor, ASSIGNMENT_OWNED_STEPS } from "../handoff-routes";
 import { authoritativePickupGate } from "./gate-authority";
 import { evaluateStepEvidence, type StepEvidence } from "./evidence";
 import { isDone } from "./types";
@@ -214,6 +214,8 @@ type StepCtx = {
   execId: string;
   state: StepState;
   submittedBy: string | null;
+  /** Who Transit named for this work, when it named anyone (GUARD 3). */
+  assignedUserId: string | null;
   snapshot: Awaited<ReturnType<typeof loadProcessSnapshot>>;
 };
 
@@ -236,6 +238,8 @@ async function loadStep(
     execId: exec.id,
     state: exec.state,
     submittedBy: exec.submittedBy,
+    // Who the work belongs to, when Transit has named someone (GUARD 3).
+    assignedUserId: exec.assignedUserId ?? null,
     snapshot: snap,
   };
 }
@@ -349,6 +353,28 @@ export async function activateEntryStep(fileId: string, stepKey: string): Promis
  * if handoffs ever became permission-gated this guard would go quietly blind
  * for exactly the callers it is meant to stop.
  */
+/**
+ * GUARD 3 (TRANSIT-CUSTODY-03) — assigned work belongs to its assignee.
+ *
+ * The Chef de Transit names a Déclarant for a dossier; a second Déclarant holds
+ * the same permission and could, until now, activate or submit that work
+ * silently. Permission answers « may you do this KIND of work »; the assignment
+ * answers « is this PIECE yours », and only the second one was missing.
+ *
+ * Narrow on purpose: it bites only where an assignee actually exists, and only
+ * on the steps Transit assigns. An unassigned step is unchanged, so no queue
+ * stops working and no dossier is stranded. Reassignment by the Chef remains the
+ * remedy and is audited with before/after.
+ */
+function assignmentRefusal(
+  execution: { stepKey: string; assignedUserId: string | null },
+  userId: string,
+): "step_assigned_to_other" | null {
+  if (!ASSIGNMENT_OWNED_STEPS.has(execution.stepKey)) return null;
+  if (!execution.assignedUserId) return null;
+  return execution.assignedUserId === userId ? null : "step_assigned_to_other";
+}
+
 /** PENDING/AVAILABLE -> ACTIVE. Enforces prerequisites and the pickup join gate. */
 export async function activateStep(fileId: string, stepKey: string): Promise<EngineResult> {
   const c = await guard(stepPermission(stepKey), fileId);
@@ -367,6 +393,12 @@ export async function activateStep(fileId: string, stepKey: string): Promise<Eng
   // reachable. Reception UNLOCKS it; it never starts it.
   const custody = custodyRefusal(stepKey, st.snapshot!.handoffs);
   if (custody) return fail(custody);
+
+  const ownership = assignmentRefusal(
+    { stepKey, assignedUserId: st.assignedUserId ?? null },
+    c.userId,
+  );
+  if (ownership) return fail(ownership);
 
   // The pickup convergence gate. Both branches must have landed.
   if (stepKey === "pickup") {
@@ -441,6 +473,12 @@ export async function submitStep(fileId: string, stepKey: string): Promise<Engin
   // yet accepted.
   const custodySubmit = custodyRefusal(stepKey, st.snapshot!.handoffs);
   if (custodySubmit) return fail(custodySubmit);
+
+  const ownershipSubmit = assignmentRefusal(
+    { stepKey, assignedUserId: st.assignedUserId ?? null },
+    c.userId,
+  );
+  if (ownershipSubmit) return fail(ownershipSubmit);
 
   const ev = evaluateStepEvidence(stepKey, st.snapshot!.evidence);
 

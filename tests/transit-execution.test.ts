@@ -267,11 +267,25 @@ describe("transit-actions orchestrate EXISTING audited actions only", () => {
     expect(actions).not.toContain('from("invoice")');
   });
 
-  it("40 — BAE reuses the existing releaseCustoms action (which fires the customer milestone)", () => {
-    const fn = actions.slice(actions.indexOf("export async function recordBae"), actions.indexOf("export async function dispatchToField"));
-    expect(fn).toContain("releaseCustoms(customs.id, baeReference.trim())");
+  it("40 — BAE RECORDS the reference; releasing is a separate, Chef-verified act", () => {
+    // TRANSIT-CUSTODY-03 guard 4. This used to call `releaseCustoms`, so whoever
+    // recorded the BAE also produced the RELEASED state that unlocks physical
+    // transport. Both halves already existed in the customs module (WES-4E);
+    // they are now used as the two acts they are.
+    const fn = actions.slice(
+      actions.indexOf("export async function recordBae"),
+      actions.indexOf("export async function releaseTransitToTransport"),
+    );
+    expect(fn).toContain("recordBaeReference(customs.id, baeReference.trim())");
+    expect(fn, "recording must not release").not.toContain("releaseCustoms(");
     expect(fn).toContain("baeReference.trim().length === 0"); // reference mandatory
     expect(actions).not.toContain('from("customs_record").update');
+
+    // …and the release is the Chef's, on evidence that already exists.
+    const rel = actions.slice(actions.indexOf("export async function releaseTransitToTransport"));
+    expect(rel).toContain('transitGuard("customs:validate", fileId)');
+    expect(rel).toContain('if (!bae) return fail("evidence_missing")');
+    expect(rel).toContain("releaseCustoms(");
   });
 
   it("41 — BAE does NOT publish the customer milestone directly — it flows through releaseCustoms", () => {
@@ -346,6 +360,10 @@ describe("Phase 9.0D adds NO schema and NO new permission", () => {
     expect(new Set(perms)).toEqual(new Set([
       "process:read", "process:handoff:receive", "customs:assign",
       "process:decision:create", "process:decision:approve", "customs:release", "process:team:manage",
+      // TRANSIT-CUSTODY-03: the Chef's final release. An EXISTING permission,
+      // chosen because it already names exactly the ratified releasers — which
+      // is what keeps this change free of an RBAC migration.
+      "customs:validate",
     ]));
   });
 

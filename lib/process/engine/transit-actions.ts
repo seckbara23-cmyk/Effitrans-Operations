@@ -33,7 +33,8 @@ import { roleLabel, ROLE_DISPLAY_PRIORITY } from "@/lib/navigation/roles";
 import { createNotification } from "@/lib/notifications/create";
 import { receiveHandoff } from "./actions";
 import { assignStepTeam, requestProcessDecision, finalizeProcessDecision, openProcessBlocker } from "./structures-actions";
-import { releaseCustoms } from "@/lib/customs/actions";
+import { releaseCustoms, recordBaeReference } from "@/lib/customs/actions";
+import { mayAssignStep, transitCustodyRefusal } from "@/lib/process/handoff-routes";
 import { isKnownStep } from "./state";
 import {
   deriveTransitStages,
@@ -44,7 +45,10 @@ import {
 import type { EngineError, EngineResult } from "./types";
 
 type Admin = ReturnType<typeof getAdminSupabaseClient>;
-type Ctx = { userId: string; tenantId: string; permissions: string[] };
+// `roles` carries the caller's tenant role codes: a supervisory ACT can be
+// reserved to a seat without narrowing a capability other seats legitimately
+// need elsewhere (TRANSIT-CUSTODY-03).
+type Ctx = { userId: string; tenantId: string; permissions: string[]; roles: string[] };
 
 const fail = (error: EngineError): EngineResult => ({ ok: false, error });
 const isErr = (v: Ctx | EngineError): v is EngineError => typeof v === "string";
@@ -73,7 +77,7 @@ async function transitGuard(permission: string, fileId: string): Promise<Ctx | E
   if (!tenantFlags.enabled || !tenantFlags.transitExecution) return "engine_disabled";
   if (!(await isFileVisible(user.id, user.tenantId, fileId))) return "forbidden";
   const permissions = await getEffectivePermissions(user.id);
-  return { userId: user.id, tenantId: user.tenantId, permissions };
+  return { userId: user.id, tenantId: user.tenantId, permissions, roles: user.roles ?? [] };
 }
 
 /** The ACTIVE instance for a dossier, tenant-verified. */
@@ -202,7 +206,15 @@ export type TransitState = {
   reception: { pending: boolean; received: boolean; handoffId: string | null };
   declarant: { name: string; roleLabel: string | null; departmentLabel: string | null } | null;
   dispatch: { teamCode: string | null; deterministic: boolean; suggestion: string | null };
-  bae: { obtained: boolean; reference: string | null; customsStatus: string | null; customsRecordId: string | null };
+  bae: {
+    /** The reference is recorded. NOT the same as released (TRANSIT-CUSTODY-03). */
+    recorded: boolean;
+    /** The Chef verified and released to Transport: customs_record is RELEASED. */
+    released: boolean;
+    reference: string | null;
+    customsStatus: string | null;
+    customsRecordId: string | null;
+  };
   paymentGate: { decisionId: string | null; status: string | null; outcome: string | null } | null;
   openBlockers: { id: string; title: string; category: string; status: string; customerVisible: boolean }[];
 };
@@ -322,7 +334,8 @@ export async function getTransitState(fileId: string): Promise<TransitState | nu
         suggestion,
       },
       bae: {
-        obtained: customs?.status === "RELEASED",
+        recorded: Boolean(customs?.bae_reference),
+        released: customs?.status === "RELEASED",
         reference: customs?.bae_reference ?? null,
         customsStatus: customs?.status ?? null,
         customsRecordId: customs?.id ?? null,
@@ -395,6 +408,42 @@ export async function receiveDossierAtTransit(fileId: string): Promise<EngineRes
 // =============================================================== assignment ====
 
 /**
+ * Does Transit hold this dossier? One read, shared by every Transit supervisory
+ * act, answering from the SAME facts the engine's execution doors use: the
+ * Operations → Transit transfer must be RECEIVED, and its reception step (4)
+ * must be finished.
+ */
+async function transitCustody(
+  admin: ReturnType<typeof getAdminSupabaseClient>,
+  tenantId: string,
+  instanceId: string,
+): Promise<"transit_custody_required" | null> {
+  const [{ data: handoffRows }, { data: recep }] = await Promise.all([
+    admin
+      .from("process_handoff")
+      .select("to_step_key, status")
+      .eq("tenant_id", tenantId)
+      .eq("process_instance_id", instanceId)
+      .eq("to_step_key", "coordinator_reception"),
+    admin
+      .from("process_step_execution")
+      .select("state")
+      .eq("tenant_id", tenantId)
+      .eq("process_instance_id", instanceId)
+      .eq("step_key", "coordinator_reception")
+      .not("state", "in", "(REJECTED,CANCELLED)")
+      .maybeSingle(),
+  ]);
+  return transitCustodyRefusal({
+    handoffs: ((handoffRows ?? []) as { to_step_key: string; status: string }[]).map((h) => ({
+      toStepKey: h.to_step_key,
+      status: h.status,
+    })),
+    receptionState: (recep?.state as string | undefined) ?? null,
+  });
+}
+
+/**
  * Assign a Transit step (declarant preparation, field follow-up…) to a specific
  * eligible Transit user. Writes only assigned_user_id (the column already
  * exists) — it grants NOTHING and never touches ownership or team targeting.
@@ -408,10 +457,22 @@ export async function assignTransitStep(
   const ctx = await transitGuard("customs:assign", fileId);
   if (isErr(ctx)) return fail(ctx);
   if (!isKnownStep(stepKey) || !ASSIGNABLE_STEP_KEYS.has(stepKey)) return fail("unknown_step");
+
+  // GUARD 1 (TRANSIT-CUSTODY-03). Naming a Déclarant is a supervisory act of the
+  // department that HOLDS the dossier. `customs:assign` alone proved neither:
+  // it is also the Coordinator's capability for step 12, and it said nothing
+  // about whether Operations had ever handed the dossier over. Both facts are
+  // required now, and both are checked here — the UI derives the same answer
+  // but decides nothing.
+  if (!mayAssignStep(stepKey, ctx.roles)) return fail("not_authorized_assigner");
+
   const admin = getAdminSupabaseClient();
 
   const instance = await loadInstance(admin, ctx.tenantId, fileId);
   if (!instance) return fail("not_found");
+
+  const custody = await transitCustody(admin, ctx.tenantId, instance.id);
+  if (custody) return fail(custody);
 
   // Eligibility: active, same tenant, TRANSIT-mapped.
   const { data: staff } = await admin
@@ -427,7 +488,7 @@ export async function assignTransitStep(
 
   const { data: exec } = await admin
     .from("process_step_execution")
-    .select("id, state")
+    .select("id, state, assigned_user_id")
     .eq("tenant_id", ctx.tenantId)
     .eq("process_instance_id", instance.id)
     .eq("step_key", stepKey)
@@ -450,6 +511,10 @@ export async function assignTransitStep(
     tenantId: ctx.tenantId,
     entity: "process_step_execution",
     entityId: exec.id,
+    // GUARD 3 (TRANSIT-CUSTODY-03): assigned work belongs to its assignee, so a
+    // REASSIGNMENT takes it from someone. Recording only the new holder made
+    // that invisible; both sides are recorded now.
+    before: { step_key: stepKey, assigned_user_id: (exec.assigned_user_id as string | null) ?? null },
     after: { step_key: stepKey, assigned_user_id: userId },
   });
 
@@ -548,7 +613,14 @@ export async function recordBae(fileId: string, baeReference: string): Promise<E
     .maybeSingle();
   if (!customs) return fail("not_found");
 
-  const res = await releaseCustoms(customs.id, baeReference.trim());
+  // GUARD 4 (TRANSIT-CUSTODY-03). Recording the BAE and releasing the dossier to
+  // Transport are DIFFERENT responsibilities, and this act used to be both: it
+  // called `releaseCustoms`, so whoever recorded the reference also produced the
+  // RELEASED state that unlocks physical transport. The two halves already
+  // existed separately in the customs module (WES-4E) and are now used as such —
+  // this records the evidence and changes no status. The Chef de Transit
+  // verifies and releases, in `releaseTransitToTransport` below.
+  const res = await recordBaeReference(customs.id, baeReference.trim());
   if (!res.ok) return fail(res.error === "bae_required" ? "reason_required" : "invalid_state");
 
   const instance = await loadInstance(admin, ctx.tenantId, fileId);
@@ -570,6 +642,66 @@ export async function recordBae(fileId: string, baeReference: string): Promise<E
 // =============================================================== dispatch ====
 
 /**
+ * THE final Transit release — ratified 2026-09-04 (TRANSIT-CUSTODY-03, guard 4).
+ *
+ * « Vérifier et libérer vers Transport ». The Chef de Transit confirms the
+ * customs section is complete and only then does `customs_record` reach
+ * RELEASED, which is the condition physical transport already waits on
+ * (`canPickup`). No 27th official step was added: the release was always a
+ * customs-record fact, and step 13 still carries the field work.
+ *
+ * Authority is `customs:validate` — the Chef's existing verification capability,
+ * held by CHIEF_OF_TRANSIT, OPS_SUPERVISOR (oversight) and SYSTEM_ADMIN, and by
+ * neither the Déclarant nor the field agent. Choosing an existing permission
+ * that already names exactly the ratified releasers is what keeps this slice
+ * free of an RBAC migration; `customs:release` could not be narrowed instead
+ * because it IS step 13's own permission and the field agent needs it to work
+ * that step at all.
+ *
+ * A BAE reference must already be recorded: releasing without one is refused,
+ * so the evidence always precedes the verification.
+ */
+export async function releaseTransitToTransport(fileId: string): Promise<EngineResult> {
+  const ctx = await transitGuard("customs:validate", fileId);
+  if (isErr(ctx)) return fail(ctx);
+  const admin = getAdminSupabaseClient();
+
+  const instance = await loadInstance(admin, ctx.tenantId, fileId);
+  if (!instance) return fail("not_found");
+  const custody = await transitCustody(admin, ctx.tenantId, instance.id);
+  if (custody) return fail(custody);
+
+  const { data: customs } = await admin
+    .from("customs_record")
+    .select("id, bae_reference, status")
+    .eq("tenant_id", ctx.tenantId)
+    .eq("file_id", fileId)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (!customs) return fail("not_found");
+
+  const bae = (customs.bae_reference as string | null)?.trim();
+  // The evidence comes first, always. Verifying nothing is not verification.
+  if (!bae) return fail("evidence_missing");
+  if (customs.status === "RELEASED") return { ok: true, id: customs.id as string };
+
+  const res = await releaseCustoms(customs.id as string, bae);
+  if (!res.ok) return fail(res.error === "bae_required" ? "evidence_missing" : "invalid_state");
+
+  await writeAudit({
+    action: AuditActions.PROCESS_TRANSIT_RELEASED,
+    actorId: ctx.userId,
+    tenantId: ctx.tenantId,
+    entity: "customs_record",
+    entityId: customs.id as string,
+    before: { status: customs.status },
+    after: { status: "RELEASED", bae_reference: bae, verified_by: ctx.userId },
+  });
+
+  return { ok: true, id: customs.id as string };
+}
+
+/**
  * Dispatch the dossier to a field team (AIBD / Maritime) — the T9 shape over the
  * EXISTING assignStepTeam (targets the team on transport_assignment, grants
  * nothing). Air → AIBD and sea → Maritime are deterministic; road/handling/
@@ -582,6 +714,18 @@ export async function dispatchToField(
 ): Promise<EngineResult> {
   const ctx = await transitGuard("process:team:manage", fileId);
   if (isErr(ctx)) return fail(ctx);
+
+  // GUARD 2 (TRANSIT-CUSTODY-03). Dispatching a field team is Transit's own act,
+  // so it waits until Transit holds the dossier. Transport PREPARATION is
+  // untouched: this gates the dispatch, never step 14, the vehicle and driver
+  // assignment, the Bon à Délivrer or the Pre-Gate.
+  {
+    const guardAdmin = getAdminSupabaseClient();
+    const inst = await loadInstance(guardAdmin, ctx.tenantId, fileId);
+    if (!inst) return fail("not_found");
+    const custody = await transitCustody(guardAdmin, ctx.tenantId, inst.id);
+    if (custody) return fail(custody);
+  }
   const admin = getAdminSupabaseClient();
 
   const { data: file } = await admin

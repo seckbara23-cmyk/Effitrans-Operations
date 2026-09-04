@@ -162,3 +162,62 @@ export function custodyRefusal(
   if (custody === "awaiting_transmission" && route.requiresReception) return "handoff_not_sent";
   return null;
 }
+
+// ============================================================ Transit custody ====
+
+/**
+ * Steps whose ASSIGNMENT is a supervisory act reserved to named roles.
+ *
+ * TRANSIT-CUSTODY-03. `customs:assign` is held by the Chef de Transit, the
+ * Coordinator, Operations and platform administration — and the Coordinator
+ * genuinely needs it for step 12, where it assigns the field agent. So the
+ * capability cannot be narrowed without breaking a documented Coordination
+ * responsibility. The STEP is narrowed instead: naming the Déclarant is the
+ * Chef de Transit's act, and every other assignable step keeps today's rule.
+ */
+export const ASSIGNMENT_AUTHORITY: Readonly<Record<string, readonly string[]>> = {
+  transit_declarant_assignment: ["CHIEF_OF_TRANSIT", "OPS_SUPERVISOR", "SYSTEM_ADMIN"],
+};
+
+export function mayAssignStep(stepKey: string, roleCodes: readonly string[]): boolean {
+  const allowed = ASSIGNMENT_AUTHORITY[stepKey];
+  if (!allowed) return true;
+  return allowed.some((r) => roleCodes.includes(r));
+}
+
+/**
+ * Does Transit actually hold this dossier? The Operations → Transit transfer
+ * must be RECEIVED **and** its reception step finished. Reception opens step 4;
+ * completing step 4 is what says Transit has taken the dossier on, and only then
+ * may Transit's own supervisory acts — naming a Déclarant, dispatching a field
+ * team — begin.
+ *
+ * Returns the engine refusal, or null when custody is held. `notApplicable`
+ * short-circuits: a dossier with no customs leg has no Transit custody to hold.
+ */
+export function transitCustodyRefusal(input: {
+  handoffs: readonly RouteHandoffView[];
+  /** State of `coordinator_reception`, or null when the step does not exist. */
+  receptionState: string | null;
+}): "transit_custody_required" | null {
+  const custody = custodyStateFor("coordinator_reception", input.handoffs);
+  if (custody !== "received") return "transit_custody_required";
+  const done = input.receptionState === "COMPLETED" || input.receptionState === "APPROVED";
+  return done ? null : "transit_custody_required";
+}
+
+/**
+ * Steps whose work belongs to its assignee once one is named.
+ *
+ * These are exactly the steps Transit assigns (`ASSIGNABLE_STEP_KEYS`): the
+ * customs execution chain. Elsewhere a step is claimed by whoever starts it,
+ * which is a different idea and stays as it is.
+ */
+export const ASSIGNMENT_OWNED_STEPS: ReadonlySet<string> = new Set([
+  "transit_declarant_assignment",
+  "customs_preparation",
+  "gainde_document_submission",
+  "customs_followup",
+  "customs_field_clearance",
+]);
+

@@ -16,6 +16,7 @@ import {
   requestPaymentGateDecision,
   finalizePaymentGateDecision,
   recordBae,
+  releaseTransitToTransport,
   dispatchToField,
   type TransitState,
   type TransitAssignee,
@@ -30,6 +31,9 @@ const ERROR_FR: Record<string, string> = {
   invalid_state: "Action impossible dans l'état actuel du dossier.",
   reason_required: "Une information obligatoire est manquante.",
   unknown_step: "Étape inconnue.",
+  step_assigned_to_other: "Cette étape est affectée à une autre personne.",
+  not_authorized_assigner: "Cette affectation relève du Chef de Transit.",
+  transit_custody_required: "Le Transit doit d'abord réceptionner le dossier et terminer sa réception.",
 };
 const frError = (code: string) => ERROR_FR[code] ?? "L'action a échoué. Réessayez.";
 
@@ -71,6 +75,7 @@ export function TransitPanel({
   canRequestDecision,
   canApproveDecision,
   canRecordBae,
+  canReleaseTransit,
   canDispatch,
   canManageBlockers,
 }: {
@@ -82,6 +87,8 @@ export function TransitPanel({
   canRequestDecision: boolean;
   canApproveDecision: boolean;
   canRecordBae: boolean;
+  /** The Chef's final verification authority (customs:validate). */
+  canReleaseTransit: boolean;
   canDispatch: boolean;
   canManageBlockers: boolean;
 }) {
@@ -252,10 +259,33 @@ export function TransitPanel({
       {/* BAE capture */}
       <div className="mt-3 rounded-lg border border-slate-200 p-3">
         <p className="text-xs font-medium text-slate-600">BAE — Bon À Enlever</p>
-        {state.bae.obtained ? (
+        {state.bae.released ? (
           <p className="mt-1 text-sm text-emerald-700">
-            Obtenu · référence <strong>{state.bae.reference}</strong> — le client voit « Autorisation obtenue ».
+            Libéré vers le Transport · référence <strong>{state.bae.reference}</strong> — le client voit « Autorisation obtenue ».
           </p>
+        ) : state.bae.recorded ? (
+          <div className="mt-1">
+            <p className="text-sm text-slate-700">
+              BAE enregistré · référence <strong>{state.bae.reference}</strong>.
+            </p>
+            {/* GUARD 4. Recording the BAE is the field act; verifying the customs
+                section and releasing it to Transport is the Chef de Transit's.
+                Physical transport stays blocked until this is done. */}
+            {canReleaseTransit ? (
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => run(() => releaseTransitToTransport(fileId), "Transit vérifié — dossier libéré vers le Transport.")}
+                className="mt-2 min-h-[36px] rounded-lg bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-50"
+              >
+                Vérifier et libérer vers le Transport
+              </button>
+            ) : (
+              <p className="mt-1 text-xs text-slate-500">
+                En attente de la vérification du Chef de Transit avant libération vers le Transport.
+              </p>
+            )}
+          </div>
         ) : canRecordBae ? (
           <div className="mt-1 flex flex-wrap items-center gap-2">
             <input

@@ -34,7 +34,7 @@ import { openDossierWorkflow, handDossierToTransit } from "@/lib/process/engine/
 import { submitStep, activateStep, approveStep, sendHandoff, receiveHandoff } from "@/lib/process/engine/actions";
 import { skipStep } from "@/lib/process/engine/structures-actions";
 import { declareEvidenceAbsence } from "@/lib/process/evidence-absence-actions";
-import { receiveDossierAtTransit, assignTransitStep, recordBae } from "@/lib/process/engine/transit-actions";
+import { receiveDossierAtTransit, assignTransitStep, recordBae, releaseTransitToTransport } from "@/lib/process/engine/transit-actions";
 import { createCustoms, changeCustomsStatus, recordGaindeRegistration } from "@/lib/customs/actions";
 import { createTransport, assignTransport, changeTransportStatus } from "@/lib/transport/actions";
 import {
@@ -138,6 +138,9 @@ async function carryToValidatedInvoice() {
 
   need(await as(field, () => activateStep(fileId, "customs_field_clearance")), "activate 13");
   need(await as(field, () => recordBae(fileId, `BAE-ND-${Date.now()}`)), "bae");
+  // GUARD 4: recording the BAE is the field act; the Chef verifies and
+  // releases to Transport, which is what unlocks physical transport.
+  need(await as(transit, () => releaseTransitToTransport(fileId)), "release transit");
 
   need(await as(transport, () => activateStep(fileId, "transport_assignment")), "activate 14");
   need(await as(transport, () => createTransport(fileId)), "createTransport");
