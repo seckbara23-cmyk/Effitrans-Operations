@@ -112,12 +112,28 @@ export const EFFITRANS_PROCESS: ProcessStep[] = [
     description:
       "Ouvrir le dossier et générer son identifiant, envoyer l'accusé de réception au client, compléter les informations, enregistrer le dossier au tableau de suivi. Préparer la demande de transport et le Bordereau de Livraison, demander et vérifier les factures tierces payables pour le client, préparer les autorisations de dépense. Transmettre au Coordinateur.",
     prerequisites: ["operations_intake"],
-    requiredDocuments: [
-      "TRANSPORT_REQUEST",
-      "BORDEREAU_LIVRAISON",
-      "VENDOR_INVOICE",
-      "SPENDING_AUTHORIZATION",
-    ],
+    // RATIFIED 2026-09-03 (H-3..H-6, docs/process/workflow-semantic-audit-steps-1-10.md).
+    // These four documents used to be a universal hard gate here, and through
+    // D-2 they gated the Operations→Transit transmission as well. None of them
+    // is read by the customs chain (steps 4-13); each belongs to another stage:
+    //
+    //   SPENDING_AUTHORIZATION → corporate Finance. The real « Autorisation de
+    //     dépense » is `expense_authorization` + the DEC-C08 seven-visa chain,
+    //     raised under `finance:expense:create` — which the Account Manager does
+    //     not hold. An AM opening requirement enforced a Finance act.
+    //   VENDOR_INVOICE → arrives across the dossier's life; the AM CONTROLS it
+    //     (ICAM NFACT = verified VENDOR_INVOICE), which is not the same as
+    //     collecting it before Transit may start.
+    //   TRANSPORT_REQUEST → conditional on the dossier needing transport; a
+    //     customs-only dossier must not be blocked for lacking it.
+    //   BORDEREAU_LIVRAISON → stays HARD where it actually controls something:
+    //     `transport_docs_transmission` and the pickup gate. Unchanged there.
+    //
+    // Deliberately EMPTY rather than replaced by another universal list: step 3
+    // represents operational preparation, not premature collection of every
+    // artefact the dossier may eventually hold. Every document type, the C-3
+    // declarable set and the pickup control are untouched.
+    requiredDocuments: [],
     requiredEvidence: ["file_number", "client_acknowledgment_sent", "vendor_invoices_verified"],
     completionRule: "dossier_opened_and_preparation_complete",
     rejectsTo: null,

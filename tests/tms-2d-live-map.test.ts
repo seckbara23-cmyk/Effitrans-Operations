@@ -397,7 +397,10 @@ describe("TMS-2D — every TMS-2 guarantee survives", () => {
     void migrations;
     const dir = fileURLToPath(new URL("../supabase/migrations", import.meta.url));
     const files = require("node:fs").readdirSync(dir).filter((f: string) => f.endsWith(".sql")).sort();
-    expect(files.at(-1), "136 remains the newest migration").toBe("20260928000001_mission_return_leg.sql");
+    // TMS-2D added none of its own; the newest on disk now belongs to a later
+    // slice (H-9's OPS_SUPERVISOR grant), which is what this must track.
+    expect(files.at(-1)).toBe("20260929000001_ops_supervisor_file_update.sql");
+    expect(files).toContain("20260928000001_mission_return_leg.sql");
   });
 
   it("the map layer is read-only — a GPS fix can trigger no write", () => {

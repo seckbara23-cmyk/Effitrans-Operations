@@ -120,13 +120,22 @@ const transportRank = (f: ModuleFacts): number =>
  *     vehicle/route work no fact captures.
  */
 export const FACT_RULES: Readonly<Record<string, FactRule>> = {
-  // The dossier exists and left DRAFT. The opening step cannot still be open
-  // for a dossier that is demonstrably in progress.
-  am_dossier_opening: {
-    satisfied: (f) => f.fileStatus !== "DRAFT" && f.fileStatus !== "CANCELLED",
-    started: (f) => f.fileStatus === "DRAFT",
-    factFr: "Dossier ouvert (statut du dossier au-delà de Brouillon)",
-  },
+  // REMOVED 2026-09-03 (H-1/H-2 ratification) — `am_dossier_opening`.
+  //
+  // Its rule was « the dossier left DRAFT », held back from completing step 3
+  // only by the canonical-evidence check on step 3's four required documents.
+  // Those four were ratified away (they belonged to Finance, to the transport
+  // lane and to pickup), which would have made the evidence check vacuous and
+  // left the proxy alone in charge: verifying any document on any opened
+  // dossier would have completed the Account Manager's preparation step, and a
+  // dossier would have become transmissible to Transit without the AM ever
+  // declaring readiness.
+  //
+  // Step 3's completion IS the Account Manager's deliberate act — the readiness
+  // control H-2 names — so no fact may stand in for it. Removing the rule is
+  // strictly narrowing: reconciliation now never touches this step. Steps
+  // already completed by the old proxy keep their state and provenance; nothing
+  // is rewritten.
 
   // GAINDE registration: the FINANCE milestone — not the Declarant's paperwork.
   //

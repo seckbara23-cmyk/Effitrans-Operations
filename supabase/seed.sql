@@ -179,11 +179,12 @@ insert into public.permission (code, module, action, data_scope, description) va
    'Advance an operational file through its status state machine (distinct from editing)')
 on conflict (code) do nothing;
 
--- OPS_SUPERVISOR advances the dossier ladder WITHOUT editing master data: it
--- holds no file:update, which is exactly why the transition controls were
--- invisible to it. CEO is deliberately excluded — it reads and reports.
--- The other three holders receive file:transition alongside their existing
--- file:update grants above.
+-- file:transition is a SEPARATE authority from file:update: advancing the
+-- dossier ladder and editing master data are distinct acts, and that
+-- distinction (ratified 2026-07-28) is unchanged. What changed on 2026-09-03
+-- (H-9) is the GRANT: OPS_SUPERVISOR now also holds file:update, below, so the
+-- Operations Supervisor can maintain the operational dossier as information
+-- arrives. CEO is deliberately excluded — it reads and reports.
 insert into public.role_permission (role_id, permission_id)
 select r.id, p.id
 from public.role r
@@ -198,6 +199,18 @@ from public.role r
 join public.permission p on p.code = 'file:assign'
 where r.tenant_id = '00000000-0000-0000-0000-000000000001'
   and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR', 'ACCOUNT_MANAGER')
+on conflict do nothing;
+
+-- H-9 (ratified 2026-09-03, mirrors migration 20260929000001): a dossier is a
+-- living operational record and Operations maintains it. This grants ONLY the
+-- dossier/master-data edit; file:create is deliberately NOT granted, and every
+-- independently governed record (Finance authorizations, customs declarations,
+-- signed POD, payments) keeps its own permission.
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id from public.role r
+join public.permission p on p.code = 'file:update'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code = 'OPS_SUPERVISOR'
 on conflict do nothing;
 
 -- TMS-1 (D1 = Option A, ratified 2026-08-18, mirrors migration 20260906000001):

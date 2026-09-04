@@ -110,7 +110,8 @@ async function carryToStep13() {
   const opened = await as(ops, () => openDossierWorkflow(fileId, { ownerUserId: ops.id, skipCotation: true }));
   if (!opened.ok) throw new Error(`slice 3 open failed: ${JSON.stringify(opened)}`);
 
-  await as(ops, () => submitStep(fileId, "operations_intake"));
+  // H-1 (2026-09-03): `openDossierWorkflow` completes step 2 from the opening
+  // act itself, so step 3 is already AVAILABLE here. No submit needed.
   await as(am, () => activateStep(fileId, "am_dossier_opening"));
   await provideEvidence(fileId, "BORDEREAU_LIVRAISON", am, ops);
   await provideEvidence(fileId, "TRANSPORT_REQUEST", am, ops);

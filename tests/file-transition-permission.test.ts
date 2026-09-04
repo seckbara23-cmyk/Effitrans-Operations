@@ -33,18 +33,31 @@ describe("the grant", () => {
     expect(perms(role)).toContain("file:transition");
   });
 
-  it("OPS_SUPERVISOR gets it WITHOUT file:update — that is the whole point", () => {
+  it("the two authorities stay SEPARATE — the distinction, not the grant, was the point", () => {
+    // Ratified 2026-07-28: advancing the status ladder and editing master data
+    // are different acts, so they are different permissions. H-9 (2026-09-03)
+    // granted OPS_SUPERVISOR the second one as well — a dossier is a living
+    // record and Operations maintains it. What must never happen is the two
+    // collapsing into one permission, or `file:transition` implying edit rights.
     expect(perms("OPS_SUPERVISOR")).toContain("file:transition");
-    expect(perms("OPS_SUPERVISOR")).not.toContain("file:update");
+    expect(perms("OPS_SUPERVISOR")).toContain("file:update");
+    const catalogue = read("supabase/seed.sql") + read("lib/platform/role-templates.ts");
+    expect(catalogue).toContain("file:transition");
+    expect(catalogue).toContain("file:update");
   });
 
-  it("existing file:update grants are unchanged", () => {
-    for (const role of ["SYSTEM_ADMIN", "ACCOUNT_MANAGER", "COORDINATOR"]) {
+  it("file:update is held by exactly the four ratified roles", () => {
+    for (const role of ["SYSTEM_ADMIN", "ACCOUNT_MANAGER", "COORDINATOR", "OPS_SUPERVISOR"]) {
       expect(perms(role), role).toContain("file:update");
     }
-    for (const role of ["OPS_SUPERVISOR", "FINANCE_OFFICER", "CASHIER"]) {
+    // Editing a dossier is Operations' business and nobody else's.
+    for (const role of ["FINANCE_OFFICER", "CASHIER", "CLIENT_USER", "COURIER", "CUSTOMS_DECLARANT"]) {
       expect(perms(role), role).not.toContain("file:update");
     }
+  });
+
+  it("H-9 granted the EDIT only — creation was deliberately withheld", () => {
+    expect(perms("OPS_SUPERVISOR")).not.toContain("file:create");
   });
 
   it("is NOT granted by analogy to unrelated roles", () => {
@@ -96,8 +109,12 @@ describe("the migration reaches EXISTING tenants", () => {
   it("seed and templates agree — provisioning parity", () => {
     const seed = read("supabase/seed.sql");
     expect(seed).toContain("'file:transition'");
-    // OPS_SUPERVISOR needs its own grant: it has no file:update line to join
     expect(seed).toMatch(/p\.code = 'file:transition'[\s\S]{0,200}OPS_SUPERVISOR/);
+    // H-9 — the same role now also carries file:update, in all three sources.
+    expect(seed).toMatch(/p\.code = 'file:update'[\s\S]{0,200}OPS_SUPERVISOR/);
+    const migration = read("supabase/migrations/20260929000001_ops_supervisor_file_update.sql");
+    expect(migration).toContain("'file:update'");
+    expect(migration).toContain("OPS_SUPERVISOR");
   });
 });
 

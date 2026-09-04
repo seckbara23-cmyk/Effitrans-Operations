@@ -30,7 +30,7 @@ import {
   firstActionableStepFor,
   TRANSIT_HANDOFF_FROM_STEP,
 } from "@/lib/process/intake";
-import { getStep, EFFITRANS_PROCESS } from "@/lib/process/effitrans-process";
+import { getStep, getActivity, EFFITRANS_PROCESS } from "@/lib/process/effitrans-process";
 
 const read = (p: string) => readFileSync(fileURLToPath(new URL(p, import.meta.url)), "utf8");
 const strip = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
@@ -381,17 +381,22 @@ describe("UAT-00009 — the guards are untouched", () => {
     for (const src of [intakeLib, handoffFn, prereqUi, panel, dossierUi]) {
       expect(src).not.toMatch(/signature|signé_requis|requires_signature/i);
     }
-    expect(getStep("am_dossier_opening")!.requiredDocuments).toContain("BORDEREAU_LIVRAISON");
+    // H-6 (2026-09-03) moved the requirement to where it actually controls
+    // something. Its MEANING — the unsigned operational slip, distinct from the
+    // signed POD — is what this test guards, and that is unchanged.
+    expect(getStep("am_dossier_opening")!.requiredDocuments).not.toContain("BORDEREAU_LIVRAISON");
+    expect(getActivity("transport_docs_transmission")!.requiredDocuments).toContain("BORDEREAU_LIVRAISON");
+    expect(strip(read("../lib/process/engine/gates.ts"))).toContain('checkEvidence("BORDEREAU_LIVRAISON", snap)');
   });
 
   it("the dossier status is not consulted by the handoff — DELIVERED blocks nothing", () => {
     expect(handoffFn).not.toMatch(/file\.status|"DELIVERED"|operational_file"\)[\s\S]{0,80}status/);
   });
 
-  it("no migration was added for this slice", () => {
+  it("the UAT-00009 slice itself added no migration — the newest is a LATER slice's", () => {
     const dir = fileURLToPath(new URL("../supabase/migrations", import.meta.url));
     const files = require("node:fs").readdirSync(dir).filter((f: string) => f.endsWith(".sql")).sort();
-    expect(files.at(-1)).toBe("20260928000001_mission_return_leg.sql");
+    expect(files.at(-1)).toBe("20260929000001_ops_supervisor_file_update.sql");
   });
 
   it("the pilot dossier is named nowhere in the slice", () => {
@@ -405,9 +410,11 @@ describe("UAT-00009 — the guards are untouched", () => {
     const step3 = getStep("am_dossier_opening")!;
     expect(step3.prerequisites).toContain("operations_intake");
     expect(step2.prerequisites).toContain("cotation");
-    expect(step3.requiredDocuments).toEqual([
-      "TRANSPORT_REQUEST", "BORDEREAU_LIVRAISON", "VENDOR_INVOICE", "SPENDING_AUTHORIZATION",
-    ]);
+    // H-3..H-6 (2026-09-03) emptied this set by BUSINESS RULING, after the audit
+    // proved none of the four is read by the customs chain. What this test
+    // guards is that the registry is not edited to make a UAT pass — the
+    // prerequisites and the maker-checker relations below are untouched.
+    expect(step3.requiredDocuments).toEqual([]);
     expect(EFFITRANS_PROCESS.length).toBeGreaterThanOrEqual(26);
   });
 });

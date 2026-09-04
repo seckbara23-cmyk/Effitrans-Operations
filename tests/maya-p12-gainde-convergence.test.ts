@@ -193,7 +193,8 @@ describe("the fact reaches the projection, and stops there", () => {
     // Requirement: reuse. The only completion path remains the WES-5 RPC.
     expect(actionBody()).not.toMatch(/process_step_execution|reconcile_step_completion|from\("process_/);
     expect([...FACT_PROVABLE_STEP_KEYS].sort()).toEqual([
-      "am_dossier_opening",
+      // `am_dossier_opening` left the set on 2026-09-03 (H-1/H-2): step 3's
+      // completion is the Account Manager's readiness act, not a fact.
       "customs_field_clearance",
       "gainde_document_submission", // MAYA-P1.11 — CEO step 9, once ratified
       "gainde_registration",

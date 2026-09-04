@@ -39,6 +39,9 @@ import { initializeProcessForFile, activateEntryStep, sendHandoff } from "./acti
 import { assignProcessOwner, skipStep } from "./structures-actions";
 import { transitionFile } from "@/lib/files/actions";
 import { loadProcessSnapshot } from "./snapshot";
+import { promoteSuccessors } from "./promote";
+import { writeAudit } from "@/lib/audit/log";
+import { AuditActions } from "@/lib/audit/events";
 import { isDone } from "./types";
 
 type Admin = ReturnType<typeof getAdminSupabaseClient>;
@@ -371,6 +374,47 @@ export async function getIntakeState(fileId: string, diag?: IntakeDiag): Promise
  * the skip tolerates "already skipped", and the milestone dedup key
  * (`file_opened:<fileId>`) makes the customer message once-only.
  */
+/**
+ * Complete step 2 from the opening act (H-1). Deliberately local, deliberately
+ * single-purpose: exported to nobody, hard-coded to `operations_intake`, and a
+ * no-op unless that step is exactly ACTIVE. Idempotent — a retry of the opening
+ * action finds it terminal-done and does nothing.
+ */
+async function completeIntakeFromOpening(
+  ctx: { userId: string; tenantId: string; permissions: string[] },
+  fileId: string,
+): Promise<void> {
+  const snap = await loadProcessSnapshot(ctx.tenantId, fileId, ctx.permissions);
+  const exec = snap?.executions.find((e) => e.stepKey === "operations_intake");
+  if (!exec || exec.state !== "ACTIVE") return;
+
+  const now = new Date().toISOString();
+  const admin = getAdminSupabaseClient();
+  // CAS on ACTIVE: a concurrent opener or a supervisor submitting by hand wins
+  // and this writes nothing.
+  const { data } = await admin
+    .from("process_step_execution")
+    .update({ state: "COMPLETED", submitted_by: ctx.userId, submitted_at: now, completed_at: now })
+    .eq("id", exec.id)
+    .eq("tenant_id", ctx.tenantId)
+    .eq("state", "ACTIVE")
+    .select("id");
+  if ((data?.length ?? 0) !== 1) return;
+
+  await writeAudit({
+    action: AuditActions.PROCESS_STEP_COMPLETED,
+    actorId: ctx.userId,
+    tenantId: ctx.tenantId,
+    entity: "process_step_execution",
+    entityId: exec.id,
+    after: { step_key: "operations_intake", source: "dossier_opening" },
+  });
+
+  // The ordinary promotion path — step 3 becomes AVAILABLE and enters the
+  // Account Manager's queue immediately.
+  await promoteSuccessors(ctx.tenantId, fileId, ctx.permissions, "operations_intake", ctx.userId);
+}
+
 export async function openDossierWorkflow(
   fileId: string,
   input: { ownerUserId: string; skipCotation?: boolean; cotationPrecision?: string | null },
@@ -456,6 +500,33 @@ export async function openDossierWorkflow(
       return { ok: false, error: `activation_${activated.error}` };
     }
   }
+
+  // 4b. THE INTAKE FACT — ratified 2026-09-03 (H-1).
+  //
+  //     Step 2 « Responsable des Opérations — réception et affectation » carries
+  //     no executable evidence (`requiredDocuments: []`), and the facts it
+  //     certifies — the canonical Operations owner and the Account-Manager seat
+  //     — are written by THIS action, above. Asking the operator to press
+  //     « Terminer » afterwards certified nothing and, because step 3 waits on
+  //     step 2, left the Account Manager's preparation step PENDING and
+  //     therefore invisible in every queue. That is what a real UAT hit.
+  //
+  //     So the OPENING ACT completes it. Not a bypass of authority: opening is
+  //     gated on `process:manage` + `process:owner:assign`, held only by
+  //     OPS_SUPERVISOR, COORDINATOR and SYSTEM_ADMIN — Operations seats. It is
+  //     deliberately NOT routed through `submitStep`, whose gate is
+  //     `file:assign`: a COORDINATOR may legitimately open a dossier and does
+  //     not hold it, and the intake act is not being performed a second time
+  //     here — it is being recorded.
+  //
+  //     Narrow by construction: this completes `operations_intake` and nothing
+  //     else, only from this path, only from ACTIVE, and only with the opener as
+  //     the recorded principal. Promotion then opens step 3 through the ordinary
+  //     `promoteSuccessors`, so the ladder, D-2, C-2 and closure are untouched.
+  //
+  //     Failure is tolerated: the dossier stays open with step 2 ACTIVE, exactly
+  //     as before this change. Never worse, and never silently "done".
+  await completeIntakeFromOpening(ctx, fileId);
 
   // 5. Legacy lifecycle: a DRAFT dossier formally becomes OPENED through the
   //    EXISTING transition seam (its own permission + audit) — the engine itself

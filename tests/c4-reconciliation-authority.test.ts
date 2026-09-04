@@ -68,7 +68,10 @@ describe("C-4 — a reconciled completion promotes, using the ONE authority", ()
     // relation is non-empty where the workflow says it should be. These are the
     // six steps reconciliation can close, and the dependents each one opens.
     const expected: Record<string, string[]> = {
-      am_dossier_opening: ["coordinator_reception", "transport_assignment", "bon_a_delivrer", "pre_gate"],
+      // `am_dossier_opening` left this set on 2026-09-03 (H-1/H-2): step 3's
+      // completion is the Account Manager's own readiness act and no fact may
+      // stand in for it. Its dependents are unchanged and still promote — from
+      // a human completion, which is the point.
       gainde_registration: ["coordinator_to_declarant", "gainde_document_submission"],
       gainde_document_submission: ["customs_followup"],
       customs_field_clearance: ["pickup"],
@@ -139,13 +142,15 @@ describe("C-4 — reconciliation defers to canonical evidence", () => {
     expect(service).toContain('const RECONCILE_FULL_READ = ["document:read", "customs:read", "transport:read", "finance:read"]');
   });
 
-  it("the weak proxy that caused this is still weak — which is why the gate exists", () => {
-    // Not a regression on the rule: the rule is a PROXY and is allowed to be
-    // one. This pins WHY the gate is required, so nobody later concludes the
-    // gate is redundant and removes it.
-    const rule = FACT_RULES["am_dossier_opening"];
-    expect(rule.satisfied({ fileStatus: "OPENED" } as never)).toBe(true);
-    expect(rule.satisfied({ fileStatus: "IN_PROGRESS" } as never)).toBe(true);
+  it("the weak proxy that caused this is GONE, and the gate that caught it remains", () => {
+    // The proxy asked only « is the dossier past DRAFT » and was held back by
+    // the canonical-evidence gate. H-1/H-2 removed the rule outright rather
+    // than leave it standing alone behind an emptied evidence set.
+    expect(FACT_RULES["am_dossier_opening"]).toBeUndefined();
+    expect(FACT_PROVABLE_STEP_KEYS).not.toContain("am_dossier_opening");
+    // The gate itself is untouched — it still guards every remaining rule.
+    expect(service).toContain("evaluateStepEvidence");
+    expect(service).toContain("CANONICAL EVIDENCE, or no completion");
   });
 });
 

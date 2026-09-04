@@ -69,7 +69,10 @@ export type TransitStage = {
 export const TRANSIT_STAGES: readonly TransitStage[] = [
   {
     key: "T1",
-    labelFr: "Réception, vérification sommaire et cotation",
+    // H-7 — « cotation » left this label: the commercial devis is Operations'
+    // (DEC-C32), and no Transit clearance-estimate act exists in the platform
+    // to justify the word. What T1 actually maps is `coordinator_reception`.
+    labelFr: "Réception et vérification sommaire",
     responsibleFr: "Chef de Transit",
     stepKeys: ["coordinator_reception"],
     customerStage: "documents_verification",

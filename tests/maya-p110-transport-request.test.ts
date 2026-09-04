@@ -51,7 +51,14 @@ describe("the act is unanchored — that is why this is not P1.1", () => {
     expect(s.role).toBe("ACCOUNT_MANAGER");
     expect(s.permissions).toContain("document:create");
     expect(s.permissions).not.toContain("transport:request");
-    expect(s.requiredDocuments).toContain("TRANSPORT_REQUEST");
+    // H-5 (2026-09-03) removed TRANSPORT_REQUEST from step 3's required set —
+    // it is conditional on the dossier needing transport, and a customs-only
+    // dossier must not be blocked for lacking it. The finding this test exists
+    // for is untouched: the AM COLLECTS the request under `document:create`,
+    // and `transport:request` still names an act no step assigns to anyone.
+    expect(s.requiredDocuments).not.toContain("TRANSPORT_REQUEST");
+    // The document type itself is untouched — removed as a step-3 gate, not deleted.
+    expect(read("lib/process/documents.ts")).toContain('key: "TRANSPORT_REQUEST"');
     expect(holders("document:create")).toContain("ACCOUNT_MANAGER");
   });
 

@@ -87,7 +87,8 @@ async function carryToValidatedInvoice() {
   fileId = (created as unknown as { id: string }).id;
 
   need(await as(ops, () => openDossierWorkflow(fileId, { ownerUserId: ops.id, skipCotation: true })), "open");
-  need(await as(ops, () => submitStep(fileId, "operations_intake")), "step 2");
+  // H-1 (2026-09-03): `openDossierWorkflow` completes step 2 from the opening
+  // act itself, so step 3 is already AVAILABLE here. No submit needed.
 
   need(await as(am, () => activateStep(fileId, "am_dossier_opening")), "activate 3");
   await provideEvidence(fileId, "BORDEREAU_LIVRAISON", am, ops);

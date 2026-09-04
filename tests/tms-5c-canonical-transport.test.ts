@@ -37,7 +37,10 @@ const root = path.join(__dirname, "..");
 const read = (...p: string[]) => fs.readFileSync(path.join(root, ...p), "utf-8");
 
 const TRANSPORT_ROLES = ["TRANSPORT_OFFICER", "PICKUP_AGENT", "DRIVER"] as const;
-const TRANSIT_ROLES = ["CHIEF_OF_TRANSIT", "CUSTOMS_DECLARANT", "CUSTOMS_FIELD_AGENT", "QUOTATION_MANAGER"] as const;
+// QUOTATION_MANAGER was here until H-7 (2026-09-03) re-homed cotation to
+// OPERATIONS. What TMS-5C guarantees is unchanged: moving TRANSPORT out of
+// TRANSIT did not move the CUSTOMS roles, which are the three below.
+const TRANSIT_ROLES = ["CHIEF_OF_TRANSIT", "CUSTOMS_DECLARANT", "CUSTOMS_FIELD_AGENT"] as const;
 
 // ====================================================== the realignment ====
 

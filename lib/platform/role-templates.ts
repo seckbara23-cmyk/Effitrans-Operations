@@ -362,7 +362,14 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
       "analytics:read", "client:read", "communication:manage", "communication:read",
       "communication:send", "customs:create", "customs:delete", "customs:read", "customs:release",
       "customs:update", "document:approve", "document:create", "document:delete", "document:read",
-      "document:update", "executive:dashboard:read", "file:assign", "file:assign:commercial", "file:delete", "file:transition", "file:read", "file:read:all",
+      "document:update", "executive:dashboard:read", "file:assign", "file:assign:commercial", "file:delete",
+      // H-9 (ratified 2026-09-03): the Operations Supervisor maintains the
+      // operational dossier as information arrives. `file:transition` stays a
+      // SEPARATE authority — advancing the ladder and editing master data are
+      // still distinct acts; only the grant changed, not the distinction. It
+      // confers nothing over Finance, Customs, POD or payment records, each of
+      // which keeps its own permission. `file:create` deliberately NOT granted.
+      "file:update", "file:transition", "file:read", "file:read:all",
       "finance:create", "finance:issue", "finance:payment", "finance:read", "finance:update",
       "finance:void", "portal:manage", ...BASE, "report:read", "task:create", "task:delete",
       "task:read", "task:read:all", "task:update", "tracking:manage", "tracking:read",

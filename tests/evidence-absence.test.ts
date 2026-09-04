@@ -128,11 +128,17 @@ describe("C-3 — the write path is gated like every other mutation", () => {
     expect(action).toContain('assertPermission("file:create")');
     expect(action).toContain('assertControlStep("evidence.declare_absence", fileId, user.tenantId, user.id)');
     expect(action).toContain("if (gate) return { ok: false, error: gate };");
-    // …and the gate points at step 3, which owns all three declarable types.
+    // …and the gate still points at step 3, whose control this remains.
     expect(CONTROL_OWNING_STEP["evidence.declare_absence"]).toBe("am_dossier_opening");
-    for (const key of DECLARABLE_EVIDENCE_KEYS) {
-      expect(getStep("am_dossier_opening")!.requiredDocuments, key).toContain(key);
-    }
+    // H-3/H-4/H-5 (2026-09-03) removed all four documents from step 3's required
+    // set, so the declarable keys no longer appear there. C-3 itself is
+    // DELIBERATELY UNTOUCHED and stays closed: the same three keys, the same
+    // migration CHECK, the same mandatory motif. What changed is which step
+    // demands them, never who may waive what.
+    expect([...DECLARABLE_EVIDENCE_KEYS].sort()).toEqual(
+      ["SPENDING_AUTHORIZATION", "TRANSPORT_REQUEST", "VENDOR_INVOICE"],
+    );
+    expect(getStep("am_dossier_opening")!.requiredDocuments).toEqual([]);
   });
 
   it("is attributed and audited — with an event the real validator accepts", () => {

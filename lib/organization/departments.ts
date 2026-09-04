@@ -123,7 +123,11 @@ export const ROLE_CANONICAL_DEPARTMENT: Readonly<Record<string, CanonicalDepartm
   CHIEF_OF_TRANSIT: "TRANSIT",
   CUSTOMS_DECLARANT: "TRANSIT", // Déclarant en douane — prepares/submits in GAINDE
   CUSTOMS_FIELD_AGENT: "TRANSIT", // Agent de terrain douane (BAE, sorties)
-  QUOTATION_MANAGER: "TRANSIT", // PROVISIONAL — cotation is Chef de Transit's step T1 in the Guide
+  // RATIFIED 2026-09-03 (H-7). Was TRANSIT, marked PROVISIONAL on a reading of
+  // the Transit Guide's T1 « cotation ». DEC-C32 already places quotation
+  // validation under OPS_SUPERVISOR, and the commercial cotation reaches
+  // Operations with the client's request — it is not Transit's work.
+  QUOTATION_MANAGER: "OPERATIONS",
 
   // ---- Transport — ground execution (TMS-5C, superseding business decision 5)
   TRANSPORT_OFFICER: "TRANSPORT", // coordination du transport terrestre
@@ -212,7 +216,7 @@ export const CONTACT_DEPARTMENT_TO_CANONICAL: Readonly<Record<string, CanonicalD
  * department without touching the engine.
  */
 export const QUEUE_DEPARTMENT_TO_CANONICAL: Readonly<Record<string, CanonicalDepartmentCode>> = {
-  cotation: "TRANSIT", // PROVISIONAL — Guide T1: cotation by Chef de Transit
+  cotation: "OPERATIONS", // RATIFIED 2026-09-03 (H-7) — see QUOTATION_MANAGER above
   operations: "OPERATIONS",
   account_management: "OPERATIONS",
   coordination: "OPERATIONS",

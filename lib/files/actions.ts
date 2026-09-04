@@ -208,12 +208,21 @@ export async function updateFile(id: string, input: FileInput): Promise<ActionRe
   if (invalid) return { ok: false, error: invalid };
 
   const supabase = getAdminSupabaseClient();
+  // H-10 — read the CURRENT values before writing, so the audit can say what
+  // actually changed. The dossier is an editable record; the history of that
+  // record is what makes the leniency safe.
   const { data: existing } = await supabase
     .from("operational_file")
-    .select("id, tenant_id")
+    .select("id, tenant_id, type, client_id, priority, parent_file_id, client_reference, on_behalf_of, processing_due_date")
     .eq("id", id)
     .maybeSingle();
   if (!existing || existing.tenant_id !== admin.tenantId) return { ok: false, error: "not_found" };
+  const { data: existingShipment } = await supabase
+    .from("shipment")
+    .select("*")
+    .eq("file_id", id)
+    .eq("tenant_id", admin.tenantId)
+    .maybeSingle();
 
   // A dossier may never be its own parent; the database also proves it, but
   // refusing here keeps the message specific.
@@ -243,13 +252,41 @@ export async function updateFile(id: string, input: FileInput): Promise<ActionRe
     .upsert(shipmentRow(admin.tenantId, id, input.shipment), { onConflict: "file_id" });
   if (shipErr) return { ok: false, error: shipErr.message };
 
+  // H-10 — attributable, reconstructable history: actor, timestamp (the audit
+  // row's own), the fields that changed, and both values. Only CHANGED fields
+  // are recorded: an audit listing every field on every save hides the edit.
+  // Reason is not forced for ordinary corrections (ratified for this slice); the
+  // sensitive-field matrix that would require one is a follow-up ruling.
+  const nextFile: Record<string, unknown> = {
+    type: input.type,
+    client_id: input.clientId,
+    priority: input.priority ?? "normal",
+    ...fileFacts(input),
+  };
+  const nextShipment = shipmentRow(admin.tenantId, id, input.shipment) as Record<string, unknown>;
+  const before: Record<string, unknown> = {};
+  const after: Record<string, unknown> = {};
+  const diff = (prev: Record<string, unknown> | null, next: Record<string, unknown>, prefix: string) => {
+    for (const [k, v] of Object.entries(next)) {
+      if (k === "tenant_id" || k === "file_id") continue;
+      const was = (prev ?? {})[k] ?? null;
+      const now = v ?? null;
+      if (String(was) === String(now)) continue;
+      before[`${prefix}${k}`] = was;
+      after[`${prefix}${k}`] = now;
+    }
+  };
+  diff(existing as Record<string, unknown>, nextFile, "");
+  diff((existingShipment as Record<string, unknown> | null) ?? null, nextShipment, "shipment.");
+
   await writeAudit({
     action: AuditActions.FILE_UPDATED,
     actorId: admin.id,
     tenantId: admin.tenantId,
     entity: "operational_file",
     entityId: id,
-    after: { type: input.type, client_id: input.clientId },
+    before,
+    after,
   });
 
   revalidatePath("/files");

@@ -126,8 +126,8 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
   // ------------------------------------------------------- reaching step 4 ----
 
   it("steps 2 and 3 complete on real evidence, opening the road to Transit", async () => {
-    const s2 = await as(ops, () => submitStep(fileId, "operations_intake"));
-    expect(s2.ok, `step 2: ${JSON.stringify(s2)}`).toBe(true);
+    // H-1: step 2 was completed by the opening act, so step 3 is already open.
+    expect((await execution(fileId, "operations_intake"))?.state).toBe("COMPLETED");
     expect((await execution(fileId, "am_dossier_opening"))?.state).toBe("AVAILABLE");
 
     const started = await as(am, () => activateStep(fileId, "am_dossier_opening"));
@@ -501,8 +501,7 @@ describe("C-4 — a RECONCILED completion promotes its dependents", () => {
     );
     if (!opened.ok) throw new Error(`recon workflow open failed: ${JSON.stringify(opened)}`);
 
-    const s2 = await as(ops, () => submitStep(reconFile, "operations_intake"));
-    if (!s2.ok) throw new Error(`recon step 2 failed: ${JSON.stringify(s2)}`);
+    // H-1: the opening act already completed step 2.
     const started = await as(am, () => activateStep(reconFile, "am_dossier_opening"));
     if (!started.ok) throw new Error(`recon step 3 activate failed: ${JSON.stringify(started)}`);
   });

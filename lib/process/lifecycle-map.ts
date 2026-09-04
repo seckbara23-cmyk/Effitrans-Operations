@@ -73,11 +73,11 @@ export type TransitSourceStep = {
 };
 
 export const TRANSIT_SOURCE_MAP: readonly TransitSourceStep[] = [
-  { key: "T1", labelFr: "Réception, vérification sommaire et cotation", stepKeys: ["cotation", "coordinator_reception"] },
+  { key: "T1", labelFr: "Réception et vérification sommaire", stepKeys: ["coordinator_reception"] }, // H-7: cotation is not Transit's
   { key: "T2", labelFr: "Analyse, conformité documentaire, ORBUS / GRED", stepKeys: ["customs_preparation"] },
   { key: "T3", labelFr: "Relation client en cas de manque (Account Manager)", stepKeys: [], mechanism: "correction_return" },
   { key: "T4", labelFr: "Préparation et saisie (manifeste, note de détail, GAINDE)", stepKeys: ["customs_preparation"] },
-  { key: "T5", labelFr: "Contrôle, validation et signature du devis", stepKeys: ["transit_validation"] },
+  { key: "T5", labelFr: "Contrôle, validation et signature du dossier douane", stepKeys: ["transit_validation"] }, // H-8: it validates the customs dossier, never a devis
   { key: "T6", labelFr: "Intervention Finance (enregistrement)", stepKeys: ["coordinator_to_finance", "gainde_registration"] },
   { key: "T7", labelFr: "Vérification du rattachement électronique", stepKeys: ["coordinator_to_declarant"] },
   { key: "T8", labelFr: "Dépôt, suivi des observations et obtention du BAE", stepKeys: ["gainde_document_submission", "customs_followup", "customs_field_clearance"] },

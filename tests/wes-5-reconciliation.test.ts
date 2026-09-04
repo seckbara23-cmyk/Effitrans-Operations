@@ -50,8 +50,13 @@ describe("WES-5B step satisfaction", () => {
     // MAYA-P1.11 added `gainde_document_submission` (CEO step 9, rattachement)
     // once Effitrans ratified the act, its owner and its manual nature. The set
     // grows only when a business answer arrives — never to make a step tidy.
+    // H-1/H-2 (2026-09-03) REMOVED `am_dossier_opening`. Its proxy was « the
+    // dossier left DRAFT », held back only by step 3's four required documents;
+    // once those were ratified away the proxy would have stood alone and
+    // completed the Account Manager's preparation — the readiness act itself —
+    // from any document verification. The set shrinks the same way it grows:
+    // only on a business answer.
     expect([...FACT_PROVABLE_STEP_KEYS].sort()).toEqual([
-      "am_dossier_opening",
       "customs_field_clearance",
       "gainde_document_submission",
       "gainde_registration",

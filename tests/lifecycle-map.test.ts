@@ -55,11 +55,24 @@ describe("40 — Transit T1–T10 mapping is complete, with source terminology p
     expect(TRANSIT_SOURCE_MAP.find((t) => t.key === "T3")!.mechanism).toBe("correction_return");
   });
 
-  it("preserves the source vocabulary (GAINDE, ORBUS/GRED, BAE, cotation, rattachement, Maritime/AIBD)", () => {
+  it("preserves the source vocabulary (GAINDE, ORBUS/GRED, BAE, rattachement, Maritime/AIBD)", () => {
     const labels = TRANSIT_SOURCE_MAP.map((t) => t.labelFr).join(" ");
-    for (const term of ["cotation", "ORBUS / GRED", "GAINDE", "rattachement", "BAE", "Maritime / AIBD"]) {
+    // « cotation » left this list on 2026-09-03 (H-7). Preserving the source
+    // vocabulary is right for terms of art the platform implements; it was
+    // wrong for a word that attributed the commercial devis to Transit, which
+    // DEC-C32 places under Operations. No Transit clearance-estimate act exists
+    // in the platform, so the word described nothing here.
+    for (const term of ["ORBUS / GRED", "GAINDE", "rattachement", "BAE", "Maritime / AIBD"]) {
       expect(labels, term).toContain(term);
     }
+    // H-7 / H-8 — what the two corrected stages must say, and must not.
+    const t1 = TRANSIT_SOURCE_MAP.find((t) => t.key === "T1")!;
+    expect(t1.labelFr).toBe("Réception et vérification sommaire");
+    expect(t1.stepKeys).not.toContain("cotation");
+    const t5 = TRANSIT_SOURCE_MAP.find((t) => t.key === "T5")!;
+    expect(t5.labelFr).not.toContain("devis");
+    expect(t5.labelFr).toContain("dossier douane");
+    expect(labels).not.toContain("cotation");
   });
 });
 

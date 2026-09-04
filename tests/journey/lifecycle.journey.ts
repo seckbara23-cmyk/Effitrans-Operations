@@ -80,19 +80,26 @@ describe("C-4 slice 1 — Creation → Transit reception", () => {
     );
     expect(opened.ok, `openDossierWorkflow failed: ${JSON.stringify(opened)}`).toBe(true);
 
-    // Opening ACTIVATES intake — it does not complete it.
+    // H-1 (ratified 2026-09-03): the OPENING ACT is the intake act. It records
+    // the canonical Operations owner and the Account-Manager seat — the only
+    // facts step 2 certifies — so it completes step 2 rather than asking the
+    // operator for a click that certifies nothing.
     const intake = await execution(fileId, "operations_intake");
-    expect(intake?.state).toBe("ACTIVE");
-    // …and step 3 has NOT jumped ahead: its prerequisite is not done yet.
+    expect(intake?.state, "opening completes step 2").toBe("COMPLETED");
+    // …and step 3 is therefore open for the Account Manager immediately, which
+    // is the whole point: preparation no longer waits on an administrative click.
     const step3 = await execution(fileId, "am_dossier_opening");
-    expect(step3?.state, "step 3 must wait for step 2").toBe("PENDING");
+    expect(step3?.state, "the AM may start at once").toBe("AVAILABLE");
     // Cotation was skipped with a derived reason, which counts as done.
     expect((await execution(fileId, "cotation"))?.state).toBe("SKIPPED");
   });
 
   it("C-1 — completing step 2 promotes BOTH dependents, including step 14", async () => {
-    const submitted = await as(ops, () => submitStep(fileId, "operations_intake"));
-    expect(submitted.ok, `submit step 2 failed: ${JSON.stringify(submitted)}`).toBe(true);
+    // Step 2 is completed by the opening act now (H-1), so the promotion under
+    // test has already run. Re-submitting is correctly refused — a completed
+    // step is terminal — and that refusal is itself worth pinning.
+    const again = await as(ops, () => submitStep(fileId, "operations_intake"));
+    expect(again.ok, "a completed step cannot be submitted twice").toBe(false);
     expect((await execution(fileId, "operations_intake"))?.state).toBe("COMPLETED");
 
     // The dependent named by `nextSteps`…
