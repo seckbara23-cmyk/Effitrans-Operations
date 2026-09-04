@@ -33,7 +33,7 @@ import { createFile } from "@/lib/files/actions";
 import { openDossierWorkflow, handDossierToTransit } from "@/lib/process/engine/intake-actions";
 import { submitStep, activateStep, approveStep, sendHandoff, receiveHandoff } from "@/lib/process/engine/actions";
 import { declareEvidenceAbsence } from "@/lib/process/evidence-absence-actions";
-import { getActivity, getStep } from "@/lib/process/effitrans-process";
+import { getStep } from "@/lib/process/effitrans-process";
 import { receiveDossierAtTransit, assignTransitStep, recordBae } from "@/lib/process/engine/transit-actions";
 import { createCustoms, changeCustomsStatus, recordGaindeRegistration } from "@/lib/customs/actions";
 import { createTransport, assignTransport, changeTransportStatus } from "@/lib/transport/actions";
@@ -185,22 +185,6 @@ describe("C-4 negative battery — the refusals, in the order a dossier meets th
     const rows = await handoffs(fileId);
     expect(rows).toHaveLength(1);
     expect(rows[0].status).toBe("SENT");
-  });
-
-  it("MISSING EVIDENCE — a step that still requires documents refuses, and stays as it was", async () => {
-    // Re-pointed 2026-09-03. This proved the evidence gate through step 3's four
-    // required documents; H-3..H-6 ratified those away, so step 3 carries none.
-    // The INVARIANT is the gate itself, and it is proven where evidence still
-    // genuinely lives: `pre_gate`, which opens from step 3 and requires the
-    // Pre-Gate authorization.
-    expect(getActivity("pre_gate")!.requiredDocuments).toEqual(["PRE_GATE_AUTHORIZATION"]);
-    need(await as(am, () => activateStep(fileId, "pre_gate")), "activate pre_gate");
-
-    const before = await stepState("pre_gate");
-    const refused = await as(am, () => submitStep(fileId, "pre_gate"));
-    expect(refused.ok).toBe(false);
-    expect(err(refused)).toBe("evidence_missing");
-    expect(await stepState("pre_gate")).toEqual(before);
   });
 
   it("PERMISSION WITHOUT ELIGIBILITY — a holder who is not the routed receiver", async () => {
@@ -384,6 +368,19 @@ describe("C-4 negative battery — the refusals, in the order a dossier meets th
     await provideEvidence(fileId, "BON_A_DELIVRER", am, ops);
     need(await as(am, () => submitStep(fileId, "bon_a_delivrer")), "BAD");
     need(await as(am, () => activateStep(fileId, "pre_gate")), "activate pre-gate");
+
+    // MISSING EVIDENCE — proven here, at the one moment pre_gate is ACTIVE and
+    // its document is not yet in. This case used to run on step 3's four
+    // required documents; H-3..H-6 (2026-09-03) ratified those away, so the
+    // gate is proven where evidence still genuinely lives. Asserted inline
+    // rather than as its own case: activating pre_gate twice is `invalid_state`,
+    // so a standalone probe would consume the step this walk needs.
+    const beforeEvidence = await stepState("pre_gate");
+    const premature = await as(am, () => submitStep(fileId, "pre_gate"));
+    expect(premature.ok, "a step with evidence must refuse without it").toBe(false);
+    expect(err(premature)).toBe("evidence_missing");
+    expect(await stepState("pre_gate"), "a refusal changes nothing").toEqual(beforeEvidence);
+
     await provideEvidence(fileId, "PRE_GATE_AUTHORIZATION", am, ops);
     need(await as(am, () => submitStep(fileId, "pre_gate")), "pre-gate");
     need(await as(pickup, () => activateStep(fileId, "pickup")), "activate 15");
