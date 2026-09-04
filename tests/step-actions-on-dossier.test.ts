@@ -159,8 +159,11 @@ describe("UAT-WF-STEP3-001 — one model, two surfaces", () => {
     }
     // The row reads the verdict; it does not rebuild it.
     expect(queueRow).toContain("const el = item.eligibility;");
-    expect(stepActions).toContain("eligibility.canStart");
-    expect(stepActions).toContain("eligibility.canSubmit");
+    // Each button is gated by the shared verdict AT ITS OWN RENDER SITE. A
+    // substring check passes on a mere mention elsewhere in the file, which is
+    // how a probe replaced one gate with `true` and survived.
+    expect(stepActions).toMatch(/\{eligibility\.canStart && \(/);
+    expect(stepActions).toMatch(/\{eligibility\.canSubmit && \(/);
   });
 
   it("the page passes the ENGINE's facts, not its own opinion of them", () => {
@@ -173,10 +176,14 @@ describe("UAT-WF-STEP3-001 — one model, two surfaces", () => {
 // ═══════════ no second mutation path ═══════════════════════════════════════
 
 describe("UAT-WF-STEP3-001 — the same engine, called the same way", () => {
-  it("both surfaces call the SAME two server actions", () => {
+  it("both surfaces call the SAME two server actions, at the call site", () => {
+    // Asserted as CALLS, not as imports: leaving the import while swapping the
+    // call for a fetch is exactly the second mutation path this forbids.
     for (const [name, src] of [["queue row", queueRow], ["step actions", stepActions]] as const) {
-      expect(src, name).toContain("queueStartStep");
-      expect(src, name).toContain("queueSubmitStep");
+      expect(src, name).toMatch(/queueStartStep\([^)]*fileId[^)]*stepKey/);
+      expect(src, name).toMatch(/queueSubmitStep\([^)]*fileId[^)]*stepKey/);
+      expect(src, name).not.toMatch(/fetch\s*\(/);
+      expect(src, name).not.toMatch(/method:\s*["'](POST|PUT|PATCH|DELETE)/i);
     }
   });
 
