@@ -17,6 +17,11 @@
  *   2. dispatching a field team needs the same custody;
  *   3. assigned work belongs to its assignee;
  *   4. recording the BAE is not releasing — the Chef verifies.
+ *      ⚠ BLOCKED and NOT implemented: `recordCustomsRelease` is bound by a
+ *      ratified 2026-08-24 control (`assertControlStep("customs.release")`) to
+ *      step 13's CLAIMANT — the field agent. Delivering guard 4 as ruled needs
+ *      that control, the registry or the schema to change, so it is reported
+ *      for ruling rather than forced. The block is pinned below.
  *
  * And four things that must NOT move: transport preparation stays parallel,
  * physical execution stays customs-gated, transport-only and waived dossiers
@@ -167,55 +172,37 @@ describe("TRANSIT-CUSTODY-03 guard 3 — a Déclarant does not work another's do
   });
 });
 
-// ═══════════ guard 4 — recording is not releasing ══════════════════════════
+// ═══════════ guard 4 — BLOCKED, and why ═══════════════════════════════════
 
-describe("TRANSIT-CUSTODY-03 guard 4 — the Chef verifies before Transport may move", () => {
-  it("recordBae records the reference and releases nothing", () => {
+describe("TRANSIT-CUSTODY-03 guard 4 — recorded as blocked, not silently dropped", () => {
+  it("the release is bound to step 13's CLAIMANT by a ratified control", () => {
+    // `recordCustomsRelease` calls `assertControlStep("customs.release", …)`,
+    // ratified 2026-08-24: permission is necessary, not sufficient — the owning
+    // official step must be open and not claimed by somebody else. The owning
+    // step is `customs_field_clearance`, which the field agent claims to do the
+    // field work. So a Chef de Transit who did not claim it is refused, and
+    // guard 4 as ruled ("only the Chef produces RELEASED") cannot be delivered
+    // without changing that control, the registry, or the schema — none of which
+    // this slice is authorised to do. Reported for ruling instead of forced.
+    const customs = strip(read("lib/customs/actions.ts"));
+    const fnRelease = fn(customs, "recordCustomsRelease");
+    expect(fnRelease).toContain('assertControlStep("customs.release"');
+    expect(fnRelease).toContain('assertPermission("customs:release")');
+    const gate = strip(read("lib/process/control-gate.ts"));
+    expect(gate + strip(read("lib/process/control-gate-server.ts"))).toContain("assignedUserId");
+  });
+
+  it("recording the BAE therefore still releases — unchanged, and pinned as such", () => {
     const s = fn(transitActions, "recordBae");
-    expect(s).toContain("recordBaeReference(customs.id, baeReference.trim())");
-    expect(s, "recording must not release").not.toContain("releaseCustoms(");
-  });
-
-  it("the release is a distinct act under the Chef's verification authority", () => {
-    const s = fn(transitActions, "releaseTransitToTransport");
-    expect(s).toContain('transitGuard("customs:validate", fileId)');
-    expect(s).toContain("releaseCustoms(");
-    // Evidence first: releasing without a recorded BAE is refused.
-    expect(s).toContain('if (!bae) return fail("evidence_missing")');
-    // Custody still required, and the act is audited.
-    expect(s).toContain("transitCustody(");
-    expect(s).toContain("PROCESS_TRANSIT_RELEASED");
-  });
-
-  it("neither Déclarant nor field agent may release; the Chef and oversight may", () => {
-    for (const role of ["CUSTOMS_DECLARANT", "CUSTOMS_FIELD_AGENT", "COORDINATOR",
-                        "ACCOUNT_MANAGER", "TRANSPORT_OFFICER"]) {
-      expect(perms(role), role).not.toContain("customs:validate");
-    }
-    for (const role of ["CHIEF_OF_TRANSIT", "OPS_SUPERVISOR", "SYSTEM_ADMIN"]) {
-      expect(perms(role), role).toContain("customs:validate");
-    }
+    expect(s).toContain("releaseCustoms(customs.id, baeReference.trim())");
+    expect(transitActions).not.toContain("releaseTransitToTransport");
   });
 
   it("the field agent keeps `customs:release` — it is step 13's own permission", () => {
-    // Narrowing that grant instead would have blocked the field agent from the
-    // very step the workflow assigns them.
+    // Narrowing that grant, the obvious first idea, would have blocked the field
+    // agent from the very step the workflow assigns them.
     expect(getStep("customs_field_clearance")!.permissions).toEqual(["customs:release"]);
     expect(perms("CUSTOMS_FIELD_AGENT")).toContain("customs:release");
-  });
-
-  it("no 27th step, and no new permission", () => {
-    expect(getStep("customs_field_clearance")).not.toBeNull();
-    const registry = read("lib/process/effitrans-process.ts");
-    expect(registry).not.toContain("stepNumber: 27");
-    for (const src of [transitActions, routes]) {
-      expect(src).not.toMatch(/transit:release|customs:final|transit:approve/);
-    }
-  });
-
-  it("recording and releasing are separate FACTS in the read state", () => {
-    expect(transitActions).toContain("recorded: Boolean(customs?.bae_reference)");
-    expect(transitActions).toContain('released: customs?.status === "RELEASED"');
   });
 });
 
@@ -227,8 +214,7 @@ describe("TRANSIT-CUSTODY-03 — preparation stays parallel, execution stays gat
     expect(canPickup("IMP", { required: true, status: "RELEASED" }, false)).toBe(true);
   });
 
-  it("a recorded BAE alone does NOT unlock transport — only the release does", () => {
-    // The BAE lives on the customs record; the gate reads STATUS.
+  it("the gate reads STATUS — an in-progress customs record never unlocks transport", () => {
     expect(canPickup("IMP", { required: true, status: "INSPECTION" }, false)).toBe(false);
     expect(FACT_RULES["customs_field_clearance"].satisfied({ customs: { status: "RELEASED" } } as never)).toBe(true);
     expect(FACT_RULES["customs_field_clearance"].satisfied({ customs: { status: "INSPECTION" } } as never)).toBe(false);
@@ -256,14 +242,7 @@ describe("TRANSIT-CUSTODY-03 — preparation stays parallel, execution stays gat
 // ═══════════ the operator sequence, and nothing hidden ═════════════════════
 
 describe("TRANSIT-CUSTODY-03 — the Chef's sequence reads coherently", () => {
-  it("the panel offers « Vérifier et libérer vers le Transport », gated on the Chef's authority", () => {
-    expect(panel).toContain("Vérifier et libérer vers le Transport");
-    expect(panel).toContain("canReleaseTransit");
-    expect(processPage).toContain('canReleaseTransit={hasPermission(permissions, "customs:validate")}');
-  });
-
-  it("when unavailable it names the prerequisite instead of failing generically", () => {
-    expect(panel).toContain("En attente de la vérification du Chef de Transit");
+  it("a refusal names the prerequisite instead of failing generically", () => {
     for (const code of ["transit_custody_required", "step_assigned_to_other", "not_authorized_assigner"]) {
       expect(panel, code).toContain(`${code}:`);
     }

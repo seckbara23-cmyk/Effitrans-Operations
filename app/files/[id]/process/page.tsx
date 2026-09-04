@@ -207,7 +207,6 @@ export default async function ProcessInspectorPage({ params }: { params: { id: s
       canRequestDecision={hasPermission(permissions, "process:decision:create")}
       canApproveDecision={hasPermission(permissions, "process:decision:approve")}
       canRecordBae={hasPermission(permissions, "customs:release")}
-      canReleaseTransit={hasPermission(permissions, "customs:validate")}
       canDispatch={hasPermission(permissions, "process:team:manage")}
       canManageBlockers={hasPermission(permissions, "process:blocker:manage")}
     />

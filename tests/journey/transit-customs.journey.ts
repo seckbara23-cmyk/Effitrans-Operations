@@ -25,7 +25,7 @@ import { createFile } from "@/lib/files/actions";
 import { openDossierWorkflow, handDossierToTransit } from "@/lib/process/engine/intake-actions";
 import { submitStep, activateStep, approveStep, sendHandoff, receiveHandoff } from "@/lib/process/engine/actions";
 import { declareEvidenceAbsence } from "@/lib/process/evidence-absence-actions";
-import { receiveDossierAtTransit, assignTransitStep, recordBae, releaseTransitToTransport } from "@/lib/process/engine/transit-actions";
+import { receiveDossierAtTransit, assignTransitStep, recordBae } from "@/lib/process/engine/transit-actions";
 import { createCustoms, recordGaindeRegistration, changeCustomsStatus } from "@/lib/customs/actions";
 
 let ops: CurrentUser;            // OPS_SUPERVISOR — customs:validate (independent checker)
@@ -437,14 +437,6 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     // field agent holds it, so anyone else would be refused assigned_to_another.
     const bae = await as(field, () => recordBae(fileId, `BAE-JRN-${Date.now()}`));
     expect(bae.ok, `recordBae: ${JSON.stringify(bae)}`).toBe(true);
-
-    // GUARD 4 (TRANSIT-CUSTODY-03): recording the reference is the field act and
-    // changes no status — the customs section is not released by whoever wrote
-    // the BAE down. The Chef de Transit verifies and releases, and THAT is what
-    // reconciliation reads below.
-    expect((await execution(fileId, "customs_field_clearance"))?.state).not.toBe("COMPLETED");
-    const released = await as(transit, () => releaseTransitToTransport(fileId));
-    expect(released.ok, `release: ${JSON.stringify(released)}`).toBe(true);
 
     // The release IS the fact that proves this step, so reconciliation closes it
     // — and now promotes from it.

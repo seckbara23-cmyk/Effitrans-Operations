@@ -25,7 +25,7 @@ import { createFile } from "@/lib/files/actions";
 import { openDossierWorkflow, handDossierToTransit } from "@/lib/process/engine/intake-actions";
 import { submitStep, activateStep, approveStep, sendHandoff, receiveHandoff } from "@/lib/process/engine/actions";
 import { declareEvidenceAbsence } from "@/lib/process/evidence-absence-actions";
-import { receiveDossierAtTransit, assignTransitStep, recordBae, releaseTransitToTransport } from "@/lib/process/engine/transit-actions";
+import { receiveDossierAtTransit, assignTransitStep, recordBae } from "@/lib/process/engine/transit-actions";
 import { createCustoms, changeCustomsStatus } from "@/lib/customs/actions";
 import { createTransport, assignTransport, changeTransportStatus } from "@/lib/transport/actions";
 import {
@@ -163,9 +163,6 @@ async function carryToStep13() {
   await as(field, () => activateStep(fileId, "customs_field_clearance"));
   const bae = await as(field, () => recordBae(fileId, `BAE-S3-${Date.now()}`));
   if (!bae.ok) throw new Error(`bae: ${JSON.stringify(bae)}`);
-  // GUARD 4: the field agent records the BAE; the Chef verifies and releases.
-  const rel = await as(transit, () => releaseTransitToTransport(fileId));
-  if (!rel.ok) throw new Error(`release: ${JSON.stringify(rel)}`);
 }
 
 describe("C-4 slice 3a — transport, convergence, delivery, completeness", () => {

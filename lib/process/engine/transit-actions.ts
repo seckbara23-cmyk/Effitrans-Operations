@@ -33,7 +33,7 @@ import { roleLabel, ROLE_DISPLAY_PRIORITY } from "@/lib/navigation/roles";
 import { createNotification } from "@/lib/notifications/create";
 import { receiveHandoff } from "./actions";
 import { assignStepTeam, requestProcessDecision, finalizeProcessDecision, openProcessBlocker } from "./structures-actions";
-import { releaseCustoms, recordBaeReference } from "@/lib/customs/actions";
+import { releaseCustoms } from "@/lib/customs/actions";
 import { mayAssignStep, transitCustodyRefusal } from "@/lib/process/handoff-routes";
 import { isKnownStep } from "./state";
 import {
@@ -206,15 +206,7 @@ export type TransitState = {
   reception: { pending: boolean; received: boolean; handoffId: string | null };
   declarant: { name: string; roleLabel: string | null; departmentLabel: string | null } | null;
   dispatch: { teamCode: string | null; deterministic: boolean; suggestion: string | null };
-  bae: {
-    /** The reference is recorded. NOT the same as released (TRANSIT-CUSTODY-03). */
-    recorded: boolean;
-    /** The Chef verified and released to Transport: customs_record is RELEASED. */
-    released: boolean;
-    reference: string | null;
-    customsStatus: string | null;
-    customsRecordId: string | null;
-  };
+  bae: { obtained: boolean; reference: string | null; customsStatus: string | null; customsRecordId: string | null };
   paymentGate: { decisionId: string | null; status: string | null; outcome: string | null } | null;
   openBlockers: { id: string; title: string; category: string; status: string; customerVisible: boolean }[];
 };
@@ -334,8 +326,7 @@ export async function getTransitState(fileId: string): Promise<TransitState | nu
         suggestion,
       },
       bae: {
-        recorded: Boolean(customs?.bae_reference),
-        released: customs?.status === "RELEASED",
+        obtained: customs?.status === "RELEASED",
         reference: customs?.bae_reference ?? null,
         customsStatus: customs?.status ?? null,
         customsRecordId: customs?.id ?? null,
@@ -613,14 +604,7 @@ export async function recordBae(fileId: string, baeReference: string): Promise<E
     .maybeSingle();
   if (!customs) return fail("not_found");
 
-  // GUARD 4 (TRANSIT-CUSTODY-03). Recording the BAE and releasing the dossier to
-  // Transport are DIFFERENT responsibilities, and this act used to be both: it
-  // called `releaseCustoms`, so whoever recorded the reference also produced the
-  // RELEASED state that unlocks physical transport. The two halves already
-  // existed separately in the customs module (WES-4E) and are now used as such —
-  // this records the evidence and changes no status. The Chef de Transit
-  // verifies and releases, in `releaseTransitToTransport` below.
-  const res = await recordBaeReference(customs.id, baeReference.trim());
+  const res = await releaseCustoms(customs.id, baeReference.trim());
   if (!res.ok) return fail(res.error === "bae_required" ? "reason_required" : "invalid_state");
 
   const instance = await loadInstance(admin, ctx.tenantId, fileId);
@@ -640,66 +624,6 @@ export async function recordBae(fileId: string, baeReference: string): Promise<E
 }
 
 // =============================================================== dispatch ====
-
-/**
- * THE final Transit release — ratified 2026-09-04 (TRANSIT-CUSTODY-03, guard 4).
- *
- * « Vérifier et libérer vers Transport ». The Chef de Transit confirms the
- * customs section is complete and only then does `customs_record` reach
- * RELEASED, which is the condition physical transport already waits on
- * (`canPickup`). No 27th official step was added: the release was always a
- * customs-record fact, and step 13 still carries the field work.
- *
- * Authority is `customs:validate` — the Chef's existing verification capability,
- * held by CHIEF_OF_TRANSIT, OPS_SUPERVISOR (oversight) and SYSTEM_ADMIN, and by
- * neither the Déclarant nor the field agent. Choosing an existing permission
- * that already names exactly the ratified releasers is what keeps this slice
- * free of an RBAC migration; `customs:release` could not be narrowed instead
- * because it IS step 13's own permission and the field agent needs it to work
- * that step at all.
- *
- * A BAE reference must already be recorded: releasing without one is refused,
- * so the evidence always precedes the verification.
- */
-export async function releaseTransitToTransport(fileId: string): Promise<EngineResult> {
-  const ctx = await transitGuard("customs:validate", fileId);
-  if (isErr(ctx)) return fail(ctx);
-  const admin = getAdminSupabaseClient();
-
-  const instance = await loadInstance(admin, ctx.tenantId, fileId);
-  if (!instance) return fail("not_found");
-  const custody = await transitCustody(admin, ctx.tenantId, instance.id);
-  if (custody) return fail(custody);
-
-  const { data: customs } = await admin
-    .from("customs_record")
-    .select("id, bae_reference, status")
-    .eq("tenant_id", ctx.tenantId)
-    .eq("file_id", fileId)
-    .is("deleted_at", null)
-    .maybeSingle();
-  if (!customs) return fail("not_found");
-
-  const bae = (customs.bae_reference as string | null)?.trim();
-  // The evidence comes first, always. Verifying nothing is not verification.
-  if (!bae) return fail("evidence_missing");
-  if (customs.status === "RELEASED") return { ok: true, id: customs.id as string };
-
-  const res = await releaseCustoms(customs.id as string, bae);
-  if (!res.ok) return fail(res.error === "bae_required" ? "evidence_missing" : "invalid_state");
-
-  await writeAudit({
-    action: AuditActions.PROCESS_TRANSIT_RELEASED,
-    actorId: ctx.userId,
-    tenantId: ctx.tenantId,
-    entity: "customs_record",
-    entityId: customs.id as string,
-    before: { status: customs.status },
-    after: { status: "RELEASED", bae_reference: bae, verified_by: ctx.userId },
-  });
-
-  return { ok: true, id: customs.id as string };
-}
 
 /**
  * Dispatch the dossier to a field team (AIBD / Maritime) — the T9 shape over the
