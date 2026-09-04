@@ -33,7 +33,7 @@ import { createFile } from "@/lib/files/actions";
 import { openDossierWorkflow, handDossierToTransit } from "@/lib/process/engine/intake-actions";
 import { submitStep, activateStep, approveStep, sendHandoff, receiveHandoff } from "@/lib/process/engine/actions";
 import { declareEvidenceAbsence } from "@/lib/process/evidence-absence-actions";
-import { getActivity } from "@/lib/process/effitrans-process";
+import { getActivity, getStep } from "@/lib/process/effitrans-process";
 import { receiveDossierAtTransit, assignTransitStep, recordBae } from "@/lib/process/engine/transit-actions";
 import { createCustoms, changeCustomsStatus, recordGaindeRegistration } from "@/lib/customs/actions";
 import { createTransport, assignTransport, changeTransportStatus } from "@/lib/transport/actions";
@@ -121,6 +121,19 @@ describe("C-4 negative battery — the refusals, in the order a dossier meets th
     expect(anon.ok, "signed out is refused").toBe(false);
 
     expect(await stepState("operations_intake"), "neither attempt moved it").toEqual(before);
+  });
+
+  it("STEP 3 — the Account Manager claims it, and no document gate stands in the way", async () => {
+    // H-3..H-6 (2026-09-03): step 3's four required documents were ratified away
+    // — they belonged to Finance, the transport lane and pickup — so what opens
+    // here is the preparation itself. Claiming it is also what the hijack test
+    // below depends on: a step must be ACTIVE before anyone can submit it.
+    expect(getStep("am_dossier_opening")!.requiredDocuments).toEqual([]);
+    need(await as(am, () => activateStep(fileId, "am_dossier_opening")), "activate 3");
+
+    const claimed = await stepState("am_dossier_opening");
+    expect(claimed.state).toBe("ACTIVE");
+    expect(claimed.assigned, "activating claims the step").toBe(am.id);
   });
 
   it("INVALID « sans objet » — a non-declarable type, and a blank motif", async () => {
