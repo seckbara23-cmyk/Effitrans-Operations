@@ -38,6 +38,7 @@ import {
 import { initializeProcessForFile, activateEntryStep, sendHandoff } from "./actions";
 import { assignProcessOwner, skipStep } from "./structures-actions";
 import { transitionFile } from "@/lib/files/actions";
+import { evaluateStepEvidence } from "./evidence";
 import { loadProcessSnapshot } from "./snapshot";
 import { promoteSuccessors } from "./promote";
 import { writeAudit } from "@/lib/audit/log";
@@ -387,6 +388,23 @@ async function completeIntakeFromOpening(
   const snap = await loadProcessSnapshot(ctx.tenantId, fileId, ctx.permissions);
   const exec = snap?.executions.find((e) => e.stepKey === "operations_intake");
   if (!exec || exec.state !== "ACTIVE") return;
+
+  // OPS-OWNERSHIP-01 (ratified K3) — the SAME evidence gate `submitStep` applies.
+  //
+  // H-1 completes step 2 from the opening act rather than asking for a click
+  // that certifies nothing. That reasoning holds only while there IS something
+  // certified: step 2's fact is the designation of the Responsable client, and
+  // this door writes COMPLETED directly, so without this check the opening act
+  // would close the step on a dossier that has no Account Manager — which is
+  // precisely what K3 forbids, and would have made the gate inert on the path
+  // everyone actually uses.
+  //
+  // Not a second mechanism: the same `evaluateStepEvidence` on the same
+  // snapshot. When the designation exists the opening act still completes step 2
+  // exactly as H-1 intends; when it does not, the step stays ACTIVE and waits
+  // for the Operations Supervisor to designate, which is the ratified sequence.
+  const ev = evaluateStepEvidence("operations_intake", snap!.evidence);
+  if (!ev.complete) return;
 
   const now = new Date().toISOString();
   const admin = getAdminSupabaseClient();

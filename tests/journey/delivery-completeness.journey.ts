@@ -21,7 +21,7 @@ import {
 } from "./fixtures";
 import type { CurrentUser } from "@/lib/auth/current-user";
 
-import { createFile } from "@/lib/files/actions";
+import { createFile, assignCommercialOwner } from "@/lib/files/actions";
 import { openDossierWorkflow, handDossierToTransit } from "@/lib/process/engine/intake-actions";
 import { submitStep, activateStep, approveStep, sendHandoff, receiveHandoff } from "@/lib/process/engine/actions";
 import { declareEvidenceAbsence } from "@/lib/process/evidence-absence-actions";
@@ -107,6 +107,10 @@ async function carryToStep13() {
   if (!created.ok) throw new Error(`slice 3 creation failed: ${JSON.stringify(created)}`);
   fileId = (created as { id: string }).id;
 
+  // OPS-OWNERSHIP-01 (K3) — designate the Responsable client BEFORE opening:
+  // the opening act completes step 2 only when that governed designation
+  // exists. This is the ratified sequence, not test scaffolding.
+  await as(ops, () => assignCommercialOwner({ fileId: fileId, userId: am.id, reasonCode: "INITIAL" }));
   const opened = await as(ops, () => openDossierWorkflow(fileId, { ownerUserId: ops.id, skipCotation: true }));
   if (!opened.ok) throw new Error(`slice 3 open failed: ${JSON.stringify(opened)}`);
 
@@ -473,6 +477,10 @@ describe("C-4 section F — governed billing, and the issuance boundary", () => 
     );
     expect(other.ok).toBe(true);
     const otherId = (other as { id: string }).id;
+    // OPS-OWNERSHIP-01 (K3) — designate the Responsable client BEFORE opening:
+    // the opening act completes step 2 only when that governed designation
+    // exists. This is the ratified sequence, not test scaffolding.
+    await as(ops, () => assignCommercialOwner({ fileId: otherId, userId: am.id, reasonCode: "INITIAL" }));
     await as(ops, () => openDossierWorkflow(otherId, { ownerUserId: ops.id, skipCotation: true }));
 
     const refused = await as(billing, () => prepareInvoiceDraft(otherId));

@@ -226,6 +226,37 @@ describe("OPS-OWNERSHIP-01 — both snapshot assemblers feed the governed histor
   });
 });
 
+// ═══════════ the OTHER door into step 2 ════════════════════════════════════
+
+describe("OPS-OWNERSHIP-01 — the opening act honours the same gate", () => {
+  it("completeIntakeFromOpening evaluates the evidence before completing", () => {
+    // H-1 completes step 2 from the dossier-opening act, writing COMPLETED
+    // directly rather than going through submitStep. Gating only submitStep
+    // would therefore have left the control inert on the path everyone actually
+    // uses — CI stayed green precisely because the journeys never call
+    // submitStep here. Same evaluator, same snapshot, second door.
+    const src = code("lib/process/engine/intake-actions.ts");
+    const fn = src.slice(src.indexOf("async function completeIntakeFromOpening"));
+    const body = fn.slice(0, fn.indexOf(String.fromCharCode(10) + "export ", 1));
+    expect(body).toContain('evaluateStepEvidence("operations_intake"');
+    expect(body).toMatch(/if \(!ev\.complete\) return;/);
+    // …and the check must precede the write that completes the step.
+    expect(body.indexOf("evaluateStepEvidence")).toBeLessThan(body.indexOf('state: "COMPLETED"'));
+  });
+
+  it("no third completion path writes COMPLETED for operations_intake", () => {
+    // If another module starts completing step 2 directly, this fails and the
+    // new door gets the gate too, rather than silently reopening the bypass.
+    const offenders: string[] = [];
+    for (const f of ["lib/process/engine/intake-actions.ts", "lib/process/engine/actions.ts",
+                     "lib/process/reconcile/service.ts", "lib/process/queues/service.ts"]) {
+      const src = code(f);
+      if (/operations_intake/.test(src) && /state: "COMPLETED"/.test(src)) offenders.push(f);
+    }
+    expect(offenders).toEqual(["lib/process/engine/intake-actions.ts"]);
+  });
+});
+
 // ═══════════ I · the portal ════════════════════════════════════════════════
 
 describe("OPS-OWNERSHIP-01 — portal ownership precedence", () => {

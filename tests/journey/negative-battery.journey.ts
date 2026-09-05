@@ -29,7 +29,7 @@ import {
 } from "./fixtures";
 import type { CurrentUser } from "@/lib/auth/current-user";
 
-import { createFile } from "@/lib/files/actions";
+import { createFile, assignCommercialOwner } from "@/lib/files/actions";
 import { openDossierWorkflow, handDossierToTransit } from "@/lib/process/engine/intake-actions";
 import { submitStep, activateStep, approveStep, sendHandoff, receiveHandoff } from "@/lib/process/engine/actions";
 import { declareEvidenceAbsence } from "@/lib/process/evidence-absence-actions";
@@ -93,6 +93,10 @@ describe("C-4 negative battery — the refusals, in the order a dossier meets th
       "createFile",
     );
     fileId = (created as unknown as { id: string }).id;
+    // OPS-OWNERSHIP-01 (K3) — designate the Responsable client BEFORE opening:
+    // the opening act completes step 2 only when that governed designation
+    // exists. This is the ratified sequence, not test scaffolding.
+    need(await as(ops, () => assignCommercialOwner({ fileId: fileId, userId: am.id, reasonCode: "INITIAL" })), "designate AM");
     need(await as(ops, () => openDossierWorkflow(fileId, { ownerUserId: ops.id, skipCotation: true })), "open");
   }, 120_000);
 

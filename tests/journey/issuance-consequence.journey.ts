@@ -32,7 +32,7 @@ import {
 } from "./fixtures";
 import type { CurrentUser } from "@/lib/auth/current-user";
 
-import { createFile } from "@/lib/files/actions";
+import { createFile, assignCommercialOwner } from "@/lib/files/actions";
 import { openDossierWorkflow, handDossierToTransit } from "@/lib/process/engine/intake-actions";
 import { submitStep, activateStep, approveStep, sendHandoff, receiveHandoff } from "@/lib/process/engine/actions";
 import { declareEvidenceAbsence } from "@/lib/process/evidence-absence-actions";
@@ -90,6 +90,10 @@ async function carryToValidatedInvoice() {
   );
   fileId = (created as unknown as { id: string }).id;
 
+  // OPS-OWNERSHIP-01 (K3) — designate the Responsable client BEFORE opening:
+  // the opening act completes step 2 only when that governed designation
+  // exists. This is the ratified sequence, not test scaffolding.
+  need(await as(ops, () => assignCommercialOwner({ fileId: fileId, userId: am.id, reasonCode: "INITIAL" })), "designate AM");
   need(await as(ops, () => openDossierWorkflow(fileId, { ownerUserId: ops.id, skipCotation: true })), "open");
   // H-1 (2026-09-03): `openDossierWorkflow` completes step 2 from the opening
   // act itself, so step 3 is already AVAILABLE here. No submit needed.

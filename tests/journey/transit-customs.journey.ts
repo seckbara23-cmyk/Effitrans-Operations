@@ -21,7 +21,7 @@ import {
 } from "./fixtures";
 import type { CurrentUser } from "@/lib/auth/current-user";
 
-import { createFile } from "@/lib/files/actions";
+import { createFile, assignCommercialOwner } from "@/lib/files/actions";
 import { openDossierWorkflow, handDossierToTransit } from "@/lib/process/engine/intake-actions";
 import { submitStep, activateStep, approveStep, sendHandoff, receiveHandoff } from "@/lib/process/engine/actions";
 import { declareEvidenceAbsence } from "@/lib/process/evidence-absence-actions";
@@ -117,6 +117,10 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     if (!created.ok) throw new Error(`slice 2 dossier creation failed: ${JSON.stringify(created)}`);
     fileId = (created as { id: string }).id;
 
+    // OPS-OWNERSHIP-01 (K3) — designate the Responsable client BEFORE opening:
+    // the opening act completes step 2 only when that governed designation
+    // exists. This is the ratified sequence, not test scaffolding.
+    await as(ops, () => assignCommercialOwner({ fileId: fileId, userId: am.id, reasonCode: "INITIAL" }));
     const opened = await as(ops, () =>
       openDossierWorkflow(fileId, { ownerUserId: ops.id, skipCotation: true }),
     );
@@ -566,6 +570,10 @@ describe("C-4 — a RECONCILED completion promotes its dependents", () => {
     if (!created.ok) throw new Error(`recon dossier creation failed: ${JSON.stringify(created)}`);
     reconFile = (created as { id: string }).id;
 
+    // OPS-OWNERSHIP-01 (K3) — designate the Responsable client BEFORE opening:
+    // the opening act completes step 2 only when that governed designation
+    // exists. This is the ratified sequence, not test scaffolding.
+    await as(ops, () => assignCommercialOwner({ fileId: reconFile, userId: am.id, reasonCode: "INITIAL" }));
     const opened = await as(ops, () =>
       openDossierWorkflow(reconFile, { ownerUserId: ops.id, skipCotation: true }),
     );

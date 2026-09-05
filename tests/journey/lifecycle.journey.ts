@@ -19,7 +19,7 @@ import { as, actAsNobody } from "./identity";
 import { identity, execution, auditFor, handoffs, db, provideEvidence, TENANT_A, CLIENT_DEPOSIT_REQUIRED } from "./fixtures";
 import type { CurrentUser } from "@/lib/auth/current-user";
 
-import { createFile } from "@/lib/files/actions";
+import { createFile, assignCommercialOwner } from "@/lib/files/actions";
 import { openDossierWorkflow, handDossierToTransit, getIntakeState } from "@/lib/process/engine/intake-actions";
 import { submitStep, activateStep, receiveHandoff } from "@/lib/process/engine/actions";
 import { declareEvidenceAbsence } from "@/lib/process/evidence-absence-actions";
@@ -77,6 +77,10 @@ describe("C-4 slice 1 — Creation → Transit reception", () => {
   });
 
   it("T2 — Operations opens the workflow: step 2 ACTIVE, step 3 still PENDING", async () => {
+    // OPS-OWNERSHIP-01 (K3) — designate the Responsable client BEFORE opening:
+    // the opening act completes step 2 only when that governed designation
+    // exists. This is the ratified sequence, not test scaffolding.
+    await as(ops, () => assignCommercialOwner({ fileId: fileId, userId: am.id, reasonCode: "INITIAL" }));
     const opened = await as(ops, () =>
       openDossierWorkflow(fileId, { ownerUserId: ops.id, skipCotation: true }),
     );
@@ -278,6 +282,10 @@ describe("C-4 — a step cannot be closed on evidence its actor may not judge", 
 
     // skipCotation: false — the devis is REQUIRED on this dossier, so step 1
     // stays a live step with real evidence rather than a derived skip.
+    // OPS-OWNERSHIP-01 (K3) — designate the Responsable client BEFORE opening:
+    // the opening act completes step 2 only when that governed designation
+    // exists. This is the ratified sequence, not test scaffolding.
+    await as(ops, () => assignCommercialOwner({ fileId: id, userId: am.id, reasonCode: "INITIAL" }));
     const opened = await as(ops, () =>
       openDossierWorkflow(id, { ownerUserId: ops.id, skipCotation: false }),
     );
