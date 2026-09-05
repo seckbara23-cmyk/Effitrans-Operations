@@ -63,7 +63,13 @@ export function target(spec) {
   }
   if (spec.kind === "db-url") {
     if (!spec.url) throw new Error("[exec] db-url target needs a url");
-    return { kind: "db-url", flags: ["--db-url", spec.url], label: `db-url ${redact(spec.url)}` };
+    // `--workdir` points the CLI at a different Supabase project directory.
+    // The rehearsal needs it because `migration repair` resolves a migration's
+    // NAME from the local migrations directory, and the rehearsal's fabricated
+    // versions deliberately do not live in the real one.
+    const flags = ["--db-url", spec.url];
+    if (spec.workdir) flags.push("--workdir", spec.workdir);
+    return { kind: "db-url", flags, label: `db-url ${redact(spec.url)}${spec.workdir ? ` (workdir ${spec.workdir})` : ""}` };
   }
   throw new Error(`[exec] unknown target kind: ${spec.kind}`);
 }
@@ -159,8 +165,8 @@ export function applyFile(tgt, file, opts) {
  * applied. The CI runner satisfies this by construction; a human running it
  * from a stale tree would record the wrong name, which the guard reports.
  */
-export function repair(tgt, version, opts) {
-  const r = run(["migration", "repair", ...tgt.flags, "--status", "applied", version], opts);
+export function repair(tgt, version, opts, status = "applied") {
+  const r = run(["migration", "repair", ...tgt.flags, "--status", status, version], opts);
   if (r.code !== 0) return { ok: false, message: (r.stderr || r.stdout).slice(-2000) };
   const out = r.stdout + r.stderr;
   if (/Migration history repaired|repaired/i.test(out)) return { ok: true, message: "" };

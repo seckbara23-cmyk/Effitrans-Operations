@@ -71,3 +71,6 @@ docs/Logistic Pack/
 *.dpl
 *.DPL
 /maya-extracts/
+
+# Migration rehearsal scratch project (created and removed by scripts/migration-rehearsal.mjs)
+.rehearsal/
