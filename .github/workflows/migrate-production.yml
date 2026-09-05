@@ -1,0 +1,141 @@
+name: Migrate production
+
+# MIG-POLICY — the ONLY sanctioned path for applying a migration to production.
+#
+# Manual dispatch only. Pushing code never applies anything: a human names one
+# version and approves the protected environment. That separation is the point —
+# the September 2026 ledger gap happened because applying was a thing someone
+# did by hand, informally, with nothing checking afterwards.
+#
+# There is no break-glass input. An emergency may change WHO can approve the
+# `production-db` environment; it never changes which steps run. Repository/
+# ledger validation, verification, recording, post-record verification and the
+# HELD behaviour apply identically to every run, always.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Migration version to apply (14 digits, e.g. 20261001000001)"
+        required: true
+        type: string
+      dry_run:
+        description: "Validate only — apply nothing, record nothing"
+        required: false
+        default: true
+        type: boolean
+      reason:
+        description: "Why this is being deployed now (recorded in the run log)"
+        required: true
+        type: string
+
+concurrency:
+  # Two migrations at once is how a ledger and a schema disagree. Never cancel
+  # in progress: interrupting between apply and record is the exact state this
+  # whole workflow exists to prevent.
+  group: migrate-production
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: Preflight (read-only, no approval needed)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate the requested version format
+        run: |
+          case "${{ inputs.version }}" in
+            [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]) ;;
+            *) echo "::error::version must be exactly 14 digits"; exit 1 ;;
+          esac
+          echo "Requested: ${{ inputs.version }}"
+          echo "Reason   : ${{ inputs.reason }}"
+
+      - name: Lint migrations
+        run: npm run lint:migrations
+
+  migrate:
+    name: Apply and record
+    needs: preflight
+    runs-on: ubuntu-latest
+    # THE APPROVAL GATE. Reviewers on this environment are what stands between a
+    # dispatch and production; the secrets live here and nowhere else.
+    environment:
+      name: production-db
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.106.0
+
+      - name: Link the production project
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase link --project-ref "${{ secrets.SUPABASE_PROJECT_REF }}"
+
+      # Independent of the runner, and read-only: if the repository and ledger
+      # already disagree, nothing should be applied on top of that.
+      - name: Migration-integrity guard (expects exactly this one pending)
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: node scripts/migration-integrity.mjs --linked --expect-pending 1
+
+      - name: Dry run
+        if: ${{ inputs.dry_run }}
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: node scripts/migrate-production.mjs --linked --version "${{ inputs.version }}" --dry-run
+
+      - name: Apply, verify, record, re-verify
+        if: ${{ !inputs.dry_run }}
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: node scripts/migrate-production.mjs --linked --version "${{ inputs.version }}"
+
+      # Runs even on failure: the operator needs to know WHICH state production
+      # ended in, and that reading must come from the guard rather than from the
+      # runner that just failed.
+      - name: Post-run integrity report
+        if: always()
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: node scripts/migration-integrity.mjs --linked || true
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Production migration"
+            echo ""
+            echo "| field | value |"
+            echo "| --- | --- |"
+            echo "| version | ${{ inputs.version }} |"
+            echo "| mode | ${{ inputs.dry_run && 'DRY RUN' || 'APPLY' }} |"
+            echo "| reason | ${{ inputs.reason }} |"
+            echo "| actor | ${{ github.actor }} |"
+            echo "| commit | ${{ github.sha }} |"
+            echo "| result | ${{ job.status }} |"
+          } >> "$GITHUB_STEP_SUMMARY"

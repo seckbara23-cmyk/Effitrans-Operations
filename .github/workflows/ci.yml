@@ -25,6 +25,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # MIG-POLICY — repository-only, no database. Enforces that every migration
+      # from the cutover ships a companion verifier and declares its executor,
+      # so a missing one is found here rather than at deployment time.
+      - name: Lint migrations
+        run: npm run lint:migrations
+
       - name: Typecheck
         run: npm run typecheck
 
@@ -1239,6 +1245,24 @@ jobs:
           # The env guard requires the anon key even where the harness never uses
           # an anon client — it is validated at module load, not at first use.
           SUPABASE_SERVICE_ROLE_KEY="$KEY" NEXT_PUBLIC_SUPABASE_ANON_KEY="$ANON"             npx vitest run --config vitest.journey.config.ts
+
+      # ---- migration toolchain rehearsal (MIG-POLICY) ----------------------
+      # Runs LAST, against the same disposable stack, because it deliberately
+      # injects failures: bad SQL, a migration that applies but verifies false,
+      # and one applied-but-unrecorded. It works in its own `rehearsal` schema
+      # and throwaway directories, and removes its own ledger rows afterwards.
+      #
+      # It also MEASURES whether a multi-statement body is atomic on a late
+      # failure rather than assuming it — the design deliberately does not
+      # depend on that, but an operator should know the answer.
+      - name: Migration toolchain rehearsal + failure injection
+        run: node scripts/migration-rehearsal.mjs --db-url "postgresql://postgres:postgres@127.0.0.1:54322/postgres"
+
+      # The guard, against a database whose ledger the rehearsal has restored.
+      # Proves it reports CLEAN on a consistent database — the case that must
+      # not cry wolf, or the guard gets ignored when it finally matters.
+      - name: Migration-integrity guard (read-only)
+        run: node scripts/migration-integrity.mjs --db-url "postgresql://postgres:postgres@127.0.0.1:54322/postgres"
 
       - name: Stop local Supabase
         if: always()

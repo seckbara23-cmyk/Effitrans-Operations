@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "lint:migrations": "node scripts/lint-migrations.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "ai:eval:local": "vitest run --config vitest.eval.config.ts",
@@ -17,7 +18,9 @@
     "db:push": "supabase db push",
     "migration:new": "supabase migration new",
     "db:types": "supabase gen types typescript --local > lib/db/types.ts",
-    "test:rls": "node scripts/guard-local-db.mjs && psql \"$DATABASE_URL\" -f supabase/tests/rls_tenant_isolation_test.sql"
+    "test:rls": "node scripts/guard-local-db.mjs && psql \"$DATABASE_URL\" -f supabase/tests/rls_tenant_isolation_test.sql",
+    "migration:guard": "node scripts/migration-integrity.mjs",
+    "migration:apply": "node scripts/migrate-production.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.0",
