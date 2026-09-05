@@ -188,6 +188,13 @@ export type EngineError =
   // The act belongs to a supervisory seat this caller does not hold — e.g.
   // assigning a Déclarant, which is the Chef de Transit's.
   | "not_authorized_assigner"
+  // TRANSIT-CUSTODY-05 — verifying the mainlevée before the Transport leg is
+  // the Chef de Transit's seat. Holding `customs:validate` for other acts is
+  // not the same as being this dossier's verifier.
+  | "not_authorized_approver"
+  // TRANSIT-CUSTODY-05 — the mainlevée is on file but the Chef de Transit has
+  // not verified it. The goods do not move on a reference alone.
+  | "release_not_approved"
   // Transit does not hold this dossier yet: the Operations handoff has not been
   // received, or its reception step is not finished.
   | "transit_custody_required"

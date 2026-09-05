@@ -126,6 +126,16 @@ export const EVENT_TYPES: readonly EventTypeDef[] = [
   // corrected, not in an immutable append-only store. Internal: a receivability
   // refusal is an internal judgement and must not reach the customer portal.
   { type: "CUSTOMS_RECEIVABILITY_DECIDED", domain: "customs", version: 1, emission: "rpc", metadataKeys: [...TRANSITION, "has_reason"], clientSafe: false, labelFr: "Recevabilité prononcée" },
+  // TRANSIT-CUSTODY-05 — the release is two acts. The field actor records the
+  // mainlevée and the dossier waits; the Chef de Transit verifies independently
+  // and only then may the release proceed. Emitted ONLY by their two RPCs, so
+  // each fact has exactly one owner and no double emission is possible. The
+  // Chef's reason text stays on the record (WES-9A): the ledger states that a
+  // decision was taken and what it was. Internal — a refusal is an internal
+  // judgement and must not reach the customer portal.
+  { type: "CUSTOMS_BAE_RECORDED_PENDING_VERIFICATION", domain: "customs", version: 1, emission: "rpc", metadataKeys: ["previous_reference", "replaced", "after_rejection"], clientSafe: false, labelFr: "BAE enregistré — vérification du Chef de Transit requise" },
+  { type: "CUSTOMS_RELEASE_APPROVED", domain: "customs", version: 1, emission: "rpc", metadataKeys: [...TRANSITION, "has_reason", "recorded_by"], clientSafe: false, labelFr: "Libération vers le Transport approuvée" },
+  { type: "CUSTOMS_RELEASE_REJECTED", domain: "customs", version: 1, emission: "rpc", metadataKeys: [...TRANSITION, "has_reason", "recorded_by"], clientSafe: false, labelFr: "Libération vers le Transport refusée" },
   { type: "CUSTOMS_RELEASE_COMPLETED", domain: "customs", version: 1, emission: "trigger", metadataKeys: [...TRANSITION, "reference"], clientSafe: true, labelFr: "Mainlevée obtenue" },
 
   // ----------------------------------------------------------------- transport

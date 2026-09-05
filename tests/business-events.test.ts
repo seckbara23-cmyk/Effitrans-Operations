@@ -67,6 +67,8 @@ const PG1_VALIDATION = "supabase/migrations/20260825000001_customs_validation_ev
 const P11_GAINDE = "supabase/migrations/20260827000001_gainde_registration.sql";
 // D4 — the governed correction door emits CUSTOMS_CORRECTED and CUSTOMS_REVALIDATED.
 const D4_CORRECTION = "supabase/migrations/20260920000001_customs_governed_data.sql";
+// TRANSIT-CUSTODY-05 — the BAE/release split emits its own two facts.
+const TC5_RELEASE_APPROVAL = "supabase/migrations/20260930000001_customs_release_approval.sql";
 const P111_ATTACHMENT = "supabase/migrations/20260828000001_customs_attachment.sql";
 const TMS1_COMMERCIAL_OWNER = "supabase/migrations/20260906000001_commercial_owner_assignment.sql";
 const LEDGER_MARKER = "lib/workflow/events/ledger-marker.ts";
@@ -718,7 +720,8 @@ describe("event sources", () => {
     const all = migration() + atomicity() + sqlCode(ASSIGNMENT) + sqlCode(DOC_GOV)
       + sqlCode(ARTIFACTS) + sqlCode(RECONCILE) + sqlCode(EC_TRIAGE) + sqlCode(COMMERCIAL)
       + sqlCode(UT3_EMITTERS) + sqlCode(EMP3_OUTBOUND) + sqlCode(QC3_RECEIVABILITY) + sqlCode(PG1_VALIDATION) + sqlCode(P11_GAINDE)
-      + sqlCode(P111_ATTACHMENT) + sqlCode(TMS1_COMMERCIAL_OWNER) + sqlCode(D4_CORRECTION);
+      + sqlCode(P111_ATTACHMENT) + sqlCode(TMS1_COMMERCIAL_OWNER) + sqlCode(D4_CORRECTION)
+      + sqlCode(TC5_RELEASE_APPROVAL);
     for (const def of emittedEventTypes()) {
       // The ledger marker is emitted from the application, by design: the
       // statement IS the act, so there is no prior transaction to join.

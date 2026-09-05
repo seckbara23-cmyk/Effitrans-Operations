@@ -65,6 +65,15 @@ export type CustomsRecord = {
    * because the Quality Manual names the control and not the checklist.
    * `null` = not yet assessed, never "receivable by default".
    */
+  /**
+   * TRANSIT-CUSTODY-05 — the Chef de Transit's verdict on releasing to the
+   * Transport leg. `null` = no mainlevée recorded yet; PENDING = recorded and
+   * awaiting the Chef; APPROVED/REJECTED = decided. Deliberately NOT a customs
+   * status: recording, verifying and releasing are three separate facts.
+   */
+  releaseApprovalStatus: string | null;
+  releaseApprovalNote: string | null;
+  baeRecordedAt: string | null;
   receivabilityStatus: string | null;
   receivabilityAt: string | null;
   receivabilityNote: string | null;

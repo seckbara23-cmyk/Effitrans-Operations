@@ -47,6 +47,9 @@ type RecordRow = {
   regime: string | null;
   declaration_date: string | null;
   bae_reference: string | null;
+  bae_recorded_at: string | null;
+  release_approval_status: string | null;
+  release_approval_note: string | null;
   release_date: string | null;
   inspection_status: string;
   external_ref: string | null;
@@ -77,6 +80,11 @@ function toRecord(r: RecordRow): CustomsRecord {
     // MAYA-P0.7-A — QC N°3. Null means NOT YET ASSESSED, which is deliberately
     // distinct from every recorded outcome: an unassessed file is neither
     // receivable nor refused, and quality reporting must tell the three apart.
+    // TRANSIT-CUSTODY-05 — recorded ≠ verified ≠ released; the workspace needs
+    // all three to say which act is outstanding and whose it is.
+    releaseApprovalStatus: r.release_approval_status ?? null,
+    releaseApprovalNote: r.release_approval_note ?? null,
+    baeRecordedAt: r.bae_recorded_at ?? null,
     receivabilityStatus: r.receivability_status ?? null,
     receivabilityAt: r.receivability_at ?? null,
     receivabilityNote: r.receivability_note ?? null,
@@ -101,7 +109,7 @@ function toRecord(r: RecordRow): CustomsRecord {
 }
 
 const RECORD_COLS =
-  "id, file_id, status, required, declaration_number, sh_position_count, declaration_type, dpi_regime, exemption_title_origin, tariff_classification_origin, customs_office, regime, declaration_date, bae_reference, release_date, inspection_status, external_ref, notes, receivability_status, receivability_at, receivability_note, provider_code, provider_synced_at, reviewed_at, reviewer:reviewed_by(email), gainde_registered_at, gainde_registrar:gainde_registered_by(email), attachment_completed_at, attachment_systems, attachment_recorder:attachment_completed_by(email)";
+  "id, file_id, status, required, declaration_number, sh_position_count, declaration_type, dpi_regime, exemption_title_origin, tariff_classification_origin, customs_office, regime, declaration_date, bae_reference, bae_recorded_at, release_approval_status, release_approval_note, release_date, inspection_status, external_ref, notes, receivability_status, receivability_at, receivability_note, provider_code, provider_synced_at, reviewed_at, reviewer:reviewed_by(email), gainde_registered_at, gainde_registrar:gainde_registered_by(email), attachment_completed_at, attachment_systems, attachment_recorder:attachment_completed_by(email)";
 
 /** The (single) customs record for a dossier, or null. */
 export async function getCustomsRecord(fileId: string): Promise<CustomsRecord | null> {

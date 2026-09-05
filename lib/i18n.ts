@@ -492,6 +492,13 @@ export const t = {
     cancel: "Annuler",
     release: "Libérer (BAE)",
     baePrompt: "Référence BAE / libération :",
+    // TRANSIT-CUSTODY-05 — obtaining the mainlevée and releasing the goods to
+    // the Transport leg are two acts by two people. The workspace button says
+    // which one it is about to perform.
+    recordBae: "Enregistrer le BAE",
+    baeRecordPrompt: "Référence du BAE obtenu :",
+    baePendingVerification: "BAE enregistré — vérification du Chef de Transit requise.",
+    baeRejected: "Libération refusée par le Chef de Transit.",
     // MAYA-P0.7-A — Contrôle Qualité N°3 (Déclarant en douane).
     receivability: {
       title: "Recevabilité",
@@ -597,6 +604,10 @@ export const t = {
       protected_released:
         "Ce dédouanement est libéré (BAE) : il ne peut plus être supprimé.",
       use_release: "Utilisez l'action « Libérer ».",
+      release_not_approved:
+        "Le Chef de Transit n'a pas encore vérifié ce BAE : la libération vers le Transport reste bloquée.",
+      self_approval_forbidden:
+        "Vous avez enregistré ce BAE : sa vérification revient à une autre personne.",
       generic: "L'action a échoué. Veuillez réessayer.",
     },
   },

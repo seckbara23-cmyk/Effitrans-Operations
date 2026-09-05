@@ -25,7 +25,7 @@ import { createFile } from "@/lib/files/actions";
 import { openDossierWorkflow, handDossierToTransit } from "@/lib/process/engine/intake-actions";
 import { submitStep, activateStep, approveStep, sendHandoff, receiveHandoff } from "@/lib/process/engine/actions";
 import { declareEvidenceAbsence } from "@/lib/process/evidence-absence-actions";
-import { receiveDossierAtTransit, assignTransitStep, recordBae } from "@/lib/process/engine/transit-actions";
+import { receiveDossierAtTransit, assignTransitStep, recordBae, decideTransitRelease, finalizeTransitRelease } from "@/lib/process/engine/transit-actions";
 import { createCustoms, recordGaindeRegistration, changeCustomsStatus } from "@/lib/customs/actions";
 
 let ops: CurrentUser;            // OPS_SUPERVISOR — customs:validate (independent checker)
@@ -437,6 +437,30 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     // field agent holds it, so anyone else would be refused assigned_to_another.
     const bae = await as(field, () => recordBae(fileId, `BAE-JRN-${Date.now()}`));
     expect(bae.ok, `recordBae: ${JSON.stringify(bae)}`).toBe(true);
+
+    // TRANSIT-CUSTODY-05 — recording is not releasing. The step stays open on
+    // the reference alone: nothing has been verified yet.
+    expect((await execution(fileId, "customs_field_clearance"))?.state).not.toBe("COMPLETED");
+
+    // The field agent who obtained the mainlevée may not verify it.
+    const selfCheck = await as(field, () => decideTransitRelease(fileId, "APPROVED"));
+    expect(selfCheck.ok).toBe(false);
+
+    // Nor may Operations, which holds `customs:validate` for other acts: the
+    // seat is the Chef de Transit's.
+    const opsCheck = await as(ops, () => decideTransitRelease(fileId, "APPROVED"));
+    expect(opsCheck.ok, "Operations must not be a normal approver").toBe(false);
+    expect((opsCheck as { error: string }).error).toBe("not_authorized_approver");
+
+    // And the release itself is refused while the verdict is outstanding.
+    const early = await as(field, () => finalizeTransitRelease(fileId));
+    expect(early.ok).toBe(false);
+    expect((early as { error: string }).error).toBe("release_not_approved");
+
+    const verdict = await as(transit, () => decideTransitRelease(fileId, "APPROVED"));
+    expect(verdict.ok, `release approval: ${JSON.stringify(verdict)}`).toBe(true);
+    const finalized = await as(field, () => finalizeTransitRelease(fileId));
+    expect(finalized.ok, `finalize release: ${JSON.stringify(finalized)}`).toBe(true);
 
     // The release IS the fact that proves this step, so reconciliation closes it
     // — and now promotes from it.

@@ -17,11 +17,10 @@
  *   2. dispatching a field team needs the same custody;
  *   3. assigned work belongs to its assignee;
  *   4. recording the BAE is not releasing — the Chef verifies.
- *      ⚠ BLOCKED and NOT implemented: `recordCustomsRelease` is bound by a
- *      ratified 2026-08-24 control (`assertControlStep("customs.release")`) to
- *      step 13's CLAIMANT — the field agent. Delivering guard 4 as ruled needs
- *      that control, the registry or the schema to change, so it is reported
- *      for ruling rather than forced. The block is pinned below.
+ *      DELIVERED by TRANSIT-CUSTODY-05, whose own suite carries the detail.
+ *      The block reported here — `assertControlStep("customs.release")` binds
+ *      the release to step 13's CLAIMANT — was not weakened: the release stayed
+ *      with the field agent and gained a precondition the Chef alone can set.
  *
  * And four things that must NOT move: transport preparation stays parallel,
  * physical execution stays customs-gated, transport-only and waived dossiers
@@ -172,18 +171,17 @@ describe("TRANSIT-CUSTODY-03 guard 3 — a Déclarant does not work another's do
   });
 });
 
-// ═══════════ guard 4 — BLOCKED, and why ═══════════════════════════════════
+// ═══════════ guard 4 — the block, and how -05 cleared it ══════════════════
 
-describe("TRANSIT-CUSTODY-03 guard 4 — recorded as blocked, not silently dropped", () => {
+describe("TRANSIT-CUSTODY-03 guard 4 — reported blocked, then delivered by -05", () => {
   it("the release is bound to step 13's CLAIMANT by a ratified control", () => {
     // `recordCustomsRelease` calls `assertControlStep("customs.release", …)`,
     // ratified 2026-08-24: permission is necessary, not sufficient — the owning
     // official step must be open and not claimed by somebody else. The owning
     // step is `customs_field_clearance`, which the field agent claims to do the
-    // field work. So a Chef de Transit who did not claim it is refused, and
-    // guard 4 as ruled ("only the Chef produces RELEASED") cannot be delivered
-    // without changing that control, the registry, or the schema — none of which
-    // this slice is authorised to do. Reported for ruling instead of forced.
+    // field work. So a Chef de Transit who did not claim it is refused. -05
+    // cleared this by inverting the question: rather than moving the release to
+    // the Chef, it made the release conditional on the Chef's recorded verdict.
     const customs = strip(read("lib/customs/actions.ts"));
     const fnRelease = fn(customs, "recordCustomsRelease");
     expect(fnRelease).toContain('assertControlStep("customs.release"');
@@ -192,10 +190,15 @@ describe("TRANSIT-CUSTODY-03 guard 4 — recorded as blocked, not silently dropp
     expect(gate + strip(read("lib/process/control-gate-server.ts"))).toContain("assignedUserId");
   });
 
-  it("recording the BAE therefore still releases — unchanged, and pinned as such", () => {
-    const s = fn(transitActions, "recordBae");
-    expect(s).toContain("releaseCustoms(customs.id, baeReference.trim())");
-    expect(transitActions).not.toContain("releaseTransitToTransport");
+  it("the control was NOT weakened — the release still runs through it", () => {
+    // TRANSIT-CUSTODY-05 resolved the block without touching the ratified
+    // control: `recordCustomsRelease` still asserts it, and still belongs to
+    // step 13's claimant. What changed is that it now refuses unless the Chef
+    // de Transit has verified the mainlevée first.
+    const customs = strip(read("lib/customs/actions.ts"));
+    expect(fn(customs, "recordCustomsRelease")).toContain('assertControlStep("customs.release"');
+    expect(fn(transitActions, "recordBae")).toContain("recordBaeReference(customs.id");
+    expect(fn(transitActions, "recordBae")).not.toContain("releaseCustoms(");
   });
 
   it("the field agent keeps `customs:release` — it is step 13's own permission", () => {
@@ -271,7 +274,7 @@ describe("TRANSIT-CUSTODY-03 — scope held", () => {
   it("no migration was added for this slice", () => {
     const dir = fileURLToPath(new URL("../supabase/migrations", import.meta.url));
     const files = require("node:fs").readdirSync(dir).filter((f: string) => f.endsWith(".sql")).sort();
-    expect(files.at(-1)).toBe("20260929000001_ops_supervisor_file_update.sql");
+    expect(files.at(-1)).toBe("20260930000001_customs_release_approval.sql");
   });
 
   it("no RBAC grant was changed", () => {

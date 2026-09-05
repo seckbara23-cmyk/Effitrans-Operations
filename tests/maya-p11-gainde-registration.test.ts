@@ -47,6 +47,7 @@ const customs = (over: Partial<CustomsRecord> = {}): CustomsRecord => ({
   declarationNumber: null, customsOffice: null, regime: null, declarationDate: null,
   baeReference: null, releaseDate: null, inspectionStatus: "NOT_REQUIRED",
   externalRef: null, notes: null,
+  releaseApprovalStatus: null, releaseApprovalNote: null, baeRecordedAt: null,
   receivabilityStatus: null, receivabilityAt: null, receivabilityNote: null,
   providerCode: "manual", providerSyncedAt: null,
   reviewedAt: null, reviewedByEmail: null,

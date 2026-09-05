@@ -29,7 +29,7 @@ type Admin = ReturnType<typeof getAdminSupabaseClient>;
 async function loadCustoms(supabase: Admin, id: string, tenantId: string) {
   const { data } = await supabase
     .from("customs_record")
-    .select("id, file_id, status, required, bae_reference, declaration_number, declaration_date, receivability_status, receivability_note, created_by, updated_by, reviewed_at, reviewed_by, external_ref")
+    .select("id, file_id, status, required, bae_reference, declaration_number, declaration_date, receivability_status, receivability_note, release_approval_status, release_approval_by, release_approval_at, release_approval_note, bae_recorded_by, bae_recorded_at, created_by, updated_by, reviewed_at, reviewed_by, external_ref")
     .eq("id", id)
     .eq("tenant_id", tenantId)
     .is("deleted_at", null)
@@ -763,12 +763,24 @@ export async function recordBaeReference(
     if (gate) return { ok: false, error: gate };
   }
 
-  const { error } = await supabase.rpc("record_bae_reference", {
+  // TRANSIT-CUSTODY-05. Recording the mainlevée names its author, stamps the
+  // moment, and puts the dossier in front of the Chef de Transit — it does NOT
+  // release. The previous reference, if this is a correction after a refusal,
+  // is carried into the ledger event rather than quietly overwritten.
+  const { error } = await supabase.rpc("record_customs_bae", {
     p_customs_id: id,
     p_bae_reference: baeReference.trim(),
     p_actor: user.id,
   });
-  if (error) return { ok: false, error: "record_failed" };
+  if (error) {
+    // Same token discipline as the approval below: an already-released record
+    // and a missing reference are different refusals and must stay different.
+    const token = (error.message ?? "").split(":")[0].trim();
+    if (token === "invalid_transition" || token === "reason_required") {
+      return { ok: false, error: token };
+    }
+    return { ok: false, error: "record_failed" };
+  }
 
   await writeAudit({
     action: AuditActions.CUSTOMS_UPDATED,
@@ -828,6 +840,16 @@ export async function recordCustomsRelease(
     return { ok: false, error: "invalid_transition" };
   }
 
+  // TRANSIT-CUSTODY-05 — the release rests on an independent verification.
+  // Enforced HERE, on the persisted decision, rather than on anything a screen
+  // believed: recording the BAE opens the verification, and only the Chef de
+  // Transit's APPROVED decision permits the release to proceed. This ADDS a
+  // precondition to the ratified control gate above; it does not replace or
+  // weaken it, and the release remains the act of whoever legitimately owns it.
+  if (rec.release_approval_status !== "APPROVED") {
+    return { ok: false, error: "release_not_approved" };
+  }
+
   // Atomic: the status, the reference and the release date move together, and
   // the WES-9 customs trigger emits CUSTOMS_RELEASE_COMPLETED and BAE_RECORDED
   // inside the same transaction.
@@ -865,6 +887,77 @@ export async function recordCustomsRelease(
   });
 
   revalidate(rec.file_id);
+  return { ok: true, id };
+}
+
+/**
+ * THE Chef de Transit's independent verification of the customs section
+ * (TRANSIT-CUSTODY-05).
+ *
+ * It decides; it does not release. `recordCustomsRelease` still performs the
+ * release under its own ratified control gate — this only supplies the fact
+ * that gate had no way to express: that somebody other than the field actor
+ * looked at the mainlevée and accepted responsibility for letting the goods
+ * move.
+ *
+ * Authority is `customs:validate` — held by neither the Déclarant nor the field
+ * agent — and the ROLE scope above it keeps this the Chef's act rather than any
+ * holder's. Maker/checker is enforced in the RPC, on the recorded author, so it
+ * cannot be sidestepped by a second permission.
+ */
+export async function recordCustomsReleaseApproval(
+  id: string,
+  status: "APPROVED" | "REJECTED",
+  note: string | null,
+): Promise<ActionResult> {
+  let user;
+  try {
+    user = await assertPermission("customs:validate");
+  } catch {
+    return { ok: false, error: "forbidden" };
+  }
+  if (status === "REJECTED" && !(note ?? "").trim()) {
+    return { ok: false, error: "reason_required" };
+  }
+
+  const supabase = getAdminSupabaseClient();
+  const rec = await loadCustoms(supabase, id, user.tenantId);
+  if (!rec) return { ok: false, error: "not_found" };
+  if (!(await isFileVisible(user.id, user.tenantId, rec.file_id))) {
+    return { ok: false, error: "forbidden" };
+  }
+
+  const { error } = await supabase.rpc("record_customs_release_approval", {
+    p_customs_id: id,
+    p_status: status,
+    p_note: note?.trim() || null,
+    p_actor: user.id,
+  });
+  if (error) {
+    // The RPC raises `token: sentence`. Matching the TOKEN, not the prose,
+    // means rewording an exception can never silently flatten a precise
+    // refusal into one generic word.
+    const token = (error.message ?? "").split(":")[0].trim();
+    for (const known of ["self_approval_forbidden", "already_decided", "bae_required", "reason_required", "invalid_transition"]) {
+      if (token === known) return { ok: false, error: known };
+    }
+    return { ok: false, error: "approval_failed" };
+  }
+
+  await writeAudit({
+    action: status === "APPROVED"
+      ? AuditActions.CUSTOMS_RELEASE_APPROVED
+      : AuditActions.CUSTOMS_RELEASE_REJECTED,
+    actorId: user.id,
+    tenantId: user.tenantId,
+    entity: "customs_record",
+    entityId: id,
+    before: { release_approval_status: rec.release_approval_status ?? null },
+    after: { release_approval_status: status, has_reason: Boolean(note?.trim()) },
+  });
+
+  revalidatePath(`/files/${rec.file_id}`);
+  revalidatePath(`/files/${rec.file_id}/process`);
   return { ok: true, id };
 }
 

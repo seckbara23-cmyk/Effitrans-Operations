@@ -16,6 +16,8 @@ import {
   requestPaymentGateDecision,
   finalizePaymentGateDecision,
   recordBae,
+  decideTransitRelease,
+  finalizeTransitRelease,
   dispatchToField,
   type TransitState,
   type TransitAssignee,
@@ -32,6 +34,9 @@ const ERROR_FR: Record<string, string> = {
   unknown_step: "Étape inconnue.",
   step_assigned_to_other: "Cette étape est affectée à une autre personne.",
   not_authorized_assigner: "Cette affectation relève du Chef de Transit.",
+  not_authorized_approver: "La vérification finale avant le Transport relève du Chef de Transit.",
+  release_not_approved: "Le Chef de Transit n'a pas encore vérifié ce BAE : la libération reste bloquée.",
+  self_validation_forbidden: "Vous avez enregistré ce BAE : sa vérification revient à une autre personne.",
   transit_custody_required: "Le Transit doit d'abord réceptionner le dossier et terminer sa réception.",
 };
 const frError = (code: string) => ERROR_FR[code] ?? "L'action a échoué. Réessayez.";
@@ -74,6 +79,7 @@ export function TransitPanel({
   canRequestDecision,
   canApproveDecision,
   canRecordBae,
+  canApproveRelease,
   canDispatch,
   canManageBlockers,
 }: {
@@ -85,6 +91,7 @@ export function TransitPanel({
   canRequestDecision: boolean;
   canApproveDecision: boolean;
   canRecordBae: boolean;
+  canApproveRelease: boolean;
   canDispatch: boolean;
   canManageBlockers: boolean;
 }) {
@@ -94,6 +101,7 @@ export function TransitPanel({
   const [notice, setNotice] = useState<string | null>(null);
   const [declarantId, setDeclarantId] = useState("");
   const [baeRef, setBaeRef] = useState("");
+  const [releaseNote, setReleaseNote] = useState("");
   const [decisionReason, setDecisionReason] = useState("");
   const [overrideTeam, setOverrideTeam] = useState("");
   const [overrideReason, setOverrideReason] = useState("");
@@ -252,13 +260,95 @@ export function TransitPanel({
         )}
       </div>
 
-      {/* BAE capture */}
+      {/* BAE capture, then the Chef de Transit's verification (TRANSIT-CUSTODY-05).
+          Recording the mainlevée and releasing to the Transport leg are two acts
+          by two people; the card never lets one look like the other. */}
       <div className="mt-3 rounded-lg border border-slate-200 p-3">
         <p className="text-xs font-medium text-slate-600">BAE — Bon À Enlever</p>
-        {state.bae.obtained ? (
+        {state.bae.released ? (
           <p className="mt-1 text-sm text-emerald-700">
-            Obtenu · référence <strong>{state.bae.reference}</strong> — le client voit « Autorisation obtenue ».
+            Libéré vers le Transport · référence <strong>{state.bae.reference}</strong> — le client voit « Autorisation obtenue ».
           </p>
+        ) : state.bae.recorded ? (
+          <div className="mt-1">
+            <p className="text-sm text-amber-700">
+              BAE enregistré — vérification du Chef de Transit requise.
+            </p>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Référence <strong>{state.bae.reference}</strong>
+              {state.bae.recordedByName ? ` · enregistré par ${state.bae.recordedByName}` : ""}
+              {state.bae.recordedAt ? ` · le ${new Date(state.bae.recordedAt).toLocaleDateString("fr-FR")}` : ""}
+            </p>
+            {state.bae.approvalStatus === "REJECTED" && (
+              <p className="mt-1 rounded-md bg-rose-50 px-2 py-1 text-xs text-rose-700">
+                Libération refusée par le Chef de Transit{state.bae.approvalNote ? ` : ${state.bae.approvalNote}` : "."}
+                {" "}Le transport reste bloqué tant que le BAE n'a pas été corrigé et vérifié.
+              </p>
+            )}
+            {canApproveRelease && state.bae.approvalStatus !== "APPROVED" && (
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <input
+                  value={releaseNote}
+                  onChange={(e) => setReleaseNote(e.target.value)}
+                  placeholder="Motif (obligatoire en cas de refus)"
+                  className="min-w-[220px] rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
+                />
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() =>
+                    run(
+                      () => decideTransitRelease(fileId, "APPROVED", releaseNote.trim() || undefined),
+                      "Vérification enregistrée — le dossier peut être libéré vers le Transport.",
+                    )
+                  }
+                  className="min-h-[36px] rounded-lg bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-50"
+                >
+                  Vérifier et libérer vers le Transport
+                </button>
+                <button
+                  type="button"
+                  disabled={pending || !releaseNote.trim()}
+                  onClick={() =>
+                    run(
+                      () => decideTransitRelease(fileId, "REJECTED", releaseNote.trim()),
+                      "Refus enregistré — le motif est visible sur le dossier.",
+                    )
+                  }
+                  className="min-h-[36px] rounded-lg border border-rose-200 px-3 py-1.5 text-sm font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+                >
+                  Refuser avec motif
+                </button>
+              </div>
+            )}
+            {state.bae.approvalStatus === "APPROVED" && (
+              <div className="mt-1">
+                <p className="text-xs text-emerald-700">
+                  Vérifié par le Chef de Transit — la libération peut être finalisée.
+                </p>
+                {canRecordBae && (
+                  <button
+                    type="button"
+                    disabled={pending}
+                    onClick={() =>
+                      run(
+                        () => finalizeTransitRelease(fileId),
+                        "Dossier libéré — « Autorisation obtenue » publiée au client.",
+                      )
+                    }
+                    className="mt-1.5 min-h-[36px] rounded-lg bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-50"
+                  >
+                    Finaliser la libération vers le Transport
+                  </button>
+                )}
+              </div>
+            )}
+            {!canApproveRelease && state.bae.approvalStatus !== "APPROVED" && (
+              <p className="mt-1 text-xs text-slate-400">
+                En attente de la vérification du Chef de Transit.
+              </p>
+            )}
+          </div>
         ) : canRecordBae ? (
           <div className="mt-1 flex flex-wrap items-center gap-2">
             <input
@@ -270,7 +360,7 @@ export function TransitPanel({
             <button
               type="button"
               disabled={pending || !baeRef.trim()}
-              onClick={() => run(() => recordBae(fileId, baeRef.trim()), "BAE enregistré — « Autorisation obtenue » publiée au client.")}
+              onClick={() => run(() => recordBae(fileId, baeRef.trim()), "BAE enregistré — vérification du Chef de Transit requise.")}
               className="min-h-[36px] rounded-lg bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-50"
             >
               Enregistrer le BAE

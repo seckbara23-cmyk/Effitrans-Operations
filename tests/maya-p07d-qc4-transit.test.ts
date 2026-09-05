@@ -53,6 +53,7 @@ const customs = (over: Partial<CustomsRecord> = {}): CustomsRecord => ({
   declarationDate: "2026-08-10T08:00:00.000Z", baeReference: "BAE-2026-556",
   releaseDate: "2026-08-11T01:00:00.000Z", inspectionStatus: "NOT_REQUIRED",
   externalRef: "GND-77421", notes: null,
+  releaseApprovalStatus: null, releaseApprovalNote: null, baeRecordedAt: null,
   receivabilityStatus: null, receivabilityAt: null, receivabilityNote: null,
   providerCode: "manual", providerSyncedAt: null,
   reviewedAt: null, reviewedByEmail: null,

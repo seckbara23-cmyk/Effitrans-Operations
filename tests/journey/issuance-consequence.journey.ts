@@ -36,7 +36,7 @@ import { createFile } from "@/lib/files/actions";
 import { openDossierWorkflow, handDossierToTransit } from "@/lib/process/engine/intake-actions";
 import { submitStep, activateStep, approveStep, sendHandoff, receiveHandoff } from "@/lib/process/engine/actions";
 import { declareEvidenceAbsence } from "@/lib/process/evidence-absence-actions";
-import { receiveDossierAtTransit, assignTransitStep, recordBae } from "@/lib/process/engine/transit-actions";
+import { receiveDossierAtTransit, assignTransitStep, recordBae, decideTransitRelease, finalizeTransitRelease } from "@/lib/process/engine/transit-actions";
 import { createCustoms, changeCustomsStatus, recordGaindeRegistration } from "@/lib/customs/actions";
 import { createTransport, assignTransport, changeTransportStatus } from "@/lib/transport/actions";
 import {
@@ -143,6 +143,8 @@ async function carryToValidatedInvoice() {
 
   need(await as(field, () => activateStep(fileId, "customs_field_clearance")), "activate 13");
   need(await as(field, () => recordBae(fileId, `BAE-CQ-${Date.now()}`)), "bae");
+  need(await as(transit, () => decideTransitRelease(fileId, "APPROVED")), "release approval");
+  need(await as(field, () => finalizeTransitRelease(fileId)), "finalize release");
 
   need(await as(transport, () => activateStep(fileId, "transport_assignment")), "activate 14");
   need(await as(transport, () => createTransport(fileId)), "createTransport");

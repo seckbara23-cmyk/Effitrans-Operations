@@ -23,7 +23,7 @@ import { FinancePanel } from "@/components/process/finance-panel";
 import { StepActions } from "@/components/process/step-actions";
 import { evaluateStepAction } from "@/lib/process/step-eligibility";
 import { queueForStep } from "@/lib/process/queues/registry";
-import { custodyStateFor, maySendRoute, routeFor, type CustodyState, type RouteHandoffView } from "@/lib/process/handoff-routes";
+import { custodyStateFor, maySendRoute, mayApproveRelease, routeFor, type CustodyState, type RouteHandoffView } from "@/lib/process/handoff-routes";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -207,6 +207,7 @@ export default async function ProcessInspectorPage({ params }: { params: { id: s
       canRequestDecision={hasPermission(permissions, "process:decision:create")}
       canApproveDecision={hasPermission(permissions, "process:decision:approve")}
       canRecordBae={hasPermission(permissions, "customs:release")}
+      canApproveRelease={hasPermission(permissions, "customs:validate") && mayApproveRelease(user.roles ?? [])}
       canDispatch={hasPermission(permissions, "process:team:manage")}
       canManageBlockers={hasPermission(permissions, "process:blocker:manage")}
     />

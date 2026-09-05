@@ -34,7 +34,7 @@ import { openDossierWorkflow, handDossierToTransit } from "@/lib/process/engine/
 import { submitStep, activateStep, approveStep, sendHandoff, receiveHandoff } from "@/lib/process/engine/actions";
 import { declareEvidenceAbsence } from "@/lib/process/evidence-absence-actions";
 import { getStep } from "@/lib/process/effitrans-process";
-import { receiveDossierAtTransit, assignTransitStep, recordBae } from "@/lib/process/engine/transit-actions";
+import { receiveDossierAtTransit, assignTransitStep, recordBae, decideTransitRelease, finalizeTransitRelease } from "@/lib/process/engine/transit-actions";
 import { createCustoms, changeCustomsStatus, recordGaindeRegistration } from "@/lib/customs/actions";
 import { createTransport, assignTransport, changeTransportStatus } from "@/lib/transport/actions";
 import { prepareInvoiceDraft, submitInvoiceToFinance, approveInvoice, emailValidatedInvoice } from "@/lib/process/billing/actions";
@@ -335,6 +335,8 @@ describe("C-4 negative battery — the refusals, in the order a dossier meets th
     need(await as(coordinator, () => submitStep(fileId, "customs_followup")), "step 12");
     need(await as(field, () => activateStep(fileId, "customs_field_clearance")), "activate 13");
     need(await as(field, () => recordBae(fileId, `BAE-NEG-${Date.now()}`)), "bae");
+    need(await as(transit, () => decideTransitRelease(fileId, "APPROVED")), "release approval");
+    need(await as(field, () => finalizeTransitRelease(fileId)), "finalize release");
 
     // Customs branch landed; transport branch has not.
     const before = await stepState("pickup");

@@ -207,6 +207,27 @@ export function transitCustodyRefusal(input: {
 }
 
 /**
+ * Roles that may deliver the Chef de Transit's final verification of the
+ * mainlevée before a dossier is released to the Transport leg.
+ *
+ * TRANSIT-CUSTODY-05. `customs:validate` is the right capability — it is held by
+ * neither the Déclarant nor the field agent, so it already excludes the people
+ * whose work is being checked. But it is ALSO held by Operations and by platform
+ * administration, and the ruling is explicit that possessing the capability must
+ * not silently make them the everyday approvers. So the role is named here and
+ * checked in addition to the permission: the Chef de Transit is the approver,
+ * and no one else. Operations and platform administration keep the capability
+ * for the acts that genuinely need it and are refused here. No break-glass path
+ * is opened in this slice; if a Chef is unavailable the answer is to seat one,
+ * which is a governance act with its own audit trail, not a quiet exception.
+ */
+export const RELEASE_APPROVAL_ROLES: readonly string[] = ["CHIEF_OF_TRANSIT"];
+
+export function mayApproveRelease(roleCodes: readonly string[]): boolean {
+  return RELEASE_APPROVAL_ROLES.some((r) => roleCodes.includes(r));
+}
+
+/**
  * Steps whose work belongs to its assignee once one is named.
  *
  * These are exactly the steps Transit assigns (`ASSIGNABLE_STEP_KEYS`): the

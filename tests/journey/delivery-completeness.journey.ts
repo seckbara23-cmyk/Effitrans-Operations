@@ -25,7 +25,7 @@ import { createFile } from "@/lib/files/actions";
 import { openDossierWorkflow, handDossierToTransit } from "@/lib/process/engine/intake-actions";
 import { submitStep, activateStep, approveStep, sendHandoff, receiveHandoff } from "@/lib/process/engine/actions";
 import { declareEvidenceAbsence } from "@/lib/process/evidence-absence-actions";
-import { receiveDossierAtTransit, assignTransitStep, recordBae } from "@/lib/process/engine/transit-actions";
+import { receiveDossierAtTransit, assignTransitStep, recordBae, decideTransitRelease, finalizeTransitRelease } from "@/lib/process/engine/transit-actions";
 import { createCustoms, changeCustomsStatus } from "@/lib/customs/actions";
 import { createTransport, assignTransport, changeTransportStatus } from "@/lib/transport/actions";
 import {
@@ -163,6 +163,12 @@ async function carryToStep13() {
   await as(field, () => activateStep(fileId, "customs_field_clearance"));
   const bae = await as(field, () => recordBae(fileId, `BAE-S3-${Date.now()}`));
   if (!bae.ok) throw new Error(`bae: ${JSON.stringify(bae)}`);
+  // TRANSIT-CUSTODY-05 — the mainlevée is recorded, verified by the Chef de
+  // Transit, and only then finalised by the field agent who obtained it.
+  const approved = await as(transit, () => decideTransitRelease(fileId, "APPROVED"));
+  if (!approved.ok) throw new Error(`release approval: ${JSON.stringify(approved)}`);
+  const released = await as(field, () => finalizeTransitRelease(fileId));
+  if (!released.ok) throw new Error(`finalize release: ${JSON.stringify(released)}`);
 }
 
 describe("C-4 slice 3a — transport, convergence, delivery, completeness", () => {

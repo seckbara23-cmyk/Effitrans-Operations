@@ -263,7 +263,7 @@ describe("UAT-WF-STEP3-001 — nothing was weakened", () => {
   it("no migration was added for this slice", () => {
     const dir = fileURLToPath(new URL("../supabase/migrations", import.meta.url));
     const files = require("node:fs").readdirSync(dir).filter((f: string) => f.endsWith(".sql")).sort();
-    expect(files.at(-1)).toBe("20260929000001_ops_supervisor_file_update.sql");
+    expect(files.at(-1)).toBe("20260930000001_customs_release_approval.sql");
   });
 
   it("the UAT dossier is named nowhere in the slice", () => {

@@ -1280,6 +1280,12 @@ export type Database = {
           released_at: string | null;
           // MAYA-P0.7-A — Quality Control N°3 (recevabilité). All nullable:
           // null = not yet assessed, never "receivable by default".
+          bae_recorded_by: string | null;
+          bae_recorded_at: string | null;
+          release_approval_status: string | null;
+          release_approval_by: string | null;
+          release_approval_at: string | null;
+          release_approval_note: string | null;
           receivability_status: string | null;
           receivability_at: string | null;
           receivability_by: string | null;
@@ -1303,6 +1309,12 @@ export type Database = {
           file_id: string;
           status?: string;
           required?: boolean;
+          bae_recorded_by?: string | null;
+          bae_recorded_at?: string | null;
+          release_approval_status?: string | null;
+          release_approval_by?: string | null;
+          release_approval_at?: string | null;
+          release_approval_note?: string | null;
           receivability_status?: string | null;
           receivability_at?: string | null;
           receivability_by?: string | null;
@@ -1367,6 +1379,12 @@ export type Database = {
           intel_version?: number;
           submitted_at?: string | null;
           released_at?: string | null;
+          bae_recorded_by?: string | null;
+          bae_recorded_at?: string | null;
+          release_approval_status?: string | null;
+          release_approval_by?: string | null;
+          release_approval_at?: string | null;
+          release_approval_note?: string | null;
           receivability_status?: string | null;
           receivability_at?: string | null;
           receivability_by?: string | null;
@@ -5006,6 +5024,18 @@ export type Database = {
       // MAYA-P0.7-A — Quality Control N°3. Writes the decision AND appends the
       // ledger event in one transaction; service_role only.
       record_customs_receivability: {
+        Args: { p_customs_id: string; p_status: string; p_note: string | null; p_actor: string };
+        Returns: Json;
+      };
+      // TRANSIT-CUSTODY-05 — the field act: records the mainlevée, names its
+      // author, opens the Chef's verification. Never releases. service_role only.
+      record_customs_bae: {
+        Args: { p_customs_id: string; p_bae_reference: string; p_actor: string };
+        Returns: Json;
+      };
+      // TRANSIT-CUSTODY-05 — the Chef de Transit's independent verdict on
+      // releasing to Transport. Enforces maker/checker on the recorded author.
+      record_customs_release_approval: {
         Args: { p_customs_id: string; p_status: string; p_note: string | null; p_actor: string };
         Returns: Json;
       };

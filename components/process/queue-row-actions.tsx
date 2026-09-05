@@ -41,6 +41,8 @@ const ERROR_FR: Record<string, string> = {
   unknown_step: "Étape inconnue.",
   step_assigned_to_other: "Cette étape est affectée à une autre personne.",
   not_authorized_assigner: "Cette affectation relève du Chef de Transit.",
+  not_authorized_approver: "La vérification finale avant le Transport relève du Chef de Transit.",
+  release_not_approved: "Le Chef de Transit n'a pas encore vérifié ce BAE : la libération reste bloquée.",
   transit_custody_required: "Le Transit doit d'abord réceptionner le dossier et terminer sa réception.",
   handoff_not_sent: "Le dossier doit d'abord être formellement transmis au service suivant.",
   not_authorized_sender: "Vous n'êtes pas habilité à effectuer cette transmission.",

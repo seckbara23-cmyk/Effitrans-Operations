@@ -17,6 +17,7 @@ import {
   recordCustomsValidation,
   recordGaindeRegistration,
   recordReceivability,
+  recordBaeReference,
   releaseCustoms,
   updateCustoms,
 } from "@/lib/customs/actions";
@@ -225,22 +226,41 @@ export function CustomsPanel({
           </div>
         )}
 
+        {record.baeReference && record.status !== "RELEASED" && (
+          <p className={record.releaseApprovalStatus === "REJECTED" ? "text-xs text-rose-700" : "text-xs text-amber-700"}>
+            {record.releaseApprovalStatus === "REJECTED"
+              ? `${c.baeRejected}${record.releaseApprovalNote ? ` ${record.releaseApprovalNote}` : ""}`
+              : c.baePendingVerification}
+          </p>
+        )}
+
         {/* Workflow actions */}
         {(canUpdate || canRelease) && targets.length > 0 && (
           <div className="flex flex-wrap items-center gap-2">
             {targets.map((s) => {
               if (s === "RELEASED") {
+                // TRANSIT-CUSTODY-05 — one button, two different acts, never
+                // conflated. Until the Chef de Transit has verified the
+                // mainlevée this control RECORDS it and opens that
+                // verification; the release itself is refused server-side, so
+                // offering it here would only produce a failure.
+                const verified = record.releaseApprovalStatus === "APPROVED";
                 return canRelease ? (
                   <button
                     key={s}
                     onClick={() => {
-                      const bae = window.prompt(c.baePrompt);
-                      if (bae && bae.trim()) run(() => releaseCustoms(record.id, bae.trim()), "workflow");
+                      if (verified) {
+                        const bae = window.prompt(c.baePrompt);
+                        if (bae && bae.trim()) run(() => releaseCustoms(record.id, bae.trim()), "workflow");
+                        return;
+                      }
+                      const bae = window.prompt(c.baeRecordPrompt, record.baeReference ?? "");
+                      if (bae && bae.trim()) run(() => recordBaeReference(record.id, bae.trim()), "workflow");
                     }}
                     disabled={pending}
                     className="rounded-md border border-teal-200 px-2 py-1 text-xs font-medium text-teal-700 hover:bg-teal-50 disabled:opacity-50"
                   >
-                    {c.release}
+                    {verified ? c.release : c.recordBae}
                   </button>
                 ) : null;
               }

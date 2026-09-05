@@ -354,8 +354,8 @@ describe("scope — steps 4-10 and the pilot dossier are untouched", () => {
   it("exactly one migration was added, and it is the newest", () => {
     const dir = fileURLToPath(new URL("../supabase/migrations", import.meta.url));
     const files = readdirSync(dir).filter((f: string) => f.endsWith(".sql")).sort();
-    expect(files.at(-1)).toBe("20260929000001_ops_supervisor_file_update.sql");
-    expect(read("lib/platform/ops/build-info.ts")).toContain("MIGRATION_COUNT = 137");
+    expect(files.at(-1)).toBe("20260930000001_customs_release_approval.sql");
+    expect(read("lib/platform/ops/build-info.ts")).toContain("MIGRATION_COUNT = 138");
   });
 
   it("EFT-IMP-2026-00009 is named nowhere in the slice", () => {

@@ -33,8 +33,8 @@ import { roleLabel, ROLE_DISPLAY_PRIORITY } from "@/lib/navigation/roles";
 import { createNotification } from "@/lib/notifications/create";
 import { receiveHandoff } from "./actions";
 import { assignStepTeam, requestProcessDecision, finalizeProcessDecision, openProcessBlocker } from "./structures-actions";
-import { releaseCustoms } from "@/lib/customs/actions";
-import { mayAssignStep, transitCustodyRefusal } from "@/lib/process/handoff-routes";
+import { recordBaeReference, recordCustomsRelease, recordCustomsReleaseApproval } from "@/lib/customs/actions";
+import { mayAssignStep, mayApproveRelease, transitCustodyRefusal } from "@/lib/process/handoff-routes";
 import { isKnownStep } from "./state";
 import {
   deriveTransitStages,
@@ -206,7 +206,20 @@ export type TransitState = {
   reception: { pending: boolean; received: boolean; handoffId: string | null };
   declarant: { name: string; roleLabel: string | null; departmentLabel: string | null } | null;
   dispatch: { teamCode: string | null; deterministic: boolean; suggestion: string | null };
-  bae: { obtained: boolean; reference: string | null; customsStatus: string | null; customsRecordId: string | null };
+  bae: {
+    /** The mainlevée reference is on file. NOT the same as released. */
+    recorded: boolean;
+    /** null | PENDING | APPROVED | REJECTED — the Chef de Transit's verdict. */
+    approvalStatus: string | null;
+    approvalNote: string | null;
+    recordedByName: string | null;
+    recordedAt: string | null;
+    /** The dossier is released to Transport: customs_record is RELEASED. */
+    released: boolean;
+    reference: string | null;
+    customsStatus: string | null;
+    customsRecordId: string | null;
+  };
   paymentGate: { decisionId: string | null; status: string | null; outcome: string | null } | null;
   openBlockers: { id: string; title: string; category: string; status: string; customerVisible: boolean }[];
 };
@@ -280,11 +293,15 @@ export async function getTransitState(fileId: string): Promise<TransitState | nu
     // BAE + customs status.
     const { data: customs } = await admin
       .from("customs_record")
-      .select("id, status, bae_reference")
+      .select("id, status, bae_reference, bae_recorded_by, bae_recorded_at, release_approval_status, release_approval_note")
       .eq("tenant_id", ctx.tenantId)
       .eq("file_id", fileId)
       .is("deleted_at", null)
       .maybeSingle();
+
+    const baeRecorder = customs?.bae_recorded_by
+      ? await resolveUserCard(admin, ctx.tenantId, customs.bae_recorded_by as string)
+      : null;
 
     // Finance payment-gate decision (latest for this type).
     const { data: decisions } = await admin
@@ -326,7 +343,14 @@ export async function getTransitState(fileId: string): Promise<TransitState | nu
         suggestion,
       },
       bae: {
-        obtained: customs?.status === "RELEASED",
+        // TRANSIT-CUSTODY-05 — three separate facts. A reference on file is not
+        // a verdict, and a verdict is not a release; the panel says which.
+        recorded: Boolean(customs?.bae_reference),
+        approvalStatus: customs?.release_approval_status ?? null,
+        approvalNote: customs?.release_approval_note ?? null,
+        recordedByName: baeRecorder?.name ?? null,
+        recordedAt: customs?.bae_recorded_at ?? null,
+        released: customs?.status === "RELEASED",
         reference: customs?.bae_reference ?? null,
         customsStatus: customs?.status ?? null,
         customsRecordId: customs?.id ?? null,
@@ -604,7 +628,11 @@ export async function recordBae(fileId: string, baeReference: string): Promise<E
     .maybeSingle();
   if (!customs) return fail("not_found");
 
-  const res = await releaseCustoms(customs.id, baeReference.trim());
+  // TRANSIT-CUSTODY-05. Recording the mainlevée is the FIELD act: it persists
+  // the reference, names who obtained it, and puts the dossier in front of the
+  // Chef de Transit. It does not release — that is the Chef's separate act
+  // below, and physical transport stays blocked until it happens.
+  const res = await recordBaeReference(customs.id, baeReference.trim());
   if (!res.ok) return fail(res.error === "bae_required" ? "reason_required" : "invalid_state");
 
   const instance = await loadInstance(admin, ctx.tenantId, fileId);
@@ -624,6 +652,121 @@ export async function recordBae(fileId: string, baeReference: string): Promise<E
 }
 
 // =============================================================== dispatch ====
+
+/**
+ * « Vérifier et libérer vers le Transport » / « Refuser avec motif » — the Chef
+ * de Transit's independent verification (TRANSIT-CUSTODY-05).
+ *
+ * Two authorities, both required. `customs:validate` is the verification
+ * capability, held by neither the Déclarant nor the field agent; the ROLE scope
+ * keeps this the Chef's act rather than any holder's, so Operations and platform
+ * administration do not silently become the everyday approvers merely by being
+ * broadly privileged. Maker/checker — the actor who recorded the mainlevée may
+ * not verify it — is enforced in the database, on the recorded author, where a
+ * second permission cannot reach around it.
+ *
+ * Approving does not itself release: it records the verdict, and the release
+ * remains `recordCustomsRelease`, behind its own ratified control gate, which
+ * now additionally refuses without this approval.
+ */
+export async function decideTransitRelease(
+  fileId: string,
+  status: "APPROVED" | "REJECTED",
+  note?: string,
+): Promise<EngineResult> {
+  const ctx = await transitGuard("customs:validate", fileId);
+  if (isErr(ctx)) return fail(ctx);
+  if (!mayApproveRelease(ctx.roles)) return fail("not_authorized_approver");
+  if (status === "REJECTED" && !(note ?? "").trim()) return fail("reason_required");
+
+  const admin = getAdminSupabaseClient();
+  const instance = await loadInstance(admin, ctx.tenantId, fileId);
+  if (!instance) return fail("not_found");
+  const custody = await transitCustody(admin, ctx.tenantId, instance.id);
+  if (custody) return fail(custody);
+
+  const { data: customs } = await admin
+    .from("customs_record")
+    .select("id")
+    .eq("tenant_id", ctx.tenantId)
+    .eq("file_id", fileId)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (!customs) return fail("not_found");
+
+  const res = await recordCustomsReleaseApproval(customs.id as string, status, note ?? null);
+  if (!res.ok) {
+    if (res.error === "self_approval_forbidden") return fail("self_validation_forbidden");
+    if (res.error === "reason_required") return fail("reason_required");
+    if (res.error === "already_decided") return fail("invalid_state");
+    if (res.error === "bae_required") return fail("evidence_missing");
+    if (res.error === "forbidden") return fail("forbidden");
+    return fail("invalid_state");
+  }
+
+  // The Operations owner learns the outcome either way: an approval unblocks
+  // Transport, a refusal sends work back to the field.
+  if (instance.owner_user_id && instance.owner_user_id !== ctx.userId) {
+    const { data: fileRow } = await admin
+      .from("operational_file").select("file_number").eq("id", fileId).eq("tenant_id", ctx.tenantId).maybeSingle();
+    await createNotification({
+      tenantId: ctx.tenantId,
+      userId: instance.owner_user_id,
+      type: "FILE_ASSIGNED",
+      fileId,
+      title: status === "APPROVED"
+        ? `Transit libéré vers le Transport — ${fileRow?.file_number ?? ""}`.trim()
+        : `Libération refusée par le Transit — ${fileRow?.file_number ?? ""}`.trim(),
+      body: status === "APPROVED"
+        ? "Le Chef de Transit a vérifié le dossier douane : le Transport peut se poursuivre."
+        : "Le Chef de Transit a refusé la libération. Le motif figure sur le dossier.",
+    });
+  }
+
+  return { ok: true, id: customs.id as string };
+}
+
+/**
+ * « Finaliser la libération vers le Transport » — the third and last act of
+ * TRANSIT-CUSTODY-05, and the one that actually moves the goods.
+ *
+ * It stays with `recordCustomsRelease` and therefore with `assertControlStep`,
+ * which binds it to whoever CLAIMED `customs_field_clearance` — the field agent
+ * doing the work. That ratified control is untouched here. What changed is that
+ * the release is now refused unless the Chef de Transit has verified the
+ * mainlevée, so the field agent records, the Chef verifies, the field agent
+ * releases: three acts, two people, one audited chain.
+ */
+export async function finalizeTransitRelease(fileId: string): Promise<EngineResult> {
+  const ctx = await transitGuard("customs:release", fileId);
+  if (isErr(ctx)) return fail(ctx);
+
+  const admin = getAdminSupabaseClient();
+  const instance = await loadInstance(admin, ctx.tenantId, fileId);
+  if (!instance) return fail("not_found");
+  const custody = await transitCustody(admin, ctx.tenantId, instance.id);
+  if (custody) return fail(custody);
+
+  const { data: customs } = await admin
+    .from("customs_record")
+    .select("id, bae_reference, release_approval_status")
+    .eq("tenant_id", ctx.tenantId)
+    .eq("file_id", fileId)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (!customs?.bae_reference) return fail("evidence_missing");
+  // Read as a courtesy so the refusal is legible; the authority is the server
+  // check inside recordCustomsRelease, which this cannot skip.
+  if (customs.release_approval_status !== "APPROVED") return fail("release_not_approved");
+
+  const res = await recordCustomsRelease(customs.id as string, customs.bae_reference as string);
+  if (!res.ok) {
+    if (res.error === "release_not_approved") return fail("release_not_approved");
+    if (res.error === "forbidden") return fail("forbidden");
+    return fail("invalid_state");
+  }
+  return { ok: true, id: customs.id as string };
+}
 
 /**
  * Dispatch the dossier to a field team (AIBD / Maritime) — the T9 shape over the

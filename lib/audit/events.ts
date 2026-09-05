@@ -502,6 +502,10 @@ export const AuditActions = {
   // chef). Safe metadata only: step key + assignee id, never a UUID in any label.
   PROCESS_STEP_ASSIGNED: "process.step.assigned",
   PROCESS_TRANSIT_RECEIVED: "process.transit.received",
+  // TRANSIT-CUSTODY-05 — the Chef de Transit's independent verification of the
+  // customs section, distinct from CUSTOMS_RELEASED which is the release itself.
+  CUSTOMS_RELEASE_APPROVED: "customs.release.approved",
+  CUSTOMS_RELEASE_REJECTED: "customs.release.rejected",
 
   // Phase 9.0E — Finance execution. Safe metadata only: category, status,
   // amount/currency, references — never free-text notes or beneficiary banking

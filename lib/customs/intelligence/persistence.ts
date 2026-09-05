@@ -78,6 +78,9 @@ export function rowToDeclaration(row: IntelRecordRow): Declaration {
     // MAYA-P0.7-A — the intelligence lifecycle does not read recevabilité and
     // must not: a QC judgement is not a declaration state. Carried as null so
     // the shape is complete without implying the engine consumes it.
+    releaseApprovalStatus: null,
+    releaseApprovalNote: null,
+    baeRecordedAt: null,
     receivabilityStatus: null,
     receivabilityAt: null,
     receivabilityNote: null,

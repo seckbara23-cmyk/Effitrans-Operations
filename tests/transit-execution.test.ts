@@ -267,10 +267,17 @@ describe("transit-actions orchestrate EXISTING audited actions only", () => {
     expect(actions).not.toContain('from("invoice")');
   });
 
-  it("40 — BAE reuses the existing releaseCustoms action (which fires the customer milestone)", () => {
-    const fn = actions.slice(actions.indexOf("export async function recordBae"), actions.indexOf("export async function dispatchToField"));
-    expect(fn).toContain("releaseCustoms(customs.id, baeReference.trim())");
-    expect(fn).toContain("baeReference.trim().length === 0"); // reference mandatory
+  it("40 — BAE reuses the existing audited customs actions, and still writes no row itself", () => {
+    // TRANSIT-CUSTODY-05 split the single act in two: recording the mainlevée
+    // (recordBaeReference) and, after the Chef de Transit's verification,
+    // releasing (recordCustomsRelease). Both are existing audited actions —
+    // the point of this assertion, which is that transit-actions orchestrates
+    // and never writes customs rows of its own.
+    const rec = actions.slice(actions.indexOf("export async function recordBae"), actions.indexOf("export async function decideTransitRelease"));
+    expect(rec).toContain("recordBaeReference(customs.id, baeReference.trim())");
+    expect(rec).toContain("baeReference.trim().length === 0"); // reference mandatory
+    const fin = actions.slice(actions.indexOf("export async function finalizeTransitRelease"));
+    expect(fin.slice(0, fin.indexOf("export async function", 1))).toContain("recordCustomsRelease(");
     expect(actions).not.toContain('from("customs_record").update');
   });
 
@@ -346,6 +353,9 @@ describe("Phase 9.0D adds NO schema and NO new permission", () => {
     expect(new Set(perms)).toEqual(new Set([
       "process:read", "process:handoff:receive", "customs:assign",
       "process:decision:create", "process:decision:approve", "customs:release", "process:team:manage",
+      // TRANSIT-CUSTODY-05 — the Chef de Transit's verification. An EXISTING
+      // permission, held by exactly three roles and re-granted to nobody.
+      "customs:validate",
     ]));
   });
 
