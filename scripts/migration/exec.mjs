@@ -20,7 +20,7 @@
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 
 /**
@@ -78,6 +78,14 @@ export function target(spec) {
 export function redact(url) {
   return String(url).replace(/\/\/[^@/]*@/, "//***@");
 }
+
+/**
+ * `-f` paths must be ABSOLUTE. With `--workdir` set, the CLI resolves relative
+ * file arguments against the workdir, so a relative path silently becomes
+ * `<workdir>/<workdir>/...` and the file is "not found" — while the command
+ * still exits in a way that looks like an ordinary failure.
+ */
+const abs = (p) => resolve(p);
 
 function run(args, { timeoutMs = 600_000 } = {}) {
   // `--output-format json` is NOT optional. Against `--linked` the CLI happens
@@ -152,7 +160,7 @@ export function query(tgt, sql, opts) {
 
 /** Read-only SQL from a file. Same contract as `query`. */
 export function queryFile(tgt, file, opts) {
-  const r = run(["db", "query", ...tgt.flags, "-f", file], opts);
+  const r = run(["db", "query", ...tgt.flags, "-f", abs(file)], opts);
   const j = parseJson(r.stdout, r.stderr, r.stdout + r.stderr);
   if (j && j._tag === "Error") throw new Error(`[exec] query failed: ${j.error?.message ?? "unknown"}`);
   if (r.code !== 0) throw new Error(`[exec] query exited ${r.code}: ${(r.stderr || r.stdout).slice(-800)}`);
@@ -166,7 +174,7 @@ export function queryFile(tgt, file, opts) {
  * differs sharply depending on whether the ledger was written yet.
  */
 export function applyFile(tgt, file, opts) {
-  const r = run(["db", "query", ...tgt.flags, "-f", file], { timeoutMs: 900_000, ...opts });
+  const r = run(["db", "query", ...tgt.flags, "-f", abs(file)], { timeoutMs: 900_000, ...opts });
   const j = parseJson(r.stdout, r.stderr, r.stdout + r.stderr);
   if (j && j._tag === "Error") return { ok: false, message: j.error?.message ?? "unknown error" };
   if (r.code !== 0) return { ok: false, message: (r.stderr || r.stdout).slice(-2000) };

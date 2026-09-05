@@ -84,9 +84,19 @@ function writeTmp(name, sql) {
 }
 
 /** Statements that return no rows go through applyFile, which does not demand any. */
-function exec(tgt, name, sql) {
+/**
+ * `mustSucceed` exists because of a false result this script once produced: the
+ * setup SQL silently failed to run, so the atomicity probe's table never
+ * existed, and A1 cheerfully reported "MEASURED ATOMIC" on the strength of a
+ * table that was absent for entirely the wrong reason. Scaffolding that fails
+ * must stop the run, or every measurement built on it is fiction.
+ */
+function exec(tgt, name, sql, mustSucceed = false) {
   const r = applyFile(tgt, writeTmp(name, sql));
-  if (!r.ok) console.log(`[rehearsal]   (exec ${name} reported: ${String(r.message).replace(/\s+/g, " ").slice(0, 200)})`);
+  if (!r.ok) {
+    console.log(`[rehearsal]   (exec ${name} reported: ${oneLine(r.message).slice(0, 300)})`);
+    if (mustSucceed) throw new Error(`rehearsal scaffolding failed (${name}): ${oneLine(r.message).slice(0, 300)}`);
+  }
   return r;
 }
 
@@ -135,7 +145,7 @@ function main() {
   console.log(`[rehearsal] disposable target confirmed: ${host}`);
   console.log(`[rehearsal] project directory: ${ROOT}`);
 
-  exec(tgt, "setup.sql", "drop schema if exists rehearsal cascade; create schema rehearsal;");
+  exec(tgt, "setup.sql", "drop schema if exists rehearsal cascade; create schema rehearsal;", true);
 
   const base = ledgerRows(tgt);
   console.log(`[rehearsal] ledger starts at ${base.length} rows\n`);
@@ -144,7 +154,21 @@ function main() {
 
   // ---- A1: is the default executor atomic on a LATE failure? --------------
   {
-    exec(tgt, "a1.sql", "create table rehearsal.atomicity_probe(x int);\nselect 1/0;");
+    // Positive control FIRST: prove the probe SQL can create the table at all,
+    // so that "table absent" afterwards means rollback rather than a broken run.
+    exec(tgt, "a1-control.sql", "create table rehearsal.atomicity_probe(x int);", true);
+    const control = Number(
+      query(tgt, "select count(*) as n from information_schema.tables where table_schema='rehearsal' and table_name='atomicity_probe'")[0].n,
+    );
+    if (control !== 1) throw new Error("atomicity positive control failed: the probe table could not be created");
+    exec(tgt, "a1-reset.sql", "drop table rehearsal.atomicity_probe;", true);
+
+    // The measurement: the same CREATE followed by a statement that must raise.
+    const late = exec(tgt, "a1.sql", "create table rehearsal.atomicity_probe(x int);\nselect 1/0;");
+    if (late.ok) throw new Error("atomicity probe did not fail as intended — 1/0 was expected to raise");
+    if (!/division|zero/i.test(String(late.message))) {
+      throw new Error(`atomicity probe failed for the WRONG reason: ${oneLine(late.message).slice(0, 200)}`);
+    }
     const n = Number(
       query(tgt, "select count(*) as n from information_schema.tables where table_schema='rehearsal' and table_name='atomicity_probe'")[0].n,
     );
@@ -241,7 +265,7 @@ function main() {
   }
 
   // ---- cleanup: leave the database as we found it -------------------------
-  exec(tgt, "teardown.sql", "drop schema if exists rehearsal cascade;");
+  exec(tgt, "teardown.sql", "drop schema if exists rehearsal cascade;", true);
   for (const v of recorded) repair(tgt, v, undefined, "reverted"); // supported mechanism, not a DELETE
   const finalRows = ledgerRows(tgt);
   record("CLEANUP", "rehearsal rows reverted, schema dropped", finalRows.length === base.length,
