@@ -80,7 +80,11 @@ export function redact(url) {
 }
 
 function run(args, { timeoutMs = 600_000 } = {}) {
-  const r = spawnSync(NPX.cmd, [...NPX.prefix, "supabase", ...args], {
+  // `--output-format json` is NOT optional. Against `--linked` the CLI happens
+  // to emit JSON anyway, but against `--db-url` it prints a human ASCII table —
+  // so a parser that works in production silently fails on the rehearsal
+  // database, which is precisely backwards. Ask for JSON explicitly, always.
+  const r = spawnSync(NPX.cmd, [...NPX.prefix, "supabase", "--output-format", "json", ...args], {
     encoding: "utf8",
     timeout: timeoutMs,
     maxBuffer: 64 * 1024 * 1024,
@@ -114,7 +118,20 @@ function withTempSql(sql, fn) {
 function parseJson(...sources) {
   for (const out of sources) {
     if (!out) continue;
-    const i = out.indexOf("{");
+    // A bare array is a valid shape for `--output-format json`; normalise it to
+    // the `{ rows }` envelope the callers expect.
+    const a = out.indexOf("[");
+    const b = out.lastIndexOf("]");
+    const objAt = out.indexOf("{");
+    if (a >= 0 && b > a && (objAt < 0 || a < objAt)) {
+      try {
+        const arr = JSON.parse(out.slice(a, b + 1));
+        if (Array.isArray(arr)) return { rows: arr };
+      } catch {
+        /* fall through to the object attempt */
+      }
+    }
+    const i = objAt;
     const j = out.lastIndexOf("}");
     if (i < 0 || j <= i) continue;
     // Bounded to the outermost braces: the CLI writes human preamble before its
