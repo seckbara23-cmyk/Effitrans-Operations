@@ -177,6 +177,16 @@ export async function customsIdFor(fileId: string): Promise<string> {
   return data.id as string;
 }
 
+/** The Chef de Transit's verdict on the release, and the status it decides. */
+export async function customsReleaseState(fileId: string) {
+  const { data } = await db()
+    .from("customs_record")
+    .select("status, bae_reference, bae_recorded_by, release_approval_status, release_approval_by, release_approval_note")
+    .eq("file_id", fileId)
+    .maybeSingle();
+  return data ?? null;
+}
+
 /** The transport record for a dossier — id + updated_at for the CAS write. */
 export async function transportFor(fileId: string): Promise<{ id: string; updatedAt: string }> {
   const { data } = await db()

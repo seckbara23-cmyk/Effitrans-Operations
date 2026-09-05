@@ -16,7 +16,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { as } from "./identity";
 import {
-  identity, execution, auditFor, handoffs, provideEvidence, customsIdFor,
+  identity, execution, auditFor, handoffs, provideEvidence, customsIdFor, customsReleaseState,
   CLIENT_DEPOSIT_REQUIRED,
 } from "./fixtures";
 import type { CurrentUser } from "@/lib/auth/current-user";
@@ -438,11 +438,19 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     const bae = await as(field, () => recordBae(fileId, `BAE-JRN-${Date.now()}`));
     expect(bae.ok, `recordBae: ${JSON.stringify(bae)}`).toBe(true);
 
-    // TRANSIT-CUSTODY-05 — recording is not releasing. The step stays open on
-    // the reference alone: nothing has been verified yet.
+    // TRANSIT-CUSTODY-05 — recording is not releasing. The reference and its
+    // author are on file, the verification is open, and the step stays open too.
+    const recorded = await customsReleaseState(fileId);
+    expect(recorded?.release_approval_status).toBe("PENDING");
+    expect(recorded?.bae_recorded_by).toBeTruthy();
+    expect(recorded?.status).not.toBe("RELEASED");
     expect((await execution(fileId, "customs_field_clearance"))?.state).not.toBe("COMPLETED");
 
-    // The field agent who obtained the mainlevée may not verify it.
+    // The field agent who obtained the mainlevée may not verify it. Refused on
+    // the SEAT — the field agent holds neither `customs:validate` nor the Chef's
+    // role — so this does not reach the database's maker/checker guard, which
+    // stands behind it for actors who hold both and is unreachable in the normal
+    // flow precisely because the control gate binds recording to the claimant.
     const selfCheck = await as(field, () => decideTransitRelease(fileId, "APPROVED"));
     expect(selfCheck.ok).toBe(false);
 
@@ -469,6 +477,9 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     expect(refused.ok, `refusal: ${JSON.stringify(refused)}`).toBe(true);
     const stillBlocked = await as(field, () => finalizeTransitRelease(fileId));
     expect((stillBlocked as { error: string }).error).toBe("release_not_approved");
+    const refusedState = await customsReleaseState(fileId);
+    expect(refusedState?.release_approval_status).toBe("REJECTED");
+    expect(refusedState?.release_approval_note).toContain("illisible");
 
     // Correcting the mainlevée reopens the verification rather than inheriting
     // the refusal — the field agent can answer the Chef and be looked at again.
@@ -477,8 +488,18 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
 
     const verdict = await as(transit, () => decideTransitRelease(fileId, "APPROVED"));
     expect(verdict.ok, `release approval: ${JSON.stringify(verdict)}`).toBe(true);
+    // The ratified control is intact: the Chef holds `customs:release` and is
+    // STILL refused the finalisation, because step 13 is claimed by the field
+    // agent. Approving does not hand the Chef the release — it unblocks it for
+    // the person whose step it is. This can fail for no other reason.
+    const chefFinalize = await as(transit, () => finalizeTransitRelease(fileId));
+    expect(chefFinalize.ok, "the Chef must not be able to finalise").toBe(false);
+
     const finalized = await as(field, () => finalizeTransitRelease(fileId));
     expect(finalized.ok, `finalize release: ${JSON.stringify(finalized)}`).toBe(true);
+    const released = await customsReleaseState(fileId);
+    expect(released?.status).toBe("RELEASED");
+    expect(released?.release_approval_status).toBe("APPROVED");
 
     // The release IS the fact that proves this step, so reconciliation closes it
     // — and now promotes from it.
