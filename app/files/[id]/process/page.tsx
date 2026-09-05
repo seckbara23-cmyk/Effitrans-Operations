@@ -13,6 +13,7 @@ import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-server";
 import { getProcessState } from "@/lib/process/engine/service";
+import { assigneeLabelMap, resolveAssigneeLabel } from "@/lib/process/assignee-label";
 import { getCommercialOwnerPanel, listAssignableStaff } from "@/lib/files/service";
 import { getIntakeState, listEligibleOperationsOwners, type EligibleOwner, type IntakeState } from "@/lib/process/engine/intake-actions";
 import { IntakePanel } from "@/components/process/intake-panel";
@@ -119,6 +120,19 @@ export default async function ProcessInspectorPage({ params }: { params: { id: s
   const pendingHandoffTargets = new Set<string>();
   const handoffViews: RouteHandoffView[] = [];
   const assigneeNames = new Map<string, string>();
+  /**
+   * True when the claimant lookup itself FAILED, as opposed to returning no row.
+   *
+   * The two are different facts and the page must not say the same thing about
+   * them. "No row" means the claimant is genuinely someone this reader cannot
+   * resolve; a failed query means we simply do not know, and rendering « une
+   * autre personne » there states something false — which is exactly the defect
+   * this block had: the select named a column `app_user` does not have
+   * (`full_name`; it is `name`), PostgREST refused the request, the error was
+   * never read, and EVERY claimed step — including the reader's own — reported
+   * that somebody else held it.
+   */
+  let assigneeLookupFailed = false;
   if (state) {
     const admin = getAdminSupabaseClient();
     const claimedIds = [
@@ -131,20 +145,26 @@ export default async function ProcessInspectorPage({ params }: { params: { id: s
         .eq("tenant_id", user.tenantId)
         .in("status", ["SENT", "RECEIVED"])
         .in("to_step_key", state.activeSteps.map((s) => s.stepKey)),
+      // No cast on the result: the typed client checks this projection against
+      // the generated schema, so a wrong column name is a build error rather
+      // than a silent empty map at runtime.
       claimedIds.length
         ? admin
             .from("app_user")
-            .select("id, full_name, email")
+            .select("id, name, email")
             .eq("tenant_id", user.tenantId)
             .in("id", claimedIds)
-        : Promise.resolve({ data: [] as { id: string; full_name: string | null; email: string }[] }),
+        : Promise.resolve({ data: [], error: null }),
     ]);
     for (const h of (handoffRows.data ?? []) as { to_step_key: string; status: string }[]) {
       handoffViews.push({ toStepKey: h.to_step_key, status: h.status });
       if (h.status === "SENT") pendingHandoffTargets.add(h.to_step_key);
     }
-    for (const u of (userRows.data ?? []) as { id: string; full_name: string | null; email: string }[]) {
-      assigneeNames.set(u.id, u.full_name || u.email);
+    if (userRows.error) {
+      assigneeLookupFailed = true;
+      console.error("[process] claimant name lookup failed:", userRows.error.message);
+    } else {
+      for (const [id, label] of assigneeLabelMap(userRows.data ?? [])) assigneeNames.set(id, label);
     }
   }
 
@@ -383,11 +403,11 @@ export default async function ProcessInspectorPage({ params }: { params: { id: s
                       queueKey={queueKey}
                       stepKey={s.stepKey}
                       eligibility={eligibility}
-                      assigneeLabel={
-                        s.assignedUserId
-                          ? assigneeNames.get(s.assignedUserId) ?? "une autre personne"
-                          : null
-                      }
+                      assigneeLabel={resolveAssigneeLabel({
+                        assignedUserId: s.assignedUserId,
+                        names: assigneeNames,
+                        lookupFailed: assigneeLookupFailed,
+                      })}
                     />
                   )}
                 </div>
