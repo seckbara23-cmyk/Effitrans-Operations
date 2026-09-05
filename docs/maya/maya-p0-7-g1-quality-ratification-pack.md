@@ -152,7 +152,7 @@ pas choisir à votre place.
 
 Quel est le circuit réel ?
 
-☐ Commercial → Opérations → Account Manager → Coordinateur → Transit
+☑ Commercial → Opérations → Account Manager → Coordinateur → Transit
 ☐ Commercial → Account Manager → Opérations → Transit
 ☐ Les deux existent, selon le type de dossier : ______________________
 Autre : ________________________________________________
@@ -162,12 +162,17 @@ C'est la seule contradiction directe entre deux sources internes que nous ayons
 rencontrée. Nous refusons d'en choisir une : le circuit détermine qui reçoit le
 dossier, qui est relancé en cas de retard, et où se mesure le délai.
 
-**COMPORTEMENT ACTUEL**
-La plateforme affiche la contradiction elle-même et ne tranche pas.
+**COMPORTEMENT ACTUEL (avant ratification)**
+La plateforme affichait la contradiction elle-même et ne tranchait pas.
 
-**RÉPONSE / DÉCISION :**
-_______________________________________________________________
-_______________________________________________________________
+**RÉPONSE / DÉCISION : RATIFIÉ le 2026-09-05 — DEC-C33 (OPS-OWNERSHIP-01, K1).**
+Circuit canonique : **Commercial → Intake Opérations → Account Manager →
+Coordinateur → Transit**. La formulation « transmission aux opérations » du
+manuel qualité ne prévaut pas sur ce circuit pour la plateforme. La divergence
+historique est **conservée** dans la documentation et dans le code
+(`QC2_TRANSMISSION_CONFLICT`) : elle explique pourquoi une décision était
+nécessaire. Aucun contrôle « accusé de réception vers les Opérations » n'est
+inventé (K2, différé).
 
 ---
 
@@ -176,28 +181,31 @@ _______________________________________________________________
 **QUESTION**
 Comment l'Account Manager d'un dossier est-il désigné ?
 
-☐ Affecté manuellement par le Responsable des Opérations
+☑ Affecté manuellement par le Responsable des Opérations
 ☐ C'est la personne qui crée le dossier
-☐ C'est le gestionnaire attitré du client (portefeuille client)
+☐ C'est le gestionnaire attitré du client (portefeuille client) — différé (K5)
 ☐ Affecté par le chef de département
 Autre : ________________________________________________
 
 **Peut-on changer l'Account Manager d'un dossier en cours ?**
-☐ Oui ☐ Non ☐ Oui, avec accord de : ______________________
+☑ Oui — tant que le dossier n'est pas clôturé/annulé, avec code motif ET motif libre obligatoires
 
-**Faut-il conserver l'historique des changements ?** ☐ Oui ☐ Non
+**Faut-il conserver l'historique des changements ?** ☑ Oui — `assignment_event`, immuable
 
-**POURQUOI**
-Aujourd'hui la plateforme inscrit automatiquement **le créateur du dossier**
-comme Account Manager, et rien ne le modifie ensuite. Nous ne pouvons donc pas
-affirmer qui est réellement l'Account Manager, et nous préférons n'attribuer le
-travail à personne plutôt que de désigner la mauvaise personne.
+**POURQUOI (constat d'origine)**
+La plateforme inscrivait automatiquement **le créateur du dossier** comme
+Account Manager, et rien ne le modifiait ensuite.
 
 **COMPORTEMENT ACTUEL**
-L'ouverture du dossier est affichée sans nom de responsable.
+Corrigé. Depuis TMS-1 (2026-08-18) la création n'inscrit plus personne : le
+dossier naît « À affecter ». Le Responsable des Opérations désigne l'Account
+Manager via `assign_commercial_owner`, seul écrivain de
+`operational_file.account_manager_id`, avec événement d'affectation immuable.
 
-**RÉPONSE / DÉCISION :**
-_______________________________________________________________
+**RÉPONSE / DÉCISION : RATIFIÉ (TMS-Q1, 2026-08-18) puis rendu exécutable le
+2026-09-05 — DEC-C34.** Depuis OPS-OWNERSHIP-01, l'étape 2 ne peut plus être
+terminée sans cette désignation pour les dossiers IMP/EXP : la preuve exigée est
+l'historique gouverné, pas la seule valeur de la colonne.
 
 ---
 

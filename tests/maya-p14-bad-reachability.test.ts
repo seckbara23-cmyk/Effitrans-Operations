@@ -129,12 +129,17 @@ describe("the 5.0A snapshot is history, not state", () => {
     expect(documentIsCapturable("BON_A_DELIVRER")).toBe(true);
   });
 
-  it("no entry was ever marked implemented — the block is unmaintained", () => {
-    // 16 missing + 13 partial + 0 implemented. A verdict here describes
-    // 2026-07-13, and `lib/process/types.ts` says so in as many words.
+  it("the block is a 2026-07-13 snapshot, maintained only where a slice proved otherwise", () => {
+    // It used to hold NO "implemented" entry at all, which was the evidence that
+    // nobody maintained it. That is no longer strictly true: OPS-OWNERSHIP-01
+    // marked `operations_intake` implemented and pinned the claim with tests.
+    // The point of this assertion survives intact — a verdict here still
+    // describes 2026-07-13 unless a slice deliberately updated it, so the
+    // exceptions are enumerated rather than the set left open.
     const verdicts = [...read("lib/process/effitrans-process.ts").matchAll(/verdict: "(\w+)"/g)].map((m) => m[1]);
     expect(verdicts.length).toBeGreaterThan(20);
-    expect(new Set(verdicts)).toEqual(new Set(["missing", "partial"]));
+    expect(new Set(verdicts)).toEqual(new Set(["missing", "partial", "implemented"]));
+    expect(verdicts.filter((v) => v === "implemented")).toHaveLength(1);
     expect(read("lib/process/types.ts")).toContain("Phase 5.0A audit verdict");
   });
 

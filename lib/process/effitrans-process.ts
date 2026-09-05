@@ -72,30 +72,54 @@ export const EFFITRANS_PROCESS: ProcessStep[] = [
     clientStage: "request_received",
     phase: "intake",
     department: "operations",
+    // OPS-OWNERSHIP-01 (K7) — DELIBERATELY LEFT AS THE OFFICIAL ROLE.
+    //
+    // `role` is the vocabulary of the first-party « PROCESSUS OPÉRATIONNEL »
+    // document, not a tenant role code. `OPERATIONS_MANAGER` is correct there,
+    // and `ROLE_MAPPINGS` already resolves it to the tenant role OPS_SUPERVISOR
+    // ("mapped"); the operations queue and the pilot checklist both key on the
+    // official name. Rewriting this field to OPS_SUPERVISOR would have routed
+    // step 2 to /my-work instead of /queues/operations and collapsed two
+    // vocabularies that are separate on purpose.
+    //
+    // K7's alignment is the AUTHORITY — `permissions` below — and the owning
+    // role in `process_step_owning_role`, which already reads OPS_SUPERVISOR.
     role: "OPERATIONS_MANAGER",
     description:
       "Recevoir le dossier accepté et l'affecter à l'Account Manager responsable du client. L'affectation est notifiée, historisée et visible sur le dossier.",
     prerequisites: ["cotation"],
-    requiredDocuments: [],
+    // OPS-OWNERSHIP-01 (ratified K3). The assignment is this step's whole
+    // purpose, so it is now EXECUTABLE evidence rather than a documentary note:
+    // the step cannot be submitted until a governed COMMERCIAL_OWNER assignment
+    // exists and names the dossier's current Account Manager. Structured
+    // evidence, not an upload — the same shape as CUSTOMS_DOSSIER.
+    requiredDocuments: ["ACCOUNT_MANAGER_ASSIGNMENT"],
     requiredEvidence: ["account_manager_id", "assignment_actor", "assignment_date"],
     completionRule: "account_manager_assigned",
     rejectsTo: null,
     nextSteps: ["am_dossier_opening"],
     parallelGroup: "main",
     slaPolicyKey: "operations_assignment",
-    permissions: ["file:assign"],
+    // OPS-OWNERSHIP-01 (ratified K7). Was `file:assign` — the deprecated
+    // working-assignee lane (WES-3F) that ACCOUNT_MANAGER also holds, so an
+    // Account Manager could execute the Operations intake step. The act this
+    // step performs is designating the Responsable client, whose authority is
+    // `file:assign:commercial` (OPS_SUPERVISOR + SYSTEM_ADMIN, migration 115).
+    // This NARROWS the gate; no grant is broadened, and the AM keeps
+    // `file:assign` for its own lane.
+    permissions: ["file:assign:commercial"],
     implementation: {
-      verdict: "partial",
+      verdict: "implemented",
       existing: [
-        "role OPS_SUPERVISOR (semantically equivalent to OPERATIONS_MANAGER)",
-        "operational_file.account_manager_id, operational_file.assigned_to_user_id",
-        "assignFile() — file:assign, writes audit_log (file.assigned) + notification",
+        "OPERATIONS_MANAGER maps to the tenant role OPS_SUPERVISOR (ROLE_MAPPINGS, status mapped)",
+        "assign_commercial_owner (migration 115) — the SOLE writer of operational_file.account_manager_id",
+        "assignment_event(subject_type='COMMERCIAL_OWNER') — immutable designation history",
+        "CommercialOwner control, rendered inside this step",
+        "ACCOUNT_MANAGER_ASSIGNMENT — executable evidence gating submission (IMP/EXP)",
       ],
       gaps: [
-        "account_manager_id is auto-set to the CREATOR at createFile and no action ever changes it",
-        "two competing ownership columns (account_manager_id vs assigned_to_user_id)",
+        "TRP/HND applicability of the Account Manager concept is DEFERRED (K4) — the evidence gate is inert for those types, which is containment and not a ruling",
         "no operations intake queue",
-        "no assignment history table — history exists only as audit_log rows",
       ],
     },
   },

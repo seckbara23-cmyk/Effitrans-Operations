@@ -15,6 +15,7 @@
 import "server-only";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { scopedFrom } from "@/lib/db/tenant-scope";
+import { amAssignmentRequiredForFileType } from "../applicability";
 import { hasPermission } from "@/lib/rbac/permissions";
 import type { EvidenceSnapshot } from "./evidence";
 import type { ExecutionView } from "./state";
@@ -116,7 +117,7 @@ export async function loadProcessSnapshot(
   const admin = getAdminSupabaseClient();
 
   const { data: fileRows } = await scopedFrom(admin, "operational_file", tenantId)
-    .select("id, type, status")
+    .select("id, type, status, account_manager_id")
     .eq("id", fileId)
     .limit(1);
   const file = ((fileRows ?? []) as Row[])[0];
@@ -223,8 +224,44 @@ export async function loadProcessSnapshot(
     .eq("tenant_id", tenantId)
     .eq("file_id", fileId);
 
+  // OPS-OWNERSHIP-01 — the GOVERNED designation of the Responsable client.
+  //
+  // Read only for the dossier types where the designation is an executable
+  // requirement (deferred K4 keeps TRP/HND out), and only the user ids a
+  // COMMERCIAL_OWNER assignment_event has actually named. The evidence checker
+  // compares the dossier's current account_manager_id against this list, so a
+  // column value with no matching governed event does not satisfy step 2.
+  //
+  // One bounded, indexed lookup beside the absence read above — no N+1.
+  let commercialOwner: EvidenceSnapshot["commercialOwner"];
+  if (amAssignmentRequiredForFileType(file.type as string)) {
+    const { data: ownerEvents } = await (admin as unknown as {
+      from: (t: string) => {
+        select: (c: string) => {
+          eq: (k: string, v: string) => {
+            eq: (k: string, v: string) => {
+              eq: (k: string, v: string) => Promise<{ data: Row[] | null }>;
+            };
+          };
+        };
+      };
+    })
+      .from("assignment_event")
+      .select("new_user_id")
+      .eq("tenant_id", tenantId)
+      .eq("file_id", fileId)
+      .eq("subject_type", "COMMERCIAL_OWNER");
+    commercialOwner = {
+      accountManagerId: (file.account_manager_id as string | null) ?? null,
+      governedUserIds: ((ownerEvents ?? []) as Row[])
+        .map((r) => r.new_user_id as string | null)
+        .filter((x): x is string => Boolean(x)),
+    };
+  }
+
   const evidence: EvidenceSnapshot = {
     fileType: file.type as string,
+    commercialOwner,
     declaredAbsences: ((absenceRows ?? []) as Row[]).map((r) => ({
       key: r.evidence_key as string,
       reason: r.reason as string,

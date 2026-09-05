@@ -246,7 +246,7 @@ export async function getDepartmentQueue(req: QueueRequest): Promise<QueueResult
   }
 
   const { data: fileRows } = await scopedFrom(admin, "operational_file", req.tenantId)
-    .select("id, file_number, type, client_id, priority, status")
+    .select("id, file_number, type, client_id, priority, status, account_manager_id")
     .in("id", fileIds);
   // MAYA-P1.7 — the SAME population as the Control Tower (DEC-B43). A tower
   // bucket that links here must not say 5 while the queue shows 4, and a closed
@@ -280,6 +280,35 @@ export async function getDepartmentQueue(req: QueueRequest): Promise<QueueResult
     .select("file_id, evidence_key, reason")
     .eq("tenant_id", req.tenantId)
     .in("file_id", fileIds);
+  // OPS-OWNERSHIP-01 — the governed COMMERCIAL_OWNER designations, batched over
+  // the same dossier set. Without this the queue would evaluate step 2's
+  // evidence against an absent projection and report EVERY operations-intake row
+  // as blocked, including correctly assigned ones: the stricter view is safe for
+  // authorisation but wrong for a work list, which exists to say what is
+  // actually actionable.
+  const { data: ownerEventRows } = await (admin as unknown as {
+    from: (t: string) => {
+      select: (c: string) => {
+        eq: (k: string, v: string) => {
+          eq: (k: string, v: string) => { in: (k: string, v: string[]) => Promise<{ data: Row[] | null }> };
+        };
+      };
+    };
+  })
+    .from("assignment_event")
+    .select("file_id, new_user_id")
+    .eq("tenant_id", req.tenantId)
+    .eq("subject_type", "COMMERCIAL_OWNER")
+    .in("file_id", fileIds);
+  const governedOwnersByFile = new Map<string, string[]>();
+  for (const r of (ownerEventRows ?? []) as Row[]) {
+    const fid = r.file_id as string;
+    const uid = r.new_user_id as string | null;
+    if (!uid) continue;
+    if (!governedOwnersByFile.has(fid)) governedOwnersByFile.set(fid, []);
+    governedOwnersByFile.get(fid)!.push(uid);
+  }
+
   const absencesByFile = new Map<string, { key: string; reason: string }[]>();
   for (const r of (absenceRows ?? []) as Row[]) {
     const fid = r.file_id as string;
@@ -352,6 +381,10 @@ export async function getDepartmentQueue(req: QueueRequest): Promise<QueueResult
       access,
       // C-3 — declared absences, batched with the other per-file reads.
       declaredAbsences: absencesByFile.get(fileId) ?? [],
+      commercialOwner: {
+        accountManagerId: str(file.account_manager_id),
+        governedUserIds: governedOwnersByFile.get(fileId) ?? [],
+      },
       documents: (docsByFile.get(fileId) ?? []).map((d) => ({
         typeCode: d.type_code as string,
         status: d.status as string,

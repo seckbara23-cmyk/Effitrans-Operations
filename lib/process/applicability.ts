@@ -25,6 +25,31 @@ import type { ExecutionView } from "./engine/state";
 export const CUSTOMS_LEG_FILE_TYPES = ["IMP", "EXP"] as const;
 
 /**
+ * Dossier types for which step 2's ACCOUNT_MANAGER_ASSIGNMENT evidence is
+ * EXECUTABLE (OPS-OWNERSHIP-01, ratified 2026-09-05).
+ *
+ * ⚠ THIS IS CONTAINMENT, NOT A RULING. Whether a transport-only (TRP) or
+ * handling (HND) dossier requires an Account Manager is deferred business
+ * decision K4, explicitly not decided by this slice. `operations_intake` itself
+ * applies to EVERY dossier type — it is deliberately absent from
+ * STEP_APPLICABILITY below — so gating its evidence unconditionally would have
+ * blocked the live TRP dossier and thereby answered K4 by side effect. The gate
+ * is therefore scoped to the types the ratification covers, and TRP/HND keep
+ * exactly today's behaviour until K4 is ruled.
+ *
+ * It shares its members with CUSTOMS_LEG_FILE_TYPES today and is deliberately
+ * NOT an alias: "carries a customs declaration" and "has a Responsable client"
+ * are different questions that happen to have the same answer for now, and
+ * collapsing them would hide K4 rather than contain it.
+ */
+export const AM_ASSIGNMENT_REQUIRED_FILE_TYPES = ["IMP", "EXP"] as const;
+
+/** Is the Account-Manager designation an executable requirement for this type? */
+export function amAssignmentRequiredForFileType(fileType: string): boolean {
+  return (AM_ASSIGNMENT_REQUIRED_FILE_TYPES as readonly string[]).includes(fileType);
+}
+
+/**
  * Step keys that ONLY apply to the listed dossier types. Absent key = the step
  * applies to every type.
  */

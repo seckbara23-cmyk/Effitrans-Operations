@@ -92,6 +92,14 @@ export const DOCUMENT_MAPPINGS: DocumentMapping[] = [
     note: "Correctly modelled as the customs_record table (1:1 with operational_file), not as an uploaded document. Its constituent documents are gated by document_type.gates_customs.",
   },
   {
+    key: "ACCOUNT_MANAGER_ASSIGNMENT",
+    labelFr: "Désignation du Responsable client",
+    typeCode: null,
+    status: "structured",
+    steps: ["operations_intake"],
+    note: "OPS-OWNERSHIP-01 — never an upload. Satisfied by the GOVERNED designation: operational_file.account_manager_id together with a COMMERCIAL_OWNER assignment_event naming that same user. Binding the column to the immutable history is the point — it is what keeps assign_commercial_owner the only way to satisfy this step, rather than merely the only way today.",
+  },
+  {
     key: "GAINDE_DECLARATION_REFERENCE",
     labelFr: "Référence + preuve d'enregistrement GAINDE",
     typeCode: "GAINDE_REGISTRATION_EVIDENCE",

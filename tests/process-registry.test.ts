@@ -370,9 +370,11 @@ describe("required-document mapping (Deliverable 9)", () => {
     }
   });
 
-  it("covers the 17 official artefacts", () => {
-    expect(DOCUMENT_MAPPINGS).toHaveLength(17);
-    expect(new Set(DOCUMENT_MAPPINGS.map((d) => d.key)).size).toBe(17);
+  it("covers the 18 official artefacts", () => {
+    // 17 from the 5.0A registry + ACCOUNT_MANAGER_ASSIGNMENT (OPS-OWNERSHIP-01),
+    // the structured designation evidence that gates step 2.
+    expect(DOCUMENT_MAPPINGS).toHaveLength(18);
+    expect(new Set(DOCUMENT_MAPPINGS.map((d) => d.key)).size).toBe(18);
   });
 
   it("has NO document types left missing — the catalog is complete (Phase 5.0D)", () => {
@@ -513,12 +515,22 @@ describe("Phase 5.0A audit verdicts", () => {
     }
   });
 
-  it("nothing is fully implemented yet", () => {
-    expect(EFFITRANS_PROCESS.filter((s) => s.implementation.verdict === "implemented")).toHaveLength(0);
+  it("exactly one step is fully implemented — step 2, by OPS-OWNERSHIP-01", () => {
+    // The 5.0A snapshot recorded a platform where NO step was complete. That
+    // held for a year. `operations_intake` is the first to change it: authority,
+    // evidence, control and history are all in place and pinned by
+    // tests/ops-ownership-01.test.ts. Asserted by KEY, not merely by count, so
+    // a second step flipping to "implemented" fails here and is reviewed rather
+    // than absorbed.
+    const done = EFFITRANS_PROCESS.filter((s) => s.implementation.verdict === "implemented");
+    expect(done.map((s) => s.key)).toEqual(["operations_intake"]);
   });
 
-  it("counts 13 partial and 13 missing steps", () => {
-    expect(EFFITRANS_PROCESS.filter((s) => s.implementation.verdict === "partial")).toHaveLength(13);
+  it("counts 1 implemented, 12 partial and 13 missing steps", () => {
+    // Was 13 partial / 13 missing. Step 2 moved partial → implemented; nothing
+    // else moved, and the total is still 26.
+    expect(EFFITRANS_PROCESS.filter((s) => s.implementation.verdict === "implemented")).toHaveLength(1);
+    expect(EFFITRANS_PROCESS.filter((s) => s.implementation.verdict === "partial")).toHaveLength(12);
     expect(EFFITRANS_PROCESS.filter((s) => s.implementation.verdict === "missing")).toHaveLength(13);
   });
 

@@ -18,6 +18,7 @@
 import { isVerified } from "@/lib/documents/doctrine";
 import { DOCUMENT_MAPPINGS, mapDocument } from "../documents";
 import { getNode } from "./state";
+import { amAssignmentRequiredForFileType } from "../applicability";
 
 export type EvidenceStatus =
   | "satisfied"
@@ -65,6 +66,23 @@ export type EvidenceSnapshot = {
     driverUserId: string | null;
   } | null;
   invoices: { status: string; balance: number }[];
+  /**
+   * OPS-OWNERSHIP-01 — the GOVERNED designation of the Responsable client.
+   *
+   * Both halves are carried on purpose. `accountManagerId` is the dossier's
+   * current commercial owner; `governedUserIds` are the users a COMMERCIAL_OWNER
+   * `assignment_event` has actually named. The evidence is satisfied only when
+   * the current owner appears in that immutable history — so the column alone
+   * can never satisfy step 2, and a value that did not arrive through
+   * `assign_commercial_owner` would not either.
+   *
+   * Optional for the same reason as `declaredAbsences`: display-only
+   * projections that omit it show the stricter view, and authorise nothing.
+   */
+  commercialOwner?: {
+    accountManagerId: string | null;
+    governedUserIds: string[];
+  };
   /**
    * C-3 — evidence keys DECLARED inapplicable to this dossier, with their motif.
    * A declaration satisfies exactly the key it names and fabricates no document.
@@ -125,6 +143,31 @@ export function checkEvidence(key: string, snap: EvidenceSnapshot): EvidenceItem
   const declared = (snap.declaredAbsences ?? []).find((d) => d.key === key);
   if (declared && isDeclarableEvidence(key)) {
     return { key, labelFr, status: "satisfied", detail: absenceLabelFr(declared.reason) };
+  }
+
+  // OPS-OWNERSHIP-01 — the designation of the Responsable client (step 2).
+  //
+  // Ratified K3: the proof is the governed mechanism plus its immutable
+  // history, "not merely a nullable UI value". So BOTH must hold — the dossier
+  // names a current Account Manager, AND a COMMERCIAL_OWNER assignment_event
+  // names that same user. A column carrying a value no event ever recorded is
+  // reported missing, which is what makes `assign_commercial_owner` the only
+  // way to satisfy this step rather than merely the only writer today.
+  //
+  // Inapplicable types never reach here: the registry node's requiredDocuments
+  // are filtered by `amAssignmentRequiredForFileType` before evaluation, so for
+  // TRP/HND this key is not requested at all (deferred K4).
+  if (key === "ACCOUNT_MANAGER_ASSIGNMENT") {
+    const co = snap.commercialOwner;
+    // Absent projection = stricter view. Never satisfied by omission.
+    if (!co) return { key, labelFr, status: "missing", detail: "no_assignment_data" };
+    if (!nonEmpty(co.accountManagerId)) {
+      return { key, labelFr, status: "missing", detail: "no_account_manager" };
+    }
+    if (!co.governedUserIds.includes(co.accountManagerId as string)) {
+      return { key, labelFr, status: "missing", detail: "no_governed_assignment" };
+    }
+    return { key, labelFr, status: "satisfied" };
   }
 
   // Structured records, not uploads.
@@ -196,7 +239,14 @@ export type StepEvidence = {
  */
 export function evaluateStepEvidence(stepKey: string, snap: EvidenceSnapshot): StepEvidence {
   const node = getNode(stepKey);
-  const keys = node?.requiredDocuments ?? [];
+  // OPS-OWNERSHIP-01 — evidence whose applicability is narrower than its step's.
+  // `operations_intake` applies to every dossier type, but whether a TRP/HND
+  // dossier has a Responsable client at all is deferred decision K4. Filtering
+  // the KEY (rather than skipping the step) leaves those dossiers exactly as
+  // they behave today and keeps K4 undecided.
+  const keys = (node?.requiredDocuments ?? []).filter(
+    (k) => k !== "ACCOUNT_MANAGER_ASSIGNMENT" || amAssignmentRequiredForFileType(snap.fileType),
+  );
   const items = keys.map((k) => checkEvidence(k, snap));
 
   const pick = (s: EvidenceStatus) => items.filter((i) => i.status === s).map((i) => i.key);

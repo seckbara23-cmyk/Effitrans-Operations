@@ -31,6 +31,11 @@ export const NON_DECLARABLE_EVIDENCE_KEYS: readonly string[] = [
   "BORDEREAU_LIVRAISON",
   "RECEIPT",
   "PAYMENT_PROOF",
+  // OPS-OWNERSHIP-01 — declaring the designation of a Responsable client
+  // "absent with a motif" would waive the one control step 2 exists to enforce.
+  // Non-declarable by default (the declarable set is a closed allowlist); named
+  // here so the intent survives someone extending that allowlist later.
+  "ACCOUNT_MANAGER_ASSIGNMENT",
 ];
 
 export function isDeclarableEvidence(key: string): boolean {

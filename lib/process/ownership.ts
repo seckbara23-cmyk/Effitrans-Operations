@@ -7,9 +7,14 @@
  * every step.
  *
  * The dossier historically carries three competing ownership columns
- * (account_manager_id — auto-set to the creator and never changed;
- * coordinator_id; assigned_to_user_id) — the 9.0A audit's "three-headed
- * ownership" finding. None is removed or repurposed. Phase 9.0B adds the
+ * (account_manager_id; coordinator_id; assigned_to_user_id) — the 9.0A audit's
+ * "three-headed ownership" finding.
+ *
+ * ⚠ CORRECTED 2026-09-05 (OPS-OWNERSHIP-01). This comment used to say
+ * account_manager_id was "auto-set to the creator and never changed". That
+ * stopped being true with TMS-1 (2026-08-18): `createFile` no longer writes it,
+ * and `assign_commercial_owner` — the Operations Manager's audited designation,
+ * with immutable assignment_event history — is its only writer. None is removed or repurposed. Phase 9.0B adds the
  * canonical `process_instance.owner_user_id`, and THIS resolver defines the
  * one documented precedence every reader uses during the migration window:
  *

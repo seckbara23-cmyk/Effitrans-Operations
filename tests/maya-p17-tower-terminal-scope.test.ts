@@ -115,7 +115,12 @@ describe("the boundary is the population, applied once", () => {
 
   it("the linked queues use the same rule, so counts cannot diverge", () => {
     const q = code(QUEUE);
-    expect(q).toContain('.select("id, file_number, type, client_id, priority, status")');
+    // Assert the RULE, not the column list. What makes counts agree is that the
+    // queue reads `status` and filters it through the same `isActiveFile`; the
+    // rest of the projection is incidental and grows for unrelated reasons —
+    // pinning it verbatim made this test fail when OPS-OWNERSHIP-01 added
+    // account_manager_id, which cannot affect a count.
+    expect(q).toMatch(/scopedFrom\(admin, "operational_file", req\.tenantId\)[\s\S]{0,40}\.select\("[^"]*status[^"]*"\)/);
     expect(q).toMatch(/filter\(\(f\) => isActiveFile\(String\(f\.status\)\)\)/);
     // The existing scope guard drops those rows — no second mechanism.
     expect(q).toContain("if (!file) continue;");

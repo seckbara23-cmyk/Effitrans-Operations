@@ -43,7 +43,11 @@ export type QC2Control = {
 };
 
 /**
- * THE CONFLICT, recorded rather than resolved.
+ * THE CONFLICT — recorded, then RATIFIED (OPS-OWNERSHIP-01, K1, 2026-09-05).
+ *
+ * The disagreement below is preserved deliberately, exactly as it was found.
+ * Deleting it would erase the reason a ruling was needed, and the next reader
+ * of the Quality Manual would raise it again from scratch.
  *
  * The Quality Manual orders the process « ACCOUNT MANAGER → … » and names the
  * control « Transmission aux opérations ». The platform's canonical process
@@ -58,11 +62,20 @@ export type QC2Control = {
  * `process_handoff` is keyed on step keys inside a process instance that only
  * exists once the engine is enabled for the dossier.
  *
- * Two first-party documents disagreeing is a business question, not an
- * engineering one.
+ * Two first-party documents disagreeing was a business question, not an
+ * engineering one — and it was put to the business and answered.
+ *
+ * RATIFIED 2026-09-05 (OPS-OWNERSHIP-01, K1): the canonical platform circuit is
+ *
+ *     Commercial → Intake Opérations → Account Manager → Coordinateur → Transit
+ *
+ * The Quality Manual's « transmission aux opérations » wording does NOT override
+ * it for the platform. The ruling settles which circuit the platform implements;
+ * it does not claim the Quality Manual is wrong about anything else, and it does
+ * not invent an acknowledgement-back-to-Operations control (deferred K2).
  */
 export const QC2_TRANSMISSION_CONFLICT =
-  "Non déterminable : le manuel qualité indique « transmission aux opérations », alors que le processus opérationnel de référence fait l'inverse — les Opérations affectent le dossier à l'Account Manager, qui transmet ensuite au Coordinateur. Aucun mécanisme de transmission existant ne représente ce contrôle.";
+  "Circuit ratifié (2026-09-05) : Commercial → Intake Opérations → Account Manager → Coordinateur → Transit. Les Opérations reçoivent le dossier et désignent le Responsable client ; l'Account Manager prépare le dossier ; la transmission au Transit est un acte distinct des Opérations. Divergence historique conservée : le manuel qualité mentionnait « transmission aux opérations », sens inverse du processus opérationnel de référence ; cette contradiction est tranchée en faveur du processus opérationnel et n'est pas supprimée de la documentation.";
 
 export const QC2_NO_PROCEDURE_CRITERIA =
   "Non évalué : aucun référentiel de procédures n'est défini pour ce contrôle.";

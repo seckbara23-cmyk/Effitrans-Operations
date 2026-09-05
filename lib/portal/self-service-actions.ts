@@ -64,7 +64,14 @@ async function assertOwnedFile(fileId: string): Promise<{ ok: true; owned: Owned
       fileId: own.id,
       tenantId: user.tenantId,
       clientUserId: user.id,
-      ownerId: own.assigned_to_user_id ?? own.account_manager_id ?? own.coordinator_id,
+      // OPS-OWNERSHIP-01 — `assigned_to_user_id` was retired as an ownership
+      // and visibility source by WES-3F and removed from `user_readable_file_ids`;
+      // the portal was the last reader still treating it as CURRENT authority,
+      // and it won the fallback outright. The commercial owner is the dossier's
+      // client-facing responsible, which is exactly who a client request should
+      // reach. The column is deliberately NOT removed (deferred K6) — only its
+      // precedence is corrected.
+      ownerId: own.account_manager_id ?? own.coordinator_id,
     },
   };
 }

@@ -13,6 +13,7 @@ import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-server";
 import { getProcessState } from "@/lib/process/engine/service";
+import { getCommercialOwnerPanel, listAssignableStaff } from "@/lib/files/service";
 import { getIntakeState, listEligibleOperationsOwners, type EligibleOwner, type IntakeState } from "@/lib/process/engine/intake-actions";
 import { IntakePanel } from "@/components/process/intake-panel";
 import { evaluateTransitHandoffReadiness } from "@/lib/process/intake";
@@ -21,6 +22,7 @@ import { TransitPanel } from "@/components/process/transit-panel";
 import { getFinanceState, type FinanceState } from "@/lib/finance/request-actions";
 import { FinancePanel } from "@/components/process/finance-panel";
 import { StepActions } from "@/components/process/step-actions";
+import { CommercialOwner } from "@/components/files/commercial-owner";
 import { evaluateStepAction } from "@/lib/process/step-eligibility";
 import { queueForStep } from "@/lib/process/queues/registry";
 import { custodyStateFor, maySendRoute, mayApproveRelease, routeFor, type CustodyState, type RouteHandoffView } from "@/lib/process/handoff-routes";
@@ -272,6 +274,19 @@ export default async function ProcessInspectorPage({ params }: { params: { id: s
     );
   }
 
+  // OPS-OWNERSHIP-01 — step 2's assignment control, loaded from the SAME panel
+  // service the dossier page uses. Reusing the loader and the component is the
+  // point: there is one assignment implementation, rendered in two places, and
+  // the ratification forbids a second path.
+  //
+  // Loaded only when step 2 is actually on screen, so no dossier pays for a
+  // read it does not display.
+  const step2Open = state.activeSteps.some((s) => s.stepKey === "operations_intake");
+  const commercialOwner = step2Open ? await getCommercialOwnerPanel(params.id) : null;
+  const commercialStaff = step2Open && commercialOwner ? await listAssignableStaff() : [];
+  const canAssignCommercial = hasPermission(permissions, "file:assign:commercial");
+
+
   return (
     <main className="mx-auto max-w-4xl space-y-4 p-6">
       <header>
@@ -336,6 +351,27 @@ export default async function ProcessInspectorPage({ params }: { params: { id: s
                   {s.missingPrerequisites.length > 0 && (
                     <div className="text-xs text-red-600">
                       Prérequis manquants : {s.missingPrerequisites.join(", ")}
+                    </div>
+                  )}
+                  {/* OPS-OWNERSHIP-01 — the designation IS this step's work, so
+                      the control lives in the step rather than only on the
+                      dossier page. Same component, same server action. */}
+                  {s.stepKey === "operations_intake" && commercialOwner && (
+                    <div className="mt-2 max-w-xl">
+                      <CommercialOwner
+                        fileId={params.id}
+                        ownerId={commercialOwner.ownerId}
+                        ownerLabel={commercialOwner.ownerLabel}
+                        history={commercialOwner.history}
+                        staff={commercialStaff}
+                        canAssign={canAssignCommercial}
+                        isTerminal={false}
+                      />
+                      {!canAssignCommercial && (
+                        <p className="mt-1 text-xs text-slate-500">
+                          L&apos;affectation du Responsable client relève du Superviseur des opérations.
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>
