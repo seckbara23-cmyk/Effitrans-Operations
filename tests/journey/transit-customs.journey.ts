@@ -457,6 +457,24 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     expect(early.ok).toBe(false);
     expect((early as { error: string }).error).toBe("release_not_approved");
 
+    // A refusal must carry a motif — the record has to say WHY the goods were
+    // held, or the refusal is unaccountable.
+    const noMotif = await as(transit, () => decideTransitRelease(fileId, "REJECTED"));
+    expect(noMotif.ok).toBe(false);
+    expect((noMotif as { error: string }).error).toBe("reason_required");
+
+    // A reasoned refusal is recorded, and the release stays blocked by it.
+    const refused = await as(transit, () =>
+      decideTransitRelease(fileId, "REJECTED", "Référence illisible sur le BAE."));
+    expect(refused.ok, `refusal: ${JSON.stringify(refused)}`).toBe(true);
+    const stillBlocked = await as(field, () => finalizeTransitRelease(fileId));
+    expect((stillBlocked as { error: string }).error).toBe("release_not_approved");
+
+    // Correcting the mainlevée reopens the verification rather than inheriting
+    // the refusal — the field agent can answer the Chef and be looked at again.
+    const corrected = await as(field, () => recordBae(fileId, `BAE-JRN-2-${Date.now()}`));
+    expect(corrected.ok, `re-record: ${JSON.stringify(corrected)}`).toBe(true);
+
     const verdict = await as(transit, () => decideTransitRelease(fileId, "APPROVED"));
     expect(verdict.ok, `release approval: ${JSON.stringify(verdict)}`).toBe(true);
     const finalized = await as(field, () => finalizeTransitRelease(fileId));
