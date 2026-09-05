@@ -60,8 +60,19 @@ function assertDisposable(url) {
 }
 
 const results = [];
+const oneLine = (x) => String(x ?? "").replace(/\s+/g, " ").slice(0, 900);
+
+/**
+ * A GitHub workflow command is parsed ONLY at the start of a line, so a prefixed
+ * "[rehearsal] ::error::…" is plain text and a failing rehearsal surfaces as
+ * nothing but "exit code 1". Learned by staring at exactly that.
+ */
+const annotate = (level, title, message) => console.log(`::${level} title=${title}::${oneLine(message)}`);
+
 function record(id, what, pass, detail) {
   results.push({ id, what, pass, detail });
+  if (!pass) annotate("error", `rehearsal ${id}`, `${what} — ${detail}`);
+  else if (id === "A1") annotate("notice", "rehearsal A1 atomicity", detail);
   console.log(`[rehearsal] ${pass ? "PASS" : "FAIL"} ${id} — ${what}${detail ? `\n[rehearsal]        ${detail}` : ""}`);
 }
 
@@ -240,15 +251,16 @@ function main() {
   console.log("");
   const failed = results.filter((r) => !r.pass);
   console.log(`[rehearsal] ${results.length - failed.length}/${results.length} scenarios behaved as designed`);
-  if (failed.length) {
-    for (const f of failed) console.error(`[rehearsal] ::error::${f.id} ${f.what} — ${f.detail}`);
-    process.exit(1);
-  }
+  annotate("notice", "rehearsal summary", results.map((r) => `${r.id}=${r.pass ? "PASS" : "FAIL"}`).join(" "));
+  if (failed.length) process.exit(1);
 }
 
 try {
   main();
 } catch (e) {
+  // Annotate the crash too: a stack trace buried in a log the reader may not be
+  // able to open is a crash nobody can act on.
+  console.log(`::error title=rehearsal crashed::${String(e.stack || e.message).replace(/\s+/g, " ").slice(0, 900)}`);
   console.error(`[rehearsal] crashed: ${e.stack || e.message}`);
   process.exit(1);
 }
