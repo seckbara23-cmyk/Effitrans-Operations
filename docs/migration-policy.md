@@ -89,6 +89,29 @@ similar — the lint fails the build if such SQL is left on the default executor
 The runner refuses to apply a non-default executor automatically; those are run
 by an operator per the escalation below, then recorded through the runner.
 
+### The two executors are not interchangeable — measured, not assumed
+
+| | `--linked` (production) | `--db-url` (local/CI) |
+|---|---|---|
+| transport | Management API | extended query protocol |
+| multi-statement body | **accepted** | **rejected** — "cannot insert multiple commands into a prepared statement" |
+| atomicity on late failure | **ATOMIC** (measured on staging, 2026-09-05, with a positive control) | n/a |
+
+Consequences:
+
+* The CI rehearsal, which targets a local database, uses **one command per call**
+  and cannot test multi-statement behaviour at all. It validates the
+  orchestration — invariants, verifier gating, the failure states — not the
+  executor's transactional semantics.
+* Atomicity is therefore measured separately, against a real Supabase project
+  over the same Management API production uses:
+  `node scripts/measure-atomicity.mjs --project-ref <staging-ref>`. It refuses
+  the production ref, works in a scratch schema, and drops it afterwards.
+* **Result: a failed apply most likely leaves nothing behind.** The design still
+  does not depend on it — `VERIFY_FAILED` remains "state indeterminate, diagnose
+  by hand" — because one measurement of a hosted platform is evidence, not a
+  guarantee.
+
 **Long operations:** anything likely to exceed two minutes (a large backfill, an
 index build on a grown table) must be timed against staging first. A timeout
 mid-apply lands in `VERIFY_FAILED`, the worst state.

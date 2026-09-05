@@ -16,8 +16,11 @@
  *   R5 POST_RECORD_MISMATCH   → recorded, post-check still finds work pending
  *   R6 HELD                   → a discrepancy refuses the NEXT migration
  *
- *   A1 atomicity              → is a multi-statement body actually rolled back
- *                               on a late failure? MEASURED, never assumed.
+ * Atomicity is NOT measured here — see scripts/measure-atomicity.mjs. The
+ * production executor is the Management API multi-statement path; this local
+ * `--db-url` target speaks the extended query protocol and will not accept a
+ * multi-statement body at all, so any answer obtained here would be a confident
+ * statement about a different thing.
  *
  * It works inside a self-contained Supabase project directory (`.rehearsal/`)
  * so the real `supabase/migrations` is never touched — and so that
@@ -72,7 +75,6 @@ const annotate = (level, title, message) => console.log(`::${level} title=${titl
 function record(id, what, pass, detail) {
   results.push({ id, what, pass, detail });
   if (!pass) annotate("error", `rehearsal ${id}`, `${what} — ${detail}`);
-  else if (id === "A1") annotate("notice", "rehearsal A1 atomicity", detail);
   console.log(`[rehearsal] ${pass ? "PASS" : "FAIL"} ${id} — ${what}${detail ? `\n[rehearsal]        ${detail}` : ""}`);
 }
 
@@ -145,46 +147,25 @@ function main() {
   console.log(`[rehearsal] disposable target confirmed: ${host}`);
   console.log(`[rehearsal] project directory: ${ROOT}`);
 
-  exec(tgt, "setup.sql", "drop schema if exists rehearsal cascade; create schema rehearsal;", true);
+  // ONE COMMAND PER CALL. The `--db-url` path sends SQL over the extended query
+  // protocol (a prepared statement), which accepts exactly one command per
+  // message: "cannot insert multiple commands into a prepared statement". The
+  // production `--linked` path goes through the Management API and DOES accept
+  // multi-statement bodies. The two executors are not interchangeable, and that
+  // difference is why the atomicity question is measured on staging instead of
+  // here (scripts/measure-atomicity.mjs).
+  exec(tgt, "setup-drop.sql", "drop schema if exists rehearsal cascade;", true);
+  exec(tgt, "setup-create.sql", "create schema rehearsal;", true);
 
   const base = ledgerRows(tgt);
   console.log(`[rehearsal] ledger starts at ${base.length} rows\n`);
   const V = (n) => `2999010${n}000001`; // far future: always sorts after anything real
   const recorded = [];
 
-  // ---- A1: is the default executor atomic on a LATE failure? --------------
-  {
-    // Positive control FIRST: prove the probe SQL can create the table at all,
-    // so that "table absent" afterwards means rollback rather than a broken run.
-    exec(tgt, "a1-control.sql", "create table rehearsal.atomicity_probe(x int);", true);
-    const control = Number(
-      query(tgt, "select count(*) as n from information_schema.tables where table_schema='rehearsal' and table_name='atomicity_probe'")[0].n,
-    );
-    if (control !== 1) throw new Error("atomicity positive control failed: the probe table could not be created");
-    exec(tgt, "a1-reset.sql", "drop table rehearsal.atomicity_probe;", true);
-
-    // The measurement: the same CREATE followed by a statement that must raise.
-    const late = exec(tgt, "a1.sql", "create table rehearsal.atomicity_probe(x int);\nselect 1/0;");
-    if (late.ok) throw new Error("atomicity probe did not fail as intended — 1/0 was expected to raise");
-    if (!/division|zero/i.test(String(late.message))) {
-      throw new Error(`atomicity probe failed for the WRONG reason: ${oneLine(late.message).slice(0, 200)}`);
-    }
-    const n = Number(
-      query(tgt, "select count(*) as n from information_schema.tables where table_schema='rehearsal' and table_name='atomicity_probe'")[0].n,
-    );
-    const atomic = n === 0;
-    // RECORDED, NOT REQUIRED. Atomicity is a property of the platform's
-    // execution path, not of our code, and the design deliberately does not
-    // depend on it — that is what step 3's verifier is for. Failing the build
-    // over it would assert a guarantee we chose not to rely on. So A1 always
-    // passes and always reports what it measured.
-    record("A1", "multi-statement body atomic on late failure (MEASUREMENT)", true,
-      atomic
-        ? "MEASURED ATOMIC — the earlier CREATE TABLE was rolled back by the later failure"
-        : "MEASURED NOT ATOMIC — the CREATE TABLE survived a later failure. Partial application is real; " +
-          "the runner's post-apply verification is what protects us, exactly as designed.");
-    exec(tgt, "a1-clean.sql", "drop table if exists rehearsal.atomicity_probe;");
-  }
+  // A1 (atomicity) is deliberately NOT measured here. It is a property of the
+  // PRODUCTION executor — the Management API multi-statement path — which this
+  // local `--db-url` target cannot even accept. Measuring it here would produce
+  // a confident answer about the wrong thing. See scripts/measure-atomicity.mjs.
 
   // ---- R1: clean apply ----------------------------------------------------
   {

@@ -59,7 +59,11 @@ export function target(spec) {
   if (spec.kind === "local") return { kind: "local", flags: ["--local"], label: "local stack" };
   if (spec.kind === "project-ref") {
     if (!spec.ref) throw new Error("[exec] project-ref target needs a ref");
-    return { kind: "project-ref", flags: ["--project-ref", spec.ref], label: `project ${spec.ref}` };
+    // `--project-ref` is only honoured ALONGSIDE `--linked` ("--project-ref only
+    // applies when targeting the linked project"). Together they address that
+    // project over the Management API while leaving the stored link alone — so
+    // a staging measurement cannot accidentally repoint the whole toolchain.
+    return { kind: "project-ref", flags: ["--linked", "--project-ref", spec.ref], label: `project ${spec.ref} (Management API)` };
   }
   if (spec.kind === "db-url") {
     if (!spec.url) throw new Error("[exec] db-url target needs a url");
