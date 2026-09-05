@@ -121,6 +121,18 @@ select (select count(*) from information_schema.tables
 const ledgerRows = (tgt) =>
   query(tgt, "select version from supabase_migrations.schema_migrations order by version").map((r) => String(r.version));
 
+/**
+ * The ledger as the REHEARSAL sees it: only its own fabricated versions.
+ *
+ * The rehearsal's repository view holds seven made-up migrations, so comparing
+ * it against the full ledger reports all 138 real versions as
+ * UNKNOWN_REMOTE_VERSION — true from that narrow viewpoint, and pure noise that
+ * buries the one finding each scenario is actually about.
+ */
+const REHEARSAL_PREFIX = "2999";
+const rehearsalLedger = (tgt) =>
+  ledgerRows(tgt).filter((v) => v.startsWith(REHEARSAL_PREFIX)).map((v) => ({ version: v, name: "" }));
+
 /** Rehearsal migrations carry their verifier in the rehearsal tree, not the repo's. */
 const rehearsalRepo = () =>
   repoMigrations(MIG).map((m) => ({ ...m, verifier: join(VER, `${m.version}_${m.name}.verify.sql`) }));
@@ -224,7 +236,7 @@ function main() {
     applyFile(tgt, s5.path);
     const rec = repair(tgt, s5.version);
     if (rec.ok) recorded.push(s5.version);
-    const state = reconcile(rehearsalRepo(), ledgerRows(tgt).map((v) => ({ version: v, name: "" })));
+    const state = reconcile(rehearsalRepo(), rehearsalLedger(tgt));
     const pass = rec.ok && state.pending.length > 0;
     record("R5", "POST_RECORD_MISMATCH → recorded, but the post-check finds work still pending", pass,
       `record=${rec.ok} pending after recording: ${state.pending.join(", ") || "none"}`);
@@ -236,7 +248,7 @@ function main() {
     // a hard finding — and every later target must be refused because of it.
     const next = scenario(V(7), "blocked", "create table rehearsal.r7(x int);", okVerifier("r7"));
     const repo = rehearsalRepo();
-    const ledger = ledgerRows(tgt).map((v) => ({ version: v, name: "" }));
+    const ledger = rehearsalLedger(tgt);
     const state = reconcile(repo, ledger);
     const problems = validateTarget(next.version, repo, ledger, state);
     const held = state.hard.some((h) => h.code === "MISSING_REMOTELY_BEHIND_MAX");
