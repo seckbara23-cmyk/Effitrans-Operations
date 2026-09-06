@@ -50,13 +50,27 @@ describe("the ratified rule — pure decision core", () => {
     expect(controlGateError(r.reason)).toBe("step_gate_step_not_started");
   });
 
-  it("HARD-BLOCKS a closed or not-yet-open step", () => {
-    for (const state of ["PENDING", "COMPLETED", "SKIPPED", "REJECTED", "CANCELLED"]) {
+  it("HARD-BLOCKS a closed step", () => {
+    for (const state of ["COMPLETED", "APPROVED", "SKIPPED", "REJECTED", "CANCELLED"]) {
       expect(
         evaluateControlGate({ hasInstance: true, step: step(state), userId: ME }),
         state,
       ).toEqual({ allowed: false, reason: "step_closed" });
     }
+  });
+
+  it("HARD-BLOCKS a step waiting its turn — and says NOT YET, not FINISHED (UI-1)", () => {
+    // Both were `step_closed`, so a PENDING step — the ordinary state of 25
+    // steps out of 26 — told the operator its work was « terminée ». The block
+    // is identical; only the sentence differs, and the sentence is the point.
+    const r = evaluateControlGate({ hasInstance: true, step: step("PENDING"), userId: ME });
+    expect(r).toEqual({ allowed: false, reason: "step_not_open" });
+    expect(controlGateError(r.reason)).toBe("step_gate_step_not_open");
+    expect(CONTROL_GATE_MESSAGE_FR.step_not_open).toBe("Cette étape n'est pas encore ouverte.");
+    // The two sentences must not be interchangeable: one says finished.
+    expect(CONTROL_GATE_MESSAGE_FR.step_not_open).not.toBe(CONTROL_GATE_MESSAGE_FR.step_closed);
+    expect(CONTROL_GATE_MESSAGE_FR.step_not_open).not.toMatch(/terminée|n'est plus/);
+    expect(CONTROL_GATE_MESSAGE_FR.step_closed).toMatch(/terminée/);
   });
 
   it("HARD-BLOCKS a step claimed by somebody else, and allows its own assignee", () => {
@@ -67,7 +81,12 @@ describe("the ratified rule — pure decision core", () => {
   });
 
   it("is a BLOCK, never a warning — no refusal maps to a pass", () => {
-    for (const reason of ["step_not_started", "step_closed", "assigned_to_another"] as const) {
+    for (const reason of [
+      "step_not_started",
+      "step_not_open",
+      "step_closed",
+      "assigned_to_another",
+    ] as const) {
       expect(controlGateError(reason)).toMatch(/^step_gate_/);
       expect(CONTROL_GATE_MESSAGE_FR[reason].length).toBeGreaterThan(10);
       // The refusal never names the other person.

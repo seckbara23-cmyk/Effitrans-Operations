@@ -200,8 +200,12 @@ describe("nothing is synchronised, and nothing is required that was not ratified
     // The operator-facing hint says so positively — assert the claim, not a word.
     const i18n = read("lib/i18n.ts");
     const block = i18n.slice(i18n.indexOf("attachment: {"), i18n.indexOf("gainde: {"));
-    expect(block).toMatch(/ne la verifie pas/);
-    expect(block).toMatch(/ne se synchronise avec aucun systeme douanier/);
+    // UI-7 (GAINDE-04) — this block shipped unaccented and has been corrected.
+    // The CLAIM is what matters and is what is pinned; the accents are pinned
+    // in tests/gainde-04-customs-ui.test.ts so a regression to machine French
+    // fails there rather than silently passing here.
+    expect(block).toMatch(/ne la vérifie pas/);
+    expect(block).toMatch(/ne se synchronise avec aucun système douanier/);
   });
 
   it("a screenshot is NEVER a precondition", () => {

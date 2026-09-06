@@ -432,11 +432,21 @@ describe("a customs:register holder reaches the act, and gains nothing else", ()
     // OPS-CUSTOMS-OWNERSHIP-01 — the permission clause is unchanged and still
     // asserted; the condition gained an `owns(...)` clause so the control is
     // drawn only for the role whose work it is. Strictly narrower, never wider.
-    expect(p).toMatch(/\(canUpdate \|\| canRelease\) && owns\("customs\.status"\) && targets\.length > 0/); // status moves
-    expect(p).toMatch(/canUpdate && \(\s*<form onSubmit=\{onSubmit\}/);        // declaration edit
+    // UI-9 (GAINDE-04) — the status ladder and the BAE/mainlevée were scoped by
+    // ONE verdict although they belong to two different steps, which hid the
+    // mainlevée from the field agent. Each is now drawn on its own verdict;
+    // both clauses are strictly narrower than the permission alone, which is
+    // what this assertion is about.
+    expect(p).toMatch(/\(canUpdate && owns\("customs\.status"\)\)/);          // status moves
+    expect(p).toMatch(/\(canRelease && owns\("customs\.bae"\)\)/);            // mainlevée
+    // UI-3 (GAINDE-04) — the declaration edit gained the same owner scoping,
+    // and a non-owner now gets the read-only view instead of nothing.
+    expect(p).toMatch(/canUpdate && owns\("customs\.update"\) \? \(\s*<form onSubmit=\{onSubmit\}/);
     expect(p).toMatch(/canValidate && owns\("customs\.validation"\) && !record\.reviewedAt/); // PG-1 validation
     const recevabilite = p.slice(p.indexOf("c.receivability.title"));
-    expect(recevabilite.slice(0, recevabilite.indexOf("RECEIVABILITY_OUTCOMES"))).toContain("canUpdate &&");
+    // UI-4 (GAINDE-04) — recevabilité is owner-scoped too.
+    expect(recevabilite.slice(0, recevabilite.indexOf("RECEIVABILITY_OUTCOMES")))
+      .toContain('canUpdate && owns("customs.receivability") &&');
   });
 
   it("Finance's own workflow surface points at the act", () => {

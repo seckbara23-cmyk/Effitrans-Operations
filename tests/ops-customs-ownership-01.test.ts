@@ -226,10 +226,23 @@ describe("OPS-CUSTOMS-OWNERSHIP-01 — the panel does not re-derive authority", 
     const panel = code("components/customs/customs-panel.tsx");
     const groups: [string, string][] = [
       ["customs.create", '{canCreate && owns("customs.create") && ('],
-      ["customs.status", '{(canUpdate || canRelease) && owns("customs.status") && targets.length > 0 && ('],
+      // UI-9 (GAINDE-04) — the status ladder and the BAE/mainlevée live in the
+      // same block but belong to two DIFFERENT steps, so one verdict could not
+      // speak for both: scoping the block on `customs.status` hid the mainlevée
+      // from the field agent, because step 6 is by then completed and assigned
+      // to the Déclarant. Each control is now drawn on its own verdict, and
+      // that is what this assertion pins.
+      ["customs.status", '(canUpdate && owns("customs.status"))'],
+      ["customs.bae", '(canRelease && owns("customs.bae"))'],
+      ["customs.status (ladder)", 'if (!canUpdate || !owns("customs.status")) return null;'],
       ["customs.gainde_registration", '{canRegisterGainde && owns("customs.gainde_registration") && ('],
       ["customs.attachment", '{canAttach && owns("customs.attachment") && ('],
       ["customs.validation", '{canValidate && owns("customs.validation") && !record.reviewedAt && ('],
+      // UI-2/3/4 (GAINDE-04) — the three maker groups that were permission-only
+      // and are now owner-scoped like their neighbours.
+      ["customs.receivability", '{canUpdate && owns("customs.receivability") && ('],
+      ["customs.update (governed)", 'canUpdate={canUpdate && owns("customs.update")}'],
+      ["customs.update (metadata)", '{canUpdate && owns("customs.update") ? ('],
     ];
     for (const [control, condition] of groups) {
       expect(panel, control).toContain(condition);

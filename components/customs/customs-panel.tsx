@@ -210,7 +210,7 @@ export function CustomsPanel({
           {canCreate && owns("customs.create") && (
             <button
               onClick={() => run(() => createCustoms(fileId), "create")}
-              disabled={pending}
+              disabled={pending || !gateOpen("customs.create")}
               className="rounded-lg bg-navy-900 px-3 py-2 text-sm font-medium text-white hover:bg-navy-800 disabled:opacity-50"
             >
               {c.start}
@@ -276,7 +276,15 @@ export function CustomsPanel({
         )}
 
         {/* Workflow actions */}
-        {(canUpdate || canRelease) && owns("customs.status") && targets.length > 0 && (
+        {/* UI-9 — this block mixes two different owners: the status ladder
+            belongs to the Déclarant's step 6, the BAE/mainlevée belongs to the
+            field agent's step 13. Scoping the whole block on `customs.status`
+            hid the BAE button from the only role that may press it, because
+            step 6 is by then completed and assigned to somebody else. Each
+            control is now drawn on ITS OWN verdict. */}
+        {((canUpdate && owns("customs.status")) ||
+          (canRelease && owns("customs.bae")) ||
+          canDelete) && targets.length > 0 && (
           <div className="flex flex-wrap items-center gap-2">
             {targets.map((s) => {
               if (s === "RELEASED") {
@@ -286,7 +294,8 @@ export function CustomsPanel({
                 // verification; the release itself is refused server-side, so
                 // offering it here would only produce a failure.
                 const verified = record.releaseApprovalStatus === "APPROVED";
-                return canRelease ? (
+                const releaseControl = verified ? "customs.release" : "customs.bae";
+                return canRelease && owns("customs.bae") ? (
                   <button
                     key={s}
                     onClick={() => {
@@ -298,20 +307,20 @@ export function CustomsPanel({
                       const bae = window.prompt(c.baeRecordPrompt, record.baeReference ?? "");
                       if (bae && bae.trim()) run(() => recordBaeReference(record.id, bae.trim()), "workflow");
                     }}
-                    disabled={pending}
+                    disabled={pending || !gateOpen(releaseControl)}
                     className="rounded-md border border-teal-200 px-2 py-1 text-xs font-medium text-teal-700 hover:bg-teal-50 disabled:opacity-50"
                   >
                     {verified ? c.release : c.recordBae}
                   </button>
                 ) : null;
               }
-              if (!canUpdate) return null;
+              if (!canUpdate || !owns("customs.status")) return null;
               const label = s === "BLOCKED" ? c.block : s === "CANCELLED" ? c.cancel : `→ ${c.statuses[s]}`;
               return (
                 <button
                   key={s}
                   onClick={() => run(() => changeCustomsStatus(record.id, s), "workflow")}
-                  disabled={pending}
+                  disabled={pending || !gateOpen("customs.status")}
                   className="rounded-md border border-slate-200 px-2 py-1 text-xs font-medium text-navy-700 hover:bg-slate-50 disabled:opacity-50"
                 >
                   {label}
@@ -329,6 +338,8 @@ export function CustomsPanel({
             )}
           </div>
         )}
+        {canUpdate && owns("customs.status") && <GateHint reason={gateReason("customs.status")} />}
+        {canRelease && owns("customs.bae") && <GateHint reason={gateReason("customs.bae")} />}
         <ErrorLine error={error} scope="workflow" />
 
         {/* MAYA-P1.1 — CEO step 8 : enregistrement GAINDE par la Finance.
@@ -361,11 +372,18 @@ export function CustomsPanel({
                 const ref = window.prompt(c.gainde.prompt, record.externalRef ?? "");
                 if (ref && ref.trim()) run(() => recordGaindeRegistration(record.id, ref.trim()), "gainde");
               }}
-              disabled={pending}
+              disabled={pending || !gateOpen("customs.gainde_registration")}
               className="mt-2 rounded-md border border-teal-200 px-2 py-1 text-xs font-medium text-teal-700 hover:bg-teal-50 disabled:opacity-50"
             >
               {c.gainde.action}
             </button>
+          )}
+          {/* UI-6 — this control alone ignored its own step gate and offered no
+              explanation: the Finance officer could press it on a dossier the
+              process had not brought to step 9, and read « L'action a échoué ».
+              Its attachment sibling has behaved correctly since P1.11. */}
+          {canRegisterGainde && owns("customs.gainde_registration") && (
+            <GateHint reason={gateReason("customs.gainde_registration")} />
           )}
           <p className="mt-2 text-[11px] text-slate-400">{c.gainde.hint}</p>
           <ErrorLine error={error} scope="gainde" />
@@ -475,7 +493,12 @@ export function CustomsPanel({
               {record.receivabilityNote ? ` — ${record.receivabilityNote}` : ""}
             </p>
           )}
-          {canUpdate && (
+          {/* UI-4 — recevabilité is Contrôle Qualité N°3, the DÉCLARANT's own
+              judgement. It was drawn for every `customs:update` holder, so a
+              Chef de Transit was offered the maker decision he is supposed to
+              be checking. Ownership decides whether it is drawn; the step gate
+              decides whether it is pressable. */}
+          {canUpdate && owns("customs.receivability") && (
             <div className="mt-2 flex flex-wrap gap-2">
               {RECEIVABILITY_OUTCOMES.map((o) => (
                 <button
@@ -492,13 +515,16 @@ export function CustomsPanel({
                     }
                     run(() => recordReceivability(record.id, o, null), "receivability");
                   }}
-                  disabled={pending}
+                  disabled={pending || !gateOpen("customs.receivability")}
                   className="rounded-md border border-slate-200 px-2 py-1 text-xs font-medium text-navy-700 hover:bg-slate-50 disabled:opacity-50"
                 >
                   {RECEIVABILITY_LABELS_FR[o]}
                 </button>
               ))}
             </div>
+          )}
+          {canUpdate && owns("customs.receivability") && (
+            <GateHint reason={gateReason("customs.receivability")} />
           )}
           <p className="mt-2 text-[11px] text-slate-400">{c.receivability.hint}</p>
           <ErrorLine error={error} scope="receivability" />
@@ -508,16 +534,28 @@ export function CustomsPanel({
             correction door. Above the free-text metadata deliberately: these
             are the facts a chef de transit certifies, not references anyone may
             retype. */}
+        {/* UI-2 / UI-5 — the five governed elements are the Déclarant's entry
+            and the Chef de Transit's certification target. Editing them was
+            offered to any `customs:update` holder, which meant the checker
+            could rewrite the very facts he then certified. With ownership
+            withheld the component falls to its own read-only rendering, which
+            is exactly what UI-5 asks for: the Chef reads them, he does not
+            retype them. */}
         <GovernedCustomsFields
           record={record}
-          canUpdate={canUpdate}
+          canUpdate={canUpdate && owns("customs.update")}
           canCorrect={canCorrect}
           canRevalidate={canRevalidate}
           awaitingRevalidation={awaitingRevalidation}
         />
 
         {/* Editable manual-reference metadata */}
-        {canUpdate && (
+        {/* UI-3 / UI-5 — the declaration metadata is step-6 maker data. It was
+            editable by every `customs:update` holder; it is now editable only
+            by the owner of step 6, and READABLE by everyone the panel is drawn
+            for. Hiding it from the Chef instead of freezing it would have taken
+            away the information he needs in order to validate at step 7. */}
+        {canUpdate && owns("customs.update") ? (
           <form onSubmit={onSubmit} className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <Field label={c.fields.declarationNumber} name="declarationNumber" defaultValue={record.declarationNumber} />
             <Field label={c.fields.customsOffice} name="customsOffice" defaultValue={record.customsOffice} />
@@ -567,18 +605,56 @@ export function CustomsPanel({
             <div className="sm:col-span-2">
               <button
                 type="submit"
-                disabled={pending}
+                disabled={pending || !gateOpen("customs.update")}
                 className="rounded-lg bg-navy-900 px-3 py-2 text-sm font-medium text-white hover:bg-navy-800 disabled:opacity-50"
               >
                 {pending ? c.saving : c.save}
               </button>
             </div>
           </form>
+        ) : (
+          <ReadOnlyMetadata record={record} />
         )}
 
         <ErrorLine error={error} scope="metadata" />
       </div>
     </section>
+  );
+}
+
+/**
+ * UI-5 — the declaration metadata as a READER sees it.
+ *
+ * Everyone the panel is drawn for already sees the status, the BAE reference,
+ * the GAINDE reference, the attachment systems, the recevabilité verdict and the
+ * validation state. Withholding the declaration number and the bureau from the
+ * Chef de Transit would leave him certifying facts the screen refused to show
+ * him — so the maker's form becomes the checker's summary rather than
+ * disappearing. Nothing here is actionable, and « — » says "not captured"
+ * rather than rendering an empty row that reads as a broken page.
+ */
+function ReadOnlyMetadata({ record }: { record: CustomsRecord }) {
+  const c = t.customs;
+  const rows: [string, string | null][] = [
+    [c.fields.declarationNumber, record.declarationNumber],
+    [c.fields.customsOffice, record.customsOffice],
+    [c.fields.regime, record.regime],
+    [c.fields.declarationDate, record.declarationDate],
+    [c.fields.inspection, c.inspection[record.inspectionStatus]],
+    [c.fields.externalRef, record.externalRef],
+    [c.fields.notes, record.notes],
+  ];
+  return (
+    <dl className="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
+      {rows.map(([label, value]) => (
+        <div key={label} className="flex justify-between gap-3 border-b border-slate-100 py-1 text-xs">
+          <dt className="shrink-0 text-slate-500">{label}</dt>
+          <dd className="text-right font-medium text-navy-900">
+            {value && value.trim() ? value : "—"}
+          </dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 

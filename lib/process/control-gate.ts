@@ -52,6 +52,21 @@ export const CONTROL_OWNING_STEP: Record<string, string> = {
 /** The step states in which a control may be exercised. */
 const ACTIONABLE: readonly StepState[] = ["AVAILABLE", "ACTIVE", "BLOCKED", "SUBMITTED"];
 
+/**
+ * NOT ACTIONABLE YET — as opposed to not actionable ANY MORE.
+ *
+ * UI-1. Both were reported as `step_closed`, so a step the workflow simply had
+ * not reached yet told the operator « L'étape correspondante du processus
+ * officiel est terminée ou n'est plus ouverte. » — that it was FINISHED. On the
+ * UAT dossier the Déclarant read that sentence about work nobody had started,
+ * and reasonably concluded the platform had lost the step.
+ *
+ * `step_not_started` already covers the case where no execution row exists at
+ * all. This covers the case where the row exists and is waiting its turn, which
+ * is the ordinary state of 25 steps out of 26 and had no words of its own.
+ */
+const NOT_YET_OPEN: readonly StepState[] = ["PENDING"];
+
 export type ControlGateInput = {
   /** null when the dossier has no process instance (see compatibility path). */
   step: { state: StepState; assignedUserId: string | null } | null;
@@ -62,7 +77,10 @@ export type ControlGateInput = {
 
 export type ControlGateResult =
   | { allowed: true; reason: "no_process_instance" | "step_open" }
-  | { allowed: false; reason: "step_not_started" | "step_closed" | "assigned_to_another" };
+  | {
+      allowed: false;
+      reason: "step_not_started" | "step_not_open" | "step_closed" | "assigned_to_another";
+    };
 
 /**
  * May this actor exercise this control right now? PURE — no I/O, fully testable.
@@ -70,13 +88,20 @@ export type ControlGateResult =
  * Order matters and is deliberate:
  *   • no instance          -> defer to permission (compatibility path)
  *   • step row absent      -> the step has not been reached: BLOCK
- *   • step not actionable  -> done, skipped, rejected, or not yet open: BLOCK
+ *   • step waiting its turn -> BLOCK, and say NOT YET (UI-1)
+ *   • step not actionable  -> done, skipped, rejected or cancelled: BLOCK
  *   • step claimed by someone else -> BLOCK (assignment narrowing)
  */
 export function evaluateControlGate(input: ControlGateInput): ControlGateResult {
   if (!input.hasInstance) return { allowed: true, reason: "no_process_instance" };
   if (!input.step) return { allowed: false, reason: "step_not_started" };
-  if (!ACTIONABLE.includes(input.step.state)) return { allowed: false, reason: "step_closed" };
+  if (!ACTIONABLE.includes(input.step.state)) {
+    // UI-1 — "not yet" and "no longer" are different facts and get different
+    // sentences. Conflating them told operators that untouched work was done.
+    return NOT_YET_OPEN.includes(input.step.state)
+      ? { allowed: false, reason: "step_not_open" }
+      : { allowed: false, reason: "step_closed" };
+  }
   if (input.step.assignedUserId !== null && input.step.assignedUserId !== input.userId) {
     return { allowed: false, reason: "assigned_to_another" };
   }
@@ -96,6 +121,10 @@ export function evaluateControlGate(input: ControlGateInput): ControlGateResult 
 export const CONTROL_GATE_MESSAGE_FR: Record<string, string> = {
   step_not_started:
     "Cette action n'est pas encore ouverte dans le processus officiel du dossier.",
+  // UI-1 — the step exists and is waiting its turn. Said in the operator's own
+  // terms, without implying that anything was done or lost.
+  step_not_open:
+    "Cette étape n'est pas encore ouverte.",
   step_closed:
     "L'étape correspondante du processus officiel est terminée ou n'est plus ouverte.",
   assigned_to_another:
