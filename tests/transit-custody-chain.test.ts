@@ -184,7 +184,7 @@ describe("TRANSIT-CUSTODY-03 guard 4 — reported blocked, then delivered by -05
     // the Chef, it made the release conditional on the Chef's recorded verdict.
     const customs = strip(read("lib/customs/actions.ts"));
     const fnRelease = fn(customs, "recordCustomsRelease");
-    expect(fnRelease).toContain('assertControlStep("customs.release"');
+    expect(fnRelease).toContain('customsControlGate("customs.release"');
     expect(fnRelease).toContain('assertPermission("customs:release")');
     const gate = strip(read("lib/process/control-gate.ts"));
     expect(gate + strip(read("lib/process/control-gate-server.ts"))).toContain("assignedUserId");
@@ -196,7 +196,7 @@ describe("TRANSIT-CUSTODY-03 guard 4 — reported blocked, then delivered by -05
     // step 13's claimant. What changed is that it now refuses unless the Chef
     // de Transit has verified the mainlevée first.
     const customs = strip(read("lib/customs/actions.ts"));
-    expect(fn(customs, "recordCustomsRelease")).toContain('assertControlStep("customs.release"');
+    expect(fn(customs, "recordCustomsRelease")).toContain('customsControlGate("customs.release"');
     expect(fn(transitActions, "recordBae")).toContain("recordBaeReference(customs.id");
     expect(fn(transitActions, "recordBae")).not.toContain("releaseCustoms(");
   });

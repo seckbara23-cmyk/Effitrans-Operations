@@ -75,7 +75,7 @@ describe("D4 — the five governed elements exist and carry the ratified vocabul
   it("the Déclarant enters them on the ordinary step-gated path", () => {
     const update = fn("updateCustoms");
     expect(update).toContain('assertPermission("customs:update")');
-    expect(update).toContain('assertControlStep("customs.update"');
+    expect(update).toContain('customsControlGate("customs.update"'); // step gate + ownership
     for (const col of ["sh_position_count", "declaration_type", "dpi_regime", "exemption_title_origin", "tariff_classification_origin"]) {
       expect(update, col).toContain(col);
     }

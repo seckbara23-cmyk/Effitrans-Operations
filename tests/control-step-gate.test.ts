@@ -118,9 +118,15 @@ describe("the server enforces it, on every gated action", () => {
       "customs.receivability", "customs.attachment", "customs.gainde_registration",
       "customs.validation", "customs.bae", "customs.release",
     ]) {
-      expect(customs, ctrl).toContain(`assertControlStep("${ctrl}"`);
+      // OPS-CUSTOMS-OWNERSHIP-01 — the nine sites now call `customsControlGate`,
+      // which composes THIS gate with the ownership rule. The step condition is
+      // unchanged and still asserted; what the helper adds is a second, narrower
+      // one. `ops-customs-ownership-01.test.ts` pins that it calls both, in
+      // order, so this assertion still proves every control is step-gated.
+      expect(customs, ctrl).toContain(`customsControlGate("${ctrl}"`);
     }
-    expect((customs.match(/assertControlStep\(/g) ?? []).length).toBe(9);
+    expect((customs.match(/customsControlGate\(/g) ?? []).length).toBe(10); // 9 sites + definition
+    expect(customs).toContain("assertControlStep(controlId, fileId, user.tenantId, user.id)");
   });
 
   it("the Finance panel's own controls call the gate", () => {
@@ -138,7 +144,7 @@ describe("the server enforces it, on every gated action", () => {
     // …and in createCustoms the permission precedes the gate.
     const slice = customs.slice(customs.indexOf("export async function createCustoms"));
     expect(slice.indexOf('assertPermission("customs:create")')).toBeLessThan(
-      slice.indexOf("assertControlStep("),
+      slice.indexOf("customsControlGate("),
     );
   });
 

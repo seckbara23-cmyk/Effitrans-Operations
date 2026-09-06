@@ -429,9 +429,12 @@ describe("a customs:register holder reaches the act, and gains nothing else", ()
     // customs panel carrying exactly one action. Each of these is the gate that
     // makes that true; none of them is `canRegisterGainde`.
     const p = code(PANEL);
-    expect(p).toMatch(/\(canUpdate \|\| canRelease\) && targets\.length > 0/); // status moves
+    // OPS-CUSTOMS-OWNERSHIP-01 — the permission clause is unchanged and still
+    // asserted; the condition gained an `owns(...)` clause so the control is
+    // drawn only for the role whose work it is. Strictly narrower, never wider.
+    expect(p).toMatch(/\(canUpdate \|\| canRelease\) && owns\("customs\.status"\) && targets\.length > 0/); // status moves
     expect(p).toMatch(/canUpdate && \(\s*<form onSubmit=\{onSubmit\}/);        // declaration edit
-    expect(p).toMatch(/canValidate && !record\.reviewedAt/);                   // PG-1 validation
+    expect(p).toMatch(/canValidate && owns\("customs\.validation"\) && !record\.reviewedAt/); // PG-1 validation
     const recevabilite = p.slice(p.indexOf("c.receivability.title"));
     expect(recevabilite.slice(0, recevabilite.indexOf("RECEIVABILITY_OUTCOMES"))).toContain("canUpdate &&");
   });

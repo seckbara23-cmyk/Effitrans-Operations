@@ -31,6 +31,7 @@ import { listEligibleAssigneesForFile } from "@/lib/workflow/access/assignees";
 import { DocumentsPanel } from "@/components/documents/documents-panel";
 import { listDocuments, listDocumentTypes, getMissingRequiredDocuments } from "@/lib/documents/service";
 import { CustomsPanel } from "@/components/customs/customs-panel";
+import { getControlVerdicts } from "@/lib/process/control-ownership-server";
 import { correctionsForRecord } from "@/lib/customs/corrections";
 import { getCustomsRecord, getMissingCustomsDocuments } from "@/lib/customs/service";
 import { isVerified } from "@/lib/documents/doctrine";
@@ -371,6 +372,30 @@ export default async function FileDetailPage({ params }: { params: { id: string 
   };
   const risk = assessRisk(riskInput);
 
+  // OPS-CUSTOMS-OWNERSHIP-01 — what the SERVER would decide for each customs
+  // control, resolved once. The panel renders this rather than re-deriving
+  // authority from permissions, which is how it came to offer a Chef de Transit
+  // the Déclarant's maker controls.
+  const customsControlVerdicts = canReadCustoms
+    ? await getControlVerdicts(
+        [
+          "customs.create",
+          "customs.update",
+          "customs.status",
+          "customs.receivability",
+          "customs.attachment",
+          "customs.gainde_registration",
+          "customs.validation",
+          "customs.bae",
+          "customs.release",
+        ],
+        file.id,
+        user.tenantId,
+        user.id,
+        user.roles ?? [],
+      )
+    : {};
+
   return (
     <div className="animate-fade-in space-y-6">
       {/* MAYA-P0.6-B — naming consistency: the header carries the same derived
@@ -530,6 +555,7 @@ export default async function FileDetailPage({ params }: { params: { id: string 
             canValidate={hasPermission(permissions, "customs:validate")}
             canRegisterGainde={hasPermission(permissions, "customs:register")}
             canAttach={hasPermission(permissions, "customs:update")}
+            gates={customsControlVerdicts}
             // D4 — the governed correction door and its recertification. Each
             // flag decides only what is DRAWN; both actions re-assert their own
             // permission server-side and the RPCs re-prove it in the database.

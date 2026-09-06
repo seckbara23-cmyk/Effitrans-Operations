@@ -314,7 +314,7 @@ describe("OPS-OWNERSHIP-01 — the ratified frame is untouched", () => {
     expect(gate).toContain("assignedUserId");
     expect(gate).not.toMatch(/ACCOUNT_MANAGER_ASSIGNMENT|file:assign:commercial/);
     const customs = code("lib/customs/actions.ts");
-    expect(customs).toContain('assertControlStep("customs.release"');
+    expect(customs).toContain('customsControlGate("customs.release"');
     expect(customs).toMatch(/release_approval_status\s*!==\s*"APPROVED"/);
     expect(read("lib/process/handoff-routes.ts")).toContain('senderRoles: ["OPS_SUPERVISOR", "SYSTEM_ADMIN"]');
   });

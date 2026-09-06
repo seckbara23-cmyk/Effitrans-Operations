@@ -141,7 +141,10 @@ describe("maker-checker is enforced by the DATABASE", () => {
   it("the button is never the security boundary", () => {
     // The panel hides the action, and that is a courtesy, not a control.
     const p = code(PANEL);
-    expect(p).toMatch(/canValidate && !record\.reviewedAt/);
+    // OPS-CUSTOMS-OWNERSHIP-01 — the permission clause is unchanged and still
+    // asserted; the condition gained an `owns(...)` clause so the control is
+    // drawn only for the role whose work it is. Strictly narrower, never wider.
+    expect(p).toMatch(/canValidate && owns\("customs\.validation"\) && !record\.reviewedAt/);
     expect(code(PAGE)).toContain('canValidate={hasPermission(permissions, "customs:validate")}');
   });
 });

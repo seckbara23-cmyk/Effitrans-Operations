@@ -83,20 +83,45 @@ export function evaluateControlGate(input: ControlGateInput): ControlGateResult 
   return { allowed: true, reason: "step_open" };
 }
 
-/** Operator-facing refusals, in French. Never leaks another user's identity. */
-export const CONTROL_GATE_MESSAGE_FR: Record<
-  Exclude<ControlGateResult["reason"], "no_process_instance" | "step_open">,
-  string
-> = {
+/**
+ * Operator-facing refusals, in French. Never leaks another user's identity.
+ *
+ * ⚠ These existed from the start and were rendered NOWHERE. Every refusal
+ * reached the customs panel as `step_gate_<reason>`, matched no key in its error
+ * map, and fell through to « L'action a échoué. Veuillez réessayer. » — so the
+ * platform knew precisely why it had refused and told the operator nothing.
+ * `stepGateMessageFr` below is the accessor that ends that; surfaces resolve
+ * through it rather than copying these strings.
+ */
+export const CONTROL_GATE_MESSAGE_FR: Record<string, string> = {
   step_not_started:
     "Cette action n'est pas encore ouverte dans le processus officiel du dossier.",
   step_closed:
     "L'étape correspondante du processus officiel est terminée ou n'est plus ouverte.",
   assigned_to_another:
     "Cette étape est prise en charge par un autre intervenant.",
+  // OPS-CUSTOMS-OWNERSHIP-01 — the step is open and unclaimed, but the work
+  // belongs to another role. Names the ROLE's responsibility, never a person:
+  // the reader must not learn who else could act from a refusal.
+  not_owning_role:
+    "Cette action relève du rôle responsable de cette étape.",
 };
 
 export function controlGateError(reason: ControlGateResult["reason"]): string {
   if (reason === "no_process_instance" || reason === "step_open") return "forbidden";
   return `step_gate_${reason}`;
+}
+
+/** The error code a refused ownership check returns, in the same vocabulary. */
+export const CONTROL_OWNERSHIP_ERROR = "step_gate_not_owning_role";
+
+/**
+ * The French sentence for a `step_gate_*` error code, or null when the code is
+ * not one. ONE resolver for both the disabled-control hint and the failure
+ * line, so a control cannot explain itself one way before the click and another
+ * way after it.
+ */
+export function stepGateMessageFr(code: string | null | undefined): string | null {
+  if (typeof code !== "string" || !code.startsWith("step_gate_")) return null;
+  return CONTROL_GATE_MESSAGE_FR[code.slice("step_gate_".length)] ?? null;
 }

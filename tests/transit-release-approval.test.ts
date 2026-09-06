@@ -213,8 +213,8 @@ describe("TRANSIT-CUSTODY-05 — the release is refused without the verdict", ()
 
   it("16 — and that check sits AFTER the ratified control gate, not instead of it", () => {
     const f = fn(customsActions, "recordCustomsRelease");
-    expect(f).toContain('assertControlStep("customs.release"');
-    expect(f.indexOf('assertControlStep("customs.release"'))
+    expect(f).toContain('customsControlGate("customs.release"');
+    expect(f.indexOf('customsControlGate("customs.release"'))
       .toBeLessThan(f.indexOf("release_not_approved"));
   });
 

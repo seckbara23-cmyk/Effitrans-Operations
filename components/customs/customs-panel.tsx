@@ -8,6 +8,7 @@
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { t } from "@/lib/i18n";
+import { stepGateMessageFr } from "@/lib/process/control-gate";
 import { nextStatuses } from "@/lib/customs/status";
 import {
   changeCustomsStatus,
@@ -54,6 +55,20 @@ type PanelError = { scope: ErrorScope; message: string };
  * the panel had no aria-live, no role and no focus move, so a screen-reader user
  * got nothing at all when an action was refused.
  */
+/**
+ * Why an owned control is not actionable YET, in the process's own words.
+ *
+ * OPS-CUSTOMS-OWNERSHIP-01. The refusal already existed server-side and reached
+ * the operator as « L'action a échoué. Veuillez réessayer. » — a sentence that
+ * says nothing and invites a retry that cannot succeed. The Déclarant on the UAT
+ * dossier was told exactly that when attaching GAINDE/ORBUS, because the
+ * attachment belongs to step 11 and the dossier was on step 6.
+ */
+function GateHint({ reason }: { reason: string | null }) {
+  if (!reason) return null;
+  return <p className="mt-1 text-[11px] text-amber-700">{reason}</p>;
+}
+
 function ErrorLine({ error, scope }: { error: PanelError | null; scope: ErrorScope }) {
   if (!error || error.scope !== scope) return null;
   return <p role="alert" className="text-xs text-red-600">{error.message}</p>;
@@ -102,6 +117,7 @@ export function CustomsPanel({
   canValidate,
   canRegisterGainde,
   canAttach,
+  gates,
   canCorrect,
   canRevalidate,
   awaitingRevalidation,
@@ -116,6 +132,12 @@ export function CustomsPanel({
   canValidate: boolean;
   canRegisterGainde: boolean;
   canAttach: boolean;
+  /**
+   * OPS-CUSTOMS-OWNERSHIP-01 — the SERVER's verdict per control. The panel does
+   * not re-derive authority from permissions; it renders what the actions would
+   * decide, so a drawn control and a refused request cannot disagree.
+   */
+  gates: Record<string, { allowed: boolean; reasonCode: string | null; reasonFr: string | null; isOwner: boolean }>;
   /** D4 — may open the governed correction door on certified data. */
   canCorrect: boolean;
   /** D4 — may recertify after a correction (never one's own). */
@@ -123,6 +145,18 @@ export function CustomsPanel({
   /** D4 — corrected and not yet recertified. */
   awaitingRevalidation: boolean;
 }) {
+  /**
+   * Is this control DRAWN for this viewer? Permission says the role has
+   * business with it at all; ownership says this particular work is theirs.
+   * A Chef de Transit reading a Déclarant's preparation gets the data and no
+   * buttons — the controls would never be theirs, so drawing them is noise.
+   */
+  const owns = (controlId: string) => gates[controlId]?.isOwner ?? true;
+  /** Enabled only when the server would allow it right now. */
+  const gateOpen = (controlId: string) => gates[controlId]?.allowed ?? true;
+  /** The exact process reason, for a control drawn but not yet actionable. */
+  const gateReason = (controlId: string) => gates[controlId]?.reasonFr ?? null;
+
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   // SCOPED, not global. One `error` string served nine actions and was rendered
@@ -147,7 +181,14 @@ export function CustomsPanel({
       if (seq !== runSeq.current) return; // superseded — never speak for a newer action
       if (!res.ok) {
         const map = c.errors as Record<string, string>;
-        setError({ scope, message: map[res.error] ?? c.errors.generic });
+        // OPS-CUSTOMS-OWNERSHIP-01 — a process-gate refusal explains itself.
+        // These codes had no entry here, so every one of them degraded to
+        // « L'action a échoué », telling the operator nothing about a decision
+        // the platform could state precisely. Resolved through the gate's own
+        // vocabulary so the hint before the click and the message after it are
+        // the same sentence.
+        const message = stepGateMessageFr(res.error) ?? map[res.error] ?? c.errors.generic;
+        setError({ scope, message });
         return;
       }
       router.refresh();
@@ -166,7 +207,7 @@ export function CustomsPanel({
         {header}
         <div className="surface flex items-center justify-between p-4 text-sm text-slate-500">
           <span>{c.empty}</span>
-          {canCreate && (
+          {canCreate && owns("customs.create") && (
             <button
               onClick={() => run(() => createCustoms(fileId), "create")}
               disabled={pending}
@@ -235,7 +276,7 @@ export function CustomsPanel({
         )}
 
         {/* Workflow actions */}
-        {(canUpdate || canRelease) && targets.length > 0 && (
+        {(canUpdate || canRelease) && owns("customs.status") && targets.length > 0 && (
           <div className="flex flex-wrap items-center gap-2">
             {targets.map((s) => {
               if (s === "RELEASED") {
@@ -314,7 +355,7 @@ export function CustomsPanel({
               {c.fields.externalRef} : <span className="tabular font-medium">{record.externalRef}</span>
             </p>
           )}
-          {canRegisterGainde && (
+          {canRegisterGainde && owns("customs.gainde_registration") && (
             <button
               onClick={() => {
                 const ref = window.prompt(c.gainde.prompt, record.externalRef ?? "");
@@ -355,13 +396,13 @@ export function CustomsPanel({
               {c.attachment.systems} : <span className="font-medium">{record.attachmentSystems.join(" · ")}</span>
             </p>
           )}
-          {canAttach && (
+          {canAttach && owns("customs.attachment") && (
             <div className="mt-2 flex flex-wrap gap-2">
               {ATTACHMENT_SYSTEM_SETS.map((set) => (
                 <button
                   key={set.join("+")}
                   onClick={() => run(() => recordCustomsAttachment(record.id, set), "attachment")}
-                  disabled={pending}
+                  disabled={pending || !gateOpen("customs.attachment")}
                   className="rounded-md border border-teal-200 px-2 py-1 text-xs font-medium text-teal-700 hover:bg-teal-50 disabled:opacity-50"
                 >
                   {record.attachmentCompletedAt ? `${c.attachment.action} — ` : ""}{set.join(" + ")}
@@ -369,6 +410,7 @@ export function CustomsPanel({
               ))}
             </div>
           )}
+          {canAttach && owns("customs.attachment") && <GateHint reason={gateReason("customs.attachment")} />}
           <p className="mt-2 text-[11px] text-slate-400">{c.attachment.hint}</p>
           <ErrorLine error={error} scope="attachment" />
         </div>
@@ -392,14 +434,17 @@ export function CustomsPanel({
               </span>
             )}
           </div>
-          {canValidate && !record.reviewedAt && (
+          {canValidate && owns("customs.validation") && !record.reviewedAt && (
             <button
               onClick={() => run(() => recordCustomsValidation(record.id), "validation")}
-              disabled={pending}
+              disabled={pending || !gateOpen("customs.validation")}
               className="mt-2 rounded-md border border-teal-200 px-2 py-1 text-xs font-medium text-teal-700 hover:bg-teal-50 disabled:opacity-50"
             >
               {c.validation.action}
             </button>
+          )}
+          {canValidate && owns("customs.validation") && !record.reviewedAt && (
+            <GateHint reason={gateReason("customs.validation")} />
           )}
           <p className="mt-2 text-[11px] text-slate-400">{c.validation.hint}</p>
           <ErrorLine error={error} scope="validation" />

@@ -15,6 +15,7 @@ import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
 import { isFileVisible } from "@/lib/authz/visibility";
 import { assertControlStep } from "@/lib/process/control-gate-server";
+import { assertControlOwner } from "@/lib/process/control-ownership-server";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
 import { onCustomsReleased } from "@/lib/handoffs/triggers";
@@ -46,6 +47,32 @@ function revalidate(fileId: string) {
   // Published reports are unaffected by construction — they render a frozen
   // snapshot and never recompute — so this widens no history.
   revalidatePath("/performance", "layout");
+}
+
+/**
+ * BOTH conditions a dossier control must satisfy, asked in one place.
+ *
+ * `assertControlStep` (ratified 2026-08-24) asks whether the owning official
+ * step is open and not claimed by somebody else. `assertControlOwner`
+ * (OPS-CUSTOMS-OWNERSHIP-01) asks the question that was missing: on an OPEN,
+ * UNASSIGNED step, is this work yours by role? Without it the customs
+ * permissions — deliberately broad, because a Chef de Transit needs
+ * `customs:update` for their own acts — let any holder perform the Déclarant's
+ * preparation the moment nobody had claimed it.
+ *
+ * Ownership is asked SECOND and only on the allowed path: an actor should be
+ * told the step is not open before being told whose it is, and the second read
+ * is skipped entirely when the first already refuses.
+ */
+async function customsControlGate(
+  controlId: string,
+  fileId: string,
+  user: { tenantId: string; id: string; roles: string[] },
+): Promise<string | null> {
+  return (
+    (await assertControlStep(controlId, fileId, user.tenantId, user.id)) ??
+    (await assertControlOwner(controlId, fileId, user.tenantId, user.id, user.roles))
+  );
 }
 
 /** Codes of customs-prerequisite documents still missing (admin, no extra gate). */
@@ -86,7 +113,7 @@ export async function createCustoms(fileId: string): Promise<ActionResult> {
   // RATIFIED 2026-08-24 — permission is necessary, not sufficient: the
   // owning official step must also be open and not claimed by someone else.
   {
-    const gate = await assertControlStep("customs.create", fileId, user.tenantId, user.id);
+    const gate = await customsControlGate("customs.create", fileId, user);
     if (gate) return { ok: false, error: gate };
   }
   const supabase = getAdminSupabaseClient();
@@ -164,7 +191,7 @@ export async function updateCustoms(id: string, input: CustomsInput): Promise<Ac
   // RATIFIED 2026-08-24 — permission is necessary, not sufficient: the
   // owning official step must also be open and not claimed by someone else.
   {
-    const gate = await assertControlStep("customs.update", rec.file_id, user.tenantId, user.id);
+    const gate = await customsControlGate("customs.update", rec.file_id, user);
     if (gate) return { ok: false, error: gate };
   }
 
@@ -236,7 +263,7 @@ export async function changeCustomsStatus(id: string, toStatus: string): Promise
   // RATIFIED 2026-08-24 — permission is necessary, not sufficient: the
   // owning official step must also be open and not claimed by someone else.
   {
-    const gate = await assertControlStep("customs.status", rec.file_id, user.tenantId, user.id);
+    const gate = await customsControlGate("customs.status", rec.file_id, user);
     if (gate) return { ok: false, error: gate };
   }
   const from = rec.status as CustomsStatus;
@@ -381,7 +408,7 @@ export async function recordGaindeRegistration(
   // RATIFIED 2026-08-24 — permission is necessary, not sufficient: the
   // owning official step must also be open and not claimed by someone else.
   {
-    const gate = await assertControlStep("customs.gainde_registration", rec.file_id, user.tenantId, user.id);
+    const gate = await customsControlGate("customs.gainde_registration", rec.file_id, user);
     if (gate) return { ok: false, error: gate };
   }
   // Fail before showing success; the RPC refuses the duplicate as well.
@@ -467,7 +494,7 @@ export async function recordCustomsAttachment(
   // RATIFIED 2026-08-24 — permission is necessary, not sufficient: the
   // owning official step must also be open and not claimed by someone else.
   {
-    const gate = await assertControlStep("customs.attachment", rec.file_id, user.tenantId, user.id);
+    const gate = await customsControlGate("customs.attachment", rec.file_id, user);
     if (gate) return { ok: false, error: gate };
   }
 
@@ -518,7 +545,7 @@ export async function recordCustomsValidation(id: string): Promise<ActionResult>
   // RATIFIED 2026-08-24 — permission is necessary, not sufficient: the
   // owning official step must also be open and not claimed by someone else.
   {
-    const gate = await assertControlStep("customs.validation", rec.file_id, user.tenantId, user.id);
+    const gate = await customsControlGate("customs.validation", rec.file_id, user);
     if (gate) return { ok: false, error: gate };
   }
   // Fail before showing success. The RPC enforces all of these too.
@@ -705,7 +732,7 @@ export async function recordReceivability(
   // RATIFIED 2026-08-24 — permission is necessary, not sufficient: the
   // owning official step must also be open and not claimed by someone else.
   {
-    const gate = await assertControlStep("customs.receivability", rec.file_id, user.tenantId, user.id);
+    const gate = await customsControlGate("customs.receivability", rec.file_id, user);
     if (gate) return { ok: false, error: gate };
   }
 
@@ -759,7 +786,7 @@ export async function recordBaeReference(
   // RATIFIED 2026-08-24 — permission is necessary, not sufficient: the
   // owning official step must also be open and not claimed by someone else.
   {
-    const gate = await assertControlStep("customs.bae", rec.file_id, user.tenantId, user.id);
+    const gate = await customsControlGate("customs.bae", rec.file_id, user);
     if (gate) return { ok: false, error: gate };
   }
 
@@ -833,7 +860,7 @@ export async function recordCustomsRelease(
   // RATIFIED 2026-08-24 — permission is necessary, not sufficient: the
   // owning official step must also be open and not claimed by someone else.
   {
-    const gate = await assertControlStep("customs.release", rec.file_id, user.tenantId, user.id);
+    const gate = await customsControlGate("customs.release", rec.file_id, user);
     if (gate) return { ok: false, error: gate };
   }
   if (!canTransition(rec.status as CustomsStatus, "RELEASED")) {
