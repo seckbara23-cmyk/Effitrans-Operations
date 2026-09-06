@@ -48,6 +48,17 @@ async function owningRoles(stepKeys: readonly string[]): Promise<Map<string, str
 }
 
 /**
+ * The owning role of ONE step, or null when the registry mirror names none.
+ *
+ * Exported for the engine (OPS-CUSTOMS-GAINDE-04 A4). `activateStep` needs the
+ * same fact this module already loads, and the alternative — a second query
+ * written next to the engine — is how two answers to one question start.
+ */
+export async function stepOwningRole(stepKey: string): Promise<string | null> {
+  return (await owningRoles([stepKey])).get(stepKey) ?? null;
+}
+
+/**
  * Assert that `controlId`'s work belongs to this actor right now.
  *
  * Returns null when allowed, or `step_gate_not_owning_role`. Call AFTER

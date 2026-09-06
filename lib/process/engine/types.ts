@@ -201,5 +201,10 @@ export type EngineError =
   // C-4 — an explicit handoff addressed to this step is still SENT. Promotion
   // made the step AVAILABLE; reception is a separate act and has not happened.
   | "handoff_reception_required"
+  // OPS-CUSTOMS-GAINDE-04 (A4) — the step is OPEN and UNCLAIMED, and its owning
+  // role is not one this caller holds. Deliberately the SAME code the control
+  // gate already returns for the same fact, so « cette action relève du rôle
+  // responsable de cette étape » is one sentence rather than two that drift.
+  | "step_gate_not_owning_role"
   | "already_initialized"
   | "cross_tenant";

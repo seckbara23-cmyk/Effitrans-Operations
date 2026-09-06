@@ -52,6 +52,8 @@ import {
 } from "./state";
 import { promoteSuccessors } from "./promote";
 import { custodyRefusal, maySendRoute, routeFor, ASSIGNMENT_OWNED_STEPS } from "../handoff-routes";
+import { evaluateControlOwnership } from "../control-ownership";
+import { stepOwningRole } from "../control-ownership-server";
 import { authoritativePickupGate } from "./gate-authority";
 import { evaluateStepEvidence, type StepEvidence } from "./evidence";
 import { isDone } from "./types";
@@ -375,6 +377,56 @@ function assignmentRefusal(
   return execution.assignedUserId === userId ? null : "step_assigned_to_other";
 }
 
+/**
+ * GUARD 4 (OPS-CUSTOMS-GAINDE-04) — an OPEN, UNCLAIMED step belongs to its ROLE.
+ *
+ * THE HOLE THIS CLOSES, which was exploitable in one click. `activateStep`
+ * asked for the step's PERMISSION and never for its OWNER, and the step
+ * permissions are deliberately broad — a Chef de Transit legitimately holds
+ * `customs:update` for their own acts. So a Chef could activate the Déclarant's
+ * step 6 while nobody held it, become its `assigned_user_id` by that very act,
+ * and thereby satisfy `evaluateControlOwnership`'s `assigned_to_self` branch —
+ * unlocking, on the same screen, the customs controls
+ * OPS-CUSTOMS-OWNERSHIP-01 had just been written to withhold. The control layer
+ * asked "is this work yours"; the claim layer never did, so the answer could be
+ * manufactured.
+ *
+ * ONE RULE, NOT A SECOND ONE. This calls `evaluateControlOwnership` — the same
+ * pure function the customs panel renders and `assertControlOwner` enforces —
+ * rather than restating it. A step gate and a control gate that disagree about
+ * ownership would be worse than either alone.
+ *
+ * WHY AN ASSIGNMENT STILL WINS. An explicit assignment is a stronger statement
+ * than role membership and it leaves an audited record of who took whose work.
+ * That is the ratified escape hatch (2026-08-24, reaffirmed 2026-09-06):
+ * coverage for absence is an explicit audited override, never implicit
+ * permission inheritance. So this bites only on an UNCLAIMED step — which is
+ * exactly the state the escalation needed.
+ *
+ * NO IMPLICIT BYPASS, INCLUDING PLATFORM ADMINISTRATION. SYSTEM_ADMIN owns no
+ * step and is refused here like anyone else; the audited route is to assign the
+ * step first.
+ *
+ * FAIL-CLOSED, deliberately. The 2026-09-06 leniency doctrine exempts exactly
+ * this class: process ownership is an authority control, not a business
+ * completeness requirement, and authority controls stay fail-closed.
+ */
+async function owningRoleRefusal(
+  stepKey: string,
+  assignedUserId: string | null,
+  c: Ctx,
+): Promise<"step_gate_not_owning_role" | null> {
+  if (assignedUserId !== null) return null; // audited assignment — see header
+  const verdict = evaluateControlOwnership({
+    hasInstance: true,
+    owningRole: await stepOwningRole(stepKey),
+    actorRoles: c.roles,
+    stepAssignedUserId: null,
+    userId: c.userId,
+  });
+  return verdict.allowed ? null : "step_gate_not_owning_role";
+}
+
 /** PENDING/AVAILABLE -> ACTIVE. Enforces prerequisites and the pickup join gate. */
 export async function activateStep(fileId: string, stepKey: string): Promise<EngineResult> {
   const c = await guard(stepPermission(stepKey), fileId);
@@ -399,6 +451,12 @@ export async function activateStep(fileId: string, stepKey: string): Promise<Eng
     c.userId,
   );
   if (ownership) return fail(ownership);
+
+  // GUARD 4 — and if nobody holds it, is the ROLE yours? Asked last of the
+  // authority guards: an actor should learn the step is not open, or is
+  // somebody else's, before learning it is not their role's.
+  const roleRefusal = await owningRoleRefusal(stepKey, st.assignedUserId ?? null, c);
+  if (roleRefusal) return fail(roleRefusal);
 
   // The pickup convergence gate. Both branches must have landed.
   if (stepKey === "pickup") {
