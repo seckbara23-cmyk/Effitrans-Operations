@@ -49,6 +49,10 @@ let am: CurrentUser;          // ACCOUNT_MANAGER — owns steps 3, 16, 19
 let transit: CurrentUser;     // CHIEF_OF_TRANSIT
 let declarant: CurrentUser;   // CUSTOMS_DECLARANT — the customs-declaration queue
 let coordinator: CurrentUser; // COORDINATOR — owns steps 17, 18
+// OPS-CUSTOMS-OWNERSHIP-01 — step 9 belongs to CUSTOMS_FINANCE_OFFICER.
+// The journey used to register GAINDE as `ops`, which permission-only gating
+// allowed; the ownership layer refuses it, correctly.
+let customsFinance: CurrentUser;
 let field: CurrentUser;       // CUSTOMS_FIELD_AGENT
 let transport: CurrentUser;   // TRANSPORT_OFFICER — owns step 14
 let pickup: CurrentUser;      // PICKUP_AGENT — owns step 15
@@ -150,7 +154,7 @@ async function carryToStep13() {
   // customs:register and file:read:all, so it stands in for the milestone here
   // without needing the handoff-receiver ground to survive reception.
   const { recordGaindeRegistration } = await import("@/lib/customs/actions");
-  const reg = await as(ops, () => recordGaindeRegistration(customsId, `GAINDE-S3-${Date.now()}`));
+  const reg = await as(customsFinance, () => recordGaindeRegistration(customsId, `GAINDE-S3-${Date.now()}`));
   if (!reg.ok) throw new Error(`gainde: ${JSON.stringify(reg)}`);
 
   await runStep(coordinator, "coordinator_to_declarant");
@@ -182,6 +186,7 @@ describe("C-4 slice 3a — transport, convergence, delivery, completeness", () =
     transit = await identity("transit");
     declarant = await identity("declarant");
     coordinator = await identity("coordinator");
+    customsFinance = await identity("customsfinance");
     field = await identity("field");
     transport = await identity("transport");
     pickup = await identity("pickup");

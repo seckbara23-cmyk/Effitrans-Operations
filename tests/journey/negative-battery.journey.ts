@@ -43,6 +43,7 @@ import { completeCollections, closeDossier } from "@/lib/collections/actions";
 
 let ops: CurrentUser, am: CurrentUser, transit: CurrentUser, declarant: CurrentUser;
 let coordinator: CurrentUser, field: CurrentUser, transport: CurrentUser, pickup: CurrentUser;
+let customsFinance: CurrentUser; // OPS-CUSTOMS-OWNERSHIP-01 — owns step 9
 let billing: CurrentUser, finance: CurrentUser, collections: CurrentUser, courier: CurrentUser;
 
 let fileId = "";
@@ -73,6 +74,7 @@ describe("C-4 negative battery — the refusals, in the order a dossier meets th
     transit = await identity("transit");
     declarant = await identity("declarant");
     coordinator = await identity("coordinator");
+    customsFinance = await identity("customsfinance");
     field = await identity("field");
     transport = await identity("transport");
     pickup = await identity("pickup");
@@ -327,7 +329,7 @@ describe("C-4 negative battery — the refusals, in the order a dossier meets th
     need(await as(coordinator, () => submitStep(fileId, "coordinator_to_finance")), "step 8");
     need(await as(coordinator, () => sendHandoff(fileId, "coordinator_to_finance", "gainde_registration")), "send 9");
     const customsId = await customsIdFor(fileId);
-    need(await as(ops, () => recordGaindeRegistration(customsId, `GAINDE-NEG-${Date.now()}`)), "gainde");
+    need(await as(customsFinance, () => recordGaindeRegistration(customsId, `GAINDE-NEG-${Date.now()}`)), "gainde");
     need(await as(coordinator, () => activateStep(fileId, "coordinator_to_declarant")), "activate 10");
     need(await as(coordinator, () => submitStep(fileId, "coordinator_to_declarant")), "step 10");
     const h = (await handoffs(fileId)).find((x) => x.to_step_key === "gainde_document_submission" && x.status === "SENT");

@@ -51,6 +51,10 @@ let am: CurrentUser;
 let transit: CurrentUser;
 let declarant: CurrentUser;
 let coordinator: CurrentUser;
+// OPS-CUSTOMS-OWNERSHIP-01 — step 9 belongs to CUSTOMS_FINANCE_OFFICER.
+// The journey used to register GAINDE as `ops`, which permission-only gating
+// allowed; the ownership layer refuses it, correctly.
+let customsFinance: CurrentUser;
 let field: CurrentUser;
 let transport: CurrentUser;
 let pickup: CurrentUser;
@@ -126,7 +130,7 @@ async function carryToValidatedInvoice() {
   need(await as(coordinator, () => activateStep(fileId, "coordinator_to_finance")), "activate 8");
   need(await as(coordinator, () => submitStep(fileId, "coordinator_to_finance")), "step 8");
   need(await as(coordinator, () => sendHandoff(fileId, "coordinator_to_finance", "gainde_registration")), "send 9");
-  need(await as(ops, () => recordGaindeRegistration(customsId, `GAINDE-ND-${Date.now()}`)), "gainde");
+  need(await as(customsFinance, () => recordGaindeRegistration(customsId, `GAINDE-ND-${Date.now()}`)), "gainde");
 
   need(await as(coordinator, () => activateStep(fileId, "coordinator_to_declarant")), "activate 10");
   need(await as(coordinator, () => submitStep(fileId, "coordinator_to_declarant")), "step 10");
@@ -202,6 +206,7 @@ describe("C-4 — the NO-DEPOSIT control fixture", () => {
     transit = await identity("transit");
     declarant = await identity("declarant");
     coordinator = await identity("coordinator");
+    customsFinance = await identity("customsfinance");
     field = await identity("field");
     transport = await identity("transport");
     pickup = await identity("pickup");
