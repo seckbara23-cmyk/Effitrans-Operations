@@ -28,19 +28,18 @@ import {
   EVIDENCE_STATUS_LABELS_FR,
   CLEARANCE_MISSING_LABELS_FR,
 } from "@/lib/finance/requests";
+import { processErrorFr } from "@/lib/process/error-fr";
 
-const ERROR_FR: Record<string, string> = {
-  finance_disabled: "Le flux d'exécution Finance n'est pas activé.",
-  forbidden: "Action non autorisée.",
-  not_found: "Élément introuvable.",
-  invalid_state: "Action impossible dans l'état actuel.",
-  reason_required: "Une information obligatoire est manquante.",
-  self_review_forbidden: "Le demandeur ne peut pas réviser sa propre demande.",
-  self_verification_forbidden: "L'exécutant du décaissement ne peut pas vérifier son propre justificatif.",
-  not_reimbursable: "Cette dépense n'est pas refacturable au client.",
-  clearance_not_ready: "Le feu vert financier n'est pas encore possible.",
-};
-const frError = (code: string) => ERROR_FR[code] ?? "L'action a échoué. Réessayez.";
+/**
+ * Slice 3 (GAINDE-04) - the private map that used to live here is gone.
+ *
+ * Six of them had drifted apart: one code carried up to five different
+ * sentences, and this surface had no sentence at all for several refusals it
+ * can actually receive. The vocabulary is now `lib/process/error-fr.ts`, which
+ * also resolves the control gate's `step_gate_*` family that no map here
+ * covered.
+ */
+const frError = (code: string) => processErrorFr(code, "finance");
 
 const STATUS_TONE: Record<string, string> = {
   REQUESTED: "bg-blue-50 text-blue-700 border-blue-200",

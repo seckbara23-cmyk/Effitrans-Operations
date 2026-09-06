@@ -30,6 +30,7 @@ import { stepPermission, canTransitionStep } from "@/lib/process/engine/state";
 import { queueForStep } from "@/lib/process/queues/registry";
 import { getStep } from "@/lib/process/effitrans-process";
 import { FACT_RULES } from "@/lib/process/reconcile/satisfaction";
+import { PROCESS_ERROR_FR, hasProcessErrorFr } from "@/lib/process/error-fr";
 
 const read = (p: string) => readFileSync(fileURLToPath(new URL(`../${p}`, import.meta.url)), "utf8");
 const strip = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
@@ -294,11 +295,16 @@ describe("UAT-WF-STEP3-001 — a refusal the operator can read", () => {
       }
     }
     expect(reachable.size, "the reachable set must not be empty").toBeGreaterThan(5);
-    const block = stepActions.slice(stepActions.indexOf("const ERROR_FR"));
-    const keys = [...block.slice(0, block.indexOf("};")).matchAll(/^\s{2}([a-z_]+):/gm)].map((m) => m[1]);
-    for (const c of reachable) expect(keys, `${c} has no French sentence`).toContain(c);
-    // …and nothing unreachable is kept.
-    expect(keys).not.toContain("already_initialized");
+    // Slice 3 (GAINDE-04) — the private map this used to read is gone; the
+    // vocabulary is shared. The property is unchanged and now stronger: it is
+    // asserted through the same resolver the component calls, so a sentence that
+    // exists but is unreachable from `processErrorFr` cannot satisfy it.
+    for (const c of reachable) {
+      expect(hasProcessErrorFr(c), `${c} has no French sentence`).toBe(true);
+    }
+    // …and nothing unreachable is kept. `already_initialized` is declared in the
+    // EngineError union and emitted by nothing in this repository.
+    expect(PROCESS_ERROR_FR.already_initialized).toBeUndefined();
   });
 
   it("outstanding evidence is named from the catalogue, not a filename", () => {

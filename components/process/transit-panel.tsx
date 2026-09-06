@@ -23,23 +23,18 @@ import {
   type TransitAssignee,
 } from "@/lib/process/engine/transit-actions";
 import { openProcessBlocker, resolveProcessBlocker } from "@/lib/process/engine/structures-actions";
+import { processErrorFr } from "@/lib/process/error-fr";
 
-const ERROR_FR: Record<string, string> = {
-  engine_disabled: "Le flux d'exécution Transit n'est pas activé.",
-  forbidden: "Action non autorisée.",
-  not_found: "Élément introuvable.",
-  handoff_not_open: "Aucun transfert en attente de réception.",
-  invalid_state: "Action impossible dans l'état actuel du dossier.",
-  reason_required: "Une information obligatoire est manquante.",
-  unknown_step: "Étape inconnue.",
-  step_assigned_to_other: "Cette étape est affectée à une autre personne.",
-  not_authorized_assigner: "Cette affectation relève du Chef de Transit.",
-  not_authorized_approver: "La vérification finale avant le Transport relève du Chef de Transit.",
-  release_not_approved: "Le Chef de Transit n'a pas encore vérifié ce BAE : la libération reste bloquée.",
-  self_validation_forbidden: "Vous avez enregistré ce BAE : sa vérification revient à une autre personne.",
-  transit_custody_required: "Le Transit doit d'abord réceptionner le dossier et terminer sa réception.",
-};
-const frError = (code: string) => ERROR_FR[code] ?? "L'action a échoué. Réessayez.";
+/**
+ * Slice 3 (GAINDE-04) - the private map that used to live here is gone.
+ *
+ * Six of them had drifted apart: one code carried up to five different
+ * sentences, and this surface had no sentence at all for several refusals it
+ * can actually receive. The vocabulary is now `lib/process/error-fr.ts`, which
+ * also resolves the control gate's `step_gate_*` family that no map here
+ * covered.
+ */
+const frError = (code: string) => processErrorFr(code, "transit");
 
 const STATUS_TONE: Record<string, string> = {
   done: "bg-emerald-50 text-emerald-700 border-emerald-200",

@@ -21,45 +21,7 @@ import {
   queueSubmitStep,
 } from "@/lib/process/queues/actions";
 import type { MissingEvidence } from "@/lib/process/engine/types";
-
-const ERROR_FR: Record<string, string> = {
-  engine_disabled: "Moteur de processus désactivé.",
-  forbidden: "Action non autorisée.",
-  not_found: "Dossier ou étape introuvable.",
-  invalid_state: "L'étape a déjà changé d'état. Rafraîchissez la file.",
-  prerequisites_unmet: "Prérequis non satisfaits.",
-  evidence_missing: "Preuves requises manquantes.",
-  evidence_unauthorized:
-    "Vous n'avez pas accès aux preuves exigées par cette étape. "
-    + "Elle doit être clôturée par une personne habilitée à les consulter.",
-  gate_blocked: "Porte de convergence bloquée.",
-  self_validation_forbidden: "Vous ne pouvez pas valider votre propre travail.",
-  override_not_allowed: "Dérogation non autorisée.",
-  reason_required: "Un motif est obligatoire.",
-  handoff_not_open: "Ce transfert n'est plus en attente.",
-  cross_tenant: "Action non autorisée.",
-  unknown_step: "Étape inconnue.",
-  step_assigned_to_other: "Cette étape est affectée à une autre personne.",
-  not_authorized_assigner: "Cette affectation relève du Chef de Transit.",
-  not_authorized_approver: "La vérification finale avant le Transport relève du Chef de Transit.",
-  release_not_approved: "Le Chef de Transit n'a pas encore vérifié ce BAE : la libération reste bloquée.",
-  transit_custody_required: "Le Transit doit d'abord réceptionner le dossier et terminer sa réception.",
-  handoff_not_sent: "Le dossier doit d'abord être formellement transmis au service suivant.",
-  not_authorized_sender: "Vous n'êtes pas habilité à effectuer cette transmission.",
-  already_initialized: "Processus déjà initialisé.",
-  // C-4 — work arrived by handoff and has not been accepted yet.
-  handoff_reception_required: "Réceptionnez d'abord le dossier : cette étape vous a été transmise.",
-  not_eligible_receiver: "Ce transfert ne vous est pas destiné.",
-  // C-2 — a handoff may not outrun its own from-step.
-  from_step_incomplete: "L'étape d'origine du transfert n'est pas terminée.",
-};
-
-/** Why a required artefact does not count yet — the evaluator's own vocabulary. */
-const EVIDENCE_STATUS_FR: Record<string, string> = {
-  missing: "manquant",
-  invalid: "rejeté ou expiré",
-  pending_review: "en attente de validation",
-};
+import { EVIDENCE_STATUS_FR, processErrorFr } from "@/lib/process/error-fr";
 
 const btn =
   "rounded border px-2 py-1 text-xs font-medium transition disabled:opacity-50";
@@ -75,7 +37,7 @@ export function QueueRowActions({ item, queue }: { item: QueueItem; queue: Queue
     start(async () => {
       const r = await fn();
       if (r.ok) return;
-      setError(ERROR_FR[r.error ?? ""] ?? "Action refusée.");
+      setError(processErrorFr(r.error, "queue"));
       // The engine now says WHICH artefacts are outstanding. Names come from the
       // document catalogue (type_code), never from an uploaded filename.
       setMissing(r.missing ?? []);

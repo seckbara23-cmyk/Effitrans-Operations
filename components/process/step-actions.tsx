@@ -23,46 +23,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { queueStartStep, queueSubmitStep } from "@/lib/process/queues/actions";
 import type { StepEligibility } from "@/lib/process/step-eligibility";
-
-/**
- * Every code the two engine actions can return. A refusal an operator cannot
- * read is the defect UAT-00009 was about; a contract test derives this set from
- * the engine's own error union.
- */
-const ERROR_FR: Record<string, string> = {
-  engine_disabled: "Moteur de processus désactivé.",
-  forbidden: "Action non autorisée.",
-  not_found: "Dossier ou étape introuvable.",
-  unknown_step: "Étape inconnue.",
-  step_assigned_to_other: "Cette étape est affectée à une autre personne.",
-  not_authorized_assigner: "Cette affectation relève du Chef de Transit.",
-  not_authorized_approver: "La vérification finale avant le Transport relève du Chef de Transit.",
-  release_not_approved: "Le Chef de Transit n'a pas encore vérifié ce BAE : la libération reste bloquée.",
-  transit_custody_required: "Le Transit doit d'abord réceptionner le dossier et terminer sa réception.",
-  handoff_not_sent: "Le dossier doit d'abord être formellement transmis au service suivant.",
-  not_authorized_sender: "Vous n'êtes pas habilité à effectuer cette transmission.",
-  invalid_state: "L'étape a changé d'état. Rafraîchissez la page.",
-  prerequisites_unmet: "Prérequis non satisfaits.",
-  evidence_missing: "Preuves requises manquantes.",
-  evidence_unauthorized:
-    "Vous n'avez pas accès aux preuves exigées par cette étape. "
-    + "Elle doit être clôturée par une personne habilitée à les consulter.",
-  gate_blocked: "Porte de convergence bloquée.",
-  self_validation_forbidden: "Vous ne pouvez pas valider votre propre travail.",
-  override_not_allowed: "Dérogation non autorisée.",
-  reason_required: "Un motif est obligatoire.",
-  handoff_not_open: "Ce transfert n'est plus en attente.",
-  not_eligible_receiver: "Ce transfert ne vous est pas destiné.",
-  from_step_incomplete: "L'étape d'origine du transfert n'est pas terminée.",
-  handoff_reception_required: "Réceptionnez d'abord le dossier : cette étape vous a été transmise.",
-};
-
-/** Why an artefact does not count yet — the evaluator's own vocabulary. */
-const EVIDENCE_STATUS_FR: Record<string, string> = {
-  missing: "manquant",
-  invalid: "rejeté ou expiré",
-  pending_review: "en attente de validation",
-};
+import { EVIDENCE_STATUS_FR, processErrorFr } from "@/lib/process/error-fr";
 
 type MissingEvidence = { key: string; labelFr: string; status: string };
 
@@ -96,7 +57,7 @@ export function StepActions({
         router.refresh();
         return;
       }
-      setError(ERROR_FR[r.error ?? ""] ?? "Action refusée.");
+      setError(processErrorFr(r.error));
       setMissing(r.missing ?? []);
     });
   };

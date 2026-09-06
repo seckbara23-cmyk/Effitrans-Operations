@@ -31,6 +31,12 @@ import {
   TRANSIT_HANDOFF_FROM_STEP,
 } from "@/lib/process/intake";
 import { getStep, getActivity, EFFITRANS_PROCESS } from "@/lib/process/effitrans-process";
+import {
+  PROCESS_ERROR_FR,
+  PROCESS_ERROR_GENERIC,
+  hasProcessErrorFr,
+  processErrorFr,
+} from "@/lib/process/error-fr";
 
 const read = (p: string) => readFileSync(fileURLToPath(new URL(p, import.meta.url)), "utf8");
 const strip = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
@@ -256,20 +262,19 @@ describe("UAT-00009 — every structured refusal has operator-facing French", ()
     return [...u.slice(0, u.indexOf(";")).matchAll(/"([a-z_]+)"/g)].map((m) => m[1]);
   };
 
-  const frenchKeys = (ui: string): string[] => {
-    const i = ui.indexOf("const ERROR_FR");
-    const block = ui.slice(i, ui.indexOf("};", i));
-    return [...block.matchAll(/^\s{2}([a-z_]+):/gm)].map((m) => m[1]);
-  };
+  /**
+   * Slice 3 (GAINDE-04) — the private maps these surfaces used to declare are
+   * gone. The contract is unchanged and now stronger: it is asserted through
+   * the same resolver the components call, and it covers the `step_gate_*`
+   * family none of the private maps ever carried.
+   */
+  const speaks = (c: string): boolean => hasProcessErrorFr(c);
 
   it("the handoff action's own codes are all spoken on both surfaces", () => {
     const guardCodes = ["engine_disabled", "forbidden"]; // from intakeGuard
     const codes = [...new Set([...returnedCodes(handoffFn), ...guardCodes])];
     expect(codes).toContain("am_opening_incomplete");
-    for (const ui of [panel, dossierUi]) {
-      const keys = frenchKeys(ui);
-      for (const c of codes) expect(keys, `${c} has no French sentence`).toContain(c);
-    }
+    for (const c of codes) expect(speaks(c), `${c} has no French sentence`).toBe(true);
   });
 
   it("sendHandoff's codes reach the same two surfaces", () => {
@@ -279,31 +284,33 @@ describe("UAT-00009 — every structured refusal has operator-facing French", ()
     const codes = [...new Set([...returnedCodes(send), ...(send.match(/fail\("([a-z_]+)"\)/g) ?? [])
       .map((m) => m.replace(/fail\("|"\)/g, ""))])];
     expect(codes).toContain("from_step_incomplete");
-    for (const ui of [panel, dossierUi]) {
-      const keys = frenchKeys(ui);
-      for (const c of codes) expect(keys, `${c} has no French sentence`).toContain(c);
-    }
+    for (const c of codes) expect(speaks(c), `${c} has no French sentence`).toBe(true);
   });
 
   it("the queue speaks every engine error it can receive", () => {
-    const keys = frenchKeys(queueUi);
     for (const c of engineErrorUnion()) {
-      expect(keys, `${c} has no French sentence in the queue`).toContain(c);
+      // `already_initialized` is declared in the union and emitted nowhere, so
+      // it is deliberately absent from the vocabulary (see UAT-00009 below).
+      if (c === "already_initialized") continue;
+      expect(speaks(c), `${c} has no French sentence in the queue`).toBe(true);
     }
   });
 
   it("no surface keeps a French sentence for a code that cannot occur", () => {
     // `feature_disabled` and `cross_tenant_forbidden` were mapped for years
     // while the action returned neither — dead vocabulary hides live gaps.
-    for (const ui of [panel, dossierUi]) {
-      expect(frenchKeys(ui)).not.toContain("feature_disabled");
-      expect(frenchKeys(ui)).not.toContain("cross_tenant_forbidden");
+    for (const dead of ["feature_disabled", "cross_tenant_forbidden", "owner_forbidden"]) {
+      expect(PROCESS_ERROR_FR[dead], dead).toBeUndefined();
     }
   });
 
   it("the generic fallback still exists — but is no longer the answer here", () => {
-    expect(panel).toContain("L'action a échoué. Réessayez.");
-    expect(frenchKeys(panel)).toContain("am_opening_incomplete");
+    // Slice 3 (GAINDE-04) — the fallback moved into the shared resolver, so
+    // there is one of it instead of three slightly different ones. What this
+    // test is about is unchanged: the intake refusal must not reach it.
+    expect(PROCESS_ERROR_GENERIC.length).toBeGreaterThan(10);
+    expect(speaks("am_opening_incomplete")).toBe(true);
+    expect(processErrorFr("am_opening_incomplete", "intake")).not.toBe(PROCESS_ERROR_GENERIC);
   });
 });
 

@@ -14,28 +14,18 @@ import { openProcessBlocker, resolveProcessBlocker } from "@/lib/process/engine/
 import type { IntakeState, EligibleOwner } from "@/lib/process/engine/intake-actions";
 import type { HandoffPrerequisite, ActionableStep } from "@/lib/process/intake";
 import { HandoffPrerequisites } from "./handoff-prerequisites";
+import { processErrorFr } from "@/lib/process/error-fr";
 
-const ERROR_FR: Record<string, string> = {
-  engine_disabled: "Le flux d'ouverture n'est pas activé.",
-  forbidden: "Action non autorisée.",
-  not_found: "Dossier introuvable.",
-  intake_incomplete: "Informations obligatoires manquantes — corrigez les points bloquants.",
-  transition_failed: "Le statut du dossier n'a pas pu être mis à jour. Réessayez.",
-  blocked_by_intake_blockers: "Transmission refusée : des points bloquants sont ouverts sur ce dossier.",
-  owner_forbidden: "Le responsable choisi n'est pas un membre Opérations actif.",
-  owner_not_found: "Le responsable choisi n'est pas un membre Opérations actif.",
-  // D-2 / C-2 — the handoff may not outrun its own from-step. Both codes reach
-  // this screen; neither had a sentence, which is why a real UAT saw only
-  // « L'action a échoué. Réessayez. »
-  am_opening_incomplete: "Transmission impossible : l'étape d'ouverture et de préparation du dossier n'est pas terminée.",
-  from_step_incomplete: "Transmission impossible : l'étape d'origine du transfert n'est pas terminée.",
-  unknown_step: "Étape inconnue.",
-  handoff_not_sent: "Le dossier doit d'abord être formellement transmis au service suivant.",
-  not_authorized_sender: "Vous n'êtes pas habilité à effectuer cette transmission.",
-  invalid_state: "L'état du dossier a changé. Rafraîchissez la page.",
-};
-
-const frError = (code: string) => ERROR_FR[code] ?? ERROR_FR[code.replace(/^owner_/, "")] ?? "L'action a échoué. Réessayez.";
+/**
+ * Slice 3 (GAINDE-04) - the private map that used to live here is gone.
+ *
+ * Six of them had drifted apart: one code carried up to five different
+ * sentences, and this surface had no sentence at all for several refusals it
+ * can actually receive. The vocabulary is now `lib/process/error-fr.ts`, which
+ * also resolves the control gate's `step_gate_*` family that no map here
+ * covered.
+ */
+const frError = (code: string) => processErrorFr(code, "intake");
 
 export function IntakePanel({
   fileId,

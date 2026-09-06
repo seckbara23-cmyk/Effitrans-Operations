@@ -20,19 +20,15 @@ import { assignCommercialOwner } from "@/lib/files/actions";
 import type { StaffOption } from "@/lib/files/types";
 import type { CommercialOwnerHistoryRow } from "@/lib/files/service";
 import { SELECTABLE_REASON_CODES, ASSIGNMENT_REASON_LABELS_FR } from "@/lib/workflow/access/vocabulary";
+import { processErrorFr } from "@/lib/process/error-fr";
 
-const ERR: Record<string, string> = {
-  forbidden: "Vous n'avez pas l'autorité pour désigner le Responsable client.",
-  actor_invalid: "Votre compte n'est plus actif dans cette organisation.",
-  not_found: "Dossier introuvable.",
-  owner_required: "Le Responsable client ne peut pas être retiré sans remplaçant.",
-  owner_unchanged: "Ce Responsable client est déjà désigné.",
-  invalid_assignee: "La personne choisie n'est pas un compte actif de l'organisation.",
-  file_terminal: "Le dossier est clôturé ou annulé : le Responsable client ne peut plus changer.",
-  reason_required: "Un remplacement exige un motif détaillé.",
-  assign_failed: "La désignation a échoué.",
-};
-
+/**
+ * Slice 3 (GAINDE-04) - the private map that used to live here is gone. Its
+ * narrower sentences moved into SURFACE_ERROR_FR.commercialOwner, beside the
+ * canonical ones they narrow, so a reader can see both at once and a test can
+ * count them.
+ */
+const frError = (code: string | undefined) => processErrorFr(code, "commercialOwner");
 export function CommercialOwner({
   fileId, ownerId, ownerLabel, history, staff, canAssign, isTerminal,
 }: {
@@ -66,7 +62,7 @@ export function CommercialOwner({
         reason: reason.trim() || null,
       });
       if (!res.ok) {
-        setError(ERR[res.error ?? ""] ?? ERR.assign_failed);
+        setError(frError(res.error));
         return;
       }
       setSelected("");

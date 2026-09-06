@@ -39,6 +39,7 @@ import { canPickup } from "@/lib/transport/gates";
 import { getStep } from "@/lib/process/effitrans-process";
 import { TENANT_ROLE_TEMPLATES } from "@/lib/platform/role-templates";
 import { FACT_RULES } from "@/lib/process/reconcile/satisfaction";
+import { hasProcessErrorFr, processErrorFr } from "@/lib/process/error-fr";
 
 const read = (p: string) => readFileSync(fileURLToPath(new URL(`../${p}`, import.meta.url)), "utf8");
 const strip = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
@@ -245,17 +246,26 @@ describe("TRANSIT-CUSTODY-03 — preparation stays parallel, execution stays gat
 // ═══════════ the operator sequence, and nothing hidden ═════════════════════
 
 describe("TRANSIT-CUSTODY-03 — the Chef's sequence reads coherently", () => {
+  const CUSTODY_REFUSALS = [
+    "transit_custody_required",
+    "step_assigned_to_other",
+    "not_authorized_assigner",
+  ];
+
   it("a refusal names the prerequisite instead of failing generically", () => {
-    for (const code of ["transit_custody_required", "step_assigned_to_other", "not_authorized_assigner"]) {
-      expect(panel, code).toContain(`${code}:`);
+    for (const code of CUSTODY_REFUSALS) {
+      expect(hasProcessErrorFr(code, "transit"), code).toBe(true);
     }
+    expect(processErrorFr("transit_custody_required")).toMatch(/réceptionner/);
   });
 
   it("every new refusal has French on the surfaces that can receive it", () => {
-    for (const p of ["components/process/queue-row-actions.tsx", "components/process/step-actions.tsx"]) {
-      const src = strip(read(p));
-      for (const code of ["transit_custody_required", "step_assigned_to_other", "not_authorized_assigner"]) {
-        expect(src, `${p} ${code}`).toContain(`${code}:`);
+    // Slice 3 (GAINDE-04) — the three private maps this used to read are gone.
+    // Every surface resolves through one vocabulary, so coverage is now a
+    // property of the vocabulary rather than of three copies of it.
+    for (const surface of ["transit", "queue", undefined] as const) {
+      for (const code of CUSTODY_REFUSALS) {
+        expect(hasProcessErrorFr(code, surface), `${surface ?? "canonical"} ${code}`).toBe(true);
       }
     }
   });

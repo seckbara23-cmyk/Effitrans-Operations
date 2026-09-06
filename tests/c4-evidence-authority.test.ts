@@ -22,6 +22,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { evaluateStepEvidence } from "@/lib/process/engine/evidence";
 import { getTenantRoleTemplate } from "@/lib/platform/role-templates";
+import { hasProcessErrorFr, processErrorFr } from "@/lib/process/error-fr";
 
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(`../${rel}`, import.meta.url)), "utf8");
 
@@ -90,10 +91,12 @@ describe("C-4 — the WRITE path refuses what the evaluator cannot vouch for", (
   });
 
   it("the operator sees a sentence, not a code", () => {
-    const fr = read("components/process/queue-row-actions.tsx");
-    expect(fr).toContain("evidence_unauthorized:");
-    const line = fr.slice(fr.indexOf("evidence_unauthorized:"));
-    expect(line.slice(0, 260)).toMatch(/n'avez pas accès aux preuves/);
+    // Slice 3 (GAINDE-04) — the queue's private map is gone; the vocabulary is
+    // shared. The property is unchanged and asserted through the resolver the
+    // component actually calls, so a sentence that exists but is unreachable
+    // can no longer satisfy it.
+    expect(hasProcessErrorFr("evidence_unauthorized")).toBe(true);
+    expect(processErrorFr("evidence_unauthorized", "queue")).toMatch(/n'avez pas accès aux preuves/);
   });
 });
 

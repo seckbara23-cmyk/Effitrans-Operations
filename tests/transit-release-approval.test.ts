@@ -30,6 +30,7 @@ import { TENANT_ROLE_TEMPLATES } from "@/lib/platform/role-templates";
 import { EVENT_TYPES } from "@/lib/workflow/events/types";
 import { getStep } from "@/lib/process/effitrans-process";
 import { canPickup } from "@/lib/transport/gates";
+import { hasProcessErrorFr, processErrorFr } from "@/lib/process/error-fr";
 
 const read = (p: string) => readFileSync(fileURLToPath(new URL(`../${p}`, import.meta.url)), "utf8");
 const strip = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
@@ -391,14 +392,13 @@ describe("TRANSIT-CUSTODY-05 — the screens tell the three acts apart", () => {
   });
 
   it("39 — every new refusal has a French sentence on every surface that shows one", () => {
-    for (const f of [
-      "components/process/transit-panel.tsx",
-      "components/process/step-actions.tsx",
-      "components/process/queue-row-actions.tsx",
-    ]) {
-      const src = read(f);
-      expect(src, f).toContain("not_authorized_approver:");
-      expect(src, f).toContain("release_not_approved:");
+    // Slice 3 (GAINDE-04) — the three private maps are gone; one vocabulary
+    // serves all three surfaces, so this is asserted once, through the resolver
+    // each of them calls.
+    for (const surface of ["transit", "queue", undefined] as const) {
+      for (const c of ["not_authorized_approver", "release_not_approved"]) {
+        expect(hasProcessErrorFr(c, surface), `${surface ?? "canonical"} ${c}`).toBe(true);
+      }
     }
     const i18n = read("lib/i18n.ts");
     expect(i18n).toContain("release_not_approved:");
