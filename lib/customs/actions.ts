@@ -203,16 +203,39 @@ export async function updateCustoms(id: string, input: CustomsInput): Promise<Ac
   // about certified data, and it would evaporate the moment a step reopened.
   if (rec.reviewed_at) return { ok: false, error: "validated_use_correction" };
 
+  // ONE payload rule for every column: `undefined` means NOT SUPPLIED and
+  // leaves the stored value alone; an explicit empty string means CLEAR IT.
+  //
+  // The seven metadata columns below were written unconditionally, so a form
+  // that legitimately sends only part of the record erased the rest. Two
+  // callers share this action, and one of them is partial by design:
+  // `GovernedCustomsFields` submits only the five D4 elements
+  // (components/customs/governed-fields.tsx:88-108), so saving the ICTD block
+  // silently NULLed the declaration number, the bureau, the régime, the
+  // declaration date, the GAINDE/Orbus reference and the notes, and reset the
+  // inspection to NOT_REQUIRED. Nothing warned, and the audit row said only
+  // « customs.updated ». The D4 five already used the correct idiom; the fix is
+  // to apply it to all of them rather than to keep two rules in one payload.
   const { error } = await supabase
     .from("customs_record")
     .update({
-      declaration_number: input.declarationNumber?.trim() || null,
-      customs_office: input.customsOffice?.trim() || null,
-      regime: input.regime?.trim() || null,
-      declaration_date: input.declarationDate || null,
-      inspection_status: input.inspectionStatus ?? "NOT_REQUIRED",
-      external_ref: input.externalRef?.trim() || null,
-      notes: input.notes?.trim() || null,
+      ...(input.declarationNumber === undefined
+        ? {}
+        : { declaration_number: input.declarationNumber?.trim() || null }),
+      ...(input.customsOffice === undefined
+        ? {}
+        : { customs_office: input.customsOffice?.trim() || null }),
+      ...(input.regime === undefined ? {} : { regime: input.regime?.trim() || null }),
+      ...(input.declarationDate === undefined
+        ? {}
+        : { declaration_date: input.declarationDate || null }),
+      ...(input.inspectionStatus === undefined
+        ? {}
+        : { inspection_status: input.inspectionStatus }),
+      ...(input.externalRef === undefined
+        ? {}
+        : { external_ref: input.externalRef?.trim() || null }),
+      ...(input.notes === undefined ? {} : { notes: input.notes?.trim() || null }),
       // D4 — the five governed elements. Entered here by the Déclarant, on the
       // ordinary step-gated path; `undefined` leaves a value alone so a partial
       // form never silently erases a captured fact.
