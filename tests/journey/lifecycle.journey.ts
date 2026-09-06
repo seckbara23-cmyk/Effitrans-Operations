@@ -253,14 +253,12 @@ describe("C-4 slice 1 — Creation → Transit reception", () => {
  * skip stand would have proven nothing while looking thorough.
  */
 describe("C-4 — a step cannot be closed on evidence its actor may not judge", () => {
-  // TWO dossiers, deliberately. The blind actor CLAIMS step 1 when it activates
-  // it, and a claimed step is no longer an open unassigned step whose owning
-  // role you hold — so the responsibility ground stops making the dossier
-  // visible to the quotation lead. That refusal is CORRECT, but it would make
-  // the sighted cases fail with `forbidden` for a reason that has nothing to do
-  // with evidence. Each actor gets a dossier whose step 1 it can legitimately
-  // reach.
-  let devisFile = "";   // the blind actor's — refusal and unchanged state
+  // TWO dossiers, deliberately. Step 1 is CLAIMED by whoever activates it, and
+  // the blind case leaves its dossier's step 1 ACTIVE-and-refused on purpose —
+  // proving that a refusal changes nothing. Running the sighted cases on the
+  // same dossier would then be testing a step somebody else already holds,
+  // which is a different question. Each case gets its own.
+  let devisFile = "";   // stays ACTIVE and unclosed — the refusal and its no-op
   let sightedFile = ""; // the quotation lead's — missing, then complete
 
   async function openDevisDossier(tag: string): Promise<string> {
@@ -310,11 +308,30 @@ describe("C-4 — a step cannot be closed on evidence its actor may not judge", 
   });
 
   it("an actor who cannot see the evidence is REFUSED — evidence_unauthorized", async () => {
-    const started = await as(blind, () => activateStep(devisFile, "cotation"));
-    expect(started.ok, `blind actor could not start step 1: ${JSON.stringify(started)}`).toBe(true);
+    // WHO STARTS IT CHANGED, AND WHY (OPS-CUSTOMS-GAINDE-04 A4). The blind actor
+    // used to start step 1 itself. It no longer may: `activateStep` now refuses
+    // an OPEN, UNCLAIMED step to anyone outside its owning role, and step 1's
+    // owner is QUOTATION_MANAGER. That refusal is correct and is the point of
+    // that guard — an actor must not be able to claim its way into ownership.
+    //
+    // The fixture cannot simply BE a quotation manager: C-4 granted that role
+    // `document:read` precisely so it is not hard-blocked from its own step,
+    // which is the one thing this fixture must not hold. So the step is opened
+    // by its legitimate owner and SUBMITTED by the blind actor — which the
+    // engine permits (`cotation` is not an assignment-owned step, and a
+    // same-permission colleague submitting is a UI narrowing, not a guard).
+    // The invariant under test is untouched: reaching `submitStep` without
+    // being able to see the evidence must be refused, and refused specifically.
+    const started = await as(quotation, () => activateStep(devisFile, "cotation"));
+    expect(started.ok, `step 1 could not be opened: ${JSON.stringify(started)}`).toBe(true);
 
     const before = await execution(devisFile, "cotation");
     expect(before?.state).toBe("ACTIVE");
+
+    // …and the blind actor genuinely holds step 1's permission, so what refuses
+    // below is the evidence rule and not authorization.
+    const claimed = await as(blind, () => activateStep(devisFile, "cotation"));
+    expect(claimed.ok, "already ACTIVE — this proves nothing new, it guards the setup").toBe(false);
 
     const refused = await as(blind, () => submitStep(devisFile, "cotation"));
     expect(refused.ok, "a step must not close on evidence its actor cannot judge").toBe(false);
