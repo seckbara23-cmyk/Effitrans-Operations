@@ -1,0 +1,376 @@
+/**
+ * OPS-CUSTOMS-GAINDE-04 slice 5 — one construction, one decision, three surfaces.
+ * ---------------------------------------------------------------------------
+ * THE DEFECT, which is subtler than it sounds. `evaluateStepAction` was pure
+ * and shared from the day it was written, and the two surfaces that read it
+ * STILL disagreed three provable ways — because sharing a decision is not the
+ * same as sharing the facts it decides on. Each caller assembled its own from
+ * whatever it had in scope:
+ *
+ *   1. EVIDENCE — the queue folded missing evidence into its blocker, the
+ *      process page folded in only missing prerequisites. So the dossier
+ *      surface offered « Terminer » on steps `submitStep` then refused.
+ *   2. CUSTODY — both derived a SENT-only boolean, a partial re-implementation
+ *      of `custodyStateFor`. A step whose governed route had transmitted
+ *      nothing looked ready and was refused `handoff_not_sent`.
+ *   3. CLAIM — `claimedByAnother` fired only on ACTIVE while the engine's
+ *      `assignmentRefusal` bites in ANY state once an assignee exists, and
+ *      Transit writes assignments on AVAILABLE rows.
+ *
+ * A third surface built on those facts would have inherited all three. So the
+ * facts moved INTO the evaluator and the construction into one builder.
+ *
+ * WHAT THIS FILE HOLDS. That the three divergences are closed at the source;
+ * that ownership, unauthorized evidence and the governance class are now
+ * expressible; and that no surface has kept a private derivation.
+ */
+import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { evaluateStepAction, type StepActionFacts } from "@/lib/process/step-eligibility";
+import { ASSIGNMENT_OWNED_STEPS } from "@/lib/process/handoff-routes";
+import {
+  CLASSIFIED,
+  blocksCompletion,
+  governanceFor,
+  requirementMessageFr,
+} from "@/lib/process/requirement-class";
+
+const read = (p: string) => readFileSync(fileURLToPath(new URL(`../${p}`, import.meta.url)), "utf8");
+const code = (p: string) =>
+  read(p).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
+const ME = { userId: "u-me", permissions: ["customs:create", "customs:update"], roles: ["CUSTOMS_DECLARANT"] };
+const CHEF = { userId: "u-chef", permissions: ["customs:create", "customs:update"], roles: ["CHIEF_OF_TRANSIT"] };
+
+/** Step 6 — owned by the Déclarant, and one of the assignment-owned steps. */
+const step6 = (over: Partial<StepActionFacts> = {}): StepActionFacts => ({
+  stepKey: "customs_preparation",
+  state: "AVAILABLE",
+  assignedUserId: null,
+  custody: "not_applicable",
+  owningRole: "CUSTOMS_DECLARANT",
+  missingPrerequisites: [],
+  requirements: [],
+  ...over,
+});
+
+const missing = (key = "COMMERCIAL_INVOICE") =>
+  [{ key, labelFr: "Facture commerciale", status: "missing" as const }];
+
+// ===========================================================================
+// DIVERGENCE 1 — evidence
+// ===========================================================================
+
+describe("evidence blocks completion, derived by the evaluator and not by a caller", () => {
+  it("01 — an ACTIVE step with a missing requirement offers no Terminer", () => {
+    const el = evaluateStepAction(
+      step6({ state: "ACTIVE", assignedUserId: ME.userId, requirements: missing() }),
+      ME,
+    );
+    expect(el.canSubmit).toBe(false);
+    expect(el.reasonFr).toContain("Facture commerciale");
+  });
+
+  it("02 — and the same facts give the same verdict whoever assembled them", () => {
+    // The whole point: the decision no longer depends on which surface built
+    // the blocker sentence, because there is no blocker sentence to build.
+    const facts = step6({ state: "ACTIVE", assignedUserId: ME.userId, requirements: missing() });
+    expect(evaluateStepAction(facts, ME).canSubmit).toBe(false);
+    expect(evaluateStepAction({ ...facts, blockedReason: null }, ME).canSubmit).toBe(false);
+  });
+
+  it("03 — with nothing outstanding, Terminer is offered", () => {
+    const el = evaluateStepAction(step6({ state: "ACTIVE", assignedUserId: ME.userId }), ME);
+    expect(el.canSubmit).toBe(true);
+    expect(el.reasonFr).toBeNull();
+  });
+
+  it("04 — every unsatisfied status blocks, because every one of them blocks submitStep", () => {
+    for (const status of ["missing", "invalid", "pending_review", "unauthorized"] as const) {
+      const el = evaluateStepAction(
+        step6({
+          state: "ACTIVE",
+          assignedUserId: ME.userId,
+          requirements: [{ key: "K", labelFr: "Pièce", status }],
+        }),
+        ME,
+      );
+      expect(el.canSubmit, status).toBe(false);
+    }
+  });
+});
+
+// ===========================================================================
+// DIVERGENCE 2 — custody
+// ===========================================================================
+
+describe("custody is a state, not a boolean", () => {
+  it("05 — awaiting_reception blocks, and says the transfer must be accepted", () => {
+    const el = evaluateStepAction(step6({ custody: "awaiting_reception" }), ME);
+    expect(el.canStart).toBe(false);
+    expect(el.awaitingReception).toBe(true);
+    expect(el.reasonFr).toContain("réceptionné");
+  });
+
+  it("06 — awaiting_transmission ALSO blocks, and says something different", () => {
+    // The half a boolean could not express. The engine refuses this with
+    // `handoff_not_sent`, and the surface used to offer the button anyway.
+    const el = evaluateStepAction(step6({ custody: "awaiting_transmission" }), ME);
+    expect(el.canStart).toBe(false);
+    expect(el.awaitingReception).toBe(false);
+    expect(el.reasonFr).toContain("transmis");
+    expect(el.reasonFr).not.toContain("réceptionné");
+  });
+
+  it("07 — received and not_applicable do not block", () => {
+    for (const custody of ["received", "not_applicable"] as const) {
+      expect(evaluateStepAction(step6({ custody }), ME).canStart, custody).toBe(true);
+    }
+  });
+});
+
+// ===========================================================================
+// DIVERGENCE 3 — the claim
+// ===========================================================================
+
+describe("an assignment is respected in every state the engine respects it", () => {
+  it("08 — an AVAILABLE assignment-owned step assigned to someone else offers no Démarrer", () => {
+    // `assignmentRefusal` bites in ANY state once an assignee exists, and
+    // Transit genuinely writes assignments on AVAILABLE rows. The UI offered
+    // « Démarrer » on work the engine refuses with `step_assigned_to_other`.
+    expect(ASSIGNMENT_OWNED_STEPS.has("customs_preparation")).toBe(true);
+    const el = evaluateStepAction(step6({ assignedUserId: "someone-else" }), ME);
+    expect(el.claimedByAnother).toBe(true);
+    expect(el.canStart).toBe(false);
+  });
+
+  it("09 — and the assignee still gets it", () => {
+    const el = evaluateStepAction(step6({ assignedUserId: ME.userId }), ME);
+    expect(el.claimedByAnother).toBe(false);
+    expect(el.canStart).toBe(true);
+  });
+
+  it("10 — outside the assignment-owned steps the ACTIVE-only narrowing stands", () => {
+    // Ratified 2026-09-04 as a UI narrowing rather than a guard; widening it
+    // everywhere would be a product decision nobody made.
+    expect(ASSIGNMENT_OWNED_STEPS.has("am_dossier_opening")).toBe(false);
+    const available = evaluateStepAction(
+      { ...step6({ assignedUserId: "someone-else" }), stepKey: "am_dossier_opening", owningRole: null },
+      ME,
+    );
+    expect(available.claimedByAnother).toBe(false);
+  });
+});
+
+// ===========================================================================
+// WHAT THE EVALUATOR COULD NOT SAY BEFORE
+// ===========================================================================
+
+describe("ownership, at the same seam the controls use", () => {
+  it("11 — a foreign role is not the owner and is offered nothing", () => {
+    const el = evaluateStepAction(step6(), CHEF);
+    expect(el.mayAct, "the Chef genuinely holds the permission").toBe(true);
+    expect(el.isOwner).toBe(false);
+    expect(el.canStart).toBe(false);
+    expect(el.reasonFr).toContain("rôle responsable");
+  });
+
+  it("12 — an audited assignment makes it theirs, exactly as the control gate says", () => {
+    const el = evaluateStepAction(step6({ assignedUserId: CHEF.userId }), CHEF);
+    expect(el.isOwner).toBe(true);
+    expect(el.canStart).toBe(true);
+  });
+
+  it("13 — a step with no owning role defers, as the compatibility path requires", () => {
+    const el = evaluateStepAction(step6({ owningRole: null }), CHEF);
+    expect(el.isOwner).toBe(true);
+    expect(el.canStart).toBe(true);
+  });
+});
+
+describe("unauthorized evidence never reads as ready", () => {
+  it("14 — it is its own state, with its own sentence", () => {
+    // `evidence.complete` deliberately ignores unauthorized items — right for a
+    // display, wrong for a write, and `submitStep` hard-refuses on them. A card
+    // that read `complete` told a viewer « prêt » about work the server refuses.
+    const el = evaluateStepAction(
+      step6({
+        state: "ACTIVE",
+        assignedUserId: ME.userId,
+        requirements: [{ key: "K", labelFr: "Pièce", status: "unauthorized" }],
+      }),
+      ME,
+    );
+    expect(el.unauthorized).toBe(true);
+    expect(el.canSubmit).toBe(false);
+    expect(el.reasonFr).toBe("Informations insuffisantes pour évaluer cette étape.");
+    expect(el.reasonFr).not.toMatch(/prêt/i);
+  });
+
+  it("15 — and authority is never softened by a governance class", () => {
+    const el = evaluateStepAction(
+      step6({
+        state: "ACTIVE",
+        assignedUserId: ME.userId,
+        requirements: [{ key: "K", labelFr: "Pièce", status: "unauthorized" }],
+      }),
+      ME,
+    );
+    expect(el.requirements[0].blocking).toBe(true);
+  });
+});
+
+// ===========================================================================
+// THE LENIENCY DOCTRINE — expressible, and behaviour-neutral until ratified
+// ===========================================================================
+
+describe("requirements carry a governance class", () => {
+  it("16 — an unclassified requirement is FLAG_FOR_RULING, never a silent HARD_GATE", () => {
+    // « Defaulting every unknown requirement to a blocker is NOT acceptable. »
+    const g = governanceFor("customs_preparation", "COMMERCIAL_INVOICE");
+    expect(g.klass).toBe("FLAG_FOR_RULING");
+    expect(g.ratified).toBe(false);
+  });
+
+  it("17 — and it keeps TODAY's behaviour until Effitrans rules on it", () => {
+    // The other half, and the one that is easy to get wrong: turning a shipped
+    // gate off because nobody has re-classified it would be an unratified
+    // LOOSENING of a live control, made silently, on production dossiers.
+    expect(blocksCompletion(governanceFor("x", "y"), true)).toBe(true);
+    expect(blocksCompletion(governanceFor("x", "y"), false)).toBe(false);
+  });
+
+  it("18 — a RATIFIED soft gate stops blocking; an unratified one does not", () => {
+    const soft = { klass: "SOFT_GATE" as const, ratified: true, mandatoryAtFr: null, source: "DEC-X" };
+    const unruledSoft = { ...soft, ratified: false, source: "" };
+    expect(blocksCompletion(soft, true)).toBe(false);
+    expect(blocksCompletion(unruledSoft, true)).toBe(true);
+  });
+
+  it("19 — a ratified HARD gate and a controlled exception still block completion", () => {
+    for (const klass of ["HARD_GATE", "CONTROLLED_EXCEPTION"] as const) {
+      expect(blocksCompletion({ klass, ratified: true, mandatoryAtFr: null, source: "DEC-X" }, true))
+        .toBe(true);
+    }
+  });
+
+  it("20 — the classification registry is EMPTY until the matrix is ratified", () => {
+    // Entries here change what operators are told, so each needs a first-party
+    // citation. « The code already does it » is not a source.
+    expect(Object.keys(CLASSIFIED)).toEqual([]);
+  });
+
+  it("21 — an unruled blocker says BOTH true things to the operator", () => {
+    const el = evaluateStepAction(
+      step6({ state: "ACTIVE", assignedUserId: ME.userId, requirements: missing() }),
+      ME,
+    );
+    const r = el.requirements[0];
+    expect(r.messageFr).toContain("Action requise");
+    expect(r.messageFr).toContain("Facture commerciale");
+    expect(r.messageFr).toContain("ratification");
+  });
+
+  it("22 — a non-blocking requirement is written in the progressive-completeness register", () => {
+    const msg = requirementMessageFr({
+      labelFr: "Bordereau de livraison",
+      governance: { klass: "SOFT_GATE", ratified: true, mandatoryAtFr: "avant la validation du Chef de Transit", source: "DEC-X" },
+      blocks: false,
+    });
+    expect(msg).toContain("Information à compléter");
+    expect(msg).toContain("Vous pouvez poursuivre");
+    expect(msg).toContain("avant la validation du Chef de Transit");
+    expect(msg).not.toContain("Action requise");
+  });
+});
+
+// ===========================================================================
+// NO SURFACE KEEPS A PRIVATE DERIVATION
+// ===========================================================================
+
+describe("one construction, and it is the only one", () => {
+  it("23 — both server surfaces build facts through the shared constructor", () => {
+    expect(code("lib/process/contextual/facts.ts")).toContain("buildStepFacts({");
+    expect(code("lib/process/queues/service.ts")).toContain("buildStepFacts({");
+  });
+
+  it("24 — and the dossier's process page reads the loader rather than the database", () => {
+    const page = code("app/files/[id]/process/page.tsx");
+    expect(page).toContain("loadContextualStepFacts(");
+    expect(page).not.toContain("process_handoff");
+    expect(page).not.toContain("getAdminSupabaseClient");
+  });
+
+  it("25 — the builder is PURE: the queue and the dossier cannot share a query", () => {
+    const build = code("lib/process/contextual/build.ts");
+    expect(build).not.toMatch(/getAdminSupabaseClient|server-only|await /);
+  });
+
+  it("26 — the loader never reads the permission-FILTERED snapshot arrays directly", () => {
+    // The defect `gate-authority.ts` exists to prevent: a BILLING_OFFICER holds
+    // no `document:read`, so `snap.documents` is empty for them and every
+    // evidence item would read « missing » instead of « you cannot see this ».
+    const loader = code("lib/process/contextual/facts.ts");
+    for (const forbidden of ["snap.documents", "snap.customs", "snap.transport", "snap.invoices"]) {
+      expect(loader, forbidden).not.toContain(forbidden);
+    }
+    expect(loader).toContain("evaluateStepEvidence(");
+  });
+
+  it("27 — nothing loads the owning role per step: it is one batched read", () => {
+    const owning = code("lib/process/contextual/owning-roles.ts");
+    expect(owning).toContain('.in("step_key", keys)');
+    // One reader for the whole platform — three copies of this query were about
+    // to exist.
+    for (const consumer of [
+      "lib/process/contextual/facts.ts",
+      "lib/process/control-ownership-server.ts",
+      "lib/process/queues/service.ts",
+    ]) {
+      expect(code(consumer), consumer).toContain("owning-roles");
+    }
+  });
+
+  it("28 — the evaluator is still PURE and is still not a second engine", () => {
+    const e = code("lib/process/step-eligibility.ts");
+    expect(e).not.toMatch(/getAdminSupabaseClient|createClient|"use server"|from\(/);
+    expect(e).not.toMatch(/process_step_execution|\.update\(|\.insert\(/);
+  });
+});
+
+// ===========================================================================
+// A6 — the snapshot is memoized, and the key carries the AUTHORITY
+// ===========================================================================
+
+describe("the render cache cannot leak a privileged snapshot", () => {
+  const cacheSrc = code("lib/process/engine/snapshot-cache.ts");
+
+  it("29 — the permission set is part of the key, not an ignored argument", () => {
+    // `gate-authority.ts` deliberately builds a snapshot with GATE_FULL_READ
+    // that it describes as "created here, consumed here, and never handed
+    // back". A key of (tenant, file) alone would hand exactly that to the next
+    // permission-filtered display caller.
+    expect(cacheSrc).toContain("permissionKey: string");
+    expect(cacheSrc).toContain("[...new Set(permissions)].sort().join(SEP)");
+    expect(cacheSrc).toContain("cache(");
+  });
+
+  it("30 — and mutations do NOT come through it", () => {
+    // An action loads, writes, and may load again; serving it a memoized
+    // pre-write snapshot would make it decide on state it had already changed.
+    const engine = code("lib/process/engine/actions.ts");
+    expect(engine).not.toContain("loadProcessSnapshotForDisplay");
+    expect(engine).toContain("loadProcessSnapshot(");
+  });
+
+  it("31 — the three READ paths share it", () => {
+    for (const p of [
+      "lib/process/engine/service.ts",
+      "lib/process/engine/gate-authority.ts",
+      "lib/process/contextual/facts.ts",
+    ]) {
+      expect(code(p), p).toContain("loadProcessSnapshotForDisplay(");
+    }
+  });
+});

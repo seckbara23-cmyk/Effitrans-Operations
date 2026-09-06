@@ -20,6 +20,7 @@ import { COMPATIBILITY_VERSION, planCompatibilityInit, type CompatibilityPlan } 
 import { buildReadModel, type ProcessReadModel } from "./read-model";
 import { loadProcessSnapshot } from "./snapshot";
 import { authoritativeGates } from "./gate-authority";
+import { loadProcessSnapshotForDisplay } from "./snapshot-cache";
 
 /**
  * The consolidated process state for one dossier (Deliverable 11).
@@ -39,7 +40,10 @@ export async function getProcessState(fileId: string): Promise<ProcessReadModel 
   if (!(await isFileVisible(user.id, user.tenantId, fileId))) return null;
 
   const permissions = await getEffectivePermissions(user.id);
-  const snap = await loadProcessSnapshot(user.tenantId, fileId, permissions);
+  // A6 — memoized per render and keyed on the PERMISSION SET, so the journey
+  // panel, the authoritative gates and the contextual loader share one read
+  // instead of paying for the same four.
+  const snap = await loadProcessSnapshotForDisplay(user.tenantId, fileId, permissions);
   if (!snap?.instance) return null;
 
   const model = buildReadModel(snap.instance, snap.executions, snap.handoffs, snap.evidence);

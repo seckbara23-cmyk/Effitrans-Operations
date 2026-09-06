@@ -25,7 +25,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { evaluateStepAction } from "@/lib/process/step-eligibility";
+import { evaluateStepAction, type StepRequirementFact } from "@/lib/process/step-eligibility";
 import { stepPermission, canTransitionStep } from "@/lib/process/engine/state";
 import { queueForStep } from "@/lib/process/queues/registry";
 import { getStep } from "@/lib/process/effitrans-process";
@@ -44,15 +44,36 @@ const processPage = strip(read("app/files/[id]/process/page.tsx"));
 const engineActions = strip(read("lib/process/engine/actions.ts"));
 const queueActions = strip(read("lib/process/queues/actions.ts"));
 
-const AM = { userId: "user-am", permissions: ["file:create", "process:read"] };
-const OTHER_AM = { userId: "user-am-2", permissions: ["file:create", "process:read"] };
-const SUPERVISOR = { userId: "user-ops", permissions: ["file:assign", "file:update", "process:read"] };
+// Slice 5 (GAINDE-04) — viewers now carry ROLES as well as permissions:
+// ownership is a role question, and an evaluator that could not ask it was how
+// the dossier page came to offer a Chef the Déclarant's work.
+const AM = {
+  userId: "user-am",
+  permissions: ["file:create", "process:read"],
+  roles: ["ACCOUNT_MANAGER"],
+};
+const OTHER_AM = {
+  userId: "user-am-2",
+  permissions: ["file:create", "process:read"],
+  roles: ["ACCOUNT_MANAGER"],
+};
+const SUPERVISOR = {
+  userId: "user-ops",
+  permissions: ["file:assign", "file:update", "process:read"],
+  roles: ["OPS_SUPERVISOR"],
+};
 
+// The facts a step is decided on. `custody` replaced the SENT-only boolean and
+// `requirements` replaced the caller's pre-rendered blocker sentence — both
+// because a fact a caller derives is a fact two callers derive differently.
 const step3 = (over: Partial<Parameters<typeof evaluateStepAction>[0]> = {}) => ({
   stepKey: "am_dossier_opening",
   state: "AVAILABLE",
   assignedUserId: null,
-  awaitingReception: false,
+  custody: "not_applicable" as const,
+  owningRole: "ACCOUNT_MANAGER",
+  missingPrerequisites: [] as string[],
+  requirements: [] as StepRequirementFact[],
   ...over,
 });
 
@@ -93,16 +114,19 @@ describe("UAT-WF-STEP3-001 — one derivation decides what a surface offers", ()
 
   it("an outstanding handoff blocks execution, whoever is looking", () => {
     for (const viewer of [AM, OTHER_AM, SUPERVISOR]) {
-      const el = evaluateStepAction(step3({ awaitingReception: true }), viewer);
+      const el = evaluateStepAction(step3({ custody: "awaiting_reception" as const }), viewer);
       expect(el.canStart, "start").toBe(false);
       expect(el.canSubmit, "submit").toBe(false);
     }
-    expect(evaluateStepAction(step3({ awaitingReception: true }), AM).reasonFr)
+    expect(evaluateStepAction(step3({ custody: "awaiting_reception" as const }), AM).reasonFr)
       .toBe("Le transfert doit d'abord être réceptionné.");
   });
 
   it("an unmet prerequisite is a reason, not a silent absence", () => {
-    const el = evaluateStepAction(step3({ blockedReason: "Prérequis manquants : cotation" }), AM);
+    const el = evaluateStepAction(
+      step3({ missingPrerequisites: ["cotation"], blockedReason: "Prérequis manquants : cotation" }),
+      AM,
+    );
     expect(el.canStart).toBe(false);
     expect(el.reasonFr).toBe("Prérequis manquants : cotation");
   });
@@ -168,13 +192,23 @@ describe("UAT-WF-STEP3-001 — one model, two surfaces", () => {
   });
 
   it("the page passes the ENGINE's facts, not its own opinion of them", () => {
-    expect(processPage).toContain("assignedUserId: s.assignedUserId");
-    expect(processPage).toContain("awaitingReception: pendingHandoffTargets.has(s.stepKey)");
-    // The page now reads SENT *and* RECEIVED, because custody needs both:
+    // Slice 5 (GAINDE-04) — the page no longer HAS an opinion. It used to
+    // assemble facts itself, and the queue assembled them differently: custody
+    // from SENT handoffs alone, evidence folded in on one surface and not the
+    // other. Both now read one loader and one builder, which is the strongest
+    // form of this property rather than a weakening of it.
+    expect(processPage).toContain("loadContextualStepFacts(");
+    expect(processPage).toContain("evaluateStepAction(ctx.facts");
+    // …and the hand-rolled versions are gone, not merely unused.
+    expect(processPage).not.toContain("pendingHandoffTargets");
+    expect(processPage).not.toContain("process_handoff");
+    // The queue builds through the same constructor.
+    expect(queueService).toContain("buildStepFacts({");
+    // Which is where custody is derived — from the FULL handoff set, because
     // « nothing transmitted » and « transmitted, not accepted » are different
     // facts requiring different acts (UAT-WF-HANDOFF-01B).
-    expect(processPage).toContain('.in("status", ["SENT", "RECEIVED"])');
-    expect(processPage).toContain('if (h.status === "SENT") pendingHandoffTargets.add(h.to_step_key);');
+    const build = strip(read("lib/process/contextual/build.ts"));
+    expect(build).toContain("custodyStateFor(input.stepKey, input.handoffs)");
   });
 });
 

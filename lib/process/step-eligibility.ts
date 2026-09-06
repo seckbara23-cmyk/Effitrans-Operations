@@ -1,30 +1,78 @@
 /**
  * THE one answer to "may this person act on this step, right now?" — PURE.
  * ---------------------------------------------------------------------------
- * Two surfaces execute official steps: the department queue
+ * Two surfaces execute official steps today — the department queue
  * (`/queues/[queueKey]`) and the dossier's official-process page
- * (`/files/[id]/process`). Both call the SAME server actions, and both must
- * therefore offer the same buttons on the same facts.
+ * (`/files/[id]/process`) — and a third is being added on the dossier itself.
+ * They all call the SAME server actions, so they must offer the same buttons on
+ * the same facts.
  *
- * This module exists because the alternative was tried. UAT-OPS-TRANSIT-00009
- * found two surfaces holding different opinions about one server rule: the
- * dossier page could name why a transmission was blocked while the process
- * screen offered an enabled button and then reported « L'action a échoué ».
- * The fix there was one evaluator for one decision; this is the same fix for
- * step execution, applied before the second surface exists rather than after.
+ * WHY THIS FILE GREW (OPS-CUSTOMS-GAINDE-04, slice 5). The evaluator was pure
+ * and shared, and the two surfaces still disagreed three provable ways — because
+ * it decided nothing it was not handed, and each caller assembled the facts
+ * itself:
+ *
+ *   1. EVIDENCE. The queue folded missing evidence into `blockedReason`; the
+ *      process page folded in only missing prerequisites. So the dossier surface
+ *      offered « Terminer » on steps `submitStep` then refused with
+ *      `evidence_missing`.
+ *   2. CUSTODY. `awaitingReception` was a boolean derived from SENT handoffs
+ *      alone — a partial re-implementation of `custodyStateFor`, which also
+ *      knows `awaiting_transmission`. A step whose governed route had sent
+ *      nothing looked ready and was refused `handoff_not_sent`.
+ *   3. CLAIM. `claimedByAnother` fired only on ACTIVE, while the engine's
+ *      `assignmentRefusal` bites in ANY state once an assignee exists — and
+ *      Transit writes assignments on AVAILABLE rows. So « Démarrer » was offered
+ *      on work the engine refuses with `step_assigned_to_other`.
+ *
+ * Adding a third surface on top of those facts would have inherited all three.
+ * So the FACTS moved into the evaluator: it now takes the evidence items, the
+ * custody state and the assignment, and derives the blocking itself. There is
+ * one loader (`lib/process/contextual/facts.ts`) and every surface reads it.
+ *
+ * TWO MORE THINGS IT CAN NOW EXPRESS, both of which used to make a surface lie:
+ *
+ *   * UNAUTHORIZED EVIDENCE. `evaluateStepEvidence` reports items the viewer
+ *     cannot see; `complete` deliberately ignores them (right for display) and
+ *     `submitStep` hard-refuses on them (right for a write). A card that read
+ *     `complete` said « prêt » to someone the server would refuse. It is now a
+ *     state of its own with its own sentence.
+ *   * GOVERNANCE CLASS (leniency doctrine, 2026-09-06). A requirement is
+ *     HARD_GATE, SOFT_GATE, CONTROLLED_EXCEPTION or INFORMATIONAL, and only a
+ *     hard one should stop work. Until Effitrans ratifies the classification
+ *     matrix nothing is reclassified — see `requirement-class.ts` for why
+ *     unilaterally softening a shipped gate would be its own unratified change
+ *     — but the shape is here and the operator is told the truth about it.
  *
  * WHAT THIS IS, AND IS NOT. It decides what a surface OFFERS. It is not a
- * boundary: `activateStep` and `submitStep` re-check permission, prerequisites,
- * reception and state on every call, and they are what actually refuse. A UI
- * that hides a button is a courtesy; a server that refuses is the control. The
- * rule for changing this file is therefore narrow — it may become no more
- * permissive than the engine, and where it is stricter (see CLAIM below) that
- * strictness must be a deliberate, recorded product decision.
+ * boundary: `activateStep` and `submitStep` re-check permission, ownership,
+ * prerequisites, custody, evidence and state on every call, and they are what
+ * actually refuse. A UI that hides a button is a courtesy; a server that refuses
+ * is the control. The rule for changing this file is therefore narrow — it may
+ * become no more permissive than the engine, and where it is stricter (see CLAIM
+ * below) that strictness must be a deliberate, recorded product decision.
  */
 import { stepPermission } from "./engine/state";
 // The PURE check module, not the server-side permissions facade: this file
 // is read by client components and must not drag a React cache() into them.
 import { hasPermission } from "@/lib/rbac/check";
+import { ASSIGNMENT_OWNED_STEPS, type CustodyState } from "./handoff-routes";
+import { evaluateControlOwnership } from "./control-ownership";
+import {
+  blocksCompletion,
+  governanceFor,
+  requirementMessageFr,
+  type RequirementClass,
+} from "./requirement-class";
+
+/** One requirement of a step that is not satisfied yet. */
+export type StepRequirementFact = {
+  /** Official evidence key from the registry (e.g. BON_A_ENLEVER). */
+  key: string;
+  labelFr: string;
+  /** Exactly the evaluator's own vocabulary — never a rendered flag. */
+  status: "missing" | "invalid" | "pending_review" | "unauthorized";
+};
 
 /** Everything the decision needs. Each field is a FACT, never a rendered flag. */
 export type StepActionFacts = {
@@ -34,18 +82,40 @@ export type StepActionFacts = {
   /** process_step_execution.assigned_user_id */
   assignedUserId: string | null;
   /**
-   * True when a handoff addressed to THIS step is still SENT. The engine
-   * refuses `handoff_reception_required` at both activate and submit until the
-   * receiving department accepts it, so no surface may offer work before then.
+   * Where the step stands in its custody transfer — the FULL state, not a
+   * boolean. `awaiting_reception` and `awaiting_transmission` are different
+   * refusals (`handoff_reception_required` vs `handoff_not_sent`) and need
+   * different sentences because they need different acts.
    */
-  awaitingReception: boolean;
-  /** An open blocker that should stop execution, already resolved by the caller. */
+  custody: CustodyState;
+  /** `process_step_owning_role.role_code`, or null when the step has no owner. */
+  owningRole: string | null;
+  /** Step keys this step depends on that are not terminal yet. */
+  missingPrerequisites: readonly string[];
+  /** Unsatisfied requirements, from `evaluateStepEvidence`. */
+  requirements: readonly StepRequirementFact[];
+  /**
+   * A blocker that is neither evidence nor a prerequisite — an open process
+   * blocker, say. Already resolved to French by the caller.
+   */
   blockedReason?: string | null;
 };
 
 export type StepActionViewer = {
   userId: string;
   permissions: readonly string[];
+  /** Tenant role codes. Ownership is a ROLE question, not a permission one. */
+  roles: readonly string[];
+};
+
+/** A requirement as a surface should render it. */
+export type StepRequirementView = StepRequirementFact & {
+  klass: RequirementClass;
+  /** Has Effitrans ruled on the class? */
+  ratified: boolean;
+  /** Does it stop this step from completing right now? */
+  blocking: boolean;
+  messageFr: string;
 };
 
 export type StepEligibility = {
@@ -53,9 +123,21 @@ export type StepEligibility = {
   permission: string;
   /** Does the viewer hold it? The engine's `guard()` asks precisely this. */
   mayAct: boolean;
-  /** ACTIVE and claimed by somebody else. */
+  /**
+   * Is this work the viewer's? By owning role, or by an explicit assignment.
+   * Drives whether a step is DRAWN at all — a step that will never be this
+   * person's is noise, not information.
+   */
+  isOwner: boolean;
+  /** Claimed by somebody else — see the CLAIM note in `evaluateStepAction`. */
   claimedByAnother: boolean;
+  custody: CustodyState;
+  /** Kept for callers that only ask the old question. */
   awaitingReception: boolean;
+  /** The viewer cannot see the evidence this step requires. Never « prêt ». */
+  unauthorized: boolean;
+  /** Every unsatisfied requirement, classified. */
+  requirements: StepRequirementView[];
   /** AVAILABLE → ACTIVE. Claims the step for the viewer. */
   canStart: boolean;
   /** ACTIVE → SUBMITTED/COMPLETED. */
@@ -78,49 +160,129 @@ export function evaluateStepAction(
   const permission = stepPermission(facts.stepKey);
   const mayAct = hasPermission([...viewer.permissions], permission);
 
-  // CLAIM. `activateStep` writes `assigned_user_id = caller`, so an ACTIVE step
-  // belongs to whoever started it. The engine does NOT currently refuse a
-  // same-permission colleague who submits it, so this is a deliberate UI
-  // narrowing, ratified 2026-09-04: an official step is somebody's work, and a
-  // supervisor must not complete an Account Manager's attestation for them by
-  // pressing a button on a page they can both see. Recorded as narrowing rather
-  // than as a guard, because it is not one.
-  const claimedByAnother =
-    facts.state === "ACTIVE" &&
-    facts.assignedUserId !== null &&
-    facts.assignedUserId !== viewer.userId;
+  // OWNERSHIP. The same pure rule the customs controls use and `activateStep`
+  // now enforces, so a card and a button cannot disagree about whose work this
+  // is. `assigned_to_other` is not ownership — that case is the claim below.
+  const own = evaluateControlOwnership({
+    hasInstance: true,
+    owningRole: facts.owningRole,
+    actorRoles: viewer.roles,
+    stepAssignedUserId: facts.assignedUserId,
+    userId: viewer.userId,
+  });
+  const isOwner = own.allowed && own.reason !== "assigned_to_other";
 
-  const blocked = Boolean(facts.blockedReason);
+  // CLAIM. `activateStep` writes `assigned_user_id = caller`, so an ACTIVE step
+  // belongs to whoever started it. For the steps Transit ASSIGNS, the engine's
+  // `assignmentRefusal` bites in any state once an assignee exists — including
+  // AVAILABLE, which Transit genuinely writes. Restricting this to ACTIVE
+  // offered « Démarrer » on work the engine refuses; the two now agree.
+  //
+  // Elsewhere the ACTIVE-only rule stays a deliberate UI narrowing, ratified
+  // 2026-09-04: an official step is somebody's work, and a supervisor must not
+  // complete an Account Manager's attestation for them by pressing a button on
+  // a page they can both see. Recorded as a narrowing rather than as a guard,
+  // because it is not one.
+  const claimedByAnother =
+    facts.assignedUserId !== null &&
+    facts.assignedUserId !== viewer.userId &&
+    (facts.state === "ACTIVE" || ASSIGNMENT_OWNED_STEPS.has(facts.stepKey));
+
+  // CUSTODY. Both outstanding states stop work, and they stop it for different
+  // reasons; `custodyRefusal` is the engine's version of this same test.
+  const custodyBlocked =
+    facts.custody === "awaiting_reception" || facts.custody === "awaiting_transmission";
+
+  // EVIDENCE. Derived HERE, from the items, rather than trusted from a caller's
+  // pre-rendered sentence — which is how two surfaces came to hold two opinions.
+  const unauthorized = facts.requirements.some((r) => r.status === "unauthorized");
+  const requirements: StepRequirementView[] = facts.requirements.map((r) => {
+    const governance = governanceFor(facts.stepKey, r.key);
+    // Every unsatisfied status stops `submitStep` today: `unauthorized` through
+    // its own hard refusal, the rest because `complete` is false. Authority is
+    // never softened by a classification, so `unauthorized` is blocking outright.
+    const blocking =
+      r.status === "unauthorized" ? true : blocksCompletion(governance, true);
+    return {
+      ...r,
+      klass: governance.klass,
+      ratified: governance.ratified,
+      blocking,
+      messageFr: requirementMessageFr({ labelFr: r.labelFr, governance, blocks: blocking }),
+    };
+  });
+  const evidenceBlocked = requirements.some((r) => r.blocking);
+
+  const prerequisitesUnmet = facts.missingPrerequisites.length > 0;
+  const otherBlocker = Boolean(facts.blockedReason);
+  const blockedForStart = prerequisitesUnmet || otherBlocker || facts.state === "BLOCKED";
+  const blockedForSubmit = blockedForStart || evidenceBlocked || unauthorized;
+
   const canStart =
-    mayAct && facts.state === "AVAILABLE" && !facts.awaitingReception && !blocked;
+    mayAct && isOwner && facts.state === "AVAILABLE" && !claimedByAnother
+    && !custodyBlocked && !blockedForStart;
   const canSubmit =
-    mayAct && facts.state === "ACTIVE" && !claimedByAnother && !facts.awaitingReception && !blocked;
+    mayAct && facts.state === "ACTIVE" && !claimedByAnother
+    && !custodyBlocked && !blockedForSubmit;
 
   return {
     permission,
     mayAct,
+    isOwner,
     claimedByAnother,
-    awaitingReception: facts.awaitingReception,
+    custody: facts.custody,
+    awaitingReception: facts.custody === "awaiting_reception",
+    unauthorized,
+    requirements,
     canStart,
     canSubmit,
-    reasonFr: reasonFor({ facts, mayAct, claimedByAnother, blocked, canStart, canSubmit }),
+    reasonFr: reasonFor({
+      facts,
+      mayAct,
+      isOwner,
+      claimedByAnother,
+      custodyBlocked,
+      unauthorized,
+      requirements,
+      prerequisitesUnmet,
+      canStart,
+      canSubmit,
+    }),
   };
 }
 
 function reasonFor(input: {
   facts: StepActionFacts;
   mayAct: boolean;
+  isOwner: boolean;
   claimedByAnother: boolean;
-  blocked: boolean;
+  custodyBlocked: boolean;
+  unauthorized: boolean;
+  requirements: StepRequirementView[];
+  prerequisitesUnmet: boolean;
   canStart: boolean;
   canSubmit: boolean;
 }): string | null {
-  const { facts, mayAct, claimedByAnother, blocked, canStart, canSubmit } = input;
+  const {
+    facts, mayAct, isOwner, claimedByAnother, custodyBlocked, unauthorized,
+    requirements, prerequisitesUnmet, canStart, canSubmit,
+  } = input;
   if (canStart || canSubmit) return null;
   if (!OFFERABLE.has(facts.state)) return null; // nothing to explain yet
-  if (facts.awaitingReception) return "Le transfert doit d'abord être réceptionné.";
-  if (blocked) return facts.blockedReason ?? "Un point bloquant est ouvert sur ce dossier.";
+  // Order is what an operator can act on first.
+  if (facts.custody === "awaiting_reception") return "Le transfert doit d'abord être réceptionné.";
+  if (facts.custody === "awaiting_transmission" && custodyBlocked) {
+    return "Le dossier doit d'abord être formellement transmis au service suivant.";
+  }
+  if (prerequisitesUnmet || facts.blockedReason) {
+    return facts.blockedReason ?? "Un point bloquant est ouvert sur ce dossier.";
+  }
   if (!mayAct) return "Cette étape relève d'un autre rôle.";
   if (claimedByAnother) return "Étape déjà prise en charge par une autre personne.";
+  if (!isOwner) return "Cette étape relève du rôle responsable de cette étape.";
+  // A viewer who cannot see the evidence must never read « prêt ».
+  if (unauthorized) return "Informations insuffisantes pour évaluer cette étape.";
+  const blocking = requirements.filter((r) => r.blocking);
+  if (blocking.length > 0) return blocking[0].messageFr;
   return null;
 }

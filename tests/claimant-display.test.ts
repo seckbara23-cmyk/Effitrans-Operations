@@ -27,6 +27,8 @@ const read = (p: string) => readFileSync(fileURLToPath(new URL(`../${p}`, import
 const code = (p: string) =>
   read(p).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 const PAGE = "app/files/[id]/process/page.tsx";
+const LOADER = "lib/process/contextual/facts.ts";
+const LOADER_SRC = read(LOADER);
 const AM = "87706794-e98f-4448-90d9-1f3ca42b86c7"; // the real claimant on 00011
 
 const rows = (...r: AssigneeRow[]) => r;
@@ -102,32 +104,41 @@ describe("claimant label — a failed lookup is not disguised as another person"
 });
 
 describe("claimant label — the page wiring", () => {
-  it("10 — the page selects the column that exists, with no cast to hide it", () => {
-    const page = read(PAGE);
-    expect(page).toContain('.select("id, name, email")');
+  // Slice 5 (GAINDE-04) — the lookup moved OFF the page and into the one
+  // loader every step surface reads. The three properties below are unchanged
+  // and are now asserted where the query actually lives; asserting them on the
+  // page would only prove that the page no longer does it.
+  it("10 — the lookup selects the column that exists, with no cast to hide it", () => {
+    expect(LOADER_SRC).toContain('.select("id, name, email")');
     // Read CODE, not prose: the block explains in its own comment which column
     // does not exist, so a raw text search matches the explanation and would
     // have to be relaxed — leaving it unable to catch the real thing.
-    expect(code(PAGE)).not.toContain("full_name");
-    // The cast is what let a non-existent column compile. Its absence is the
-    // build-time half of this fix: `full_name` is now a TypeScript error that
-    // names the column.
-    expect(page).not.toMatch(/as \{ id: string; [a-z_]*name: string \| null; email: string \}\[\]/);
+    expect(code(LOADER)).not.toContain("full_name");
+    expect(LOADER_SRC).not.toMatch(/as \{ id: string; [a-z_]*name: string \| null; email: string \}\[\]/);
   });
 
   it("11 — the query error is read, not swallowed", () => {
-    const page = read(PAGE);
-    expect(page).toMatch(/if \(userRows\.error\)/);
-    expect(page).toContain("assigneeLookupFailed = true");
+    expect(LOADER_SRC).toMatch(/if \(res\.error\)/);
+    expect(LOADER_SRC).toContain("failed: true");
     // …and the failure reaches the label decision rather than dying in a log.
-    expect(page).toMatch(/lookupFailed: assigneeLookupFailed/);
+    expect(LOADER_SRC).toMatch(/lookupFailed: failed/);
   });
 
   it("12 — the label comes from the shared resolver, not a second inline rule", () => {
-    const page = read(PAGE);
-    expect(page).toContain("resolveAssigneeLabel({");
-    // No inline `?? "une autre personne"` survives to disagree with it.
-    expect(page).not.toMatch(/\?\?\s*"une autre personne"/);
+    expect(LOADER_SRC).toContain("resolveAssigneeLabel({");
+    // No inline `?? "une autre personne"` survives anywhere to disagree with it.
+    for (const p of [LOADER, PAGE]) {
+      expect(read(p), p).not.toMatch(/\?\?\s*"une autre personne"/);
+    }
+  });
+
+  it("13 — and the page reads the resolved label instead of resolving one", () => {
+    // The regression that matters for this surface: a second inline rule
+    // appearing beside the loader's.
+    const page = code(PAGE);
+    expect(page).toContain("loadContextualStepFacts(");
+    expect(page).not.toContain("assigneeLabelMap(");
+    expect(page).not.toContain("resolveAssigneeLabel(");
   });
 
   it("13 — the resolver decides nothing but the label", () => {

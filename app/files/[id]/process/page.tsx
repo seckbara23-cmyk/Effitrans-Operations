@@ -13,7 +13,7 @@ import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-server";
 import { getProcessState } from "@/lib/process/engine/service";
-import { assigneeLabelMap, resolveAssigneeLabel } from "@/lib/process/assignee-label";
+import { loadContextualStepFacts } from "@/lib/process/contextual/facts";
 import { getCommercialOwnerPanel, listAssignableStaff } from "@/lib/files/service";
 import { getIntakeState, listEligibleOperationsOwners, type EligibleOwner, type IntakeState } from "@/lib/process/engine/intake-actions";
 import { IntakePanel } from "@/components/process/intake-panel";
@@ -26,8 +26,7 @@ import { StepActions } from "@/components/process/step-actions";
 import { CommercialOwner } from "@/components/files/commercial-owner";
 import { evaluateStepAction } from "@/lib/process/step-eligibility";
 import { queueForStep } from "@/lib/process/queues/registry";
-import { custodyStateFor, maySendRoute, mayApproveRelease, routeFor, type CustodyState, type RouteHandoffView } from "@/lib/process/handoff-routes";
-import { getAdminSupabaseClient } from "@/lib/supabase/admin";
+import { maySendRoute, mayApproveRelease, routeFor, type CustodyState } from "@/lib/process/handoff-routes";
 
 export const dynamic = "force-dynamic";
 
@@ -107,66 +106,24 @@ export default async function ProcessInspectorPage({ params }: { params: { id: s
   if (!hasPermission(permissions, "process:read")) notFound();
 
   const state = await getProcessState(params.id);
+  // Slice 5 (GAINDE-04) — the ONE loader. Every fact that decides what this page
+  // OFFERS comes from here, so this surface, the department queue and the
+  // dossier cards cannot come to hold different opinions about one server rule.
+  const contextual = await loadContextualStepFacts(params.id, {
+    tenantId: user.tenantId,
+    permissions,
+  });
+  const contextualByStep = new Map(
+    (contextual?.steps ?? []).map((c) => [c.facts.stepKey, c] as const),
+  );
 
-  // Two facts the action rows need, read once and only when there is something
-  // to render. Neither decides authority — `activateStep`/`submitStep` re-check
-  // everything — they decide what the page may honestly OFFER and SAY.
-  //
-  //  * every step with an outstanding (SENT) handoff addressed to it. The read
-  //    model exposes only the first such handoff, and offering work on a second
-  //    one would reproduce exactly the "UI says ready, server refuses" defect.
-  //  * the display name of whoever holds a claimed step, so an absent button is
-  //    legible as « someone else has this » rather than as a broken page.
-  const pendingHandoffTargets = new Set<string>();
-  const handoffViews: RouteHandoffView[] = [];
-  const assigneeNames = new Map<string, string>();
-  /**
-   * True when the claimant lookup itself FAILED, as opposed to returning no row.
-   *
-   * The two are different facts and the page must not say the same thing about
-   * them. "No row" means the claimant is genuinely someone this reader cannot
-   * resolve; a failed query means we simply do not know, and rendering « une
-   * autre personne » there states something false — which is exactly the defect
-   * this block had: the select named a column `app_user` does not have
-   * (`full_name`; it is `name`), PostgREST refused the request, the error was
-   * never read, and EVERY claimed step — including the reader's own — reported
-   * that somebody else held it.
-   */
-  let assigneeLookupFailed = false;
-  if (state) {
-    const admin = getAdminSupabaseClient();
-    const claimedIds = [
-      ...new Set(state.activeSteps.map((s) => s.assignedUserId).filter((v): v is string => !!v)),
-    ];
-    const [handoffRows, userRows] = await Promise.all([
-      admin
-        .from("process_handoff")
-        .select("to_step_key, status")
-        .eq("tenant_id", user.tenantId)
-        .in("status", ["SENT", "RECEIVED"])
-        .in("to_step_key", state.activeSteps.map((s) => s.stepKey)),
-      // No cast on the result: the typed client checks this projection against
-      // the generated schema, so a wrong column name is a build error rather
-      // than a silent empty map at runtime.
-      claimedIds.length
-        ? admin
-            .from("app_user")
-            .select("id, name, email")
-            .eq("tenant_id", user.tenantId)
-            .in("id", claimedIds)
-        : Promise.resolve({ data: [], error: null }),
-    ]);
-    for (const h of (handoffRows.data ?? []) as { to_step_key: string; status: string }[]) {
-      handoffViews.push({ toStepKey: h.to_step_key, status: h.status });
-      if (h.status === "SENT") pendingHandoffTargets.add(h.to_step_key);
-    }
-    if (userRows.error) {
-      assigneeLookupFailed = true;
-      console.error("[process] claimant name lookup failed:", userRows.error.message);
-    } else {
-      for (const [id, label] of assigneeLabelMap(userRows.data ?? [])) assigneeNames.set(id, label);
-    }
-  }
+  // Slice 5 (GAINDE-04) — the hand-rolled handoff and claimant reads that used
+  // to live here are gone. They were this page's own opinion of two facts, and
+  // the queue held a different one: custody was derived from SENT handoffs
+  // alone, so a step whose governed route had transmitted nothing looked ready
+  // and was refused `handoff_not_sent`. Both now come from the loader above,
+  // which also keeps the claimant distinction this page was fixed for — a
+  // FAILED lookup is not the same fact as an absent row, and must not say so.
 
   // Phase 9.0C — the Operations intake panel. Only when the intake flag is on;
   // getIntakeState degrades to null (panel hidden) if the 9.0B structures are
@@ -342,22 +299,19 @@ export default async function ProcessInspectorPage({ params }: { params: { id: s
             // page never re-implements the conditions; it reads the same
             // function on the same facts, so the two surfaces cannot disagree.
             const queueKey = queueForStep(s.stepKey);
-            const eligibility = evaluateStepAction(
-              {
-                stepKey: s.stepKey,
-                state: s.state,
-                assignedUserId: s.assignedUserId,
-                // The engine refuses `handoff_reception_required` while a
-                // handoff addressed to this step is still SENT, so the page must
-                // not offer work before the receiving department accepts it.
-                awaitingReception: pendingHandoffTargets.has(s.stepKey),
-                blockedReason:
-                  s.missingPrerequisites.length > 0
-                    ? `Prérequis manquants : ${s.missingPrerequisites.join(", ")}`
-                    : null,
-              },
-              { userId: user.id, permissions },
-            );
+            // Slice 5 (GAINDE-04) — the facts come from the ONE loader, not
+            // from what this page happened to have in scope. The hand-rolled
+            // version knew nothing about evidence (so it offered « Terminer »
+            // on steps the engine refuses), derived custody from SENT handoffs
+            // alone, and never asked whose work the step was.
+            const ctx = contextualByStep.get(s.stepKey);
+            const eligibility = ctx
+              ? evaluateStepAction(ctx.facts, {
+                  userId: user.id,
+                  permissions,
+                  roles: user.roles ?? [],
+                })
+              : null;
             return (
               <li key={s.stepKey} className="flex items-start justify-between gap-3 border-b border-slate-100 pb-2 last:border-0">
                 <div>
@@ -396,18 +350,17 @@ export default async function ProcessInspectorPage({ params }: { params: { id: s
                   )}
                 </div>
                 <div className="flex flex-col items-end gap-1">
-                  <Badge state={s.state} custody={custodyStateFor(s.stepKey, handoffViews)} />
-                  {queueKey && (
+                  <Badge
+                    state={s.state}
+                    custody={ctx?.facts.custody ?? "not_applicable"}
+                  />
+                  {queueKey && eligibility && (
                     <StepActions
                       fileId={params.id}
                       queueKey={queueKey}
                       stepKey={s.stepKey}
                       eligibility={eligibility}
-                      assigneeLabel={resolveAssigneeLabel({
-                        assignedUserId: s.assignedUserId,
-                        names: assigneeNames,
-                        lookupFailed: assigneeLookupFailed,
-                      })}
+                      assigneeLabel={ctx?.assigneeLabel ?? null}
                     />
                   )}
                 </div>

@@ -238,7 +238,15 @@ describe("UAT-WF-HANDOFF-01B — the display says where custody stands", () => {
   });
 
   it("the dossier page badge reads the SAME custody facts as the guard", () => {
-    expect(processPage).toContain("custodyStateFor(s.stepKey, handoffViews)");
+    // Slice 5 (GAINDE-04) — the page no longer derives custody itself. It reads
+    // the loader's fact, which the SHARED builder computes with the same
+    // `custodyStateFor` the guard uses — so the two cannot drift, which is
+    // exactly what this test is for. The old inline derivation is asserted gone
+    // rather than merely unused.
+    expect(processPage).toContain("custody={ctx?.facts.custody");
+    expect(processPage).not.toContain("custodyStateFor(s.stepKey");
+    const build = strip(read("lib/process/contextual/build.ts"));
+    expect(build).toContain("custodyStateFor(input.stepKey, input.handoffs)");
     expect(processPage).toContain('"À transmettre"');
     expect(processPage).toContain('"En attente de réception"');
   });

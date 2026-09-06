@@ -38,6 +38,8 @@ import { isActiveFile } from "@/lib/files/filter";
 import { getQueue, queueStepKeys } from "./registry";
 import { compareQueueItems, evaluatePriority, type PriorityResult } from "./priority";
 import { blockerSentence } from "../labels";
+import { buildStepFacts } from "../contextual/build";
+import { owningRoleByStepKey } from "../contextual/owning-roles";
 import type { ProcessDepartment } from "../types";
 
 export type QueueFilters = {
@@ -138,6 +140,12 @@ export type QueueRequest = {
   userId: string;
   queueKey: ProcessDepartment;
   permissions: string[];
+  /**
+   * Tenant role codes. Ownership is a ROLE question, not a permission one
+   * (GAINDE-04 slice 5) — without them the queue could not tell whether a step
+   * is the reader's work, which is what `activateStep` now enforces.
+   */
+  roles?: string[];
   filters?: QueueFilters;
   page?: number;
   pageSize?: number;
@@ -324,6 +332,13 @@ export async function getDepartmentQueue(req: QueueRequest): Promise<QueueResult
       .in("process_instance_id", instanceIds),
   ]);
   const handoffsByInstance = group((handoffRows ?? []) as Row[], (h) => h.process_instance_id as string);
+
+  // ONE bounded read for the whole page: the registry mirror is keyed by step
+  // key and a queue page spans at most a handful of them, so this is a single
+  // lookup rather than one per row.
+  const owningRoleByStep = await owningRoleByStepKey(
+    ((allExecRows ?? []) as Row[]).map((e) => e.step_key as string),
+  );
   const execsByInstance = group((allExecRows ?? []) as Row[], (e) => e.process_instance_id as string);
 
   // (7-10) evidence, batched by file. Modules the caller cannot read are skipped
@@ -409,6 +424,13 @@ export async function getDepartmentQueue(req: QueueRequest): Promise<QueueResult
       invoices: (invoicesByFile.get(fileId) ?? []).map((i) => ({ status: i.status as string, balance: 0 })),
     };
 
+    // Every handoff of this instance, in the shape `custodyStateFor` reads.
+    // The old `openHandoff` boolean could not tell « nothing transmitted » from
+    // « transmitted, not accepted », which are different refusals.
+    const instanceHandoffViews = (handoffsByInstance.get(inst.id as string) ?? []).map((h) => ({
+      toStepKey: h.to_step_key as string,
+      status: h.status as string,
+    }));
     const openHandoff = (handoffsByInstance.get(inst.id as string) ?? []).find(
       (h) => h.status === "SENT" && h.to_step_key === stepKey,
     );
@@ -487,15 +509,26 @@ export async function getDepartmentQueue(req: QueueRequest): Promise<QueueResult
       // function on the same facts, so they cannot come to hold different
       // opinions about one server rule (the UAT-00009 lesson, applied here
       // before the second surface existed rather than after).
+      // Slice 5 (GAINDE-04) — the facts are BUILT by the shared constructor
+      // rather than assembled here. Sharing the evaluator was not enough: this
+      // surface folded evidence into `blockedReason` and the dossier page did
+      // not, both derived custody from SENT handoffs alone, and neither knew
+      // the owning role. One construction, one decision, three surfaces.
       eligibility: evaluateStepAction(
-        {
+        buildStepFacts({
           stepKey,
           state,
           assignedUserId: str(e.assigned_user_id),
-          awaitingReception: Boolean(openHandoff),
-          blockedReason: blockerSummary,
-        },
-        { userId: req.userId, permissions: req.permissions },
+          handoffs: instanceHandoffViews,
+          views,
+          evidence,
+          owningRole: owningRoleByStep.get(stepKey) ?? null,
+          // Only what is neither evidence nor a prerequisite: those two are the
+          // evaluator's own business now, and passing the summary here as well
+          // would double-count them.
+          extraBlockerFr: state === "BLOCKED" ? blockerSummary : null,
+        }),
+        { userId: req.userId, permissions: req.permissions, roles: req.roles ?? [] },
       ),
       callerMayAct: hasPermission(req.permissions, stepPermission(stepKey)),
       callerMayReceive: hasPermission(req.permissions, "process:handoff:receive"),

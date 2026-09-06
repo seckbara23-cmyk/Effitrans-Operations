@@ -25,27 +25,10 @@ import {
   stepGateMessageFr,
 } from "./control-gate";
 import { evaluateControlOwnership } from "./control-ownership";
+// ONE reader of `process_step_owning_role` for the whole platform.
+import { owningRoleByStepKey as owningRoles } from "./contextual/owning-roles";
 
 type Row = Record<string, unknown>;
-
-/** Owning role per step key, for the steps asked about. One bounded read. */
-async function owningRoles(stepKeys: readonly string[]): Promise<Map<string, string>> {
-  if (stepKeys.length === 0) return new Map();
-  const admin = getAdminSupabaseClient();
-  // `process_step_owning_role` is a GLOBAL registry mirror keyed by step_key —
-  // it carries no tenant column, so it is read directly rather than scoped.
-  const { data } = await (admin as unknown as {
-    from: (t: string) => {
-      select: (c: string) => { in: (k: string, v: string[]) => Promise<{ data: Row[] | null }> };
-    };
-  })
-    .from("process_step_owning_role")
-    .select("step_key, role_code")
-    .in("step_key", [...stepKeys]);
-  const out = new Map<string, string>();
-  for (const r of (data ?? []) as Row[]) out.set(r.step_key as string, r.role_code as string);
-  return out;
-}
 
 /**
  * The owning role of ONE step, or null when the registry mirror names none.

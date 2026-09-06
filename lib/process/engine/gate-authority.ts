@@ -45,6 +45,7 @@ import "server-only";
  */
 import { loadProcessSnapshot, toViews } from "./snapshot";
 import { evaluateBillingGate, evaluateClosureGate, evaluatePickupGate, type GateResult } from "./gates";
+import { loadProcessSnapshotForDisplay } from "./snapshot-cache";
 
 /**
  * The read set a gate evaluates under. Every domain a gate can consult, so no
@@ -77,7 +78,10 @@ export async function authoritativeGates(
   tenantId: string,
   fileId: string,
 ): Promise<AuthoritativeGates | null> {
-  const snap = await loadProcessSnapshot(tenantId, fileId, [...GATE_FULL_READ]);
+  // Same memo, DIFFERENT key: this snapshot is privileged, and the cache is
+  // keyed on the permission set precisely so it can never be handed to a
+  // permission-filtered display caller.
+  const snap = await loadProcessSnapshotForDisplay(tenantId, fileId, [...GATE_FULL_READ]);
   if (!snap?.instance) return null;
   const views = toViews(snap.executions);
   return {
