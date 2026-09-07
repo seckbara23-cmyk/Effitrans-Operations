@@ -232,6 +232,18 @@ describe("nothing became a second authority", () => {
     // reference with no taxes — keep happening beside its replacement.
     expect(sqlCode).toContain("drop function if exists public.record_gainde_registration(uuid, text, uuid);");
     expect(read(VERIFY)).toContain("the 3-arg record_gainde_registration is GONE");
+    // …and the check is on ARITY. Postgres reports a function's identity
+    // arguments WITH their parameter names — the live one reads
+    // « p_customs_id uuid, p_reference text, p_actor uuid » — so a comparison
+    // against 'uuid, text, uuid' can never match. Written that way the
+    // gone-check would always pass, protecting nothing, and the remains-check
+    // would always fail, reporting a correctly applied migration as broken.
+    // Found by reading the live signature out of production before shipping.
+    for (const doc of [sqlCode, read(VERIFY)]) {
+      expect(doc).toContain("p.pronargs = 3");
+      expect(doc).toContain("p.pronargs = 7");
+      expect(doc).not.toContain("pg_get_function_identity_arguments(p.oid) = ");
+    }
   });
 });
 

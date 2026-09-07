@@ -148,19 +148,29 @@ with checks(label, ok) as (
     -- ---- 5. ONE Finance registration action ------------------------------
     -- Leaving the 3-arg version alive would let the incomplete act — a
     -- reference with no taxes — keep happening beside its replacement.
+    -- ARITY, not the identity string. `pg_get_function_identity_arguments`
+    -- includes parameter NAMES — the live function reads
+    -- « p_customs_id uuid, p_reference text, p_actor uuid » — so a comparison
+    -- against 'uuid, text, uuid' can never match. Written that way, the first
+    -- check would always pass (protecting nothing) and the second would always
+    -- fail (reporting a correctly applied migration as broken).
     ('the 3-arg record_gainde_registration is GONE', (
       select count(*) = 0 from pg_proc p
         join pg_namespace n on n.oid = p.pronamespace
        where n.nspname = 'public' and p.proname = 'record_gainde_registration'
-         and pg_get_function_identity_arguments(p.oid) = 'uuid, text, uuid'
+         and p.pronargs = 3
     )),
 
     ('exactly one record_gainde_registration remains, and it takes the taxes', (
       select count(*) = 1 from pg_proc p
         join pg_namespace n on n.oid = p.pronamespace
        where n.nspname = 'public' and p.proname = 'record_gainde_registration'
-         and pg_get_function_identity_arguments(p.oid)
-             = 'uuid, text, uuid, timestamp with time zone, text, text, jsonb'
+    ) and (
+      select count(*) = 1 from pg_proc p
+        join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname = 'record_gainde_registration'
+         and p.pronargs = 7
+         and 'jsonb'::regtype = any(p.proargtypes::oid[])
     )),
 
     -- A re-registration is a CORRECTION: the previous payment is superseded by

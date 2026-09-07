@@ -645,12 +645,26 @@ begin
     raise exception 'MIGRATION FAILED: gainde_declaration_reference missing';
   end if;
 
+  -- ARITY, not the identity string. `pg_get_function_identity_arguments`
+  -- includes parameter NAMES — the live function reads
+  -- « p_customs_id uuid, p_reference text, p_actor uuid » — so comparing it to
+  -- 'uuid, text, uuid' can never match, and this guard would have passed even
+  -- if the DROP had silently failed. An assertion that cannot fail is worse
+  -- than no assertion: it reads as protection.
   if exists (
     select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
      where n.nspname = 'public' and p.proname = 'record_gainde_registration'
-       and pg_get_function_identity_arguments(p.oid) = 'uuid, text, uuid'
+       and p.pronargs = 3
   ) then
     raise exception 'MIGRATION FAILED: the 3-arg record_gainde_registration still exists — two competing Finance registration paths';
+  end if;
+
+  if not exists (
+    select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public' and p.proname = 'record_gainde_registration'
+       and p.pronargs = 7
+  ) then
+    raise exception 'MIGRATION FAILED: the 7-arg record_gainde_registration is missing';
   end if;
 
   if exists (
