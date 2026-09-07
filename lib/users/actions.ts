@@ -400,7 +400,18 @@ export async function updateUserIdentity(
         email: target.email,
       });
 
-  if (nextName !== target.name) {
+  // ONLY WHEN THE NAME WAS ACTUALLY TOUCHED, and this is not a nicety.
+  //
+  // `displayNameFrom` falls back to the e-mail, which is right for RENDERING
+  // and wrong for WRITING. Two production users have no stored name at all, and
+  // without this guard an administrator who edited only their titre principal
+  // would have written their e-mail address into `app_user.name` — turning
+  // « no name recorded » into « their name is finance@effitrans.com », silently,
+  // as a side effect of an unrelated edit. The fallback must stay a fallback.
+  const nameTouched =
+    v.displayName !== undefined || v.firstName !== undefined || v.lastName !== undefined;
+
+  if (nameTouched && nextName !== target.name) {
     const { error } = await supabase
       .from("app_user")
       .update({ name: nextName })
@@ -441,7 +452,9 @@ export async function updateUserIdentity(
   // Nothing here is a secret: no password, no token, no session, no auth
   // metadata — this function never reads any.
   const changed: Record<string, { before: string | null; after: string | null }> = {};
-  if (nextName !== target.name) changed.display_name = { before: target.name, after: nextName };
+  if (nameTouched && nextName !== target.name) {
+    changed.display_name = { before: target.name, after: nextName };
+  }
   for (const [key, col] of [
     ["mainTitle", "job_title"],
     ["firstName", "first_name"],

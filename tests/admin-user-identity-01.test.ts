@@ -151,6 +151,29 @@ describe("the administrator can edit a staff identity from the Users area", () =
     expect(a).toContain("if (Object.keys(row).length > 3) {");
   });
 
+  it("09c — editing only a title never writes a name the admin did not enter", () => {
+    // ⚠ A REAL BUG, found on review rather than by a test. `displayNameFrom`
+    // falls back to the e-mail — correct for RENDERING an unnamed user, wrong
+    // for WRITING. Two production users have no stored name, so an
+    // administrator who edited only their titre principal would have had their
+    // e-mail address written into `app_user.name`: « no name recorded » would
+    // silently have become « their name is finance@effitrans.com », as a side
+    // effect of an unrelated edit.
+    //
+    // The name is now written only when the name was actually touched.
+    const a = identityAction();
+    expect(a).toContain("const nameTouched =");
+    expect(a).toContain("v.displayName !== undefined || v.firstName !== undefined || v.lastName !== undefined;");
+    expect(a).toContain("if (nameTouched && nextName !== target.name) {");
+    // …and the audit does not claim a name change that did not happen.
+    const flatAction = a.replace(/\s+/g, " ");
+    expect(flatAction).toContain("if (nameTouched && nextName !== target.name) { changed.display_name");
+    // The fallback itself is unchanged: rendering an unnamed user still yields
+    // the e-mail, which is the architecture's existing final fallback.
+    expect(displayNameFrom({ email: "finance@effitrans.com" })).toBe("finance@effitrans.com");
+    expect(buildStaffIdentity({ email: "plain@test.local" }).displayName).toBe("plain@test.local");
+  });
+
   it("11b — an empty submission is refused rather than reported as saved", () => {
     expect(validateIdentity({})).toEqual({ ok: false, error: "nothing_to_change" });
     expect(code(PANEL)).toContain("Aucune modification à enregistrer.");
@@ -414,7 +437,7 @@ describe("the edit is auditable through the existing architecture", () => {
     const a = identityAction();
     expect(a).toContain("before: before[col] ?? null");
     expect(a).toContain("after: (row[col] as string | null) ?? null");
-    expect(a).toContain("changed.display_name = { before: target.name, after: nextName }");
+    expect(a.replace(/\s+/g, " ")).toContain("changed.display_name = { before: target.name, after: nextName };");
   });
 
   it("39 — no credential, token or session data can reach the audit", () => {
