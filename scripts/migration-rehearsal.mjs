@@ -130,13 +130,33 @@ const ledgerRows = (tgt) =>
  * UNKNOWN_REMOTE_VERSION — true from that narrow viewpoint, and pure noise that
  * buries the one finding each scenario is actually about.
  */
-const REHEARSAL_PREFIX = "2999";
-const rehearsalLedger = (tgt) =>
-  ledgerRows(tgt).filter((v) => v.startsWith(REHEARSAL_PREFIX)).map((v) => ({ version: v, name: "" }));
+//
+// TWO WORLDS, and they must not see each other.
+//
+// R1-R6 build up to a deliberately BROKEN world: R4 leaves a migration applied
+// but unrecorded below the maximum, which is MISSING_REMOTELY_BEHIND_MAX, and
+// R6's entire point is that this hard finding refuses every later target. That
+// is the correct end state for those scenarios and a useless starting state for
+// R7, which is about ordering in a HEALTHY repository. So R7 gets its own
+// version family and its own view of both the repository and the ledger.
+const FAMILY_BROKEN = "2999"; // R1-R6
+const FAMILY_ORDERED = "2998"; // R7 only
 
-/** Rehearsal migrations carry their verifier in the rehearsal tree, not the repo's. */
-const rehearsalRepo = () =>
-  repoMigrations(MIG).map((m) => ({ ...m, verifier: join(VER, `${m.version}_${m.name}.verify.sql`) }));
+const rehearsalLedger = (tgt, family = FAMILY_BROKEN) =>
+  ledgerRows(tgt).filter((v) => v.startsWith(family)).map((v) => ({ version: v, name: "" }));
+
+/**
+ * Rehearsal migrations carry their verifier in the rehearsal tree, not the repo's.
+ *
+ * Filtered by family for the same reason the ledger view is: the two views must
+ * be built from the same population or reconcile() compares a repository that
+ * holds one world against a ledger that holds another, and reports the whole of
+ * the other world as missing.
+ */
+const rehearsalRepo = (family = FAMILY_BROKEN) =>
+  repoMigrations(MIG)
+    .filter((m) => String(m.version).startsWith(family))
+    .map((m) => ({ ...m, verifier: join(VER, `${m.version}_${m.name}.verify.sql`) }));
 
 function main() {
   const args = parseArgs(process.argv.slice(2));
@@ -172,7 +192,24 @@ function main() {
 
   const base = ledgerRows(tgt);
   console.log(`[rehearsal] ledger starts at ${base.length} rows\n`);
-  const V = (n) => `2999010${n}000001`; // far future: always sorts after anything real
+  // ---- REHEARSAL VERSION IDS ARE 14 DIGITS, ALWAYS ----------------------
+  //
+  // `repoMigrations` rejects anything that is not exactly 14 digits as
+  // MALFORMED_VERSION; `reconcile` reports that as a HARD finding; and a hard
+  // finding makes EVERY `validateTarget` call fail for THAT reason instead of
+  // the one under test.
+  //
+  // The first cut of R7 built its ids as `2999010${n}000001` with n=11..13,
+  // which is 15 characters wide, and the run failed naming a malformed version
+  // rather than anything about ordering. Asserting the width at the source is
+  // the difference between a generator that is correct for the arguments it
+  // happened to be given and one that is correct.
+  const vid = (family, n) => {
+    const v = `${family}01010000${String(n).padStart(2, "0")}`;
+    if (!/^\d{14}$/.test(v)) throw new Error(`rehearsal version "${v}" is not 14 digits`);
+    return v;
+  };
+  const V = (n) => vid(FAMILY_BROKEN, n); // far future: always sorts after anything real
   const recorded = [];
 
   // A1 (atomicity) is deliberately NOT measured here. It is a property of the
@@ -270,17 +307,36 @@ function main() {
   // no supported way forward. What must happen instead is that the earliest is
   // allowed, the other two are refused BY NAME, and each application moves the
   // window forward by exactly one.
+  //
+  // It runs in the FAMILY_ORDERED world (see the two-worlds note above): a fresh
+  // repository with nothing recorded, which is what production looks like on
+  // the axis this scenario measures. Running it in R1-R6's world would measure
+  // R4's outstanding discrepancy instead, and pass or fail for the wrong reason.
   {
-    const a = scenario(V(11), "first", "create table rehearsal.r11(x int);", okVerifier("r11"));
-    const b = scenario(V(12), "second", "create table rehearsal.r12(x int);", okVerifier("r12"));
-    const c = scenario(V(13), "third", "create table rehearsal.r13(x int);", okVerifier("r13"));
+    const O = (n) => vid(FAMILY_ORDERED, n);
+    const a = scenario(O(1), "first", "create table rehearsal.r11(x int);", okVerifier("r11"));
+    const b = scenario(O(2), "second", "create table rehearsal.r12(x int);", okVerifier("r12"));
+    const c = scenario(O(3), "third", "create table rehearsal.r13(x int);", okVerifier("r13"));
     const steps = [];
 
     const look = () => {
-      const repo = rehearsalRepo();
-      const ledger = rehearsalLedger(tgt);
+      const repo = rehearsalRepo(FAMILY_ORDERED);
+      const ledger = rehearsalLedger(tgt, FAMILY_ORDERED);
       return { repo, ledger, state: reconcile(repo, ledger) };
     };
+
+    // The premise, asserted rather than assumed: this world starts clean. If it
+    // does not, every later assertion is about the contamination.
+    {
+      const { state } = look();
+      const shape = classify(state);
+      if (shape.status !== LEDGER_STATUS.CLEAN_WITH_PENDING || state.pending.length !== 3) {
+        record("R7", "ordered promotion — the scenario's own world starts clean", false,
+          `expected CLEAN_WITH_PENDING with 3 pending, got ${shape.status} with ${state.pending.length} ` +
+            `(hard: ${state.hard.map((h) => h.code).join(",") || "none"})`);
+        throw new Error("R7 premise failed: the ordering world is not clean");
+      }
+    }
 
     // STATE A — all three pending. Only the earliest may go.
     {
