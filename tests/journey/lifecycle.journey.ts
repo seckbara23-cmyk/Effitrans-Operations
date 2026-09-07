@@ -227,21 +227,39 @@ describe("C-4 slice 1 — Creation → Transit reception", () => {
     }
   });
 
-  it("the evidence gate is intact wherever evidence is still required", async () => {
-    // Re-pointed from step 3, which no longer carries documents. `pre_gate`
-    // opens from step 3 and genuinely requires PRE_GATE_AUTHORIZATION, so it is
-    // the honest place to prove that a step refuses without its evidence and
-    // stays exactly as it was.
+  it("a SOFT gate lets the work continue — and records what is still outstanding", async () => {
+    // ⚠ REVERSED 2026-09-07 (DEC-C48/C49). This case used to prove that
+    // `pre_gate` REFUSES without PRE_GATE_AUTHORIZATION. Effitrans has since
+    // ruled that an unknown business-completeness requirement must not
+    // automatically block, and the Pre-Gate is now classified SOFT with a cited
+    // checkpoint: the registry's own `PICKUP_READINESS` gate requires it at
+    // step 15, not here. In production this exact requirement was displayed to
+    // an Account Manager as « bloquante aujourd'hui » on dossier 00011.
+    //
+    // WHAT STILL HAS TO BE TRUE, and is the whole safety of the reversal:
+    // leniency leaves a TRAIL. A step completed with an outstanding SOFT item
+    // records it, so nothing is forgotten — it is simply not in the way.
+    //
+    // The HARD half is proven further down this same file: step 1 on the
+    // sighted dossier still refuses with `evidence_missing` because the devis
+    // and its client acceptance ARE that step's content. Not re-proven here,
+    // because the only HARD gate reachable at this point of the walk would need
+    // the walk reordered around it — and a case wrapped in `if (opened.ok)` is
+    // a case that can never fail.
     expect(getActivity("pre_gate")!.requiredDocuments).toEqual(["PRE_GATE_AUTHORIZATION"]);
     const started = await as(am, () => activateStep(fileId, "pre_gate"));
     expect(started.ok, `activate pre_gate: ${JSON.stringify(started)}`).toBe(true);
 
-    const before = await execution(fileId, "pre_gate");
-    const premature = await as(am, () => submitStep(fileId, "pre_gate"));
-    expect(premature.ok, "a step with evidence must refuse without it").toBe(false);
-    expect((premature as { error: string }).error).toBe("evidence_missing");
-    expect((await execution(fileId, "pre_gate"))?.state).toBe(before?.state);
+    const lenient = await as(am, () => submitStep(fileId, "pre_gate"));
+    expect(lenient.ok, `a SOFT gate must not stop the work: ${JSON.stringify(lenient)}`).toBe(true);
+
+    const after = await execution(fileId, "pre_gate");
+    expect(after?.state).toBe("COMPLETED");
+    const summary = after?.evidence_summary as { missing?: string[] } | null;
+    expect(summary?.missing, "the outstanding artefact must still be recorded")
+      .toContain("PRE_GATE_AUTHORIZATION");
   });
+
 });
 
 /**

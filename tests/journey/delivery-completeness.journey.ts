@@ -316,15 +316,20 @@ describe("C-4 slice 3a — transport, convergence, delivery, completeness", () =
     expect(started.ok, `the owner must be able to start its own step: ${JSON.stringify(started)}`).toBe(true);
     expect((await execution(fileId, "am_delivery_followup"))?.state).toBe("ACTIVE");
 
-    // Evidence is still enforced — the capability grants the step, not a waiver.
-    const premature = await as(am, () => submitStep(fileId, "am_delivery_followup"));
-    expect(premature.ok, "step 16 still needs the signed delivery note").toBe(false);
-    expect((premature as { error: string }).error).toBe("evidence_missing");
-
-    await provideEvidence(fileId, "SIGNED_DELIVERY_NOTE", am, ops);
-
+    // ⚠ REVERSED 2026-09-07 (DEC-C48). Step 16 used to refuse without the
+    // signed BL. It is now SOFT: the artefact is OBTAINED during the delivery
+    // follow-up and is enforced at step 17, `transport_pod_handoff`, which is
+    // HARD and is a strict prerequisite of everything from 18 to 26. Warning
+    // here and holding the line there is the shape the doctrine asks for.
     const done = await as(am, () => submitStep(fileId, "am_delivery_followup"));
-    expect(done.ok, `submit step 16: ${JSON.stringify(done)}`).toBe(true);
+    expect(done.ok, `step 16 must not be blocked by a SOFT gate: ${JSON.stringify(done)}`).toBe(true);
+    const soft = (await execution(fileId, "am_delivery_followup"))
+      ?.evidence_summary as { missing?: string[] } | null;
+    expect(soft?.missing, "the outstanding POD must still be recorded")
+      .toContain("SIGNED_DELIVERY_NOTE");
+
+    // The POD arrives the real way, for step 17 to hand over.
+    await provideEvidence(fileId, "SIGNED_DELIVERY_NOTE", am, ops);
 
     // TRANSPORT marks the delivery — the other half of the split that gave step
     // 16 its own capability. The Account Manager obtained the signed BL; moving
@@ -389,20 +394,24 @@ describe("C-4 slice 3a — transport, convergence, delivery, completeness", () =
 
   // --------------------------------- E. 18 → 19 the second maker/checker ----
 
-  it("step 18 refuses without its receipts, then stops at SUBMITTED", async () => {
+  it("step 18 continues without its receipts, records them, and stops at SUBMITTED", async () => {
     const started = await as(coordinator, () => activateStep(fileId, "coordinator_completeness"));
     expect(started.ok, `activate step 18: ${JSON.stringify(started)}`).toBe(true);
 
-    const premature = await as(coordinator, () => submitStep(fileId, "coordinator_completeness"));
-    expect(premature.ok, "completeness needs its evidence").toBe(false);
-    expect((premature as { error: string }).error).toBe("evidence_missing");
-
-    // RECEIPT and PAYMENT_PROOF both map to PAYMENT_RECEIPT, so one verified
-    // document satisfies both keys — the mapping is the registry's, not ours.
-    await provideEvidence(fileId, "RECEIPT", coordinator, ops);
-
+    // ⚠ REVERSED 2026-09-07 (DEC-C48). `RECEIPT` and `PAYMENT_PROOF` are two
+    // of the 108 requirements no first-party Effitrans source classifies —
+    // nothing establishes WHEN a third-party receipt becomes mandatory — and
+    // the ratified default is that an unknown requirement does not block.
+    //
+    // WHAT DID NOT MOVE, and is asserted below and in the next case: step 18 is
+    // still reviewed by step 19, and the preparer still cannot sign its own
+    // completeness. Leniency touches business completeness, never maker/checker.
     const submitted = await as(coordinator, () => submitStep(fileId, "coordinator_completeness"));
     expect(submitted.ok, `submit step 18: ${JSON.stringify(submitted)}`).toBe(true);
+    const outstanding = (await execution(fileId, "coordinator_completeness"))
+      ?.evidence_summary as { missing?: string[] } | null;
+    expect(outstanding?.missing, "the receipts must still be recorded as outstanding")
+      .toEqual(expect.arrayContaining(["RECEIPT", "PAYMENT_PROOF"]));
 
     const exec = await execution(fileId, "coordinator_completeness");
     expect(exec?.state, "18 is reviewed by 19 — it must not self-complete").toBe("SUBMITTED");

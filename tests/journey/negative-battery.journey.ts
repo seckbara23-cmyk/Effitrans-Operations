@@ -63,6 +63,9 @@ async function stepState(key: string) {
     submittedBy: e?.submitted_by ?? null,
     reviewedBy: e?.reviewed_by ?? null,
     completedAt: e?.completed_at ?? null,
+    // OPS-LENIENCY-01 — a step completed with an outstanding SOFT requirement
+    // records it. Leniency has to leave a trail, and this is the trail.
+    evidence_summary: e?.evidence_summary ?? null,
   };
 }
 
@@ -398,20 +401,26 @@ describe("C-4 negative battery — the refusals, in the order a dossier meets th
     need(await as(am, () => submitStep(fileId, "bon_a_delivrer")), "BAD");
     need(await as(am, () => activateStep(fileId, "pre_gate")), "activate pre-gate");
 
-    // MISSING EVIDENCE — proven here, at the one moment pre_gate is ACTIVE and
-    // its document is not yet in. This case used to run on step 3's four
-    // required documents; H-3..H-6 (2026-09-03) ratified those away, so the
-    // gate is proven where evidence still genuinely lives. Asserted inline
-    // rather than as its own case: activating pre_gate twice is `invalid_state`,
-    // so a standalone probe would consume the step this walk needs.
-    const beforeEvidence = await stepState("pre_gate");
-    const premature = await as(am, () => submitStep(fileId, "pre_gate"));
-    expect(premature.ok, "a step with evidence must refuse without it").toBe(false);
-    expect(err(premature)).toBe("evidence_missing");
-    expect(await stepState("pre_gate"), "a refusal changes nothing").toEqual(beforeEvidence);
-
-    await provideEvidence(fileId, "PRE_GATE_AUTHORIZATION", am, ops);
-    need(await as(am, () => submitStep(fileId, "pre_gate")), "pre-gate");
+    // ⚠ REVERSED 2026-09-07 (DEC-C48/C49). This inline case used to prove that
+    // pre_gate REFUSES without its document. The Pre-Gate is now SOFT, cited to
+    // the registry's own pickup gate at step 15 — so what is proven here is the
+    // reversal AND its safety rail: the work continues, and the outstanding
+    // artefact is recorded rather than forgotten.
+    //
+    // WHERE THE HARD REFUSAL LIVES NOW. It is not re-proven inside this walk:
+    // every step it still passes through is either SOFT or evidence-free, and
+    // inserting a HARD case would mean reordering the walk around the WES-5
+    // reconciliation that carries step 17 here. It is proven, on the same
+    // engine door, by transit-customs (steps 6, 11, 13) and
+    // delivery-completeness (step 24), and by the lifecycle journey's own
+    // step-6 case.
+    const lenient = await as(am, () => submitStep(fileId, "pre_gate"));
+    expect(lenient.ok, `a SOFT gate must not stop the walk: ${JSON.stringify(lenient)}`).toBe(true);
+    const preGateRow = await stepState("pre_gate");
+    expect(
+      (preGateRow.evidence_summary as { missing?: string[] } | null)?.missing,
+      "the outstanding Pre-Gate must still be recorded",
+    ).toContain("PRE_GATE_AUTHORIZATION");
     need(await as(pickup, () => activateStep(fileId, "pickup")), "activate 15");
     const t2 = await transportFor(fileId);
     for (const st of ["PLANNED", "DRIVER_ASSIGNED", "PICKED_UP"]) {

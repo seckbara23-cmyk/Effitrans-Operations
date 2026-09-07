@@ -98,8 +98,8 @@ const PICKUP_GATE =
   "Registre PICKUP_READINESS (Phase 5.0A) — la porte de convergence de l'enlèvement (étape 15) exige cet artefact. C'est la source de première main qui établit QUAND il devient obligatoire.";
 const OBJECT_OF_THE_ACT =
   "L'artefact EST l'objet de l'acte : l'étape consiste à le remettre ou à le transmettre. Sans lui l'étape n'a pas de contenu, et la chaîne 15→26 étant strictement séquentielle, la laisser passer viderait les étapes suivantes.";
-const QO1 =
-  "QO-1 « devis optionnel » (livré, commit 9a6e70f) — le devis n'est pas un préalable universel : l'étape 1 est sautée pour un client sous contrat et la porte a été levée.";
+const COTATION =
+  "QO-0/QO-1 (ratifié 2026-08-18, docs/commercial/quotation-optional-audit.md) — un dossier PEUT exister sans devis, et le mécanisme ratifié pour cela est le SAUT de l'étape 1 (`skipStep`, motif enregistré, audité, réouvrable), PAS sa clôture à vide. Quand l'étape 1 est vivante, le devis et son acceptation SONT son contenu ; QT609/QT613 (migration 20260806000001) contraignent déjà l'enregistrement de la décision client.";
 
 const AVANT_ENLEVEMENT = "avant l'enlèvement (étape 15 — porte de convergence)";
 
@@ -141,6 +141,17 @@ export const CLASSIFIED: Readonly<Record<string, RequirementGovernance>> = {
   "customs_field_clearance::BON_A_ENLEVER": hard(BAE),
 
   // ---- Artefacts that ARE the act ----------------------------------------
+  //
+  // ⚠ THE DEVIS BELONGS HERE, NOT AMONG THE SOFT GATES. QO-0/QO-1 ratifies
+  // that a dossier may exist WITHOUT a devis — and the mechanism it ratifies
+  // for that is SKIPPING step 1, with a recorded motif and an audited reopen.
+  // Completing step 1 on nothing is a different act: it asserts « le devis est
+  // validé par le client » about a devis that does not exist. Classifying these
+  // SOFT would have turned a ruling about OPTIONALITY into a licence to close
+  // the step empty.
+  "cotation::QUOTATION": hard(COTATION),
+  "cotation::QUOTATION_APPROVAL": hard(COTATION),
+
   "transport_pod_handoff::SIGNED_DELIVERY_NOTE": hard(OBJECT_OF_THE_ACT),
   "billing_dispatch::FINAL_INVOICE": hard(OBJECT_OF_THE_ACT),
   "administration_deposit_prep::FINAL_INVOICE": hard(OBJECT_OF_THE_ACT),
@@ -163,9 +174,6 @@ export const CLASSIFIED: Readonly<Record<string, RequirementGovernance>> = {
     OBJECT_OF_THE_ACT,
   ),
 
-  // The devis: already ratified as non-universal.
-  "cotation::QUOTATION": soft("à l'acceptation du client, pour un client sans contrat", QO1),
-  "cotation::QUOTATION_APPROVAL": soft("à l'acceptation du client, pour un client sans contrat", QO1),
 };
 
 /** What we say about a requirement Effitrans has not classified yet. */
