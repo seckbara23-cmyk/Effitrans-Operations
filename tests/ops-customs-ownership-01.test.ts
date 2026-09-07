@@ -160,8 +160,27 @@ describe("OPS-CUSTOMS-OWNERSHIP-01 — the UAT dossier, replayed", () => {
     }).allowed;
 
   it("11 — the Chef cannot perform the Déclarant's preparation controls", () => {
-    for (const control of ["customs.create", "customs.update", "customs.status", "customs.receivability"]) {
+    // MIGRATION-139-APPROVAL-01 §21.1 added `customs.declaration_reference`.
+    //
+    // It was already refused — the rule special-cases no control and the map
+    // sends it to `customs_preparation` — but this list is where that refusal
+    // is STATED, and until now the newest of the Déclarant's controls was not
+    // in it. The guarantee held by composition across four separate files; a
+    // reader asking "can the Chef record the Déclarant's GAINDE reference?"
+    // had to assemble the answer rather than read it.
+    //
+    // It matters here more than for its neighbours: `customs:update` is held by
+    // the Chef, the Coordinator, the Field Agent, OPS_SUPERVISOR and
+    // SYSTEM_ADMIN, so permission alone puts five roles on the Déclarant's own
+    // step-6 fact. This line is the one that says only one of them may write it.
+    for (const control of [
+      "customs.create", "customs.update", "customs.status", "customs.receivability",
+      "customs.declaration_reference",
+    ]) {
       expect(ask(control, ["CHIEF_OF_TRANSIT"]), control).toBe(false);
+      expect(ask(control, ["COORDINATOR"]), control).toBe(false);
+      expect(ask(control, ["CUSTOMS_FINANCE_OFFICER"]), control).toBe(false);
+      expect(ask(control, ["SYSTEM_ADMIN"]), control).toBe(false);
       expect(ask(control, ["CUSTOMS_DECLARANT"]), control).toBe(true);
     }
   });
@@ -350,16 +369,16 @@ describe("OPS-CUSTOMS-OWNERSHIP-01 — the ratified frame is untouched", () => {
   });
 
   it("31 — no migration was added", () => {
-    // ONE shared invariant instead of a per-slice snapshot. This used to pin
-    // « the newest migration on disk is still X » / « there are still N of
-    // them », which was true when the slice shipped and says nothing once a
-    // LATER slice ships one of its own — it goes red for a reason that has
-    // nothing to do with this slice. What is durable, and what the ledger
-    // discipline actually depends on, is that the directory and `build-info`
-    // agree; that is asserted here and in the two suites that own it.
-    const dir = fileURLToPath(new URL("../supabase/migrations", import.meta.url));
-    const files = require("node:fs").readdirSync(dir).filter((f: string) => f.endsWith(".sql")).sort();
-    expect(files).toHaveLength(MIGRATION_COUNT);
+    // ONE shared invariant instead of a per-slice snapshot. This used to pin
+    // « the newest migration on disk is still X » / « there are still N of
+    // them », which was true when the slice shipped and says nothing once a
+    // LATER slice ships one of its own — it goes red for a reason that has
+    // nothing to do with this slice. What is durable, and what the ledger
+    // discipline actually depends on, is that the directory and `build-info`
+    // agree; that is asserted here and in the two suites that own it.
+    const dir = fileURLToPath(new URL("../supabase/migrations", import.meta.url));
+    const files = require("node:fs").readdirSync(dir).filter((f: string) => f.endsWith(".sql")).sort();
+    expect(files).toHaveLength(MIGRATION_COUNT);
     expect(files.at(-1)).toBe(`${LATEST_MIGRATION}.sql`);
   });
 });

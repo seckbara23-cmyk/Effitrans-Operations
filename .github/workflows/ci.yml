@@ -163,6 +163,15 @@ jobs:
           PGPASSWORD: postgres
         run: psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/rls_customs_test.sql
 
+      # MIGRATION-139-APPROVAL-01 §9 — the customs duties breakdown is ratified
+      # INTERNAL data (DEC-C39). `customs_record` is exposed to the portal by a
+      # policy with NO column list, which is why #139 put the figures in their
+      # own tables; this proves a real customer identity reads none of them.
+      - name: Run RLS GAINDE tax-payment test (DEC-C39 staff-only)
+        env:
+          PGPASSWORD: postgres
+        run: psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/rls_gainde_tax_payment_test.sql
+
       - name: Run RLS transport test (Phase 1.10)
         env:
           PGPASSWORD: postgres
