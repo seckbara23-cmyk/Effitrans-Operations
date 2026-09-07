@@ -232,13 +232,38 @@ with checks(label, ok) as (
     -- No money in the event ledger (WES-9C), on either the recording or the
     -- correction path. The figures live in the payment ledger, where they are
     -- governed.
+    -- ⚠⚠ THIS CHECK WAS WRONG, AND IT FAILED A CORRECT MIGRATION.
+    --
+    -- It banned `'amount` anywhere in the function body. The RPC legitimately
+    -- READS its input with `(v_line ->> 'amountMinor')::bigint` — that is how the
+    -- tax breakdown arrives — so the ban matched the correct implementation and
+    -- the check returned false against a properly applied #139.
+    --
+    -- Consequence: `VERIFY_FAILED` at the runner's step 3, on production, AFTER
+    -- the DDL had landed. "Production is indeterminate, no automatic rollback,
+    -- diagnose by hand." A verifier that fails a correct migration is not a
+    -- lesser defect than one that passes a broken one — it lands you in the
+    -- worst state the toolchain has, from a healthy deployment.
+    --
+    -- Found by the CI step that runs every verifier against a database where
+    -- its migration IS applied (2026-09-07). Nothing had ever executed it that
+    -- way before.
+    --
+    -- WHAT THE DOCTRINE ACTUALLY REQUIRES (WES-9C): no money in the EVENT
+    -- ledger. Not "the word amount must not appear in the function". So the
+    -- check is now bounded to the event's metadata argument, and states the
+    -- allow-list positively as well as negatively.
     ('the registration event still carries no money', (
       select count(*) = 1 from pg_proc p
         join pg_namespace n on n.oid = p.pronamespace
        where n.nspname = 'public' and p.proname = 'record_gainde_registration'
          and p.prosrc like '%GAINDE_REGISTRATION_RECORDED%'
-         and p.prosrc not like '%''amount%'
-         and p.prosrc not like '%total_paid_minor''%'
+         -- POSITIVELY: the metadata is exactly a reference and a correction flag.
+         and p.prosrc like '%jsonb_build_object(''reference'', v_ref, ''corrected'', v_prev is not null)%'
+         -- NEGATIVELY, bounded to the metadata argument, so a money key cannot
+         -- be slipped in beside them without this noticing.
+         and substr(p.prosrc, position('p_metadata' in p.prosrc), 200) not like '%amount%'
+         and substr(p.prosrc, position('p_metadata' in p.prosrc), 200) not like '%minor%'
     )),
 
     -- ONE money authority: this ledger records an execution, it never
