@@ -31,7 +31,8 @@
 import { mkdirSync, writeFileSync, rmSync, existsSync, copyFileSync } from "node:fs";
 import { join } from "node:path";
 import { target, query, queryFile, applyFile, repair } from "./migration/exec.mjs";
-import { repoMigrations, reconcile, validateTarget } from "./migration/ledger.mjs";
+import { repoMigrations, reconcile, validateTarget, classify, LEDGER_STATUS }
+  from "./migration/ledger.mjs";
 
 const ROOT = ".rehearsal";
 const MIG = join(ROOT, "supabase", "migrations");
@@ -255,6 +256,88 @@ function main() {
     const pass = problems.length > 0 && held;
     record("R6", "HELD → an outstanding discrepancy refuses the NEXT migration", pass,
       `hard=${state.hard.map((h) => h.code).join(",") || "none"} · refusal: ${problems[0] ?? "NONE (bad)"}`);
+  }
+
+  // ---- R7: ORDERED PROMOTION on a real database ---------------------------
+  //
+  // The ordering rule, exercised against an actual ledger rather than a
+  // fabricated array. Three migrations are authored at once — the exact shape
+  // production is in with #139/#140/#141 — and the runner's own validator is
+  // asked about each in turn.
+  //
+  // This is the scenario the old "exactly one pending" rule could not express:
+  // it refused ALL THREE, including the earliest, and left the repository with
+  // no supported way forward. What must happen instead is that the earliest is
+  // allowed, the other two are refused BY NAME, and each application moves the
+  // window forward by exactly one.
+  {
+    const a = scenario(V(11), "first", "create table rehearsal.r11(x int);", okVerifier("r11"));
+    const b = scenario(V(12), "second", "create table rehearsal.r12(x int);", okVerifier("r12"));
+    const c = scenario(V(13), "third", "create table rehearsal.r13(x int);", okVerifier("r13"));
+    const steps = [];
+
+    const look = () => {
+      const repo = rehearsalRepo();
+      const ledger = rehearsalLedger(tgt);
+      return { repo, ledger, state: reconcile(repo, ledger) };
+    };
+
+    // STATE A — all three pending. Only the earliest may go.
+    {
+      const { repo, ledger, state } = look();
+      const shape = classify(state);
+      steps.push(`A: status=${shape.status} pending=${state.pending.length} next=${shape.earliestPending}`);
+      const okFirst = validateTarget(a.version, repo, ledger, state).length === 0;
+      const noSecond = validateTarget(b.version, repo, ledger, state).join(" ");
+      const noThird = validateTarget(c.version, repo, ledger, state).join(" ");
+      steps.push(`A: earliest allowed=${okFirst} second refused=${/earliest pending/.test(noSecond)} third refused=${/earliest pending/.test(noThird)}`);
+      if (!okFirst || !/earliest pending/.test(noSecond) || !/earliest pending/.test(noThird)) {
+        record("R7", "ordered promotion — only the earliest pending may apply", false, steps.join(" · "));
+        throw new Error("R7 state A failed");
+      }
+    }
+
+    // Apply the earliest, verify it, record it — the real three-step sequence.
+    const advance = (sc) => {
+      const ap = applyFile(tgt, sc.path);
+      const v = ap.ok ? queryFile(tgt, sc.verifier)[0] : null;
+      const rec = v && v.ok === true ? repair(tgt, sc.version) : { ok: false, message: "not reached" };
+      if (rec.ok) recorded.push(sc.version);
+      return ap.ok && v?.ok === true && rec.ok;
+    };
+
+    const okA = advance(a);
+
+    // STATE B — the window moved by exactly one.
+    let okB = false;
+    {
+      const { repo, ledger, state } = look();
+      const shape = classify(state);
+      steps.push(`B: next=${shape.earliestPending} pending=${state.pending.length}`);
+      const thirdStillRefused = /earliest pending/.test(validateTarget(c.version, repo, ledger, state).join(" "));
+      const secondNowAllowed = validateTarget(b.version, repo, ledger, state).length === 0;
+      okB = thirdStillRefused && secondNowAllowed && shape.earliestPending === b.version;
+      steps.push(`B: third refused=${thirdStillRefused} second allowed=${secondNowAllowed}`);
+    }
+    const okApplyB = okB && advance(b);
+
+    // STATE C — the last one is now due, and after it nothing is.
+    let okC = false;
+    {
+      const { repo, ledger, state } = look();
+      okC = classify(state).earliestPending === c.version
+        && validateTarget(c.version, repo, ledger, state).length === 0;
+      steps.push(`C: next=${classify(state).earliestPending}`);
+    }
+    const okApplyC = okC && advance(c);
+
+    // STATE D — nothing pending, and the status says so.
+    const shapeD = classify(look().state);
+    steps.push(`D: status=${shapeD.status} pending=${shapeD.pending.length}`);
+
+    const pass = okA && okApplyB && okApplyC
+      && shapeD.status === LEDGER_STATUS.CLEAN && shapeD.pending.length === 0;
+    record("R7", "ordered promotion — earliest-only, one at a time, window advances", pass, steps.join(" · "));
   }
 
   // ---- cleanup: leave the database as we found it -------------------------
