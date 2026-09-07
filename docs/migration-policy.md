@@ -90,6 +90,7 @@ its own failure isolation.
 | `scripts/lint-migrations.mjs` | verifier + executor conventions, no database |
 | `scripts/verify-migrations.mjs` | **read-only**; runs every verifier against a database that HAS its migration |
 | `scripts/migration-rehearsal.mjs` | failure injection; refuses non-local targets |
+| `scripts/migration-promotion-walk.mjs` | rebuilds at the production baseline and promotes the real pending migrations in order; refuses non-local targets |
 | `.github/workflows/migrate-production.yml` | dispatch-only, environment-gated |
 
 ## Authoring a migration (from #139)
@@ -189,6 +190,17 @@ mid-apply lands in `VERIFY_FAILED`, the worst state.
    `APPLIED_AND_RECORDED — <version> applied, verified, recorded, re-verified.`
 8. **Repeat from step 2 for the next migration.** One per approved action —
    there is no batch mode, and requesting a later version is refused by name.
+9. **When the sequence is finished, advance the promotion walk’s baseline.**
+   In `.github/workflows/ci.yml`, the step *Promotion walk — the real
+   migrations, from the real baseline* carries `--baseline <version>`. That
+   literal is production’s maximum applied version, and the walk rebuilds the
+   database at it before promoting everything above it. Set it to the version
+   you just deployed.
+
+   Leaving it stale makes the walk test a promotion that already happened. If
+   it falls to or above the newest repository migration the walk fails with
+   *nothing to promote*, which is deliberate: a walk over an empty set proves
+   nothing and must not read green.
 
 ### The pending sequence, as it stands
 

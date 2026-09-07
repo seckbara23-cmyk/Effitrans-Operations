@@ -193,6 +193,40 @@ describe("a verifier's evidence is the schema, never the ledger", () => {
     expect(runnerCode).toContain("remoteLedger");
     expect(runnerCode).toContain("applied.has(m.version)");
   });
+
+  it("05b — §14: CI promotes the REAL pending migrations from the REAL baseline", () => {
+    // The three checks above each prove a piece and none proves the sequence:
+    // `db reset` proves the SQL applies, the sweep proves the verifiers pass,
+    // the rehearsal proves the ordering machinery — with synthetic migrations.
+    // The walk is the only place THIS repository's pending set is promoted, in
+    // order, from the state production is actually in.
+    const ci = read(".github/workflows/ci.yml");
+    expect(ci).toContain("scripts/migration-promotion-walk.mjs");
+    expect(ci).toContain("--baseline");
+    // Last, because it rebuilds the database: nothing may depend on what it
+    // leaves behind.
+    expect(ci.indexOf("migration-promotion-walk.mjs")).toBeGreaterThan(ci.indexOf("migration-rehearsal.mjs"));
+
+    const walk = js("scripts/migration-promotion-walk.mjs");
+    // It asks the REAL validator, not a reimplementation of the rule.
+    expect(walk).toContain("validateTarget");
+    expect(walk).toContain("queryFile");
+    // Recording is the supported mechanism and nothing else.
+    expect(walk).toContain("repair(tgt");
+    expect(walk).not.toMatch(/insert\s+into\s+supabase_migrations/i);
+    // No production door: the target can only be built from a --db-url whose
+    // host is loopback, and the check runs before anything is touched.
+    expect(walk).not.toContain('kind: "linked"');
+    expect(walk).not.toContain("--linked");
+    expect(walk).toContain("assertDisposable");
+    // An empty walk must FAIL, not pass quietly. A stale baseline that promotes
+    // nothing would otherwise read green forever.
+    expect(walk).toContain("nothing to walk");
+    // …and the runbook makes advancing the baseline part of every deployment.
+    const policy = read("docs/migration-policy.md");
+    expect(policy).toContain("advance the promotion walk");
+    expect(policy).toContain("--baseline");
+  });
 });
 
 // ===========================================================================

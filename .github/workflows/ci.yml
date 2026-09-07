@@ -1282,6 +1282,31 @@ jobs:
       - name: Migration-integrity guard (read-only)
         run: node scripts/migration-integrity.mjs --db-url "postgresql://postgres:postgres@127.0.0.1:54322/postgres"
 
+      # ---- the promotion walk (MIGRATION-GATE-139-141-REPAIR §14) ----------
+      # THE ONE TEST THAT USES THE REAL MIGRATIONS ON THE REAL SEQUENCE.
+      #
+      # Everything above proves a piece: `db reset` proves the SQL applies, the
+      # verifier sweep proves the verifiers pass, the rehearsal proves the
+      # ordering machinery. None of them proves THIS repository's pending
+      # migrations promote, in order, from the state production is actually in.
+      #
+      # So this rebuilds the database at the production baseline — by
+      # withdrawing the pending migrations for the duration of one `db reset` —
+      # and then walks them forward one at a time, asking the runner's own
+      # validator at every state whether a later migration may jump the queue.
+      #
+      # ⚠ `--baseline` IS PRODUCTION'S CURRENT MAXIMUM APPLIED VERSION, and it
+      # must advance as production advances: the deploy runbook makes bumping it
+      # the last step of every promotion (docs/migration-policy.md). If it goes
+      # stale the walk fails with "nothing to promote", which is the correct
+      # signal — a walk over an empty set proves nothing and must not read green.
+      #
+      # Runs last: it resets the database, so nothing may depend on the state
+      # it leaves behind.
+      - name: Promotion walk — the real migrations, from the real baseline (§14)
+        run: |
+          node scripts/migration-promotion-walk.mjs             --db-url "postgresql://postgres:postgres@127.0.0.1:54322/postgres"             --baseline 20260930000001
+
       - name: Stop local Supabase
         if: always()
         run: supabase stop
