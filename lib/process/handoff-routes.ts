@@ -76,7 +76,12 @@ export const HANDOFF_ROUTES: readonly HandoffRoute[] = [
     toStepKey: "coordinator_to_declarant",
     senderRoles: null,
     requiresReception: false,
-    labelFr: "Retour de la Finance douane au Déclarant",
+    // ⚠ RATIFIED 2026-09-06 (DEC-C40). This route ends at the COORDINATION,
+    // which then transmits to the Déclarant at step 11. The label previously
+    // read « au Déclarant » and named the wrong recipient: step 10 is the
+    // Coordinator's return handoff, and `isRoutedReceiverRole` has always
+    // admitted the Coordinator here and refused the Déclarant.
+    labelFr: "Retour de la Finance douane à la Coordination",
   },
   {
     fromStepKey: "billing_dispatch",

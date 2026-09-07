@@ -31,8 +31,9 @@ import "server-only";
 import { promoteSuccessors, PromotionAuditUnrecoverableError } from "@/lib/process/engine/promote";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
-import { loadProcessSnapshot } from "@/lib/process/engine/snapshot";
+import { loadProcessSnapshot, toViews } from "@/lib/process/engine/snapshot";
 import { evaluateStepEvidence } from "@/lib/process/engine/evidence";
+import { prerequisitesMet } from "@/lib/process/engine/state";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import {
   FACT_PROVABLE_STEP_KEYS,
@@ -240,6 +241,35 @@ async function run(input: {
       const ev = evaluateStepEvidence(stepKey, evidenceSnap.evidence);
       if (ev.unauthorized.length > 0 || !ev.complete) continue;
     }
+
+    // ---------------------------------------------------------------- (3) ----
+    // AND ITS PREREQUISITES, which this path never asked for.
+    //
+    // THE HOLE, found by a read-only production census on 2026-09-07 and
+    // ratified closed the same day. `activateStep` refuses `prerequisites_unmet`
+    // and `submitStep` inherits that guarantee because the step had to be
+    // ACTIVE first — but reconciliation completes a step without activating it,
+    // so it passed straight through. Two production dossiers reached step 11
+    // COMPLETED with step 10 never completed and zero submission documents:
+    // both through this door, neither through a human one.
+    //
+    // The registry ALREADY declares the rule (step 11 requires steps 9 and 10,
+    // the ratified 9+10→11 join). Nothing new is invented here; a rule that was
+    // only enforced on one of two paths is now enforced on both, which is what
+    // « the same evaluator, on the same registry requirements » above claims.
+    //
+    // NOT RETROACTIVE, and deliberately so. This runs on the completion path, so
+    // the two already-COMPLETED rows are untouched — inventing a correction to
+    // history would be a worse answer than reporting it. What changes is what
+    // happens NEXT.
+    //
+    // Read from the SNAPSHOT, not from the loop's own executions: that query is
+    // filtered to the fact-provable keys, so it cannot see step 10 while judging
+    // step 11 — and a prerequisite test that cannot see the prerequisite would
+    // refuse everything. Guarded on `evidenceSnap` for the same reason the
+    // evidence gate above is: without the snapshot we know nothing, and
+    // silently refusing every completion is not the same as being careful.
+    if (evidenceSnap && !prerequisitesMet(stepKey, toViews(evidenceSnap.executions))) continue;
 
     const { data, error } = await supabase.rpc("reconcile_step_completion", {
       p_execution_id: execution.id,

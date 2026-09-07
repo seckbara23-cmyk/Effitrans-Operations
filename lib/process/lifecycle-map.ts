@@ -46,7 +46,15 @@ export const CANONICAL_LIFECYCLE: readonly LifecycleStage[] = [
   { stage: 6, key: "declaration_preparation", labelFr: "Préparation de la déclaration par le Déclarant (manifeste, note de détail, saisie GAINDE)", stepKeys: ["customs_preparation"], customsLegOnly: true },
   { stage: 7, key: "chief_validation", labelFr: "Contrôle, validation et signature du Chef de Transit", stepKeys: ["transit_validation"], customsLegOnly: true },
   { stage: 8, key: "finance_registration", labelFr: "Intervention Finance — enregistrement / paiement", stepKeys: ["coordinator_to_finance", "gainde_registration"], customsLegOnly: true },
-  { stage: 9, key: "attachment_verification", labelFr: "Vérification du rattachement via liens électroniques", stepKeys: ["coordinator_to_declarant"], customsLegOnly: true },
+  // ⚠ RATIFIED 2026-09-06 (DEC-C40) — the verification of the rattachement is
+  // the DÉCLARANT's, so this stage names step 11. It previously named step 10
+  // `coordinator_to_declarant`, which is the Coordinator's RETURN handoff and
+  // not a verification at all. The straddle originated in
+  // maya-p1-0 row 9 (« 10–11 », class F) and survived here while migration
+  // 20260828000001 had already put the rattachement fact on step 11 — two live
+  // answers to one question. Divergence historique conservée in that document
+  // and in phase-9.0d rather than deleted.
+  { stage: 9, key: "attachment_verification", labelFr: "Exécution et vérification du rattachement électronique (Déclarant)", stepKeys: ["coordinator_to_declarant", "gainde_document_submission"], customsLegOnly: true },
   { stage: 10, key: "declaration_filing_followup", labelFr: "Dépôt de la déclaration et suivi douanier", stepKeys: ["gainde_document_submission", "customs_followup"], customsLegOnly: true },
   { stage: 11, key: "bae_acquisition", labelFr: "Obtention du BAE (Bon à Enlever)", stepKeys: ["customs_field_clearance"], customsLegOnly: true },
   { stage: 12, key: "field_dispatch", labelFr: "Dispatch vers AIBD ou Maritime", stepKeys: ["transport_assignment"] },
@@ -79,7 +87,12 @@ export const TRANSIT_SOURCE_MAP: readonly TransitSourceStep[] = [
   { key: "T4", labelFr: "Préparation et saisie (manifeste, note de détail, GAINDE)", stepKeys: ["customs_preparation"] },
   { key: "T5", labelFr: "Contrôle, validation et signature du dossier douane", stepKeys: ["transit_validation"] }, // H-8: it validates the customs dossier, never a devis
   { key: "T6", labelFr: "Intervention Finance (enregistrement)", stepKeys: ["coordinator_to_finance", "gainde_registration"] },
-  { key: "T7", labelFr: "Vérification du rattachement électronique", stepKeys: ["coordinator_to_declarant"] },
+  // ⚠ RATIFIED 2026-09-06 (DEC-C40) — T7 follows the DÉCLARANT to step 11.
+  // Step 10 stays listed because the Coordinator's return handoff is what
+  // OPENS the rattachement, and dropping it would orphan that step from the
+  // Transit board; what changed is that the VERIFICATION is no longer claimed
+  // to happen there.
+  { key: "T7", labelFr: "Exécution et vérification du rattachement électronique (Déclarant)", stepKeys: ["coordinator_to_declarant", "gainde_document_submission"] },
   { key: "T8", labelFr: "Dépôt, suivi des observations et obtention du BAE", stepKeys: ["gainde_document_submission", "customs_followup", "customs_field_clearance"] },
   { key: "T9", labelFr: "Dispatch terrain (Maritime / AIBD / Transport)", stepKeys: ["transport_assignment"] },
   { key: "T10", labelFr: "Exécution terrain et collecte des preuves", stepKeys: ["pickup", "transport_pod_handoff"] },

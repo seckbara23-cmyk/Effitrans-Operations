@@ -133,10 +133,21 @@ export const TRANSIT_STAGES: readonly TransitStage[] = [
     customerStage: "declaration_filed",
   },
   {
+    // ⚠ RATIFIED 2026-09-06 (DEC-C40). T7 is the DÉCLARANT's act, so it names
+    // step 11 `gainde_document_submission`. It previously named ONLY step 10
+    // `coordinator_to_declarant` — the Coordinator's return handoff, which is
+    // what OPENS the rattachement and is not a verification. Step 10 stays
+    // listed for that reason; what changed is that the verification is no
+    // longer claimed to happen there.
+    //
+    // The platform held two live answers to this: `lifecycle-map.ts`, this file
+    // and `phase-9.0d` said step 10, while migration 20260828000001 and
+    // `reconcile/satisfaction.ts` had already put the rattachement FACT on step
+    // 11. The divergence is preserved in the documents rather than deleted.
     key: "T7",
-    labelFr: "Vérification du rattachement électronique",
+    labelFr: "Exécution et vérification du rattachement électronique",
     responsibleFr: "Déclarant en douane",
-    stepKeys: ["coordinator_to_declarant"],
+    stepKeys: ["coordinator_to_declarant", "gainde_document_submission"],
     customerStage: "customs_formalities",
   },
   {

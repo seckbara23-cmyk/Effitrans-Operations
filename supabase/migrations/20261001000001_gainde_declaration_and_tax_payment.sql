@@ -441,6 +441,18 @@ begin
     raise exception 'reference_unchanged: this GAINDE reference is already recorded';
   end if;
 
+  -- A RE-REGISTRATION IS A CORRECTION, and the correction door is the void.
+  -- `record_gainde_registration` has always allowed a second call with a
+  -- different reference (that is how a mistyped registration is repaired), and
+  -- one live payment per record is the rule — so the previous one is superseded
+  -- here rather than edited, keeping the earlier figures visible. Nothing is
+  -- deleted: the void carries its reason, its author and its moment.
+  update public.gainde_tax_payment
+     set voided_at   = now(),
+         voided_by   = p_actor,
+         void_reason = 'Remplacé par un nouvel enregistrement GAINDE'
+   where customs_record_id = p_customs_id and voided_at is null;
+
   insert into public.gainde_tax_payment
     (tenant_id, file_id, customs_record_id, paid_at, paid_by,
      currency, total_paid_minor, quittance_reference, created_by)
@@ -575,6 +587,38 @@ revoke execute on function public.void_gainde_tax_payment(uuid, uuid, text) from
 revoke execute on function public.void_gainde_tax_payment(uuid, uuid, text) from authenticated;
 grant  execute on function public.void_gainde_tax_payment(uuid, uuid, text) to service_role;
 
+
+-- ===========================================================================
+-- 9. Step 10 / step 11 — the receiver projection, reconciled (DEC-C40).
+--
+-- THE CONTRADICTION. `process_step_receiving_role` said the DÉCLARANT receives
+-- at step 10 `coordinator_to_declarant`. Enforcement said otherwise:
+-- `isRoutedReceiverRole` derives eligibility from the step's DEPARTMENT, and
+-- step 10 belongs to `coordination`, so the engine admits the COORDINATOR and
+-- refuses the Déclarant with `not_eligible_receiver`. The projection therefore
+-- gave a Déclarant dossier VISIBILITY for a reception the engine would then
+-- refuse — a promise the platform could not keep.
+--
+-- THE RULING (2026-09-06). Step 10 is the COORDINATOR's return handoff; step 11
+-- is the Déclarant's rattachement AND its verification. So the Déclarant's
+-- receiving role moves to the step where he actually receives, and step 10
+-- names the role enforcement already admits. Nothing is granted and nothing is
+-- widened: this table is a READ-ONLY visibility projection and says so of
+-- itself — « Never a source of mutation authority. »
+--
+-- The superseded row is DELETED rather than annotated because it is a
+-- projection, not a record of anything that happened: the history of the
+-- ruling lives in DEC-C40 and in the documents that carried the divergence.
+-- ===========================================================================
+delete from public.process_step_receiving_role
+ where step_key = 'coordinator_to_declarant' and role_code = 'CUSTOMS_DECLARANT';
+
+insert into public.process_step_receiving_role (step_key, role_code, note) values
+  ('coordinator_to_declarant',  'COORDINATOR',
+   'RATIFIED 2026-09-06 (DEC-C40): step 10 is the Coordinator''s RETURN handoff from Finance douane. Matches what isRoutedReceiverRole already enforces from the step department.'),
+  ('gainde_document_submission','CUSTOMS_DECLARANT',
+   'RATIFIED 2026-09-06 (DEC-C40): the Declarant receives at step 11, where he performs and verifies the rattachement. Moved from step 10, where the projection promised a reception the engine refused.')
+on conflict (step_key, role_code) do nothing;
 -- ===========================================================================
 -- 8. Application-time assertions. These run once, now, and can never run
 --    again — which is why the companion verifier exists.

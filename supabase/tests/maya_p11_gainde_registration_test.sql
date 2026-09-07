@@ -1,5 +1,11 @@
 -- Behaviour test — MAYA-P1.1 Finance GAINDE registration (CEO step 8).
 -- Non-destructive (BEGIN/ROLLBACK).
+-- GAINDE-04 (DEC-C39, migration 20261001000001): step 9 is an ACTUAL PAYMENT
+-- with a per-tax breakdown, so `record_gainde_registration` now takes the
+-- payment date, currency, quittance and lines. The 3-argument version was
+-- DROPPED rather than kept beside it — two registration paths, one of which
+-- records no taxes, would let the incomplete act keep happening. Every call
+-- below gained the same minimal breakdown; what each case PROVES is unchanged.
 -- ---------------------------------------------------------------------------
 -- Proves the DATABASE enforces what the UI presents:
 --   * an actor holding customs:register succeeds
@@ -103,23 +109,23 @@ begin
   -- updateCustoms — and must still be refused HERE, because the narrow Finance
   -- capability is the authority for the registration ACT.
   begin
-    perform public.record_gainde_registration('00000000-0000-0000-0000-0000000b10e1', 'GND-X', '00000000-0000-0000-0000-0000000b1002');
+    perform public.record_gainde_registration('00000000-0000-0000-0000-0000000b10e1', 'GND-X', '00000000-0000-0000-0000-0000000b1002', now(), 'XOF', 'Q-P11', '[{"taxCode":"DD","labelFr":"Droit de douane","amountMinor":1250000}]'::jsonb);
   exception when others then updater := true; end;
 
   begin
-    perform public.record_gainde_registration('00000000-0000-0000-0000-0000000b10e1', 'GND-X', '00000000-0000-0000-0000-0000000b1003');
+    perform public.record_gainde_registration('00000000-0000-0000-0000-0000000b10e1', 'GND-X', '00000000-0000-0000-0000-0000000b1003', now(), 'XOF', 'Q-P11', '[{"taxCode":"DD","labelFr":"Droit de douane","amountMinor":1250000}]'::jsonb);
   exception when others then noperm := true; end;
 
   begin
-    perform public.record_gainde_registration('00000000-0000-0000-0000-0000000b10e1', 'GND-X', '00000000-0000-0000-0000-0000000b1004');
+    perform public.record_gainde_registration('00000000-0000-0000-0000-0000000b10e1', 'GND-X', '00000000-0000-0000-0000-0000000b1004', now(), 'XOF', 'Q-P11', '[{"taxCode":"DD","labelFr":"Droit de douane","amountMinor":1250000}]'::jsonb);
   exception when others then xtenant := true; end;
 
   begin
-    perform public.record_gainde_registration('00000000-0000-0000-0000-0000000b10e1', 'GND-X', '00000000-0000-0000-0000-0000deadbeef');
+    perform public.record_gainde_registration('00000000-0000-0000-0000-0000000b10e1', 'GND-X', '00000000-0000-0000-0000-0000deadbeef', now(), 'XOF', 'Q-P11', '[{"taxCode":"DD","labelFr":"Droit de douane","amountMinor":1250000}]'::jsonb);
   exception when others then forged := true; end;
 
   begin
-    perform public.record_gainde_registration('00000000-0000-0000-0000-0000000b10e1', '   ', '00000000-0000-0000-0000-0000000b1001');
+    perform public.record_gainde_registration('00000000-0000-0000-0000-0000000b10e1', '   ', '00000000-0000-0000-0000-0000000b1001', now(), 'XOF', 'Q-P11', '[{"taxCode":"DD","labelFr":"Droit de douane","amountMinor":1250000}]'::jsonb);
   exception when others then empty_ref := true; end;
 
   insert into _r values ('customs_update_cannot_substitute', case when updater then 1 else 0 end),
@@ -158,7 +164,7 @@ begin
    where event_type='GAINDE_REGISTRATION_RECORDED' and subject_id='00000000-0000-0000-0000-0000000b10e1';
 
   perform public.record_gainde_registration(
-    '00000000-0000-0000-0000-0000000b10e1', '  GND-2026-4417  ', '00000000-0000-0000-0000-0000000b1001');
+    '00000000-0000-0000-0000-0000000b10e1', '  GND-2026-4417  ', '00000000-0000-0000-0000-0000000b1001', now(), 'XOF', 'Q-P11', '[{"taxCode":"DD","labelFr":"Droit de douane","amountMinor":1250000}]'::jsonb);
 
   select external_ref, gainde_registered_at, gainde_registered_by, status,
          provider_code, provider_synced_at, reviewed_at
@@ -203,11 +209,11 @@ declare dup boolean := false; v_ref text; corrected boolean; first_corrected boo
 begin
   begin
     perform public.record_gainde_registration(
-      '00000000-0000-0000-0000-0000000b10e1', 'GND-2026-4417', '00000000-0000-0000-0000-0000000b1001');
+      '00000000-0000-0000-0000-0000000b10e1', 'GND-2026-4417', '00000000-0000-0000-0000-0000000b1001', now(), 'XOF', 'Q-P11', '[{"taxCode":"DD","labelFr":"Droit de douane","amountMinor":1250000}]'::jsonb);
   exception when others then dup := true; end;
 
   perform public.record_gainde_registration(
-    '00000000-0000-0000-0000-0000000b10e1', 'GND-2026-4418', '00000000-0000-0000-0000-0000000b1001');
+    '00000000-0000-0000-0000-0000000b10e1', 'GND-2026-4418', '00000000-0000-0000-0000-0000000b1001', now(), 'XOF', 'Q-P11-B', '[{"taxCode":"DD","labelFr":"Droit de douane","amountMinor":1250000}]'::jsonb);
   select external_ref into v_ref from public.customs_record where id='00000000-0000-0000-0000-0000000b10e1';
   -- SELECT THE EVENT BY ITS REFERENCE, NOT BY TIME.
   -- `business_event.occurred_at` defaults to now(), which in PostgreSQL is

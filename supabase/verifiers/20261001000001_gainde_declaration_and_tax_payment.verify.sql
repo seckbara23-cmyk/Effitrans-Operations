@@ -150,6 +150,17 @@ with checks(label, ok) as (
              = 'uuid, text, uuid, timestamp with time zone, text, text, jsonb'
     )),
 
+    -- A re-registration is a CORRECTION: the previous payment is superseded by
+    -- a void, never edited. Without this the one-live-payment index would refuse
+    -- the repair path the RPC has always allowed.
+    ('a re-registration supersedes the previous payment rather than editing it', (
+      select count(*) = 1 from pg_proc p
+        join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname = 'record_gainde_registration'
+         and p.prosrc like '%voided_at   = now()%'
+         and p.prosrc like '%Remplac%'
+    )),
+
     ('registration refuses a reference with no breakdown, and no quittance', (
       select count(*) = 1 from pg_proc p
         join pg_namespace n on n.oid = p.pronamespace
