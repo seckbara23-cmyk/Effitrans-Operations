@@ -42,7 +42,7 @@
  */
 import { existsSync } from "node:fs";
 import { target, queryFile } from "./migration/exec.mjs";
-import { repoMigrations } from "./migration/ledger.mjs";
+import { repoMigrations, remoteLedger } from "./migration/ledger.mjs";
 
 function parseArgs(argv) {
   const a = { dir: "supabase/migrations" };
@@ -56,6 +56,9 @@ function parseArgs(argv) {
     // Only these versions, comma-separated. Used by the promotion rehearsal to
     // check one verifier at the moment its migration lands.
     else if (v === "--only") a.only = new Set(argv[++i].split(",").map((x) => x.trim()));
+    // Check every verifier, including those whose migration is NOT applied.
+    // They will fail, and correctly so — use it only to see the whole set.
+    else if (v === "--include-pending") a.includePending = true;
   }
   return a;
 }
@@ -70,18 +73,37 @@ function main() {
     process.exit(2);
   }
 
-  let tgt, repo;
+  let tgt, repo, applied;
   try {
     tgt = target(args.target);
     repo = repoMigrations(args.dir).filter((m) => existsSync(m.verifier));
+    applied = new Set(remoteLedger(tgt).map((r) => r.version));
   } catch (e) {
     console.error(`[verify] could not start: ${e.message}`);
     process.exit(2);
   }
   if (args.only) repo = repo.filter((m) => args.only.has(m.version));
 
+  // ---- ONLY APPLIED MIGRATIONS, AND THAT IS THE WHOLE POINT ---------------
+  //
+  // The question this script answers is "does every verifier still pass against
+  // the schema its migration produced". For a migration that has NOT been
+  // applied, the verifier erroring is the CORRECT answer — the objects are
+  // genuinely absent — and reporting it as a failure would make the tool useless
+  // against production, where a pending backlog is normal.
+  //
+  // In CI this filter removes nothing: `db reset` applies every migration, so
+  // every verifier is checked. Against production it checks exactly the ones
+  // whose postconditions are supposed to hold right now.
+  const skipped = args.includePending ? [] : repo.filter((m) => !applied.has(m.version));
+  if (!args.includePending) repo = repo.filter((m) => applied.has(m.version));
+
   log(`[verify] target    : ${tgt.label}`);
-  log(`[verify] verifiers : ${repo.length}`);
+  log(`[verify] applied   : ${applied.size} migrations in the ledger`);
+  log(`[verify] checking  : ${repo.length} verifier(s)`);
+  if (skipped.length) {
+    log(`[verify] skipping  : ${skipped.length} not applied (${skipped.map((m) => m.version).join(", ")})`);
+  }
   log("");
 
   const failed = [];
@@ -123,7 +145,14 @@ function main() {
     console.error("[verify] apply into VERIFY_FAILED, which the policy calls indeterminate.");
     process.exit(1);
   }
-  log(`[verify] OK — ${repo.length}/${repo.length} verifiers pass against ${tgt.label}.`);
+  if (repo.length === 0) {
+    log(`[verify] OK — nothing to check: no applied migration has a companion verifier.`);
+    process.exit(0);
+  }
+  log(
+    `[verify] OK — ${repo.length}/${repo.length} verifier(s) pass against ${tgt.label}` +
+      (skipped.length ? `; ${skipped.length} not applied and therefore not checked.` : "."),
+  );
   process.exit(0);
 }
 

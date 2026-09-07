@@ -156,6 +156,14 @@ describe("a verifier's evidence is the schema, never the ledger", () => {
     expect(runnerCode).not.toContain("applyFile");
     expect(runnerCode).not.toMatch(/\brepair\b/);
     expect(runnerCode).toContain("queryFile");
+
+    // It checks the verifiers of APPLIED migrations only. For a migration that
+    // is not applied, the verifier erroring is the CORRECT answer — the objects
+    // are genuinely absent — so treating that as a failure would make the tool
+    // useless against production, where a pending backlog is normal. In CI the
+    // filter removes nothing: `db reset` applies everything.
+    expect(runnerCode).toContain("remoteLedger");
+    expect(runnerCode).toContain("applied.has(m.version)");
   });
 });
 
