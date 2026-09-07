@@ -96,6 +96,34 @@ describe("a verifier's evidence is the schema, never the ledger", () => {
     expect(lint).toContain("const strip");
   });
 
+  it("02b — …and the lint's read-only rule is pinned, so it cannot be quietly deleted", () => {
+    // Test 03 below scans the verifiers THAT EXIST. The lint scans the ones
+    // that will exist. Deleting the lint's rule leaves today's files clean and
+    // tomorrow's unguarded, and nothing would have noticed — which is exactly
+    // the shape of the defect this whole programme is about: a control that is
+    // only ever asked a question it cannot fail.
+    //
+    // Found by an adversarial probe (§15.14) whose own first cut was wrong: it
+    // disabled the lint and then asked only the lint, so of course the lint
+    // passed. The probe now runs the suite, and the suite now has this.
+    const lint = read("scripts/lint-migrations.mjs");
+    expect(lint).toContain("verifiers must be strictly read-only");
+    // Read the rule list as TEXT rather than matching it with a regex. The
+    // thing under assertion IS a list of regexes, and writing a regex to match
+    // regexes is how the first cut of this test asserted a backspace character
+    // by accident — `\b` inside a template literal is not a word boundary.
+    const at = lint.indexOf("const MUTATING");
+    expect(at, "the read-only rule list must still exist").toBeGreaterThan(-1);
+    const rules = lint.slice(at, at + 400);
+    for (const verb of ["insert", "update", "delete", "truncate", "alter", "drop", "grant", "revoke", "create"]) {
+      expect(rules, `the read-only ban must still cover ${verb}`).toContain(verb);
+    }
+    // …and the two rules that are not simple verbs: a session or role change,
+    // and an anonymous DO block, which can write without naming a verb.
+    expect(rules, "session and role changes must still be banned").toContain("(set|reset)");
+    expect(rules, "anonymous DO blocks must still be banned").toContain("do");
+  });
+
   it("03 — every verifier still meets the read-only, one-row contract", () => {
     for (const f of verifiers) {
       const v = sql(`${VERIFIERS_DIR}/${f}`);
