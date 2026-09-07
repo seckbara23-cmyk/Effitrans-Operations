@@ -140,9 +140,13 @@ function relation(n: WorkNode): ViewerRelation {
   const e = n.eligibility;
   if (e.canSubmit && IN_HAND.has(n.state)) return "yours_active";
   if (e.canStart) return "yours_available";
-  if (e.claimedByAnother || n.assigneeLabel !== null) return "someone_else";
-  // Owned by their role but not offerable right now (custody, a prerequisite,
-  // an outstanding hard requirement): still theirs to read about.
+  // `claimedByAnother` is the evaluator's own verdict and already means
+  // « assigned, and not to you ». An assignee LABEL alone would be wrong here:
+  // a step assigned to the reader but momentarily unofferable — custody
+  // outstanding, a prerequisite open — would read « Travail en cours » about
+  // the reader's own work.
+  if (e.claimedByAnother) return "someone_else";
+  // Owned by their role but not offerable right now: still theirs to read about.
   return e.isOwner && e.mayAct ? "yours_available" : "observer";
 }
 

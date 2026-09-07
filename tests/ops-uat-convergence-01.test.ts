@@ -502,6 +502,28 @@ describe("one canonical next action", () => {
     expect(held.currentOwnerFr).toBe("Awa D.");
   });
 
+  it("20b — but the reader's OWN step, momentarily unofferable, stays theirs", () => {
+    // An assignee LABEL is not evidence that somebody else holds the work.
+    // Assigned to the reader, and stopped only because the custody transfer has
+    // not been received: « Travail en cours » would be telling them their own
+    // work belongs to another. `claimedByAnother` is the evaluator's verdict and
+    // is the only thing that may say that.
+    const mine = work([
+      node({
+        stepKey: "customs_preparation",
+        state: "ACTIVE",
+        assigneeLabel: "Moi",
+        eligibility: evaluateStepAction(
+          facts({ state: "ACTIVE", assignedUserId: DECLARANT.userId, custody: "awaiting_reception" }),
+          DECLARANT,
+        ),
+      }),
+    ]);
+    expect(mine.primary?.eligibility.claimedByAnother).toBe(false);
+    expect(mine.primary?.eligibility.canSubmit).toBe(false);
+    expect(mine.primary?.viewer).toBe("yours_available");
+  });
+
   it("21 — evidence the viewer cannot see never renders as ready", () => {
     const el = evaluateStepAction(
       facts({
