@@ -51,6 +51,7 @@ const verdict = (over: Partial<StepEligibility> = {}): StepEligibility => ({
   claimedByAnother: false,
   custody: "not_applicable",
   awaitingReception: false,
+  notApplicable: null,
   unauthorized: false,
   requirements: [],
   canStart: false,

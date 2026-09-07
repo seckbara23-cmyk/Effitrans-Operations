@@ -104,7 +104,6 @@ function node(over: Partial<WorkNode> & { stepKey: string }, viewer = DECLARANT)
     assignedUserId: over.assigneeLabel ? "someone" : null,
   });
   return {
-    stepKey: over.stepKey,
     stepNumber: registry?.stepNumber ?? null,
     labelFr: registry?.labelFr ?? over.stepKey,
     state: over.state ?? "PENDING",

@@ -18,7 +18,31 @@
 
 ---
 
-## 1. Ce que le code fait aujourd'hui — et pourquoi il ne bouge pas encore
+> ## ⚠ MISE À JOUR 2026-09-07 — LE COMPORTEMENT A CHANGÉ (DEC-C48)
+>
+> La section 1 ci-dessous décrivait la position du 2026-09-06 : la classe
+> pilotait ce que l'opérateur LIT, jamais ce que le moteur refuse, et une
+> exigence non classée continuait de bloquer. **Effitrans a tranché en sens
+> inverse** : « UNKNOWN BUSINESS COMPLETENESS REQUIREMENT MUST NOT
+> AUTOMATICALLY BECOME HARD_GATE. »
+>
+> `blocksCompletion` répond désormais depuis la **classe seule**, et
+> `FLAG_FOR_RULING` **ne bloque pas**. Les 19 exigences de preuve que le
+> registre des 26 étapes déclare sont classées avec citation dans
+> `lib/process/requirement-class.ts` ; tout le reste est signalé et laisse
+> passer.
+>
+> **Ce qui n'a PAS changé :** prérequis, custody, rôle propriétaire,
+> permissions, machine à états, maker/checker, RLS,
+> `assert_actor_authority`, tout CHECK base — et `unauthorized`, qui est
+> délibérément **hors** du classificateur parce qu'aucune classe ne peut
+> assouplir une autorité.
+>
+> **Les 546 lignes ci-dessous restent des PROPOSITIONS non contestées**
+> (la phase adversariale n'a jamais tourné) et ne pilotent toujours aucun
+> comportement : seul `CLASSIFIED` le fait.
+
+## 1. Ce que le code faisait au 2026-09-06 — position désormais renversée
 
 La doctrine pose deux exigences qui tirent dans des directions opposées, et
 les deux sont respectées ici :
