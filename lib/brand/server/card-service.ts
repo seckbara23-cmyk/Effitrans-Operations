@@ -17,10 +17,13 @@ import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
 import { tenantBlockReason, isLifecycleStatus, type LifecycleStatus } from "@/lib/platform/company-metadata";
 import { readBrandCore } from "./service";
+import { staffIdentityStored } from "@/lib/users/identity-141";
 import { buildCardModel, cardReadiness, type CardModel, type CardReadiness } from "@/lib/brand/card/model";
 
 type Embedded = {
   user_id: string; tenant_id: string; job_title: string | null; phone_office: string | null;
+  /** ADMIN-USER-IDENTITY-01 — present only once migration 20261003000001 lands. */
+  staff_function?: string | null;
   phone_mobile: string | null; whatsapp: string | null; photo_asset_id: string | null; public_card_enabled: boolean;
   app_user: { name: string | null; email: string; status: string } | { name: string | null; email: string; status: string }[] | null;
   organization: { name: string; trade_name: string | null; lifecycle_status: string; trial_ends_at: string | null } | Record<string, unknown>[] | null;
@@ -40,12 +43,23 @@ export const resolveCardByToken = cache(async (token: string): Promise<CardModel
   if (!token || token.length < 16) return null;
   const admin = getAdminSupabaseClient();
 
+  // ADMIN-USER-IDENTITY-01 — the card reads the CANONICAL identity and holds no
+  // value of its own: the name comes from `app_user.name` (written by the Users
+  // editor) and the title from `workforce_profile.job_title` (the same column
+  // that editor writes). There is one value, not a canonical one and a branding
+  // override, so there is no precedence to resolve.
+  //
+  // §21/DEC-C53 — `staff_function` arrives with migration 20261003000001, which is
+  // written and NOT applied, and PostgREST fails the WHOLE select on an unknown
+  // column. A public card route that 500s is worse than one without a fonction,
+  // so it is named only once the probe says it exists.
+  const withFunction = await staffIdentityStored();
+  const BASE =
+    "user_id, tenant_id, job_title, phone_office, phone_mobile, whatsapp, photo_asset_id, public_card_enabled, " +
+    "app_user:user_id(name, email, status), organization:tenant_id(name, trade_name, lifecycle_status, trial_ends_at)";
   const { data } = await admin
     .from("workforce_profile")
-    .select(
-      "user_id, tenant_id, job_title, phone_office, phone_mobile, whatsapp, photo_asset_id, public_card_enabled, " +
-        "app_user:user_id(name, email, status), organization:tenant_id(name, trade_name, lifecycle_status, trial_ends_at)",
-    )
+    .select(withFunction ? `${BASE}, staff_function` : BASE)
     .eq("public_card_token", token)
     .maybeSingle();
 
@@ -69,7 +83,12 @@ export const resolveCardByToken = cache(async (token: string): Promise<CardModel
     assets: core.assets,
     memberships: core.memberships,
     employee: {
-      name: user.name ?? user.email, title: row.job_title, department: null, email: user.email,
+      // `department` on the card model is the employee's FONCTION — the field was
+      // added by DBC-1 and hard-coded `null` because nothing owned the value.
+      // Now something does. It stays null on schema 138, exactly as before.
+      name: user.name ?? user.email, title: row.job_title,
+      department: withFunction ? (row.staff_function ?? null) : null,
+      email: user.email,
       phoneOffice: row.phone_office, phoneMobile: row.phone_mobile, whatsapp: row.whatsapp, photoAssetId: row.photo_asset_id,
     },
   });

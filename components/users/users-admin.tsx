@@ -528,8 +528,18 @@ function UserRow({
   return (
     <tr className="align-top hover:bg-slate-50/60">
       <td className="px-4 py-3">
-        <div className="font-medium text-navy-900">{user.name ?? user.email}</div>
+        {/* §10 — professional identity and security role are shown as separate
+            facts, in separate columns. They often correspond; they remain
+            independent, and an administrator must be able to see which is which. */}
+        <div className="font-medium text-navy-900">{user.identity.displayName}</div>
         <div className="text-xs text-slate-500">{user.email}</div>
+        {(user.identity.mainTitle || user.identity.functionLabel) && (
+          <div className="mt-0.5 text-xs text-slate-600">
+            {user.identity.mainTitle}
+            {user.identity.mainTitle && user.identity.functionLabel ? " · " : ""}
+            {user.identity.functionLabel}
+          </div>
+        )}
       </td>
       <td className="px-4 py-3">
         <div className="flex flex-wrap gap-1.5">
@@ -696,11 +706,16 @@ function UserRow({
             </button>
             {/* Password management lives on the details page, not in a table row:
                 it needs a confirmation dialog and a one-time secret reveal. */}
+            {/* ADMIN-USER-IDENTITY-01 — the ratified affordance. It was
+                « Détails », which reads as « look at » rather than « change », and
+                an administrator looking for a way to correct a name had no
+                reason to click it. Same destination, same interaction pattern:
+                only the promise changed, and the page now keeps it. */}
             <Link
               href={`/users/${user.id}`}
               className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-medium text-navy-700 hover:bg-slate-50"
             >
-              {t.users.actions.details}
+              {t.users.actions.edit}
             </Link>
           </div>
         )}

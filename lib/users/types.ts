@@ -11,10 +11,23 @@ import type { Presence } from "./presence";
 import type { StaffStatus } from "./lifecycle";
 import type { PasswordStatus } from "./password-lifecycle";
 
+import type { StaffIdentity } from "./identity";
+
 export type AdminUser = {
   id: string;
   email: string;
+  /** The legacy single-field display name, straight from `app_user.name`. */
   name: string | null;
+  /**
+   * ADMIN-USER-IDENTITY-01 — the canonical professional identity. `firstName`,
+   * `lastName` and `functionLabel` are null for EVERY user while migration
+   * 20261003000001 is unapplied; `displayName` and `mainTitle` are live today.
+   * Professional identity, never authority: `roles` below is a separate fact
+   * and neither derives from the other.
+   */
+  identity: StaffIdentity;
+  /** Can the platform store a first/last split and a function yet? */
+  identityStorable: boolean;
   /** 8.1A — full lifecycle: active | inactive (suspended) | archived (departed). */
   status: StaffStatus;
   isSystemAdmin: boolean;
@@ -93,6 +106,13 @@ export type CreateUserError =
   | "welcome_failed"
   // 8.1A — the target is archived: suspend/welcome/role changes are refused (restore first).
   | "user_archived"
+  // ADMIN-USER-IDENTITY-01 — the submitted identity is not storable as written
+  // (too long, or a display name sent together with a first/last split).
+  | "invalid_identity"
+  // ADMIN-USER-IDENTITY-01 — the caller supplied a Prénom, a Nom or a Fonction
+  // and migration 20261003000001 is not applied. REFUSED rather than accepted
+  // and dropped: the platform must never claim it saved what it cannot store.
+  | "identity_schema_unavailable"
   | "generic";
 
 export type ActionResult =

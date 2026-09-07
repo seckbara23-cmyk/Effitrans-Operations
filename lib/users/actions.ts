@@ -28,6 +28,8 @@ import { NON_ASSIGNABLE_STAFF_ROLE_CODES } from "./service";
 // one `admin:users:manage` token. userAdminCodes() returns [granular, umbrella],
 // so a tenant whose migration has not been applied yet is never locked out.
 import { userAdminCodes } from "./permissions";
+import { displayNameFrom, validateIdentity, type StaffIdentityInput } from "./identity";
+import { staffIdentityStored } from "./identity-141";
 import type { ActionResult, CredentialMode, CreateUserError } from "./types";
 
 type Admin = ReturnType<typeof getAdminSupabaseClient>;
@@ -295,6 +297,177 @@ export async function sendWelcomeEmail(userId: string): Promise<ActionResult> {
     welcome: welcome.outcome,
     ...(welcome.setupLink ? { setupLink: welcome.setupLink } : {}),
   };
+}
+
+// ------------------------------------------- canonical professional identity ----
+
+/**
+ * Edit a staff member's CANONICAL PROFESSIONAL IDENTITY from Administration →
+ * Users. ADMIN-USER-IDENTITY-01, ratified 2026-09-07.
+ *
+ * ── WHAT IT WRITES, AND WHERE ───────────────────────────────────────────────
+ *   app_user.name                     the display name (derived from first+last
+ *                                     when the platform can store them)
+ *   workforce_profile.job_title       « Titre principal » — the SAME column the
+ *                                     Digital Business Card, the e-mail
+ *                                     signature and generated documents already
+ *                                     read, so the card needs no second value
+ *   workforce_profile.first_name      ⧗ migration 20261003000001
+ *   workforce_profile.last_name       ⧗ migration 20261003000001
+ *   workforce_profile.staff_function  ⧗ migration 20261003000001
+ *
+ * ── WHAT IT MUST NEVER DO, AND CANNOT ───────────────────────────────────────
+ * Grant anything. There is no role write, no `user_role` touch, no permission
+ * lookup and no import of the RBAC modules in this function's reach: setting a
+ * title of « Chef de Transit » writes one text column and nothing else. It also
+ * never touches `id`, `email`, `status`, `is_system_admin`, the password
+ * lifecycle, any assignment, or any of the 204 foreign keys that reference this
+ * user — every one of which is a uuid, which is why a rename cannot break an
+ * operational reference.
+ *
+ * ── AND IT NEVER LIES ABOUT PERSISTENCE ─────────────────────────────────────
+ * Migration 20261003000001 is written and NOT applied. Rather than accepting a
+ * Prénom and dropping it, the action REFUSES with `identity_schema_unavailable`
+ * when the caller supplies a field the schema cannot hold. §21, verbatim: « do
+ * not claim data was saved when it could not be persisted. »
+ */
+export async function updateUserIdentity(
+  userId: string,
+  input: StaffIdentityInput,
+): Promise<ActionResult> {
+  let admin;
+  try {
+    // The capability that already exists for editing a user. No new permission:
+    // widening authority to change someone's professional identity would be its
+    // own ratification, and SYSTEM_ADMIN already holds this.
+    admin = await assertAnyPermission(userAdminCodes("update"));
+  } catch {
+    return { ok: false, error: "forbidden" };
+  }
+
+  const parsed = validateIdentity(input);
+  if (!parsed.ok) return { ok: false, error: "invalid_identity" };
+  const v = parsed.value;
+
+  const supabase = getAdminSupabaseClient();
+  const { data: target } = await supabase
+    .from("app_user")
+    .select("id, tenant_id, email, name, status")
+    .eq("id", userId)
+    .maybeSingle();
+  if (!target || target.tenant_id !== admin.tenantId) return { ok: false, error: "not_found" };
+  // 8.1A — an archived user is read-only everywhere else in this module; identity
+  // is not the exception that reopens a departed account.
+  if (target.status === "archived") return { ok: false, error: "user_archived" };
+
+  const canStoreSplit = await staffIdentityStored();
+  const wantsSplit =
+    v.firstName !== undefined || v.lastName !== undefined || v.functionLabel !== undefined;
+  if (wantsSplit && !canStoreSplit) return { ok: false, error: "identity_schema_unavailable" };
+
+  // The profile row may not exist yet: 32 of 60 users have one. Reading it first
+  // keeps the audit honest about what actually changed and lets the upsert carry
+  // only the touched fields.
+  const profileCols = canStoreSplit
+    ? "user_id, job_title, first_name, last_name, staff_function"
+    : "user_id, job_title";
+  const { data: profile, error: profileErr } = await supabase
+    .from("workforce_profile")
+    .select(profileCols)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (profileErr) {
+    reportError(profileErr, { scope: "action", event: "users.identity.read" });
+    return { ok: false, error: "generic" };
+  }
+  const before = (profile ?? {}) as Record<string, string | null>;
+
+  // ---- the display name -----------------------------------------------------
+  // Derived from first+last when both are known, so an administrator is never
+  // asked to maintain the same fact twice (§6). On schema 138 the admin edits
+  // it directly, which is the same field with one fewer inference.
+  const nextFirst = v.firstName !== undefined ? v.firstName : (before.first_name ?? null);
+  const nextLast = v.lastName !== undefined ? v.lastName : (before.last_name ?? null);
+  const nextName = canStoreSplit
+    ? displayNameFrom({
+        firstName: nextFirst,
+        lastName: nextLast,
+        legacyName: v.displayName !== undefined ? v.displayName : target.name,
+        email: target.email,
+      })
+    : displayNameFrom({
+        legacyName: v.displayName !== undefined ? v.displayName : target.name,
+        email: target.email,
+      });
+
+  if (nextName !== target.name) {
+    const { error } = await supabase
+      .from("app_user")
+      .update({ name: nextName })
+      .eq("id", userId)
+      .eq("tenant_id", admin.tenantId);
+    if (error) {
+      reportError(error, { scope: "action", event: "users.identity.name" });
+      return { ok: false, error: "generic" };
+    }
+  }
+
+  // ---- the professional profile ---------------------------------------------
+  const row: Record<string, unknown> = {
+    user_id: userId,
+    tenant_id: admin.tenantId,
+    updated_by: admin.id,
+  };
+  if (v.mainTitle !== undefined) row.job_title = v.mainTitle;
+  if (canStoreSplit) {
+    if (v.firstName !== undefined) row.first_name = v.firstName;
+    if (v.lastName !== undefined) row.last_name = v.lastName;
+    if (v.functionLabel !== undefined) row.staff_function = v.functionLabel;
+  }
+
+  if (Object.keys(row).length > 3) {
+    const { error } = await supabase
+      .from("workforce_profile")
+      .upsert(row as never, { onConflict: "user_id" });
+    if (error) {
+      reportError(error, { scope: "action", event: "users.identity.profile" });
+      return { ok: false, error: "generic" };
+    }
+  }
+
+  // ---- audit ----------------------------------------------------------------
+  // Old and new VALUES, because a name and a title are the change itself and an
+  // audit that recorded only field names could not answer « what was it before ».
+  // Nothing here is a secret: no password, no token, no session, no auth
+  // metadata — this function never reads any.
+  const changed: Record<string, { before: string | null; after: string | null }> = {};
+  if (nextName !== target.name) changed.display_name = { before: target.name, after: nextName };
+  for (const [key, col] of [
+    ["mainTitle", "job_title"],
+    ["firstName", "first_name"],
+    ["lastName", "last_name"],
+    ["functionLabel", "staff_function"],
+  ] as const) {
+    if (row[col] === undefined) continue;
+    changed[col] = { before: before[col] ?? null, after: (row[col] as string | null) ?? null };
+  }
+
+  await writeAudit({
+    action: AuditActions.USER_IDENTITY_UPDATED,
+    actorId: admin.id,
+    tenantId: admin.tenantId,
+    entity: "app_user",
+    entityId: userId,
+    before: { display_name: target.name },
+    after: { changed, schema: canStoreSplit ? "canonical" : "legacy_display_name_only" },
+  });
+
+  revalidatePath("/users");
+  revalidatePath(`/users/${userId}`);
+  // The branding surfaces read the SAME two stores, so they follow with no
+  // second write — but their pages are cached and must be told.
+  revalidatePath("/brand-center");
+  return { ok: true };
 }
 
 export async function setUserStatus(userId: string, status: "active" | "inactive"): Promise<ActionResult> {

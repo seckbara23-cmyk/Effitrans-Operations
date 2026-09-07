@@ -6,6 +6,7 @@ import { getEffectivePermissions } from "@/lib/rbac/permissions";
 import { getAdminUser } from "@/lib/users/service";
 import { canUserAdmin } from "@/lib/users/permissions";
 import { UserPasswordPanel } from "@/components/users/user-password-panel";
+import { UserIdentityPanel } from "@/components/users/user-identity-panel";
 import { t } from "@/lib/i18n";
 
 export const metadata: Metadata = { title: t.users.title };
@@ -59,15 +60,34 @@ export default async function UserDetailsPage({ params }: { params: { id: string
 
   return (
     <div className="animate-fade-in space-y-6">
+      {/* ADMIN-USER-IDENTITY-01 — the canonical display name, which is what
+          `identity.displayName` resolves through: first + last when the platform
+          holds them, the stored name otherwise, the e-mail last. */}
       <PageHeader
         meta="Administration"
-        title={user.name ?? user.email}
-        subtitle={user.email}
+        title={user.identity.displayName}
+        subtitle={[user.identity.mainTitle, user.identity.functionLabel, user.email]
+          .filter(Boolean)
+          .join(" · ")}
       />
 
       <Link href="/users" className="inline-block text-sm text-teal-700 hover:underline">
         ← {t.users.title}
       </Link>
+
+      {/* The ratified edit experience: Administration → Users → select → Edit →
+          Identité / Profil professionnel → Save. It is placed FIRST because it is
+          why an administrator opens this page. */}
+      <UserIdentityPanel
+        userId={user.id}
+        email={user.email}
+        identity={user.identity}
+        storable={user.identityStorable}
+        canUpdate={canUserAdmin(permissions, "update")}
+        archived={user.status === "archived"}
+        roles={user.roles}
+        statusLabel={t.users.status[user.status]}
+      />
 
       <section className="surface p-5">
         {/* EMP-4A — Enterprise Mail access for this user. A link rather than an

@@ -32,7 +32,7 @@ export function PeopleManager({ people }: { people: WorkforceView[] }) {
                   <p className="truncate text-xs text-slate-500">{p.email}{p.roleSummary ? ` · ${p.roleSummary}` : ""}</p>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <Chip ok={Boolean(p.jobTitle)}>Fonction</Chip>
+                  <Chip ok={Boolean(p.jobTitle)}>Titre</Chip>
                   <Chip ok={p.hasPhone}>Tél.</Chip>
                   <Chip ok={p.hasPhoto}>Photo</Chip>
                 </div>
@@ -76,7 +76,23 @@ function EditRow({ person, onDone }: { person: WorkforceView; onDone: () => void
 
   return (
     <div className="mt-3 grid grid-cols-1 gap-3 rounded-lg bg-slate-50 p-4 sm:grid-cols-2">
-      <Fld label="Fonction (titre professionnel)"><input value={d.jobTitle ?? ""} onChange={(e) => set("jobTitle", e.target.value)} className={inp} placeholder="Managing Director | CEO" /></Fld>
+      {/* ADMIN-USER-IDENTITY-01 — this said « Fonction (titre professionnel) » and
+          collapsed two facts Effitrans has since ratified as distinct: the
+          FONCTION is the organisational function (Transit, Douane, Finance), the
+          TITRE PRINCIPAL is the professional designation (Chef de Transit).
+          This field has only ever written `workforce_profile.job_title`, which
+          is the title — so the label was wrong, not the column.
+
+          There is ONE value and no override: Administration → Utilisateurs and
+          this field write the same column, and the last write wins. The
+          canonical editor is Users; this stays because a branding administrator
+          preparing a card should not have to leave the studio to fix a typo. */}
+      <Fld label="Titre principal"><input value={d.jobTitle ?? ""} onChange={(e) => set("jobTitle", e.target.value)} className={inp} placeholder="Chef de Transit | Directeur Général" /></Fld>
+      <p className="text-[11px] text-slate-500">
+        Le nom, le prénom et la fonction se modifient dans{" "}
+        <a href="/users" className="text-teal-700 hover:underline">Administration → Utilisateurs</a>.
+        Le titre ci-dessus est la même valeur que celle qui y figure.
+      </p>
       <Fld label="Variante de signature"><select value={d.signatureVariant} onChange={(e) => set("signatureVariant", e.target.value)} className={inp}>{SIGNATURE_VARIANTS.map((v) => <option key={v} value={v}>{v}</option>)}</select></Fld>
       <Fld label="Téléphone bureau"><input value={d.phoneOffice ?? ""} onChange={(e) => set("phoneOffice", e.target.value)} className={inp} placeholder="+221 33 867 02 67" /></Fld>
       <Fld label="Mobile"><input value={d.phoneMobile ?? ""} onChange={(e) => set("phoneMobile", e.target.value)} className={inp} placeholder="+221 76 356 58 59" /></Fld>

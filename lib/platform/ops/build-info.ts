@@ -13,10 +13,10 @@
  */
 
 /** The latest migration shipped in this build (pinned to the directory by test). */
-export const LATEST_MIGRATION = "20261002000001_dossier_service_scope";
+export const LATEST_MIGRATION = "20261003000001_staff_professional_identity";
 
 /** Total migrations shipped in this build (pinned by test). */
-export const MIGRATION_COUNT = 140;
+export const MIGRATION_COUNT = 141;
 
 /** Newest DATA-probeable migration marker: this permission row proves migrations ≥ this point. */
 export const MIGRATION_PROBE = {

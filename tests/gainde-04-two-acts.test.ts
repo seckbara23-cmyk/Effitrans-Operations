@@ -321,8 +321,8 @@ describe("migration #139 ships under the #139+ policy", () => {
     // (20261002000001_dossier_service_scope), also unapplied. What this slice
     // guarantees is that #139 SHIPS with its verifier and that build-info
     // tracks the directory — never that nothing may be added after it.
-    expect(MIGRATION_COUNT).toBe(140);
-    expect(LATEST_MIGRATION).toBe("20261002000001_dossier_service_scope");
+    expect(MIGRATION_COUNT).toBe(141);
+    expect(LATEST_MIGRATION).toBe("20261003000001_staff_professional_identity");
     const dir = fileURLToPath(new URL("../supabase/migrations", import.meta.url));
     const files = require("node:fs").readdirSync(dir).filter((f: string) => f.endsWith(".sql")).sort();
     expect(files).toHaveLength(MIGRATION_COUNT);

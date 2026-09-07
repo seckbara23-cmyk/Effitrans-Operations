@@ -13,6 +13,8 @@ import { assertAnyPermission } from "@/lib/auth/require-permission";
 import { classifyPresence } from "./presence";
 import { toStaffStatus } from "./lifecycle";
 import { userAdminCodes } from "./permissions";
+import { buildStaffIdentity } from "./identity";
+import { staffIdentityStored } from "./identity-141";
 import { passwordStatus } from "./password-lifecycle";
 import type { AdminUser, AdminUserRole, AssignableRole, PresenceSummary } from "./types";
 
@@ -85,15 +87,42 @@ export async function listUsers(opts: { includeArchived?: boolean } = {}): Promi
   const { data: users, error } = await query.order("email").returns<UserRow[]>();
   if (error) throw new Error(`[users] directory read failed: ${error.message}`);
 
-  const [{ data: roleRows, error: roleErr }, passwordRows] = await Promise.all([
+  // ADMIN-USER-IDENTITY-01 — the professional profile, in ONE batched read for
+  // the whole directory. §19/DEC-C53: `first_name`, `last_name` and
+  // `staff_function` arrive with migration 20261003000001, which is written and
+  // NOT applied, and PostgREST fails the WHOLE select on an unknown column — so
+  // they are named only once the probe says they exist. `job_title` has existed
+  // since DBC-1 and is always projected.
+  const identityStorable = await staffIdentityStored();
+  const [{ data: roleRows, error: roleErr }, passwordRows, profileRows] = await Promise.all([
     supabase
       .from("user_role")
       .select("user_id, role:role_id(id, code, label_fr)")
       .eq("tenant_id", admin.tenantId)
       .returns<{ user_id: string; role: { id: string; code: string; label_fr: string | null } | null }[]>(),
     readPasswordLifecycle(supabase, admin.tenantId),
+    supabase
+      .from("workforce_profile")
+      .select(
+        identityStorable
+          ? "user_id, job_title, first_name, last_name, staff_function"
+          : "user_id, job_title",
+      )
+      .eq("tenant_id", admin.tenantId),
   ]);
   if (roleErr) throw new Error(`[users] role read failed: ${roleErr.message}`);
+  // A GENUINE failure stays loud. Only a not-yet-applied migration was made
+  // survivable, and it was made survivable by not asking — not by catching.
+  if (profileRows.error) {
+    throw new Error(`[users] professional profile read failed: ${profileRows.error.message}`);
+  }
+  const profileByUser = new Map<string, Record<string, string | null>>();
+  // Cast through `unknown`: the generated database types describe the schema
+  // that is DEPLOYED, and the three identity columns are deliberately not in it
+  // yet. Adding them to lib/db/types.ts would assert columns production lacks.
+  for (const r of (profileRows.data ?? []) as unknown as Record<string, string | null>[]) {
+    if (r.user_id) profileByUser.set(r.user_id, r);
+  }
 
   const byUser = new Map<string, AdminUserRole[]>();
   for (const r of roleRows ?? []) {
@@ -105,10 +134,20 @@ export async function listUsers(opts: { includeArchived?: boolean } = {}): Promi
 
   return (users ?? []).map((u) => {
     const pw = passwordRows.get(u.id);
+    const wp = profileByUser.get(u.id);
     return {
     id: u.id,
     email: u.email,
     name: u.name,
+    identity: buildStaffIdentity({
+      firstName: wp?.first_name ?? null,
+      lastName: wp?.last_name ?? null,
+      legacyName: u.name,
+      email: u.email,
+      functionLabel: wp?.staff_function ?? null,
+      mainTitle: wp?.job_title ?? null,
+    }),
+    identityStorable,
     status: toStaffStatus(u.status),
     isSystemAdmin: u.is_system_admin,
     roles: byUser.get(u.id) ?? [],

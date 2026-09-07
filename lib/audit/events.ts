@@ -18,6 +18,12 @@ export const AuditActions = {
   // future assignability end. Restore is the only exit, back to active.
   USER_ARCHIVED: "user.archived",
   USER_RESTORED: "user.restored",
+  // ADMIN-USER-IDENTITY-01 — an administrator edited a staff member's canonical
+  // professional identity (name, fonction, titre principal). Carries old and new
+  // VALUES: a name is the change itself, and none of it is a secret. It is
+  // deliberately NOT a `user.role.*` code — professional identity is not
+  // authority, and an auditor scanning for privilege changes must not find this.
+  USER_IDENTITY_UPDATED: "user.identity.updated",
   USER_ROLE_ASSIGNED: "user.role.assigned",
   USER_ROLE_REVOKED: "user.role.revoked",
   // Phase 5.0E-4 — welcome / setup-link lifecycle (safe metadata only; NEVER the link).

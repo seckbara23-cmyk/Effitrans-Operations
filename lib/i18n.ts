@@ -1615,6 +1615,8 @@ export const t = {
       revoke: "Retirer",
       resendWelcome: "Renvoyer l'e-mail",
       details: "Détails",
+      // ADMIN-USER-IDENTITY-01 — the row action now says what the page does.
+      edit: "Modifier",
     },
     archive: {
       confirmTitle: "Archiver cet utilisateur ?",

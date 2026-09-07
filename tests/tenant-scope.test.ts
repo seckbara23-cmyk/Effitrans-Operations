@@ -103,6 +103,13 @@ const KNOWN_UNSCOPED_READS: Record<string, string> = {
   //     before it fetches anything. Delete with the file once #140 is applied.
   "lib/files/service-scope-140.ts::operational_file":
     "zero-row schema probe: does the #140 column exist? returns no data at all",
+  // --- And the third of the same shape, for migration 20261003000001
+  //     (ADMIN-USER-IDENTITY-01). `.limit(0)`: the question is whether
+  //     workforce_profile.first_name exists, answered by PostgREST validating
+  //     the projection before it fetches. Delete with the file once #141 is
+  //     applied.
+  "lib/users/identity-141.ts::workforce_profile":
+    "zero-row schema probe: does the #141 column exist? returns no data at all",
   // --- Self-identity lookups by auth.users id (globally unique; no tenant
   //     context to filter on — the read RESOLVES which identity/tenant the
   //     caller is). Safe: an auth id maps to exactly one identity row.
