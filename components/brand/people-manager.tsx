@@ -88,7 +88,7 @@ function EditRow({ person, onDone }: { person: WorkforceView; onDone: () => void
           canonical editor is Users; this stays because a branding administrator
           preparing a card should not have to leave the studio to fix a typo. */}
       <Fld label="Titre principal"><input value={d.jobTitle ?? ""} onChange={(e) => set("jobTitle", e.target.value)} className={inp} placeholder="Chef de Transit | Directeur Général" /></Fld>
-      <p className="text-[11px] text-slate-500">
+      <p className="text-[11px] text-slate-500 sm:col-span-2">
         Le nom, le prénom et la fonction se modifient dans{" "}
         <a href="/users" className="text-teal-700 hover:underline">Administration → Utilisateurs</a>.
         Le titre ci-dessus est la même valeur que celle qui y figure.
