@@ -81,6 +81,19 @@ with checks(label, ok) as (
          and p.prosrc like '%tax_total_mismatch%'
     )),
 
+    -- ONE function serves two tables with different shapes. Reading the row's
+    -- identity by trying fields in turn raises « record "new" has no field
+    -- payment_id » on the header table — PL/pgSQL resolves record fields at
+    -- runtime — and CI found exactly that. The identity is resolved from
+    -- TG_TABLE_NAME, and NEW/OLD are each read only where they exist.
+    ('the balance rule resolves its row from the table it fired on', (
+      select count(*) = 1 from pg_proc p
+        join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname = 'assert_gainde_tax_payment_balances'
+         and p.prosrc like '%tg_table_name%'
+         and p.prosrc like '%tg_op%'
+    )),
+
     -- Step 9 is ONE act. A second live payment would mean the dossier had been
     -- registered twice; a voided one stays, which is what makes the correction
     -- door auditable rather than destructive.

@@ -151,6 +151,19 @@ describe("step 9 is a payment with a breakdown, not a reference", () => {
     expect(sqlCode).not.toMatch(/numeric\(\d+, ?\d+\)[^\n]*amount/);
   });
 
+  it("12b — the shared balance trigger reads each table by its own shape", () => {
+    // CI found this the hard way. ONE function serves two tables with different
+    // shapes, and `coalesce(new.payment_id, new.id, …)` reads plausibly while
+    // raising « record "new" has no field "payment_id" » the moment it fires on
+    // the HEADER table: PL/pgSQL resolves record fields at runtime, so a field
+    // that does not exist is an error, not a null. NEW is also null on DELETE
+    // and OLD on INSERT.
+    const f = fn("assert_gainde_tax_payment_balances");
+    expect(f).toContain("tg_table_name = 'gainde_tax_payment'");
+    expect(f).toContain("tg_op = 'DELETE'");
+    expect(f).not.toContain("coalesce(new.payment_id, old.payment_id, new.id, old.id)");
+  });
+
   it("13 — the lines must add up to the total, checked at COMMIT", () => {
     // Deferred on purpose: the header is inserted before its lines, so an
     // immediate check would refuse every legitimate payment.

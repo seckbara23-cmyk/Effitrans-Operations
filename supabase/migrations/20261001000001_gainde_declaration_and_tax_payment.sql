@@ -216,12 +216,24 @@ security definer
 set search_path = public, pg_temp
 as $$
 declare
-  v_payment uuid := coalesce(new.payment_id, old.payment_id, new.id, old.id);
+  v_payment uuid;
   v_total   bigint;
   v_sum     bigint;
   v_voided  timestamptz;
   v_lines   integer;
 begin
+  -- ONE function, TWO tables with different shapes — so the row's identity is
+  -- resolved from the table it came from, never by trying fields in turn.
+  -- `coalesce(new.payment_id, new.id, …)` reads plausibly and raises « record
+  -- "new" has no field "payment_id" » the moment it fires on the HEADER table:
+  -- PL/pgSQL resolves record fields at runtime, so a field that does not exist
+  -- is an error rather than a null. And NEW is null on DELETE, OLD on INSERT,
+  -- so each is read only where it exists.
+  if tg_table_name = 'gainde_tax_payment' then
+    v_payment := case when tg_op = 'DELETE' then old.id else new.id end;
+  else
+    v_payment := case when tg_op = 'DELETE' then old.payment_id else new.payment_id end;
+  end if;
   select total_paid_minor, voided_at into v_total, v_voided
     from public.gainde_tax_payment where id = v_payment;
   -- The header is gone (cascade delete): there is nothing left to balance.
