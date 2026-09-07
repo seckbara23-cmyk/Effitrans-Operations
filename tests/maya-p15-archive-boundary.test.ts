@@ -119,7 +119,15 @@ describe("step 23 is built and is not blocked by the deferral", () => {
   it("completionRule and requiredEvidence are descriptive, never enforced", () => {
     // This is why the missing archived_at blocks nothing. completionRule is a
     // label shown as `nextAction`; evidenceKeys is only ever counted.
-    expect(code("lib/process/queues/service.ts")).toContain("nextAction: node?.completionRule");
+    // OPS-UAT-CONVERGENCE-01 §9 — the queue's « Prochaine action » column no
+    // longer PRINTS `completionRule`: an internal code
+    // (`pickup_confirmed_after_readiness_gate`) was reaching an operator's
+    // screen. What this test asserts is unchanged and is the stronger claim:
+    // `completionRule` is DESCRIPTIVE — no engine door reads it.
+    for (const mod of ["lib/process/engine/actions.ts", "lib/process/engine/gates.ts",
+                       "lib/process/engine/promote.ts", "lib/process/step-eligibility.ts"]) {
+      expect(code(mod), mod).not.toContain("completionRule");
+    }
     expect(code("lib/workflow/policy/validate.ts")).toMatch(/evidenceKeys\?\.length/);
     expect(step("administration_deposit_prep").requiredEvidence).toContain("archived_at");
   });

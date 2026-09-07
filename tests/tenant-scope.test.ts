@@ -97,6 +97,12 @@ const KNOWN_UNSCOPED_READS: Record<string, string> = {
   //     not. Delete with the file once migration 20261001000001 is applied.
   "lib/customs/schema-139.ts::customs_record":
     "zero-row schema probe: does the #139 column exist? returns no data at all",
+  // --- The same shape, for migration 20261002000001 (OPS-SERVICE-SCOPE-01).
+  //     `.limit(0)` again: the question is whether operational_file.services
+  //     exists, and it is answered by PostgREST validating the projection
+  //     before it fetches anything. Delete with the file once #140 is applied.
+  "lib/files/service-scope-140.ts::operational_file":
+    "zero-row schema probe: does the #140 column exist? returns no data at all",
   // --- Self-identity lookups by auth.users id (globally unique; no tenant
   //     context to filter on — the read RESOLVES which identity/tenant the
   //     caller is). Safe: an auth id maps to exactly one identity row.

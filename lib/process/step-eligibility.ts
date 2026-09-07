@@ -62,8 +62,10 @@ import {
   blocksCompletion,
   governanceFor,
   requirementMessageFr,
+  NOT_APPLICABLE_GOVERNANCE,
   type RequirementClass,
 } from "./requirement-class";
+import type { ServiceKey } from "./service-scope";
 
 /** One requirement of a step that is not satisfied yet. */
 export type StepRequirementFact = {
@@ -99,6 +101,16 @@ export type StepActionFacts = {
    * blocker, say. Already resolved to French by the caller.
    */
   blockedReason?: string | null;
+  /**
+   * Set when this step belongs to a service Effitrans is NOT providing on this
+   * dossier (OPS-SERVICE-SCOPE-01). It is the FIRST question asked, before
+   * evidence and before timing: a requirement of a service nobody bought is
+   * not missing, not pending and not blocked — it is out of scope.
+   *
+   * Null on every dossier whose scope is UNKNOWN, which is every production
+   * dossier today, so this changes nothing until a scope is actually recorded.
+   */
+  notApplicable?: { service: ServiceKey; reasonFr: string } | null;
 };
 
 export type StepActionViewer = {
@@ -134,6 +146,8 @@ export type StepEligibility = {
   custody: CustodyState;
   /** Kept for callers that only ask the old question. */
   awaitingReception: boolean;
+  /** Out of scope for this dossier. Never « missing », never blocking. */
+  notApplicable: { service: ServiceKey; reasonFr: string } | null;
   /** The viewer cannot see the evidence this step requires. Never « prêt ». */
   unauthorized: boolean;
   /** Every unsatisfied requirement, classified. */
@@ -159,6 +173,11 @@ export function evaluateStepAction(
 ): StepEligibility {
   const permission = stepPermission(facts.stepKey);
   const mayAct = hasPermission([...viewer.permissions], permission);
+  // APPLICABILITY FIRST — before evidence, before timing, before leniency.
+  // Asking « is this document present » ahead of « did we sell this service »
+  // is how a transport-only dossier ends up waiting for a customs declaration
+  // nobody agreed to file.
+  const notApplicable = facts.notApplicable ?? null;
 
   // OWNERSHIP. The same pure rule the customs controls use and `activateStep`
   // now enforces, so a card and a button cannot disagree about whose work this
@@ -197,12 +216,17 @@ export function evaluateStepAction(
   // pre-rendered sentence — which is how two surfaces came to hold two opinions.
   const unauthorized = facts.requirements.some((r) => r.status === "unauthorized");
   const requirements: StepRequirementView[] = facts.requirements.map((r) => {
-    const governance = governanceFor(facts.stepKey, r.key);
-    // Every unsatisfied status stops `submitStep` today: `unauthorized` through
-    // its own hard refusal, the rest because `complete` is false. Authority is
-    // never softened by a classification, so `unauthorized` is blocking outright.
+    // Out of scope ⇒ out of scope for its requirements too. They are reported,
+    // never as « manquant ».
+    const governance = notApplicable
+      ? NOT_APPLICABLE_GOVERNANCE
+      : governanceFor(facts.stepKey, r.key);
+    // AUTHORITY IS NEVER SOFTENED BY A CLASSIFICATION. `unauthorized` means the
+    // viewer cannot see the evidence, so they may not close it either —
+    // `submitStep` refuses it on its own terms. Everything else answers from
+    // the ratified class, and an unruled requirement does NOT block.
     const blocking =
-      r.status === "unauthorized" ? true : blocksCompletion(governance, true);
+      r.status === "unauthorized" ? !notApplicable : blocksCompletion(governance);
     return {
       ...r,
       klass: governance.klass,
@@ -215,8 +239,9 @@ export function evaluateStepAction(
 
   const prerequisitesUnmet = facts.missingPrerequisites.length > 0;
   const otherBlocker = Boolean(facts.blockedReason);
-  const blockedForStart = prerequisitesUnmet || otherBlocker || facts.state === "BLOCKED";
-  const blockedForSubmit = blockedForStart || evidenceBlocked || unauthorized;
+  const blockedForStart =
+    prerequisitesUnmet || otherBlocker || facts.state === "BLOCKED" || Boolean(notApplicable);
+  const blockedForSubmit = blockedForStart || evidenceBlocked || (unauthorized && !notApplicable);
 
   const canStart =
     mayAct && isOwner && facts.state === "AVAILABLE" && !claimedByAnother
@@ -232,12 +257,14 @@ export function evaluateStepAction(
     claimedByAnother,
     custody: facts.custody,
     awaitingReception: facts.custody === "awaiting_reception",
+    notApplicable,
     unauthorized,
     requirements,
     canStart,
     canSubmit,
     reasonFr: reasonFor({
       facts,
+      notApplicable,
       mayAct,
       isOwner,
       claimedByAnother,
@@ -253,6 +280,7 @@ export function evaluateStepAction(
 
 function reasonFor(input: {
   facts: StepActionFacts;
+  notApplicable: { service: ServiceKey; reasonFr: string } | null;
   mayAct: boolean;
   isOwner: boolean;
   claimedByAnother: boolean;
@@ -264,10 +292,13 @@ function reasonFor(input: {
   canSubmit: boolean;
 }): string | null {
   const {
-    facts, mayAct, isOwner, claimedByAnother, custodyBlocked, unauthorized,
+    facts, notApplicable, mayAct, isOwner, claimedByAnother, custodyBlocked, unauthorized,
     requirements, prerequisitesUnmet, canStart, canSubmit,
   } = input;
   if (canStart || canSubmit) return null;
+  // Out of scope outranks every other explanation: telling somebody which
+  // document is missing from work Effitrans is not doing would be noise.
+  if (notApplicable) return notApplicable.reasonFr;
   if (!OFFERABLE.has(facts.state)) return null; // nothing to explain yet
   // Order is what an operator can act on first.
   if (facts.custody === "awaiting_reception") return "Le transfert doit d'abord être réceptionné.";

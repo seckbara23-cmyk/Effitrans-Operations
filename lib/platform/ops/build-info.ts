@@ -13,10 +13,10 @@
  */
 
 /** The latest migration shipped in this build (pinned to the directory by test). */
-export const LATEST_MIGRATION = "20261001000001_gainde_declaration_and_tax_payment";
+export const LATEST_MIGRATION = "20261002000001_dossier_service_scope";
 
 /** Total migrations shipped in this build (pinned by test). */
-export const MIGRATION_COUNT = 139;
+export const MIGRATION_COUNT = 140;
 
 /** Newest DATA-probeable migration marker: this permission row proves migrations ≥ this point. */
 export const MIGRATION_PROBE = {

@@ -94,6 +94,11 @@ export const PROCESS_ERROR_FR: Record<string, string> = {
   invalid_state:
     "Action impossible dans l'état actuel : il a changé depuis l'affichage de cette page. Rafraîchissez pour voir la situation à jour.",
   prerequisites_unmet: "Prérequis non satisfaits.",
+  // OPS-SERVICE-SCOPE-01. Deliberately NOT phrased as a blockage: nothing is
+  // missing, the service was simply not contracted. The remedy is « Sans
+  // objet », not a document.
+  step_not_applicable:
+    "Cette étape ne s'applique pas à ce dossier : le service correspondant n'a pas été demandé. Marquez-la « Sans objet » si elle apparaît encore.",
   gate_blocked: "Porte de convergence bloquée.",
   from_step_incomplete: "L'étape d'origine du transfert n'est pas terminée.",
   am_opening_incomplete:

@@ -14,6 +14,7 @@
  */
 import "server-only";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
+import { serviceScopeStored } from "@/lib/files/service-scope-140";
 import { scopedFrom } from "@/lib/db/tenant-scope";
 import { amAssignmentRequiredForFileType } from "../applicability";
 import { hasPermission } from "@/lib/rbac/permissions";
@@ -116,8 +117,18 @@ export async function loadProcessSnapshot(
 ): Promise<ProcessSnapshot | null> {
   const admin = getAdminSupabaseClient();
 
+  // §19 — N-1 COMPATIBLE PROJECTION. `services` arrives with migration
+  // 20261002000001, which is written and NOT applied. PostgREST fails the WHOLE
+  // select on an unknown column, so naming it unconditionally would take every
+  // dossier route to the error boundary — exactly the OPS-GAINDE-04-COMPAT-01
+  // incident, repeated. Asked for only once the probe says the column is there.
+  const scopeStored = await serviceScopeStored();
   const { data: fileRows } = await scopedFrom(admin, "operational_file", tenantId)
-    .select("id, type, status, account_manager_id")
+    .select(
+      scopeStored
+        ? "id, type, status, account_manager_id, services"
+        : "id, type, status, account_manager_id",
+    )
     .eq("id", fileId)
     .limit(1);
   const file = ((fileRows ?? []) as Row[])[0];
@@ -261,6 +272,11 @@ export async function loadProcessSnapshot(
 
   const evidence: EvidenceSnapshot = {
     fileType: file.type as string,
+    // `undefined` when the column was not projected, `null` when it exists and
+    // nobody chose. `scopeFromRow` treats both as « never recorded » and falls
+    // through to type derivation rather than asserting that Effitrans sells
+    // nothing on this dossier.
+    services: scopeStored ? ((file.services as string[] | null) ?? null) : undefined,
     commercialOwner,
     declaredAbsences: ((absenceRows ?? []) as Row[]).map((r) => ({
       key: r.evidence_key as string,

@@ -11,6 +11,8 @@
  * No customs / documents / transport module / finance / invoices.
  */
 import { closureBlockers } from "./closure";
+import { normalizeServices } from "@/lib/process/service-scope";
+import { serviceScopeStored } from "./service-scope-140";
 import { invoiceTotals, paidAmount, balanceDue } from "@/lib/finance/calc";
 import { revalidatePath } from "next/cache";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
@@ -129,6 +131,13 @@ export async function createFile(input: FileInput): Promise<ActionResult> {
   const invalid = validateFile(input);
   if (invalid) return { ok: false, error: invalid };
 
+  // OPS-SERVICE-SCOPE-01 — normalised here rather than trusted from the
+  // browser: an unknown code, a duplicate or an empty array would all violate
+  // the CHECK, and a refused insert after `next_file_number` would burn a
+  // dossier number. `null` means nothing was chosen, which stays unrecorded.
+  const chosenServices = normalizeServices(input.services);
+  const scopeStored = await serviceScopeStored();
+
   const supabase = getAdminSupabaseClient();
 
   // TMS-2 — refused BEFORE the dossier row exists and BEFORE a number is
@@ -166,6 +175,16 @@ export async function createFile(input: FileInput): Promise<ActionResult> {
       status: "DRAFT",
       priority: input.priority ?? "normal",
       created_by: admin.id,
+      // §19 — N-1 COMPATIBLE WRITE. The column arrives with migration
+      // 20261002000001, which is written and NOT applied; naming it in an
+      // insert against schema 138 fails the whole statement. Included only
+      // when the probe says the column is there, so an operator choice is
+      // either stored or never offered — never accepted and dropped.
+      //
+      // Cast because the generated database types describe the schema that is
+      // DEPLOYED, and `services` is deliberately not in it yet. Adding it to
+      // lib/db/types.ts would assert a column production does not have.
+      ...((scopeStored && chosenServices ? { services: chosenServices } : {}) as object),
       ...fileFacts(input),
     })
     .select("id")
@@ -189,7 +208,14 @@ export async function createFile(input: FileInput): Promise<ActionResult> {
     tenantId: admin.tenantId,
     entity: "operational_file",
     entityId: data.id,
-    after: { file_number: fileNumber, type: input.type, client_id: input.clientId },
+    after: {
+      file_number: fileNumber,
+      type: input.type,
+      client_id: input.clientId,
+      // Recorded in the audit whether or not the column exists, so the choice
+      // an operator made is traceable even on a schema that could not store it.
+      services: chosenServices,
+    },
   });
 
   revalidatePath("/files");

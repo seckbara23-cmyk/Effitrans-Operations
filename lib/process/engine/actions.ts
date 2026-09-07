@@ -56,6 +56,8 @@ import { evaluateControlOwnership } from "../control-ownership";
 import { stepOwningRole } from "../control-ownership-server";
 import { authoritativePickupGate } from "./gate-authority";
 import { evaluateStepEvidence, type StepEvidence } from "./evidence";
+import { blockingRequirements } from "../requirement-class";
+import { scopeFromRow, stepApplicability } from "../service-scope";
 import { isDone } from "./types";
 import { isRoutedReceiverRole } from "../queues/registry";
 import type { EngineError, EngineResult, StepState } from "./types";
@@ -538,6 +540,19 @@ export async function submitStep(fileId: string, stepKey: string): Promise<Engin
   );
   if (ownershipSubmit) return fail(ownershipSubmit);
 
+  // OPS-SERVICE-SCOPE-01 — a step belonging to a service Effitrans is not
+  // providing may not be COMPLETED as though the work happened. It is out of
+  // scope, and the honest disposition is `skipStep`, which records who decided
+  // and why. Derived from the dossier type only: no production row carries an
+  // explicit scope (migration 20261002000001 is written and NOT applied), so
+  // this refuses exactly what `stepAppliesToFileType` already refused for
+  // TRP/HND and nothing more.
+  const scope = scopeFromRow({
+    type: st.snapshot!.evidence.fileType,
+    services: st.snapshot!.evidence.services,
+  });
+  if (!stepApplicability(stepKey, scope).applicable) return fail("step_not_applicable");
+
   const ev = evaluateStepEvidence(stepKey, st.snapshot!.evidence);
 
   // C-4 — evidence the actor cannot SEE may not be evidence the actor CLOSES.
@@ -559,7 +574,17 @@ export async function submitStep(fileId: string, stepKey: string): Promise<Engin
     return fail("evidence_unauthorized");
   }
 
-  if (!ev.complete) {
+  // OPS-LENIENCY-01 — only a requirement Effitrans has RULED blocking blocks.
+  // `ev.complete` asks « is everything present »; that is the completeness
+  // question, and answering it with a refusal turned 108 unexamined
+  // requirements into hard gates. `blockingRequirements` asks the governed
+  // question instead, from the SAME classifier `evaluateStepAction` reads, so
+  // the button and the server cannot hold two opinions.
+  //
+  // What is outstanding but not blocking is not forgotten: `evidence_summary`
+  // below records `ev.missing` exactly as before, so a lenient completion
+  // leaves a trail rather than a hole.
+  if (blockingRequirements(stepKey, ev).length > 0) {
     // Name what is outstanding. The evaluator already computed it; reducing it
     // to a bare code is what left an Account Manager guessing which of four
     // documents the step wanted. Keys and labels come from the document

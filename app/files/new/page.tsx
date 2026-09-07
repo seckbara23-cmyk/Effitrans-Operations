@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { serviceScopeStored } from "@/lib/files/service-scope-140";
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/page-header";
 import { requireUser } from "@/lib/auth/require-user";
@@ -46,13 +47,18 @@ export default async function NewFilePage() {
     ? await listGeographyOptions()
     : { ports: [], airports: [] };
 
+  // §4 — the « Services demandés » checkboxes appear only when the platform can
+  // actually store the answer. Migration 20261002000001 is written and not
+  // applied, so today they do not appear and the scope stays type-derived.
+  const servicesAvailable = await serviceScopeStored();
+
   return (
     <div className="animate-fade-in space-y-6">
       {header}
       <Link href="/files" className="text-sm text-teal-700 hover:underline">
         ← {t.files.backToList}
       </Link>
-      <FileForm mode="create" clients={clients} parents={parents} ports={geo.ports} airports={geo.airports} />
+      <FileForm mode="create" clients={clients} parents={parents} ports={geo.ports} airports={geo.airports} servicesAvailable={servicesAvailable} />
     </div>
   );
 }

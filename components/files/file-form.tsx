@@ -34,6 +34,12 @@ function numberOrNull(v: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+import {
+  SERVICE_KEYS,
+  SERVICE_LABEL_FR,
+  type ServiceKey,
+} from "@/lib/process/service-scope";
+
 const FILE_TYPES: FileType[] = ["IMP", "EXP", "TRP", "HND"];
 const MODES: TransportMode[] = ["SEA", "AIR", "ROAD", "MULTIMODAL"];
 const PRIORITIES: Priority[] = ["low", "normal", "high", "critical"];
@@ -47,6 +53,7 @@ export function FileForm({
   canUpdate = true,
   ports = [],
   airports = [],
+  servicesAvailable = false,
 }: {
   mode: "create" | "edit";
   fileId?: string;
@@ -68,6 +75,14 @@ export function FileForm({
    */
   ports?: { id: string; label: string }[];
   airports?: { id: string; label: string }[];
+  /**
+   * OPS-SERVICE-SCOPE-01 — can the platform actually STORE a service scope?
+   * Resolved on the server by probing for migration 20261002000001's column;
+   * false today, because that migration is written and not applied. A checkbox
+   * whose value cannot be stored is a lie to the operator, so the field is not
+   * rendered at all rather than rendered and discarded.
+   */
+  servicesAvailable?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -106,6 +121,12 @@ export function FileForm({
   const [clientReference, setClientReference] = useState(initial?.clientReference ?? "");
   const [onBehalfOf, setOnBehalfOf] = useState(initial?.onBehalfOf ?? "");
   const [processingDueDate, setProcessingDueDate] = useState(initial?.processingDueDate ?? "");
+  // OPS-SERVICE-SCOPE-01 — seeded from what the dossier already records. An
+  // existing dossier with no stored scope stays unrecorded: opening the edit
+  // form must not silently assign one.
+  const [services, setServices] = useState<ServiceKey[]>(
+    (initial?.services ?? []) as ServiceKey[],
+  );
 
   const editable = mode === "create" || canUpdate;
   // TMS-2 — which anchor pickers apply to the declared transport mode.
@@ -117,6 +138,10 @@ export function FileForm({
       type,
       clientId,
       priority,
+      // Only when the platform can store it AND something was chosen. Sending
+      // an empty array would assert « Effitrans provides no service here »,
+      // which the database refuses and which no operator means.
+      services: servicesAvailable && services.length > 0 ? services : undefined,
       shipment: {
         transportMode: transportMode || null,
         incoterm,
@@ -190,6 +215,32 @@ export function FileForm({
               ))}
             </select>
           </Field>
+          {/* §4 — SERVICES DEMANDÉS. Deferred UI: rendered only when migration
+              20261002000001 is applied, because a checkbox whose value cannot
+              be stored is a lie to the operator. Until then the platform
+              derives what the dossier TYPE establishes and leaves the rest
+              UNKNOWN, and UNKNOWN removes no step from any dossier. */}
+          {servicesAvailable && (
+            <Field label="Services demandés">
+              <div className="flex flex-wrap gap-3 pt-1.5">
+                {SERVICE_KEYS.map((k) => (
+                  <label key={k} className="flex items-center gap-1.5 text-sm text-navy-900">
+                    <input
+                      type="checkbox"
+                      checked={services.includes(k)}
+                      disabled={!editable}
+                      onChange={(e) =>
+                        setServices((prev) =>
+                          e.target.checked ? [...new Set([...prev, k])] : prev.filter((x) => x !== k),
+                        )
+                      }
+                    />
+                    {SERVICE_LABEL_FR[k]}
+                  </label>
+                ))}
+              </div>
+            </Field>
+          )}
           <Field label={t.files.form.client}>
             <select className={input} value={clientId} disabled={!editable} onChange={(e) => setClientId(e.target.value)}>
               <option value="">{t.files.form.selectClient}</option>

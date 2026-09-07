@@ -88,6 +88,7 @@ export function LifecycleTracker({
         )}
       >
         <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{L.nextActionTitle}</p>
+        <p className="text-[11px] text-slate-500">{L.nextActionNote}</p>
         {na ? (
           <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
             <div>

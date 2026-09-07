@@ -169,7 +169,11 @@ describe("UAT-WF-STEP3-001 — one derivation decides what a surface offers", ()
 describe("UAT-WF-STEP3-001 — one model, two surfaces", () => {
   it("the queue derives eligibility from the shared function", () => {
     expect(queueService).toContain("evaluateStepAction(");
-    expect(queueService).toContain("eligibility: evaluateStepAction(");
+    // Hoisted out of the object literal so the row's « Prochaine action »
+    // sentence can be derived from the SAME verdict as its buttons. The
+    // invariant is the call, not where it sits.
+    expect(queueService).toContain("const eligibility = evaluateStepAction(");
+    expect(queueService).toContain("eligibility,");
   });
 
   it("the dossier's official-process page derives it from the same function", () => {
@@ -297,16 +301,26 @@ describe("UAT-WF-STEP3-001 — nothing was weakened", () => {
   });
 
   it("no migration was added for this slice", () => {
-    // ONE shared invariant instead of a per-slice snapshot. This used to pin
-    // « the newest migration on disk is still X » / « there are still N of
-    // them », which was true when the slice shipped and says nothing once a
-    // LATER slice ships one of its own — it goes red for a reason that has
-    // nothing to do with this slice. What is durable, and what the ledger
-    // discipline actually depends on, is that the directory and `build-info`
-    // agree; that is asserted here and in the two suites that own it.
-    const dir = fileURLToPath(new URL("../supabase/migrations", import.meta.url));
-    const files = require("node:fs").readdirSync(dir).filter((f: string) => f.endsWith(".sql")).sort();
-    expect(files).toHaveLength(MIGRATION_COUNT);
+    // ONE shared invariant instead of a per-slice snapshot. This used to pin
+
+    // « the newest migration on disk is still X » / « there are still N of
+
+    // them », which was true when the slice shipped and says nothing once a
+
+    // LATER slice ships one of its own — it goes red for a reason that has
+
+    // nothing to do with this slice. What is durable, and what the ledger
+
+    // discipline actually depends on, is that the directory and `build-info`
+
+    // agree; that is asserted here and in the two suites that own it.
+
+    const dir = fileURLToPath(new URL("../supabase/migrations", import.meta.url));
+
+    const files = require("node:fs").readdirSync(dir).filter((f: string) => f.endsWith(".sql")).sort();
+
+    expect(files).toHaveLength(MIGRATION_COUNT);
+
     expect(files.at(-1)).toBe(`${LATEST_MIGRATION}.sql`);
   });
 

@@ -47,9 +47,18 @@ export type ShipmentInput = {
   warehouseEntryDate?: string | null;
 };
 
+import type { ServiceKey } from "@/lib/process/service-scope";
+
 export type FileInput = {
   type: FileType;
   clientId: string;
+  /**
+   * OPS-SERVICE-SCOPE-01 — the operational services Effitrans provides on this
+   * dossier, chosen explicitly at creation. `undefined`/`null` = not recorded,
+   * which is what every dossier created before migration 20261002000001 carries
+   * and what the applicability evaluator reads as UNKNOWN.
+   */
+  services?: ServiceKey[] | null;
   priority?: Priority | null;
   shipment?: ShipmentInput;
   /** MAYA-P0.5-B — dossier facts. Optional, never a prerequisite. */
@@ -180,6 +189,12 @@ export type FileDetail = {
   tenantId: string;
   fileNumber: string;
   type: FileType;
+  /**
+   * OPS-SERVICE-SCOPE-01 — the recorded service scope, or null when none was
+   * recorded (every dossier predating migration 20261002000001, and every
+   * dossier at all while that migration is unapplied).
+   */
+  services?: ServiceKey[] | null;
   clientId: string;
   clientName: string | null;
   status: FileStatus;

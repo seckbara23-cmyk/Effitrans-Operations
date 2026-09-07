@@ -39,6 +39,7 @@ import { getQueue, queueStepKeys } from "./registry";
 import { compareQueueItems, evaluatePriority, type PriorityResult } from "./priority";
 import { blockerSentence } from "../labels";
 import { buildStepFacts } from "../contextual/build";
+import { scopeFromRow, stepApplicability } from "../service-scope";
 import { owningRoleByStepKey } from "../contextual/owning-roles";
 import type { ProcessDepartment } from "../types";
 
@@ -491,6 +492,43 @@ export async function getDepartmentQueue(req: QueueRequest): Promise<QueueResult
 
     const nextStep = node?.nextSteps[0] ?? null;
 
+    // OPS-SERVICE-SCOPE-01 — the SAME scope the dossier page derives, so a step
+    // out of scope is out of scope in the queue too. Derived from the dossier
+    // type; no production row carries an explicit choice yet.
+    const scope = scopeFromRow({ type: snap.fileType, services: snap.services });
+    const applicability = stepApplicability(stepKey, scope);
+
+    // ONE eligibility derivation, shared with the dossier's official-process
+    // page. Neither surface reproduces these conditions: they read the same
+    // function on the same facts, so they cannot come to hold different
+    // opinions about one server rule (the UAT-00009 lesson, applied here
+    // before the second surface existed rather than after).
+    // Slice 5 (GAINDE-04) — the facts are BUILT by the shared constructor
+    // rather than assembled here. Sharing the evaluator was not enough: this
+    // surface folded evidence into `blockedReason` and the dossier page did
+    // not, both derived custody from SENT handoffs alone, and neither knew
+    // the owning role. One construction, one decision, three surfaces.
+    const eligibility = evaluateStepAction(
+      buildStepFacts({
+        stepKey,
+        state,
+        assignedUserId: str(e.assigned_user_id),
+        handoffs: instanceHandoffViews,
+        views,
+        evidence,
+        owningRole: owningRoleByStep.get(stepKey) ?? null,
+        scope,
+        notApplicable: applicability.applicable
+          ? null
+          : { service: applicability.service, reasonFr: applicability.reasonFr },
+        // Only what is neither evidence nor a prerequisite: those two are the
+        // evaluator's own business now, and passing the summary here as well
+        // would double-count them.
+        extraBlockerFr: state === "BLOCKED" ? blockerSummary : null,
+      }),
+      { userId: req.userId, permissions: req.permissions, roles: req.roles ?? [] },
+    );
+
     items.push({
       executionId: e.id as string,
       processInstanceId: inst.id as string,
@@ -504,32 +542,7 @@ export async function getDepartmentQueue(req: QueueRequest): Promise<QueueResult
       department: req.queueKey,
       requiredRole: node?.role ?? null,
       requiredPermission: stepPermission(stepKey),
-      // ONE eligibility derivation, shared with the dossier's official-process
-      // page. Neither surface reproduces these conditions: they read the same
-      // function on the same facts, so they cannot come to hold different
-      // opinions about one server rule (the UAT-00009 lesson, applied here
-      // before the second surface existed rather than after).
-      // Slice 5 (GAINDE-04) — the facts are BUILT by the shared constructor
-      // rather than assembled here. Sharing the evaluator was not enough: this
-      // surface folded evidence into `blockedReason` and the dossier page did
-      // not, both derived custody from SENT handoffs alone, and neither knew
-      // the owning role. One construction, one decision, three surfaces.
-      eligibility: evaluateStepAction(
-        buildStepFacts({
-          stepKey,
-          state,
-          assignedUserId: str(e.assigned_user_id),
-          handoffs: instanceHandoffViews,
-          views,
-          evidence,
-          owningRole: owningRoleByStep.get(stepKey) ?? null,
-          // Only what is neither evidence nor a prerequisite: those two are the
-          // evaluator's own business now, and passing the summary here as well
-          // would double-count them.
-          extraBlockerFr: state === "BLOCKED" ? blockerSummary : null,
-        }),
-        { userId: req.userId, permissions: req.permissions, roles: req.roles ?? [] },
-      ),
+      eligibility,
       callerMayAct: hasPermission(req.permissions, stepPermission(stepKey)),
       callerMayReceive: hasPermission(req.permissions, "process:handoff:receive"),
       assigneeId: str(e.assigned_user_id),
@@ -557,7 +570,18 @@ export async function getDepartmentQueue(req: QueueRequest): Promise<QueueResult
         transportComplete: transportBranch.complete,
         waitingOnOtherBranch,
       },
-      nextAction: node?.completionRule ?? "—",
+      // §9/§16 — this was `node.completionRule`, an INTERNAL code
+      // (`customs_dossier_prepared`) printed in a column headed « Prochaine
+      // action ». Internal names never reach a screen. The sentence now comes
+      // from the SAME eligibility verdict the row's buttons come from, so the
+      // column and the button cannot describe different situations.
+      nextAction:
+        eligibility.reasonFr
+        ?? (eligibility.canSubmit
+          ? "Terminer l'étape"
+          : eligibility.canStart
+            ? "Démarrer l'étape"
+            : node?.labelFr ?? "—"),
       nextRecipient: nextStep ? (getNode(nextStep)?.department ?? null) : null,
       customerImpacting: !!node?.clientStage,
       priority,

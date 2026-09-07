@@ -161,6 +161,11 @@ export type EngineError =
   | "invalid_state"
   | "prerequisites_unmet"
   | "evidence_missing"
+  // OPS-SERVICE-SCOPE-01 — this step belongs to a service Effitrans is not
+  // providing on this dossier. Distinct from every other refusal: nothing is
+  // missing and nothing is blocked; the work is simply out of scope, and the
+  // honest disposition is a recorded skip rather than a completion.
+  | "step_not_applicable"
   // C-4 — the actor cannot SEE this evidence, so the actor may not close it.
   // Distinct from evidence_missing: the artefact may well exist.
   | "evidence_unauthorized"

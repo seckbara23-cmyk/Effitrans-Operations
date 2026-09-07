@@ -36,6 +36,9 @@ import { getNode } from "../engine/state";
 import { assigneeLabelMap, resolveAssigneeLabel, type AssigneeRow } from "../assignee-label";
 import { buildStepFacts } from "./build";
 import { owningRoleByStepKey } from "./owning-roles";
+import { scopeFromRow, stepApplicability, type ServiceScope } from "../service-scope";
+import { roleLabel } from "@/lib/navigation/roles";
+import type { ParallelGroup } from "../types";
 import type { StepActionFacts } from "../step-eligibility";
 import { loadProcessSnapshotForDisplay } from "../engine/snapshot-cache";
 
@@ -47,6 +50,10 @@ export type ContextualStep = {
   stepNumber: number | null;
   labelFr: string;
   department: string | null;
+  /** Which branch of the graph — main, customs, transport_readiness. */
+  branch: ParallelGroup;
+  /** The owning role in French. Never a role CODE on a screen. */
+  ownerLabelFr: string | null;
   /** Who holds it, ready to render. Null when nothing is claimed. */
   assigneeLabel: string | null;
   /** Deep link target on the official-process page. */
@@ -57,6 +64,12 @@ export type ContextualDossier = {
   fileId: string;
   /** false when the dossier has no process instance — every surface degrades. */
   hasInstance: boolean;
+  /**
+   * Which services Effitrans is providing here (OPS-SERVICE-SCOPE-01). Derived
+   * from the dossier type today — no production row carries an explicit choice
+   * yet — and UNKNOWN never removes a step.
+   */
+  scope: ServiceScope;
   steps: ContextualStep[];
   /** The claimant lookup FAILED, as distinct from returning no row. */
   assigneeLookupFailed: boolean;
@@ -91,8 +104,12 @@ export async function loadContextualStepFacts(
 ): Promise<ContextualDossier | null> {
   const snap = await loadProcessSnapshotForDisplay(viewer.tenantId, fileId, viewer.permissions);
   if (!snap) return null;
+  const scope = scopeFromRow({
+    type: snap.evidence.fileType,
+    services: snap.evidence.services,
+  });
   if (!snap.instance) {
-    return { fileId, hasInstance: false, steps: [], assigneeLookupFailed: false };
+    return { fileId, hasInstance: false, scope, steps: [], assigneeLookupFailed: false };
   }
 
   const views = toViews(snap.executions);
@@ -108,6 +125,10 @@ export async function loadContextualStepFacts(
 
   const steps: ContextualStep[] = snap.executions.map((e) => {
     const node = getNode(e.stepKey);
+    // APPLICABILITY FIRST. Asked before evidence and before timing, so a step
+    // belonging to a service Effitrans is not providing never reaches the
+    // evaluator as « missing ».
+    const applicability = stepApplicability(e.stepKey, scope);
     return {
       // ONE construction, shared with the queue — see contextual/build.ts. The
       // queue reads many dossiers from its own batch and this reads one from
@@ -120,10 +141,16 @@ export async function loadContextualStepFacts(
         views,
         evidence: evaluateStepEvidence(e.stepKey, snap.evidence),
         owningRole: ownerByStep.get(e.stepKey) ?? null,
+        scope,
+        notApplicable: applicability.applicable
+          ? null
+          : { service: applicability.service, reasonFr: applicability.reasonFr },
       }),
       stepNumber: node?.stepNumber ?? null,
       labelFr: node?.labelFr ?? e.stepKey,
       department: node?.department ?? null,
+      branch: node?.parallelGroup ?? "main",
+      ownerLabelFr: node?.role ? roleLabel(node.role) : null,
       assigneeLabel: resolveAssigneeLabel({
         assignedUserId: e.assignedUserId ?? null,
         names,
@@ -133,5 +160,5 @@ export async function loadContextualStepFacts(
     };
   });
 
-  return { fileId, hasInstance: true, steps, assigneeLookupFailed: failed };
+  return { fileId, hasInstance: true, scope, steps, assigneeLookupFailed: failed };
 }

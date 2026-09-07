@@ -96,17 +96,26 @@ export function TransportPanel({
     return (
       <section className="space-y-3">
         {header}
-        <div className="surface flex items-center justify-between p-4 text-sm text-slate-500">
-          <span>{tr.empty}</span>
-          {canCreate && (
-            <button
-              onClick={() => run(() => createTransport(fileId))}
-              disabled={pending}
-              className="rounded-lg bg-navy-900 px-3 py-2 text-sm font-medium text-white hover:bg-navy-800 disabled:opacity-50"
-            >
-              {tr.start}
-            </button>
-          )}
+        <div className="surface space-y-2 p-4 text-sm text-slate-500">
+          <div className="flex items-center justify-between gap-3">
+            <span>{tr.empty}</span>
+            {canCreate && (
+              <button
+                onClick={() => run(() => createTransport(fileId))}
+                disabled={pending}
+                className="shrink-0 rounded-lg bg-navy-900 px-3 py-2 text-sm font-medium text-white hover:bg-navy-800 disabled:opacity-50"
+              >
+                {tr.start}
+              </button>
+            )}
+          </div>
+          {/* §15 — the two acts are distinct and must READ as distinct.
+              Creating the mission record is a transport-domain act under
+              `transport:create`; étape 14 is the official process step under
+              `transport:assign`, owned by the Service Transport and gated by
+              the engine. This sentence is the seam, and the official step keeps
+              its own card immediately above this panel. */}
+          {canCreate && <p className="text-[11px] text-slate-500">{tr.startHint}</p>}
         </div>
         {/* TMS-4 — the REQUEST lane: raise the need without execution
             authority. The transport team is notified and takes over. */}

@@ -317,8 +317,12 @@ describe("step 9 is satisfied by Finance's payment, never by a reference", () =>
 
 describe("migration #139 ships under the #139+ policy", () => {
   it("26 — it exists, it is the newest, and build-info tracks it", () => {
-    expect(LATEST_MIGRATION).toBe("20261001000001_gainde_declaration_and_tax_payment");
-    expect(MIGRATION_COUNT).toBe(139);
+    // ⚠ #139 is NO LONGER THE NEWEST. OPS-SERVICE-SCOPE-01 added #140
+    // (20261002000001_dossier_service_scope), also unapplied. What this slice
+    // guarantees is that #139 SHIPS with its verifier and that build-info
+    // tracks the directory — never that nothing may be added after it.
+    expect(MIGRATION_COUNT).toBe(140);
+    expect(LATEST_MIGRATION).toBe("20261002000001_dossier_service_scope");
     const dir = fileURLToPath(new URL("../supabase/migrations", import.meta.url));
     const files = require("node:fs").readdirSync(dir).filter((f: string) => f.endsWith(".sql")).sort();
     expect(files).toHaveLength(MIGRATION_COUNT);

@@ -13,12 +13,12 @@ import "server-only";
  * links to it, so nothing is hidden — it is simply not repeated where it does not
  * help.
  */
-import { evaluateStepAction } from "../step-eligibility";
 import { queueForStep } from "../queues/registry";
 import { EFFITRANS_PROCESS } from "../effitrans-process";
-import { loadContextualStepFacts } from "./facts";
+import { getDossierWork, type DossierWorkView } from "../work-service";
 import { contextualStatus, worthShowing } from "./view";
 import { sectionFor, type DossierSection } from "./sections";
+import type { StepActionViewer } from "../step-eligibility";
 import type { ContextualStepCardProps } from "@/components/process/contextual-step-card";
 
 /** Steps that carry an official number — « Étape 6 sur 26 ». */
@@ -37,42 +37,50 @@ export type ContextualCards = Partial<Record<DossierSection, ContextualStepCardP
  */
 export async function contextualCardsFor(
   fileId: string,
-  viewer: {
-    tenantId: string;
-    userId: string;
-    permissions: readonly string[];
-    roles: readonly string[];
-  },
+  viewer: { tenantId: string } & StepActionViewer,
 ): Promise<ContextualCards> {
-  const dossier = await loadContextualStepFacts(fileId, {
-    tenantId: viewer.tenantId,
-    permissions: viewer.permissions,
-  });
-  if (!dossier?.hasInstance) return {};
+  const view = await getDossierWork(fileId, viewer);
+  return cardsFromWork(fileId, view);
+}
+
+/**
+ * The same cards, from a work model the caller already built.
+ *
+ * The dossier page needs BOTH the primary-action card and the per-section
+ * cards, and they must be the same verdicts — building them twice would
+ * reintroduce, inside one page, exactly the divergence this programme removed
+ * between pages.
+ */
+export function cardsFromWork(fileId: string, view: DossierWorkView | null): ContextualCards {
+  if (!view?.hasInstance) return {};
 
   const out: ContextualCards = {};
-  for (const step of dossier.steps) {
-    const section = sectionFor(step.facts.stepKey);
-    if (!section) continue;
+  const byKey = new Map(view.dossier.steps.map((s) => [s.facts.stepKey, s]));
+  const all = [
+    ...view.work.current, ...view.work.parallel, ...view.work.blocked,
+    ...view.work.upcoming, ...view.work.notApplicable,
+  ];
 
-    const eligibility = evaluateStepAction(step.facts, {
-      userId: viewer.userId,
-      permissions: viewer.permissions,
-      roles: viewer.roles,
-    });
-    if (!worthShowing(step.facts.state, eligibility)) continue;
+  for (const item of all) {
+    const step = byKey.get(item.stepKey);
+    if (!step) continue;
+    const section = sectionFor(item.stepKey);
+    if (!section) continue;
+    if (!worthShowing(item.state, item.eligibility)) continue;
 
     (out[section] ??= []).push({
       fileId,
-      stepKey: step.facts.stepKey,
-      stepNumber: step.stepNumber,
-      labelFr: step.labelFr,
+      stepKey: item.stepKey,
+      stepNumber: item.stepNumber,
+      labelFr: item.labelFr,
       totalSteps: TOTAL_STEPS,
-      status: contextualStatus(step.facts.state, eligibility),
-      eligibility,
-      assigneeLabel: step.assigneeLabel,
-      queueKey: queueForStep(step.facts.stepKey),
+      status: contextualStatus(item.state, item.eligibility),
+      eligibility: item.eligibility,
+      assigneeLabel: item.assigneeLabel,
+      queueKey: queueForStep(item.stepKey),
       anchor: step.anchor,
+      kind: item.kind,
+      viewer: item.viewer,
     });
   }
 

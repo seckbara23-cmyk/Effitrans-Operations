@@ -95,7 +95,15 @@ describe("pickup: the enforced rule is customs release", () => {
     // nextAction, never an executable gate. Pinned so the audit's reasoning
     // cannot quietly become wrong.
     expect(step("pickup").completionRule).toBe("pickup_confirmed_after_readiness_gate");
-    expect(code("lib/process/queues/service.ts")).toContain("nextAction: node?.completionRule");
+    // OPS-UAT-CONVERGENCE-01 §9 — the queue's « Prochaine action » column no
+    // longer PRINTS `completionRule`: an internal code
+    // (`pickup_confirmed_after_readiness_gate`) was reaching an operator's
+    // screen. What this test asserts is unchanged and is the stronger claim:
+    // `completionRule` is DESCRIPTIVE — no engine door reads it.
+    for (const mod of ["lib/process/engine/actions.ts", "lib/process/engine/gates.ts",
+                       "lib/process/engine/promote.ts", "lib/process/step-eligibility.ts"]) {
+      expect(code(mod), mod).not.toContain("completionRule");
+    }
   });
 });
 

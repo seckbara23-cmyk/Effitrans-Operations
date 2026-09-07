@@ -28,6 +28,7 @@ import Link from "next/link";
 import { StepActions } from "./step-actions";
 import type { StepEligibility } from "@/lib/process/step-eligibility";
 import type { ContextualStatus } from "@/lib/process/contextual/view";
+import type { ViewerRelation, WorkKind } from "@/lib/process/work-model";
 
 export type ContextualStepCardProps = {
   fileId: string;
@@ -45,6 +46,28 @@ export type ContextualStepCardProps = {
   queueKey: string | null;
   /** Deep link to this exact step on the official-process page. */
   anchor: string;
+  /**
+   * Where this sits in the canonical partition (OPS-NEXT-ACTION-01). Carried so
+   * a card cannot describe itself as current work while the dossier header —
+   * reading the same model — calls it parallel.
+   */
+  kind: WorkKind;
+  /** What the READER may do. Drives the heading, never the buttons. */
+  viewer: ViewerRelation;
+};
+
+/** The heading an operator reads first. Ratified vocabulary, §13. */
+const HEADING: Record<ViewerRelation, string> = {
+  yours_active: "Votre action",
+  yours_available: "À votre tour",
+  someone_else: "Travail en cours",
+  observer: "Suivi",
+};
+
+const KIND_NOTE: Partial<Record<WorkKind, string>> = {
+  parallel: "Action parallèle — peut être menée en même temps que l'étape en cours.",
+  upcoming: "À venir — les prérequis ne sont pas encore réunis.",
+  not_applicable: "Sans objet sur ce dossier.",
 };
 
 export function ContextualStepCard({
@@ -58,6 +81,8 @@ export function ContextualStepCard({
   assigneeLabel,
   queueKey,
   anchor,
+  kind,
+  viewer,
 }: ContextualStepCardProps) {
   // Outstanding requirements, in the two registers the leniency doctrine
   // ratified: what genuinely stops the step, and what should be completed while
@@ -70,7 +95,7 @@ export function ContextualStepCard({
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="text-[11px] uppercase tracking-wide text-slate-400">
-            Processus du dossier
+            {HEADING[viewer]}
           </p>
           <p className="text-xs text-slate-500">
             {stepNumber ? `Étape ${stepNumber} sur ${totalSteps}` : "Étape hors séquence"}
@@ -86,6 +111,8 @@ export function ContextualStepCard({
       {assigneeLabel && (
         <p className="mt-1 text-xs text-slate-600">En cours : {assigneeLabel}</p>
       )}
+
+      {KIND_NOTE[kind] && <p className="mt-1 text-[11px] text-slate-500">{KIND_NOTE[kind]}</p>}
 
       {/* « Action requise » — what the process will not pass without. */}
       {blocking.length > 0 && (

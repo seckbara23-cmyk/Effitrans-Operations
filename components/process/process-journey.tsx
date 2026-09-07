@@ -12,8 +12,20 @@ import Link from "next/link";
 import { getProcessState } from "@/lib/process/engine/service";
 import { getIntakeState } from "@/lib/process/engine/intake-actions";
 import { summarizeJourney } from "@/lib/navigation/journey";
+import type { DossierWork } from "@/lib/process/work-model";
 
-export async function ProcessJourneyPanel({ fileId }: { fileId: string }) {
+export async function ProcessJourneyPanel({
+  fileId,
+  work,
+}: {
+  fileId: string;
+  /**
+   * The canonical work model, built ONCE by the dossier page. Passing it rather
+   * than rebuilding it here is what makes the panel and the page incapable of
+   * disagreeing — which is the whole defect this slice closes.
+   */
+  work?: DossierWork;
+}) {
   // No flag read here on purpose. getProcessState is the single gate: it checks the
   // global kill switch, resolves the user, checks THAT TENANT's rollout, enforces
   // process:read, and returns null for anything it will not answer. A second flag
@@ -58,7 +70,7 @@ export async function ProcessJourneyPanel({ fileId }: { fileId: string }) {
     );
   }
 
-  const j = summarizeJourney(model);
+  const j = summarizeJourney(model, work);
 
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-4">
@@ -77,7 +89,11 @@ export async function ProcessJourneyPanel({ fileId }: { fileId: string }) {
 
       {/* WES-2 — a COUNT of official steps, never a percentage. Dossier progress
           has exactly one number and the lifecycle tracker on this page renders
-          it; a second bar here would be a second answer. */}
+          it; a second bar here would be a second answer.
+
+          §11 — the numerator counts the 26 NUMBERED steps only. The three
+          parallel activities are real work and are shown, apart, because
+          folding them in produced counts like « 28/26 ». */}
       <div className="mb-3">
         <div className="mb-1 flex items-baseline justify-between text-xs">
           <span className="font-medium text-slate-700">
@@ -85,6 +101,10 @@ export async function ProcessJourneyPanel({ fileId }: { fileId: string }) {
           </span>
           {j.inferred && <span className="text-amber-700">Historique reconstitué, non vérifié</span>}
         </div>
+        <p className="text-[11px] text-slate-500">
+          + {j.activitiesCompleted}/{j.activitiesTotal} activités parallèles
+          {j.notApplicable > 0 && ` · ${j.notApplicable} étape(s) sans objet`}
+        </p>
         {j.unverifiedCount > 0 && (
           <p className="mt-1 text-[11px] text-amber-700">
             {j.unverifiedCount} étape(s) supposée(s) à partir de l&apos;ancien dossier — sans preuve.
@@ -113,6 +133,24 @@ export async function ProcessJourneyPanel({ fileId }: { fileId: string }) {
                 </span>
               ))}
             </dd>
+          </div>
+        )}
+        {/* §10 — concurrent work is NAMED as concurrent rather than queued
+            behind the current step or promoted above it. */}
+        {j.parallelLabels.length > 0 && (
+          <div className="flex gap-2">
+            <dt className="w-28 shrink-0 text-slate-500">En parallèle</dt>
+            <dd className="min-w-0 text-slate-700">
+              {j.parallelLabels.map((l) => (
+                <span key={l} className="block truncate">{l}</span>
+              ))}
+            </dd>
+          </div>
+        )}
+        {j.upcomingLabel && (
+          <div className="flex gap-2">
+            <dt className="w-28 shrink-0 text-slate-500">À venir</dt>
+            <dd className="min-w-0 truncate text-slate-600">{j.upcomingLabel}</dd>
           </div>
         )}
       </dl>

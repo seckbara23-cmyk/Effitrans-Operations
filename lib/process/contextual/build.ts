@@ -16,6 +16,7 @@
  */
 import { custodyStateFor, type RouteHandoffView } from "../handoff-routes";
 import { missingPrerequisites } from "../engine/state";
+import { stepAppliesToScope, UNKNOWN_SCOPE, type ServiceKey, type ServiceScope } from "../service-scope";
 import { blockerSentence } from "../labels";
 import type { StepEvidence } from "../engine/evidence";
 import type { ExecutionView } from "../engine/state";
@@ -42,10 +43,29 @@ export function buildStepFacts(input: {
   views: readonly ExecutionView[];
   evidence: StepEvidence;
   owningRole: string | null;
+  /**
+   * The dossier's service scope, so a prerequisite belonging to a service
+   * Effitrans is NOT providing does not hold the graph shut. Defaults to
+   * UNKNOWN, under which every prerequisite counts exactly as before.
+   */
+  scope?: ServiceScope;
+  /** Set when the step's service is not contracted on this dossier. */
+  notApplicable?: { service: ServiceKey; reasonFr: string } | null;
   /** A blocker that is neither evidence nor a prerequisite, already in French. */
   extraBlockerFr?: string | null;
 }): StepActionFacts {
-  const prereqs = missingPrerequisites(input.stepKey, [...input.views]);
+  // OPS-SERVICE-SCOPE-01 — a prerequisite that does not apply cannot be
+  // outstanding. Without this the join gate at step 15 waits forever on
+  // `customs_field_clearance` for a transport-only dossier: the step is
+  // PENDING, PENDING is not terminal, and nothing would ever make it so.
+  //
+  // The step is NOT mutated to SKIPPED here. Skipping is a recorded decision
+  // with an actor and a motif (`skipStep`); this is a read-time answer to « is
+  // this a real prerequisite for THIS dossier », and it writes nothing.
+  const scope = input.scope ?? UNKNOWN_SCOPE;
+  const prereqs = missingPrerequisites(input.stepKey, [...input.views]).filter((p) =>
+    stepAppliesToScope(p, scope),
+  );
   return {
     stepKey: input.stepKey,
     state: input.state,
@@ -55,6 +75,7 @@ export function buildStepFacts(input: {
     // accepted », which are different refusals needing different acts.
     custody: custodyStateFor(input.stepKey, input.handoffs),
     owningRole: input.owningRole,
+    notApplicable: input.notApplicable ?? null,
     missingPrerequisites: prereqs,
     // Evidence is handed over as ITEMS, not as a pre-rendered sentence. The
     // first divergence was one surface folding it into a blocker string and the

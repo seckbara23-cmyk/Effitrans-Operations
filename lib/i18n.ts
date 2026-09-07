@@ -43,7 +43,16 @@ export const t = {
   lifecycle: {
     title: "Cycle de vie du dossier",
     percent: "terminé",
-    nextActionTitle: "Prochaine action",
+    // §16 — renamed 2026-09-07. This panel derives its own ladder from the
+    // documents, the customs record and the transport record; it is NOT the
+    // official 26-step process, and calling its output « Prochaine action » put
+    // a second answer to the dossier's one question on the same screen. The
+    // canonical current action lives in « Votre travail sur ce dossier » at the
+    // top of the page. Distinct facts may coexist; two claims about what to do
+    // next may not.
+    nextActionTitle: "Suivi logistique — prochaine étape",
+    nextActionNote:
+      "Vue logistique du dossier (documents, douane, transport). L'action officielle à mener figure en haut de la page.",
     responsible: "Service responsable",
     noAction: "Dossier clôturé — aucune action requise.",
     departments: {
@@ -95,7 +104,10 @@ export const t = {
       customs_blocked: "Dossier douane bloqué",
       plan_transport: "Planifier le transport et affecter un véhicule",
       await_customs_release: "En attente de la mainlevée douane",
-      start_transit: "Démarrer le transport",
+      // Renamed 2026-09-07: « Démarrer le transport » named the same thing as
+      // the mission-creation button and as étape 14. This one is the physical
+      // departure — transport_record → IN_TRANSIT.
+      start_transit: "Lancer l'acheminement",
       mark_delivered: "Marquer comme livré",
       transport_blocked: "Transport bloqué",
       await_pod: "En attente de la preuve de livraison (POD)",
@@ -645,7 +657,16 @@ export const t = {
     forbidden: "Vous n'avez pas l'autorisation de consulter le transport.",
     notConfigured: "Le module transport nécessite la configuration Supabase.",
     empty: "Aucun transport.",
-    start: "Démarrer le transport",
+    // OPS-UAT-CONVERGENCE-01 §15. This button calls `createTransport`: it
+    // CREATES the mission record. It is not étape 14, which is the Service
+    // Transport assigning a vehicle and a driver under `transport:assign`.
+    // Labelling it « Démarrer le transport » put a second, unqualified start
+    // control beside an official step that reported « Bloquée », and no
+    // operator could tell which one moved the process.
+    start: "Créer la mission transport",
+    startHint:
+        "Crée l'enregistrement transport du dossier. L'étape officielle 14 " +
+        "(affectation du véhicule et du chauffeur) reste à exécuter par le Service Transport.",
     save: "Enregistrer",
     saving: "Enregistrement…",
     assign: "Affecter chauffeur / véhicule",

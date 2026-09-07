@@ -29,6 +29,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { evaluateStepAction, type StepActionFacts } from "@/lib/process/step-eligibility";
 import { ASSIGNMENT_OWNED_STEPS } from "@/lib/process/handoff-routes";
+import { getNode } from "@/lib/process/engine/state";
 import {
   CLASSIFIED,
   blocksCompletion,
@@ -58,24 +59,39 @@ const step6 = (over: Partial<StepActionFacts> = {}): StepActionFacts => ({
 const missing = (key = "COMMERCIAL_INVOICE") =>
   [{ key, labelFr: "Facture commerciale", status: "missing" as const }];
 
+/**
+ * A requirement Effitrans HAS ruled a hard gate (OPS-LENIENCY-01).
+ * `customs_preparation::CUSTOMS_DOSSIER` is the maker side of the
+ * `customs_validation` maker/checker pair, which the doctrine excludes from
+ * every derogation. Used wherever a test needs something that genuinely stops
+ * the step, now that an UNRULED requirement deliberately does not.
+ */
+const hardMissing = () =>
+  [{ key: "CUSTOMS_DOSSIER", labelFr: "Dossier de d\u00e9douanement", status: "missing" as const }];
+
 // ===========================================================================
 // DIVERGENCE 1 — evidence
 // ===========================================================================
 
 describe("evidence blocks completion, derived by the evaluator and not by a caller", () => {
-  it("01 — an ACTIVE step with a missing requirement offers no Terminer", () => {
+  it("01 — an ACTIVE step with a missing HARD requirement offers no Terminer", () => {
+    // ⚠ OPS-LENIENCY-01 changed which requirements reach this outcome, not the
+    // outcome itself. It used to be « any unsatisfied requirement »; Effitrans
+    // has since ruled that an UNKNOWN business-completeness requirement must
+    // not automatically become a blocker, so the blocking case now needs a
+    // requirement that was actually classified. Test 04 covers the other half.
     const el = evaluateStepAction(
-      step6({ state: "ACTIVE", assignedUserId: ME.userId, requirements: missing() }),
+      step6({ state: "ACTIVE", assignedUserId: ME.userId, requirements: hardMissing() }),
       ME,
     );
     expect(el.canSubmit).toBe(false);
-    expect(el.reasonFr).toContain("Facture commerciale");
+    expect(el.reasonFr).toContain("Dossier de dédouanement");
   });
 
   it("02 — and the same facts give the same verdict whoever assembled them", () => {
     // The whole point: the decision no longer depends on which surface built
     // the blocker sentence, because there is no blocker sentence to build.
-    const facts = step6({ state: "ACTIVE", assignedUserId: ME.userId, requirements: missing() });
+    const facts = step6({ state: "ACTIVE", assignedUserId: ME.userId, requirements: hardMissing() });
     expect(evaluateStepAction(facts, ME).canSubmit).toBe(false);
     expect(evaluateStepAction({ ...facts, blockedReason: null }, ME).canSubmit).toBe(false);
   });
@@ -86,17 +102,48 @@ describe("evidence blocks completion, derived by the evaluator and not by a call
     expect(el.reasonFr).toBeNull();
   });
 
-  it("04 — every unsatisfied status blocks, because every one of them blocks submitStep", () => {
-    for (const status of ["missing", "invalid", "pending_review", "unauthorized"] as const) {
+  it("04 — a CLASSIFIED requirement blocks in every unsatisfied status, an unruled one in none", () => {
+    // Two rules, and the pair is the whole leniency doctrine in one test.
+    //
+    // A ruled HARD gate blocks whatever SHAPE its dissatisfaction takes —
+    // missing, invalid or awaiting review are three ways of not being there.
+    for (const status of ["missing", "invalid", "pending_review"] as const) {
       const el = evaluateStepAction(
         step6({
           state: "ACTIVE",
           assignedUserId: ME.userId,
-          requirements: [{ key: "K", labelFr: "Pièce", status }],
+          requirements: [{ key: "CUSTOMS_DOSSIER", labelFr: "Pièce", status }],
         }),
         ME,
       );
-      expect(el.canSubmit, status).toBe(false);
+      expect(el.canSubmit, `hard/${status}`).toBe(false);
+    }
+    // An UNRULED one blocks in none of them: « defaulting every unknown
+    // requirement to a blocker is NOT acceptable ».
+    for (const status of ["missing", "invalid", "pending_review"] as const) {
+      const el = evaluateStepAction(
+        step6({
+          state: "ACTIVE",
+          assignedUserId: ME.userId,
+          requirements: [{ key: "COMMERCIAL_INVOICE", labelFr: "Pièce", status }],
+        }),
+        ME,
+      );
+      expect(el.canSubmit, `unruled/${status}`).toBe(true);
+    }
+    // AUTHORITY IS NOT COMPLETENESS. `unauthorized` says the viewer cannot SEE
+    // the evidence, so no classification may soften it — not even on a
+    // requirement nobody has ruled on.
+    {
+      const el = evaluateStepAction(
+        step6({
+          state: "ACTIVE",
+          assignedUserId: ME.userId,
+          requirements: [{ key: "COMMERCIAL_INVOICE", labelFr: "Pièce", status: "unauthorized" }],
+        }),
+        ME,
+      );
+      expect(el.canSubmit, "unauthorized").toBe(false);
     }
   });
 });
@@ -233,53 +280,79 @@ describe("requirements carry a governance class", () => {
     expect(g.ratified).toBe(false);
   });
 
-  it("17 — and it keeps TODAY's behaviour until Effitrans rules on it", () => {
-    // The other half, and the one that is easy to get wrong: turning a shipped
-    // gate off because nobody has re-classified it would be an unratified
-    // LOOSENING of a live control, made silently, on production dossiers.
-    expect(blocksCompletion(governanceFor("x", "y"), true)).toBe(true);
-    expect(blocksCompletion(governanceFor("x", "y"), false)).toBe(false);
+  it("17 — and it does NOT block — the ratified default rule", () => {
+    // ⚠ REVERSED 2026-09-07, deliberately. The 2026-09-06 slice kept today's
+    // behaviour for an unruled requirement, reasoning that switching off a
+    // shipped gate is itself an unratified act. Effitrans then ruled the other
+    // way, in terms that leave no room: « UNKNOWN BUSINESS COMPLETENESS
+    // REQUIREMENT MUST NOT AUTOMATICALLY BECOME HARD_GATE. »
+    expect(blocksCompletion(governanceFor("x", "y"))).toBe(false);
   });
 
-  it("18 — a RATIFIED soft gate stops blocking; an unratified one does not", () => {
-    const soft = { klass: "SOFT_GATE" as const, ratified: true, mandatoryAtFr: null, source: "DEC-X" };
-    const unruledSoft = { ...soft, ratified: false, source: "" };
-    expect(blocksCompletion(soft, true)).toBe(false);
-    expect(blocksCompletion(unruledSoft, true)).toBe(true);
+  it("18 — only a class ruled BLOCKING blocks", () => {
+    const g = (klass: Parameters<typeof blocksCompletion>[0]["klass"]) =>
+      ({ klass, ratified: true, mandatoryAtFr: null, source: "DEC-X" });
+    expect(blocksCompletion(g("SOFT_GATE"))).toBe(false);
+    expect(blocksCompletion(g("INFORMATIONAL"))).toBe(false);
+    expect(blocksCompletion(g("NOT_APPLICABLE"))).toBe(false);
+    expect(blocksCompletion(g("FLAG_FOR_RULING"))).toBe(false);
+    // A controlled exception blocks until somebody exercises it: an exception
+    // that applies itself is not a control.
+    expect(blocksCompletion(g("CONTROLLED_EXCEPTION"))).toBe(true);
+    expect(blocksCompletion(g("HARD_GATE"))).toBe(true);
   });
 
-  it("19 — a ratified HARD gate and a controlled exception still block completion", () => {
-    for (const klass of ["HARD_GATE", "CONTROLLED_EXCEPTION"] as const) {
-      expect(blocksCompletion({ klass, ratified: true, mandatoryAtFr: null, source: "DEC-X" }, true))
-        .toBe(true);
+  it("19 — every ratified entry carries a first-party citation", () => {
+    // Entries here change what an operator is told AND what the engine
+    // refuses, so each needs a source. « The code already does it » is not a
+    // source — that reasoning is what produced 108 unexamined blockers.
+    for (const [key, g] of Object.entries(CLASSIFIED)) {
+      expect(g.ratified, key).toBe(true);
+      expect(g.source.length, key).toBeGreaterThan(40);
+      // A SOFT gate must name WHERE the artefact becomes mandatory. Without a
+      // later checkpoint, downgrading it would simply drop the requirement.
+      if (g.klass === "SOFT_GATE") expect(g.mandatoryAtFr, key).toBeTruthy();
     }
   });
 
-  it("20 — the classification registry is EMPTY until the matrix is ratified", () => {
-    // Entries here change what operators are told, so each needs a first-party
-    // citation. « The code already does it » is not a source.
-    expect(Object.keys(CLASSIFIED)).toEqual([]);
+  it("20 — the registry classifies the step-evidence requirements the registry declares", () => {
+    // Bounded and checkable: every key here must be a real requirement of a
+    // real step, so a typo cannot silently classify nothing.
+    for (const key of Object.keys(CLASSIFIED)) {
+      const [stepKey, reqKey] = key.split("::");
+      const node = getNode(stepKey);
+      expect(node, stepKey).toBeTruthy();
+      expect(node!.requiredDocuments, key).toContain(reqKey);
+    }
   });
 
-  it("21 — an unruled blocker says BOTH true things to the operator", () => {
+  it("21 — an unruled requirement is reported, not dressed as a settled rule", () => {
+    // ⚠ THE §8 CORRECTION. On dossier 00011 the Bon à Délivrer and the Pre-Gate
+    // were shown as « Cette exigence est bloquante aujourd'hui ; sa
+    // classification est en attente de ratification » — internal governance
+    // bookkeeping printed on an operator's screen, presenting an unexamined
+    // requirement as a confirmed blocker.
     const el = evaluateStepAction(
       step6({ state: "ACTIVE", assignedUserId: ME.userId, requirements: missing() }),
       ME,
     );
     const r = el.requirements[0];
-    expect(r.messageFr).toContain("Action requise");
+    expect(r.blocking).toBe(false);
+    expect(r.messageFr).toContain("Information à compléter");
     expect(r.messageFr).toContain("Facture commerciale");
-    expect(r.messageFr).toContain("ratification");
+    expect(r.messageFr).toContain("vous pouvez poursuivre les opérations autorisées");
+    expect(r.messageFr).not.toContain("Action requise");
+    expect(r.messageFr).not.toContain("bloquante aujourd'hui");
   });
 
-  it("22 — a non-blocking requirement is written in the progressive-completeness register", () => {
+  it("22 — a SOFT gate names the checkpoint where it becomes mandatory", () => {
     const msg = requirementMessageFr({
       labelFr: "Bordereau de livraison",
       governance: { klass: "SOFT_GATE", ratified: true, mandatoryAtFr: "avant la validation du Chef de Transit", source: "DEC-X" },
       blocks: false,
     });
     expect(msg).toContain("Information à compléter");
-    expect(msg).toContain("Vous pouvez poursuivre");
+    expect(msg).toContain("vous pouvez poursuivre");
     expect(msg).toContain("avant la validation du Chef de Transit");
     expect(msg).not.toContain("Action requise");
   });

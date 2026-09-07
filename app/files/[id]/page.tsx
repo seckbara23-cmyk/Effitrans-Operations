@@ -1,4 +1,5 @@
 import { getCanonicalDossierState } from "@/lib/workflow/dossier-state";
+import { serviceScopeStored } from "@/lib/files/service-scope-140";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/page-header";
@@ -70,8 +71,11 @@ import { ArtifactPanel } from "@/components/documents/artifact-panel";
 import { getArtifactPanel } from "@/lib/documents/artifacts/service";
 import { getDossierAccess } from "@/lib/workflow/access/service";
 import { t } from "@/lib/i18n";
-import { contextualCardsFor } from "@/lib/process/contextual/cards";
+import { cardsFromWork } from "@/lib/process/contextual/cards";
+import { getDossierWork } from "@/lib/process/work-service";
 import { ContextualStepCard } from "@/components/process/contextual-step-card";
+import { DossierWorkSummary } from "@/components/process/dossier-work-summary";
+import { DossierSectionNav } from "@/components/files/dossier-section-nav";
 import type { DossierSection } from "@/lib/process/contextual/sections";
 
 export const metadata: Metadata = { title: t.files.title };
@@ -384,12 +388,19 @@ export default async function FileDetailPage({ params }: { params: { id: string 
   // workflow: the verdicts come from the same evaluator /process and /queues
   // read, and the buttons call the same two server actions. /process remains the
   // complete 26-step view and every card links back to the exact step.
-  const contextualCards = await contextualCardsFor(file.id, {
+  //
+  // OPS-NEXT-ACTION-01 — ONE model, built once, read by the summary at the top
+  // of this page, by the journey panel and by every section card. Three
+  // consumers, one load: `loadProcessSnapshotForDisplay` is request-memoised.
+  // Building it three times is precisely how the page came to hold three
+  // opinions about what happens next.
+  const workView = await getDossierWork(file.id, {
     tenantId: user.tenantId,
     userId: user.id,
     permissions,
     roles: user.roles ?? [],
   });
+  const contextualCards = cardsFromWork(file.id, workView);
 
   const customsControlVerdicts = canReadCustoms
     ? await getControlVerdicts(
@@ -440,10 +451,20 @@ export default async function FileDetailPage({ params }: { params: { id: string 
       <Link href="/files" className="text-sm text-teal-700 hover:underline">
         ← {t.files.backToList}
       </Link>
+      {/* §12/§13 — the first thing an operator reads: what is happening now,
+          whether any of it is theirs, and what is merely to be completed. The
+          card it draws is the SAME component the sections below mount, with the
+          same server-computed verdict, so the top of the page and the section
+          it belongs to cannot offer different things. */}
+      <div id="resume" className="scroll-mt-24">
+        <DossierWorkSummary fileId={file.id} view={workView} />
+      </div>
+      <DossierSectionNav />
       {/* Phase 5.0E-1 (D10) — renders nothing when the engine is dark or this
           dossier has no process instance. Not a 26-step checklist: it answers
-          "where is this, who has it, what next". */}
-      <ProcessJourneyPanel fileId={file.id} />
+          "where is this, who has it, what next". Handed the same work model as
+          the summary above. */}
+      <ProcessJourneyPanel fileId={file.id} work={workView?.work} />
       {/* Operations' own official steps, at the top of the dossier where the
           Ops Supervisor is already looking. */}
       {cards("operations").length > 0 && (
@@ -509,7 +530,7 @@ export default async function FileDetailPage({ params }: { params: { id: string 
           label DERIVED from them. The label is computed on read and stored
           nowhere; when the four dimensions match no MAYA type it is simply
           absent, never guessed. */}
-      <section className="surface p-5">
+      <section id="details" className="surface scroll-mt-24 p-5">
         <h2 className="mb-3 text-sm font-semibold text-navy-900">Identification du dossier</h2>
         <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Fact label="Référence client" value={file.clientReference} />
@@ -554,8 +575,7 @@ export default async function FileDetailPage({ params }: { params: { id: string 
           </p>
         )}
       </section>
-      <QC2Panel evidence={qc2} />
-      <FileForm mode="edit" fileId={file.id} initial={file} clients={clients} parents={parentOptions} canUpdate={canUpdate} ports={geo.ports} airports={geo.airports} />
+      <FileForm mode="edit" fileId={file.id} initial={file} clients={clients} parents={parentOptions} canUpdate={canUpdate} ports={geo.ports} airports={geo.airports} servicesAvailable={await serviceScopeStored()} />
       {canReadTasks && (
         <TaskPanel
           currentUserId={user.id}
@@ -582,6 +602,7 @@ export default async function FileDetailPage({ params }: { params: { id: string 
           />
         </div>
       )}
+      <div id="douane" className="scroll-mt-24" />
       {canReadCustoms && cards("customs").length > 0 && (
         <div className="space-y-2">{cards("customs")}</div>
       )}
@@ -613,7 +634,6 @@ export default async function FileDetailPage({ params }: { params: { id: string 
       {cards("delivery").length > 0 && (
         <div className="space-y-2">{cards("delivery")}</div>
       )}
-      <QC4Panel evidence={qc4} />
       {/* UAT-1 — Operations owns the delivery proof once transport is DELIVERED.
           Hidden before delivery and rendered above Transport, because after
           delivery it is the outstanding work. */}
@@ -636,11 +656,12 @@ export default async function FileDetailPage({ params }: { params: { id: string 
           <CarriagePanel carriage={carriage} shipmentId={file.shipment?.id ?? null} />
         </div>
       )}
+      <div id="transport" className="scroll-mt-24" />
       {canReadTransport && cards("transport").length > 0 && (
         <div className="space-y-2">{cards("transport")}</div>
       )}
       {canReadTransport && (
-        <div id="transport" className="scroll-mt-24">
+        <div id="transport-record" className="scroll-mt-24">
           <TransportPanel
             fileId={file.id}
             record={transportRecord}
@@ -671,7 +692,6 @@ export default async function FileDetailPage({ params }: { params: { id: string 
           />
         </div>
       )}
-      <QC5Panel evidence={qc5} />
       {canReadTransport && transportRecord && (
         <DriverAssign
           transportId={transportRecord.id}
@@ -690,11 +710,12 @@ export default async function FileDetailPage({ params }: { params: { id: string 
           />
         </div>
       )}
+      <div id="finance" className="scroll-mt-24" />
       {canReadFinance && cards("finance").length > 0 && (
         <div className="space-y-2">{cards("finance")}</div>
       )}
       {canReadFinance && finance && (
-        <div id="finance" className="scroll-mt-24">
+        <div id="finance-panel" className="scroll-mt-24">
           <FinancePanel
             podVerified={transportRecord ? podApproved : null}
             fileId={file.id}
@@ -709,7 +730,6 @@ export default async function FileDetailPage({ params }: { params: { id: string 
           />
         </div>
       )}
-      <QC6Panel evidence={qc6} />
       {canReadDocs && artifactItems.length > 0 && (
         <ArtifactPanel
           fileId={file.id}
@@ -717,11 +737,35 @@ export default async function FileDetailPage({ params }: { params: { id: string 
           canGenerate={canGenerateArtifacts}
         />
       )}
-      {canReadComms && <MailTimeline messages={communications} />}
-      {/* WES-9: canonical operational history. No permission gate here — the
-          RLS policy on business_event is the boundary, and it defers to the
-          dossier's own visibility rule rather than inventing a second one. */}
-      <EventTimeline fileId={file.id} />
+      {/* §17 — QUALITÉ. The four QC panels used to sit inline between the
+          operational panels, so « Non suivi par la plateforme » and « Non
+          renseigné » — observations that block nothing — visually outweighed
+          the work an operator came to do. They are unchanged, complete and
+          still one click away; they are simply no longer in the path.
+
+          Collapsed with a plain <details>: no client component, no state, and
+          it still prints and still opens with scripting off. */}
+      <details id="qualite" className="surface scroll-mt-24 p-5">
+        <summary className="cursor-pointer text-sm font-semibold text-navy-900">
+          Contrôles qualité
+          <span className="ml-2 text-[11px] font-normal text-slate-500">
+            Observations de complétude — n&apos;empêchent aucune opération.
+          </span>
+        </summary>
+        <div className="mt-3 space-y-4">
+          <QC2Panel evidence={qc2} />
+          <QC4Panel evidence={qc4} />
+          <QC5Panel evidence={qc5} />
+          <QC6Panel evidence={qc6} />
+        </div>
+      </details>
+      <div id="historique" className="scroll-mt-24 space-y-6">
+        {canReadComms && <MailTimeline messages={communications} />}
+        {/* WES-9: canonical operational history. No permission gate here — the
+            RLS policy on business_event is the boundary, and it defers to the
+            dossier's own visibility rule rather than inventing a second one. */}
+        <EventTimeline fileId={file.id} />
+      </div>
       <FileDangerZone
         fileId={file.id}
         canManage={canManageLifecycle}

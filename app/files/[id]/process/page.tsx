@@ -14,6 +14,12 @@ import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-server";
 import { getProcessState } from "@/lib/process/engine/service";
 import { loadContextualStepFacts } from "@/lib/process/contextual/facts";
+import { EFFITRANS_PROCESS, PARALLEL_ACTIVITIES } from "@/lib/process/effitrans-process";
+import { scopeLabelFr } from "@/lib/process/service-scope";
+
+/** The 26 numbered steps and the 3 parallel activities, from the registry. */
+const OFFICIAL_TOTAL = EFFITRANS_PROCESS.filter((x) => typeof x.stepNumber === "number").length;
+const ACTIVITY_TOTAL = PARALLEL_ACTIVITIES.length;
 import { getCommercialOwnerPanel, listAssignableStaff } from "@/lib/files/service";
 import { getIntakeState, listEligibleOperationsOwners, type EligibleOwner, type IntakeState } from "@/lib/process/engine/intake-actions";
 import { IntakePanel } from "@/components/process/intake-panel";
@@ -113,6 +119,9 @@ export default async function ProcessInspectorPage({ params }: { params: { id: s
     tenantId: user.tenantId,
     permissions,
   });
+  // §5 — what this dossier's service scope puts out of play. Read-time only:
+  // nothing is mutated to SKIPPED by looking at the page.
+  const outOfScope = contextual?.steps.filter((c) => c.facts.notApplicable) ?? [];
   const contextualByStep = new Map(
     (contextual?.steps ?? []).map((c) => [c.facts.stepKey, c] as const),
   );
@@ -276,6 +285,17 @@ export default async function ProcessInspectorPage({ params }: { params: { id: s
           <strong>{state.currentPhase ?? "—"}</strong> · source{" "}
           <strong>{state.compatibilitySource}</strong> ({state.compatibilityConfidence})
         </p>
+        {/* §11 — the shape of the process, stated once and correctly.
+            {OFFICIAL_TOTAL} numbered steps plus {ACTIVITY_TOTAL} parallel
+            activities are materialised as {OFFICIAL_TOTAL + ACTIVITY_TOTAL}
+            execution rows; the activities carry no step number and are never
+            counted inside the official total. */}
+        <p className="mt-1 text-xs text-slate-500">
+          {OFFICIAL_TOTAL} étapes officielles + {ACTIVITY_TOTAL} activités parallèles
+          {" = "}
+          {OFFICIAL_TOTAL + ACTIVITY_TOTAL} nœuds d&apos;exécution · services :{" "}
+          {contextual ? scopeLabelFr(contextual.scope) : "non précisés"}
+        </p>
       </header>
 
       {intakePanel}
@@ -403,6 +423,30 @@ export default async function ProcessInspectorPage({ params }: { params: { id: s
           </p>
         </section>
       </div>
+
+      {/* §5 — steps that do NOT apply to this dossier. They keep their audit
+          row and their history; they are not missing, not blocked, not failed,
+          and they are never rendered as completed. Absent entirely from a
+          dossier whose scope puts nothing out of play, which is every dossier
+          whose services were never recorded. */}
+      {outOfScope.length > 0 && (
+        <section className="rounded-lg border border-slate-200 bg-white p-4">
+          <h2 className="mb-2 text-sm font-semibold text-slate-900">Sans objet sur ce dossier</h2>
+          <p className="mb-2 text-xs text-slate-500">
+            Service non demandé. Ces étapes ne bloquent aucune progression et
+            n&apos;exigent aucune preuve.
+          </p>
+          <ul className="space-y-1 text-sm">
+            {outOfScope.map((c) => (
+              <li key={c.facts.stepKey} className="text-slate-600">
+                {c.stepNumber ? `${c.stepNumber}. ` : ""}
+                {c.labelFr} —{" "}
+                <span className="text-slate-500">{c.facts.notApplicable?.reasonFr}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <Gate title="Convergence enlèvement" gate={state.pickupReadiness} />
       <Gate title="Prêt à facturer" gate={state.billingReadiness} />

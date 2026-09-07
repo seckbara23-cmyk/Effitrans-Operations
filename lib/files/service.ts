@@ -10,6 +10,8 @@
  * Reads are not audited. Search/filter/sort live in ./filter (pure, tested).
  */
 import "server-only";
+import { serviceScopeStored } from "./service-scope-140";
+import { normalizeServices, type ServiceKey } from "@/lib/process/service-scope";
 import { getServerSupabaseClient } from "@/lib/supabase/server";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
@@ -292,6 +294,30 @@ export async function getFile(id: string): Promise<FileDetail | null> {
     .maybeSingle();
   if (!file) return null;
 
+  // §19 — THE SERVICE SCOPE, READ SEPARATELY AND ONLY WHEN IT EXISTS.
+  //
+  // `services` arrives with migration 20261002000001, which is written and NOT
+  // applied, and PostgREST fails the WHOLE select on an unknown column — the
+  // OPS-GAINDE-04-COMPAT-01 incident, exactly. It stays out of the projection
+  // above for a second reason too: that projection must remain ONE STRING
+  // LITERAL or the typed client degrades the whole row to a parser error, and a
+  // dossier read losing its types to accommodate a column production does not
+  // have is a bad trade.
+  //
+  // So it is its own narrow read, and only after #140 lands. The process engine
+  // does not depend on it — the snapshot reads the scope on its own path — and
+  // this value only seeds the edit form's checkboxes, which are themselves not
+  // rendered until the same migration is applied.
+  let services: ServiceKey[] | null = null;
+  if (await serviceScopeStored()) {
+    const { data: row } = await supabase
+      .from("operational_file")
+      .select("services" as never)
+      .eq("id", id)
+      .maybeSingle();
+    services = normalizeServices((row as { services?: string[] | null } | null)?.services);
+  }
+
   // MAYA-P0.5-B — the parent's HUMAN key for display. Same RLS-enforced client:
   // a parent in another tenant is unreadable here exactly as it is unlinkable
   // in the database.
@@ -355,6 +381,10 @@ export async function getFile(id: string): Promise<FileDetail | null> {
     tenantId: file.tenant_id,
     fileNumber: file.file_number,
     type: file.type as FileType,
+    // `null` on schema 138/139, and null again when the column exists and
+    // nobody chose. Never [] — an empty array would read as « Effitrans
+    // provides no service on this dossier ».
+    services,
     clientId: file.client_id,
     clientName,
     status: file.status as FileStatus,

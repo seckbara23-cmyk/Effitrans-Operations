@@ -69,15 +69,22 @@ describe("C-4 — the WRITE path refuses what the evaluator cannot vouch for", (
   });
 
   it("the authority check runs BEFORE the completeness check", () => {
-    // Order is the whole point: `complete` can be true while `unauthorized` is
-    // non-empty — that combination IS the defect — so a guard placed after the
-    // completeness branch would never be reached in exactly the case it exists
-    // to catch.
+    // Order is the whole point: the completeness test can pass while
+    // `unauthorized` is non-empty — that combination IS the defect — so a guard
+    // placed after the completeness branch would never be reached in exactly
+    // the case it exists to catch.
+    //
+    // OPS-LENIENCY-01 moved the completeness expression from `!ev.complete` to
+    // `blockingRequirements(...)`: only a requirement Effitrans has RULED
+    // blocking blocks. The ORDER invariant is unchanged and is what this pins;
+    // the authority refusal was deliberately left OUT of the classifier, so no
+    // classification can ever soften it.
     const authority = submit.indexOf("ev.unauthorized.length > 0");
-    const completeness = submit.indexOf("!ev.complete");
+    const completeness = submit.indexOf("blockingRequirements(stepKey, ev)");
     expect(authority).toBeGreaterThan(-1);
     expect(completeness).toBeGreaterThan(-1);
-    expect(authority, "the unauthorized guard must precede !ev.complete").toBeLessThan(completeness);
+    expect(authority, "the unauthorized guard must precede the completeness gate")
+      .toBeLessThan(completeness);
   });
 
   it("the two refusals stay distinct — neither is folded into the other", () => {

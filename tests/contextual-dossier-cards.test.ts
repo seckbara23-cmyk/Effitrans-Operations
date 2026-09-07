@@ -125,26 +125,41 @@ describe("the dossier card is a surface, never an engine", () => {
 // ===========================================================================
 
 describe("the cards are assembled from the one loader and the one evaluator", () => {
-  it("07 — through the shared loader, not a query of its own", () => {
+  it("07 — through the shared model, not a query and not a second evaluation", () => {
+    // OPS-NEXT-ACTION-01 moved the load one hop further away, and the
+    // invariant is STRONGER for it: the cards no longer load anything and no
+    // longer evaluate anything. They are projected from the canonical work
+    // model, built once per request by `getDossierWork` over the one loader,
+    // so the cards, the dossier header and the journey panel are not merely
+    // consistent — they are literally the same verdicts.
     const cards = code(CARDS);
-    expect(cards).toContain("loadContextualStepFacts(");
-    expect(cards).toContain("evaluateStepAction(");
+    expect(cards).toContain("getDossierWork(");
     expect(cards).not.toContain("getAdminSupabaseClient");
+    expect(cards).not.toContain(".select(");
+    expect(cards).not.toContain("evaluateStepAction(");
+    const service = code("lib/process/work-service.ts");
+    expect(service).toContain("loadContextualStepFacts(");
+    expect(service).toContain("evaluateStepAction(");
   });
 
   it("08 — and the dossier page mounts them without deciding anything", () => {
     const page = code(DOSSIER);
-    expect(page).toContain("contextualCardsFor(");
+    expect(page).toContain("getDossierWork(");
+    expect(page).toContain("cardsFromWork(file.id, workView)");
     expect(page).toContain("<ContextualStepCard");
     // The page passes the reader's OWN permissions and roles — a widened set
     // would make the evidence snapshot lie about what they can see.
     expect(page).toMatch(/permissions,\s*roles: user\.roles \?\? \[\],/);
+    // ONE build. Two calls would put two opinions on one page, which is the
+    // defect this programme exists to end — between pages first, and now
+    // within one.
+    expect(page.match(/getDossierWork\(/g) ?? []).toHaveLength(1);
   });
 
   it("09 — a dossier with no process instance renders exactly as before", () => {
     // The compatibility path every process surface keeps: nothing appears, and
     // no section changes.
-    expect(code(CARDS)).toContain("if (!dossier?.hasInstance) return {};");
+    expect(code(CARDS)).toContain("if (!view?.hasInstance) return {};");
   });
 });
 

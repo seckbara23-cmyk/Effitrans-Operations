@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Suspense } from "react";
 import { usePathname } from "next/navigation";
 import { allNavItems, newDossierAction } from "@/lib/nav";
 import { t } from "@/lib/i18n";
@@ -11,6 +12,7 @@ import { recordLogoutAudit } from "@/lib/auth/actions";
 import { NotificationBell } from "@/components/notifications/notification-bell";
 import { WorkspaceSwitcher } from "@/components/workspace/workspace-switcher";
 import { PwaInstallAction } from "@/components/pwa/pwa-install-action";
+import { HistoryNav } from "./history-nav";
 
 function currentTitle(pathname: string): string {
   const match = allNavItems.find(
@@ -51,6 +53,14 @@ export function Topbar({
         >
           <IconMenu />
         </button>
+
+        {/* APP-NAVIGATION-01 — beside the page title, where a breadcrumb would
+            be. Navigation only: it calls router.back()/forward() and nothing
+            else. Suspense because it reads the search params, which opts its
+            subtree — and only its subtree — out of static rendering. */}
+        <Suspense fallback={null}>
+          <HistoryNav />
+        </Suspense>
 
         <div className="hidden min-w-0 sm:block">
           <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-slate-500">

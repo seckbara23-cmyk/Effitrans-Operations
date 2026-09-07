@@ -43,6 +43,13 @@ export type EvidenceItem = {
  */
 export type EvidenceSnapshot = {
   fileType: string;
+  /**
+   * OPS-SERVICE-SCOPE-01 — the services Effitrans provides on this dossier, as
+   * the operator chose them. `undefined` means the column was not projected
+   * (schema 138/139); `null` means it exists and nobody chose. Both are « never
+   * recorded » and both fall through to type derivation.
+   */
+  services?: readonly string[] | null;
   /** Which modules the caller may read. An unreadable module yields `unauthorized`. */
   access: {
     documents: boolean;

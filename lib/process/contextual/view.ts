@@ -23,7 +23,15 @@ export type ContextualStatusKey =
   | "bloquee"
   | "terminee"
   | "rejetee"
-  | "sans_objet";
+  | "sans_objet"
+  /**
+   * Open, legitimate, and somebody ELSE's. Added 2026-09-07 because it was
+   * being rendered as « Bloquée »: on dossier 00011 step 14 was AVAILABLE and
+   * perfectly healthy, and a Déclarant read « Transport — Bloquée » simply
+   * because the step was not his. Nothing was blocked. « En attente » would
+   * have been just as wrong: nobody is waiting on anything.
+   */
+  | "autre_service";
 
 export type ContextualStatus = {
   key: ContextualStatusKey;
@@ -41,6 +49,7 @@ const STATUS: Record<ContextualStatusKey, { labelFr: string; tone: string }> = {
   terminee: { labelFr: "Terminée", tone: "bg-emerald-50 text-emerald-800 border-emerald-200" },
   rejetee: { labelFr: "Rejetée", tone: "bg-rose-50 text-rose-800 border-rose-200" },
   sans_objet: { labelFr: "Sans objet", tone: "bg-slate-50 text-slate-500 border-slate-200" },
+  autre_service: { labelFr: "Autre service", tone: "bg-slate-50 text-slate-600 border-slate-200" },
 };
 
 const TERMINAL_DONE = new Set(["COMPLETED", "APPROVED"]);
@@ -60,6 +69,9 @@ export function contextualStatus(state: string, eligibility: StepEligibility): C
 
 function statusKey(state: string, e: StepEligibility): ContextualStatusKey {
   if (TERMINAL_DONE.has(state)) return "terminee";
+  // A service Effitrans is not providing outranks every other reading: it is
+  // not missing, not pending and not blocked.
+  if (e.notApplicable) return "sans_objet";
   if (state === "SKIPPED" || state === "CANCELLED") return "sans_objet";
   if (state === "REJECTED") return "rejetee";
   // PENDING is « not yet open » and must never read as finished — the UI-1
@@ -68,8 +80,17 @@ function statusKey(state: string, e: StepEligibility): ContextualStatusKey {
   if (e.canStart || e.canSubmit) return "a_votre_tour";
   if (state === "ACTIVE") return "en_cours";
   if (state === "BLOCKED") return "bloquee";
-  // AVAILABLE or SUBMITTED, and not this reader's to act on right now. If the
-  // platform can say why, that is a blockage; otherwise it is simply open.
+  // AVAILABLE or SUBMITTED, and not this reader's to act on right now.
+  //
+  // « NOT YOURS » IS NOT « BLOCKED », and conflating them is what made a
+  // healthy step 14 read « Bloquée » to a Déclarant. A step waiting for its own
+  // department is progressing normally; only custody and an outstanding
+  // BLOCKING requirement genuinely stop it.
+  const custodyStopped =
+    e.custody === "awaiting_reception" || e.custody === "awaiting_transmission";
+  if (custodyStopped || e.requirements.some((r) => r.blocking)) return "bloquee";
+  if (e.claimedByAnother) return "en_cours";
+  if (!e.isOwner || !e.mayAct) return "autre_service";
   if (e.reasonFr) return "bloquee";
   return "disponible";
 }
@@ -82,6 +103,10 @@ function statusKey(state: string, e: StepEligibility): ContextualStatusKey {
  * process again in a smaller font » — /process remains the complete view.
  */
 export function worthShowing(state: string, eligibility: StepEligibility): boolean {
+  // Out of scope: reported on /process, where the complete picture belongs, and
+  // never repeated as a contextual card. « The service was not requested » is
+  // not work, and a dossier page full of it is noise.
+  if (eligibility.notApplicable) return false;
   if (eligibility.canStart || eligibility.canSubmit) return true;
   if (TERMINAL_DONE.has(state) || state === "SKIPPED" || state === "CANCELLED") return false;
   if (state === "PENDING") return false; // upcoming work belongs on /process

@@ -165,7 +165,15 @@ describe("step 26's declared permissions are a label, not a requirement", () => 
     expect(step26.permissions).toContain("file:update"); // …and it is never consumed
     expect(code("lib/process/engine/actions.ts")).toContain("permissions[0]");
     // The P1.5 finding, re-verified rather than carried over.
-    expect(code("lib/process/queues/service.ts")).toContain("nextAction: node?.completionRule");
+    // OPS-UAT-CONVERGENCE-01 §9 — the queue's « Prochaine action » column no
+    // longer PRINTS `completionRule`: an internal code
+    // (`pickup_confirmed_after_readiness_gate`) was reaching an operator's
+    // screen. What this test asserts is unchanged and is the stronger claim:
+    // `completionRule` is DESCRIPTIVE — no engine door reads it.
+    for (const mod of ["lib/process/engine/actions.ts", "lib/process/engine/gates.ts",
+                       "lib/process/engine/promote.ts", "lib/process/step-eligibility.ts"]) {
+      expect(code(mod), mod).not.toContain("completionRule");
+    }
   });
 
   it("the audit records the correction to my own P1.5 note", () => {
