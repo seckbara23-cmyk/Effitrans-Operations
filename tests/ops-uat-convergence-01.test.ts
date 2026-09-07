@@ -332,6 +332,40 @@ describe("leniency — governance without unnecessary friction", () => {
     expect(el.canSubmit).toBe(true);
   });
 
+  it("10b — ⚠ AND ITS ARTEFACT IS STILL HARD-REQUIRED AT THE CITED CHECKPOINT", () => {
+    // THE ASSERTION THAT MAKES SOFT DEFENSIBLE, and CI found it before design
+    // did. Softening a requirement at its own activity is only safe because
+    // something ELSE still demands the artefact, and the classification cites
+    // exactly what: the registry's `PICKUP_READINESS` convergence gate.
+    //
+    // That gate is NOT decorative. `activateStep` consults it through
+    // `authoritativePickupGate` — built from the DOSSIER's facts, not the
+    // caller's filtered snapshot — and refuses `gate_blocked`. So the Bon à
+    // Délivrer and the Pre-Gate stopped blocking their own activity and did
+    // not stop being required: they are required at the enlèvement, which is
+    // what the operator message says.
+    //
+    // If a later slice ever softened the pickup gate as well, the artefacts
+    // would quietly stop being required ANYWHERE. This is what refuses that.
+    const gate = read("lib/process/engine/gates.ts");
+    for (const key of ["BON_A_DELIVRER", "PRE_GATE_AUTHORIZATION", "BORDEREAU_LIVRAISON"]) {
+      expect(gate, key).toContain(`checkEvidence("${key}", snap)`);
+    }
+    const engine = code("lib/process/engine/actions.ts");
+    expect(engine).toContain("await authoritativePickupGate(c.tenantId, fileId)");
+    expect(engine).toContain('return fail("gate_blocked")');
+    // The gate reads the DOCUMENT, and `blocksCompletion` is nowhere near it:
+    // a governance class cannot reach a join gate.
+    expect(code("lib/process/engine/gates.ts")).not.toContain("blocksCompletion");
+    expect(code("lib/process/engine/gate-authority.ts")).not.toContain("blocksCompletion");
+    // And the classification points at that gate by name, so the message an
+    // operator reads and the control that enforces it name the same thing.
+    for (const [step, key] of [["bon_a_delivrer", "BON_A_DELIVRER"], ["pre_gate", "PRE_GATE_AUTHORIZATION"]] as const) {
+      expect(governanceFor(step, key).source, step).toContain("PICKUP_READINESS");
+      expect(governanceFor(step, key).mandatoryAtFr, step).toContain("15");
+    }
+  });
+
   it("11 — INFORMATIONAL never blocks", () => {
     expect(blocksCompletion({ klass: "INFORMATIONAL", ratified: true, mandatoryAtFr: null, source: "x" })).toBe(false);
   });

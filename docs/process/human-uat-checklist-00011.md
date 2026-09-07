@@ -164,6 +164,14 @@ elles ne défont rien.
 | **Ne doit pas bloquer** | l'absence du BAD · l'absence du Pre-Gate · l'absence de BL |
 | **PASS** | ① le message lit « **Information à compléter … À compléter avant l'enlèvement (étape 15) — vous pouvez poursuivre les opérations autorisées** » ② il ne contient **PAS** « Action requise » ③ il ne contient **PAS** « bloquante aujourd'hui » ni « ratification » ④ **Terminer est accepté sans document** ⑤ ces activités apparaissent sous « Actions parallèles », jamais comme « Prochaine action » tant que l'étape courante est ouverte |
 
+> **⚠⚠ ET C'EST ICI QUE LA SOUPLESSE SE PROUVE, PAS À LA FICHE 9.** « SOFT »
+> ne veut pas dire « abandonné ». Le BAD et le Pre-Gate cessent de bloquer
+> **leur propre activité** et restent **durs à l'étape 15** : la porte de
+> convergence `PICKUP_READINESS` est consultée par le moteur à l'ouverture de
+> l'enlèvement, pas seulement affichée. **Testé à la fiche 11.** Si l'étape 15
+> s'ouvrait sans ces documents, la souplesse serait devenue un trou — et ce
+> serait un échec d'UAT, pas un progrès.
+
 ## 10 — Service Transport · mission puis étape 14
 
 > **⚠ DEUX ACTES DISTINCTS, DÉSORMAIS DEUX NOMS DISTINCTS.**
@@ -186,7 +194,7 @@ elles ne défont rien.
 | **Actions** | 15 enlèvement · 16 suivi jusqu'à réception client · 17 remise des justificatifs |
 | **Preuve exigée** | **15** : aucune · **16** : `SIGNED_DELIVERY_NOTE` — **SOFT**, obligatoire à l'étape 17 · **17** : `SIGNED_DELIVERY_NOTE` **VERIFIED** — **HARD** |
 | **Ne doit pas bloquer** | à l'étape 16, l'absence du BL signé |
-| **PASS** | ① l'étape 15 s'ouvre une fois 13 **et** 14 terminées ② l'étape 16 se termine **sans** le BL signé, avec l'avertissement ③ l'étape 17 le **refuse** sans document vérifié — la chaîne 15→26 étant strictement séquentielle, c'est là que la preuve est tenue |
+| **PASS** | ① ⚠⚠ **le contrôle le plus important de cette campagne** : tant que le **BAD, le Pre-Gate ou le Bordereau de Livraison** manquent, l'ouverture de l'étape 15 doit être **REFUSée** — c'est la contrepartie exacte de la souplesse accordée à la fiche 9. Fournissez-les, et l'étape 15 s'ouvre ② l'étape 15 exige aussi 13 **et** 14 terminées ③ l'étape 16 se termine **sans** le BL signé, avec l'avertissement ④ l'étape 17 le **refuse** sans document vérifié — la chaîne 15→26 étant strictement séquentielle, c'est là que la preuve est tenue |
 
 ## 12 — Contrôles finaux et facturation · étapes 18 → 22
 

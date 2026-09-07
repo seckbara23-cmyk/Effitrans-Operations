@@ -407,13 +407,23 @@ describe("C-4 negative battery — the refusals, in the order a dossier meets th
     // reversal AND its safety rail: the work continues, and the outstanding
     // artefact is recorded rather than forgotten.
     //
-    // WHERE THE HARD REFUSAL LIVES NOW. It is not re-proven inside this walk:
-    // every step it still passes through is either SOFT or evidence-free, and
-    // inserting a HARD case would mean reordering the walk around the WES-5
-    // reconciliation that carries step 17 here. It is proven, on the same
-    // engine door, by transit-customs (steps 6, 11, 13) and
-    // delivery-completeness (step 24), and by the lifecycle journey's own
-    // step-6 case.
+    // ⚠⚠ AND HERE IS THE PROOF THAT SOFT IS NOT A HOLE — the most important
+    // assertion in this file, and it was found by CI rather than by design.
+    //
+    // Softening the Pre-Gate at its own activity is only defensible because
+    // something ELSE still requires the artefact, and the classification cites
+    // exactly what: the registry's `PICKUP_READINESS` convergence gate at step
+    // 15. That gate is not decorative — `activateStep` consults it through
+    // `authoritativePickupGate` and refuses `gate_blocked`. So the sequence
+    // below is the doctrine, executed:
+    //
+    //     the activity completes without the document   (SOFT — warn, continue)
+    //     step 15 REFUSES without the document          (HARD — at the checkpoint)
+    //     the document arrives, and step 15 opens
+    //
+    // If a later slice ever softened the pickup gate too, this walk would go
+    // green while the artefact quietly stopped being required anywhere. The
+    // refusal below is what stops that.
     const lenient = await as(am, () => submitStep(fileId, "pre_gate"));
     expect(lenient.ok, `a SOFT gate must not stop the walk: ${JSON.stringify(lenient)}`).toBe(true);
     const preGateRow = await stepState("pre_gate");
@@ -421,6 +431,12 @@ describe("C-4 negative battery — the refusals, in the order a dossier meets th
       (preGateRow.evidence_summary as { missing?: string[] } | null)?.missing,
       "the outstanding Pre-Gate must still be recorded",
     ).toContain("PRE_GATE_AUTHORIZATION");
+
+    const tooSoon = await as(pickup, () => activateStep(fileId, "pickup"));
+    expect(tooSoon.ok, "the enlèvement must refuse while the Pre-Gate is outstanding").toBe(false);
+    expect(err(tooSoon)).toBe("gate_blocked");
+
+    await provideEvidence(fileId, "PRE_GATE_AUTHORIZATION", am, ops);
     need(await as(pickup, () => activateStep(fileId, "pickup")), "activate 15");
     const t2 = await transportFor(fileId);
     for (const st of ["PLANNED", "DRIVER_ASSIGNED", "PICKED_UP"]) {
