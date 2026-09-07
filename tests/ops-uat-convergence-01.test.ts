@@ -14,7 +14,7 @@
  * coverage against the requirement rather than against this file's structure.
  */
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
   SERVICE_KEYS,
@@ -52,6 +52,19 @@ import type { StepEvidence } from "@/lib/process/engine/evidence";
 const read = (p: string) => readFileSync(fileURLToPath(new URL(`../${p}`, import.meta.url)), "utf8");
 const code = (p: string) =>
   read(p).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
+/** Every application source file, repo-relative, for the exhaustive census. */
+function walk(dir: string, base = dir, out: string[] = []): string[] {
+  const SKIP = new Set(["node_modules", ".next", ".git", "supabase", "docs", "scripts", "public"]);
+  for (const e of readdirSync(dir)) {
+    if (SKIP.has(e)) continue;
+    const p = `${dir}/${e}`;
+    if (statSync(p).isDirectory()) walk(p, base, out);
+    else if (/\.(ts|tsx)$/.test(e)) out.push(p.slice(base.length).replace(/^\/+/, ""));
+  }
+  return out;
+}
+
 
 // --------------------------------------------------------------- fixtures ---
 
@@ -835,5 +848,64 @@ describe("the deployed code runs on schema 138, with #139 AND #140 unapplied", (
     expect(m140).toContain("must not backfill");
     expect(m140).not.toMatch(/^\s*update\s+public\.operational_file/im);
     expect(m140).not.toContain("default");
+  });
+
+  it("39 — REPO-WIDE CENSUS: nothing reaches a pending schema unconditionally", () => {
+    // ⚠ THE EXHAUSTIVE FORM. Tests 34/35 check the modules we know about; this
+    // walks EVERY .ts/.tsx in the application and finds the ones we do not.
+    // That is the shape the OPS-GAINDE-04-COMPAT-01 incident took: one
+    // projection nobody thought of, in a file nobody was looking at, and
+    // PostgREST fails the WHOLE select on an unknown column.
+    //
+    // A name only reaches the database through `.from(x)`, `.select(x)` or
+    // `.rpc(x)`. Everywhere else it is inert — a registry entry, a documentary
+    // registry string, an audit payload key, or the ordinary French word
+    // « services » in a sentence — and this distinguishes the two rather than
+    // banning the word.
+    const files = walk(fileURLToPath(new URL("..", import.meta.url)));
+    const offenders: string[] = [];
+
+    for (const rel of files) {
+      if (rel.startsWith("tests/")) continue;
+      const src = code(rel);
+      for (const [guard, names] of [
+        ["gaindeLedgerAvailable", PENDING_139],
+        ["serviceScopeStored", PENDING_140],
+      ] as const) {
+        if (src.includes(guard)) continue; // the module asks first
+        for (const name of names) {
+          // Inside a `.from(...)` / `.select(...)` / `.rpc(...)` argument only.
+          const re = new RegExp(`\\.(from|select|rpc)\\(\\s*[\`"'][^\`"']*\\b${name}\\b`);
+          if (re.test(src)) offenders.push(`${rel}: ${name}`);
+        }
+      }
+    }
+
+    expect(offenders, offenders.join("\n")).toEqual([]);
+  });
+
+  it("40 — and the four inert references stay inert", () => {
+    // Named individually, because « it does not appear in a query » is a
+    // property that could decay quietly into « it does », and each of these is
+    // a legitimate reason for the word to exist.
+    //
+    //   tenant-tables.ts   the guard's registry of tenant-scoped table NAMES.
+    //                      A table missing from it is invisible to the guard,
+    //                      so both #139 tables are listed BEFORE they exist.
+    //   effitrans-process  a documentary `requiredEvidence` string. The registry
+    //                      describes the process; it never queries.
+    //   customs/actions    an audit payload KEY, not a column.
+    //   executive-pdf      the French word « services », in a sentence.
+    for (const [rel, name] of [
+      ["lib/db/tenant-tables.ts", "gainde_tax_payment"],
+      ["lib/db/tenant-tables.ts", "gainde_tax_payment_line"],
+      ["lib/process/effitrans-process.ts", "gainde_declaration_reference"],
+      ["lib/reports/executive-pdf.ts", "services"],
+    ] as const) {
+      const src = code(rel);
+      expect(src, `${rel} should still mention ${name}`).toContain(name);
+      expect(src, `${rel}: ${name} must not reach a query`)
+        .not.toMatch(new RegExp(`\\.(from|select|rpc)\\(\\s*[\`"'][^\`"']*\\b${name}\\b`));
+    }
   });
 });
