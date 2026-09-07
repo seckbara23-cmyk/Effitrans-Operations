@@ -48,19 +48,51 @@ with checks(label, ok) as (
           or btrim(coalesce(staff_function, 'x')) = ''
     )),
 
-    -- ---- 3. THE INVARIANT: nothing was invented ---------------------------
-    -- A name may only exist because an administrator entered it. This does not
-    -- forbid edits made after the migration — it asserts that no profile
-    -- created BEFORE it acquired a name without one being recorded, which is
-    -- what « do not split a display name, do not copy HR » means in practice.
-    ('no profile predating this migration was given a name', (
-      select count(*) = 0 from public.workforce_profile
-       where (first_name is not null or last_name is not null or staff_function is not null)
-         and created_at < (
-           select coalesce(max(inserted_at), 'infinity'::timestamptz)
-             from supabase_migrations.schema_migrations
-            where version = '20261003000001'
-         )
+    -- ---- 3. THE INVARIANT: nothing was invented --------------------------
+    -- ⚠⚠ THIS CHECK WAS BROKEN, AND THE REPAIR IS NOT A WEAKENING.
+    --
+    -- It compared the row's `created_at` against the moment this migration was
+    -- recorded, read from `supabase_migrations.schema_migrations.inserted_at`.
+    -- THAT COLUMN DOES NOT EXIST. The ledger has exactly three columns —
+    -- `version`, `statements`, `name` — verified against production and CI.
+    --
+    -- A verifier is ONE statement, so Postgres plans the whole file before
+    -- executing any of it: an unresolvable column anywhere killed EVERY check
+    -- in the file, including the ones that would have passed. And the runner
+    -- reaches its verifier at step 3, AFTER the SQL has been applied, where it
+    -- classifies a verifier that cannot run as VERIFY_FAILED — "production is
+    -- indeterminate, no automatic rollback, diagnose by hand". The worst state
+    -- the toolchain has, produced by a typo in the safety net.
+    --
+    -- IT COULD NOT HAVE BEEN FIXED BY NAMING A DIFFERENT LEDGER COLUMN either.
+    -- A verifier must be rerunnable months later, when operators have
+    -- legitimately filled these fields in — so "count the rows that carry a
+    -- value" can never be the durable form of this invariant, whatever it is
+    -- compared against.
+    --
+    -- SO THE CONCERN IS SPLIT, each half asserted where it can actually be
+    -- proven:
+    --   the MIGRATION asserts, at the moment of application and only then,
+    --     that no row already carries a value (its own `raise exception`);
+    --   the VERIFIER asserts, durably and forever, the structural property
+    --     that makes a SILENT backfill impossible: nothing in the database can
+    --     populate these fields behind an operator's back. No default, and no
+    --     trigger whose body so much as mentions them.
+    ('a name can only appear by an explicit write — no default populates one', (
+      select count(*) = 0 from information_schema.columns
+       where table_schema = 'public' and table_name = 'workforce_profile'
+         and column_name in ('first_name', 'last_name', 'staff_function')
+         and column_default is not null
+    )),
+
+    ('… and no trigger on the table can write one', (
+      select count(*) = 0
+        from pg_trigger t
+        join pg_proc p on p.oid = t.tgfoid
+       where t.tgrelid = 'public.workforce_profile'::regclass
+         and not t.tgisinternal
+         and (p.prosrc like '%first_name%' or p.prosrc like '%last_name%'
+              or p.prosrc like '%staff_function%')
     )),
 
     -- ---- 4. IDENTITY IS NOT AUTHORITY -------------------------------------
@@ -95,7 +127,10 @@ with checks(label, ok) as (
       select relrowsecurity from pg_class where oid = 'public.workforce_profile'::regclass
     )),
 
-    ('the migration created no trigger on workforce_profile', (
+    -- Superseded in substance by the trigger-BODY check above: matching on a
+    -- trigger's NAME proves nothing, because the next author names it
+    -- something else. Kept as the cheap first line.
+    ('no identity trigger was added to workforce_profile by this slice', (
       select count(*) = 0 from pg_trigger
        where tgrelid = 'public.workforce_profile'::regclass
          and not tgisinternal

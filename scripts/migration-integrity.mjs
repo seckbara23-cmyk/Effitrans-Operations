@@ -27,10 +27,22 @@
  */
 import { existsSync } from "node:fs";
 import { target, query, queryFile } from "./migration/exec.mjs";
-import { repoMigrations, remoteLedger, reconcile, crossCheckCli } from "./migration/ledger.mjs";
+import { repoMigrations, remoteLedger, reconcile, crossCheckCli, classify, LEDGER_STATUS }
+  from "./migration/ledger.mjs";
 
 function parseArgs(argv) {
-  const a = { expectPending: 0, dir: "supabase/migrations" };
+  // `expectPending` is null by DEFAULT, and that is the substantive change.
+  //
+  // It used to default to 0, so any pending migration failed the guard. That
+  // conflated two different things: a hole in the applied prefix (corruption)
+  // and a migration awaiting approval (the normal state of every repository
+  // between authoring and deployment). With three awaiting approval the guard
+  // reported the routine state as an incident — and a guard that cries wolf is
+  // a guard operators route around.
+  //
+  // The structural model in `classify()` is now the always-on check. A caller
+  // that genuinely knows how many should be pending may still assert it.
+  const a = { expectPending: null, dir: "supabase/migrations" };
   for (let i = 0; i < argv.length; i++) {
     const v = argv[i];
     if (v === "--linked") a.target = { kind: "linked" };
@@ -65,19 +77,35 @@ function main() {
     process.exit(2);
   }
 
+  const shape = classify(state);
+
   log(`[integrity] target      : ${tgt.label}`);
   log(`[integrity] repository  : ${state.repoCount} migrations`);
-  log(`[integrity] ledger      : ${state.ledgerCount} rows, max ${state.remoteMax || "(empty)"}`);
+  log(`[integrity] applied     : ${state.ledgerCount} rows, through ${shape.appliedThrough || "(empty)"}`);
   log(`[integrity] pending     : ${state.pending.length}${state.pending.length ? ` (${state.pending.join(", ")})` : ""}`);
+  log(`[integrity] next due    : ${shape.earliestPending || "(none)"}`);
+  log(`[integrity] status      : ${shape.status}`);
   log("");
 
   for (const h of state.hard) {
     fail.push(`${h.code} ${h.version} — ${h.detail}`);
   }
 
-  // The pending count must match what this run expects. Outside a deployment
-  // the expectation is zero; a deployment expects exactly its own migration.
-  if (state.pending.length !== args.expectPending) {
+  // ---- the structural invariant, always on -------------------------------
+  // A contiguous applied prefix followed by a contiguous pending suffix. The
+  // prefix holes are already `state.hard`; this catches a suffix that is not
+  // one, which would mean `reconcile` and this model had drifted apart.
+  if (!shape.suffixIntact) {
+    fail.push(
+      `PENDING_NOT_A_SUFFIX — pending [${state.pending.join(", ")}] is not entirely above the ` +
+        `applied maximum ${state.remoteMax}; the applied prefix has a hole`,
+    );
+  }
+
+  // ---- and the optional explicit expectation ------------------------------
+  // Only asserted when a caller passes one. Omitting it is not "expect zero":
+  // pending migrations are the normal state between authoring and approval.
+  if (args.expectPending !== null && state.pending.length !== args.expectPending) {
     fail.push(
       `UNEXPECTED_PENDING_COUNT — expected ${args.expectPending}, found ${state.pending.length}` +
         (state.pending.length ? ` (${state.pending.join(", ")})` : ""),
@@ -132,7 +160,15 @@ function main() {
     process.exit(1);
   }
 
-  log(`[integrity] OK — repository and ledger agree; ${args.expectPending} pending as expected.`);
+  if (shape.status === LEDGER_STATUS.CLEAN_WITH_PENDING) {
+    log(
+      `[integrity] OK — ${LEDGER_STATUS.CLEAN_WITH_PENDING}: applied contiguously through ` +
+        `${shape.appliedThrough}, ${state.pending.length} awaiting approval ` +
+        `(${state.pending.join(", ")}). Next due: ${shape.earliestPending}.`,
+    );
+  } else {
+    log(`[integrity] OK — ${LEDGER_STATUS.CLEAN}: repository and ledger agree, nothing pending.`);
+  }
   process.exit(0);
 }
 

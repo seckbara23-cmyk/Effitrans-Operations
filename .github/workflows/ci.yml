@@ -1246,6 +1246,24 @@ jobs:
           # an anon client — it is validated at module load, not at first use.
           SUPABASE_SERVICE_ROLE_KEY="$KEY" NEXT_PUBLIC_SUPABASE_ANON_KEY="$ANON"             npx vitest run --config vitest.journey.config.ts
 
+      # ---- EVERY VERIFIER, AGAINST A DATABASE THAT HAS ITS MIGRATION -------
+      #
+      # The step that would have caught the 2026-09-07 defect. Until it existed,
+      # a verifier was only ever run against a database that LACKED its
+      # migration: the integrity guard runs them for PENDING migrations, where
+      # erroring is the expected answer, and `db reset` above leaves nothing
+      # pending, so CI ran none of them at all.
+      #
+      # The #140 and #141 verifiers each referenced a ledger column that does
+      # not exist. A verifier is one statement, so the whole file failed to plan
+      # — every check in it lost. The first place anyone would have found out is
+      # the runner's step 3, on production, after the DDL had landed.
+      #
+      # This runs immediately after `db reset`, where every migration IS applied,
+      # and requires ok=true from each. Read-only.
+      - name: Every migration verifier passes against the applied schema
+        run: node scripts/verify-migrations.mjs --db-url "postgresql://postgres:postgres@127.0.0.1:54322/postgres"
+
       # ---- migration toolchain rehearsal (MIG-POLICY) ----------------------
       # Runs LAST, against the same disposable stack, because it deliberately
       # injects failures: bad SQL, a migration that applies but verifies false,

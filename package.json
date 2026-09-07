@@ -20,6 +20,7 @@
     "db:types": "supabase gen types typescript --local > lib/db/types.ts",
     "test:rls": "node scripts/guard-local-db.mjs && psql \"$DATABASE_URL\" -f supabase/tests/rls_tenant_isolation_test.sql",
     "migration:guard": "node scripts/migration-integrity.mjs",
+    "migration:verify": "node scripts/verify-migrations.mjs",
     "migration:apply": "node scripts/migrate-production.mjs"
   },
   "dependencies": {

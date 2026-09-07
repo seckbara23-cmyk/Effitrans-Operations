@@ -98,10 +98,17 @@ jobs:
 
       # Independent of the runner, and read-only: if the repository and ledger
       # already disagree, nothing should be applied on top of that.
-      - name: Migration-integrity guard (expects exactly this one pending)
+      #
+      # It used to assert `--expect-pending 1`, which assumed a migration is
+      # always deployed alongside the code that needs it. Three accumulated and
+      # the guard then refused every deployment, including the earliest and
+      # correct one. The structural check — contiguous applied prefix, pending
+      # suffix above it — is now always on, and ORDERING is enforced where it
+      # belongs: the runner refuses any target that is not the earliest pending.
+      - name: Migration-integrity guard (structural; ordering is the runner's)
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: node scripts/migration-integrity.mjs --linked --expect-pending 1
+        run: node scripts/migration-integrity.mjs --linked
 
       - name: Dry run
         if: ${{ inputs.dry_run }}

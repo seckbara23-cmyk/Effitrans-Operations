@@ -70,18 +70,48 @@ with checks(label, ok) as (
     )),
 
     -- ---- 4. THE INVARIANT: nothing was invented --------------------------
-    -- A scope may only exist because somebody chose it. This does not forbid
-    -- operator choices made after the migration — it asserts that any dossier
-    -- created BEFORE it still has none, which is what « do not invent it »
-    -- means for the twelve rows that predate the column.
-    ('no dossier predating this migration was given a scope', (
-      select count(*) = 0 from public.operational_file
-       where services is not null
-         and created_at < (
-           select coalesce(max(inserted_at), 'infinity'::timestamptz)
-             from supabase_migrations.schema_migrations
-            where version = '20261002000001'
-         )
+    -- ⚠⚠ THIS CHECK WAS BROKEN, AND THE REPAIR IS NOT A WEAKENING.
+    --
+    -- It compared the row's `created_at` against the moment this migration was
+    -- recorded, read from `supabase_migrations.schema_migrations.inserted_at`.
+    -- THAT COLUMN DOES NOT EXIST. The ledger has exactly three columns —
+    -- `version`, `statements`, `name` — verified against production and CI.
+    --
+    -- A verifier is ONE statement, so Postgres plans the whole file before
+    -- executing any of it: an unresolvable column anywhere killed EVERY check
+    -- in the file, including the ones that would have passed. And the runner
+    -- reaches its verifier at step 3, AFTER the SQL has been applied, where it
+    -- classifies a verifier that cannot run as VERIFY_FAILED — "production is
+    -- indeterminate, no automatic rollback, diagnose by hand". The worst state
+    -- the toolchain has, produced by a typo in the safety net.
+    --
+    -- IT COULD NOT HAVE BEEN FIXED BY NAMING A DIFFERENT LEDGER COLUMN either.
+    -- A verifier must be rerunnable months later, when operators have
+    -- legitimately filled these fields in — so "count the rows that carry a
+    -- value" can never be the durable form of this invariant, whatever it is
+    -- compared against.
+    --
+    -- SO THE CONCERN IS SPLIT, each half asserted where it can actually be
+    -- proven:
+    --   the MIGRATION asserts, at the moment of application and only then,
+    --     that no row already carries a value (its own `raise exception`);
+    --   the VERIFIER asserts, durably and forever, the structural property
+    --     that makes a SILENT backfill impossible: nothing in the database can
+    --     populate these fields behind an operator's back. No default, and no
+    --     trigger whose body so much as mentions them.
+    ('a scope can only appear by an explicit write — no default populates it', (
+      select count(*) = 0 from information_schema.columns
+       where table_schema = 'public' and table_name = 'operational_file'
+         and column_name = 'services' and column_default is not null
+    )),
+
+    ('… and no trigger on the table can write it', (
+      select count(*) = 0
+        from pg_trigger t
+        join pg_proc p on p.oid = t.tgfoid
+       where t.tgrelid = 'public.operational_file'::regclass
+         and not t.tgisinternal
+         and p.prosrc like '%services%'
     )),
 
     -- ---- 5. Blast radius --------------------------------------------------
@@ -92,11 +122,15 @@ with checks(label, ok) as (
       select relrowsecurity from pg_class where oid = 'public.operational_file'::regclass
     )),
 
-    ('the migration created no trigger on operational_file', (
-      select count(*) = 0 from pg_trigger
-       where tgrelid = 'public.operational_file'::regclass
-         and not tgisinternal
-         and tgname like '%service%'
+    -- Superseded by the trigger-BODY check above: matching on a trigger's NAME
+    -- proves nothing, because the next author names it something else.
+    ('no trigger was added to operational_file by this slice', (
+      select count(*) = 0
+        from pg_trigger t
+        join pg_proc p on p.oid = t.tgfoid
+       where t.tgrelid = 'public.operational_file'::regclass
+         and not t.tgisinternal
+         and (t.tgname like '%service%' or p.prosrc like '%services%')
     ))
 )
 select

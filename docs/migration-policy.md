@@ -3,6 +3,23 @@
 **Status:** implemented, awaiting first use. Migration #139 must not be deployed
 to production without separate approval.
 
+> **Amended 2026-09-07 — MIGRATION-GATE-139-141-REPAIR.** Two defects were found
+> by a decision-gate audit, before either could reach production. Both are fixed
+> and both are now enforced rather than documented:
+>
+> 1. **A verifier may not query the migration ledger.** The #140 and #141
+>    verifiers compared a row timestamp against
+>    `supabase_migrations.schema_migrations.inserted_at` — a column that does not
+>    exist. A verifier is one statement, so the whole file failed to plan, taking
+>    every other check with it, and the first place anyone would have found out
+>    was the runner's step 3 on production. `lint:migrations` now refuses it, and
+>    CI runs **every** verifier against a database that HAS its migration.
+> 2. **The runner enforces the earliest pending migration**, not "exactly one
+>    pending". The old rule assumed a migration always ships with the code that
+>    needs it; when three accumulated it refused all three, including the
+>    earliest, and the repository became undeployable through its own sanctioned
+>    path. See *Ordering* below.
+
 ## Why this exists
 
 Between 2026-09-15 and 2026-09-30, sixteen migrations (123–138) were applied to
@@ -34,6 +51,34 @@ commit, PR, merge    ─── manual dispatch + approval ───→ apply
 Nothing is applied by pushing code. A human dispatches `Migrate production`,
 names one version, gives a reason, and approves the `production-db` environment.
 
+## Ordering: the earliest pending migration, and only it
+
+**A backlog of pending migrations is normal, not corruption.** Between authoring
+a migration and approving it, the correct state of any repository is a non-empty
+pending suffix.
+
+What is checked is the SHAPE:
+
+```
+repo:    1 … 138 | 139 140 141
+ledger:  1 … 138 |
+         ^ contiguous applied prefix
+                   ^ pending suffix, every version strictly above the maximum
+```
+
+| status | meaning | guard exit |
+|---|---|---|
+| `CLEAN` | nothing pending | 0 |
+| `CLEAN_WITH_PENDING` | contiguous prefix, non-empty suffix, no holes | 0 |
+| `HELD` | a hole in the prefix, an unknown applied version, a duplicate or a malformed id | 1 |
+
+**The runner applies only the EARLIEST pending version.** Requesting any other
+is refused, and the refusal names the requested version, the earliest allowed,
+the current production maximum and the remaining sequence. There is no skip
+flag, no batch mode and no ledger gap — exactly one migration per approved
+production action, so each gets its own reviewer, its own verifier evidence and
+its own failure isolation.
+
 ## Components
 
 | file | role |
@@ -43,6 +88,7 @@ names one version, gives a reason, and approves the `production-db` environment.
 | `scripts/migration-integrity.mjs` | **read-only guard**; detects, never repairs |
 | `scripts/migrate-production.mjs` | the six-step runner |
 | `scripts/lint-migrations.mjs` | verifier + executor conventions, no database |
+| `scripts/verify-migrations.mjs` | **read-only**; runs every verifier against a database that HAS its migration |
 | `scripts/migration-rehearsal.mjs` | failure injection; refuses non-local targets |
 | `.github/workflows/migrate-production.yml` | dispatch-only, environment-gated |
 
@@ -60,6 +106,19 @@ names one version, gives a reason, and approves the `production-db` environment.
 Read-only · deterministic · idempotent · safe to run repeatedly against
 production · mutates nothing (no schema, data, permission, session role or
 configuration) · returns **exactly one row** of `(ok boolean, detail text)`.
+
+> **A verifier must not query `supabase_migrations`.** Its evidence is the
+> SCHEMA. The integrity guard runs verifiers precisely because the ledger cannot
+> say whether a migration is applied — a missing row looks identical whether the
+> SQL ran or never did — so a verifier that consults the ledger to answer that is
+> circular. It is also fragile: the ledger is `(version, statements, name)` and
+> nothing else, on the hosted platform and in the local stack alike.
+>
+> A postcondition that genuinely needs *when* something was applied belongs in
+> the migration's own apply-time `raise exception` block, which runs once, at
+> exactly that moment. What the verifier can assert durably is the MECHANISM —
+> for a "nothing was backfilled" invariant, that no default and no trigger can
+> populate the column behind an operator. `lint:migrations` enforces the ban.
 
 It must verify **meaning, not names**. `supabase/verifiers/20260930000001_customs_release_approval.verify.sql`
 is the worked example: it checks nullability, the closed CHECK vocabulary,
@@ -119,13 +178,29 @@ mid-apply lands in `VERIFY_FAILED`, the worst state.
 ## Deploying
 
 1. Merge the migration and its verifier to `main`. Confirm CI is green.
-2. Actions → **Migrate production** → Run workflow.
-3. `version` = the 14-digit id; `reason` = why now; **leave `dry_run` checked**.
-4. Approve the `production-db` environment. The dry run validates every
+2. Confirm which version is due:
+   `npm run migration:guard -- --linked` → read **next due**.
+3. Actions → **Migrate production** → Run workflow.
+4. `version` = that 14-digit id; `reason` = why now; **leave `dry_run` checked**.
+5. Approve the `production-db` environment. The dry run validates every
    precondition and applies nothing.
-5. Re-run with `dry_run` unchecked. Approve again.
-6. Read the summary. Success reads:
+6. Re-run with `dry_run` unchecked. Approve again.
+7. Read the summary. Success reads:
    `APPLIED_AND_RECORDED — <version> applied, verified, recorded, re-verified.`
+8. **Repeat from step 2 for the next migration.** One per approved action —
+   there is no batch mode, and requesting a later version is refused by name.
+
+### The pending sequence, as it stands
+
+Production is at `20260930000001` with three approved-in-repository, **not yet
+deployed** migrations. Each needs its own business approval, and they can only
+go in this order:
+
+| # | version | what it carries | due |
+|---|---|---|---|
+| 139 | `20261001000001` | GAINDE declaration reference + Finance tax payment. ⚠ Also swaps a live RPC and changes the step-10/11 receiver projection — it touches the paused operational UAT. | **next** |
+| 140 | `20261002000001` | dossier service scope. Additive and inert: proven to change nothing for an existing IMP dossier. | after 139 |
+| 141 | `20261003000001` | canonical staff professional identity. Additive; unlocks Prénom/Nom/Fonction in Administration → Users. | after 140 |
 
 ## Failure states
 

@@ -111,10 +111,41 @@ describe("migration toolchain — the version invariant is ordering-based, not a
     expect(validateTarget("20260102000001", repo, ledger, state).join(" ")).toMatch(/not greater than/);
   });
 
-  it("11 — more than one pending migration is refused (one per deployment)", () => {
-    const state = reconcile(repo, [led("20260101000001")]);
-    expect(validateTarget("20260102000001", repo, [led("20260101000001")], state).join(" "))
-      .toMatch(/exactly one pending/);
+  it("11 — ⚠ REVERSED: a BACKLOG is allowed; only the EARLIEST pending may apply", () => {
+    // This used to assert "more than one pending migration is refused (one per
+    // deployment)". That was never an ordering rule — it was an assumption that
+    // a migration is always deployed alongside the code that needs it. When
+    // three accumulated in September 2026 it refused ALL of them, including the
+    // earliest and correct one, and the repository became undeployable through
+    // its own sanctioned path with no supported way out.
+    //
+    // Ratified 2026-09-07 (MIGRATION-GATE-139-141): the target must be THE
+    // EARLIEST PENDING. Strictly stronger as an ordering control — it holds at
+    // any backlog depth — and it is what makes 138→139→140→141 provable rather
+    // than remembered.
+    const ledger = [led("20260101000001")];
+    const state = reconcile(repo, ledger);
+    expect(state.pending).toEqual(["20260102000001", "20260103000001"]);
+
+    // The earliest is allowed even with a backlog behind it.
+    expect(validateTarget("20260102000001", repo, ledger, state)).toEqual([]);
+
+    // Anything later is refused, and the refusal NAMES what to do instead.
+    const skipped = validateTarget("20260103000001", repo, ledger, state).join(" ");
+    expect(skipped).toMatch(/not the earliest pending/);
+    expect(skipped).toContain("earliest allowed=20260102000001");
+    expect(skipped).toContain("production max applied=20260101000001");
+    expect(skipped).toContain("remaining pending=[20260102000001, 20260103000001]");
+  });
+
+  it("11b — and there is no flag, anywhere, that skips ahead", () => {
+    // The rule is enforcement, not documentation. If a skip switch is ever
+    // added, this is what refuses it.
+    const runner = read("scripts/migrate-production.mjs");
+    for (const forbidden of ["--skip", "--force", "allowSkip", "ignoreOrder", "--out-of-order"]) {
+      expect(runner, forbidden).not.toContain(forbidden);
+    }
+    expect(read("scripts/migration/ledger.mjs")).toContain("is not the earliest pending migration");
   });
 
   it("12 — a missing companion verifier is refused before anything is applied", () => {

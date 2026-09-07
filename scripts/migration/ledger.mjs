@@ -116,6 +116,59 @@ export function reconcile(repo, ledger) {
 }
 
 /**
+ * THE STRUCTURAL MODEL, stated once and named.
+ * ---------------------------------------------------------------------------
+ * A healthy repository/ledger pair is a CONTIGUOUS APPLIED PREFIX followed by a
+ * CONTIGUOUS PENDING SUFFIX:
+ *
+ *     repo:    1 … 138 | 139 140 141
+ *     ledger:  1 … 138 |
+ *              ^applied ^pending, all strictly above the ledger maximum
+ *
+ * PENDING IS NOT CORRUPTION. Between authoring a migration and approving it,
+ * the correct state IS a non-empty suffix — and a guard that called that an
+ * incident would be a guard operators learn to ignore, which is worse than no
+ * guard. What corruption looks like is a hole in the PREFIX: a repository
+ * migration older than the ledger maximum that the ledger does not know. That
+ * is the September 2026 condition, and `reconcile` has always reported it as
+ * `MISSING_REMOTELY_BEHIND_MAX`.
+ *
+ * So the suffix needs no separate check: every ledger row is by definition at
+ * or below `remoteMax`, so a pending version can only fail to be in the suffix
+ * by being behind the maximum — which is exactly the hard finding above. The
+ * model is asserted here rather than merely implied, so a future change to
+ * `reconcile` that broke it would break a named contract instead of quietly
+ * widening what counts as healthy.
+ */
+export const LEDGER_STATUS = {
+  CLEAN: "CLEAN",
+  CLEAN_WITH_PENDING: "CLEAN_WITH_PENDING",
+  HELD: "HELD",
+};
+
+export function classify(state) {
+  // Belt and braces over the implication above: if a pending version were ever
+  // at or below the maximum, the prefix has a hole whatever else is true.
+  const suffixIntact =
+    !state.remoteMax || state.pending.every((v) => v > state.remoteMax);
+
+  const status = state.hard.length || !suffixIntact
+    ? LEDGER_STATUS.HELD
+    : state.pending.length
+      ? LEDGER_STATUS.CLEAN_WITH_PENDING
+      : LEDGER_STATUS.CLEAN;
+
+  return {
+    status,
+    suffixIntact,
+    appliedThrough: state.remoteMax || null,
+    pending: state.pending,
+    /** The only version the runner may apply next, or null when none is due. */
+    earliestPending: state.pending.length ? state.pending[0] : null,
+  };
+}
+
+/**
  * May `version` be applied right now?
  *
  * Every condition is stated separately so a refusal names the ONE thing that is
@@ -145,9 +198,32 @@ export function validateTarget(version, repo, ledger, state) {
   if (between.length) {
     problems.push(`${between.length} earlier migration(s) would be skipped: ${between.map((x) => x.version).join(", ")}`);
   }
-  if (state.pending.length !== 1 || state.pending[0] !== version) {
+  // ---- THE ORDERING RULE (ratified 2026-09-07, MIGRATION-GATE-139-141) -----
+  //
+  // WAS: "expected exactly one pending migration". That was not an ordering
+  // rule at all — it was an assumption that a migration is always deployed
+  // immediately alongside the code that needs it. When three accumulated, it
+  // refused ALL of them, including the earliest, and the repository became
+  // undeployable through its own sanctioned path with no supported way out.
+  //
+  // NOW: the target must be THE EARLIEST PENDING migration. That is strictly
+  // stronger as an ordering control — it holds whatever the backlog depth —
+  // and it is what makes 138→139→140→141 provable rather than remembered.
+  //
+  // It is NOT a skip feature and it does not permit a gap: exactly one
+  // migration is applied per invocation, and the next invocation's earliest
+  // pending is the one after it. Nothing else changed — approval, the single
+  // apply, verifier gating, recording and the HELD behaviour are untouched.
+  const earliest = state.pending.length ? state.pending[0] : null;
+  if (earliest === null) {
+    problems.push(`no migration is pending: ${version} is already recorded or is not in the repository`);
+  } else if (version !== earliest) {
     problems.push(
-      `expected exactly one pending migration (${version}) but found ${state.pending.length}: ${state.pending.join(", ") || "none"}`,
+      `${version} is not the earliest pending migration. ` +
+        `requested=${version} · earliest allowed=${earliest} · ` +
+        `production max applied=${state.remoteMax || "(empty)"} · ` +
+        `remaining pending=[${state.pending.join(", ")}]. ` +
+        `Apply ${earliest} first; one migration per approved production action.`,
     );
   }
   return problems;

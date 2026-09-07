@@ -117,6 +117,38 @@ for (const m of repoMigrations()) {
   if (!/\bok\b/.test(v) || !/\bdetail\b/.test(v)) {
     problems.push(`${m.version}.verify.sql: must return the (ok boolean, detail text) contract`);
   }
+
+  // ---- A VERIFIER MAY NOT CONSULT THE MIGRATION LEDGER -------------------
+  //
+  // MIGRATION-GATE-139-141-REPAIR. The #140 and #141 verifiers each compared a
+  // row timestamp against `supabase_migrations.schema_migrations.inserted_at`.
+  // That column does not exist — the ledger is exactly (version, statements,
+  // name), on the hosted platform and in the local stack alike. A verifier is
+  // ONE statement, so Postgres planned the whole file and rejected it with
+  // 42703, taking every OTHER check in the file down with it. Nothing caught it,
+  // because a verifier is only ever run against a database that LACKS its
+  // migration, where erroring is the expected answer.
+  //
+  // THE RULE IS A BAN, NOT A COLUMN WHITELIST, and deliberately so:
+  //
+  //   * A whitelist would need this lint to know the ledger's shape without a
+  //     database, so it would be a hardcoded list that silently rots.
+  //   * More fundamentally, a verifier that reads the ledger is asking the
+  //     wrong oracle. The integrity guard runs verifiers PRECISELY BECAUSE the
+  //     ledger cannot say whether a migration is applied — a missing row looks
+  //     identical whether the SQL ran or never did. A verifier that consults
+  //     the ledger to answer that is circular.
+  //
+  // A verifier's evidence is the SCHEMA. Provenance questions that genuinely
+  // need "when was this applied" belong in the migration's own apply-time
+  // `raise exception` block, which runs once, at exactly that moment.
+  if (/\bsupabase_migrations\b/i.test(v)) {
+    problems.push(
+      `${m.version}.verify.sql: a verifier must not query supabase_migrations — ` +
+        `its evidence is the schema, not the ledger (the ledger is why verifiers exist). ` +
+        `Move any "when was this applied" assertion into the migration's own apply-time check.`,
+    );
+  }
 }
 
 // A verifier parked in the migrations directory parses as a migration to the
