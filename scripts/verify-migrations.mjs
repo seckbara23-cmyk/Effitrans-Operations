@@ -65,6 +65,15 @@ function parseArgs(argv) {
 
 const log = (s = "") => console.log(s);
 const short = (s) => String(s).replace(/\s+/g, " ").slice(0, 300);
+/**
+ * A GitHub Actions annotation, so a failure is READABLE without downloading
+ * logs. Learned the hard way: the first run of this step failed and the only
+ * thing the API would surface was "Process completed with exit code 1", which
+ * says nothing about WHICH verifier or WHICH postcondition. A CI failure whose
+ * reason cannot be read is a CI step people eventually delete.
+ */
+const annotate = (level, title, message) =>
+  console.log(`::${level} title=${title}::${String(message).replace(/\s+/g, " ").slice(0, 900)}`);
 
 function main() {
   const args = parseArgs(process.argv.slice(2));
@@ -116,11 +125,13 @@ function main() {
       // not a missing object — which is exactly the defect this script exists
       // to catch, so it is a failure and never a shrug.
       failed.push(`${m.version} — the verifier could not run: ${short(e.message)}`);
+      annotate("error", `verifier ${m.version}`, `could not run against an APPLIED schema: ${e.message}`);
       log(`  ✗ ${m.version} COULD NOT RUN`);
       continue;
     }
     if (rows.length !== 1) {
       failed.push(`${m.version} — returned ${rows.length} rows; the contract is exactly one`);
+      annotate("error", `verifier ${m.version}`, `returned ${rows.length} rows; the contract is exactly one`);
       log(`  ✗ ${m.version} returned ${rows.length} rows`);
       continue;
     }
@@ -129,6 +140,7 @@ function main() {
     // truthy non-boolean has not met it.
     if (ok !== true) {
       failed.push(`${m.version} — ok=${JSON.stringify(ok)} · ${short(detail)}`);
+      annotate("error", `verifier ${m.version}`, `ok=${JSON.stringify(ok)} — ${detail}`);
       log(`  ✗ ${m.version} FAILED — ${short(detail)}`);
       continue;
     }
