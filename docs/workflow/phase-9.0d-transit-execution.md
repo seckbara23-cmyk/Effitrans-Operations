@@ -146,6 +146,19 @@ enter notifications or the portal.
 
 ## 11. Electronic attachment verification (T7)
 
+> ⚠ **RATIFIED 2026-09-06 (DEC-C40) — SUPERSEDES THE PARAGRAPH BELOW.**
+> T7 is **step 11 `gainde_document_submission`**, the Déclarant's own act: he
+> performs the GAINDE/ORBUS rattachement AND verifies it, then returns the
+> dossier to the Coordinator. **Step 10 `coordinator_to_declarant` is the
+> Coordinator's return handoff**, not the verification.
+>
+> *Divergence historique conservée.* The paragraph below placed T7 on step 10,
+> and so do `lifecycle-map.ts` and `transit.ts` until the realignment lands.
+> Migration `20260828000001` and `reconcile/satisfaction.ts` had already put the
+> rattachement fact on step 11 — « There was never a missing step, only a missing
+> fact ». The platform therefore held two live answers to one question, which is
+> why this note exists rather than a silent edit.
+
 The `coordinator_to_declarant` step models the post-registration attachment/
 linking check; it completes through the engine's normal action once its evidence
 is present (actor + timestamp recorded on the step execution) — never a bare

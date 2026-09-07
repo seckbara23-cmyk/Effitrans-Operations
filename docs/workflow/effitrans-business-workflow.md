@@ -3,6 +3,8 @@
 **Date:** 2026-07-28 · **Source of truth:** the production implementation at commit `3d5fefe`
 **Method:** reverse-engineered from `lib/process/effitrans-process.ts` (the 26-step registry), the module state machines, the automation services, and the UAT-validated production behaviour. **Nothing in this document is aspirational** — every step, status, gate and notification below exists in code and has a named enforcement point.
 
+> **Superseding note — 2026-09-06 (DEC-C37, DEC-C40, DEC-C45).** That guarantee is kept by CORRECTING the two statements that had stopped being true, not by weakening it. Steps 9 and 11 changed meaning after MAYA-P1.2: step 9 is Finance's **GAINDE registration with the duties and taxes**, completed from Finance's own milestone and never auto-completed from the Déclarant's `DECLARED` status; step 11 is the Déclarant's **rattachement AND its verification**. Each corrected line keeps the superseded wording beside the ruling, per the `QC2_TRANSMISSION_CONFLICT` precedent — a divergence that is deleted cannot be learned from.
+
 Related: [`wes-0-canonical-workflow-architecture.md`](wes-0-canonical-workflow-architecture.md) · [`wes-5-reconciliation.md`](wes-5-reconciliation.md) · [`../rbac-matrix.md`](../rbac-matrix.md)
 
 ---
@@ -44,7 +46,7 @@ Legend: **Auto** = completed automatically from module facts (WES-5 reconciliati
 | 6 | Customs declaration | Déclarant | Assigned dossier | Prepare the customs clearance dossier (`customs_record` created, `CUSTOMS_DOSSIER` assembled) | Customs dossier submitted for validation (`SUBMITTED`) | 7 |
 | 7 | Transit | Chef de Transit | Submitted customs dossier | **Maker-checker validation** — the validator must be a distinct actor from the preparer (enforced in the engine); rejection returns to step 6 with a structured reason code | Validated customs dossier | 8 |
 | 8 | Coordination | Coordinateur | Validated dossier | Transmit to Finance (customs function) | Handoff → Finance | 9 |
-| 9 | Finance (customs) | Customs finance officer | Validated dossier | Register the declaration in **GAINDE** (Senegal's customs system); record the declaration number on `customs_record` (status → `DECLARED`) | Declaration number; **Auto:** `gainde_registration` completes from `DECLARED` + number present; customer event `CUSTOMS_DECLARED` | 10 |
+| 9 | Finance (customs) | Customs finance officer | Validated dossier | **Enregistrement GAINDE avec les taxes** — Finance's own act (DEC-C37/C39): the registration in **GAINDE** (Senegal's customs system) together with the customs duties, as an actual payment with a per-line breakdown. Distinct from the Déclarant's step-6 capture of the declaration reference, which is a different fact | Declaration number; customer event `CUSTOMS_DECLARED`. ⚠ **RATIFIED 2026-09-06 (DEC-C37/C45) — SUPERSEDES THE LINE BELOW.** Step 9 is Finance's own act: the **GAINDE registration WITH the duties and taxes, an actual payment**, and it completes from Finance's own milestone `gainde_registered_at`, never from the Déclarant's `DECLARED` status. *Divergence historique conservée :* this row previously read « **Auto:** `gainde_registration` completes from `DECLARED` + number present », which is precisely the proxy MAYA-P1.2 retired — a Déclarant's fact closing a Finance step. | 10 |
 | 10 | Coordination | Coordinateur | Registered declaration | Return the dossier to the Déclarant | Handoff → Déclarant | 11 |
 | 11 | Customs declaration | Déclarant | Registered declaration | Introduce the supporting documents into GAINDE (submission evidence retained) | GAINDE submission recorded | 12 |
 | 12 | Coordination | Coordinateur | Submitted declaration | Follow the customs decision (circuit vert/orange/rouge; `INSPECTION` status when physically inspected); assign the Agent de Terrain | Field agent assigned | 13 |
@@ -296,9 +298,11 @@ flowchart TD
     J --> K{7 Chef validates?<br/>distinct actor}
     K -- reject --> J
     K -- validate --> L[8 To Finance customs]
-    L --> M[9 GAINDE registration - AUTO on DECLARED]
-    M --> N[10-11 Docs into GAINDE]
-    N --> O{12 Customs circuit}
+    L --> M[9 Finance GAINDE registration WITH duties - paid]
+    M --> N[10 Coordinator returns to Declarant]
+    N --> N2[11 Declarant rattachement GAINDE/ORBUS + verification]
+    N2 --> O2[ ]
+    N2 --> O{12 Customs circuit}
     O -- inspection --> P[INSPECTION]
     P --> Q
     O -- clear --> Q[13 BAE + RELEASE - AUTO<br/>Mainlevee obtenue]

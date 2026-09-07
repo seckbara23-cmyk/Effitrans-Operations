@@ -32,7 +32,7 @@ question *"could this step mean anything other than this fact?"*:
 | Step | Authoritative source | Completion condition | Fact code |
 |---|---|---|---|
 | `am_dossier_opening` | `operational_file.status` | left DRAFT (not CANCELLED) | `FILE_OPENED` |
-| `gainde_registration` | `customs_record` | status ≥ DECLARED **and** declaration number recorded | `CUSTOMS_DECLARED` |
+| `gainde_registration` | `customs_record` | **`gainde_registered_at` recorded by Finance** (MAYA-P1.2; ratified again 2026-09-06, DEC-C37/C45). ⚠ *Divergence historique conservée* : this row previously read « status ≥ DECLARED **and** declaration number recorded », which let the Déclarant's own fact close a Finance step — the proxy MAYA-P1.2 retired. | `GAINDE_REGISTERED` |
 | `customs_field_clearance` | `customs_record.status` | `RELEASED` (recorded via the WES-4 split, with a BAE reference) | `CUSTOMS_RELEASED` |
 | `pickup` | `transport_record.status` | ≥ `PICKED_UP` (the ladder is monotonic) | `TRANSPORT_PICKED_UP` |
 | `transport_pod_handoff` | POD document / transport | verified current POD **or** `POD_RECEIVED` | `POD_RECEIVED` |
