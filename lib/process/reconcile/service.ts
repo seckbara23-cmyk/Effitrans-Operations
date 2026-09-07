@@ -196,6 +196,26 @@ async function run(input: {
     ? await loadProcessSnapshot(input.tenantId, input.fileId, RECONCILE_FULL_READ)
     : null;
 
+/**
+ * Steps whose registry prerequisites are enforced on the RECONCILE path.
+ *
+ * `activateStep` refuses `prerequisites_unmet`, and `submitStep` inherits that
+ * because the step had to be ACTIVE first. Reconciliation completes a step
+ * without activating it, so it never asked — and two production dossiers
+ * reached step 11 COMPLETED with step 10 never completed and zero submission
+ * evidence, both through this door.
+ *
+ * ONE ENTRY, deliberately. The 9+10→11 join is ratified (DEC-C40, and
+ * `final-26-step-reconciliation.md` C5: « both must be terminal before step 11
+ * promotes »). Extending this to every fact-provable step is NOT ratified, and
+ * is not harmless: `pickup` and `transport_pod_handoff` are legitimately proved
+ * by facts that arrive before their own prerequisite closes, so a general gate
+ * stalls dossiers that are doing nothing wrong. Adding a key here is a
+ * governance act and needs its own ruling.
+ */
+const PREREQUISITE_ENFORCED_ON_RECONCILE: ReadonlySet<string> = new Set([
+  "gainde_document_submission",
+]);
   for (const stepKey of FACT_PROVABLE_STEP_KEYS) {
     const execution = byStep.get(stepKey) ?? null;
     const evaluation = evaluateStep({
@@ -269,7 +289,22 @@ async function run(input: {
     // refuse everything. Guarded on `evidenceSnap` for the same reason the
     // evidence gate above is: without the snapshot we know nothing, and
     // silently refusing every completion is not the same as being careful.
-    if (evidenceSnap && !prerequisitesMet(stepKey, toViews(evidenceSnap.executions))) continue;
+    //
+    // SCOPED, and the scope is the ratification's. Applying this to every
+    // fact-provable step was tried and CI showed what it costs: `pickup` and
+    // `transport_pod_handoff` are legitimately proved by facts that arrive
+    // before their own prerequisite step is closed, so a general gate stalled
+    // real journeys. That is exactly the shape the 2026-09-06 leniency doctrine
+    // forbids — a new hard blocker on business sequencing, adopted by side
+    // effect rather than ruled on. The 9+10→11 join IS ratified, so step 11
+    // gets it and the general case is reported for arbitration instead.
+    if (
+      PREREQUISITE_ENFORCED_ON_RECONCILE.has(stepKey)
+      && evidenceSnap
+      && !prerequisitesMet(stepKey, toViews(evidenceSnap.executions))
+    ) {
+      continue;
+    }
 
     const { data, error } = await supabase.rpc("reconcile_step_completion", {
       p_execution_id: execution.id,

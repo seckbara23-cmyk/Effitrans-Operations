@@ -141,7 +141,26 @@ describe("reconciliation may no longer complete a step whose prerequisites are o
   const svc = code("lib/process/reconcile/service.ts");
 
   it("11 — the prerequisite test is on the completion path", () => {
-    expect(svc).toContain("if (evidenceSnap && !prerequisitesMet(stepKey, toViews(evidenceSnap.executions))) continue;");
+    expect(svc).toContain("PREREQUISITE_ENFORCED_ON_RECONCILE.has(stepKey)");
+    expect(svc).toContain("!prerequisitesMet(stepKey, toViews(evidenceSnap.executions))");
+  });
+
+  it("11b — and it is SCOPED to the join Effitrans actually ratified", () => {
+    // A general gate on every fact-provable step was tried and CI showed the
+    // cost: `pickup` and `transport_pod_handoff` are legitimately proved by
+    // facts that arrive before their own prerequisite closes, so it stalled
+    // journeys doing nothing wrong. That is precisely the shape the leniency
+    // doctrine forbids — a new hard blocker on business sequencing, adopted by
+    // side effect rather than ruled on.
+    const set = svc.slice(
+      svc.indexOf("const PREREQUISITE_ENFORCED_ON_RECONCILE"),
+      svc.indexOf("]);", svc.indexOf("const PREREQUISITE_ENFORCED_ON_RECONCILE")),
+    );
+    expect(set).toContain('"gainde_document_submission"');
+    for (const notRatified of ["pickup", "transport_pod_handoff", "am_dossier_opening",
+                              "customs_field_clearance", "gainde_registration"]) {
+      expect(set, notRatified).not.toContain(`"${notRatified}"`);
+    }
   });
 
   it("12 — it reads the SNAPSHOT, not the loop's filtered executions", () => {
