@@ -90,6 +90,13 @@ describe("scopedFrom", () => {
  * read (or `scopedFrom`) instead.
  */
 const KNOWN_UNSCOPED_READS: Record<string, string> = {
+  // --- Schema capability probe (OPS-GAINDE-04-COMPAT-01). Reads ZERO rows:
+  //     `.limit(0)` asks PostgREST to validate the projection against the
+  //     schema and return nothing, so no tenant data crosses. A tenant filter
+  //     would not make it safer and would imply it reads rows, which it must
+  //     not. Delete with the file once migration 20261001000001 is applied.
+  "lib/customs/schema-139.ts::customs_record":
+    "zero-row schema probe: does the #139 column exist? returns no data at all",
   // --- Self-identity lookups by auth.users id (globally unique; no tenant
   //     context to filter on — the read RESOLVES which identity/tenant the
   //     caller is). Safe: an auth id maps to exactly one identity row.

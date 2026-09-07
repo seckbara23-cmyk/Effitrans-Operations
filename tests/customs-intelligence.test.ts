@@ -23,7 +23,7 @@ function record(over: Partial<CustomsRecord> = {}): CustomsRecord {
   return {
     id: "d1", fileId: "f1", status: "DECLARED", required: true, declarationNumber: "DN-1",
     customsOffice: "DKR", regime: "IM4", declarationDate: "2026-07-10", baeReference: null, releaseDate: null,
-    inspectionStatus: "PENDING", externalRef: null, gaindeDeclarationReference: null, notes: null,
+    inspectionStatus: "PENDING", externalRef: null, gaindeDeclarationReference: null, gaindeLedgerAvailable: false, notes: null,
     releaseApprovalStatus: null,
     releaseApprovalNote: null,
     baeRecordedAt: null,

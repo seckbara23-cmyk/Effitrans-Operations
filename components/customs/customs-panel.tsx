@@ -374,16 +374,33 @@ export function CustomsPanel({
               Effitrans names — as governed LINES, so a seventh tax needs no
               migration and no code change. */}
           {canRegisterGainde && owns("customs.gainde_registration") && (
-            <GaindeRegistrationForm
-              defaultReference={record.externalRef ?? ""}
-              disabled={pending || !gateOpen("customs.gainde_registration")}
-              onSubmit={(input) =>
-                run(
-                  () => recordGaindeRegistration(record.id, input.reference, input.payment),
-                  "gainde",
-                )
-              }
-            />
+            record.gaindeLedgerAvailable ? (
+              <GaindeRegistrationForm
+                defaultReference={record.externalRef ?? ""}
+                disabled={pending || !gateOpen("customs.gainde_registration")}
+                onSubmit={(input) =>
+                  run(
+                    () => recordGaindeRegistration(record.id, input.reference, input.payment),
+                    "gainde",
+                  )
+                }
+              />
+            ) : (
+              /* OPS-GAINDE-04-COMPAT-01 — the pre-slice control, restored for the
+                 window in which the tax ledger does not exist. Offering the
+                 breakdown form here would collect figures the database has
+                 nowhere to put; Finance keeps the capability it had. */
+              <button
+                onClick={() => {
+                  const ref = window.prompt(c.gainde.referenceLabel, record.externalRef ?? "");
+                  if (ref && ref.trim()) run(() => recordGaindeRegistration(record.id, ref.trim()), "gainde");
+                }}
+                disabled={pending || !gateOpen("customs.gainde_registration")}
+                className="mt-2 rounded-md border border-teal-200 px-2 py-1 text-xs font-medium text-teal-700 hover:bg-teal-50 disabled:opacity-50"
+              >
+                {c.gainde.action}
+              </button>
+            )
           )}
           {/* UI-6 — this control alone ignored its own step gate and offered no
               explanation: the Finance officer could press it on a dossier the
@@ -567,7 +584,10 @@ export function CustomsPanel({
             Finance's step-9 registration, and a step-6 capture there would make
             that act permanently unperformable. Reported under the metadata
             scope because that is the section it belongs to. */}
-        {canUpdate && owns("customs.declaration_reference") && (
+        {/* OPS-GAINDE-04-COMPAT-01 — hidden until migration 20261001000001 is
+            applied. There is no column to write to before then, and offering a
+            control whose every use is refused is worse than not offering it. */}
+        {record.gaindeLedgerAvailable && canUpdate && owns("customs.declaration_reference") && (
           <div className="rounded-lg border border-slate-200 p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-xs font-semibold text-navy-900">{c.declarationReference.title}</h3>
@@ -827,7 +847,11 @@ function ReadOnlyMetadata({ record }: { record: CustomsRecord }) {
     [c.fields.regime, record.regime],
     [c.fields.declarationDate, record.declarationDate],
     [c.fields.inspection, c.inspection[record.inspectionStatus]],
-    [c.declarationReference.title, record.gaindeDeclarationReference],
+    // Shown only when the column exists: « — » would otherwise read as « not
+    // captured » on a database that cannot hold it at all.
+    ...(record.gaindeLedgerAvailable
+      ? ([[c.declarationReference.title, record.gaindeDeclarationReference]] as [string, string | null][])
+      : []),
     [c.fields.externalRef, record.externalRef],
     [c.fields.notes, record.notes],
   ];

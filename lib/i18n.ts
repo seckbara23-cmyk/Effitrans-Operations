@@ -629,6 +629,12 @@ export const t = {
         "Le Chef de Transit n'a pas encore vérifié ce BAE : la libération vers le Transport reste bloquée.",
       self_approval_forbidden:
         "Vous avez enregistré ce BAE : sa vérification revient à une autre personne.",
+      // OPS-GAINDE-04-COMPAT-01 — the schema half of this slice is not deployed
+      // yet. Named rather than folded into the generic sentence, so an operator
+      // is told the truth instead of being invited to retry something that
+      // cannot succeed.
+      gainde_ledger_unavailable:
+        "Cette fonction n'est pas encore disponible : la mise à jour de la base de données correspondante n'a pas encore été déployée.",
       generic: "L'action a échoué. Veuillez réessayer.",
     },
   },

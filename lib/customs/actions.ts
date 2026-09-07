@@ -16,6 +16,7 @@ import { assertPermission } from "@/lib/auth/require-permission";
 import { isFileVisible } from "@/lib/authz/visibility";
 import { assertControlStep } from "@/lib/process/control-gate-server";
 import { assertControlOwner } from "@/lib/process/control-ownership-server";
+import { gaindeLedgerAvailable } from "./schema-139";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
 import { onCustomsReleased } from "@/lib/handoffs/triggers";
@@ -474,6 +475,14 @@ export async function recordDeclarationReference(
     if (gate) return { ok: false, error: gate };
   }
 
+  // OPS-GAINDE-04-COMPAT-01 — there is nowhere to put this yet. Refused with
+  // its own code rather than allowed to reach an RPC that does not exist and
+  // come back as a generic `record_failed`: « the column is not deployed » and
+  // « the write failed » are different facts and deserve different sentences.
+  if (!(await gaindeLedgerAvailable())) {
+    return { ok: false, error: "gainde_ledger_unavailable" };
+  }
+
   const { error } = await (supabase.rpc as unknown as RpcFn)("record_declaration_reference", {
     p_customs_id: id,
     p_reference: ref,
@@ -512,7 +521,15 @@ export type GaindeTaxLine = {
 export async function recordGaindeRegistration(
   id: string,
   reference: string,
-  payment: {
+  /**
+   * The payment, WITH its breakdown (DEC-C39).
+   *
+   * Optional only for the compatibility window: until migration
+   * 20261001000001 is applied there is no ledger to record it in, and the
+   * pre-existing reference-only registration is what the platform can honour.
+   * Once the ledger is there it is required, and its absence is refused.
+   */
+  payment?: {
     /** When the duties were actually paid. */
     paidAt: string;
     currency?: string;
@@ -531,21 +548,34 @@ export async function recordGaindeRegistration(
   const ref = reference.trim();
   if (!ref) return { ok: false, error: "reference_required" };
 
+  // OPS-GAINDE-04-COMPAT-01 — which act can this database actually record?
+  const gaindeLedger = await gaindeLedgerAvailable();
+
+  // A breakdown the platform cannot store must never be quietly discarded: the
+  // operator typed those figures and would have no way to know they vanished.
+  if (!gaindeLedger && payment) {
+    return { ok: false, error: "gainde_ledger_unavailable" };
+  }
+
   // DEC-C39 — step 9 is an ACTUAL PAYMENT with a per-tax breakdown, not a
   // reference and not one assessed total. Checked here as well as in the RPC
   // so the operator gets the specific refusal rather than `record_failed`.
-  const quittance = (payment?.quittance ?? "").trim();
-  if (!quittance) return { ok: false, error: "quittance_required" };
-  if (!payment?.paidAt) return { ok: false, error: "paid_at_required" };
-  const lines = (payment.lines ?? []).map((l) => ({
-    taxCode: (l.taxCode ?? "").trim(),
-    labelFr: (l.labelFr ?? "").trim(),
-    amountMinor: Math.trunc(Number(l.amountMinor)),
-  }));
-  if (lines.length === 0) return { ok: false, error: "tax_lines_required" };
-  if (lines.some((l) => !l.taxCode || !l.labelFr)) return { ok: false, error: "tax_line_invalid" };
-  if (lines.some((l) => !Number.isFinite(l.amountMinor) || l.amountMinor <= 0)) {
-    return { ok: false, error: "invalid_amount" };
+  let quittance = "";
+  let lines: GaindeTaxLine[] = [];
+  if (gaindeLedger) {
+    quittance = (payment?.quittance ?? "").trim();
+    if (!quittance) return { ok: false, error: "quittance_required" };
+    if (!payment?.paidAt) return { ok: false, error: "paid_at_required" };
+    lines = (payment.lines ?? []).map((l) => ({
+      taxCode: (l.taxCode ?? "").trim(),
+      labelFr: (l.labelFr ?? "").trim(),
+      amountMinor: Math.trunc(Number(l.amountMinor)),
+    }));
+    if (lines.length === 0) return { ok: false, error: "tax_lines_required" };
+    if (lines.some((l) => !l.taxCode || !l.labelFr)) return { ok: false, error: "tax_line_invalid" };
+    if (lines.some((l) => !Number.isFinite(l.amountMinor) || l.amountMinor <= 0)) {
+      return { ok: false, error: "invalid_amount" };
+    }
   }
 
   const supabase = getAdminSupabaseClient();
@@ -564,15 +594,27 @@ export async function recordGaindeRegistration(
   // Fail before showing success; the RPC refuses the duplicate as well.
   if (rec.external_ref === ref) return { ok: false, error: "reference_unchanged" };
 
-  const { error } = await supabase.rpc("record_gainde_registration", {
-    p_customs_id: id,
-    p_reference: ref,
-    p_actor: user.id,
-    p_paid_at: payment.paidAt,
-    p_currency: (payment.currency ?? "XOF").toUpperCase(),
-    p_quittance: quittance,
-    p_lines: lines,
-  } as never);
+  // TWO SIGNATURES, ONE ACT. Migration 20261001000001 replaces the 3-argument
+  // RPC with a 7-argument one that demands the taxes; until it is applied, the
+  // 3-argument version is what exists and reference-only registration is what
+  // the platform can honour — which is exactly what it did before this slice.
+  // Nothing is lost silently: a caller who supplied a breakdown was refused
+  // above.
+  const { error } = gaindeLedger
+    ? await supabase.rpc("record_gainde_registration", {
+        p_customs_id: id,
+        p_reference: ref,
+        p_actor: user.id,
+        p_paid_at: payment!.paidAt,
+        p_currency: (payment!.currency ?? "XOF").toUpperCase(),
+        p_quittance: quittance,
+        p_lines: lines,
+      } as never)
+    : await supabase.rpc("record_gainde_registration", {
+        p_customs_id: id,
+        p_reference: ref,
+        p_actor: user.id,
+      });
   if (error) {
     // The RPC raises `token: sentence`. Matching the TOKEN, not the prose,
     // means rewording an exception can never flatten a precise refusal into

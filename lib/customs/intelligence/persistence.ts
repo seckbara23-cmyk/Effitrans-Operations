@@ -77,6 +77,10 @@ export function rowToDeclaration(row: IntelRecordRow): Declaration {
     // DEC-C38 — the Déclarant's reference. Intelligence reads the provider's
     // view of a record and never authors this, so it is simply carried.
     gaindeDeclarationReference: null,
+    // Intelligence reads a provider's view of a record and authors neither the
+    // reference nor the taxes, so it reports the ledger as unavailable rather
+    // than claiming to know.
+    gaindeLedgerAvailable: false,
     notes: row.notes,
     // MAYA-P0.7-A — the intelligence lifecycle does not read recevabilité and
     // must not: a QC judgement is not a declaration state. Carried as null so

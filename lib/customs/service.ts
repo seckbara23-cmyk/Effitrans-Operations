@@ -19,6 +19,7 @@ import type {
   InspectionStatus,
   MissingCustomsDoc,
 } from "./types";
+import { gaindeLedgerAvailable } from "./schema-139";
 
 type RecordRow = {
   id: string;
@@ -53,11 +54,12 @@ type RecordRow = {
   release_date: string | null;
   inspection_status: string;
   external_ref: string | null;
-  gainde_declaration_reference: string | null;
+  /** #139 only. ABSENT from the projection while schema 138 is live. */
+  gainde_declaration_reference?: string | null;
   notes: string | null;
 };
 
-function toRecord(r: RecordRow): CustomsRecord {
+function toRecord(r: RecordRow, gaindeLedger: boolean): CustomsRecord {
   return {
     id: r.id,
     fileId: r.file_id,
@@ -72,7 +74,11 @@ function toRecord(r: RecordRow): CustomsRecord {
     inspectionStatus: r.inspection_status as InspectionStatus,
     externalRef: r.external_ref,
     // DEC-C38 — the Déclarant's own reference, never Finance's.
-    gaindeDeclarationReference: r.gainde_declaration_reference ?? null,
+    // NOT YET AVAILABLE reads as null, exactly as « not captured » does.
+    // The UI tells the two apart through `gaindeLedgerAvailable`, never by
+    // guessing from a null.
+    gaindeDeclarationReference: gaindeLedger ? (r.gainde_declaration_reference ?? null) : null,
+    gaindeLedgerAvailable: gaindeLedger,
     notes: r.notes,
     // D4 — governed elements; null = not yet captured, never a default.
     shPositionCount: r.sh_position_count ?? null,
@@ -111,8 +117,22 @@ function toRecord(r: RecordRow): CustomsRecord {
   };
 }
 
-const RECORD_COLS =
-  "id, file_id, status, required, declaration_number, sh_position_count, declaration_type, dpi_regime, exemption_title_origin, tariff_classification_origin, customs_office, regime, declaration_date, bae_reference, bae_recorded_at, release_approval_status, release_approval_note, release_date, inspection_status, external_ref, gainde_declaration_reference, notes, receivability_status, receivability_at, receivability_note, provider_code, provider_synced_at, reviewed_at, reviewer:reviewed_by(email), gainde_registered_at, gainde_registrar:gainde_registered_by(email), attachment_completed_at, attachment_systems, attachment_recorder:attachment_completed_by(email)";
+/**
+ * Everything that exists at schema 138 — every dossier can be read with this.
+ */
+const RECORD_COLS_BASE =
+  "id, file_id, status, required, declaration_number, sh_position_count, declaration_type, dpi_regime, exemption_title_origin, tariff_classification_origin, customs_office, regime, declaration_date, bae_reference, bae_recorded_at, release_approval_status, release_approval_note, release_date, inspection_status, external_ref, notes, receivability_status, receivability_at, receivability_note, provider_code, provider_synced_at, reviewed_at, reviewer:reviewed_by(email), gainde_registered_at, gainde_registrar:gainde_registered_by(email), attachment_completed_at, attachment_systems, attachment_recorder:attachment_completed_by(email)";
+
+/**
+ * The projection, chosen by what the database actually has.
+ *
+ * OPS-GAINDE-04-COMPAT-01. Asking PostgREST for a column that does not exist
+ * fails the WHOLE select — there is no partial result — so a single unapplied
+ * column took the entire dossier route down. The #139 column is therefore added
+ * only when #139 is there.
+ */
+const recordCols = (gaindeLedger: boolean) =>
+  gaindeLedger ? `${RECORD_COLS_BASE}, gainde_declaration_reference` : RECORD_COLS_BASE;
 
 /** The (single) customs record for a dossier, or null. */
 export async function getCustomsRecord(fileId: string): Promise<CustomsRecord | null> {
@@ -120,15 +140,20 @@ export async function getCustomsRecord(fileId: string): Promise<CustomsRecord | 
   if (!(await isFileVisible(user.id, user.tenantId, fileId))) return null;
 
   const supabase = getAdminSupabaseClient();
+  // One narrow schema question, memoized per request. See lib/customs/schema-139.ts
+  // for why this is a probe and not a try/catch around the read below.
+  const gaindeLedger = await gaindeLedgerAvailable();
   const { data, error } = await supabase
     .from("customs_record")
-    .select(RECORD_COLS)
+    .select(recordCols(gaindeLedger))
     .eq("tenant_id", user.tenantId)
     .eq("file_id", fileId)
     .is("deleted_at", null)
     .maybeSingle<RecordRow>();
+  // Still thrown, deliberately: a genuine read failure must stay loud. What
+  // changed is that a not-yet-applied migration is no longer one.
   if (error) throw new Error(`[customs] read failed: ${error.message}`);
-  return data ? toRecord(data) : null;
+  return data ? toRecord(data, gaindeLedger) : null;
 }
 
 /** Visibility-scoped customs queue (optionally filtered by status). */

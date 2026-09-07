@@ -49,6 +49,7 @@ const customs = (over: Partial<CustomsRecord> = {}): CustomsRecord => ({
   // DEC-C38 — the Déclarant's own GAINDE reference, distinct from Finance's
   // externalRef. Absent in these fixtures: they predate the distinction.
   gaindeDeclarationReference: null,
+  gaindeLedgerAvailable: true,
   shPositionCount: null, declarationType: null, dpiRegime: null,
   exemptionTitleOrigin: null, tariffClassificationOrigin: null,
   id: "c1", fileId: "f1", status: "RELEASED", required: true,

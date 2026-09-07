@@ -279,7 +279,7 @@ describe("P1.1 survives P1.2 intact", () => {
         id: "c1", fileId: "f1", status: "DECLARED", required: true,
         declarationNumber: null, customsOffice: null, regime: null, declarationDate: null,
         baeReference: null, releaseDate: null, inspectionStatus: "NOT_REQUIRED",
-        externalRef: "UAT-GAINDE-P11-002", gaindeDeclarationReference: null, notes: null,
+        externalRef: "UAT-GAINDE-P11-002", gaindeDeclarationReference: null, gaindeLedgerAvailable: true, notes: null,
         releaseApprovalStatus: null,
     releaseApprovalNote: null,
     baeRecordedAt: null,

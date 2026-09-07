@@ -106,7 +106,11 @@ describe("the Déclarant records his reference, through a gated action", () => {
 
   it("08 — and the panel draws it on the server's verdict, never on permission alone", () => {
     const panel = code("components/customs/customs-panel.tsx");
-    expect(panel).toContain('{canUpdate && owns("customs.declaration_reference") && (');
+    // OPS-GAINDE-04-COMPAT-01 added a leading capability check: the control is
+    // hidden entirely until migration 20261001000001 gives it a column to write
+    // to. The ownership condition it protects is unchanged and still first
+    // among the AUTHORITY conditions.
+    expect(panel).toContain('{record.gaindeLedgerAvailable && canUpdate && owns("customs.declaration_reference") && (');
     expect(panel).toContain('disabled={pending || !gateOpen("customs.declaration_reference")}');
     // A control absent from the page's verdict array is drawn UNGATED by the
     // panel's `?? true` fallback — the exact drift the array exists to end.

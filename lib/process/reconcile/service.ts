@@ -34,6 +34,7 @@ import { AuditActions } from "@/lib/audit/events";
 import { loadProcessSnapshot, toViews } from "@/lib/process/engine/snapshot";
 import { evaluateStepEvidence } from "@/lib/process/engine/evidence";
 import { prerequisitesMet } from "@/lib/process/engine/state";
+import { gaindeLedgerAvailable } from "@/lib/customs/schema-139";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import {
   FACT_PROVABLE_STEP_KEYS,
@@ -141,7 +142,10 @@ async function run(input: {
   // the satisfaction rule reads exactly as it did before this slice until the
   // schema is actually there.
   let gaindeTaxPaid: boolean | null = null;
-  if (customs.data) {
+  // OPS-GAINDE-04-COMPAT-01 — ASK before querying. Failing open on the error
+  // was already safe, but sending a query that is known to fail is noise in
+  // the logs of every reconciliation, and noise is where a real failure hides.
+  if (customs.data && (await gaindeLedgerAvailable())) {
     const paid = await supabase
       .from("gainde_tax_payment" as never)
       .select("id")

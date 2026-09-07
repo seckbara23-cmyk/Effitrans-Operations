@@ -58,6 +58,16 @@ export type CustomsRecord = {
    * step 9 permanently unperformable.
    */
   gaindeDeclarationReference: string | null;
+  /**
+   * OPS-GAINDE-04-COMPAT-01 — is migration 20261001000001 applied?
+   *
+   * The two GAINDE acts are separated by that migration. Until it lands there
+   * is nowhere to store the declaration reference and nowhere to store the
+   * taxes, so the surfaces that write them must not be offered.  means
+   * NOT YET AVAILABLE, which is a different fact from « not captured » — and
+   * both read as a null reference, so the UI needs this to tell them apart.
+   */
+  gaindeLedgerAvailable: boolean;
   notes: string | null;
   /**
    * D4 — the five governed elements (ICTD inputs: CDP, NPSH×CCT, U_DPI, U_TE).
