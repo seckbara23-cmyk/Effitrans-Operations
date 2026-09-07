@@ -130,6 +130,27 @@ describe("the administrator can edit a staff identity from the Users area", () =
     expect(refusal).toBeLessThan(panel.indexOf("setSaved(true)"));
   });
 
+  it("09b — a user with NO professional profile yet still saves", () => {
+    // 28 of the 60 production users have no `workforce_profile` row at all, so
+    // this is the COMMON path, not an edge case. The write is an upsert that
+    // supplies only `user_id`, `tenant_id`, `updated_by` and the touched
+    // identity columns — which works because `signature_variant` and
+    // `public_card_enabled` are NOT NULL *with defaults* (verified against the
+    // live schema). Supplying them here instead would silently reset a person's
+    // signature variant every time an administrator fixed a typo in their name.
+    const a = identityAction();
+    expect(a).toContain('.upsert(row as never, { onConflict: "user_id" })');
+    expect(a).toContain("user_id: userId,");
+    expect(a).toContain("tenant_id: admin.tenantId,");
+    expect(a).toContain("updated_by: admin.id,");
+    for (const untouched of ["signature_variant", "public_card_enabled", "public_card_token", "photo_asset_id", "phone_"]) {
+      expect(a, `identity editing must not write ${untouched}`).not.toContain(untouched);
+    }
+    // And the profile is only written when something for it actually changed —
+    // the three keys above are always present, so >3 means a real field.
+    expect(a).toContain("if (Object.keys(row).length > 3) {");
+  });
+
   it("11b — an empty submission is refused rather than reported as saved", () => {
     expect(validateIdentity({})).toEqual({ ok: false, error: "nothing_to_change" });
     expect(code(PANEL)).toContain("Aucune modification à enregistrer.");
@@ -466,7 +487,19 @@ describe("schema 138 renders and saves safely, with three migrations pending", (
   it("43/46 — the Users read never names a pending column unconditionally", () => {
     const svc = code(SERVICE);
     expect(svc).toContain("const identityStorable = await staffIdentityStored();");
-    expect(svc).toContain('identityStorable\n          ? "user_id, job_title, first_name, last_name, staff_function"\n          : "user_id, job_title",'.replace(/\n\s*/g, "\n          ").trim().slice(0, 20));
+    // Whitespace-insensitive on purpose: the working tree is CRLF, and a
+    // literal-with-newlines assertion passes or fails on line endings rather
+    // than on the property it claims to test. It did exactly that once.
+    const flat = svc.replace(/\s+/g, " ");
+    expect(flat).toContain(
+      'identityStorable ? "user_id, job_title, first_name, last_name, staff_function" : "user_id, job_title"',
+    );
+    // The schema-138 branch names NONE of the three pending columns.
+    const safeBranch = '"user_id, job_title"';
+    expect(flat).toContain(safeBranch);
+    for (const pending of PENDING["#141"]) {
+      expect(safeBranch, pending).not.toContain(pending);
+    }
     expect(svc).toContain('"user_id, job_title"');
     // A GENUINE failure still throws. Only the not-yet-applied migration was
     // made survivable, and it was made survivable by NOT ASKING.
