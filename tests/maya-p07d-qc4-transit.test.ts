@@ -46,6 +46,9 @@ const doc = (typeCode: string, status: string, id = String(Math.random())): Docu
 });
 
 const customs = (over: Partial<CustomsRecord> = {}): CustomsRecord => ({
+  // DEC-C38 — the Déclarant's own GAINDE reference, distinct from Finance's
+  // externalRef. Absent in these fixtures: they predate the distinction.
+  gaindeDeclarationReference: null,
   shPositionCount: null, declarationType: null, dpiRegime: null,
   exemptionTitleOrigin: null, tariffClassificationOrigin: null,
   id: "c1", fileId: "f1", status: "RELEASED", required: true,

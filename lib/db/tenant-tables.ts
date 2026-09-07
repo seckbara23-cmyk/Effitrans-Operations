@@ -68,6 +68,12 @@ export const TENANT_SCOPED_TABLES = new Set<string>([
   "invoice_counter",
   "payment_intent",
   "finance_request",
+  // OPS-CUSTOMS-GAINDE-04 (#139) — Finance's step-9 tax payment and its
+  // per-tax breakdown. Registered on the LINE table too, not only the header:
+  // a table missing from this set is invisible to the guard, and the lines
+  // carry their own tenant_id precisely so they can be scoped without a join.
+  "gainde_tax_payment",
+  "gainde_tax_payment_line",
   // communications
   "communication_message",
   "client_notification",

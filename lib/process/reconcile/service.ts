@@ -130,6 +130,27 @@ async function run(input: {
 
   if (!file.data) return { ...EMPTY, ok: false };
 
+  // DEC-C39 — is there a LIVE (non-voided) GAINDE tax payment on this record?
+  //
+  // READ SEPARATELY AND FAIL OPEN, on purpose. The payment ledger arrives with
+  // migration `20261001000001`; on a database without it PostgREST answers with
+  // an error rather than an empty set, and folding that into the query above
+  // would take the WHOLE fact load down — every step on every dossier — over a
+  // table that is legitimately absent. `null` therefore means NOT KNOWABLE, and
+  // the satisfaction rule reads exactly as it did before this slice until the
+  // schema is actually there.
+  let gaindeTaxPaid: boolean | null = null;
+  if (customs.data) {
+    const paid = await supabase
+      .from("gainde_tax_payment" as never)
+      .select("id")
+      .eq("file_id", input.fileId)
+      .eq("tenant_id", input.tenantId)
+      .is("voided_at", null)
+      .limit(1);
+    if (!paid.error) gaindeTaxPaid = (paid.data ?? []).length > 0;
+  }
+
   const facts: ModuleFacts = {
     fileType: file.data.type,
     fileStatus: file.data.status,
@@ -140,6 +161,7 @@ async function run(input: {
           declarationNumber: customs.data.declaration_number,
           baeReference: customs.data.bae_reference,
           gaindeRegisteredAt: customs.data.gainde_registered_at,
+          gaindeTaxPaid,
           attachmentCompletedAt: customs.data.attachment_completed_at,
         }
       : null,

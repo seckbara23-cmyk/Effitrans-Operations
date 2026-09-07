@@ -40,6 +40,7 @@ import { getStep } from "@/lib/process/effitrans-process";
 import { TENANT_ROLE_TEMPLATES } from "@/lib/platform/role-templates";
 import { FACT_RULES } from "@/lib/process/reconcile/satisfaction";
 import { hasProcessErrorFr, processErrorFr } from "@/lib/process/error-fr";
+import { LATEST_MIGRATION, MIGRATION_COUNT } from "@/lib/platform/ops/build-info";
 
 const read = (p: string) => readFileSync(fileURLToPath(new URL(`../${p}`, import.meta.url)), "utf8");
 const strip = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
@@ -284,7 +285,7 @@ describe("TRANSIT-CUSTODY-03 — scope held", () => {
   it("no migration was added for this slice", () => {
     const dir = fileURLToPath(new URL("../supabase/migrations", import.meta.url));
     const files = require("node:fs").readdirSync(dir).filter((f: string) => f.endsWith(".sql")).sort();
-    expect(files.at(-1)).toBe("20260930000001_customs_release_approval.sql");
+    expect(files.at(-1)).toBe(`${LATEST_MIGRATION}.sql`);
   });
 
   it("no RBAC grant was changed", () => {

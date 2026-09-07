@@ -66,6 +66,17 @@ export type ModuleFacts = {
     baeReference: string | null;
     /** MAYA-P1.1 milestone: when Finance recorded the GAINDE registration. */
     gaindeRegisteredAt: string | null;
+    /**
+     * DEC-C39 — a LIVE (non-voided) GAINDE tax payment exists for this record.
+     *
+     * THREE states, and the third is why this is not a boolean. `null` means
+     * NOT KNOWABLE: the payment ledger did not exist before migration
+     * `20261001000001`, so a dossier read on a database without it can say
+     * nothing about its taxes. Treating that as `false` would flip every
+     * historical dossier to CONFLICT the moment the code shipped, ahead of the
+     * schema — inventing a defect rather than finding one.
+     */
+    gaindeTaxPaid: boolean | null;
     /** MAYA-P1.11: when the Declarant recorded the rattachement (CEO step 9). */
     attachmentCompletedAt: string | null;
   } | null;
@@ -151,8 +162,22 @@ export const FACT_RULES: Readonly<Record<string, FactRule>> = {
   // Tightening a rule regresses nothing — that is the point of the CONFLICT
   // verdict below. A step completed on the old proxy whose milestone is absent
   // now reports CONFLICT: reported, never resolved, which is the truth about it.
+  //
+  // GAINDE-04 (DEC-C37/C39) — AND the taxes were actually paid. The milestone
+  // alone was already Finance's own act, and it is now unreachable without a
+  // breakdown because its only writer demands one. This second conjunct is the
+  // defensive half: it makes the rule state the ratified fact rather than rely
+  // on the RPC being the only door forever.
+  //
+  // `!== false` and not `=== true`, deliberately. Before migration
+  // `20261001000001` the ledger does not exist and the loader reports `null`;
+  // the rule then reads exactly as it did, so nothing in production changes
+  // ahead of the schema. Once the table is there, a milestone with no live
+  // payment stops satisfying — and reports CONFLICT, which is the truth about
+  // it, not a regression.
   gainde_registration: {
-    satisfied: (f) => Boolean(f.customs?.gaindeRegisteredAt),
+    satisfied: (f) =>
+      Boolean(f.customs?.gaindeRegisteredAt) && f.customs?.gaindeTaxPaid !== false,
     // Deliberately keyed on the milestone ALONE. `external_ref` stays writable
     // through customs:update, so keying on the reference would let an unrelated
     // edit reopen an act Finance already performed and signed.
@@ -160,7 +185,7 @@ export const FACT_RULES: Readonly<Record<string, FactRule>> = {
     // `started` is unchanged: a declaration under way is the registration
     // visibly pending. IN_PROGRESS completes nothing.
     started: (f) => customsRank(f) > 0,
-    factFr: "Enregistrement GAINDE effectué par la Finance (date + agent)",
+    factFr: "Enregistrement GAINDE effectué par la Finance, droits et taxes acquittés",
   },
 
   // Rattachement (CEO step 9): the Declarant attached the documents in GAINDE /

@@ -47,6 +47,10 @@ const facts = (attachmentCompletedAt: string | null = null): ModuleFacts => ({
     declarationNumber: "IMP-2026-000123",
     baeReference: "BAE-1",
     gaindeRegisteredAt: "2026-08-13T09:30:00.000Z",
+    // GAINDE-04 — `null` is NOT KNOWABLE (the payment ledger predates this
+    // fixture's world). The rule reads exactly as it did, which is what keeps
+    // these cases about what they were written to be about.
+    gaindeTaxPaid: null,
     attachmentCompletedAt,
   },
   transport: { status: "POD_RECEIVED" },
@@ -117,7 +121,8 @@ describe("only the attachment proves the attachment", () => {
       fileType: "IMP", fileStatus: "IN_PROGRESS",
       customs: {
         status: "NOT_STARTED", required: true, declarationNumber: null,
-        baeReference: null, gaindeRegisteredAt: null, attachmentCompletedAt: null, ...over,
+        baeReference: null, gaindeRegisteredAt: null, gaindeTaxPaid: null,
+        attachmentCompletedAt: null, ...over,
       },
       transport: null, verifiedPodDocumentId: null, verifiedBaeDocumentId: null,
     });

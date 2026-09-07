@@ -278,3 +278,29 @@ export async function invoiceMoney(invoiceId: string) {
     payments: pays ?? [],
   };
 }
+
+/**
+ * A GAINDE tax payment, as Effitrans records one (DEC-C39).
+ *
+ * Step 9 is an ACTUAL PAYMENT with a per-tax breakdown, so every journey that
+ * reaches it has to supply one. Shared here rather than written five times:
+ * five hand-rolled breakdowns would drift, and the total is checked against the
+ * lines at commit — a journey whose figures did not add up would fail for a
+ * reason that had nothing to do with what it was testing.
+ */
+export function gaindeTaxPayment(quittance: string) {
+  return {
+    paidAt: new Date(0).toISOString(),
+    currency: "XOF",
+    quittance,
+    // The six taxes Effitrans names, as governed LINES rather than columns.
+    lines: [
+      { taxCode: "DD",    labelFr: "Droit de douane",              amountMinor: 1_250_000 },
+      { taxCode: "TVA",   labelFr: "Taxe sur la valeur ajoutée",    amountMinor: 2_340_000 },
+      { taxCode: "PCS",   labelFr: "Prélèvement communautaire",     amountMinor: 60_000 },
+      { taxCode: "PCC",   labelFr: "Prélèvement communautaire CEDEAO", amountMinor: 40_000 },
+      { taxCode: "COSEC", labelFr: "Redevance COSEC",               amountMinor: 25_000 },
+      { taxCode: "RS",    labelFr: "Redevance statistique",         amountMinor: 15_000 },
+    ],
+  };
+}

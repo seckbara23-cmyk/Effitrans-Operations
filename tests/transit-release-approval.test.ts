@@ -31,6 +31,7 @@ import { EVENT_TYPES } from "@/lib/workflow/events/types";
 import { getStep } from "@/lib/process/effitrans-process";
 import { canPickup } from "@/lib/transport/gates";
 import { hasProcessErrorFr, processErrorFr } from "@/lib/process/error-fr";
+import { LATEST_MIGRATION, MIGRATION_COUNT } from "@/lib/platform/ops/build-info";
 
 const read = (p: string) => readFileSync(fileURLToPath(new URL(`../${p}`, import.meta.url)), "utf8");
 const strip = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
@@ -327,9 +328,12 @@ describe("TRANSIT-CUSTODY-05 — the three facts are on the record", () => {
   it("31 — the migration ledger advanced with the file", () => {
     const dir = fileURLToPath(new URL("../supabase/migrations", import.meta.url));
     const files = readdirSync(dir).filter((f) => f.endsWith(".sql")).sort();
-    expect(files.at(-1)).toBe("20260930000001_customs_release_approval.sql");
+    // TC-05's own migration is still present and still verified; what changed is
+    // that it is no longer the NEWEST, which was never a TC-05 property.
+    expect(files).toContain("20260930000001_customs_release_approval.sql");
+    expect(files.at(-1)).toBe(`${LATEST_MIGRATION}.sql`);
     const info = read("lib/platform/ops/build-info.ts");
-    expect(info).toContain('LATEST_MIGRATION = "20260930000001_customs_release_approval"');
+    expect(info).toContain(`LATEST_MIGRATION = "${LATEST_MIGRATION}"`);
     expect(info).toContain(`MIGRATION_COUNT = ${files.length}`);
   });
 });

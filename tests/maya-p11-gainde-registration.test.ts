@@ -41,6 +41,9 @@ function actionBody(): string {
 }
 
 const customs = (over: Partial<CustomsRecord> = {}): CustomsRecord => ({
+  // DEC-C38 — the Déclarant's own GAINDE reference, distinct from Finance's
+  // externalRef. Absent in these fixtures: they predate the distinction.
+  gaindeDeclarationReference: null,
   shPositionCount: null, declarationType: null, dpiRegime: null,
   exemptionTitleOrigin: null, tariffClassificationOrigin: null,
   id: "c1", fileId: "f1", status: "DECLARED", required: true,
@@ -166,7 +169,11 @@ describe("nothing is synchronised", () => {
     const block = i18n.slice(i18n.indexOf("gainde: {"), i18n.indexOf("hint:", i18n.indexOf("gainde: {")) + 400);
     expect(block).toMatch(/Aucune connexion GAINDE n'est en service/);
     expect(block).toMatch(/elle ne la synchronise pas/);
-    expect(block).toContain("Saisie manuelle");
+    // GAINDE-04 (DEC-C39) — the hint now names WHAT the act is (a registration
+    // with the duties and taxes) as well as what it is not. The claim this
+    // test protects is unchanged: nothing is synchronised.
+    expect(block).toContain("Service Finance douane");
+    expect(block).toContain("droits et taxes");
   });
 
   it("BLK-1 is not closed by this phase", () => {

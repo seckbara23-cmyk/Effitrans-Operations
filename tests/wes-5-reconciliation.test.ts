@@ -32,6 +32,10 @@ const FACTS: ModuleFacts = {
   customs: {
     status: "RELEASED", required: true, declarationNumber: "D-2026-001", baeReference: "BAE-1",
     gaindeRegisteredAt: "2026-08-13T09:30:00.000Z",
+    // GAINDE-04 — NOT KNOWABLE: the payment ledger arrives with migration
+    // 20261001000001, and until then the rule reads exactly as it did. These
+    // cases are about their own subject, not about the taxes.
+    gaindeTaxPaid: null,
     attachmentCompletedAt: null,
   },
   transport: { status: "POD_RECEIVED" },

@@ -17,8 +17,7 @@ import { fileURLToPath } from "node:url";
 import { as } from "./identity";
 import {
   identity, execution, auditFor, handoffs, provideEvidence, customsIdFor, transportFor,
-  db, sinkMessagesFor, billingRecipientFor, fileRow, invoiceMoney, TENANT_A, CLIENT_DEPOSIT_REQUIRED,
-} from "./fixtures";
+  db, sinkMessagesFor, billingRecipientFor, fileRow, invoiceMoney, TENANT_A, CLIENT_DEPOSIT_REQUIRED, gaindeTaxPayment, } from "./fixtures";
 import type { CurrentUser } from "@/lib/auth/current-user";
 
 import { createFile, assignCommercialOwner } from "@/lib/files/actions";
@@ -154,7 +153,7 @@ async function carryToStep13() {
   // customs:register and file:read:all, so it stands in for the milestone here
   // without needing the handoff-receiver ground to survive reception.
   const { recordGaindeRegistration } = await import("@/lib/customs/actions");
-  const reg = await as(customsFinance, () => recordGaindeRegistration(customsId, `GAINDE-S3-${Date.now()}`));
+  const reg = await as(customsFinance, () => recordGaindeRegistration(customsId, `GAINDE-S3-${Date.now()}`, gaindeTaxPayment(`Q-S3-${Date.now()}`)));
   if (!reg.ok) throw new Error(`gainde: ${JSON.stringify(reg)}`);
 
   await runStep(coordinator, "coordinator_to_declarant");

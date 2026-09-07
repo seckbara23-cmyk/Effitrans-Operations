@@ -526,15 +526,33 @@ export const t = {
       // States plainly that the platform records a manual act and verifies nothing.
       hint: "Le Déclarant scanne et rattache lui-même les documents (facture, BL, autorisations) dans GAINDE / ORBUS. La plateforme enregistre l'opération déclarée ; elle ne la vérifie pas et ne se synchronise avec aucun système douanier. En cas de rejet à la recevabilité, refaites le rattachement et enregistrez-le de nouveau.",
     },
+    // DEC-C38 — la référence que GAINDE rend au DÉCLARANT après sa saisie.
+    // Distincte de l'enregistrement Finance : deux actes, deux champs.
+    declarationReference: {
+      title: "Référence de déclaration GAINDE",
+      action: "Enregistrer la référence",
+      prompt: "Référence de déclaration rendue par GAINDE :",
+      reasonPrompt: "Motif de la correction (obligatoire après validation) :",
+      notRecorded: "Non saisie",
+      hint: "Saisie par le Déclarant après l'enregistrement de la déclaration dans GAINDE. Ce n'est pas l'enregistrement du Service Finance douane, qui porte sur les droits et taxes.",
+    },
     gainde: {
       title: "Enregistrement GAINDE",
       action: "Enregistrer dans GAINDE",
-      prompt: "Référence GAINDE :",
+      // DEC-C39 — l'étape 9 est un PAIEMENT effectif avec ventilation des
+      // taxes. Le prompt d'origine ne demandait qu'une référence, ce qui
+      // faisait passer une saisie de référence pour un acte fiscal.
+      referenceLabel: "Référence GAINDE",
+      quittanceLabel: "Référence quittance",
+      paidAtLabel: "Date de paiement",
+      taxesLabel: "Droits et taxes acquittés (ventilation)",
+      totalLabel: "Total payé :",
       registeredOn: "Enregistré le",
       by: "par",
       notRegistered: "Non enregistré",
-      // Says plainly that this is a typed record, not a live link.
-      hint: "Saisie manuelle par le Service Finance. Aucune connexion GAINDE n'est en service : la plateforme enregistre la référence, elle ne la synchronise pas.",
+      // Says plainly that this is a typed record, not a live link, and what the
+      // act actually is.
+      hint: "Enregistrement effectué par le Service Finance douane : la déclaration est enregistrée dans GAINDE avec le paiement des droits et taxes. Aucune connexion GAINDE n'est en service — la plateforme enregistre l'opération, elle ne la synchronise pas.",
     },
     validation: {
       title: "Validation Chef de Transit",

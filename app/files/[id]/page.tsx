@@ -396,6 +396,10 @@ export default async function FileDetailPage({ params }: { params: { id: string 
         [
           "customs.create",
           "customs.update",
+          // DEC-C38 — the Déclarant's own reference capture. A control absent
+          // from this array is drawn UNGATED by the panel's `?? true` fallback,
+          // which is exactly the drift the verdict list exists to end.
+          "customs.declaration_reference",
           "customs.status",
           "customs.receivability",
           "customs.attachment",

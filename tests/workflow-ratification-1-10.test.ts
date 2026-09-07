@@ -29,6 +29,7 @@ import { ROLE_CANONICAL_DEPARTMENT, QUEUE_DEPARTMENT_TO_CANONICAL } from "@/lib/
 import { TRANSIT_STAGES } from "@/lib/process/transit";
 import { TRANSIT_SOURCE_MAP } from "@/lib/process/lifecycle-map";
 import { TENANT_ROLE_TEMPLATES } from "@/lib/platform/role-templates";
+import { LATEST_MIGRATION, MIGRATION_COUNT } from "@/lib/platform/ops/build-info";
 
 const read = (p: string) => readFileSync(fileURLToPath(new URL(`../${p}`, import.meta.url)), "utf8");
 const strip = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
@@ -354,8 +355,8 @@ describe("scope — steps 4-10 and the pilot dossier are untouched", () => {
   it("exactly one migration was added, and it is the newest", () => {
     const dir = fileURLToPath(new URL("../supabase/migrations", import.meta.url));
     const files = readdirSync(dir).filter((f: string) => f.endsWith(".sql")).sort();
-    expect(files.at(-1)).toBe("20260930000001_customs_release_approval.sql");
-    expect(read("lib/platform/ops/build-info.ts")).toContain("MIGRATION_COUNT = 138");
+    expect(files.at(-1)).toBe(`${LATEST_MIGRATION}.sql`);
+    expect(read("lib/platform/ops/build-info.ts")).toContain(`MIGRATION_COUNT = ${MIGRATION_COUNT}`);
   });
 
   it("EFT-IMP-2026-00009 is named nowhere in the slice", () => {

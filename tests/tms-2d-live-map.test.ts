@@ -27,6 +27,7 @@ import {
   type LiveMission,
   type LiveMissionPoint,
 } from "@/lib/tracking/live-model";
+import { LATEST_MIGRATION, MIGRATION_COUNT } from "@/lib/platform/ops/build-info";
 
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(`../${rel}`, import.meta.url)), "utf8");
 const strip = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
@@ -399,7 +400,7 @@ describe("TMS-2D — every TMS-2 guarantee survives", () => {
     const files = require("node:fs").readdirSync(dir).filter((f: string) => f.endsWith(".sql")).sort();
     // TMS-2D added none of its own; the newest on disk now belongs to a later
     // slice (H-9's OPS_SUPERVISOR grant), which is what this must track.
-    expect(files.at(-1)).toBe("20260930000001_customs_release_approval.sql");
+    expect(files.at(-1)).toBe(`${LATEST_MIGRATION}.sql`);
     expect(files).toContain("20260928000001_mission_return_leg.sql");
   });
 

@@ -49,6 +49,15 @@ export type CustomsRecord = {
   releaseDate: string | null;
   inspectionStatus: InspectionStatus;
   externalRef: string | null;
+  /**
+   * DEC-C38 — the declaration/reference number GAINDE returned to the
+   * DÉCLARANT after his saisie (step 6). Distinct from `externalRef`, which is
+   * FINANCE's step-9 registration reference: they are two business acts, and
+   * one column could not carry both — the registration RPC refuses a reference
+   * identical to the stored one, so a step-6 capture into `external_ref` made
+   * step 9 permanently unperformable.
+   */
+  gaindeDeclarationReference: string | null;
   notes: string | null;
   /**
    * D4 — the five governed elements (ICTD inputs: CDP, NPSH×CCT, U_DPI, U_TE).

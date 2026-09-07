@@ -37,6 +37,7 @@ import {
   hasProcessErrorFr,
   processErrorFr,
 } from "@/lib/process/error-fr";
+import { LATEST_MIGRATION, MIGRATION_COUNT } from "@/lib/platform/ops/build-info";
 
 const read = (p: string) => readFileSync(fileURLToPath(new URL(p, import.meta.url)), "utf8");
 const strip = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
@@ -401,9 +402,17 @@ describe("UAT-00009 — the guards are untouched", () => {
   });
 
   it("the UAT-00009 slice itself added no migration — the newest is a LATER slice's", () => {
-    const dir = fileURLToPath(new URL("../supabase/migrations", import.meta.url));
-    const files = require("node:fs").readdirSync(dir).filter((f: string) => f.endsWith(".sql")).sort();
-    expect(files.at(-1)).toBe("20260930000001_customs_release_approval.sql");
+    // ONE shared invariant instead of a per-slice snapshot. This used to pin
+    // « the newest migration on disk is still X » / « there are still N of
+    // them », which was true when the slice shipped and says nothing once a
+    // LATER slice ships one of its own — it goes red for a reason that has
+    // nothing to do with this slice. What is durable, and what the ledger
+    // discipline actually depends on, is that the directory and `build-info`
+    // agree; that is asserted here and in the two suites that own it.
+    const dir = fileURLToPath(new URL("../supabase/migrations", import.meta.url));
+    const files = require("node:fs").readdirSync(dir).filter((f: string) => f.endsWith(".sql")).sort();
+    expect(files).toHaveLength(MIGRATION_COUNT);
+    expect(files.at(-1)).toBe(`${LATEST_MIGRATION}.sql`);
   });
 
   it("the pilot dossier is named nowhere in the slice", () => {

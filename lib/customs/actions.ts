@@ -27,6 +27,18 @@ import type { ActionResult, CustomsInput, CustomsStatus } from "./types";
 
 type Admin = ReturnType<typeof getAdminSupabaseClient>;
 
+/**
+ * An RPC the generated types do not know about yet.
+ *
+ * `lib/db/types.ts` is regenerated from a LOCAL database, and migration
+ * 20261001000001 is deliberately not applied anywhere yet — so its functions
+ * are absent from the union. Narrowed here, in one named place, rather than
+ * cast at each call site: an `as never` on the arguments would also silence a
+ * genuinely wrong parameter name, which is the mistake that cost a whole
+ * claimant lookup once.
+ */
+type RpcFn = (fn: string, args: Record<string, unknown>) => Promise<{ error: { message?: string } | null }>;
+
 async function loadCustoms(supabase: Admin, id: string, tenantId: string) {
   const { data } = await supabase
     .from("customs_record")
@@ -408,9 +420,107 @@ export async function changeCustomsStatus(id: string, toStatus: string): Promise
  * still holds, because reconciliation completes exactly the steps a fact
  * proves: no status moves, no successor opens, no human-only step is touched.
  */
+/**
+ * The DÉCLARANT records the reference GAINDE returned to him — step 6.
+ * ---------------------------------------------------------------------------
+ * RATIFIED 2026-09-06 (DEC-C37/C38). The Déclarant prepares the declaration,
+ * performs the saisie in GAINDE, and GAINDE hands him back a declaration /
+ * reference number. Recording THAT is his act. It is not Finance's step-9
+ * registration, which is a payment of duties and taxes.
+ *
+ * WHY IT IS NOT A FIELD ON THE METADATA FORM. `updateCustoms` writes
+ * `external_ref`, and `external_ref` is Finance's. A step-6 capture there makes
+ * `record_gainde_registration` refuse with `reference_unchanged`, so Finance's
+ * step 9 becomes permanently unperformable and `gainde_registration`
+ * permanently unsatisfiable. Two acts, two columns, two actions.
+ *
+ * AUTHORITY: `customs:update`, which the Déclarant already holds for his own
+ * step. `customs:register` is emphatically NOT granted to him — that is
+ * Finance's, and widening it to make a capture convenient would trade a
+ * precise permission for a broad one.
+ *
+ * THE CORRECTION DOOR. Before the Chef validates, he may re-record freely: it
+ * is his step and his working data. AFTER validation a motif becomes
+ * mandatory and the act is emitted as a correction — so a typo is never
+ * permanently unfixable, and never silently rewritten either. This does not
+ * weaken D4: the five governed elements keep their own door and this column is
+ * not one of them.
+ */
+export async function recordDeclarationReference(
+  id: string,
+  reference: string,
+  reason?: string | null,
+): Promise<ActionResult> {
+  let user;
+  try {
+    user = await assertPermission("customs:update");
+  } catch {
+    return { ok: false, error: "forbidden" };
+  }
+  const ref = reference.trim();
+  if (!ref) return { ok: false, error: "reference_required" };
+
+  const supabase = getAdminSupabaseClient();
+  const rec = await loadCustoms(supabase, id, user.tenantId);
+  if (!rec) return { ok: false, error: "not_found" };
+  if (!(await isFileVisible(user.id, user.tenantId, rec.file_id))) {
+    return { ok: false, error: "forbidden" };
+  }
+
+  // Permission is necessary, not sufficient: the owning step must be open, not
+  // claimed by somebody else, and the actor must hold its owning role.
+  {
+    const gate = await customsControlGate("customs.declaration_reference", rec.file_id, user);
+    if (gate) return { ok: false, error: gate };
+  }
+
+  const { error } = await (supabase.rpc as unknown as RpcFn)("record_declaration_reference", {
+    p_customs_id: id,
+    p_reference: ref,
+    p_actor: user.id,
+    p_reason: reason?.trim() || null,
+  } as never);
+  if (error) {
+    // Match the TOKEN, not the prose: rewording an exception must never flatten
+    // a precise refusal into one generic word.
+    const token = (error.message ?? "").split(":")[0].trim();
+    for (const known of ["reference_required", "reference_unchanged", "reason_required"]) {
+      if (token === known) return { ok: false, error: known };
+    }
+    return { ok: false, error: "record_failed" };
+  }
+
+  await writeAudit({
+    action: AuditActions.CUSTOMS_UPDATED,
+    actorId: user.id,
+    tenantId: user.tenantId,
+    entity: "customs_record",
+    entityId: id,
+    after: { gainde_declaration_reference: ref, corrected: Boolean(rec.reviewed_at) },
+  });
+  revalidate(rec.file_id);
+  return { ok: true, id };
+}
+export type GaindeTaxLine = {
+  /** The tax's code as Effitrans names it — DD, TVA, PCS, PCC, COSEC, RS, … */
+  taxCode: string;
+  labelFr: string;
+  /** Integer MINOR units, per the platform's money doctrine. */
+  amountMinor: number;
+};
+
 export async function recordGaindeRegistration(
   id: string,
   reference: string,
+  payment: {
+    /** When the duties were actually paid. */
+    paidAt: string;
+    currency?: string;
+    /** The quittance / receipt reference GAINDE issues. */
+    quittance: string;
+    /** The breakdown. A total with no lines is what this slice replaced. */
+    lines: GaindeTaxLine[];
+  },
 ): Promise<ActionResult> {
   let user;
   try {
@@ -420,6 +530,23 @@ export async function recordGaindeRegistration(
   }
   const ref = reference.trim();
   if (!ref) return { ok: false, error: "reference_required" };
+
+  // DEC-C39 — step 9 is an ACTUAL PAYMENT with a per-tax breakdown, not a
+  // reference and not one assessed total. Checked here as well as in the RPC
+  // so the operator gets the specific refusal rather than `record_failed`.
+  const quittance = (payment?.quittance ?? "").trim();
+  if (!quittance) return { ok: false, error: "quittance_required" };
+  if (!payment?.paidAt) return { ok: false, error: "paid_at_required" };
+  const lines = (payment.lines ?? []).map((l) => ({
+    taxCode: (l.taxCode ?? "").trim(),
+    labelFr: (l.labelFr ?? "").trim(),
+    amountMinor: Math.trunc(Number(l.amountMinor)),
+  }));
+  if (lines.length === 0) return { ok: false, error: "tax_lines_required" };
+  if (lines.some((l) => !l.taxCode || !l.labelFr)) return { ok: false, error: "tax_line_invalid" };
+  if (lines.some((l) => !Number.isFinite(l.amountMinor) || l.amountMinor <= 0)) {
+    return { ok: false, error: "invalid_amount" };
+  }
 
   const supabase = getAdminSupabaseClient();
   const rec = await loadCustoms(supabase, id, user.tenantId);
@@ -441,8 +568,24 @@ export async function recordGaindeRegistration(
     p_customs_id: id,
     p_reference: ref,
     p_actor: user.id,
-  });
-  if (error) return { ok: false, error: "record_failed" };
+    p_paid_at: payment.paidAt,
+    p_currency: (payment.currency ?? "XOF").toUpperCase(),
+    p_quittance: quittance,
+    p_lines: lines,
+  } as never);
+  if (error) {
+    // The RPC raises `token: sentence`. Matching the TOKEN, not the prose,
+    // means rewording an exception can never flatten a precise refusal into
+    // one generic word.
+    const token = (error.message ?? "").split(":")[0].trim();
+    for (const known of [
+      "reference_required", "quittance_required", "paid_at_required",
+      "tax_lines_required", "tax_total_mismatch", "reference_unchanged",
+    ]) {
+      if (token === known) return { ok: false, error: known };
+    }
+    return { ok: false, error: "record_failed" };
+  }
 
   await writeAudit({
     action: AuditActions.CUSTOMS_UPDATED,

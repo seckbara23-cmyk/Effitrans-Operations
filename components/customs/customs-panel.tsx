@@ -16,6 +16,7 @@ import {
   deleteCustoms,
   recordCustomsAttachment,
   recordCustomsValidation,
+  recordDeclarationReference,
   recordGaindeRegistration,
   recordReceivability,
   recordBaeReference,
@@ -31,6 +32,7 @@ import {
 } from "@/lib/customs/receivability";
 import { GovernedCustomsFields } from "./governed-fields";
 import type { ActionResult, CustomsRecord, MissingCustomsDoc } from "@/lib/customs/types";
+import type { GaindeTaxLine } from "@/lib/customs/actions";
 
 /**
  * Which control a failure belongs to. A closed union on purpose: a typo cannot
@@ -366,17 +368,22 @@ export function CustomsPanel({
               {c.fields.externalRef} : <span className="tabular font-medium">{record.externalRef}</span>
             </p>
           )}
+          {/* DEC-C39 — step 9 is an ACTUAL PAYMENT with a per-tax breakdown, so
+              it cannot be a one-line prompt. The form is the smallest honest
+              surface for it: a reference, a quittance, a date, and the taxes
+              Effitrans names — as governed LINES, so a seventh tax needs no
+              migration and no code change. */}
           {canRegisterGainde && owns("customs.gainde_registration") && (
-            <button
-              onClick={() => {
-                const ref = window.prompt(c.gainde.prompt, record.externalRef ?? "");
-                if (ref && ref.trim()) run(() => recordGaindeRegistration(record.id, ref.trim()), "gainde");
-              }}
+            <GaindeRegistrationForm
+              defaultReference={record.externalRef ?? ""}
               disabled={pending || !gateOpen("customs.gainde_registration")}
-              className="mt-2 rounded-md border border-teal-200 px-2 py-1 text-xs font-medium text-teal-700 hover:bg-teal-50 disabled:opacity-50"
-            >
-              {c.gainde.action}
-            </button>
+              onSubmit={(input) =>
+                run(
+                  () => recordGaindeRegistration(record.id, input.reference, input.payment),
+                  "gainde",
+                )
+              }
+            />
           )}
           {/* UI-6 — this control alone ignored its own step gate and offered no
               explanation: the Finance officer could press it on a dossier the
@@ -555,6 +562,54 @@ export function CustomsPanel({
             by the owner of step 6, and READABLE by everyone the panel is drawn
             for. Hiding it from the Chef instead of freezing it would have taken
             away the information he needs in order to validate at step 7. */}
+        {/* DEC-C38 — the reference GAINDE returned to the DÉCLARANT after his
+            saisie. Its OWN control and its own column: `external_ref` belongs to
+            Finance's step-9 registration, and a step-6 capture there would make
+            that act permanently unperformable. Reported under the metadata
+            scope because that is the section it belongs to. */}
+        {canUpdate && owns("customs.declaration_reference") && (
+          <div className="rounded-lg border border-slate-200 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-xs font-semibold text-navy-900">{c.declarationReference.title}</h3>
+              {record.gaindeDeclarationReference ? (
+                <span className="rounded-full bg-teal-50 px-2 py-0.5 text-xs font-medium text-teal-700">
+                  <span className="tabular">{record.gaindeDeclarationReference}</span>
+                </span>
+              ) : (
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">
+                  {c.declarationReference.notRecorded}
+                </span>
+              )}
+            </div>
+            <button
+              onClick={() => {
+                const ref = window.prompt(
+                  c.declarationReference.prompt,
+                  record.gaindeDeclarationReference ?? "",
+                );
+                if (!ref || !ref.trim()) return;
+                // After the Chef's validation this is a CORRECTION and the
+                // server demands a motif; asking here means the operator is
+                // told why before the refusal rather than after it.
+                const reason = record.reviewedAt
+                  ? window.prompt(c.declarationReference.reasonPrompt)
+                  : null;
+                if (record.reviewedAt && (!reason || !reason.trim())) return;
+                run(
+                  () => recordDeclarationReference(record.id, ref.trim(), reason),
+                  "metadata",
+                );
+              }}
+              disabled={pending || !gateOpen("customs.declaration_reference")}
+              className="mt-2 rounded-md border border-teal-200 px-2 py-1 text-xs font-medium text-teal-700 hover:bg-teal-50 disabled:opacity-50"
+            >
+              {c.declarationReference.action}
+            </button>
+            <GateHint reason={gateReason("customs.declaration_reference")} />
+            <p className="mt-2 text-[11px] text-slate-400">{c.declarationReference.hint}</p>
+          </div>
+        )}
+
         {canUpdate && owns("customs.update") ? (
           <form onSubmit={onSubmit} className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <Field label={c.fields.declarationNumber} name="declarationNumber" defaultValue={record.declarationNumber} />
@@ -633,6 +688,137 @@ export function CustomsPanel({
  * disappearing. Nothing here is actionable, and « — » says "not captured"
  * rather than rendering an empty row that reads as a broken page.
  */
+
+/**
+ * The Finance GAINDE registration — reference, quittance, date and the taxes.
+ *
+ * DEC-C39 ratified that step 9 is an actual payment with a per-tax breakdown,
+ * which a `window.prompt` cannot express. The tax codes below are Effitrans's
+ * own vocabulary, offered as a starting point rather than enforced: the lines
+ * are governed data, so a seventh tax is a row an operator types, not a
+ * migration.
+ *
+ * It decides NOTHING. The server refuses an empty breakdown, a missing
+ * quittance and a total that does not match its lines — this only makes those
+ * refusals unlikely enough to be rare, and readable when they happen.
+ */
+const GAINDE_TAXES: { code: string; labelFr: string }[] = [
+  { code: "DD", labelFr: "Droit de douane" },
+  { code: "TVA", labelFr: "Taxe sur la valeur ajoutée" },
+  { code: "PCS", labelFr: "Prélèvement communautaire de solidarité" },
+  { code: "PCC", labelFr: "Prélèvement communautaire CEDEAO" },
+  { code: "COSEC", labelFr: "Redevance COSEC" },
+  { code: "RS", labelFr: "Redevance statistique" },
+];
+
+function GaindeRegistrationForm({
+  defaultReference,
+  disabled,
+  onSubmit,
+}: {
+  defaultReference: string;
+  disabled: boolean;
+  onSubmit: (input: {
+    reference: string;
+    payment: { paidAt: string; currency: string; quittance: string; lines: GaindeTaxLine[] };
+  }) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [amounts, setAmounts] = useState<Record<string, string>>({});
+  const c = t.customs;
+
+  // Shown, never sent: the server recomputes the total from the lines and
+  // refuses a mismatch. Displaying it is so the operator sees what they are
+  // about to record.
+  const total = GAINDE_TAXES.reduce((sum, x) => sum + (Number(amounts[x.code]) || 0), 0);
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        disabled={disabled}
+        className="mt-2 rounded-md border border-teal-200 px-2 py-1 text-xs font-medium text-teal-700 hover:bg-teal-50 disabled:opacity-50"
+      >
+        {c.gainde.action}
+      </button>
+    );
+  }
+
+  return (
+    <form
+      className="mt-2 space-y-2 rounded-lg border border-teal-200 bg-teal-50/40 p-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+        const fd = new FormData(e.currentTarget);
+        const lines: GaindeTaxLine[] = GAINDE_TAXES
+          .map((x) => ({
+            taxCode: x.code,
+            labelFr: x.labelFr,
+            amountMinor: Math.trunc(Number(fd.get(`tax_${x.code}`) ?? 0)),
+          }))
+          // A tax that was not charged is not a line worth zero: it is absent.
+          .filter((l) => l.amountMinor > 0);
+        onSubmit({
+          reference: String(fd.get("reference") ?? "").trim(),
+          payment: {
+            paidAt: String(fd.get("paidAt") ?? ""),
+            currency: "XOF",
+            quittance: String(fd.get("quittance") ?? "").trim(),
+            lines,
+          },
+        });
+        setOpen(false);
+      }}
+    >
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <Field label={c.gainde.referenceLabel} name="reference" defaultValue={defaultReference} />
+        <Field label={c.gainde.quittanceLabel} name="quittance" defaultValue={null} />
+        <Field label={c.gainde.paidAtLabel} name="paidAt" type="date" defaultValue={null} />
+      </div>
+
+      <p className="text-[11px] font-medium text-navy-900">{c.gainde.taxesLabel}</p>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        {GAINDE_TAXES.map((x) => (
+          <label key={x.code} className="flex flex-col gap-1 text-xs text-slate-600">
+            {x.code} — {x.labelFr}
+            <input
+              name={`tax_${x.code}`}
+              type="number"
+              min={0}
+              step={1}
+              value={amounts[x.code] ?? ""}
+              onChange={(e) => setAmounts((a) => ({ ...a, [x.code]: e.target.value }))}
+              className="rounded-md border border-slate-200 px-2 py-1 text-sm"
+            />
+          </label>
+        ))}
+      </div>
+
+      <p className="text-xs text-navy-900">
+        {c.gainde.totalLabel} <span className="tabular font-semibold">{total.toLocaleString("fr-FR")}</span> XOF
+      </p>
+
+      <div className="flex gap-2">
+        <button
+          type="submit"
+          disabled={disabled}
+          className="rounded-md bg-navy-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-navy-800 disabled:opacity-50"
+        >
+          {c.gainde.action}
+        </button>
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+        >
+          {c.cancel}
+        </button>
+      </div>
+    </form>
+  );
+}
+
 function ReadOnlyMetadata({ record }: { record: CustomsRecord }) {
   const c = t.customs;
   const rows: [string, string | null][] = [
@@ -641,6 +827,7 @@ function ReadOnlyMetadata({ record }: { record: CustomsRecord }) {
     [c.fields.regime, record.regime],
     [c.fields.declarationDate, record.declarationDate],
     [c.fields.inspection, c.inspection[record.inspectionStatus]],
+    [c.declarationReference.title, record.gaindeDeclarationReference],
     [c.fields.externalRef, record.externalRef],
     [c.fields.notes, record.notes],
   ];

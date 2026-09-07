@@ -28,8 +28,7 @@ import { fileURLToPath } from "node:url";
 import { as } from "./identity";
 import {
   identity, execution, auditFor, provideEvidence, customsIdFor, transportFor,
-  db, sinkMessagesFor, billingRecipientFor, CLIENT_DEPOSIT_REQUIRED,
-} from "./fixtures";
+  db, sinkMessagesFor, billingRecipientFor, CLIENT_DEPOSIT_REQUIRED, gaindeTaxPayment, } from "./fixtures";
 import type { CurrentUser } from "@/lib/auth/current-user";
 
 import { createFile, assignCommercialOwner } from "@/lib/files/actions";
@@ -135,7 +134,7 @@ async function carryToValidatedInvoice() {
   need(await as(coordinator, () => submitStep(fileId, "coordinator_to_finance")), "step 8");
   const h1 = need(await as(coordinator, () => sendHandoff(fileId, "coordinator_to_finance", "gainde_registration")), "send 9");
   void h1;
-  need(await as(customsFinance, () => recordGaindeRegistration(customsId, `GAINDE-CQ-${Date.now()}`)), "gainde");
+  need(await as(customsFinance, () => recordGaindeRegistration(customsId, `GAINDE-CQ-${Date.now()}`, gaindeTaxPayment(`Q-CQ-${Date.now()}`))), "gainde");
 
   need(await as(coordinator, () => activateStep(fileId, "coordinator_to_declarant")), "activate 10");
   need(await as(coordinator, () => submitStep(fileId, "coordinator_to_declarant")), "step 10");

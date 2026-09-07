@@ -42,6 +42,10 @@ const productionDossier = (): ModuleFacts => ({
     status: "RELEASED", required: true,
     declarationNumber: "IMP-2026-000123", baeReference: "GAINDE-2026-458721",
     gaindeRegisteredAt: null, // Finance never registered — the contradiction
+    // GAINDE-04 — NOT KNOWABLE: the payment ledger arrives with migration
+    // 20261001000001, and until then the rule reads exactly as it did. These
+    // cases are about their own subject, not about the taxes.
+    gaindeTaxPaid: null,
     attachmentCompletedAt: null,
   },
   transport: { status: "DELIVERED" },

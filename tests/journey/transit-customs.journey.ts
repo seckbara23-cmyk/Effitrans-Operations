@@ -17,8 +17,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { as } from "./identity";
 import {
   identity, execution, auditFor, handoffs, provideEvidence, customsIdFor, customsReleaseState,
-  CLIENT_DEPOSIT_REQUIRED,
-} from "./fixtures";
+  CLIENT_DEPOSIT_REQUIRED, gaindeTaxPayment, } from "./fixtures";
 import type { CurrentUser } from "@/lib/auth/current-user";
 
 import { createFile, assignCommercialOwner } from "@/lib/files/actions";
@@ -344,7 +343,7 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
   it("step 9 — Finance's registration IS the step; reconciliation closes it", async () => {
     const customsId = await customsIdFor(fileId);
     const registered = await as(customsFinance, () =>
-      recordGaindeRegistration(customsId, `GAINDE-JRN-${Date.now()}`),
+      recordGaindeRegistration(customsId, `GAINDE-JRN-${Date.now()}`, gaindeTaxPayment(`Q-JRN-${Date.now()}`)),
     );
     expect(registered.ok, `GAINDE registration: ${JSON.stringify(registered)}`).toBe(true);
 

@@ -124,6 +124,8 @@ describe("every gated control maps to a real official step", () => {
     expect(owner(CONTROL_OWNING_STEP["customs.validation"])).toBe("CHIEF_OF_TRANSIT");
     expect(owner(CONTROL_OWNING_STEP["customs.release"])).toBe("CUSTOMS_FIELD_AGENT");
     expect(owner(CONTROL_OWNING_STEP["customs.gainde_registration"])).toBe("CUSTOMS_FINANCE_OFFICER");
+    // Two GAINDE acts, two owning steps, two owners. The slice in one line.
+    expect(owner(CONTROL_OWNING_STEP["customs.declaration_reference"])).toBe("CUSTOMS_DECLARANT");
     // Finance.
     expect(owner(CONTROL_OWNING_STEP["finance.invoice_create"])).toBe("BILLING_OFFICER");
     expect(owner(CONTROL_OWNING_STEP["finance.invoice_issue"])).toBe("BILLING_OFFICER");
@@ -131,11 +133,15 @@ describe("every gated control maps to a real official step", () => {
 });
 
 describe("the server enforces it, on every gated action", () => {
-  it("all nine customs controls call the gate", () => {
+  it("all ten customs controls call the gate", () => {
     for (const ctrl of [
       "customs.create", "customs.update", "customs.status",
       "customs.receivability", "customs.attachment", "customs.gainde_registration",
       "customs.validation", "customs.bae", "customs.release",
+      // GAINDE-04 (DEC-C38) — the Déclarant's own reference capture, on its own
+      // column: `external_ref` is Finance's, and a step-6 capture there would
+      // make Finance's step 9 permanently unperformable.
+      "customs.declaration_reference",
     ]) {
       // OPS-CUSTOMS-OWNERSHIP-01 — the nine sites now call `customsControlGate`,
       // which composes THIS gate with the ownership rule. The step condition is
@@ -144,7 +150,7 @@ describe("the server enforces it, on every gated action", () => {
       // order, so this assertion still proves every control is step-gated.
       expect(customs, ctrl).toContain(`customsControlGate("${ctrl}"`);
     }
-    expect((customs.match(/customsControlGate\(/g) ?? []).length).toBe(10); // 9 sites + definition
+    expect((customs.match(/customsControlGate\(/g) ?? []).length).toBe(11); // 10 sites + definition
     expect(customs).toContain("assertControlStep(controlId, fileId, user.tenantId, user.id)");
   });
 

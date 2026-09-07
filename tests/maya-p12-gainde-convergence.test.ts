@@ -56,6 +56,10 @@ const facts = (over: { gaindeRegisteredAt?: string | null; declarationNumber?: s
     declarationNumber: over.declarationNumber === undefined ? "IMP-2026-000123" : over.declarationNumber,
     baeReference: null,
     gaindeRegisteredAt: over.gaindeRegisteredAt === undefined ? null : over.gaindeRegisteredAt,
+    // GAINDE-04 — NOT KNOWABLE in this fixture, so the rule behaves exactly as
+    // it did before the payment ledger existed. These cases are about the
+    // MAYA-P1.2 proxy, not about the taxes.
+    gaindeTaxPaid: null,
     attachmentCompletedAt: null,
   },
   transport: null,
@@ -275,7 +279,7 @@ describe("P1.1 survives P1.2 intact", () => {
         id: "c1", fileId: "f1", status: "DECLARED", required: true,
         declarationNumber: null, customsOffice: null, regime: null, declarationDate: null,
         baeReference: null, releaseDate: null, inspectionStatus: "NOT_REQUIRED",
-        externalRef: "UAT-GAINDE-P11-002", notes: null,
+        externalRef: "UAT-GAINDE-P11-002", gaindeDeclarationReference: null, notes: null,
         releaseApprovalStatus: null,
     releaseApprovalNote: null,
     baeRecordedAt: null,

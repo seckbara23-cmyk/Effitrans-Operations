@@ -25,8 +25,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { as, actAsNobody } from "./identity";
 import {
   identity, execution, auditFor, handoffs, provideEvidence, customsIdFor, transportFor,
-  db, fileRow, invoiceMoney, CLIENT_DEPOSIT_REQUIRED,
-} from "./fixtures";
+  db, fileRow, invoiceMoney, CLIENT_DEPOSIT_REQUIRED, gaindeTaxPayment, } from "./fixtures";
 import type { CurrentUser } from "@/lib/auth/current-user";
 
 import { createFile, assignCommercialOwner } from "@/lib/files/actions";
@@ -329,7 +328,7 @@ describe("C-4 negative battery — the refusals, in the order a dossier meets th
     need(await as(coordinator, () => submitStep(fileId, "coordinator_to_finance")), "step 8");
     need(await as(coordinator, () => sendHandoff(fileId, "coordinator_to_finance", "gainde_registration")), "send 9");
     const customsId = await customsIdFor(fileId);
-    need(await as(customsFinance, () => recordGaindeRegistration(customsId, `GAINDE-NEG-${Date.now()}`)), "gainde");
+    need(await as(customsFinance, () => recordGaindeRegistration(customsId, `GAINDE-NEG-${Date.now()}`, gaindeTaxPayment(`Q-NEG-${Date.now()}`))), "gainde");
     need(await as(coordinator, () => activateStep(fileId, "coordinator_to_declarant")), "activate 10");
     need(await as(coordinator, () => submitStep(fileId, "coordinator_to_declarant")), "step 10");
     const h = (await handoffs(fileId)).find((x) => x.to_step_key === "gainde_document_submission" && x.status === "SENT");

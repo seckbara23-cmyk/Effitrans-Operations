@@ -53,6 +53,7 @@ type RecordRow = {
   release_date: string | null;
   inspection_status: string;
   external_ref: string | null;
+  gainde_declaration_reference: string | null;
   notes: string | null;
 };
 
@@ -70,6 +71,8 @@ function toRecord(r: RecordRow): CustomsRecord {
     releaseDate: r.release_date,
     inspectionStatus: r.inspection_status as InspectionStatus,
     externalRef: r.external_ref,
+    // DEC-C38 — the Déclarant's own reference, never Finance's.
+    gaindeDeclarationReference: r.gainde_declaration_reference ?? null,
     notes: r.notes,
     // D4 — governed elements; null = not yet captured, never a default.
     shPositionCount: r.sh_position_count ?? null,
@@ -109,7 +112,7 @@ function toRecord(r: RecordRow): CustomsRecord {
 }
 
 const RECORD_COLS =
-  "id, file_id, status, required, declaration_number, sh_position_count, declaration_type, dpi_regime, exemption_title_origin, tariff_classification_origin, customs_office, regime, declaration_date, bae_reference, bae_recorded_at, release_approval_status, release_approval_note, release_date, inspection_status, external_ref, notes, receivability_status, receivability_at, receivability_note, provider_code, provider_synced_at, reviewed_at, reviewer:reviewed_by(email), gainde_registered_at, gainde_registrar:gainde_registered_by(email), attachment_completed_at, attachment_systems, attachment_recorder:attachment_completed_by(email)";
+  "id, file_id, status, required, declaration_number, sh_position_count, declaration_type, dpi_regime, exemption_title_origin, tariff_classification_origin, customs_office, regime, declaration_date, bae_reference, bae_recorded_at, release_approval_status, release_approval_note, release_date, inspection_status, external_ref, gainde_declaration_reference, notes, receivability_status, receivability_at, receivability_note, provider_code, provider_synced_at, reviewed_at, reviewer:reviewed_by(email), gainde_registered_at, gainde_registrar:gainde_registered_by(email), attachment_completed_at, attachment_systems, attachment_recorder:attachment_completed_by(email)";
 
 /** The (single) customs record for a dossier, or null. */
 export async function getCustomsRecord(fileId: string): Promise<CustomsRecord | null> {

@@ -74,6 +74,9 @@ export function rowToDeclaration(row: IntelRecordRow): Declaration {
     releaseDate: row.release_date,
     inspectionStatus: row.inspection_status as InspectionStatus,
     externalRef: row.external_ref,
+    // DEC-C38 — the Déclarant's reference. Intelligence reads the provider's
+    // view of a record and never authors this, so it is simply carried.
+    gaindeDeclarationReference: null,
     notes: row.notes,
     // MAYA-P0.7-A — the intelligence lifecycle does not read recevabilité and
     // must not: a QC judgement is not a declaration state. Carried as null so

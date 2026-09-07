@@ -25,8 +25,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { as } from "./identity";
 import {
   identity, execution, auditFor, provideEvidence, customsIdFor, transportFor,
-  db, sinkMessagesFor, billingRecipientFor, fileRow, invoiceMoney, CLIENT_NO_DEPOSIT,
-} from "./fixtures";
+  db, sinkMessagesFor, billingRecipientFor, fileRow, invoiceMoney, CLIENT_NO_DEPOSIT, gaindeTaxPayment, } from "./fixtures";
 import type { CurrentUser } from "@/lib/auth/current-user";
 
 import { createFile, assignCommercialOwner } from "@/lib/files/actions";
@@ -130,7 +129,7 @@ async function carryToValidatedInvoice() {
   need(await as(coordinator, () => activateStep(fileId, "coordinator_to_finance")), "activate 8");
   need(await as(coordinator, () => submitStep(fileId, "coordinator_to_finance")), "step 8");
   need(await as(coordinator, () => sendHandoff(fileId, "coordinator_to_finance", "gainde_registration")), "send 9");
-  need(await as(customsFinance, () => recordGaindeRegistration(customsId, `GAINDE-ND-${Date.now()}`)), "gainde");
+  need(await as(customsFinance, () => recordGaindeRegistration(customsId, `GAINDE-ND-${Date.now()}`, gaindeTaxPayment(`Q-ND-${Date.now()}`))), "gainde");
 
   need(await as(coordinator, () => activateStep(fileId, "coordinator_to_declarant")), "activate 10");
   need(await as(coordinator, () => submitStep(fileId, "coordinator_to_declarant")), "step 10");

@@ -36,6 +36,10 @@ export const CONTROL_OWNING_STEP: Record<string, string> = {
   "evidence.declare_absence": "am_dossier_opening",
   "customs.create": "customs_preparation",
   "customs.update": "customs_preparation",
+  // GAINDE-04 (DEC-C38) — the Déclarant records the reference GAINDE returned
+  // to him after his saisie. His step, his fact. NOT Finance's step-9
+  // registration, which is a different act on a different column.
+  "customs.declaration_reference": "customs_preparation",
   "customs.status": "customs_preparation",
   "customs.receivability": "customs_preparation",
   "customs.attachment": "gainde_document_submission",

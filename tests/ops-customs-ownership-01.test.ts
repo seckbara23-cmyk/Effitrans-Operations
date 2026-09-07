@@ -33,6 +33,7 @@ import {
 } from "@/lib/process/control-gate";
 import { CUSTOMS_STATUSES, nextStatuses } from "@/lib/customs/status";
 import { EFFITRANS_PROCESS, getStep } from "@/lib/process/effitrans-process";
+import { LATEST_MIGRATION, MIGRATION_COUNT } from "@/lib/platform/ops/build-info";
 
 const read = (p: string) => readFileSync(fileURLToPath(new URL(`../${p}`, import.meta.url)), "utf8");
 const code = (p: string) =>
@@ -279,7 +280,7 @@ describe("OPS-CUSTOMS-OWNERSHIP-01 — the panel does not re-derive authority", 
 describe("OPS-CUSTOMS-OWNERSHIP-01 — the server enforces it, on every control", () => {
   it("23 — all nine customs controls pass through BOTH gates", () => {
     const actions = code("lib/customs/actions.ts");
-    expect((actions.match(/customsControlGate\(/g) ?? []).length).toBe(10); // 9 sites + the definition
+    expect((actions.match(/customsControlGate\(/g) ?? []).length).toBe(11); // 10 sites + the definition
     expect(actions).not.toMatch(/const gate = await assertControlStep\(/);
     const helper = actions.slice(actions.indexOf("async function customsControlGate"));
     expect(helper).toContain("assertControlStep(");
@@ -349,9 +350,16 @@ describe("OPS-CUSTOMS-OWNERSHIP-01 — the ratified frame is untouched", () => {
   });
 
   it("31 — no migration was added", () => {
-    const dir = fileURLToPath(new URL("../supabase/migrations", import.meta.url));
-    const files = require("node:fs").readdirSync(dir).filter((f: string) => f.endsWith(".sql")).sort();
-    expect(files).toHaveLength(138);
-    expect(files.at(-1)).toBe("20260930000001_customs_release_approval.sql");
+    // ONE shared invariant instead of a per-slice snapshot. This used to pin
+    // « the newest migration on disk is still X » / « there are still N of
+    // them », which was true when the slice shipped and says nothing once a
+    // LATER slice ships one of its own — it goes red for a reason that has
+    // nothing to do with this slice. What is durable, and what the ledger
+    // discipline actually depends on, is that the directory and `build-info`
+    // agree; that is asserted here and in the two suites that own it.
+    const dir = fileURLToPath(new URL("../supabase/migrations", import.meta.url));
+    const files = require("node:fs").readdirSync(dir).filter((f: string) => f.endsWith(".sql")).sort();
+    expect(files).toHaveLength(MIGRATION_COUNT);
+    expect(files.at(-1)).toBe(`${LATEST_MIGRATION}.sql`);
   });
 });

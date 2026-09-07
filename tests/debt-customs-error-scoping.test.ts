@@ -83,7 +83,12 @@ describe("customs errors — each action reports under its own control", () => {
     ["workflow", 'run(() => releaseCustoms(record.id, bae.trim()), "workflow")'],
     ["workflow", 'run(() => changeCustomsStatus(record.id, s), "workflow")'],
     ["workflow", 'run(() => deleteCustoms(record.id), "workflow")'],
-    ["gainde", 'run(() => recordGaindeRegistration(record.id, ref.trim()), "gainde")'],
+    // GAINDE-04 — the one-line prompt became a form: step 9 is a payment with a
+    // per-tax breakdown (DEC-C39), which a `window.prompt` cannot express. The
+    // call now spans several lines, so it is pinned on the fragment that
+    // carries the meaning; its scope is asserted separately below, because a
+    // fragment that stopped short of `"gainde"` would prove nothing.
+    ["gainde", "() => recordGaindeRegistration(record.id, input.reference, input.payment)"],
     ["attachment", 'run(() => recordCustomsAttachment(record.id, set), "attachment")'],
     ["validation", 'run(() => recordCustomsValidation(record.id), "validation")'],
     ["receivability", 'run(() => recordReceivability(record.id, o, reason.trim()), "receivability")'],
@@ -95,6 +100,9 @@ describe("customs errors — each action reports under its own control", () => {
     for (const [scope, call] of CALLS) {
       expect(SECTIONS[scope], call).toContain(call);
     }
+    // The GAINDE call is multi-line, so its scope is asserted here rather than
+    // inside the fragment above.
+    expect(SECTIONS.gainde).toMatch(/recordGaindeRegistration[\s\S]{0,120}"gainde",/);
   });
 
   it("the metadata form submits under the metadata scope", () => {
