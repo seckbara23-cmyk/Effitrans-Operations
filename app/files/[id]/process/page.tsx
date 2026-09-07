@@ -313,7 +313,16 @@ export default async function ProcessInspectorPage({ params }: { params: { id: s
                 })
               : null;
             return (
-              <li key={s.stepKey} className="flex items-start justify-between gap-3 border-b border-slate-100 pb-2 last:border-0">
+              // A9 — the deep-link target. A STABLE key, never a DOM position:
+              // « Voir cette étape » on the dossier page has to land on this
+              // row after the list has been reordered, filtered or grown, and
+              // an index would silently point at the wrong work. `scroll-mt`
+              // keeps the row clear of the sticky header when the browser jumps.
+              <li
+                id={`step-${s.stepKey}`}
+                key={s.stepKey}
+                className="scroll-mt-24 flex items-start justify-between gap-3 border-b border-slate-100 pb-2 last:border-0"
+              >
                 <div>
                   <div className="text-sm font-medium text-slate-900">
                     {s.stepNumber ? `${s.stepNumber}. ` : ""}

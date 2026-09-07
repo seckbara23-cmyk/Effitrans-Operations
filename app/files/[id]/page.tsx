@@ -70,6 +70,9 @@ import { ArtifactPanel } from "@/components/documents/artifact-panel";
 import { getArtifactPanel } from "@/lib/documents/artifacts/service";
 import { getDossierAccess } from "@/lib/workflow/access/service";
 import { t } from "@/lib/i18n";
+import { contextualCardsFor } from "@/lib/process/contextual/cards";
+import { ContextualStepCard } from "@/components/process/contextual-step-card";
+import type { DossierSection } from "@/lib/process/contextual/sections";
 
 export const metadata: Metadata = { title: t.files.title };
 export const dynamic = "force-dynamic";
@@ -376,6 +379,18 @@ export default async function FileDetailPage({ params }: { params: { id: string 
   // control, resolved once. The panel renders this rather than re-deriving
   // authority from permissions, which is how it came to offer a Chef de Transit
   // the Déclarant's maker controls.
+  // A7/A8 (GAINDE-04) — the official steps that concern THIS reader, grouped by
+  // the section of the dossier where that work actually happens. Not a second
+  // workflow: the verdicts come from the same evaluator /process and /queues
+  // read, and the buttons call the same two server actions. /process remains the
+  // complete 26-step view and every card links back to the exact step.
+  const contextualCards = await contextualCardsFor(file.id, {
+    tenantId: user.tenantId,
+    userId: user.id,
+    permissions,
+    roles: user.roles ?? [],
+  });
+
   const customsControlVerdicts = canReadCustoms
     ? await getControlVerdicts(
         [
@@ -395,6 +410,12 @@ export default async function FileDetailPage({ params }: { params: { id: string 
         user.roles ?? [],
       )
     : {};
+
+  /** The cards for one section, or nothing. Never decides anything itself. */
+  const cards = (section: DossierSection) =>
+    (contextualCards[section] ?? []).map((c) => (
+      <ContextualStepCard key={c.stepKey} {...c} />
+    ));
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -419,6 +440,11 @@ export default async function FileDetailPage({ params }: { params: { id: string 
           dossier has no process instance. Not a 26-step checklist: it answers
           "where is this, who has it, what next". */}
       <ProcessJourneyPanel fileId={file.id} />
+      {/* Operations' own official steps, at the top of the dossier where the
+          Ops Supervisor is already looking. */}
+      {cards("operations").length > 0 && (
+        <div className="space-y-2">{cards("operations")}</div>
+      )}
       <FileWorkflow file={file} canTransitionStatus={canTransitionStatus} />
       {intakeState && (
         <TransitHandoff
@@ -428,6 +454,11 @@ export default async function FileDetailPage({ params }: { params: { id: string 
           prerequisites={transitReadiness?.unmet ?? []}
           firstActionable={transitReadiness?.firstActionable ?? null}
         />
+      )}
+      {/* Coordination Transit — the receptions and the transfers between
+          departments, beside the transmission control they belong to. */}
+      {cards("coordination").length > 0 && (
+        <div className="space-y-2">{cards("coordination")}</div>
       )}
       <CommercialOrigin
         quotationId={commercialOrigin.quotationId}
@@ -444,6 +475,11 @@ export default async function FileDetailPage({ params }: { params: { id: string 
         canAssign={canAssignCommercial}
         isTerminal={file.status === "CLOSED" || file.status === "CANCELLED"}
       />
+      {/* The Account Manager's own steps, beside the designation that names
+          them. Affecter, Démarrer and Terminer stay three separate acts. */}
+      {cards("commercial").length > 0 && (
+        <div className="space-y-2">{cards("commercial")}</div>
+      )}
       <FileAssignment
         fileId={file.id}
         currentAssigneeId={file.assignedToUserId}
@@ -542,6 +578,9 @@ export default async function FileDetailPage({ params }: { params: { id: string 
           />
         </div>
       )}
+      {canReadCustoms && cards("customs").length > 0 && (
+        <div className="space-y-2">{cards("customs")}</div>
+      )}
       {canReadCustoms && (
         <div id="customs" className="scroll-mt-24">
           <CustomsPanel
@@ -565,6 +604,11 @@ export default async function FileDetailPage({ params }: { params: { id: string 
           />
         </div>
       )}
+      {/* Livraison — the Account Manager's BAD, Pre-Gate and delivery
+          follow-up, next to the proof of delivery they end in. */}
+      {cards("delivery").length > 0 && (
+        <div className="space-y-2">{cards("delivery")}</div>
+      )}
       <QC4Panel evidence={qc4} />
       {/* UAT-1 — Operations owns the delivery proof once transport is DELIVERED.
           Hidden before delivery and rendered above Transport, because after
@@ -587,6 +631,9 @@ export default async function FileDetailPage({ params }: { params: { id: string 
         <div id="carriage" className="scroll-mt-24">
           <CarriagePanel carriage={carriage} shipmentId={file.shipment?.id ?? null} />
         </div>
+      )}
+      {canReadTransport && cards("transport").length > 0 && (
+        <div className="space-y-2">{cards("transport")}</div>
       )}
       {canReadTransport && (
         <div id="transport" className="scroll-mt-24">
@@ -638,6 +685,9 @@ export default async function FileDetailPage({ params }: { params: { id: string 
             canWrite={hasPermission(permissions, "tracking:write")}
           />
         </div>
+      )}
+      {canReadFinance && cards("finance").length > 0 && (
+        <div className="space-y-2">{cards("finance")}</div>
       )}
       {canReadFinance && finance && (
         <div id="finance" className="scroll-mt-24">
