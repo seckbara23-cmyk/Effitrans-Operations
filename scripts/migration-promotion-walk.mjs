@@ -246,16 +246,28 @@ function main() {
           says: one(named).slice(0, 180),
         });
       }
-      const allRefused = refusals.every((r) => r.refused && r.byOrdering);
-      record("W2", "every migration except the earliest is refused, and the refusal names the ordering rule",
-        allRefused, refusals.map((r) => `${r.version}: refused=${r.refused} ordering=${r.byOrdering}`).join(" · "));
+      // ⚠ A CHECK OVER AN EMPTY SET IS NOT A PASS. With a single pending
+      // migration there is nothing to refuse, and `[].every(...)` is true —
+      // which would print PASS for an assertion that examined nothing. That is
+      // the same shape as a verifier only ever run where it cannot fail, so it
+      // is reported as NOT EXERCISED rather than dressed up as evidence.
+      const allRefused = refusals.length > 0 && refusals.every((r) => r.refused && r.byOrdering);
+      if (refusals.length === 0) {
+        record("W2-NA", "out-of-order refusal — NOT EXERCISED: only one migration is pending, so nothing could jump the queue",
+          true, `pending=[${state.pending.join(", ")}] — this run proves nothing about ordering; R7 does, on a fabricated backlog`);
+      } else {
+        record("W2", "every migration except the earliest is refused, and the refusal names the ordering rule",
+          allRefused, refusals.map((r) => `${r.version}: refused=${r.refused} ordering=${r.byOrdering}`).join(" · "));
+      }
       for (const r of refusals) log(`[walk]        ${r.version} → ${r.says}`);
 
       const earliest = walk[0];
       const okEarliest = validateTarget(earliest.version, repo, ledger, state).length === 0;
       record("W3", `the earliest pending migration (${earliest.version}) is the one allowed`, okEarliest,
         okEarliest ? "no problems reported" : validateTarget(earliest.version, repo, ledger, state).join(" · "));
-      if (!allRefused || !okEarliest) throw new Error("the ordering rule did not hold at the baseline");
+      if ((refusals.length > 0 && !allRefused) || !okEarliest) {
+        throw new Error("the ordering rule did not hold at the baseline");
+      }
     }
 
     // ---- promote, one at a time, asking at every state ---------------------
