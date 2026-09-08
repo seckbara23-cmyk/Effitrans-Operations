@@ -141,7 +141,14 @@ function main() {
   if (cross.checked && !cross.agrees) problems.push(`supabase migration list disagrees: ${cross.detail}`);
   if (problems.length) stop(STATE.PREFLIGHT, problems);
   for (const a of state.advisory) log(`[migrate]   advisory: ${a.code} ${a.version} — ${a.detail}`);
-  log("[migrate]   invariants hold — exactly this migration is pending");
+  // ⚠ This used to read "exactly this migration is pending", which stopped being
+  // true when the ordering rule replaced the one-pending assumption: three are
+  // pending today and the runner correctly allows the earliest. An operator
+  // reading that line mid-window would have believed the backlog was empty.
+  log(
+    `[migrate]   invariants hold — ${version} is the earliest of ${state.pending.length} pending ` +
+      `migration(s); this run applies THIS one only`,
+  );
 
   // A verifier that already passes means the SQL is applied but unrecorded:
   // the incident state, reached BEFORE we touch anything.
