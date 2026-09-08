@@ -81,6 +81,18 @@ jobs:
           # verifying a newer release against `supabase start`/`db reset` locally.
           version: 2.106.0
 
+      # SUPABASE-LINK-PRIVILEGE-01 — the protected production workflow no longer
+      # runs `supabase link`; it writes the CLI's two context files itself. That
+      # is the CLI's own cache directory and NOT a supported interface, so the
+      # mechanism is asserted here, on every ordinary run, where finding out is
+      # free — instead of at step one of an approved production window.
+      #
+      # No credentials, no network beyond DNS, no production: it only checks that
+      # the refusal "Cannot find project ref" disappears once the two files
+      # exist. Runs before the stack starts, because it needs nothing from it.
+      - name: Link-context contract (pinned CLI still reads supabase/.temp)
+        run: node scripts/migration/verify-link-context.mjs
+
       - name: Start local Supabase (applies migrations + seed)
         run: |
           if supabase start; then

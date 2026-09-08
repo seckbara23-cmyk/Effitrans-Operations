@@ -5,20 +5,29 @@
  * database over `--db-url`, which the CLI drives with the extended query
  * protocol — a prepared statement, one command per message. It rejects a
  * multi-statement body outright ("cannot insert multiple commands into a
- * prepared statement"). Production goes through `--linked`, the Management API,
- * which accepts a whole migration file at once.
+ * prepared statement"). Production goes through `--linked`, which accepts a
+ * whole migration file at once — measured 2026-09-08 on the pinned CLI.
  *
  * Two different protocols. An atomicity result from the local path would be a
  * confident answer about the wrong executor, which is worse than no answer.
  *
- * So this runs against a REAL Supabase project over the same Management API the
+ * ⚠ CORRECTED 2026-09-08 (SUPABASE-LINK-PRIVILEGE-01). This file used to call
+ * `--linked` "the Management API". It is not: on CLI 2.106.0 it is a DIRECT
+ * POSTGRES CONNECTION through the project pooler, measured at zero requests to
+ * api.supabase.com. What remains true is the part that matters here — it takes
+ * a multi-statement body where `--db-url` will not — so the measurement below
+ * is still a measurement of the production executor. Only its name was wrong.
+ *
+ * So this runs against a REAL Supabase project over the same transport the
  * production runner uses — a staging project, never production — and confines
  * itself to a scratch schema it creates and drops.
  *
  * Usage:
- *   node scripts/measure-atomicity.mjs --project-ref <staging-ref>
+ *   node scripts/measure-atomicity.mjs --project-ref <staging-ref> --pooler-url <staging-pooler-url>
  *
- * It REFUSES the production ref outright.
+ * Both are required: the CLI resolves `--linked` from a ref AND a pooler URL,
+ * and discovering the second is precisely what `supabase link` used the
+ * Management API for. It REFUSES the production ref outright.
  */
 import { target, query, applyFile } from "./migration/exec.mjs";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
@@ -30,10 +39,14 @@ const PRODUCTION_REF = "xtpppzhkiagdpmnghdlc";
 
 const args = process.argv.slice(2);
 let ref = "";
-for (let i = 0; i < args.length; i++) if (args[i] === "--project-ref") ref = args[++i];
+let poolerUrl = "";
+for (let i = 0; i < args.length; i++) {
+  if (args[i] === "--project-ref") ref = args[++i];
+  else if (args[i] === "--pooler-url") poolerUrl = args[++i];
+}
 
-if (!ref) {
-  console.error("[atomicity] usage: node scripts/measure-atomicity.mjs --project-ref <staging-ref>");
+if (!ref || !poolerUrl) {
+  console.error("[atomicity] usage: node scripts/measure-atomicity.mjs --project-ref <staging-ref> --pooler-url <staging-pooler-url>");
   process.exit(2);
 }
 if (ref === PRODUCTION_REF) {
@@ -42,7 +55,7 @@ if (ref === PRODUCTION_REF) {
   process.exit(2);
 }
 
-const tgt = target({ kind: "project-ref", ref });
+const tgt = target({ kind: "project-ref", ref, poolerUrl });
 const dir = mkdtempSync(join(tmpdir(), "eft-atomicity-"));
 const sqlFile = (name, sql) => {
   const p = join(dir, name);
@@ -54,7 +67,7 @@ const SCHEMA = "atomicity_probe_scratch";
 let exitCode = 0;
 
 try {
-  console.log(`[atomicity] target: project ${ref} (Management API — the production executor)`);
+  console.log(`[atomicity] target: project ${ref} (direct pooler connection — the production executor)`);
 
   // Clean slate, then a POSITIVE CONTROL: the same CREATE on its own must work,
   // so that "absent" in the real measurement means rolled back, not never run.
@@ -83,7 +96,7 @@ try {
   if (survived === 0) {
     console.log("[atomicity] RESULT: ATOMIC");
     console.log("[atomicity] The earlier CREATE TABLE was rolled back by the later failure, so the");
-    console.log("[atomicity] Management API runs a multi-statement body as ONE implicit transaction.");
+    console.log("[atomicity] the executor runs a multi-statement body as ONE implicit transaction.");
     console.log("[atomicity] The design does not depend on this — post-apply verification is what");
     console.log("[atomicity] protects us — but a failed apply most likely leaves nothing behind.");
   } else {

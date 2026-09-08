@@ -90,6 +90,8 @@ its own failure isolation.
 | `scripts/lint-migrations.mjs` | verifier + executor conventions, no database |
 | `scripts/verify-migrations.mjs` | **read-only**; runs every verifier against a database that HAS its migration |
 | `scripts/migration-rehearsal.mjs` | failure injection; refuses non-local targets |
+| `scripts/migration/link-context.mjs` | establishes the CLI's linked-project context from protected values; calls no Management API endpoint |
+| `scripts/migration/verify-link-context.mjs` | CI contract check that the pinned CLI still honours that context; no credentials |
 | `scripts/migration-promotion-walk.mjs` | rebuilds at the production baseline and promotes the real pending migrations in order; refuses non-local targets |
 | `.github/workflows/migrate-production.yml` | dispatch-only, environment-gated |
 
@@ -135,8 +137,9 @@ slice would be broken without, and none satisfied by a name alone.
 
 ### Declaring an executor
 
-Default is `db-query`: the whole body goes through the Management API, as one
-implicit transaction, under a **2-minute statement timeout**.
+Default is `db-query`: the whole body goes through the pooler connection
+`--linked` opens, as one implicit transaction, under a **2-minute statement
+timeout**.
 
 Add a header when that will not do:
 
@@ -153,7 +156,7 @@ by an operator per the escalation below, then recorded through the runner.
 
 | | `--linked` (production) | `--db-url` (local/CI) |
 |---|---|---|
-| transport | Management API | extended query protocol |
+| transport | direct Postgres via the project pooler — **not** the Management API (measured 2026-09-08) | extended query protocol |
 | multi-statement body | **accepted** | **rejected** — "cannot insert multiple commands into a prepared statement" |
 | atomicity on late failure | **ATOMIC** (measured on staging, 2026-09-05, with a positive control) | n/a |
 
@@ -164,9 +167,11 @@ Consequences:
   orchestration — invariants, verifier gating, the failure states — not the
   executor's transactional semantics.
 * Atomicity is therefore measured separately, against a real Supabase project
-  over the same Management API production uses:
-  `node scripts/measure-atomicity.mjs --project-ref <staging-ref>`. It refuses
-  the production ref, works in a scratch schema, and drops it afterwards.
+  over the same transport production uses:
+  `node scripts/measure-atomicity.mjs --project-ref <staging-ref> --pooler-url <staging-pooler-url>`.
+  It refuses the production ref, works in a scratch schema, and drops it
+  afterwards. Both arguments are required — the CLI resolves `--linked` from a
+  ref **and** a pooler URL.
 * **Result: a failed apply most likely leaves nothing behind.** The design still
   does not depend on it — `VERIFY_FAILED` remains "state indeterminate, diagnose
   by hand" — because one measurement of a hosted platform is evidence, not a
@@ -175,6 +180,93 @@ Consequences:
 **Long operations:** anything likely to exceed two minutes (a large backfill, an
 index build on a grown table) must be timed against staging first. A timeout
 mid-apply lands in `VERIFY_FAILED`, the worst state.
+
+## Why `supabase link` is not used
+
+**The protected production workflow does not run `supabase link`, and must not
+be "fixed" by adding it back.**
+
+`link` is not a context setter — it is a project-**provisioning** fetch. On the
+pinned CLI it makes four Management API calls:
+
+```
+GET /v1/projects/{ref}
+GET /v1/projects/{ref}/api-keys
+GET /v1/projects/{ref}/config/storage
+GET /v1/projects/{ref}/config/database/pooler
+```
+
+The runner consumes the result of exactly **one** of them — the pooler address.
+It never reads the service API keys or the storage configuration.
+
+On **2026-09-08** the account behind `SUPABASE_ACCESS_TOKEN` was refused by the
+Management API on one of those endpoints. `link` exited 1 and the integrity
+guard, the dry run, the apply, the verifier and the ledger recording were all
+skipped. A permission on an endpoint whose answer the runner never reads stopped
+migration #139 from even being **validated**.
+
+**What was measured** (CLI 2.106.0, against production, with only `project-ref`
+and `pooler-url` present in `supabase/.temp`):
+
+| command | requests to `api.supabase.com` |
+|---|---|
+| `db query --linked` | **0** (returned the real ledger, 138 rows) |
+| `migration list --linked` | **0** |
+| `migration-integrity.mjs --linked` | **0** — `CLEAN_WITH_PENDING`, exit 0, CLI cross-check agrees |
+
+Zero even on a query that **fails**, so there is no Management API fallback
+hiding behind the success case. `--linked` on this CLI is a **direct Postgres
+connection through the project pooler**; it is not a Management API path.
+
+So the requirement was removed rather than satisfied. **No Supabase organization
+role was expanded, no PAT was replaced, no CLI was upgraded, and the execution
+transport is unchanged.**
+
+### What this depends on
+
+* **`supabase/.temp` is the CLI's own cache directory, not a public interface.**
+  That dependency is deliberate and bounded.
+* The **CLI version is pinned** in both workflows, so it cannot move underneath us.
+* The cache **shape is contract-tested** — `tests/migration-link-context.test.ts`
+  pins the two filenames and their exact contents, and
+  `scripts/migration/verify-link-context.mjs` runs on every ordinary CI run to
+  prove the pinned CLI still resolves `--linked` from them.
+* **It fails CLOSED.** If a future CLI stops reading these files, `--linked`
+  stops resolving and the integrity guard — step 1 of every deployment —
+  refuses. This mechanism can *prevent* a migration; it cannot corrupt one, and
+  it cannot cause the wrong migration to be applied.
+* There is **no fallback** to `link` and none to the Management API. A fallback
+  would hide the very failure this exists to surface.
+
+### The `SUPABASE_POOLER_URL` secret
+
+Lives on the protected `production-db` environment, beside the other two.
+
+```
+postgresql://postgres.<project-ref>@<pooler-host>:<port>/postgres
+```
+
+* It carries **no password**, and the context step refuses one — a password here
+  would smuggle a production database credential into a secret and onto the
+  runner's disk, turning a least-privilege fix into a privilege escalation. The
+  CLI authenticates the pooler with `SUPABASE_ACCESS_TOKEN`.
+* Its pooler role (`postgres.<project-ref>`) is checked against
+  `SUPABASE_PROJECT_REF`, so the wrong project's URL is a refusal rather than a
+  migration applied to the wrong database.
+* The **host is deliberately not constrained**: pooler hostnames carry a region
+  Supabase may change, and a check that guessed at geography would fail closed on
+  a legitimate move.
+* Neither value is ever printed — not on success, not in any refusal.
+
+### About the access token
+
+`SUPABASE_ACCESS_TOKEN` is still required, and still authenticates the pooler.
+
+Supabase **personal access tokens carry the privileges of the account that
+minted them**; they are not scopeable per endpoint. Authorization comes from the
+account's **organization role** (Owner / Administrator / Developer / Read-Only).
+There is no per-token "migrations read-write" scope, and any documentation
+suggesting otherwise is describing something Supabase does not offer for PATs.
 
 ## Deploying
 

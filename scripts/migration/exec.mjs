@@ -17,11 +17,29 @@
  * TARGETS are explicit and never inferred. `linked` is production. Rehearsal and
  * failure injection use `db-url`, pointed at a disposable database. A script
  * that forgets to pass a target gets an error, not a default.
+ *
+ * WHAT `--linked` ACTUALLY IS, because this file said otherwise until 2026-09-08
+ * and the mistake was load-bearing. It is a DIRECT POSTGRES CONNECTION through
+ * the project's pooler — NOT a Management API path. Measured on the pinned CLI
+ * 2.106.0 against production: `db query --linked`, `migration list --linked` and
+ * the integrity guard each make ZERO requests to api.supabase.com, including on
+ * a query that FAILS, so there is no API fallback behind the success case.
+ *
+ * The mislabel mattered. It made "the migration token needs Management API
+ * privileges" look self-evident, and when `supabase link` was refused on a
+ * permissions error the obvious remedy looked like widening the credential. The
+ * runner needs no Management API privilege at all; `link` did, for endpoints
+ * whose answers the runner never reads (SUPABASE-LINK-PRIVILEGE-01).
+ *
+ * What is still true, and separately measured: `--linked` accepts a
+ * MULTI-STATEMENT body (a whole migration file), while `--db-url` drives the
+ * extended query protocol and rejects one. The two are not interchangeable.
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
+import { validatePoolerUrl, writeLinkContext } from "./link-context.mjs";
 
 /**
  * HOW WE INVOKE THE CLI, AND WHY NOT SIMPLY "npx".
@@ -58,12 +76,40 @@ export function target(spec) {
   if (spec.kind === "linked") return { kind: "linked", flags: ["--linked"], label: "LINKED (production)" };
   if (spec.kind === "local") return { kind: "local", flags: ["--local"], label: "local stack" };
   if (spec.kind === "project-ref") {
+    // ⚠⚠ THIS TARGET EMITTED A FLAG THE PINNED CLI DOES NOT HAVE.
+    //
+    // It used to return `["--linked", "--project-ref", ref]`. On CLI 2.106.0 —
+    // the version the production workflow pins — NONE of `db query`,
+    // `migration list`, `migration repair` or `migration up` accepts
+    // `--project-ref`; each answers `UnrecognizedOption: Unrecognized flag:
+    // --project-ref`. (It is a real flag on 2.117.0, which is where the
+    // assumption came from.) So this target could not execute a single command
+    // on the governed CLI, while its label claimed it was the production path.
+    //
+    // REPAIRED THE SAME WAY PRODUCTION NOW WORKS, not with a different one:
+    // a private project directory carrying the two files the CLI reads to
+    // resolve `--linked`. Same transport as production — a direct Postgres
+    // connection through the pooler — so a measurement taken here is a
+    // measurement of the executor production actually uses, which is the entire
+    // reason this target exists. The stored link is left alone: the workdir is
+    // a throwaway, so a staging measurement still cannot repoint the toolchain.
     if (!spec.ref) throw new Error("[exec] project-ref target needs a ref");
-    // `--project-ref` is only honoured ALONGSIDE `--linked` ("--project-ref only
-    // applies when targeting the linked project"). Together they address that
-    // project over the Management API while leaving the stored link alone — so
-    // a staging measurement cannot accidentally repoint the whole toolchain.
-    return { kind: "project-ref", flags: ["--linked", "--project-ref", spec.ref], label: `project ${spec.ref} (Management API)` };
+    if (!spec.poolerUrl) {
+      throw new Error(
+        "[exec] project-ref target needs a poolerUrl: the CLI resolves --linked from a project ref " +
+          "AND a pooler URL, and cannot discover the second without the Management API endpoints " +
+          "this toolchain deliberately does not call (SUPABASE-LINK-PRIVILEGE-01)",
+      );
+    }
+    const problems = validatePoolerUrl(spec.poolerUrl, spec.ref);
+    if (problems.length) throw new Error(`[exec] project-ref target refused: ${problems.join("; ")}`);
+    const dir = mkdtempSync(join(tmpdir(), "eft-ctx-"));
+    writeLinkContext(dir, spec.ref, spec.poolerUrl);
+    return {
+      kind: "project-ref",
+      flags: ["--linked", "--workdir", dir],
+      label: `project ${spec.ref} (direct pooler connection)`,
+    };
   }
   if (spec.kind === "db-url") {
     if (!spec.url) throw new Error("[exec] db-url target needs a url");

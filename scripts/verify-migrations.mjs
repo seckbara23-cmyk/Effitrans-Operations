@@ -51,7 +51,11 @@ function parseArgs(argv) {
     if (v === "--linked") a.target = { kind: "linked" };
     else if (v === "--local") a.target = { kind: "local" };
     else if (v === "--db-url") a.target = { kind: "db-url", url: argv[++i] };
-    else if (v === "--project-ref") a.target = { kind: "project-ref", ref: argv[++i] };
+    // A project ref alone cannot resolve `--linked` on the pinned CLI: it needs
+    // the pooler URL too, and discovering that is what `supabase link` used the
+    // Management API for (SUPABASE-LINK-PRIVILEGE-01). Both, or neither.
+    else if (v === "--project-ref") a.projectRef = argv[++i];
+    else if (v === "--pooler-url") a.poolerUrl = argv[++i];
     else if (v === "--dir") a.dir = argv[++i];
     // Only these versions, comma-separated. Used by the promotion rehearsal to
     // check one verifier at the moment its migration lands.
@@ -59,6 +63,12 @@ function parseArgs(argv) {
     // Check every verifier, including those whose migration is NOT applied.
     // They will fail, and correctly so — use it only to see the whole set.
     else if (v === "--include-pending") a.includePending = true;
+  }
+  // Assemble the project-ref target only when BOTH halves are present. A ref
+  // without a pooler URL is not a target, it is half of one — and `target()`
+  // says so by name rather than failing later with an unresolved connection.
+  if (a.projectRef || a.poolerUrl) {
+    a.target = { kind: "project-ref", ref: a.projectRef, poolerUrl: a.poolerUrl };
   }
   return a;
 }
@@ -78,7 +88,7 @@ const annotate = (level, title, message) =>
 function main() {
   const args = parseArgs(process.argv.slice(2));
   if (!args.target) {
-    console.error("[verify] a target is required: --linked | --local | --db-url <url> | --project-ref <ref>");
+    console.error("[verify] a target is required: --linked | --local | --db-url <url> | --project-ref <ref> --pooler-url <url>");
     process.exit(2);
   }
 

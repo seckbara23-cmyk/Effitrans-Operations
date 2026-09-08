@@ -17,9 +17,9 @@
  *   R6 HELD                   → a discrepancy refuses the NEXT migration
  *
  * Atomicity is NOT measured here — see scripts/measure-atomicity.mjs. The
- * production executor is the Management API multi-statement path; this local
- * `--db-url` target speaks the extended query protocol and will not accept a
- * multi-statement body at all, so any answer obtained here would be a confident
+ * production executor is the `--linked` pooler connection, which takes a
+ * multi-statement body; this local `--db-url` target speaks the extended query
+ * protocol and will not accept one at all, so any answer obtained here would be a confident
  * statement about a different thing.
  *
  * It works inside a self-contained Supabase project directory (`.rehearsal/`)
@@ -183,8 +183,8 @@ function main() {
   // ONE COMMAND PER CALL. The `--db-url` path sends SQL over the extended query
   // protocol (a prepared statement), which accepts exactly one command per
   // message: "cannot insert multiple commands into a prepared statement". The
-  // production `--linked` path goes through the Management API and DOES accept
-  // multi-statement bodies. The two executors are not interchangeable, and that
+  // production `--linked` path is a direct pooler connection (NOT the Management
+  // API — corrected 2026-09-08) and DOES accept multi-statement bodies. The two executors are not interchangeable, and that
   // difference is why the atomicity question is measured on staging instead of
   // here (scripts/measure-atomicity.mjs).
   exec(tgt, "setup-drop.sql", "drop schema if exists rehearsal cascade;", true);
@@ -213,8 +213,8 @@ function main() {
   const recorded = [];
 
   // A1 (atomicity) is deliberately NOT measured here. It is a property of the
-  // PRODUCTION executor — the Management API multi-statement path — which this
-  // local `--db-url` target cannot even accept. Measuring it here would produce
+  // PRODUCTION executor — the `--linked` pooler connection, which takes a
+  // multi-statement body — which this local `--db-url` target cannot accept. Measuring it here would produce
   // a confident answer about the wrong thing. See scripts/measure-atomicity.mjs.
 
   // ---- R1: clean apply ----------------------------------------------------

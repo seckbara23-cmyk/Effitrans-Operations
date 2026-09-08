@@ -28,9 +28,10 @@
  * ONE DEVIATION, STATED PLAINLY. The apply step uses `psql`, not the sanctioned
  * executor, because `supabase db query --db-url` sends SQL over the extended
  * query protocol and rejects a multi-statement body — and real migrations are
- * multi-statement. Production applies through `--linked`, the Management API,
- * which accepts them; the two executors are not interchangeable and that is
- * measured separately (scripts/measure-atomicity.mjs). Every OTHER step here is
+ * multi-statement. Production applies through `--linked` — a direct pooler
+ * connection, NOT the Management API (corrected 2026-09-08) — which does accept
+ * them; the two executors are not interchangeable and that is measured
+ * separately (scripts/measure-atomicity.mjs). Every OTHER step here is
  * the real thing: `validateTarget` for ordering, `queryFile` for the verifier,
  * `supabase migration repair` for recording, `reconcile`/`classify` for state.
  *

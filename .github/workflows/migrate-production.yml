@@ -91,10 +91,34 @@ jobs:
         with:
           version: 2.106.0
 
-      - name: Link the production project
+      # SUPABASE-LINK-PRIVILEGE-01 — `supabase link` is NOT used here, deliberately.
+      #
+      # It is a project-PROVISIONING fetch, not a context setter: on the pinned
+      # CLI it calls four Management API endpoints (project detail, api-keys,
+      # storage config, pooler config) and this runner consumes the result of
+      # exactly one — the pooler address. On 2026-09-08 the account behind the
+      # PAT was refused on one of them, `link` exited 1, and the integrity guard,
+      # the dry run, the apply, the verifier and the ledger recording were all
+      # skipped. A permission on an endpoint the runner never reads stopped a
+      # migration from even being VALIDATED.
+      #
+      # Measured against production on this exact CLI version, with only
+      # `project-ref` and `pooler-url` present: db query, migration list and the
+      # integrity guard each make ZERO calls to api.supabase.com. `--linked` on
+      # 2.106.0 is a direct Postgres connection through the pooler.
+      #
+      # So the requirement is removed rather than satisfied: no Supabase role is
+      # expanded, no PAT replaced, no CLI upgraded, and the execution transport
+      # is unchanged. SUPABASE_POOLER_URL carries NO password — the step refuses
+      # one — and the CLI authenticates the pooler with SUPABASE_ACCESS_TOKEN.
+      #
+      # There is no fallback to `link` and none to the Management API: a fallback
+      # would hide the very failure this exists to surface.
+      - name: Establish project context (no Management API)
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: supabase link --project-ref "${{ secrets.SUPABASE_PROJECT_REF }}"
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          SUPABASE_POOLER_URL: ${{ secrets.SUPABASE_POOLER_URL }}
+        run: node scripts/migration/link-context.mjs
 
       # Independent of the runner, and read-only: if the repository and ledger
       # already disagree, nothing should be applied on top of that.
@@ -111,12 +135,14 @@ jobs:
         run: node scripts/migration-integrity.mjs --linked
 
       - name: Dry run
+        id: dry_run_step
         if: ${{ inputs.dry_run }}
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: node scripts/migrate-production.mjs --linked --version "${{ inputs.version }}" --dry-run
 
       - name: Apply, verify, record, re-verify
+        id: apply_step
         if: ${{ !inputs.dry_run }}
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
@@ -125,11 +151,19 @@ jobs:
       # Runs even on failure: the operator needs to know WHICH state production
       # ended in, and that reading must come from the guard rather than from the
       # runner that just failed.
+      # It used to end in `|| true`, which made a report that could not even RUN
+      # look like a clean integrity check — and it did exactly that on
+      # 2026-09-08, reporting success in a run where the project was never
+      # linked. `continue-on-error` keeps the report from overriding the
+      # migration's own result while leaving its true outcome readable, and the
+      # step below turns a bad reading into a red run rather than a footnote.
       - name: Post-run integrity report
+        id: post_integrity
         if: always()
+        continue-on-error: true
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: node scripts/migration-integrity.mjs --linked || true
+        run: node scripts/migration-integrity.mjs --linked
 
       - name: Summary
         if: always()
@@ -144,5 +178,22 @@ jobs:
             echo "| reason | ${{ inputs.reason }} |"
             echo "| actor | ${{ github.actor }} |"
             echo "| commit | ${{ github.sha }} |"
-            echo "| result | ${{ job.status }} |"
+            echo "| MIGRATION RESULT | ${{ inputs.dry_run && steps.dry_run_step.outcome || steps.apply_step.outcome }} |"
+            echo "| POST-RUN INTEGRITY RESULT | ${{ steps.post_integrity.outcome }} |"
+            echo "| job status | ${{ job.status }} |"
+            echo ""
+            echo "The two results are SEPARATE. A migration can succeed while the"
+            echo "post-run integrity reading fails, and that combination is the"
+            echo "indeterminate state the policy calls \`VERIFY_FAILED\` or"
+            echo "\`SCHEMA_AHEAD_OF_LEDGER\`: DDL may have run, the verifier may have"
+            echo "failed, the ledger may not have been written. Read both rows."
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # A failed or unrunnable integrity report is a RED run. Last, so it can
+      # never mask the migration step's own failure — that one has already
+      # failed the job by the time this is reached.
+      - name: Integrity report must have actually run
+        if: ${{ always() && steps.post_integrity.outcome != 'success' }}
+        run: |
+          echo "::error title=post-run integrity did not pass::The migration result is reported separately above. The integrity report outcome was '${{ steps.post_integrity.outcome }}'. Production state is NOT confirmed clean by this run."
+          exit 1

@@ -9,8 +9,9 @@
  *      deployment time is discovering it too late.
  *
  *   2. THE EXECUTOR IS DECLARED, NEVER GUESSED. The default path sends a
- *      migration's whole body through the Management API, which runs it as one
- *      implicit transaction under a 2-minute statement timeout. Some SQL cannot
+ *      migration's whole body through the pooler connection `--linked` opens,
+ *      which runs it as one implicit transaction under a 2-minute statement
+ *      timeout. Some SQL cannot
  *      live there — `CREATE INDEX CONCURRENTLY` is illegal inside a transaction
  *      block, and a large backfill will exceed two minutes. Such migrations must
  *      say so in a header, and this lint refuses the combination of hostile SQL
