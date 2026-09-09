@@ -18,7 +18,7 @@ import { as } from "./identity";
 import {
   identity, execution, auditFor, handoffs, provideEvidence, customsIdFor, customsReleaseState,
   CLIENT_DEPOSIT_REQUIRED, gaindeTaxPayment, customsGovernedElements,
-  gaindePayments, gaindePaymentLines, customsRecordRefs, } from "./fixtures";
+  gaindePayments, gaindePaymentLines, customsRecordRefs, db, } from "./fixtures";
 import type { CurrentUser } from "@/lib/auth/current-user";
 
 import { createFile, assignCommercialOwner } from "@/lib/files/actions";
@@ -529,6 +529,29 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     await handOver(coordinator, customsFinance, "coordinator_to_finance", "gainde_registration");
   });
 
+  it("step 9 — nobody without customs:register may record a payment", async () => {
+    // BEFORE Finance acts, deliberately. Once step 9 closes, Finance douane
+    // itself loses sight of the dossier (migrations 121/122), so EVERY actor
+    // is refused `forbidden` from then on — and a refusal that would happen
+    // anyway proves nothing about the permission it claims to test.
+    const customsId = await customsIdFor(fileId);
+    const before = await gaindePayments(fileId);
+    expect(before.all, "no payment exists yet").toHaveLength(0);
+
+    for (const actor of [declarant, coordinator, transit]) {
+      const refused = await as(actor, () =>
+        recordGaindeRegistration(customsId, DECLARATION_REF, gaindeTaxPayment(`Q-NO-${Date.now()}`)),
+      );
+      expect(refused.ok, `${actor.id} must not record a Finance payment`).toBe(false);
+      // `assertPermission` is the first thing the action does, so this is the
+      // capability talking and not visibility.
+      expect((refused as { error: string }).error).toBe("forbidden");
+    }
+
+    const after = await gaindePayments(fileId);
+    expect(after.all, "no refused attempt left a row behind").toHaveLength(0);
+  });
+
   /**
    * UAT-STEP9-FINANCE-01 — THE EXACT CONDITION THAT BLOCKED PRODUCTION.
    *
@@ -593,40 +616,33 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
   it("step 9 — an IDENTICAL resubmission is refused, and the ledger does not churn", async () => {
     // What step 9 actually has to refuse: the same receipt, the same instant,
     // the same total, already live. A double click, not a second payment.
+    //
+    // Asserted against the RPC DIRECTLY, because that is where the guard lives
+    // and because the app layer can no longer reach it: completing step 9
+    // ends Finance douane's visibility of the dossier, so a call through
+    // `recordGaindeRegistration` here would be refused `forbidden` before it
+    // ever got near the duplicate check — a pass for the wrong reason.
     const customsId = await customsIdFor(fileId);
     const live = (await gaindePayments(fileId)).live;
     expect(live).toHaveLength(1);
 
-    const repeat = await as(customsFinance, () =>
-      recordGaindeRegistration(
-        customsId,
-        DECLARATION_REF,
-        gaindeTaxPayment(live[0].quittance_reference as string),
-      ),
-    );
-    expect(repeat.ok, "an identical live payment must be refused").toBe(false);
-    expect((repeat as { error: string }).error).toBe("payment_unchanged");
+    const payment = gaindeTaxPayment(live[0].quittance_reference as string);
+    const { error } = await db().rpc("record_gainde_registration", {
+      p_customs_id: customsId,
+      p_reference: DECLARATION_REF,
+      p_actor: customsFinance.id,
+      p_paid_at: payment.paidAt,
+      p_currency: payment.currency,
+      p_quittance: payment.quittance,
+      p_lines: payment.lines,
+    } as never);
+    expect(error, "an identical live payment must be refused").toBeTruthy();
+    expect((error?.message ?? "").split(":")[0].trim()).toBe("payment_unchanged");
 
     const after = await gaindePayments(fileId);
     expect(after.live, "still exactly one live payment").toHaveLength(1);
     expect(after.all, "and nothing was voided or re-written").toHaveLength(1);
     expect(after.live[0].id).toBe(live[0].id);
-  });
-
-  it("step 9 — nobody without customs:register may record a payment", async () => {
-    const customsId = await customsIdFor(fileId);
-    const before = await gaindePayments(fileId);
-
-    for (const actor of [declarant, coordinator, transit]) {
-      const refused = await as(actor, () =>
-        recordGaindeRegistration(customsId, DECLARATION_REF, gaindeTaxPayment(`Q-NO-${Date.now()}`)),
-      );
-      expect(refused.ok, `${actor.id} must not record a Finance payment`).toBe(false);
-      expect((refused as { error: string }).error).toBe("forbidden");
-    }
-
-    const after = await gaindePayments(fileId);
-    expect(after.all, "no refused attempt left a row behind").toHaveLength(before.all.length);
   });
 
   it("once step 9 closes, Finance douane correctly stops seeing the dossier", async () => {
