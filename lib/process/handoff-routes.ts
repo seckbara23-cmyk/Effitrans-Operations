@@ -149,23 +149,53 @@ export function custodyStateFor(
   return "awaiting_transmission";
 }
 
+/** The engine error a custody state produces, or null when custody is satisfied. */
+export type CustodyRefusal = "handoff_reception_required" | "handoff_not_sent";
+
 /**
- * May work begin on this step, as far as CUSTODY is concerned? Returns the
- * engine error to fail with, or null when custody is satisfied.
+ * THE custody decision. One rule, one implementation, taking the custody STATE
+ * so that both the writers and the readers can reach it.
+ *
+ * UAT-STEP10-HANDOFF-01. This existed only in the handoff-row form below, so
+ * `step-eligibility` — which holds a `CustodyState` and no rows — re-derived it
+ * and got it wrong: it blocked on `awaiting_transmission` for EVERY routed
+ * step, ignoring `requiresReception`. Three of the four routes set that flag
+ * FALSE deliberately (see the header: turning it on would strand any in-flight
+ * dossier that reached its target by promotion), so for those three the UI was
+ * STRICTER THAN THE ENGINE and refused work the server would have accepted.
+ *
+ * On EFT-IMP-2026-00011 that is what made official step 10 — Coordination's
+ * return of the dossier to the Déclarant, AVAILABLE and unclaimed, its
+ * prerequisite complete — render « Bloquée » with « Le dossier doit d'abord
+ * être formellement transmis au service suivant. » while `activateStep` would
+ * have accepted it. `custodyRefusal` said null and the card said blocked.
  *
  * A route that does not require reception keeps the historical rule: refused
  * only while a transfer is outstanding.
  */
-export function custodyRefusal(
+export function custodyRefusalForState(
   toStepKey: string,
-  handoffs: readonly RouteHandoffView[],
-): "handoff_reception_required" | "handoff_not_sent" | null {
+  custody: CustodyState,
+): CustodyRefusal | null {
   const route = routeTo(toStepKey);
   if (!route) return null;
-  const custody = custodyStateFor(toStepKey, handoffs);
   if (custody === "awaiting_reception") return "handoff_reception_required";
   if (custody === "awaiting_transmission" && route.requiresReception) return "handoff_not_sent";
   return null;
+}
+
+/**
+ * May work begin on this step, as far as CUSTODY is concerned? Returns the
+ * engine error to fail with, or null when custody is satisfied.
+ *
+ * The row-reading form, for callers that hold handoffs. It DELEGATES: the rule
+ * itself lives in `custodyRefusalForState` and exists exactly once.
+ */
+export function custodyRefusal(
+  toStepKey: string,
+  handoffs: readonly RouteHandoffView[],
+): CustodyRefusal | null {
+  return custodyRefusalForState(toStepKey, custodyStateFor(toStepKey, handoffs));
 }
 
 // ============================================================ Transit custody ====

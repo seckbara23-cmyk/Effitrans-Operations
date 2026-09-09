@@ -15,10 +15,19 @@
  * from where they actually were — the same reachability defect class as the
  * intake surface (UAT-15c) and provider editing (UAT-17).
  *
- * Three states, and only three:
+ * Four states:
+ *   received  → « Dossier reçu par le Transit », NO action
  *   sent      → « Dossier transmis au Transit — réception à confirmer », NO action
  *   blocked   → the unmet prerequisites, named, NO action
  *   ready     → the button
+ *
+ * UAT-STEP10-HANDOFF-01 — the first two used to be one. `handoffSent` collapses
+ * SENT and RECEIVED, so a dossier the Chef de Transit had accepted still read
+ * « réception à confirmer » forever. On EFT-IMP-2026-00011 the Chef accepted it
+ * on 2026-09-06 and the banner was still saying so at step 10, where it read
+ * like an outstanding custody transfer holding the Coordinator up. It holds
+ * nothing up — no code path connects it to any step's eligibility — but a
+ * surface that states a false fact costs a UAT cycle all the same.
  * Client ownership (Responsable client) is never touched: this is a DEPARTMENTAL
  * handoff, and the commercial owner panel above it is the only thing that moves
  * that seat.
@@ -54,12 +63,15 @@ export type TransitHandoffPrereq = HandoffPrerequisite;
 export function TransitHandoff({
   fileId,
   handoffSent,
+  handoffReceived = false,
   canSend,
   prerequisites,
   firstActionable = null,
 }: {
   fileId: string;
   handoffSent: boolean;
+  /** The Transit has ACCEPTED it. Reception is no longer outstanding. */
+  handoffReceived?: boolean;
   canSend: boolean;
   /** Unmet prerequisites, already resolved server-side. Empty ⇒ transmissible. */
   prerequisites: TransitHandoffPrereq[];
@@ -70,6 +82,21 @@ export function TransitHandoff({
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [refusal, setRefusal] = useState<{ unmet: HandoffPrerequisite[]; firstActionable: ActionableStep | null } | null>(null);
+
+  // RECEIVED — the transfer is complete. Said once, in the past tense, and
+  // never again as something still owed.
+  if (handoffReceived) {
+    return (
+      <section className="surface border-teal-200 bg-teal-50/60 p-4" aria-label="Transmission au Transit">
+        <p className="text-sm font-medium text-navy-900">
+          Dossier reçu par le Transit
+        </p>
+        <p className="mt-0.5 text-xs text-slate-600">
+          La remise des Opérations au Transit est terminée. Le Transit peut exécuter son périmètre.
+        </p>
+      </section>
+    );
+  }
 
   // TRANSMITTED — terminal for this surface. The action is not merely disabled,
   // it is absent: a dossier already handed over must never offer to hand over.

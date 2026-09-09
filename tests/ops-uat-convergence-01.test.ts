@@ -542,14 +542,30 @@ describe("one canonical next action", () => {
     // not been received: « Travail en cours » would be telling them their own
     // work belongs to another. `claimedByAnother` is the evaluator's verdict and
     // is the only thing that may say that.
+    // UAT-STEP10-HANDOFF-01 — on a step a route actually targets. No route
+    // targets `customs_preparation`, so the old fixture's custody state was
+    // one `custodyStateFor` can never return for it.
+    const RECEIVER = {
+      userId: DECLARANT.userId,
+      // Step 4's own declared permission — `mayAct` asks for exactly this, so a
+      // viewer without it would read « observer » for the wrong reason.
+      permissions: ["process:handoff:receive", "process:handoff:send"],
+      roles: ["CUSTOMS_DECLARANT"],
+    };
     const mine = work([
       node({
-        stepKey: "customs_preparation",
+        stepKey: "coordinator_reception",
         state: "ACTIVE",
         assigneeLabel: "Moi",
         eligibility: evaluateStepAction(
-          facts({ state: "ACTIVE", assignedUserId: DECLARANT.userId, custody: "awaiting_reception" }),
-          DECLARANT,
+          facts({
+            stepKey: "coordinator_reception",
+            owningRole: "CUSTOMS_DECLARANT",
+            state: "ACTIVE",
+            assignedUserId: RECEIVER.userId,
+            custody: "awaiting_reception",
+          }),
+          RECEIVER,
         ),
       }),
     ]);
@@ -602,12 +618,26 @@ describe("transport — two acts, two names", () => {
     expect(notMine.canStart).toBe(false);
     expect(contextualStatus("AVAILABLE", notMine).key).toBe("autre_service");
     expect(contextualStatus("AVAILABLE", notMine).labelFr).not.toBe("Bloquée");
-    // Genuinely stopped work still reads Bloquée.
+    // Genuinely stopped work still reads Bloquée — on a step a route targets,
+    // which `transport_assignment` is not (UAT-STEP10-HANDOFF-01).
     const stopped = evaluateStepAction(
-      facts({ stepKey: "transport_assignment", state: "AVAILABLE", owningRole: "TRANSPORT_OFFICER", custody: "awaiting_reception" }),
+      facts({ stepKey: "coordinator_reception", state: "AVAILABLE", owningRole: "TRANSPORT_OFFICER", custody: "awaiting_reception" }),
       TRANSPORT,
     );
     expect(contextualStatus("AVAILABLE", stopped).key).toBe("bloquee");
+    // …and a custody state that stops NOTHING does not read Bloquée. Step 10
+    // was doing exactly that to its own Coordinator.
+    const notStopped = evaluateStepAction(
+      facts({
+        stepKey: "coordinator_to_declarant",
+        state: "AVAILABLE",
+        owningRole: "COORDINATOR",
+        custody: "awaiting_transmission",
+      }),
+      { userId: "u-coord", permissions: ["process:handoff:send"], roles: ["COORDINATOR"] },
+    );
+    expect(contextualStatus("AVAILABLE", notStopped).key).not.toBe("bloquee");
+    expect(contextualStatus("AVAILABLE", notStopped).key).toBe("a_votre_tour");
   });
 
   it("23 — the two business acts have distinct labels and distinct authorities", () => {

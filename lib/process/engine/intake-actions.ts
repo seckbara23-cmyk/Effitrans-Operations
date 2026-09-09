@@ -230,7 +230,17 @@ export type IntakeState = {
   validation: IntakeValidation;
   hasInstance: boolean;
   owner: { name: string; roleLabel: string | null; departmentLabel: string | null; email: string; assignedAt: string | null } | null;
+  /** The dossier HAS been handed to Transit — sent, whether or not accepted. */
   handoffSent: boolean;
+  /**
+   * …and the Transit has ACCEPTED it. UAT-STEP10-HANDOFF-01: the surface had
+   * only `handoffSent`, which collapses SENT and RECEIVED, so a dossier the
+   * Chef de Transit accepted on day one went on saying « réception à
+   * confirmer » for the rest of its life. On EFT-IMP-2026-00011 that banner
+   * was still on screen at step 10 and read like an outstanding custody
+   * transfer blocking the Coordinator. It blocks nothing; it was simply wrong.
+   */
+  handoffReceived: boolean;
   /** D-2 — official step 3 done? Drives the « prérequis » list on the dossier. */
   amOpeningDone: boolean;
   /**
@@ -268,6 +278,7 @@ export async function getIntakeState(fileId: string, diag?: IntakeDiag): Promise
     let owner: IntakeState["owner"] = null;
     let openBlockers: IntakeState["openBlockers"] = [];
     let handoffSent = false;
+    let handoffReceived = false;
     let amOpeningDone = false;
     let steps: IntakeState["steps"] = [];
 
@@ -323,6 +334,9 @@ export async function getIntakeState(fileId: string, diag?: IntakeDiag): Promise
       handoffSent = (snap?.handoffs ?? []).some(
         (h) => h.toStepKey === "coordinator_reception" && (h.status === "SENT" || h.status === "RECEIVED"),
       );
+      handoffReceived = (snap?.handoffs ?? []).some(
+        (h) => h.toStepKey === "coordinator_reception" && h.status === "RECEIVED",
+      );
       steps = (snap?.executions ?? []).map((e) => ({ stepKey: e.stepKey, state: e.state }));
     }
 
@@ -351,6 +365,7 @@ export async function getIntakeState(fileId: string, diag?: IntakeDiag): Promise
       steps,
       owner,
       handoffSent,
+      handoffReceived,
       openBlockers,
     };
   } catch (e) {

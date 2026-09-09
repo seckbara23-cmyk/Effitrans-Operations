@@ -233,7 +233,14 @@ describe("UAT-WF-HANDOFF-01B — the display says where custody stands", () => {
                           "awaiting_reception", "blocked", "pending"]) {
       expect(panel, status).toContain(`${status}:`);
     }
-    expect(panel).toContain('"À transmettre au Transit"');
+    // UAT-STEP10-HANDOFF-01 — THE LABEL NAMES NO SERVICE. It read
+    // « À transmettre au Transit » for every outstanding transfer, and three
+    // of the four governed routes have nothing to do with the Transit: T7
+    // spans steps 10 and 11, whose custody runs Finance → Coordination →
+    // Déclarant. The route names itself, through `custodyRouteLabelFr`.
+    expect(panel).toContain('"À transmettre"');
+    expect(panel).not.toContain('"À transmettre au Transit"');
+    expect(panel).toContain("custodyRouteLabelFr");
     expect(panel).toContain('"En attente de réception"');
     expect(panel).toContain('"Disponible"');
   });

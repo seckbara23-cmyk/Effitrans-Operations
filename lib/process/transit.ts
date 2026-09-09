@@ -16,7 +16,7 @@
  * not exist (tests validate every key against the registry).
  */
 import { isDone, isOpen, type StepState } from "./engine/types";
-import { custodyStateFor, type RouteHandoffView } from "./handoff-routes";
+import { custodyRefusal, routeTo, type RouteHandoffView } from "./handoff-routes";
 
 // ============================================================ T1–T10 stages ====
 
@@ -183,6 +183,20 @@ export type TransitExecutionView = { stepKey: string; state: StepState };
 
 export type TransitStageView = TransitStage & {
   status: TransitStageStatus;
+  /**
+   * UAT-STEP10-HANDOFF-01 — WHICH transfer this stage is waiting on, in the
+   * route's own words (« Retour de la Finance douane à la Coordination »,
+   * « Transmission des Opérations au Transit », …). Null unless the status is
+   * a custody one.
+   *
+   * The panel used to render a single hardcoded sentence, « À transmettre au
+   * Transit », for every `awaiting_transmission`. Three of the four governed
+   * routes have nothing to do with the Transit — T7 spans steps 10 and 11,
+   * whose custody runs Finance → Coordination → Déclarant — so on
+   * EFT-IMP-2026-00011 the projection announced a Transit transfer that no part
+   * of the workflow was waiting for.
+   */
+  custodyRouteLabelFr: string | null;
   /** True once the BAE authorization stage (T8 customs_field_clearance) is done. */
 };
 
@@ -210,26 +224,44 @@ export function deriveTransitStages(
   for (const e of executions) byKey.set(e.stepKey, e.state);
 
   return TRANSIT_STAGES.map((stage) => {
-    if (stage.stepKeys.length === 0) return { ...stage, status: "pending" as TransitStageStatus };
+    if (stage.stepKeys.length === 0) {
+      return { ...stage, status: "pending" as TransitStageStatus, custodyRouteLabelFr: null };
+    }
 
     const states = stage.stepKeys.map((k) => byKey.get(k)).filter((s): s is StepState => Boolean(s));
-    if (states.length === 0) return { ...stage, status: "pending" as TransitStageStatus };
+    if (states.length === 0) {
+      return { ...stage, status: "pending" as TransitStageStatus, custodyRouteLabelFr: null };
+    }
 
     let status: TransitStageStatus;
+    let custodyRouteLabelFr: string | null = null;
     if (states.every((s) => isDone(s))) status = "done";
     else if (states.some((s) => s === "BLOCKED")) status = "blocked";
     else if (states.some((s) => s === "ACTIVE" || s === "SUBMITTED")) status = "active";
     else if (states.some((s) => isOpen(s))) {
-      // Open but unstarted. If a governed custody route targets one of these
+      // Open but unstarted. If a governed custody route STOPS one of these
       // steps, say where the transfer stands instead of calling it progress.
-      const awaiting = stage.stepKeys
-        .filter((k) => { const st = byKey.get(k); return st !== undefined && isOpen(st) && !isDone(st); })
-        .map((k) => custodyStateFor(k, handoffs));
-      if (awaiting.includes("awaiting_transmission")) status = "awaiting_transmission";
-      else if (awaiting.includes("awaiting_reception")) status = "awaiting_reception";
-      else status = "available";
+      //
+      // UAT-STEP10-HANDOFF-01 — asks `custodyRefusal`, not the raw state. An
+      // `awaiting_transmission` on a route that does not require reception
+      // stops nothing, and reporting it made T7 announce a transfer the
+      // workflow was not waiting for while step 10 was perfectly startable.
+      const open = stage.stepKeys.filter((k) => {
+        const st = byKey.get(k);
+        return st !== undefined && isOpen(st) && !isDone(st);
+      });
+      const stopped = open
+        .map((k) => ({ key: k, refusal: custodyRefusal(k, handoffs) }))
+        .filter((x) => x.refusal !== null);
+      const notSent = stopped.find((x) => x.refusal === "handoff_not_sent");
+      const notReceived = stopped.find((x) => x.refusal === "handoff_reception_required");
+      const waiting = notSent ?? notReceived ?? null;
+      if (waiting) {
+        status = notSent ? "awaiting_transmission" : "awaiting_reception";
+        custodyRouteLabelFr = routeTo(waiting.key)?.labelFr ?? null;
+      } else status = "available";
     } else status = "pending";
-    return { ...stage, status };
+    return { ...stage, status, custodyRouteLabelFr };
   });
 }
 

@@ -153,21 +153,59 @@ describe("evidence blocks completion, derived by the evaluator and not by a call
 // ===========================================================================
 
 describe("custody is a state, not a boolean", () => {
+  /**
+   * UAT-STEP10-HANDOFF-01 — THESE NOW USE A STEP THAT ACTUALLY HAS A ROUTE.
+   *
+   * They used to set a custody state on `customs_preparation`, which no route
+   * targets: `custodyStateFor` returns `not_applicable` for it and the
+   * platform can never produce the fixture. The old evaluator blocked on the
+   * bare state, so the tests passed on a state that cannot exist — and went on
+   * passing while the rule they protect was wrong for three of the four real
+   * routes. Step 4 `coordinator_reception` is the route that requires
+   * reception, so it is where the strict rule genuinely applies.
+   */
+  const routed = (over: Partial<StepActionFacts> = {}) =>
+    step6({ stepKey: "coordinator_reception", owningRole: "CHIEF_OF_TRANSIT", ...over });
+  const CHIEF = { userId: ME.userId, permissions: ["customs:assign"], roles: ["CHIEF_OF_TRANSIT"] };
+
   it("05 — awaiting_reception blocks, and says the transfer must be accepted", () => {
-    const el = evaluateStepAction(step6({ custody: "awaiting_reception" }), ME);
+    const el = evaluateStepAction(routed({ custody: "awaiting_reception" }), CHIEF);
     expect(el.canStart).toBe(false);
     expect(el.awaitingReception).toBe(true);
     expect(el.reasonFr).toContain("réceptionné");
   });
 
-  it("06 — awaiting_transmission ALSO blocks, and says something different", () => {
+  it("06 — awaiting_transmission blocks WHERE THE ROUTE REQUIRES RECEPTION", () => {
     // The half a boolean could not express. The engine refuses this with
     // `handoff_not_sent`, and the surface used to offer the button anyway.
-    const el = evaluateStepAction(step6({ custody: "awaiting_transmission" }), ME);
+    const el = evaluateStepAction(routed({ custody: "awaiting_transmission" }), CHIEF);
     expect(el.canStart).toBe(false);
     expect(el.awaitingReception).toBe(false);
     expect(el.reasonFr).toContain("transmis");
     expect(el.reasonFr).not.toContain("réceptionné");
+  });
+
+  it("06b — …and does NOT block where the route does not require it", () => {
+    /**
+     * THE STEP-10 DEFECT. `gainde_registration → coordinator_to_declarant` is
+     * `requiresReception: false`, exactly so that a target reached by
+     * promotion is not stranded. `custodyRefusal` returns null for it and
+     * `activateStep` accepts the work; the surface refused it anyway and told
+     * the Coordinator « Le dossier doit d'abord être formellement transmis au
+     * service suivant. » on EFT-IMP-2026-00011.
+     */
+    const coord = { userId: ME.userId, permissions: ["process:handoff:send"], roles: ["COORDINATOR"] };
+    const el = evaluateStepAction(
+      step6({
+        stepKey: "coordinator_to_declarant",
+        owningRole: "COORDINATOR",
+        custody: "awaiting_transmission",
+      }),
+      coord,
+    );
+    expect(el.canStart, "step 10 must be startable by its Coordinator").toBe(true);
+    expect(el.custodyRefusal).toBeNull();
+    expect(el.reasonFr).toBeNull();
   });
 
   it("07 — received and not_applicable do not block", () => {

@@ -49,11 +49,23 @@ const STATUS_LABEL: Record<string, string> = {
   done: "Terminé",
   active: "En cours",
   available: "Disponible",
-  awaiting_transmission: "À transmettre au Transit",
+  // UAT-STEP10-HANDOFF-01 — no service is named here any more. This read
+  // « À transmettre au Transit » for every outstanding transfer, and three of
+  // the four governed routes have nothing to do with the Transit: T7 spans
+  // steps 10 and 11, whose custody runs Finance → Coordination → Déclarant.
+  // The route names itself through `custodyRouteLabelFr` below.
+  awaiting_transmission: "À transmettre",
   awaiting_reception: "En attente de réception",
   blocked: "Bloqué",
   pending: "En attente",
 };
+
+/** The status, and — for a custody one — WHICH transfer, in the route's words. */
+function stageStatusLabel(status: string, routeLabelFr: string | null): string {
+  const base = STATUS_LABEL[status] ?? status;
+  const custody = status === "awaiting_transmission" || status === "awaiting_reception";
+  return custody && routeLabelFr ? `${base} — ${routeLabelFr}` : base;
+}
 
 const CUSTOMER_STAGE_FR: Record<string, string> = {
   documents_verification: "Documents en vérification",
@@ -166,7 +178,7 @@ export function TransitPanel({
               </p>
             </div>
             <span className={`shrink-0 rounded border px-2 py-0.5 text-[11px] font-medium ${STATUS_TONE[s.status]}`}>
-              {STATUS_LABEL[s.status]}
+              {stageStatusLabel(s.status, s.custodyRouteLabelFr)}
             </span>
           </li>
         ))}

@@ -31,6 +31,10 @@ import {
   recordDeclarationReference, updateCustoms,
 } from "@/lib/customs/actions";
 import { assertControlStep } from "@/lib/process/control-gate-server";
+import { getDossierWork } from "@/lib/process/work-service";
+import { evaluateStepAction } from "@/lib/process/step-eligibility";
+import { getEffectivePermissions } from "@/lib/rbac/permissions";
+import { contextualStatus } from "@/lib/process/contextual/view";
 import { getControlVerdicts } from "@/lib/process/control-ownership-server";
 
 let ops: CurrentUser;            // OPS_SUPERVISOR — customs:validate (independent checker)
@@ -132,6 +136,14 @@ function expectRendersEnabled(
   expect(v.reasonCode).toBeNull();
   expect(v.reasonFr, "an enabled control shows no refusal sentence").toBeNull();
 }
+
+/**
+ * A viewer's REAL permissions, resolved the way the page resolves them.
+ *
+ * The rendered verdict depends on them, so a fixture list would prove only
+ * that the fixture agrees with itself.
+ */
+const permissionsOf = (userId: string) => getEffectivePermissions(userId);
 
 /** The activation audit for a step must name the actor who caused it. */
 async function assertActivationAttributedTo(stepKey: string, actorId: string) {
@@ -674,6 +686,63 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     // (evaluateClearanceLive) are satisfiable in this journey. The fallback may
     // still be reached for a different reason, which is a separate question
     // from the C-2 regression and is recorded rather than assumed away.
+  });
+
+  /**
+   * UAT-STEP10-HANDOFF-01 — WHAT THE COORDINATOR ACTUALLY SEES after step 9.
+   *
+   * This journey drove step 10 straight through `activateStep`/`submitStep`
+   * and never read the surface, so it stayed green for weeks while the
+   * dossier page rendered step 10 « Bloquée » with « Le dossier doit d'abord
+   * être formellement transmis au service suivant. » and the Coordinator had
+   * no button at all. The engine was right; the read model was not. So this
+   * asserts the RENDERED verdict, through the same `getDossierWork` the
+   * dossier page and /process both call — before any action is taken.
+   */
+  it("step 10 — the Coordinator SEES an actionable step, not « Bloquée »", async () => {
+    expect((await execution(fileId, "coordinator_to_declarant"))?.state).toBe("AVAILABLE");
+
+    const view = await getDossierWork(fileId, {
+      tenantId: coordinator.tenantId,
+      userId: coordinator.id,
+      permissions: await permissionsOf(coordinator.id),
+      roles: coordinator.roles ?? [],
+    });
+    const step10 = view?.dossier.steps.find((n) => n.facts.stepKey === "coordinator_to_declarant");
+    expect(step10, "step 10 must be part of the dossier's work").toBeTruthy();
+
+    // The verdict the page renders, from the same evaluator the page uses.
+    const el = evaluateStepAction(step10!.facts, {
+      userId: coordinator.id,
+      permissions: await permissionsOf(coordinator.id),
+      roles: coordinator.roles ?? [],
+    });
+    expect(el.canStart, `step 10 must be startable: ${JSON.stringify(el)}`).toBe(true);
+    expect(el.custodyRefusal, "no custody transfer is owed here").toBeNull();
+    expect(el.reasonFr).toBeNull();
+
+    const status = contextualStatus("AVAILABLE", el);
+    expect(status.labelFr).not.toBe("Bloquée");
+    expect(status.key).toBe("a_votre_tour");
+
+    // And the Déclarant is not offered step 11 yet — governance intact.
+    const asDeclarant = await getDossierWork(fileId, {
+      tenantId: declarant.tenantId,
+      userId: declarant.id,
+      permissions: await permissionsOf(declarant.id),
+      roles: declarant.roles ?? [],
+    });
+    const s11 = asDeclarant?.dossier.steps.find(
+      (n) => n.facts.stepKey === "gainde_document_submission",
+    );
+    const s11el = s11
+      ? evaluateStepAction(s11.facts, {
+          userId: declarant.id,
+          permissions: await permissionsOf(declarant.id),
+          roles: declarant.roles ?? [],
+        })
+      : null;
+    expect(s11el?.canStart ?? false, "step 11 is not open yet").toBe(false);
   });
 
   it("step 10 — Coordination hands it back to the declarant", async () => {

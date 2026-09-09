@@ -56,7 +56,12 @@ import { stepPermission } from "./engine/state";
 // The PURE check module, not the server-side permissions facade: this file
 // is read by client components and must not drag a React cache() into them.
 import { hasPermission } from "@/lib/rbac/check";
-import { ASSIGNMENT_OWNED_STEPS, type CustodyState } from "./handoff-routes";
+import {
+  ASSIGNMENT_OWNED_STEPS,
+  custodyRefusalForState,
+  type CustodyRefusal,
+  type CustodyState,
+} from "./handoff-routes";
 import { evaluateControlOwnership } from "./control-ownership";
 import {
   blocksCompletion,
@@ -144,6 +149,13 @@ export type StepEligibility = {
   /** Claimed by somebody else — see the CLAIM note in `evaluateStepAction`. */
   claimedByAnother: boolean;
   custody: CustodyState;
+  /**
+   * WHY custody stops this step, or null when it does not — the engine's own
+   * verdict, from `custodyRefusalForState`. Read it rather than re-deriving
+   * from `custody`: three of the four routes set `requiresReception: false`,
+   * and `awaiting_transmission` on those does NOT block (UAT-STEP10-HANDOFF-01).
+   */
+  custodyRefusal: CustodyRefusal | null;
   /** Kept for callers that only ask the old question. */
   awaitingReception: boolean;
   /** Out of scope for this dossier. Never « missing », never blocking. */
@@ -207,10 +219,16 @@ export function evaluateStepAction(
     facts.assignedUserId !== viewer.userId &&
     (facts.state === "ACTIVE" || ASSIGNMENT_OWNED_STEPS.has(facts.stepKey));
 
-  // CUSTODY. Both outstanding states stop work, and they stop it for different
-  // reasons; `custodyRefusal` is the engine's version of this same test.
-  const custodyBlocked =
-    facts.custody === "awaiting_reception" || facts.custody === "awaiting_transmission";
+  // CUSTODY — asked of the ENGINE'S rule, not of a copy of it.
+  //
+  // UAT-STEP10-HANDOFF-01. This used to read « awaiting_reception OR
+  // awaiting_transmission », which is the rule for a route that REQUIRES
+  // reception. Three of the four routes deliberately do not, so on those this
+  // refused work `activateStep` would have accepted — the UI stricter than the
+  // server, which the contract at the top of this file forbids. Step 10 of
+  // EFT-IMP-2026-00011 was unstartable for the Coordinator because of it.
+  const custodyRefusalCode = custodyRefusalForState(facts.stepKey, facts.custody);
+  const custodyBlocked = custodyRefusalCode !== null;
 
   // EVIDENCE. Derived HERE, from the items, rather than trusted from a caller's
   // pre-rendered sentence — which is how two surfaces came to hold two opinions.
@@ -256,6 +274,7 @@ export function evaluateStepAction(
     isOwner,
     claimedByAnother,
     custody: facts.custody,
+    custodyRefusal: custodyRefusalCode,
     awaitingReception: facts.custody === "awaiting_reception",
     notApplicable,
     unauthorized,
@@ -268,7 +287,7 @@ export function evaluateStepAction(
       mayAct,
       isOwner,
       claimedByAnother,
-      custodyBlocked,
+      custodyRefusalCode,
       unauthorized,
       requirements,
       prerequisitesUnmet,
@@ -284,7 +303,7 @@ function reasonFor(input: {
   mayAct: boolean;
   isOwner: boolean;
   claimedByAnother: boolean;
-  custodyBlocked: boolean;
+  custodyRefusalCode: CustodyRefusal | null;
   unauthorized: boolean;
   requirements: StepRequirementView[];
   prerequisitesUnmet: boolean;
@@ -292,7 +311,7 @@ function reasonFor(input: {
   canSubmit: boolean;
 }): string | null {
   const {
-    facts, notApplicable, mayAct, isOwner, claimedByAnother, custodyBlocked, unauthorized,
+    facts, notApplicable, mayAct, isOwner, claimedByAnother, custodyRefusalCode, unauthorized,
     requirements, prerequisitesUnmet, canStart, canSubmit,
   } = input;
   if (canStart || canSubmit) return null;
@@ -300,9 +319,14 @@ function reasonFor(input: {
   // document is missing from work Effitrans is not doing would be noise.
   if (notApplicable) return notApplicable.reasonFr;
   if (!OFFERABLE.has(facts.state)) return null; // nothing to explain yet
-  // Order is what an operator can act on first.
-  if (facts.custody === "awaiting_reception") return "Le transfert doit d'abord être réceptionné.";
-  if (facts.custody === "awaiting_transmission" && custodyBlocked) {
+  // Order is what an operator can act on first. Both sentences are spoken from
+  // the REFUSAL, never from the raw state: an `awaiting_transmission` that does
+  // not block has nothing to say, and saying it anyway is what put « Bloquée »
+  // on a step the server would have run.
+  if (custodyRefusalCode === "handoff_reception_required") {
+    return "Le transfert doit d'abord être réceptionné.";
+  }
+  if (custodyRefusalCode === "handoff_not_sent") {
     return "Le dossier doit d'abord être formellement transmis au service suivant.";
   }
   if (prerequisitesUnmet || facts.blockedReason) {

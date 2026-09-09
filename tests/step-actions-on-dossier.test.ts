@@ -114,12 +114,19 @@ describe("UAT-WF-STEP3-001 — one derivation decides what a surface offers", ()
   });
 
   it("an outstanding handoff blocks execution, whoever is looking", () => {
+    // UAT-STEP10-HANDOFF-01 — on a step a route ACTUALLY targets. `step3`
+    // (`am_dossier_opening`) is a route's SOURCE, never its target, so
+    // `custodyStateFor` can only ever answer `not_applicable` for it: the old
+    // fixture described a state the platform cannot produce, and passed
+    // because the evaluator read the bare state instead of the route.
+    const handedOver = (over = {}) =>
+      step3({ stepKey: "coordinator_reception", owningRole: "ACCOUNT_MANAGER", ...over });
     for (const viewer of [AM, OTHER_AM, SUPERVISOR]) {
-      const el = evaluateStepAction(step3({ custody: "awaiting_reception" as const }), viewer);
+      const el = evaluateStepAction(handedOver({ custody: "awaiting_reception" as const }), viewer);
       expect(el.canStart, "start").toBe(false);
       expect(el.canSubmit, "submit").toBe(false);
     }
-    expect(evaluateStepAction(step3({ custody: "awaiting_reception" as const }), AM).reasonFr)
+    expect(evaluateStepAction(handedOver({ custody: "awaiting_reception" as const }), AM).reasonFr)
       .toBe("Le transfert doit d'abord être réceptionné.");
   });
 

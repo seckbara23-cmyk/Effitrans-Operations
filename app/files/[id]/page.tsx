@@ -475,6 +475,7 @@ export default async function FileDetailPage({ params }: { params: { id: string 
         <TransitHandoff
           fileId={file.id}
           handoffSent={intakeState.handoffSent}
+          handoffReceived={intakeState.handoffReceived}
           canSend={canSendToTransit}
           prerequisites={transitReadiness?.unmet ?? []}
           firstActionable={transitReadiness?.firstActionable ?? null}

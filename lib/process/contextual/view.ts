@@ -86,8 +86,14 @@ function statusKey(state: string, e: StepEligibility): ContextualStatusKey {
   // healthy step 14 read « Bloquée » to a Déclarant. A step waiting for its own
   // department is progressing normally; only custody and an outstanding
   // BLOCKING requirement genuinely stop it.
-  const custodyStopped =
-    e.custody === "awaiting_reception" || e.custody === "awaiting_transmission";
+  //
+  // UAT-STEP10-HANDOFF-01 — read the VERDICT, not the state. This asked the raw
+  // custody state and so called « Bloquée » on every routed step awaiting
+  // transmission, including the three routes that do not require reception and
+  // that the engine happily runs. Step 10 of EFT-IMP-2026-00011 read
+  // « Bloquée » to its own Coordinator while `activateStep` would have
+  // accepted it. `custodyRefusal` is null exactly when custody stops nothing.
+  const custodyStopped = e.custodyRefusal !== null;
   if (custodyStopped || e.requirements.some((r) => r.blocking)) return "bloquee";
   if (e.claimedByAnother) return "en_cours";
   if (!e.isOwner || !e.mayAct) return "autre_service";
