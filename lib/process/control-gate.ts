@@ -77,10 +77,36 @@ export type ControlGateInput = {
   /** true when the dossier has an instance at all. */
   hasInstance: boolean;
   userId: string;
+  /**
+   * UAT-WF-STEP67-01 — the live state of the PREPARER step, when the control's
+   * owning step is the VALIDATOR half of a maker-checker pair. Absent (and
+   * ignored) for every other control.
+   *
+   * WHY THIS FACT BELONGS HERE. A validator step's execution row can never be
+   * open at the moment its checker is meant to act. Its prerequisite is the
+   * preparer step, `prerequisitesMet` demands the preparer be DONE, and the
+   * preparer only becomes COMPLETED when `approveStep` — the checker's own act
+   * — lands. So `promoteSuccessors` never promotes it and the row sits PENDING
+   * through the whole review, exactly as the engine intends: `approveStep`
+   * deliberately asks nothing about the validator row and everything about the
+   * preparer being SUBMITTED.
+   *
+   * The gate asked the other question. It read the validator row, found
+   * PENDING, and refused every checker control with « Cette étape n'est pas
+   * encore ouverte. » — permanently. On EFT-IMP-2026-00011 that stopped the
+   * Chef de Transit from validating a customs dossier the Déclarant had
+   * already submitted, with no other surface able to reach `approveStep`.
+   *
+   * A SUBMITTED preparer is therefore what makes a checker control actionable,
+   * and it is a NARROWING of nothing: the control still needs its permission,
+   * still needs the pair's own step, and self-validation is still refused by
+   * `evaluateMakerChecker`, by the action and by the RPC.
+   */
+  preparerState?: StepState | null;
 };
 
 export type ControlGateResult =
-  | { allowed: true; reason: "no_process_instance" | "step_open" }
+  | { allowed: true; reason: "no_process_instance" | "step_open" | "review_pending" }
   | {
       allowed: false;
       reason: "step_not_started" | "step_not_open" | "step_closed" | "assigned_to_another";
@@ -99,7 +125,16 @@ export type ControlGateResult =
 export function evaluateControlGate(input: ControlGateInput): ControlGateResult {
   if (!input.hasInstance) return { allowed: true, reason: "no_process_instance" };
   if (!input.step) return { allowed: false, reason: "step_not_started" };
-  if (!ACTIONABLE.includes(input.step.state)) {
+
+  // UAT-WF-STEP67-01 — a checker control whose maker has SUBMITTED. See
+  // `preparerState` above for why the validator row is PENDING at exactly this
+  // moment and can never be anything else. Only PENDING qualifies: a validator
+  // row that is COMPLETED, REJECTED, SKIPPED or CANCELLED is a finished review
+  // and stays `step_closed`.
+  const reviewPending =
+    input.preparerState === "SUBMITTED" && NOT_YET_OPEN.includes(input.step.state);
+
+  if (!reviewPending && !ACTIONABLE.includes(input.step.state)) {
     // UI-1 — "not yet" and "no longer" are different facts and get different
     // sentences. Conflating them told operators that untouched work was done.
     return NOT_YET_OPEN.includes(input.step.state)
@@ -109,7 +144,7 @@ export function evaluateControlGate(input: ControlGateInput): ControlGateResult 
   if (input.step.assignedUserId !== null && input.step.assignedUserId !== input.userId) {
     return { allowed: false, reason: "assigned_to_another" };
   }
-  return { allowed: true, reason: "step_open" };
+  return { allowed: true, reason: reviewPending ? "review_pending" : "step_open" };
 }
 
 /**
@@ -141,7 +176,9 @@ export const CONTROL_GATE_MESSAGE_FR: Record<string, string> = {
 };
 
 export function controlGateError(reason: ControlGateResult["reason"]): string {
-  if (reason === "no_process_instance" || reason === "step_open") return "forbidden";
+  if (reason === "no_process_instance" || reason === "step_open" || reason === "review_pending") {
+    return "forbidden";
+  }
   return `step_gate_${reason}`;
 }
 

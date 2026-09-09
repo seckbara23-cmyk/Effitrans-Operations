@@ -15,6 +15,7 @@ import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
 import { isFileVisible } from "@/lib/authz/visibility";
 import { assertControlStep } from "@/lib/process/control-gate-server";
+import { approveStep } from "@/lib/process/engine/actions";
 import { assertControlOwner } from "@/lib/process/control-ownership-server";
 import { gaindeLedgerAvailable } from "./schema-139";
 import { writeAudit } from "@/lib/audit/log";
@@ -781,6 +782,57 @@ export async function recordCustomsValidation(id: string): Promise<ActionResult>
     entityId: id,
     after: { reviewed_by: user.id },
   });
+
+  // UAT-WF-STEP67-01 — the SAME act, on the official process.
+  //
+  // This control IS the checker half of the registry's `customs_validation`
+  // pair (preparer step 6 `customs_preparation`, validator step 7
+  // `transit_validation`). Certifying the record and completing the pair were
+  // two facts with one door, and only the record half went through it: nothing
+  // in production ever called `approveStep` for this pair — only the journey
+  // tests did — so step 6 stayed SUBMITTED forever and step 8 never opened.
+  // On EFT-IMP-2026-00011 that is what stalled the dossier after the Déclarant
+  // pressed « Terminer ».
+  //
+  // Exactly the idiom `approveInvoice` uses for the billing pair. It grants
+  // nothing: `approveStep` re-authenticates, demands `customs:validate` (the
+  // permission already asserted above), re-checks the tenant and the dossier,
+  // and enforces maker != checker on IDENTITY — so a Déclarant reaching this
+  // line is refused by the engine as well as by the two authorship checks and
+  // the RPC.
+  //
+  // The result is KEPT. A discarded refusal here would leave the operator
+  // reading « validé » on a workflow that had not moved, which is precisely
+  // the divergence the audit below records.
+  const advanced = await approveStep(rec.file_id, "transit_validation");
+  // COMPATIBILITY, stated rather than hidden. The engine is flag-gated per
+  // tenant and dossiers predating it have no `process_instance` at all —
+  // exactly the population `assertControlStep` defers to the permission check
+  // for. Those refusals mean « there is no official pair on this dossier »,
+  // not « the pair failed to close », and failing the certification on them
+  // would take a working control away from every non-engine tenant. Every
+  // OTHER refusal is a genuine divergence and is reported as one.
+  const noOfficialPair =
+    !advanced.ok && (advanced.error === "engine_disabled" || advanced.error === "not_found");
+  if (!advanced.ok && !noOfficialPair) {
+    await writeAudit({
+      action: AuditActions.PROCESS_DISPATCH_NOT_ADVANCED,
+      actorId: user.id,
+      tenantId: user.tenantId,
+      entity: "customs_record",
+      entityId: id,
+      after: {
+        file_id: rec.file_id,
+        step_key: "transit_validation",
+        // The certification IS committed; the audit records that, not a denial.
+        customs_validated: true,
+        reason: advanced.error,
+      },
+    });
+    revalidate(rec.file_id);
+    return { ok: false, error: "step_completion_failed" };
+  }
+
   revalidate(rec.file_id);
   return { ok: true, id };
 }

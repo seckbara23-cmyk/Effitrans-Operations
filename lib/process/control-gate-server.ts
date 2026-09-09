@@ -10,6 +10,7 @@ import "server-only";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { scopedFrom } from "@/lib/db/tenant-scope";
 import type { StepState } from "./engine/types";
+import { preparerStepFor } from "./engine/state";
 import {
   CONTROL_OWNING_STEP,
   controlGateError,
@@ -47,12 +48,39 @@ export async function assertControlStep(
     return gateToError(evaluateControlGate({ step: null, hasInstance: false, userId }));
   }
 
+  // UAT-WF-STEP67-01 — when the owning step is the VALIDATOR half of a
+  // maker-checker pair, the PREPARER's state is part of the gate's fact set:
+  // the validator row is PENDING for the whole review by construction, so
+  // reading it alone refused every checker control forever. See
+  // `preparerState` in control-gate.ts. Loaded in the SAME query — one round
+  // trip, and no `.eq().eq()` cartesian surprise.
+  const preparerKey = preparerStepFor(stepKey);
+  const wantedKeys = preparerKey ? [stepKey, preparerKey] : [stepKey];
+
   const { data: execRows } = await scopedFrom(admin, "process_step_execution", tenantId)
-    .select("state, assigned_user_id")
+    .select("step_key, state, assigned_user_id")
     .eq("process_instance_id", instance.id as string)
-    .eq("step_key", stepKey)
-    .limit(1);
-  const exec = ((execRows ?? []) as Row[])[0];
+    .in("step_key", wantedKeys);
+  const rows = (execRows ?? []) as Row[];
+
+  /**
+   * The LIVE attempt for a step, the way `loadStep` defines it.
+   *
+   * A rejected review does not mutate its execution row: `rejectStep` freezes
+   * it and creates a NEW attempt (`correction_of_id`). So a corrected step has
+   * two rows, and the previous `.limit(1)` returned whichever the database
+   * offered first — which could be the frozen REJECTED one, and would then
+   * refuse the correction it is meant to allow with `step_closed`. The engine
+   * has always skipped REJECTED and CANCELLED here; the gate now does too.
+   */
+  const live = (key: string) =>
+    rows.find((r) => r.step_key === key && r.state !== "REJECTED" && r.state !== "CANCELLED") ??
+    rows.find((r) => r.step_key === key);
+
+  const exec = live(stepKey);
+  const preparerState = preparerKey
+    ? ((live(preparerKey)?.state ?? null) as StepState | null)
+    : null;
 
   return gateToError(
     evaluateControlGate({
@@ -61,6 +89,7 @@ export async function assertControlStep(
         ? { state: exec.state as StepState, assignedUserId: (exec.assigned_user_id as string) ?? null }
         : null,
       userId,
+      preparerState,
     }),
   );
 }

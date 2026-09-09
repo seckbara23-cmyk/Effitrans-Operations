@@ -647,6 +647,11 @@ export const t = {
       // cannot succeed.
       gainde_ledger_unavailable:
         "Cette fonction n'est pas encore disponible : la mise à jour de la base de données correspondante n'a pas encore été déployée.",
+      // UAT-WF-STEP67-01 — the certification landed and the official process
+      // did not follow. Says both halves, because inviting a retry on an act
+      // that is already recorded is what the generic sentence would do.
+      step_completion_failed:
+        "La validation est enregistrée, mais l'étape officielle n'a pas pu être clôturée. Signalez-le : le dossier reste en attente au niveau du processus.",
       generic: "L'action a échoué. Veuillez réessayer.",
     },
   },

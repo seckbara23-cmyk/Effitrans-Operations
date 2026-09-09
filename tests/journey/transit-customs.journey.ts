@@ -25,7 +25,10 @@ import { openDossierWorkflow, handDossierToTransit } from "@/lib/process/engine/
 import { submitStep, activateStep, approveStep, sendHandoff, receiveHandoff } from "@/lib/process/engine/actions";
 import { declareEvidenceAbsence } from "@/lib/process/evidence-absence-actions";
 import { receiveDossierAtTransit, assignTransitStep, recordBae, decideTransitRelease, finalizeTransitRelease } from "@/lib/process/engine/transit-actions";
-import { createCustoms, recordGaindeRegistration, changeCustomsStatus } from "@/lib/customs/actions";
+import {
+  createCustoms, recordGaindeRegistration, changeCustomsStatus, recordCustomsValidation,
+} from "@/lib/customs/actions";
+import { assertControlStep } from "@/lib/process/control-gate-server";
 
 let ops: CurrentUser;            // OPS_SUPERVISOR — customs:validate (independent checker)
 let am: CurrentUser;             // ACCOUNT_MANAGER
@@ -285,12 +288,55 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
 
   // ---------------------------------------------- 7. INDEPENDENT VALIDATION ----
 
+  /**
+   * UAT-WF-STEP67-01 — the CHECKER'S OWN DOOR must be open.
+   *
+   * This journey used to call `approveStep` directly, and that is why the
+   * defect reached UAT: the engine was proven and the surface the Chef de
+   * Transit actually presses was never exercised. That surface is
+   * `recordCustomsValidation`, gated by `assertControlStep("customs.validation")`
+   * — which reads the VALIDATOR step's row, finds PENDING (it cannot be
+   * anything else while the review is outstanding, because its own
+   * prerequisite is the preparer step it is reviewing) and refused every
+   * checker forever with « Cette étape n'est pas encore ouverte. »
+   *
+   * So the gate is asserted on the real rows, before anybody validates.
+   */
+  it("6→7 the checker's control is OPEN while step 6 is SUBMITTED and step 7 PENDING", async () => {
+    expect((await execution(fileId, "customs_preparation"))?.state).toBe("SUBMITTED");
+    expect(
+      (await execution(fileId, "transit_validation"))?.state,
+      "the validator row is PENDING for the whole review, by construction",
+    ).toBe("PENDING");
+
+    expect(
+      await assertControlStep("customs.validation", fileId, ops.tenantId, ops.id),
+      "a submitted maker must open its checker's control",
+    ).toBeNull();
+
+    // And the fix is NARROW: a PENDING step that is not the validator half of
+    // a maker-checker pair is still refused, with the same sentence as before.
+    expect(
+      (await execution(fileId, "customs_field_clearance"))?.state,
+      "step 13 has not been reached",
+    ).toBe("PENDING");
+    expect(
+      await assertControlStep("customs.bae", fileId, ops.tenantId, ops.id),
+      "an ordinary un-reached step gains nothing from this change",
+    ).toBe("step_gate_step_not_open");
+  });
+
   it("6→7 MAKER ≠ CHECKER — the preparer cannot validate its own work", async () => {
     const before = await execution(fileId, "customs_preparation");
 
     const refused = await as(transit, () => approveStep(fileId, "transit_validation"));
     expect(refused.ok, "the preparer must not approve itself").toBe(false);
     expect((refused as { error: string }).error).toBe("self_validation_forbidden");
+
+    // …and through the operator's own door, which now reaches the engine.
+    const customsId = await customsIdFor(fileId);
+    const atTheDoor = await as(transit, () => recordCustomsValidation(customsId));
+    expect(atTheDoor.ok, "the preparer must not validate from the panel either").toBe(false);
 
     // Nothing moved: not the preparer step, not the validator step.
     const after = await execution(fileId, "customs_preparation");
@@ -307,12 +353,22 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     const refused = await as(declarant, () => approveStep(fileId, "transit_validation"));
     expect(refused.ok).toBe(false);
     expect((refused as { error: string }).error).toBe("forbidden");
+
+    const customsId = await customsIdFor(fileId);
+    const atTheDoor = await as(declarant, () => recordCustomsValidation(customsId));
+    expect(atTheDoor.ok, "the Déclarant gains no validation authority").toBe(false);
+    expect((atTheDoor as { error: string }).error).toBe("forbidden");
+
     expect((await execution(fileId, "customs_preparation"))?.state).toBe("SUBMITTED");
   });
 
-  it("step 7 — an INDEPENDENT holder of customs:validate completes both steps", async () => {
-    const approved = await as(ops, () => approveStep(fileId, "transit_validation"));
-    expect(approved.ok, `approve: ${JSON.stringify(approved)}`).toBe(true);
+  it("step 7 — the CHEF's control completes both steps and opens step 8", async () => {
+    // The operator's act, not the engine's. One press certifies the customs
+    // record AND closes the maker-checker pair; before this slice it did only
+    // the first, so step 6 stayed SUBMITTED and step 8 never opened.
+    const customsId = await customsIdFor(fileId);
+    const approved = await as(ops, () => recordCustomsValidation(customsId));
+    expect(approved.ok, `validate: ${JSON.stringify(approved)}`).toBe(true);
 
     const prep = await execution(fileId, "customs_preparation");
     expect(prep?.state).toBe("COMPLETED");
