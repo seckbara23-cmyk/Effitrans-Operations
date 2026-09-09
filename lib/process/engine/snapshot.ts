@@ -274,8 +274,21 @@ export async function loadProcessSnapshot(
     };
   }
 
+  // UAT-STEP12-FIELD-AGENT-01 — step 12's ratified output is the Agent de
+  // Terrain named on step 13. Read from the executions already loaded, and only
+  // from a LIVE attempt: a rejected or cancelled row's assignee is not an
+  // assignment.
+  const fieldAgentAssignedUserId =
+    ((execRes.data ?? []) as Row[]).find(
+      (e) =>
+        e.step_key === "customs_field_clearance" &&
+        e.state !== "REJECTED" &&
+        e.state !== "CANCELLED",
+    )?.assigned_user_id as string | null | undefined ?? null;
+
   const evidence: EvidenceSnapshot = {
     fileType: file.type as string,
+    fieldAgentAssignedUserId,
     // `undefined` when the column was not projected, `null` when it exists and
     // nobody chose. `scopeFromRow` treats both as « never recorded » and falls
     // through to type derivation rather than asserting that Effitrans sells

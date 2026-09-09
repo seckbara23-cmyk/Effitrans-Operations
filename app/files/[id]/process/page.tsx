@@ -178,11 +178,18 @@ export default async function ProcessInspectorPage({ params }: { params: { id: s
   // the process instance are absent, so nothing here can break the inspector.
   let transit: TransitState | null = null;
   let eligibleDeclarants: TransitAssignee[] = [];
+  // UAT-STEP12-FIELD-AGENT-01 — the SAME reader, asked for the other role. No
+  // new eligibility rule: `listEligibleTransitAssignees` is already
+  // role-parameterised and already returns only active, same-tenant staff.
+  let eligibleFieldAgents: TransitAssignee[] = [];
   const canAssignTransit = hasPermission(permissions, "customs:assign");
   if (tenantFlags.transitExecution) {
     transit = await getTransitState(params.id);
     if (transit && canAssignTransit && !transit.declarant) {
       eligibleDeclarants = await listEligibleTransitAssignees("CUSTOMS_DECLARANT");
+    }
+    if (transit && canAssignTransit && !transit.fieldAgent) {
+      eligibleFieldAgents = await listEligibleTransitAssignees("CUSTOMS_FIELD_AGENT");
     }
   }
   const transitPanel = transit ? (
@@ -190,6 +197,7 @@ export default async function ProcessInspectorPage({ params }: { params: { id: s
       fileId={params.id}
       state={transit}
       eligibleDeclarants={eligibleDeclarants}
+      eligibleFieldAgents={eligibleFieldAgents}
       canReceive={hasPermission(permissions, "process:handoff:receive")}
       canAssign={canAssignTransit}
       canRequestDecision={hasPermission(permissions, "process:decision:create")}

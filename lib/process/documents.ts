@@ -116,6 +116,14 @@ export const DOCUMENT_MAPPINGS: DocumentMapping[] = [
     note: "UAT-STEP11-RECONCILE-01 — this note (« No submission evidence of any kind. ») was a Phase-5.0A AUDIT FINDING, true when nothing recorded the rattachement. MAYA-P1.11 and migration 20260828000001 then made the act itself durable: customs_record.attachment_completed_at / attachment_systems, attributed and dated. The key is now satisfied by THAT act (see engine/evidence.ts), and an upload of this type remains a second, equally valid proof — P1.11 ratified that « a screenshot is NEVER a precondition ».",
   },
   {
+    key: "FIELD_AGENT_ASSIGNMENT",
+    labelFr: "Affectation de l'Agent de Terrain",
+    typeCode: null,
+    status: "structured",
+    steps: ["customs_followup"],
+    note: "UAT-STEP12-FIELD-AGENT-01 — never an upload. Satisfied by the GOVERNED assignment: `customs_field_clearance.assigned_user_id`, written only by `assignTransitStep` (Transit custody + `customs:assign` + an ACTIVE, same-tenant, TRANSIT-mapped assignee, audited before AND after). The registry always declared this as step 12's completion rule (`field_agent_assigned`); nothing enforced it, so the step closed with nobody named and step 13 opened unassigned.",
+  },
+  {
     key: "BON_A_ENLEVER",
     labelFr: "Bon à Enlever (BAE)",
     typeCode: "BON_A_ENLEVER",

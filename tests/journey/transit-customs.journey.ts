@@ -820,10 +820,61 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     expect((await execution(fileId, "customs_followup"))?.state).toBe("AVAILABLE");
   });
 
-  it("step 12 — Coordination follows the declaration up", async () => {
-    await runStep(coordinator, "customs_followup");
+  /**
+   * UAT-STEP12-FIELD-AGENT-01 — step 12's ratified output, through its door.
+   *
+   * `runStep` used to close step 12 with nobody named, and step 13 opened
+   * unassigned — the governed « affecter l'Agent de Terrain » responsibility
+   * skipped in silence, and step 13's ownership left to whoever claimed it.
+   */
+  it("step 12 — refuses to close until an Agent de Terrain is named", async () => {
+    const started = await as(coordinator, () => activateStep(fileId, "customs_followup"));
+    expect(started.ok, `activate step 12: ${JSON.stringify(started)}`).toBe(true);
+
+    expect(
+      (await execution(fileId, "customs_field_clearance"))?.assigned_user_id,
+      "nobody is named yet",
+    ).toBeNull();
+
+    const premature = await as(coordinator, () => submitStep(fileId, "customs_followup"));
+    expect(premature.ok, "step 12 must refuse without a Field Agent").toBe(false);
+    expect((premature as { error: string }).error).toBe("evidence_missing");
+
+    // …and the SURFACE says so too, in the operator's words.
+    const el = await stepEligibility(fileId, "customs_followup", coordinator);
+    expect(el?.canSubmit).toBe(false);
+    expect(el?.reasonFr).toContain("Agent de Terrain");
+  });
+
+  it("step 12 — the Coordinator names the Agent de Terrain, then closes it", async () => {
+    // THE ASSIGNMENT DOOR: the one canonical writer, called exactly as the
+    // panel calls it. Not an execution-row write, not a second path.
+    const assigned = await as(coordinator, () =>
+      assignTransitStep(fileId, "customs_field_clearance", field.id),
+    );
+    expect(assigned.ok, `assign field agent: ${JSON.stringify(assigned)}`).toBe(true);
+
+    const s13 = await execution(fileId, "customs_field_clearance");
+    expect(s13?.assigned_user_id, "step 13 is bound to the named agent").toBe(field.id);
+
+    // The act is audited, and names BOTH sides of the move.
+    const events = await auditFor("process.step.assigned", s13!.id as string);
+    expect(events.length, "the assignment must be audited").toBeGreaterThan(0);
+    expect(events[0].actor_id, "attributed to the Coordinator").toBe(coordinator.id);
+
+    // Now — and only now — step 12 may close.
+    const done = await as(coordinator, () => submitStep(fileId, "customs_followup"));
+    expect(done.ok, `submit step 12: ${JSON.stringify(done)}`).toBe(true);
     expect((await execution(fileId, "customs_followup"))?.state).toBe("COMPLETED");
-    expect((await execution(fileId, "customs_field_clearance"))?.state).toBe("AVAILABLE");
+
+    // Step 13 opens, and it is STILL the named agent's.
+    const opened = await execution(fileId, "customs_field_clearance");
+    expect(opened?.state).toBe("AVAILABLE");
+    expect(opened?.assigned_user_id, "promotion must not clear the assignment").toBe(field.id);
+
+    // Another field agent cannot take it.
+    const stolen = await as(declarant, () => activateStep(fileId, "customs_field_clearance"));
+    expect(stolen.ok, "governed ownership is not claimable by anybody else").toBe(false);
   });
 
   it("step 13 — clearance refuses without a BAE, then the release closes it", async () => {

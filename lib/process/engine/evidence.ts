@@ -44,6 +44,12 @@ export type EvidenceItem = {
 export type EvidenceSnapshot = {
   fileType: string;
   /**
+   * UAT-STEP12-FIELD-AGENT-01 — the Agent de Terrain named on step 13
+   * (`customs_field_clearance.assigned_user_id`), which is step 12's ratified
+   * output. `undefined` where the caller did not project it.
+   */
+  fieldAgentAssignedUserId?: string | null;
+  /**
    * OPS-SERVICE-SCOPE-01 — the services Effitrans provides on this dossier, as
    * the operator chose them. `undefined` means the column was not projected
    * (schema 138/139); `null` means it exists and nobody chose. Both are « never
@@ -227,6 +233,33 @@ export function checkEvidence(key: string, snap: EvidenceSnapshot): EvidenceItem
     }
     // No recorded act — fall through to the document catalogue below, which is
     // exactly what every dossier satisfied by an upload already relies on.
+  }
+
+  // FIELD_AGENT_ASSIGNMENT — a GOVERNED ASSIGNMENT, never an upload.
+  //
+  // UAT-STEP12-FIELD-AGENT-01. Step 12 is « suivre le dossier en douane ET
+  // affecter l'Agent de Terrain », and the registry has always said so:
+  // `requiredEvidence: ["field_agent_id"]`, `completionRule:
+  // "field_agent_assigned"`. Neither was ever enforced — `evaluateStepEvidence`
+  // reads `requiredDocuments`, which was empty — so « Terminer » closed step 12
+  // with nobody named and opened step 13 unassigned. The governed
+  // responsibility of the step was silently skippable.
+  //
+  // The fact is `customs_field_clearance.assigned_user_id`, written by ONE
+  // writer (`assignTransitStep`) which checks Transit custody, the assigner's
+  // authority, and that the assignee is an ACTIVE, same-tenant, TRANSIT-mapped
+  // user — then audits before AND after. Nothing here re-implements any of
+  // that; this only asks whether that writer has run.
+  //
+  // Ratified 2026-09-09 (UAT-STEP12-FIELD-AGENT-01 J2) and DELIBERATELY NARROW:
+  // `requiredEvidence` stays documentary for the other 25 steps. Turning it
+  // into a gate everywhere would convert ~20 unexamined strings into blockers,
+  // which is exactly the leniency doctrine's warning.
+  if (key === "FIELD_AGENT_ASSIGNMENT") {
+    if (!snap.access.customs) return { key, labelFr, status: "unauthorized" };
+    return nonEmpty(snap.fieldAgentAssignedUserId ?? null)
+      ? { key, labelFr, status: "satisfied", detail: "field_agent_assigned" }
+      : { key, labelFr, status: "missing", detail: "no_field_agent" };
   }
 
   if (key === "BON_A_ENLEVER") {

@@ -205,6 +205,20 @@ export type TransitState = {
   stages: TransitStageView[];
   reception: { pending: boolean; received: boolean; handoffId: string | null };
   declarant: { name: string; roleLabel: string | null; departmentLabel: string | null } | null;
+  /**
+   * UAT-STEP12-FIELD-AGENT-01 — the Agent de Terrain named on step 13, which
+   * is official step 12's governed output. Read from the execution row and its
+   * `process.step.assigned` audit: the SAME facts the writer recorded, never a
+   * second business fact.
+   */
+  fieldAgent: {
+    name: string;
+    roleLabel: string | null;
+    departmentLabel: string | null;
+    /** Who named them, and when — from the assignment audit. */
+    assignedByName: string | null;
+    assignedAt: string | null;
+  } | null;
   dispatch: { teamCode: string | null; deterministic: boolean; suggestion: string | null };
   bae: {
     /** The mainlevée reference is on file. NOT the same as released. */
@@ -254,11 +268,11 @@ export async function getTransitState(fileId: string): Promise<TransitState | nu
 
     const { data: execRows } = await admin
       .from("process_step_execution")
-      .select("step_key, state, assigned_user_id, assigned_team_code")
+      .select("id, step_key, state, assigned_user_id, assigned_team_code")
       .eq("tenant_id", ctx.tenantId)
       .eq("process_instance_id", instance.id)
       .not("state", "in", "(REJECTED,CANCELLED)")
-      .returns<{ step_key: string; state: string; assigned_user_id: string | null; assigned_team_code: string | null }[]>();
+      .returns<{ id: string; step_key: string; state: string; assigned_user_id: string | null; assigned_team_code: string | null }[]>();
     const execs = execRows ?? [];
 
     const execViews = execs.map((e) => ({ stepKey: e.step_key, state: e.state as never }));
@@ -285,6 +299,34 @@ export async function getTransitState(fileId: string): Promise<TransitState | nu
     const declarant = prep?.assigned_user_id
       ? await resolveUserCard(admin, ctx.tenantId, prep.assigned_user_id)
       : null;
+
+    // UAT-STEP12-FIELD-AGENT-01 — the Agent de Terrain on step 13, plus the
+    // attribution of the act that named them. One writer, one row, one audit.
+    const clearance = execs.find((e) => e.step_key === "customs_field_clearance");
+    let fieldAgent: TransitState["fieldAgent"] = null;
+    if (clearance?.assigned_user_id) {
+      const card = await resolveUserCard(admin, ctx.tenantId, clearance.assigned_user_id as string);
+      const { data: assignEvents } = await admin
+        .from("audit_log")
+        .select("actor_id, created_at")
+        .eq("tenant_id", ctx.tenantId)
+        .eq("action", "process.step.assigned")
+        .eq("entity_id", clearance.id as string)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .returns<{ actor_id: string | null; created_at: string }[]>();
+      const last = (assignEvents ?? [])[0] ?? null;
+      const assigner = last?.actor_id
+        ? await resolveUserCard(admin, ctx.tenantId, last.actor_id)
+        : null;
+      fieldAgent = card
+        ? {
+            ...card,
+            assignedByName: assigner?.name ?? null,
+            assignedAt: last?.created_at ?? null,
+          }
+        : null;
+    }
 
     // Dispatch team on the transport_assignment step.
     const dispatchExec = execs.find((e) => e.step_key === "transport_assignment");
@@ -337,6 +379,7 @@ export async function getTransitState(fileId: string): Promise<TransitState | nu
       stages,
       reception: { pending: Boolean(sent), received, handoffId: sent?.id ?? null },
       declarant,
+      fieldAgent,
       dispatch: {
         teamCode: dispatchExec?.assigned_team_code ?? null,
         deterministic: suggestion !== null,

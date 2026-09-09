@@ -81,6 +81,7 @@ export function TransitPanel({
   fileId,
   state,
   eligibleDeclarants,
+  eligibleFieldAgents,
   canReceive,
   canAssign,
   canRequestDecision,
@@ -93,6 +94,8 @@ export function TransitPanel({
   fileId: string;
   state: TransitState;
   eligibleDeclarants: TransitAssignee[];
+  /** UAT-STEP12-FIELD-AGENT-01 — offered only when nobody is named yet. */
+  eligibleFieldAgents: TransitAssignee[];
   canReceive: boolean;
   canAssign: boolean;
   canRequestDecision: boolean;
@@ -107,6 +110,7 @@ export function TransitPanel({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [declarantId, setDeclarantId] = useState("");
+  const [fieldAgentId, setFieldAgentId] = useState("");
   const [baeRef, setBaeRef] = useState("");
   const [releaseNote, setReleaseNote] = useState("");
   const [decisionReason, setDecisionReason] = useState("");
@@ -219,6 +223,75 @@ export function TransitPanel({
         ) : (
           <p className="mt-1 text-xs text-slate-400">Non affecté.</p>
         )}
+      </div>
+
+      {/* Agent de Terrain — official step 12's governed output (J1).
+          THE SAME WRITER as the Déclarant block above, asked for step 13:
+          `assignTransitStep(fileId, "customs_field_clearance", userId)`. It
+          checks Transit custody, the assigner's authority and that the
+          assignee is ACTIVE, same-tenant and TRANSIT-mapped, then audits
+          before AND after. Nothing is decided here.
+
+          ⚠ NOT the T9 dispatch below. That assigns a transport TEAM CODE
+          (AIBD / MARITIME) on official step 14. This names a PERSON on
+          official step 13. Two acts, two branches, two authorities. */}
+      <div className="mt-3 rounded-lg border border-slate-200 p-3">
+        <p className="text-xs font-medium text-slate-600">Agent de Terrain (douane)</p>
+        {state.fieldAgent ? (
+          <>
+            <p className="mt-1 text-sm text-slate-800">
+              <strong>{state.fieldAgent.name}</strong>
+              {state.fieldAgent.roleLabel ? (
+                <span className="text-xs text-slate-500"> · {state.fieldAgent.roleLabel}</span>
+              ) : null}
+            </p>
+            <p className="mt-0.5 text-[11px] text-slate-500">
+              {state.fieldAgent.assignedByName
+                ? `Affecté par ${state.fieldAgent.assignedByName}`
+                : "Affectation enregistrée"}
+              {state.fieldAgent.assignedAt
+                ? ` · le ${new Date(state.fieldAgent.assignedAt).toLocaleDateString("fr-FR")}`
+                : ""}
+            </p>
+          </>
+        ) : canAssign ? (
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <select
+              aria-label="Choisir l'Agent de Terrain"
+              value={fieldAgentId}
+              onChange={(e) => setFieldAgentId(e.target.value)}
+              disabled={pending}
+              className="min-w-[220px] rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
+            >
+              <option value="">— Choisir un Agent de Terrain —</option>
+              {eligibleFieldAgents.map((a) => (
+                <option key={a.id} value={a.id}>{a.name}{a.roleLabel ? ` — ${a.roleLabel}` : ""}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              disabled={pending || !fieldAgentId}
+              onClick={() =>
+                run(
+                  () => assignTransitStep(fileId, "customs_field_clearance", fieldAgentId),
+                  "Agent de Terrain affecté.",
+                )
+              }
+              className="min-h-[36px] rounded-lg bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-900 disabled:opacity-50"
+            >
+              Affecter
+            </button>
+            {eligibleFieldAgents.length === 0 && (
+              <p className="text-xs text-amber-700">Aucun Agent de Terrain actif.</p>
+            )}
+          </div>
+        ) : (
+          <p className="mt-1 text-xs text-slate-400">Non affecté.</p>
+        )}
+        <p className="mt-2 text-[11px] text-slate-400">
+          L'affectation de l'Agent de Terrain est le produit de l'étape 12 : l'étape ne peut pas
+          être terminée tant que personne n'est nommé, et l'étape 13 revient à la personne nommée ici.
+        </p>
       </div>
 
       {/* Finance payment gate */}

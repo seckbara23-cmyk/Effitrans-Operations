@@ -459,7 +459,13 @@ export const EFFITRANS_PROCESS: ProcessStep[] = [
     description:
       "Déposer et suivre le dossier dans le système douanier, puis l'affecter à l'Agent de Terrain pour le circuit douane.",
     prerequisites: ["gainde_document_submission"],
-    requiredDocuments: [],
+    // UAT-STEP12-FIELD-AGENT-01 (ratified 2026-09-09) — the completion rule
+    // below has always said `field_agent_assigned`, and nothing enforced it:
+    // `evaluateStepEvidence` reads THIS list, which was empty, so « Terminer »
+    // closed step 12 with nobody named and opened step 13 unassigned.
+    // FIELD_AGENT_ASSIGNMENT is a STRUCTURED key — never an upload — satisfied
+    // by the governed assignment on step 13. See engine/evidence.ts.
+    requiredDocuments: ["FIELD_AGENT_ASSIGNMENT"],
     requiredEvidence: ["field_agent_id"],
     completionRule: "field_agent_assigned",
     rejectsTo: null,
@@ -468,11 +474,18 @@ export const EFFITRANS_PROCESS: ProcessStep[] = [
     slaPolicyKey: "customs_followup",
     permissions: ["customs:update", "customs:assign"],
     implementation: {
+      // UAT-STEP12-FIELD-AGENT-01 — corrected. This was a Phase-5.0A audit
+      // snapshot and two of its three gaps closed years of slices ago; it was
+      // still being read as current.
       verdict: "partial",
-      existing: ["customs_record.status = UNDER_REVIEW / INSPECTION", "role COORDINATOR exists"],
+      existing: [
+        "customs_record.status = UNDER_REVIEW / INSPECTION",
+        "role COORDINATOR exists",
+        "role CUSTOMS_FIELD_AGENT exists, with its own queue (customs_field)",
+        "field-agent assignment exists and is governed: assignTransitStep(fileId, 'customs_field_clearance', userId) — customs:assign + Transit custody + active/same-tenant/TRANSIT-mapped assignee, audited before AND after",
+        "the assignment is step 12's enforced completion evidence (FIELD_AGENT_ASSIGNMENT)",
+      ],
       gaps: [
-        "no CUSTOMS_FIELD_AGENT role",
-        "no field-agent assignment",
         "no customs follow-up state distinct from UNDER_REVIEW",
       ],
     },

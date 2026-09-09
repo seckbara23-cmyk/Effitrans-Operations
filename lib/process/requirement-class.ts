@@ -94,6 +94,8 @@ const BAE =
   "Mainlevée douane. La doctrine ratifiée exclut « BAE/release safety controls » de toute dérogation ; TRANSIT-CUSTODY-05 (migration 20260930000001) lie l'enregistrement de la mainlevée à l'étape 13 et à son revendiqueur.";
 const RATTACHEMENT =
   "DEC-C40 (ratifié 2026-09-06) — l'étape 11 est le rattachement du Déclarant ET sa vérification ; migration 20260828000001 y porte le fait. Les étapes 12 et 13 (suivi douanier, BAE) reposent sur cette preuve.";
+const FIELD_AGENT =
+  "UAT-STEP12-FIELD-AGENT-01 (ratifié 2026-09-09) — l'étape 12 EST « suivre le dossier en douane ET affecter l'Agent de Terrain » ; le registre le déclarait déjà (completionRule `field_agent_assigned`) sans que rien ne l'applique. L'affectation est le produit gouverné de l'étape et fonde la propriété de l'étape 13 : sans elle l'étape 13 s'ouvre sans titulaire. Ce n'est PAS une exception à la doctrine de souplesse — BAD, Pre-Gate et la convergence restent non bloquants jusqu'à leur point ratifié (étape 15).";
 const PICKUP_GATE =
   "Registre PICKUP_READINESS (Phase 5.0A) — la porte de convergence de l'enlèvement (étape 15) exige cet artefact. C'est la source de première main qui établit QUAND il devient obligatoire.";
 const OBJECT_OF_THE_ACT =
@@ -138,6 +140,7 @@ export const CLASSIFIED: Readonly<Record<string, RequirementGovernance>> = {
 
   // ---- The customs chain -------------------------------------------------
   "gainde_document_submission::GAINDE_SUBMISSION_EVIDENCE": hard(RATTACHEMENT),
+  "customs_followup::FIELD_AGENT_ASSIGNMENT": hard(FIELD_AGENT),
   "customs_field_clearance::BON_A_ENLEVER": hard(BAE),
 
   // ---- Artefacts that ARE the act ----------------------------------------
