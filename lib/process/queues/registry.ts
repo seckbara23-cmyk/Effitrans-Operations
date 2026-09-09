@@ -114,7 +114,7 @@ export const QUEUES: QueueDef[] = [
   {
     key: "finance_customs",
     labelFr: "Finance douane",
-    description: "Enregistrement manuel de la déclaration dans GAINDE (référence + date + preuve).",
+    description: "Enregistrement manuel du paiement des droits et taxes sur la déclaration de l'étape 6 (quittance + date + ventilation).",
     roles: ["CUSTOMS_FINANCE_OFFICER", "OPS_SUPERVISOR", "SYSTEM_ADMIN"],
     officialRole: "CUSTOMS_FINANCE_OFFICER",
     permission: "process:read",

@@ -167,7 +167,11 @@ describe("nothing is synchronised", () => {
     // happens — so banning the words would fail on the sentence that makes the
     // honest claim. Assert the claim instead.
     const i18n = read("lib/i18n.ts");
-    const block = i18n.slice(i18n.indexOf("gainde: {"), i18n.indexOf("hint:", i18n.indexOf("gainde: {")) + 400);
+    // Bounded by the NEXT card, not by a character count: a fixed +400 window
+    // silently stopped covering the hint the moment the hint got longer, and a
+    // pin that can fall off the end of what it protects is not a pin.
+    const gaindeAt = i18n.indexOf("gainde: {");
+    const block = i18n.slice(gaindeAt, i18n.indexOf("validation: {", gaindeAt));
     expect(block).toMatch(/Aucune connexion GAINDE n'est en service/);
     expect(block).toMatch(/elle ne la synchronise pas/);
     // GAINDE-04 (DEC-C39) — the hint now names WHAT the act is (a registration

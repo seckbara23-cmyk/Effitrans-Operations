@@ -350,14 +350,18 @@ export const EFFITRANS_PROCESS: ProcessStep[] = [
   {
     stepNumber: 9,
     key: "gainde_registration",
-    labelFr: "Finance (fonction douane) — enregistrer la déclaration dans GAINDE",
+    // UAT-STEP9-FINANCE-01 — the label said Finance registers the declaration,
+    // which is the Déclarant's step-6 act (DEC-C38). Finance pays the duties
+    // and taxes against that declaration. Wording only: the key, the number,
+    // the prerequisites, the owner, the permission and the graph are unchanged.
+    labelFr: "Finance (fonction douane) — enregistrer le paiement des droits et taxes",
     internalLabel: "Finance douane — jalon manuel : référence GAINDE + date + agent + reçu",
     clientStage: "customs_processing",
     phase: "customs",
     department: "finance_customs",
     role: "CUSTOMS_FINANCE_OFFICER",
     description:
-      "Enregistrer la déclaration dans GAINDE, puis retourner le dossier au Coordinateur. Action opérationnelle réalisée par la Finance AVANT que le Déclarant n'introduise les documents justificatifs (étape 11). Jalon manuel : aucune automatisation API.",
+      "Enregistrer le paiement effectif des droits et taxes (quittance, date, ventilation) sur la déclaration déjà enregistrée par le Déclarant à l'étape 6, puis retourner le dossier au Coordinateur. La référence de déclaration de l'étape 6 est reprise, jamais recréée. Action opérationnelle réalisée par la Finance AVANT que le Déclarant n'introduise les documents justificatifs (étape 11). Jalon manuel : aucune automatisation API.",
     prerequisites: ["coordinator_to_finance"],
     requiredDocuments: [],
     requiredEvidence: [

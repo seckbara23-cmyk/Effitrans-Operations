@@ -31,10 +31,30 @@ const code = (p: string) =>
   read(p).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 
 const MIG = "supabase/migrations/20261001000001_gainde_declaration_and_tax_payment.sql";
+/**
+ * UAT-STEP9-FINANCE-01 — where the LIVE payment RPC is defined now.
+ *
+ * #139's file is history and must not be edited; the function it created was
+ * replaced in place by #142. A pin that keeps reading #139 for this function
+ * asserts what the platform USED to do, which is how the reference guard
+ * survived a slice that changed the act underneath it.
+ */
+const PAYMENT_MIG = "supabase/migrations/20261004000001_gainde_payment_registration.sql";
 const VERIFY = "supabase/verifiers/20261001000001_gainde_declaration_and_tax_payment.verify.sql";
 const sql = read(MIG);
 const sqlCode = sql.replace(/^\s*--.*$/gm, "");
 const actions = code("lib/customs/actions.ts");
+
+/** One function of ANY migration, bounded so a neighbour cannot satisfy a pin. */
+function fnOf(migration: string, name: string): string {
+  const src = read(migration).replace(/^\s*--.*$/gm, "");
+  const i = src.indexOf(`function public.${name}(`);
+  expect(i, `${name} not found in ${migration}`).toBeGreaterThan(-1);
+  const rest = src.slice(i);
+  const end = rest.indexOf("$$;");
+  expect(end, `${name} has no terminator`).toBeGreaterThan(0);
+  return rest.slice(0, end);
+}
 
 /** One function of the migration, bounded so a neighbour cannot satisfy a pin. */
 function fn(name: string): string {
@@ -58,15 +78,39 @@ describe("capture is not registration, and they do not share a column", () => {
   });
 
   it("02 — and it is NOT external_ref, which stays Finance's", () => {
-    // The mechanical reason, restated where it can fail: the registration RPC
-    // refuses a duplicate reference, so sharing the column would disable step 9.
+    // Two acts, two columns — still true, and still the point of this slice.
     // Whitespace-tolerant: the payload is column-aligned, and pinning where the
     // spaces fall would test the formatter.
     const flat = (x: string) => x.replace(/\s+/g, " ");
     expect(flat(fn("record_declaration_reference"))).toContain("gainde_declaration_reference = v_ref");
     expect(flat(fn("record_declaration_reference"))).not.toContain("external_ref =");
     expect(flat(fn("record_gainde_registration"))).toContain("external_ref = v_ref");
-    expect(fn("record_gainde_registration")).toContain("reference_unchanged");
+  });
+
+  it("02b — the REASON has changed, and the separation has not", () => {
+    /**
+     * UAT-STEP9-FINANCE-01. This suite's header used to give the mechanical
+     * reason for two columns as « the registration RPC refuses a reference
+     * identical to the one already stored ». That refusal was a leftover: it
+     * guarded the act step 9 USED to be, and #139 turned step 9 into a
+     * payment. It did not merely fail to protect anything — it made step 9
+     * unperformable for Finance on EFT-IMP-2026-00011, because the form
+     * defaults its reference to the very column the guard compared it with.
+     *
+     * The separation survives on its own merits: two business acts, two
+     * owners, two owning steps, two columns. What is gone is the refusal, and
+     * the declaration side keeps its own, where the reference really is the
+     * act.
+     */
+    const live = fnOf(PAYMENT_MIG, "record_gainde_registration");
+    expect(live, "the payment RPC may not refuse a reused declaration reference")
+      .not.toMatch(/v_prev\s+is\s+not\s+distinct\s+from\s+v_ref/);
+    expect(live, "it guards the PAYMENT instead").toContain("payment_unchanged");
+    expect(live, "and only a live one").toMatch(/voided_at\s+is\s+null/);
+    // NOT WEAKENED: the declaration act still refuses its own duplicate.
+    expect(fn("record_declaration_reference")).toContain("reference_unchanged");
+    // NOT WEAKENED: the payment act still never writes the Déclarant's column.
+    expect(live).not.toMatch(/gainde_declaration_reference\s*=/);
   });
 
   it("03 — half a fact is refused: reference, author and date travel together", () => {
@@ -321,8 +365,8 @@ describe("migration #139 ships under the #139+ policy", () => {
     // (20261002000001_dossier_service_scope), also unapplied. What this slice
     // guarantees is that #139 SHIPS with its verifier and that build-info
     // tracks the directory — never that nothing may be added after it.
-    expect(MIGRATION_COUNT).toBe(141);
-    expect(LATEST_MIGRATION).toBe("20261003000001_staff_professional_identity");
+    expect(MIGRATION_COUNT).toBe(142);
+    expect(LATEST_MIGRATION).toBe("20261004000001_gainde_payment_registration");
     const dir = fileURLToPath(new URL("../supabase/migrations", import.meta.url));
     const files = require("node:fs").readdirSync(dir).filter((f: string) => f.endsWith(".sql")).sort();
     expect(files).toHaveLength(MIGRATION_COUNT);

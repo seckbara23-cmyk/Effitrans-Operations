@@ -177,6 +177,42 @@ export async function customsIdFor(fileId: string): Promise<string> {
   return data.id as string;
 }
 
+/** The two GAINDE reference columns and the Finance milestone, side by side. */
+export async function customsRecordRefs(fileId: string) {
+  const { data } = await db()
+    .from("customs_record")
+    .select("external_ref, gainde_declaration_reference, gainde_registered_at, gainde_registered_by")
+    .eq("file_id", fileId)
+    .maybeSingle();
+  return (data ?? null) as Record<string, unknown> | null;
+}
+
+/**
+ * The GAINDE payment ledger for a dossier (UAT-STEP9-FINANCE-01).
+ *
+ * Live rows first, so a test can assert « exactly one live payment » without
+ * caring how many superseded ones sit behind it.
+ */
+export async function gaindePayments(fileId: string) {
+  const { data } = await db()
+    .from("gainde_tax_payment")
+    .select("id, quittance_reference, paid_at, total_paid_minor, voided_at, paid_by, created_by")
+    .eq("file_id", fileId)
+    .order("created_at", { ascending: true });
+  const rows = (data ?? []) as Record<string, unknown>[];
+  return { all: rows, live: rows.filter((r) => r.voided_at === null) };
+}
+
+/** The lines of one payment, in order — the breakdown that must sum to the total. */
+export async function gaindePaymentLines(paymentId: string) {
+  const { data } = await db()
+    .from("gainde_tax_payment_line")
+    .select("tax_code, label_fr, amount_minor, ordinal")
+    .eq("payment_id", paymentId)
+    .order("ordinal", { ascending: true });
+  return (data ?? []) as Record<string, unknown>[];
+}
+
 /**
  * The five GOVERNED customs elements (UAT-BLOCKER-STEP67-PROD-02).
  *

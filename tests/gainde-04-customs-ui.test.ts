@@ -316,7 +316,10 @@ describe("UI-7 — the rattachement block is written in French", () => {
   });
 
   it("27 — its neighbours were already correct and stay correct", () => {
-    expect(t.customs.gainde.registeredOn).toBe("Enregistré le");
+    // UAT-STEP9-FINANCE-01 — says WHAT was registered. « Enregistré le » on a
+    // card headed « Enregistrement GAINDE » read as the declaration having been
+    // registered a second time, which is the Déclarant's step-6 act.
+    expect(t.customs.gainde.registeredOn).toBe("Paiement enregistré le");
     expect(t.customs.receivability.notAssessed).toBe("Non évaluée");
   });
 });

@@ -592,8 +592,22 @@ export async function recordGaindeRegistration(
     const gate = await customsControlGate("customs.gainde_registration", rec.file_id, user);
     if (gate) return { ok: false, error: gate };
   }
-  // Fail before showing success; the RPC refuses the duplicate as well.
-  if (rec.external_ref === ref) return { ok: false, error: "reference_unchanged" };
+  // UAT-STEP9-FINANCE-01 — THE REFERENCE IS NOT WHAT THIS ACT GUARDS.
+  //
+  // This mirrored the RPC's `reference_unchanged` refusal, and both were left
+  // over from the act step 9 used to be: before 20261001000001 the whole deed
+  // WAS writing `external_ref`, so re-submitting the stored string meant the
+  // operator had changed nothing. Step 9 is now a PAYMENT — quittance, date,
+  // per-tax breakdown, ledger row — recorded AGAINST the declaration the
+  // Déclarant registered at step 6. Reusing that reference is the point of
+  // the act, not a duplicate of it.
+  //
+  // It was not a chance collision either: the form defaults its reference to
+  // the stored `external_ref`, so wherever that column held a value the
+  // default submission was guaranteed to be refused, and the only way through
+  // was to type a reference that was not the declaration's. Migration
+  // 20261004000001 moves the guard to the fact that decides: an identical live
+  // payment, refused as `payment_unchanged` below.
 
   // TWO SIGNATURES, ONE ACT. Migration 20261001000001 replaces the 3-argument
   // RPC with a 7-argument one that demands the taxes; until it is applied, the
@@ -623,7 +637,14 @@ export async function recordGaindeRegistration(
     const token = (error.message ?? "").split(":")[0].trim();
     for (const known of [
       "reference_required", "quittance_required", "paid_at_required",
-      "tax_lines_required", "tax_total_mismatch", "reference_unchanged",
+      "tax_lines_required", "tax_total_mismatch",
+      // UAT-STEP9-FINANCE-01 — the duplicate that matters: the same receipt,
+      // the same instant and the same total, already live on this record.
+      "payment_unchanged",
+      // Kept for the compatibility window only: the 3-argument RPC that
+      // predates the ledger still guards the reference, because for THAT
+      // function the reference genuinely was the act.
+      "reference_unchanged",
     ]) {
       if (token === known) return { ok: false, error: known };
     }

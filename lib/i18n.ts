@@ -549,22 +549,33 @@ export const t = {
       hint: "Saisie par le Déclarant après l'enregistrement de la déclaration dans GAINDE. Ce n'est pas l'enregistrement du Service Finance douane, qui porte sur les droits et taxes.",
     },
     gainde: {
-      title: "Enregistrement GAINDE",
-      action: "Enregistrer dans GAINDE",
+      // UAT-STEP9-FINANCE-01 — « Enregistrement GAINDE » read as a second
+      // registration of the declaration, which is the Déclarant's step-6 act.
+      // What Finance does here is pay the duties and taxes AGAINST that
+      // declaration, and the card now says so.
+      title: "Paiement des droits et taxes (douane)",
+      action: "Enregistrer le paiement",
       // DEC-C39 — l'étape 9 est un PAIEMENT effectif avec ventilation des
       // taxes. Le prompt d'origine ne demandait qu'une référence, ce qui
       // faisait passer une saisie de référence pour un acte fiscal.
-      referenceLabel: "Référence GAINDE",
+      // The declaration Finance is paying AGAINST — the Déclarant's step-6
+      // reference, reused here on purpose. Naming it « Référence GAINDE » is
+      // what made the field look like a new registration to be invented.
+      referenceLabel: "Référence de la déclaration (étape 6)",
       quittanceLabel: "Référence quittance",
       paidAtLabel: "Date de paiement",
       taxesLabel: "Droits et taxes acquittés (ventilation)",
       totalLabel: "Total payé :",
-      registeredOn: "Enregistré le",
+      registeredOn: "Paiement enregistré le",
       by: "par",
-      notRegistered: "Non enregistré",
+      notRegistered: "Paiement non enregistré",
+      /** The declaration reference shown as read-only context on the card. */
+      againstDeclaration: "Paiement rattaché à la déclaration",
+      noDeclarationYet:
+        "Aucune référence de déclaration n'a encore été enregistrée à l'étape 6.",
       // Says plainly that this is a typed record, not a live link, and what the
       // act actually is.
-      hint: "Enregistrement effectué par le Service Finance douane : la déclaration est enregistrée dans GAINDE avec le paiement des droits et taxes. Aucune connexion GAINDE n'est en service — la plateforme enregistre l'opération, elle ne la synchronise pas.",
+      hint: "Acte du Service Finance douane : enregistrer le paiement effectif des droits et taxes, avec sa quittance, sa date et sa ventilation, sur la déclaration déjà enregistrée par le Déclarant à l'étape 6. Ce n'est pas une seconde déclaration : la référence de l'étape 6 est reprise telle quelle. Aucune connexion GAINDE n'est en service — la plateforme enregistre l'opération, elle ne la synchronise pas.",
     },
     validation: {
       title: "Validation Chef de Transit",
@@ -634,6 +645,10 @@ export const t = {
       already_validated: "Ce dossier douane est déjà validé.",
       reference_required: "Une référence GAINDE est requise.",
       reference_unchanged: "Cette référence GAINDE est déjà enregistrée.",
+      // UAT-STEP9-FINANCE-01 — the payment, not the reference. Says the first
+      // one landed, so the operator stops retyping and goes to look at it.
+      payment_unchanged:
+        "Ce paiement est déjà enregistré à l'identique (même quittance, même date, même montant).",
       protected_released:
         "Ce dédouanement est libéré (BAE) : il ne peut plus être supprimé.",
       use_release: "Utilisez l'action « Libérer ».",

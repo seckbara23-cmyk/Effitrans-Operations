@@ -17,7 +17,8 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { as } from "./identity";
 import {
   identity, execution, auditFor, handoffs, provideEvidence, customsIdFor, customsReleaseState,
-  CLIENT_DEPOSIT_REQUIRED, gaindeTaxPayment, customsGovernedElements, } from "./fixtures";
+  CLIENT_DEPOSIT_REQUIRED, gaindeTaxPayment, customsGovernedElements,
+  gaindePayments, gaindePaymentLines, customsRecordRefs, } from "./fixtures";
 import type { CurrentUser } from "@/lib/auth/current-user";
 
 import { createFile, assignCommercialOwner } from "@/lib/files/actions";
@@ -27,6 +28,7 @@ import { declareEvidenceAbsence } from "@/lib/process/evidence-absence-actions";
 import { receiveDossierAtTransit, assignTransitStep, recordBae, decideTransitRelease, finalizeTransitRelease } from "@/lib/process/engine/transit-actions";
 import {
   createCustoms, recordGaindeRegistration, changeCustomsStatus, recordCustomsValidation,
+  recordDeclarationReference, updateCustoms,
 } from "@/lib/customs/actions";
 import { assertControlStep } from "@/lib/process/control-gate-server";
 import { getControlVerdicts } from "@/lib/process/control-ownership-server";
@@ -40,6 +42,18 @@ let customsFinance: CurrentUser; // CUSTOMS_FINANCE_OFFICER — customs:register
 let field: CurrentUser;          // CUSTOMS_FIELD_AGENT — customs:release
 
 let fileId = "";
+
+/**
+ * UAT-STEP9-FINANCE-01 — THE DECLARATION FINANCE PAYS AGAINST.
+ *
+ * One string, used twice on purpose: the Déclarant records it at step 6, and
+ * Finance reuses it at step 9. That reuse is the whole business fact, and it
+ * is exactly what this journey never did before — it invented a fresh
+ * `GAINDE-JRN-${Date.now()}` for Finance, so the production condition (an
+ * existing reference, reused) was never exercised and the RPC's leftover
+ * reference guard stayed invisible until a human hit it.
+ */
+const DECLARATION_REF = "JRN-GAINDE-DECL-0001";
 
 /** Drive one step the way an operator does: claim it, then close it. */
 async function runStep(actor: CurrentUser, stepKey: string) {
@@ -319,6 +333,31 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
       expect(moved.ok, `customs -> ${status}: ${JSON.stringify(moved)}`).toBe(true);
     }
 
+    // DEC-C38 — the Déclarant records the reference GAINDE handed him back.
+    // His act, his column: `gainde_declaration_reference`.
+    const declared = await as(declarant, () =>
+      recordDeclarationReference(customsId, DECLARATION_REF),
+    );
+    expect(declared.ok, `declaration reference: ${JSON.stringify(declared)}`).toBe(true);
+
+    // NOT WEAKENED — re-recording the SAME declaration reference is still
+    // refused. That uniqueness is real: for THIS act the reference IS the deed.
+    const again = await as(declarant, () =>
+      recordDeclarationReference(customsId, DECLARATION_REF),
+    );
+    expect(again.ok, "a declaration reference may not be recorded twice").toBe(false);
+    expect((again as { error: string }).error).toBe("reference_unchanged");
+
+    // …and the production hazard, reproduced deliberately: the metadata form
+    // lets step 6 write `external_ref`, which is FINANCE's column, and on
+    // EFT-IMP-2026-00011 it held a value before Finance ever acted. With the
+    // old guard that alone made step 9 unperformable. Set it to the SAME
+    // string Finance will submit — the worst case, and the real one.
+    const meta = await as(declarant, () =>
+      updateCustoms(customsId, { externalRef: DECLARATION_REF }),
+    );
+    expect(meta.ok, `metadata external_ref: ${JSON.stringify(meta)}`).toBe(true);
+
     const submitted = await as(declarant, () => submitStep(fileId, "customs_preparation"));
     expect(submitted.ok, `submit step 6: ${JSON.stringify(submitted)}`).toBe(true);
 
@@ -490,12 +529,49 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     await handOver(coordinator, customsFinance, "coordinator_to_finance", "gainde_registration");
   });
 
-  it("step 9 — Finance's registration IS the step; reconciliation closes it", async () => {
+  /**
+   * UAT-STEP9-FINANCE-01 — THE EXACT CONDITION THAT BLOCKED PRODUCTION.
+   *
+   * Step 6 recorded a declaration reference and `external_ref` already holds
+   * it. Finance now pays the duties AGAINST that declaration, submitting the
+   * same reference — which is what the business does and what the form
+   * defaults to. Before #142 this was refused « Cette référence GAINDE est
+   * déjà enregistrée » and step 9 could never be performed.
+   */
+  it("step 9 — Finance pays AGAINST the existing step-6 declaration", async () => {
     const customsId = await customsIdFor(fileId);
+    const before = await gaindePayments(fileId);
+    expect(before.live, "Finance has not paid yet").toHaveLength(0);
+
+    const quittance = `Q-JRN-${Date.now()}`;
     const registered = await as(customsFinance, () =>
-      recordGaindeRegistration(customsId, `GAINDE-JRN-${Date.now()}`, gaindeTaxPayment(`Q-JRN-${Date.now()}`)),
+      recordGaindeRegistration(customsId, DECLARATION_REF, gaindeTaxPayment(quittance)),
     );
-    expect(registered.ok, `GAINDE registration: ${JSON.stringify(registered)}`).toBe(true);
+    expect(
+      registered.ok,
+      `Finance must be able to pay against the existing declaration: ${JSON.stringify(registered)}`,
+    ).toBe(true);
+
+    // ONE live payment, attached to this customs record, attributed to Finance.
+    const after = await gaindePayments(fileId);
+    expect(after.live, "exactly one live payment").toHaveLength(1);
+    const payment = after.live[0];
+    expect(payment.quittance_reference).toBe(quittance);
+    expect(payment.paid_by).toBe(customsFinance.id);
+
+    // The breakdown is stored, and the total is the sum of its lines — the
+    // arithmetic the constraint trigger holds, asserted from the rows.
+    const lines = await gaindePaymentLines(payment.id as string);
+    expect(lines).toHaveLength(6);
+    const sum = lines.reduce((t, l) => t + Number(l.amount_minor), 0);
+    expect(Number(payment.total_paid_minor)).toBe(sum);
+
+    // THE DECLARATION IS NOT RECREATED. Finance's act writes Finance's column
+    // and the milestone; the Déclarant's reference is exactly as he left it.
+    const rec = await customsRecordRefs(fileId);
+    expect(rec?.gainde_declaration_reference, "step 6's fact is untouched").toBe(DECLARATION_REF);
+    expect(rec?.gainde_registered_by, "the milestone names Finance").toBe(customsFinance.id);
+    expect(rec?.gainde_registered_at).toBeTruthy();
 
     // Step 9 carries no required documents: the milestone IS its completion, and
     // MAYA-P1.2 tightened the rule so that only FINANCE's own registration fact
@@ -512,6 +588,45 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     // fact caused it (F-α). Proven here now that step 3 — the old vehicle for
     // this guarantee — is no longer fact-provable.
     await assertActivationAttributedTo("coordinator_to_declarant", customsFinance.id);
+  });
+
+  it("step 9 — an IDENTICAL resubmission is refused, and the ledger does not churn", async () => {
+    // What step 9 actually has to refuse: the same receipt, the same instant,
+    // the same total, already live. A double click, not a second payment.
+    const customsId = await customsIdFor(fileId);
+    const live = (await gaindePayments(fileId)).live;
+    expect(live).toHaveLength(1);
+
+    const repeat = await as(customsFinance, () =>
+      recordGaindeRegistration(
+        customsId,
+        DECLARATION_REF,
+        gaindeTaxPayment(live[0].quittance_reference as string),
+      ),
+    );
+    expect(repeat.ok, "an identical live payment must be refused").toBe(false);
+    expect((repeat as { error: string }).error).toBe("payment_unchanged");
+
+    const after = await gaindePayments(fileId);
+    expect(after.live, "still exactly one live payment").toHaveLength(1);
+    expect(after.all, "and nothing was voided or re-written").toHaveLength(1);
+    expect(after.live[0].id).toBe(live[0].id);
+  });
+
+  it("step 9 — nobody without customs:register may record a payment", async () => {
+    const customsId = await customsIdFor(fileId);
+    const before = await gaindePayments(fileId);
+
+    for (const actor of [declarant, coordinator, transit]) {
+      const refused = await as(actor, () =>
+        recordGaindeRegistration(customsId, DECLARATION_REF, gaindeTaxPayment(`Q-NO-${Date.now()}`)),
+      );
+      expect(refused.ok, `${actor.id} must not record a Finance payment`).toBe(false);
+      expect((refused as { error: string }).error).toBe("forbidden");
+    }
+
+    const after = await gaindePayments(fileId);
+    expect(after.all, "no refused attempt left a row behind").toHaveLength(before.all.length);
   });
 
   it("once step 9 closes, Finance douane correctly stops seeing the dossier", async () => {
