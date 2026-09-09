@@ -339,6 +339,8 @@ describe("C-4 negative battery — the refusals, in the order a dossier meets th
     need(await as(declarant, () => activateStep(fileId, "gainde_document_submission")), "activate 11");
     await provideEvidence(fileId, "GAINDE_SUBMISSION_EVIDENCE", declarant, ops);
     need(await as(declarant, () => submitStep(fileId, "gainde_document_submission")), "step 11");
+    // UAT-STEP12-FIELD-AGENT-01 — step 12 may not close without its Agent de Terrain.
+    need(await as(coordinator, () => assignTransitStep(fileId, "customs_field_clearance", field.id)), "assign 13");
     need(await as(coordinator, () => activateStep(fileId, "customs_followup")), "activate 12");
     need(await as(coordinator, () => submitStep(fileId, "customs_followup")), "step 12");
     need(await as(field, () => activateStep(fileId, "customs_field_clearance")), "activate 13");

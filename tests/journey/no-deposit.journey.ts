@@ -140,6 +140,9 @@ async function carryToValidatedInvoice() {
   await provideEvidence(fileId, "GAINDE_SUBMISSION_EVIDENCE", declarant, ops);
   need(await as(declarant, () => submitStep(fileId, "gainde_document_submission")), "step 11");
 
+  // UAT-STEP12-FIELD-AGENT-01 — step 12's ratified output. Naming the Agent
+  // de Terrain is what the step IS, and it now gates the step's completion.
+  need(await as(coordinator, () => assignTransitStep(fileId, "customs_field_clearance", field.id)), "assign 13");
   need(await as(coordinator, () => activateStep(fileId, "customs_followup")), "activate 12");
   need(await as(coordinator, () => submitStep(fileId, "customs_followup")), "step 12");
 

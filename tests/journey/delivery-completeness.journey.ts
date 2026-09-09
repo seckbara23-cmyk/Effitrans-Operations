@@ -165,6 +165,12 @@ async function carryToStep13() {
   await provideEvidence(fileId, "GAINDE_SUBMISSION_EVIDENCE", declarant, ops);
   await as(declarant, () => submitStep(fileId, "gainde_document_submission"));
 
+  // UAT-STEP12-FIELD-AGENT-01 — step 12's ratified output. Naming the Agent
+  // de Terrain is what the step IS, and it now gates the step's completion.
+  const assigned13 = await as(coordinator, () =>
+    assignTransitStep(fileId, "customs_field_clearance", field.id),
+  );
+  expect(assigned13.ok, `assign 13: ${JSON.stringify(assigned13)}`).toBe(true);
   await runStep(coordinator, "customs_followup");
 
   await as(field, () => activateStep(fileId, "customs_field_clearance"));
