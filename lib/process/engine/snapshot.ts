@@ -170,7 +170,11 @@ export async function loadProcessSnapshot(
       : Promise.resolve({ data: [] as Row[] }),
     access.customs
       ? scopedFrom(admin, "customs_record", tenantId)
-          .select("required, status, bae_reference, declaration_number, external_ref")
+          // UAT-STEP11-RECONCILE-01 — `attachment_completed_at` is the GOVERNED
+          // fact of step 11 (migration 20260828000001, MAYA-P1.11). Without it
+          // in this projection the evidence evaluator cannot see the act the
+          // Déclarant actually performed and keeps demanding an upload.
+          .select("required, status, bae_reference, declaration_number, external_ref, attachment_completed_at")
           .eq("file_id", fileId)
           .is("deleted_at", null)
           .limit(1)
@@ -294,6 +298,7 @@ export async function loadProcessSnapshot(
           baeReference: s(customs.bae_reference),
           declarationNumber: s(customs.declaration_number),
           externalRef: s(customs.external_ref),
+          attachmentCompletedAt: s(customs.attachment_completed_at),
         }
       : null,
     transport: transport

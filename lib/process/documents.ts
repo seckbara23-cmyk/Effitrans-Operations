@@ -113,7 +113,7 @@ export const DOCUMENT_MAPPINGS: DocumentMapping[] = [
     typeCode: "GAINDE_SUBMISSION_EVIDENCE",
     status: "mapped",
     steps: ["gainde_document_submission"],
-    note: "No submission evidence of any kind.",
+    note: "UAT-STEP11-RECONCILE-01 — this note (« No submission evidence of any kind. ») was a Phase-5.0A AUDIT FINDING, true when nothing recorded the rattachement. MAYA-P1.11 and migration 20260828000001 then made the act itself durable: customs_record.attachment_completed_at / attachment_systems, attributed and dated. The key is now satisfied by THAT act (see engine/evidence.ts), and an upload of this type remains a second, equally valid proof — P1.11 ratified that « a screenshot is NEVER a precondition ».",
   },
   {
     key: "BON_A_ENLEVER",

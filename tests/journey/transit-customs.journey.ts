@@ -28,7 +28,7 @@ import { declareEvidenceAbsence } from "@/lib/process/evidence-absence-actions";
 import { receiveDossierAtTransit, assignTransitStep, recordBae, decideTransitRelease, finalizeTransitRelease } from "@/lib/process/engine/transit-actions";
 import {
   createCustoms, recordGaindeRegistration, changeCustomsStatus, recordCustomsValidation,
-  recordDeclarationReference, updateCustoms,
+  recordDeclarationReference, updateCustoms, recordCustomsAttachment,
 } from "@/lib/customs/actions";
 import { assertControlStep } from "@/lib/process/control-gate-server";
 import { getDossierWork } from "@/lib/process/work-service";
@@ -144,6 +144,27 @@ function expectRendersEnabled(
  * that the fixture agrees with itself.
  */
 const permissionsOf = (userId: string) => getEffectivePermissions(userId);
+
+/**
+ * The RENDERED verdict for one step and one viewer, through the same loader
+ * the dossier page uses. Asserting `submitStep().ok` alone is what let four
+ * consecutive UAT blockers ship with green engine tests.
+ */
+async function stepEligibility(file: string, stepKey: string, viewer: CurrentUser) {
+  const view = await getDossierWork(file, {
+    tenantId: viewer.tenantId,
+    userId: viewer.id,
+    permissions: await permissionsOf(viewer.id),
+    roles: viewer.roles ?? [],
+  });
+  const node = view?.dossier.steps.find((n) => n.facts.stepKey === stepKey);
+  if (!node) return null;
+  return evaluateStepAction(node.facts, {
+    userId: viewer.id,
+    permissions: await permissionsOf(viewer.id),
+    roles: viewer.roles ?? [],
+  });
+}
 
 /** The activation audit for a step must name the actor who caused it. */
 async function assertActivationAttributedTo(stepKey: string, actorId: string) {
@@ -753,7 +774,18 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     await handOver(coordinator, declarant, "coordinator_to_declarant", "gainde_document_submission");
   });
 
-  it("step 11 — the declarant cannot close without GAINDE submission evidence", async () => {
+  /**
+   * UAT-STEP11-RECONCILE-01 — THE DOOR THE DÉCLARANT ACTUALLY USES.
+   *
+   * This journey satisfied step 11 by UPLOADING a
+   * `GAINDE_SUBMISSION_EVIDENCE` document and never recorded the rattachement
+   * — so it proved the one route production does not take. On
+   * EFT-IMP-2026-00011 the Déclarant pressed « Enregistrer le rattachement —
+   * GAINDE + ORBUS », the act landed, and the step went on demanding a
+   * document nobody had asked him for. The act is the ratified proof
+   * (MAYA-P1.11, migration 20260828000001); it is now what this journey uses.
+   */
+  it("step 11 — the declarant cannot close without the rattachement", async () => {
     const started = await as(declarant, () => activateStep(fileId, "gainde_document_submission"));
     expect(started.ok, `activate step 11: ${JSON.stringify(started)}`).toBe(true);
 
@@ -761,12 +793,30 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     expect(premature.ok).toBe(false);
     expect((premature as { error: string }).error).toBe("evidence_missing");
 
-    // Real verified evidence — uploaded by the declarant, verified by another.
-    await provideEvidence(fileId, "GAINDE_SUBMISSION_EVIDENCE", declarant, transit);
+    // …and the SURFACE says the same thing, in the operator's words.
+    const before = await stepEligibility(fileId, "gainde_document_submission", declarant);
+    expect(before?.canSubmit, "no rattachement, no completion").toBe(false);
+    expect(before?.reasonFr).toContain("Preuve d'introduction des documents dans GAINDE");
+  });
 
-    const done = await as(declarant, () => submitStep(fileId, "gainde_document_submission"));
-    expect(done.ok, `submit step 11: ${JSON.stringify(done)}`).toBe(true);
-    expect((await execution(fileId, "gainde_document_submission"))?.state).toBe("COMPLETED");
+  it("step 11 — recording the rattachement IS the evidence, and closes the step", async () => {
+    const customsId = await customsIdFor(fileId);
+    const recorded = await as(declarant, () =>
+      recordCustomsAttachment(customsId, ["GAINDE", "ORBUS"]),
+    );
+    expect(recorded.ok, `rattachement: ${JSON.stringify(recorded)}`).toBe(true);
+
+    // The governed fact is on the record, attributed and dated — and NEITHER
+    // step 6's declaration reference NOR step 9's payment moved with it.
+    const refs = await customsRecordRefs(fileId);
+    expect(refs?.gainde_declaration_reference, "step 6 untouched").toBe(DECLARATION_REF);
+    expect(refs?.gainde_registered_at, "step 9 untouched").toBeTruthy();
+    expect((await gaindePayments(fileId)).live, "one live payment, unchanged").toHaveLength(1);
+
+    // The step closes by CONVERGENCE, because the act triggers reconciliation —
+    // no upload, and no second human click needed.
+    const s11 = await execution(fileId, "gainde_document_submission");
+    expect(s11?.state, `step 11: ${JSON.stringify(s11)}`).toBe("COMPLETED");
     expect((await execution(fileId, "customs_followup"))?.state).toBe("AVAILABLE");
   });
 

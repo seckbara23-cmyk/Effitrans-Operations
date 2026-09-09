@@ -65,6 +65,12 @@ export type EvidenceSnapshot = {
     baeReference: string | null;
     declarationNumber: string | null;
     externalRef: string | null;
+    /**
+     * MAYA-P1.11 — when the Déclarant recorded the rattachement in GAINDE /
+     * ORBUS. The GOVERNED fact of step 11: attributed, dated, systems named.
+     * `undefined` where the column was not projected.
+     */
+    attachmentCompletedAt?: string | null;
   } | null;
   transport: {
     status: string;
@@ -191,6 +197,36 @@ export function checkEvidence(key: string, snap: EvidenceSnapshot): EvidenceItem
     return nonEmpty(ref)
       ? { key, labelFr, status: "satisfied" }
       : { key, labelFr, status: "missing", detail: "no_gainde_reference" };
+  }
+
+  // GAINDE_SUBMISSION_EVIDENCE — A RECORDED ACT, or a document, not ONLY a document.
+  //
+  // UAT-STEP11-RECONCILE-01. This key fell through to the catalogue branch
+  // below, so the only thing that could satisfy it was a VERIFIED upload of a
+  // `GAINDE_SUBMISSION_EVIDENCE` document. But the ratified proof of step 11 is
+  // the Déclarant's own rattachement: MAYA-P1.11 built it, migration
+  // 20260828000001 carries it, DEC-C40's own wording says « migration
+  // 20260828000001 y porte le fait », and that suite states the rule in as many
+  // words — « a screenshot is NEVER a precondition ».
+  //
+  // So the platform held two predicates for one step and checked the other one.
+  // On EFT-IMP-2026-00011 the Déclarant recorded GAINDE + ORBUS at 21:38, the
+  // fact was persisted and attributed — and the dossier went on saying
+  // « Action requise : Preuve d'introduction des documents dans GAINDE »,
+  // `submitStep` refused `evidence_missing`, and the reconciler refused for the
+  // same reason, so step 11 could never close by any route.
+  //
+  // STRICTLY WIDENING, and deliberately so: the gate stays HARD (with neither
+  // the act nor a document, step 11 still cannot complete, and steps 12-13 still
+  // rest on real proof), while the upload remains a legitimate way to satisfy it
+  // — which is what keeps « attachable through the ordinary document path » true
+  // and strands nobody who already took that route.
+  if (key === "GAINDE_SUBMISSION_EVIDENCE") {
+    if (snap.access.customs && nonEmpty(snap.customs?.attachmentCompletedAt ?? null)) {
+      return { key, labelFr, status: "satisfied", detail: "rattachement_recorded" };
+    }
+    // No recorded act — fall through to the document catalogue below, which is
+    // exactly what every dossier satisfied by an upload already relies on.
   }
 
   if (key === "BON_A_ENLEVER") {
