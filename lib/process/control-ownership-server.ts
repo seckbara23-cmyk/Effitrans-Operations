@@ -12,6 +12,18 @@
  *   * `getControlVerdicts` — the same rule, batched, for the UI. The panel
  *     renders what the server would decide instead of re-deriving it, which is
  *     how a page ends up offering a button the server refuses.
+ *
+ * ⚠ `getControlVerdicts` ALSO EVALUATES THE STEP GATE (UAT-BLOCKER-STEP67-PROD-02).
+ * That is the whole point of it — the panel must show what the action would
+ * decide — but it makes this the SECOND caller of `evaluateControlGate`, and
+ * the one the browser actually sees. `assertControlStep` refuses a click;
+ * this decides whether there is a click to refuse. A fix applied to the
+ * enforcement gate alone therefore changes nothing an operator can reach:
+ * UAT-WF-STEP67-01 taught the enforcement gate that a SUBMITTED maker opens
+ * its checker's control, and the Chef de Transit's button stayed disabled on
+ * EFT-IMP-2026-00011 because this function was still refusing it
+ * `step_not_open`. ANY future change to the gate's fact set must be made in
+ * BOTH places, and the parity is pinned by a test.
  */
 import "server-only";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
@@ -25,6 +37,7 @@ import {
   stepGateMessageFr,
 } from "./control-gate";
 import { evaluateControlOwnership } from "./control-ownership";
+import { preparerStepFor } from "./engine/state";
 // ONE reader of `process_step_owning_role` for the whole platform.
 import { owningRoleByStepKey as owningRoles } from "./contextual/owning-roles";
 
@@ -116,8 +129,19 @@ export async function getControlVerdicts(
   const ALLOW: ControlVerdict = { allowed: true, reasonCode: null, reasonFr: null, isOwner: true };
   const out: Record<string, ControlVerdict> = {};
 
+  const owningSteps = controlIds
+    .map((c) => CONTROL_OWNING_STEP[c])
+    .filter((k): k is string => !!k);
+  // UAT-BLOCKER-STEP67-PROD-02 — a maker-checker VALIDATOR control is decided
+  // by its PREPARER's state, so the preparer's row has to be in the batch.
+  // Today the dossier page happens to ask for `customs.update` too, which owns
+  // step 6 and would have pulled it in by luck; a caller asking only for
+  // `customs.validation` would not, and luck is not a fact set.
   const stepKeys = [
-    ...new Set(controlIds.map((c) => CONTROL_OWNING_STEP[c]).filter((k): k is string => !!k)),
+    ...new Set([
+      ...owningSteps,
+      ...owningSteps.map((k) => preparerStepFor(k)).filter((k): k is string => !!k),
+    ]),
   ];
   // Controls with no owning step are permission-governed; say so once here.
   for (const id of controlIds) if (!CONTROL_OWNING_STEP[id]) out[id] = ALLOW;
@@ -141,8 +165,19 @@ export async function getControlVerdicts(
       .in("step_key", stepKeys),
     owningRoles(stepKeys),
   ]);
+  // THE LIVE ATTEMPT, the way `loadStep` and `assertControlStep` define it.
+  // `rejectStep` freezes the rejected row and creates a NEW attempt, so a
+  // corrected step has two rows and a last-wins map would render the verdict
+  // for whichever the database returned second.
   const execByStep = new Map<string, Row>();
-  for (const r of (execRows ?? []) as Row[]) execByStep.set(r.step_key as string, r);
+  for (const r of (execRows ?? []) as Row[]) {
+    const key = r.step_key as string;
+    const dead = r.state === "REJECTED" || r.state === "CANCELLED";
+    const held = execByStep.get(key);
+    if (!held || (dead === false && (held.state === "REJECTED" || held.state === "CANCELLED"))) {
+      execByStep.set(key, r);
+    }
+  }
 
   for (const id of controlIds) {
     const stepKey = CONTROL_OWNING_STEP[id];
@@ -154,7 +189,15 @@ export async function getControlVerdicts(
     const step = exec
       ? { state: exec.state as StepState, assignedUserId: assigned }
       : null;
-    const gate = evaluateControlGate({ hasInstance: true, step, userId });
+    // The SAME fact set the enforcement gate reads. Without the preparer's
+    // state a checker control is refused `step_not_open` for the whole life of
+    // the review, because a validator step's own row is PENDING throughout it
+    // by construction — see `preparerState` in control-gate.ts.
+    const preparerKey = preparerStepFor(stepKey);
+    const preparerState = preparerKey
+      ? ((execByStep.get(preparerKey)?.state as StepState | undefined) ?? null)
+      : null;
+    const gate = evaluateControlGate({ hasInstance: true, step, userId, preparerState });
     const own = evaluateControlOwnership({
       hasInstance: true,
       owningRole,

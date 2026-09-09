@@ -51,6 +51,38 @@ import type { StepState } from "@/lib/process/engine/types";
 const read = (p: string) => readFileSync(fileURLToPath(new URL(p, import.meta.url)), "utf8");
 const server = read("../lib/process/control-gate-server.ts");
 const customs = read("../lib/customs/actions.ts");
+/** The RENDER path: what the browser's disabled state is actually computed from. */
+const verdicts = read("../lib/process/control-ownership-server.ts");
+const dossierPage = read("../app/files/[id]/page.tsx");
+const panel = read("../components/customs/customs-panel.tsx");
+
+/**
+ * Every `evaluateControlGate({ ... })` argument object in a source file.
+ *
+ * Balanced-brace slice from the `({` to its matching `}`, so an assertion
+ * cannot pass because the word appears somewhere else in the file. That is the
+ * mistake that let UAT-BLOCKER-STEP67-PROD-02 through: the fix was real, the
+ * pins were real, and neither looked at the second call site.
+ */
+function gateCallArgs(src: string): string[] {
+  const out: string[] = [];
+  const needle = "evaluateControlGate({";
+  let at = src.indexOf(needle);
+  while (at !== -1) {
+    let depth = 0;
+    let i = at + needle.length - 1;
+    for (; i < src.length; i++) {
+      if (src[i] === "{") depth++;
+      else if (src[i] === "}") {
+        depth--;
+        if (depth === 0) break;
+      }
+    }
+    out.push(src.slice(at + needle.length - 1, i + 1));
+    at = src.indexOf(needle, i);
+  }
+  return out;
+}
 
 /** The body of the action the Chef de Transit's button calls, and nothing else. */
 const validationFn = customs.slice(
@@ -284,5 +316,91 @@ describe("nothing was broadened, and maker ≠ checker still holds", () => {
     // …and the pair does not wait on them either, so the customs branch and the
     // transport-readiness branch stay siblings.
     expect(getStep("customs_preparation")!.prerequisites).toEqual(["transit_declarant_assignment"]);
+  });
+});
+
+describe("ONE rule, TWO evaluators — the parity that was missing", () => {
+  /**
+   * UAT-BLOCKER-STEP67-PROD-02. `assertControlStep` refuses a CLICK.
+   * `getControlVerdicts` decides whether there is a click to refuse, and it is
+   * what the dossier page renders `disabled` from. Teaching the first that a
+   * SUBMITTED maker opens its checker's control changed nothing an operator
+   * could reach, because the second still answered `step_not_open`.
+   *
+   * These tests are about the CLASS, not the instance: any future fact added
+   * to the gate must reach both, and a third caller must not appear silently.
+   */
+  it("has exactly the two known callers of the gate, and no more", () => {
+    const callers = [
+      ["lib/process/control-gate-server.ts", server],
+      ["lib/process/control-ownership-server.ts", verdicts],
+    ] as const;
+    for (const [name, src] of callers) {
+      expect(gateCallArgs(src).length, `${name} must call the gate`).toBeGreaterThan(0);
+    }
+    // The pure module defines it; nothing else may evaluate it. A new caller is
+    // a new place for the fact set to drift, and must come with its own pin.
+    expect(gateCallArgs(read("../lib/process/control-gate.ts")).length).toBe(0);
+  });
+
+  it("EVERY gate call passes the preparer fact — including the render path", () => {
+    for (const [name, src] of [
+      ["control-gate-server.ts", server],
+      ["control-ownership-server.ts", verdicts],
+    ] as const) {
+      const args = gateCallArgs(src);
+      for (const [i, a] of args.entries()) {
+        // The no-instance compatibility branch answers `allowed` and asks
+        // nothing about steps, so it needs no preparer.
+        if (/step:\s*null/.test(a) && /hasInstance:\s*false/.test(a)) continue;
+        expect(a, `${name} gate call #${i + 1} omits preparerState: ${a}`).toContain("preparerState");
+      }
+    }
+  });
+
+  it("the render path resolves the preparer from the registry, per control", () => {
+    expect(verdicts).toContain('import { preparerStepFor } from "./engine/state"');
+    expect(verdicts).toMatch(/const preparerKey = preparerStepFor\(stepKey\)/);
+    // …and LOADS it: a verdict computed from a row that was never fetched is
+    // indistinguishable from one computed from PENDING.
+    expect(verdicts).toMatch(/owningSteps\.map\(\(k\) => preparerStepFor\(k\)\)/);
+    expect(verdicts).toMatch(/execByStep\.get\(preparerKey\)\?\.state/);
+  });
+
+  it("the render path keeps the LIVE attempt too", () => {
+    // A last-wins map over two rows renders the verdict for whichever the
+    // database returned second. Both sides now prefer the live attempt.
+    expect(verdicts).toMatch(/r\.state === "REJECTED" \|\| r\.state === "CANCELLED"/);
+    expect(server).toMatch(/r\.state !== "REJECTED" && r\.state !== "CANCELLED"/);
+  });
+});
+
+describe("the production rendering path, pinned end to end", () => {
+  it("the dossier page asks getControlVerdicts for the Chef's control", () => {
+    expect(dossierPage).toContain("getControlVerdicts(");
+    expect(dossierPage).toContain('"customs.validation"');
+  });
+
+  it("the panel's disabled state and its sentence both come from that verdict", () => {
+    expect(panel).toContain('disabled={pending || !gateOpen("customs.validation")}');
+    expect(panel).toContain('<GateHint reason={gateReason("customs.validation")} />');
+    // `gateOpen` reads `allowed`; `gateReason` reads `reasonFr`. Both are the
+    // verdict's own fields, so there is no third opinion in the client.
+    expect(panel).toMatch(/const gateOpen = \(controlId: string\) => gates\[controlId\]\?\.allowed \?\? true/);
+    expect(panel).toMatch(/const gateReason = \(controlId: string\) => gates\[controlId\]\?\.reasonFr \?\? null/);
+  });
+
+  it("a validator control refused for lack of a submission still says NOT YET", () => {
+    // The render path's own composition, exercised through the pure rule it
+    // uses: no submission ⇒ the same sentence as before, unchanged.
+    const r = evaluateControlGate({
+      hasInstance: true,
+      step: step("PENDING"),
+      userId: ME,
+      preparerState: "ACTIVE",
+    });
+    expect(r).toEqual({ allowed: false, reason: "step_not_open" });
+    expect(CONTROL_GATE_MESSAGE_FR[controlGateError(r.reason).slice("step_gate_".length)])
+      .toBe("Cette étape n'est pas encore ouverte.");
   });
 });

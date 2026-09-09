@@ -177,6 +177,22 @@ export async function customsIdFor(fileId: string): Promise<string> {
   return data.id as string;
 }
 
+/**
+ * The five GOVERNED customs elements (UAT-BLOCKER-STEP67-PROD-02).
+ *
+ * Read so a test can assert they are BLANK and that nothing gates on them:
+ * Effitrans ruled them non-critical, and a journey that quietly populated them
+ * would stop proving it.
+ */
+export async function customsGovernedElements(fileId: string) {
+  const { data } = await db()
+    .from("customs_record")
+    .select("sh_position_count, declaration_type, dpi_regime, exemption_title_origin, tariff_classification_origin")
+    .eq("file_id", fileId)
+    .maybeSingle();
+  return (data ?? null) as Record<string, unknown> | null;
+}
+
 /** The Chef de Transit's verdict on the release, and the status it decides. */
 export async function customsReleaseState(fileId: string) {
   const { data } = await db()

@@ -17,7 +17,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { as } from "./identity";
 import {
   identity, execution, auditFor, handoffs, provideEvidence, customsIdFor, customsReleaseState,
-  CLIENT_DEPOSIT_REQUIRED, gaindeTaxPayment, } from "./fixtures";
+  CLIENT_DEPOSIT_REQUIRED, gaindeTaxPayment, customsGovernedElements, } from "./fixtures";
 import type { CurrentUser } from "@/lib/auth/current-user";
 
 import { createFile, assignCommercialOwner } from "@/lib/files/actions";
@@ -29,6 +29,7 @@ import {
   createCustoms, recordGaindeRegistration, changeCustomsStatus, recordCustomsValidation,
 } from "@/lib/customs/actions";
 import { assertControlStep } from "@/lib/process/control-gate-server";
+import { getControlVerdicts } from "@/lib/process/control-ownership-server";
 
 let ops: CurrentUser;            // OPS_SUPERVISOR — customs:validate (independent checker)
 let am: CurrentUser;             // ACCOUNT_MANAGER
@@ -80,6 +81,42 @@ async function handOver(
   expect(closed!.status).toBe("RECEIVED");
   expect(closed!.received_by, "the receiver is recorded").toBe(receiver.id);
   expect(closed!.received_by, "and is not the sender").not.toBe(closed!.sent_by);
+}
+
+/**
+ * THE CONTROLS THE DOSSIER PAGE ASKS FOR, verbatim.
+ *
+ * UAT-BLOCKER-STEP67-PROD-02 — `app/files/[id]/page.tsx` builds the customs
+ * panel's verdicts from exactly this list, and `customs-panel.tsx` renders
+ * `disabled={!gateOpen(id)}` from the result. Reproducing the list is what
+ * makes the assertions below a test of the BROWSER'S path rather than of a
+ * helper in isolation: the previous slice proved `assertControlStep`, which is
+ * only consulted once a click has already happened.
+ */
+const PAGE_CUSTOMS_CONTROLS = [
+  "customs.create",
+  "customs.update",
+  "customs.declaration_reference",
+  "customs.status",
+  "customs.receivability",
+  "customs.attachment",
+  "customs.gainde_registration",
+  "customs.validation",
+  "customs.bae",
+  "customs.release",
+] as const;
+
+/** What the panel does with a verdict: enabled, and with no refusal sentence. */
+function expectRendersEnabled(
+  verdicts: Record<string, { allowed: boolean; reasonCode: string | null; reasonFr: string | null; isOwner: boolean }>,
+  controlId: string,
+) {
+  const v = verdicts[controlId];
+  expect(v, `${controlId} must have a verdict — an absent one is drawn UNGATED`).toBeTruthy();
+  expect(v.isOwner, `${controlId} must be drawn for this viewer`).toBe(true);
+  expect(v.allowed, `${controlId} must be ENABLED: ${JSON.stringify(v)}`).toBe(true);
+  expect(v.reasonCode).toBeNull();
+  expect(v.reasonFr, "an enabled control shows no refusal sentence").toBeNull();
 }
 
 /** The activation audit for a step must name the actor who caused it. */
@@ -329,6 +366,55 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
       await assertControlStep("customs.bae", fileId, transit.tenantId, transit.id),
       "an ordinary un-reached step gains nothing from this change",
     ).toBe("step_gate_step_not_open");
+  });
+
+  /**
+   * UAT-BLOCKER-STEP67-PROD-02 — THE BROWSER'S PATH, not the action's.
+   *
+   * The previous slice fixed `assertControlStep` and the Chef's button stayed
+   * disabled in production, because the dossier page does not call it: it calls
+   * `getControlVerdicts`, which evaluates the step gate a SECOND time and fed
+   * `disabled` and « Cette étape n'est pas encore ouverte. » straight into the
+   * panel. One rule, two evaluators, one of them fixed. This asserts the one
+   * the operator actually sees.
+   */
+  it("6→7 the DOSSIER PAGE renders the Chef's button ENABLED", async () => {
+    const verdicts = await getControlVerdicts(
+      PAGE_CUSTOMS_CONTROLS, fileId, transit.tenantId, transit.id, transit.roles ?? [],
+    );
+
+    expectRendersEnabled(verdicts, "customs.validation");
+    expect(
+      verdicts["customs.validation"].reasonFr,
+      "the sentence the operator read must be gone",
+    ).not.toBe("Cette étape n'est pas encore ouverte.");
+
+    // The five governed customs elements are BLANK on this dossier, exactly as
+    // on EFT-IMP-2026-00011, and none of them is a blocker.
+    const rec = await customsGovernedElements(fileId);
+    for (const col of [
+      "sh_position_count", "declaration_type", "dpi_regime",
+      "exemption_title_origin", "tariff_classification_origin",
+    ]) {
+      expect(rec?.[col] ?? null, `${col} must still be blank here`).toBeNull();
+    }
+    expect(verdicts["customs.validation"].allowed, "a blank governed element blocks nothing").toBe(true);
+
+    // NARROW, on the very surface that was wrong: an un-reached step with no
+    // maker-checker preparer is still refused, and still says NOT YET.
+    const bae = verdicts["customs.bae"];
+    expect(bae.allowed, "step 13 has not been reached").toBe(false);
+    expect(bae.reasonCode).toBe("step_gate_step_not_open");
+    expect(bae.reasonFr).toBe("Cette étape n'est pas encore ouverte.");
+
+    // And the Déclarant — the maker — is offered nothing here. Refused on the
+    // ROLE, and the control is not even drawn for them.
+    const asMaker = await getControlVerdicts(
+      PAGE_CUSTOMS_CONTROLS, fileId, declarant.tenantId, declarant.id, declarant.roles ?? [],
+    );
+    expect(asMaker["customs.validation"].allowed, "the maker may not validate").toBe(false);
+    expect(asMaker["customs.validation"].isOwner, "and it is not drawn for them").toBe(false);
+    expect(asMaker["customs.validation"].reasonCode).toBe("step_gate_not_owning_role");
   });
 
   it("6→7 the MAKER is refused at the panel and in the engine", async () => {
