@@ -219,20 +219,25 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     // The assignment IS the step's product: step 6 must belong to somebody
     // before anyone can be said to be preparing it.
     //
-    // It is assigned to the CHIEF OF TRANSIT deliberately, and that is the only
-    // unusual choice in this slice. Step 6 is normally the declarant's. But the
-    // maker-checker proof below needs a preparer who ALSO holds customs:validate
-    // — otherwise the forbidden self-approval is refused for lack of permission,
-    // which proves permission gating and says nothing about maker ≠ checker.
-    // CHIEF_OF_TRANSIT legitimately holds both, so it is the one identity that
-    // can demonstrate the rule approveStep actually claims: a supervisor who
-    // happens to hold both permissions still cannot approve their own work.
-    // The declarant's refusal is asserted separately, so both remain proven.
+    // It is assigned to the DÉCLARANT, which is what the registry says and what
+    // production does: on EFT-IMP-2026-00011 the Chef assigned the Déclarant at
+    // step 5 and the Déclarant prepared step 6.
+    //
+    // This slice used to assign step 6 to the CHIEF OF TRANSIT so that the
+    // self-approval refusal below would be about IDENTITY rather than
+    // permission — CHIEF_OF_TRANSIT holds customs:create AND customs:validate.
+    // That proof is not lost: `negative-battery.journey.ts` performs exactly
+    // it, with the same mechanics and the same comment. What it cost here was
+    // the whole point of this slice — with the Chef as the maker, the Chef can
+    // never be the checker, so the Chef's own validation surface was
+    // unreachable and UAT-WF-STEP67-01 could hide behind a direct
+    // `approveStep` call. Two distinct people, each in their registry role, is
+    // both more faithful and what actually exercises the door.
     const assigned = await as(transit, () =>
-      assignTransitStep(fileId, "customs_preparation", transit.id),
+      assignTransitStep(fileId, "customs_preparation", declarant.id),
     );
     expect(assigned.ok, `assign: ${JSON.stringify(assigned)}`).toBe(true);
-    expect((await execution(fileId, "customs_preparation"))?.assigned_user_id).toBe(transit.id);
+    expect((await execution(fileId, "customs_preparation"))?.assigned_user_id).toBe(declarant.id);
 
     await runStep(transit, "transit_declarant_assignment");
     expect((await execution(fileId, "transit_declarant_assignment"))?.state).toBe("COMPLETED");
@@ -242,10 +247,10 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
   // -------------------------------------------------- 6. customs preparation ----
 
   it("step 6 refuses to close before the customs dossier exists", async () => {
-    const started = await as(transit, () => activateStep(fileId, "customs_preparation"));
+    const started = await as(declarant, () => activateStep(fileId, "customs_preparation"));
     expect(started.ok, `activate step 6: ${JSON.stringify(started)}`).toBe(true);
 
-    const premature = await as(transit, () => submitStep(fileId, "customs_preparation"));
+    const premature = await as(declarant, () => submitStep(fileId, "customs_preparation"));
     expect(premature.ok, "step 6 must refuse without CUSTOMS_DOSSIER").toBe(false);
     expect((premature as { error: string }).error).toBe("evidence_missing");
     expect((await execution(fileId, "customs_preparation"))?.state).toBe("ACTIVE");
@@ -254,7 +259,7 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
   it("step 6 SUBMITS for review rather than completing — it is a maker step", async () => {
     // CUSTOMS_DOSSIER is not an upload: it is satisfied by the existence of the
     // structured customs record, created through the action that owns it.
-    const created = await as(transit, () => createCustoms(fileId));
+    const created = await as(declarant, () => createCustoms(fileId));
     expect(created.ok, `createCustoms: ${JSON.stringify(created)}`).toBe(true);
 
     // A declaration cannot be FILED while a prerequisite document is missing:
@@ -263,7 +268,7 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     // Each must be VERIFIED, so each arrives the real way — uploaded by the
     // person preparing the step, verified by someone else.
     for (const code of ["COMMERCIAL_INVOICE", "PACKING_LIST", "CUSTOMS_DECLARATION", "BILL_OF_LADING"]) {
-      await provideEvidence(fileId, code, transit, ops);
+      await provideEvidence(fileId, code, declarant, ops);
     }
 
     // The customs STATUS ladder is walked here, not later, because the control
@@ -273,16 +278,16 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     // them during preparation for step 13 to be reachable at all.
     const customsId = await customsIdFor(fileId);
     for (const status of ["DOCUMENTS_PENDING", "DECLARATION_PREPARED", "DECLARED", "DUTIES_ASSESSED"]) {
-      const moved = await as(transit, () => changeCustomsStatus(customsId, status));
+      const moved = await as(declarant, () => changeCustomsStatus(customsId, status));
       expect(moved.ok, `customs -> ${status}: ${JSON.stringify(moved)}`).toBe(true);
     }
 
-    const submitted = await as(transit, () => submitStep(fileId, "customs_preparation"));
+    const submitted = await as(declarant, () => submitStep(fileId, "customs_preparation"));
     expect(submitted.ok, `submit step 6: ${JSON.stringify(submitted)}`).toBe(true);
 
     const exec = await execution(fileId, "customs_preparation");
     expect(exec?.state, "a reviewed step stops at SUBMITTED, never COMPLETED").toBe("SUBMITTED");
-    expect(exec?.submitted_by).toBe(transit.id);
+    expect(exec?.submitted_by).toBe(declarant.id);
     expect(exec?.completed_at, "nothing is complete until it is reviewed").toBeNull();
   });
 
@@ -310,7 +315,7 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     ).toBe("PENDING");
 
     expect(
-      await assertControlStep("customs.validation", fileId, ops.tenantId, ops.id),
+      await assertControlStep("customs.validation", fileId, transit.tenantId, transit.id),
       "a submitted maker must open its checker's control",
     ).toBeNull();
 
@@ -321,22 +326,27 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
       "step 13 has not been reached",
     ).toBe("PENDING");
     expect(
-      await assertControlStep("customs.bae", fileId, ops.tenantId, ops.id),
+      await assertControlStep("customs.bae", fileId, transit.tenantId, transit.id),
       "an ordinary un-reached step gains nothing from this change",
     ).toBe("step_gate_step_not_open");
   });
 
-  it("6→7 MAKER ≠ CHECKER — the preparer cannot validate its own work", async () => {
+  it("6→7 the MAKER is refused at the panel and in the engine", async () => {
     const before = await execution(fileId, "customs_preparation");
 
-    const refused = await as(transit, () => approveStep(fileId, "transit_validation"));
+    // The Déclarant prepared this. Here the refusal is about PERMISSION —
+    // CUSTOMS_DECLARANT holds no `customs:validate` at all, and the door and
+    // the engine must both say so. The IDENTITY case, where the maker DOES
+    // hold both capabilities, is proven in `negative-battery.journey.ts`,
+    // which assigns step 6 to the Chef precisely to demonstrate it.
+    const refused = await as(declarant, () => approveStep(fileId, "transit_validation"));
     expect(refused.ok, "the preparer must not approve itself").toBe(false);
-    expect((refused as { error: string }).error).toBe("self_validation_forbidden");
+    expect((refused as { error: string }).error).toBe("forbidden");
 
-    // …and through the operator's own door, which now reaches the engine.
     const customsId = await customsIdFor(fileId);
-    const atTheDoor = await as(transit, () => recordCustomsValidation(customsId));
-    expect(atTheDoor.ok, "the preparer must not validate from the panel either").toBe(false);
+    const atTheDoor = await as(declarant, () => recordCustomsValidation(customsId));
+    expect(atTheDoor.ok, "the Déclarant gains no validation authority").toBe(false);
+    expect((atTheDoor as { error: string }).error).toBe("forbidden");
 
     // Nothing moved: not the preparer step, not the validator step.
     const after = await execution(fileId, "customs_preparation");
@@ -347,18 +357,16 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     expect((await execution(fileId, "transit_validation"))?.state).not.toBe("COMPLETED");
   });
 
-  it("…and an actor without customs:validate is refused for a DIFFERENT reason", async () => {
-    // The two refusals must stay distinguishable: the declarant is not the
-    // maker here, it simply may not review at all.
-    const refused = await as(declarant, () => approveStep(fileId, "transit_validation"));
-    expect(refused.ok).toBe(false);
-    expect((refused as { error: string }).error).toBe("forbidden");
-
+  it("…and holding customs:validate is NOT holding the Chef's seat", async () => {
+    // Operations holds `customs:validate` for other acts and is refused this
+    // control on OWNERSHIP — the ratified narrowing of
+    // OPS-CUSTOMS-OWNERSHIP-01. Asserted here because opening the step gate
+    // must not be mistaken for opening the door: the second condition still
+    // stands, and it stands on the ROLE the registry names.
     const customsId = await customsIdFor(fileId);
-    const atTheDoor = await as(declarant, () => recordCustomsValidation(customsId));
-    expect(atTheDoor.ok, "the Déclarant gains no validation authority").toBe(false);
-    expect((atTheDoor as { error: string }).error).toBe("forbidden");
-
+    const refused = await as(ops, () => recordCustomsValidation(customsId));
+    expect(refused.ok, "broad privilege is not this seat").toBe(false);
+    expect((refused as { error: string }).error).toBe("step_gate_not_owning_role");
     expect((await execution(fileId, "customs_preparation"))?.state).toBe("SUBMITTED");
   });
 
@@ -367,12 +375,12 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     // record AND closes the maker-checker pair; before this slice it did only
     // the first, so step 6 stayed SUBMITTED and step 8 never opened.
     const customsId = await customsIdFor(fileId);
-    const approved = await as(ops, () => recordCustomsValidation(customsId));
+    const approved = await as(transit, () => recordCustomsValidation(customsId));
     expect(approved.ok, `validate: ${JSON.stringify(approved)}`).toBe(true);
 
     const prep = await execution(fileId, "customs_preparation");
     expect(prep?.state).toBe("COMPLETED");
-    expect(prep?.reviewed_by, "the reviewer is recorded").toBe(ops.id);
+    expect(prep?.reviewed_by, "the reviewer is recorded").toBe(transit.id);
     expect(prep?.reviewed_by, "and is NOT the maker").not.toBe(prep?.submitted_by);
 
     expect((await execution(fileId, "transit_validation"))?.state).toBe("COMPLETED");
@@ -380,7 +388,7 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
 
     const events = await auditFor("process.step.approved", prep!.id as string);
     expect(events.length, "the approval must be audited").toBeGreaterThan(0);
-    expect(events[0].actor_id).toBe(ops.id);
+    expect(events[0].actor_id).toBe(transit.id);
   });
 
   // ------------------------------------------------------ 8–13 GAINDE / BAE ----
