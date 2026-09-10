@@ -262,6 +262,35 @@ export function checkEvidence(key: string, snap: EvidenceSnapshot): EvidenceItem
       : { key, labelFr, status: "missing", detail: "no_field_agent" };
   }
 
+  // CUSTOMS_RELEASE — the finalized mainlevée, a GOVERNED FACT, never an upload.
+  //
+  // STEP13-COMPLETION-01. Step 13 is « obtenir le Bon à Enlever ET lever le
+  // dossier », and the registry has always said so: `completionRule:
+  // "bae_obtained_and_customs_released"`. Only the first half was enforced —
+  // `BON_A_ENLEVER` asks whether a BAE REFERENCE exists — so on
+  // EFT-IMP-2026-00011, the moment the field agent recorded the BAE, « Terminer »
+  // was offered and `submitStep` would have accepted it: with the Chef de
+  // Transit's verification still PENDING and customs still INSPECTION.
+  //
+  // And an early completion is not merely premature, it is IRREVERSIBLE through
+  // the UI: `customs.release` is gated on this step, a COMPLETED step answers
+  // `step_closed`, so `finalizeTransitRelease` could never record the release,
+  // customs could never become RELEASED, and the pickup gate could never open.
+  //
+  // So the release is its own key. `BON_A_ENLEVER` keeps meaning « the BAE was
+  // recorded » and this means « the release was finalized »: two governed facts,
+  // two sentences an operator can act on. ONLY `status === "RELEASED"` satisfies
+  // it — an approval PENDING, REJECTED or even APPROVED-but-not-finalized is not a
+  // release. `recordCustomsRelease` is the one writer of that status, and it
+  // already refuses without the Chef's APPROVED verdict.
+  if (key === "CUSTOMS_RELEASE") {
+    if (!snap.access.customs) return { key, labelFr, status: "unauthorized" };
+    if (!snap.customs) return { key, labelFr, status: "missing", detail: "no_customs_record" };
+    return snap.customs.status === "RELEASED"
+      ? { key, labelFr, status: "satisfied", detail: "customs_released" }
+      : { key, labelFr, status: "missing", detail: "customs_not_released" };
+  }
+
   if (key === "BON_A_ENLEVER") {
     if (!snap.access.customs) return { key, labelFr, status: "unauthorized" };
     if (!snap.customs) return { key, labelFr, status: "missing", detail: "no_customs_record" };

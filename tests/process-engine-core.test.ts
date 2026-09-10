@@ -447,7 +447,8 @@ describe("evidence checker (Deliverable 9)", () => {
 
   it("evaluates every document a step requires", () => {
     const e = evaluateStepEvidence("customs_field_clearance", emptySnap);
-    expect(e.missing).toEqual(["BON_A_ENLEVER"]);
+    // STEP13-COMPLETION-01 — step 13 requires the BAE AND the finalized release.
+    expect(e.missing).toEqual(["BON_A_ENLEVER", "CUSTOMS_RELEASE"]);
     expect(e.complete).toBe(false);
 
     const ok = evaluateStepEvidence("customs_field_clearance", readySnap);

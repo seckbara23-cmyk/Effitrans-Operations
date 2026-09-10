@@ -900,6 +900,26 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     expect(recorded?.status).not.toBe("RELEASED");
     expect((await execution(fileId, "customs_field_clearance"))?.state).not.toBe("COMPLETED");
 
+    // STEP13-COMPLETION-01 — PRESS THE DANGEROUS DOOR, don't just observe it.
+    //
+    // This journey used to check only that step 13 HAPPENED not to be completed
+    // after the BAE. It never tried. On EFT-IMP-2026-00011 that exact moment
+    // offered « Terminer », and `submitStep` would have accepted it on the BAE
+    // reference alone — closing the release control, after which the release
+    // could never be recorded at all.
+    const earlyTerminer = await as(field, () => submitStep(fileId, "customs_field_clearance"));
+    expect(earlyTerminer.ok, "step 13 must not close on a BAE with the verification PENDING").toBe(false);
+    expect((earlyTerminer as { error: string }).error).toBe("evidence_missing");
+    expect(
+      ((earlyTerminer as { missing?: { key: string }[] }).missing ?? []).map((m) => m.key),
+      "the refusal names the release, not the BAE that is already on file",
+    ).toEqual(["CUSTOMS_RELEASE"]);
+    // …and the surface agrees: no « Terminer », and it says what is missing.
+    const surface = await stepEligibility(fileId, "customs_field_clearance", field);
+    expect(surface?.canSubmit, "the UI must not offer Terminer").toBe(false);
+    expect(surface?.reasonFr).toBe("Action requise : Mainlevée finalisée.");
+    expect((await execution(fileId, "customs_field_clearance"))?.state).toBe("ACTIVE");
+
     // The field agent who obtained the mainlevée may not verify it. Refused on
     // the SEAT — the field agent holds neither `customs:validate` nor the Chef's
     // role — so this does not reach the database's maker/checker guard, which
@@ -935,6 +955,11 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     expect(refusedState?.release_approval_status).toBe("REJECTED");
     expect(refusedState?.release_approval_note).toContain("illisible");
 
+    // A REJECTED verification is not a release either.
+    const afterRejection = await as(field, () => submitStep(fileId, "customs_field_clearance"));
+    expect(afterRejection.ok, "a refused BAE must not let step 13 close").toBe(false);
+    expect((afterRejection as { error: string }).error).toBe("evidence_missing");
+
     // Correcting the mainlevée reopens the verification rather than inheriting
     // the refusal — the field agent can answer the Chef and be looked at again.
     const corrected = await as(field, () => recordBae(fileId, `BAE-JRN-2-${Date.now()}`));
@@ -942,6 +967,13 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
 
     const verdict = await as(transit, () => decideTransitRelease(fileId, "APPROVED"));
     expect(verdict.ok, `release approval: ${JSON.stringify(verdict)}`).toBe(true);
+
+    // APPROVED is a verdict, not a release: until the field agent finalizes,
+    // customs is not RELEASED and step 13 still may not close.
+    const afterApproval = await as(field, () => submitStep(fileId, "customs_field_clearance"));
+    expect(afterApproval.ok, "an approved but unfinalized release must not let step 13 close").toBe(false);
+    expect((afterApproval as { error: string }).error).toBe("evidence_missing");
+    expect((await customsReleaseState(fileId))?.status).not.toBe("RELEASED");
     // The ratified control is intact: the Chef holds `customs:release` and is
     // STILL refused the finalisation, because step 13 is claimed by the field
     // agent. Approving does not hand the Chef the release — it unblocks it for
