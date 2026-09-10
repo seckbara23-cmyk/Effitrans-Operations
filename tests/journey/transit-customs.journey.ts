@@ -18,7 +18,8 @@ import { as } from "./identity";
 import {
   identity, execution, auditFor, handoffs, provideEvidence, customsIdFor, customsReleaseState,
   CLIENT_DEPOSIT_REQUIRED, gaindeTaxPayment, customsGovernedElements,
-  gaindePayments, gaindePaymentLines, customsRecordRefs, db, } from "./fixtures";
+  gaindePayments, gaindePaymentLines, customsRecordRefs, db,
+  customsEventActor, customsEventCount, } from "./fixtures";
 import type { CurrentUser } from "@/lib/auth/current-user";
 
 import { createFile, assignCommercialOwner } from "@/lib/files/actions";
@@ -47,6 +48,9 @@ let field: CurrentUser;          // CUSTOMS_FIELD_AGENT — customs:release
 
 let fileId = "";
 
+/** ATTR-CUSTOMS-01 — the step 7 validation instant, captured when the Chef validates. */
+let step7ReviewedAt: string | null = null;
+
 /**
  * UAT-STEP9-FINANCE-01 — THE DECLARATION FINANCE PAYS AGAINST.
  *
@@ -66,6 +70,24 @@ async function runStep(actor: CurrentUser, stepKey: string) {
   const done = await as(actor, () => submitStep(fileId, stepKey));
   expect(done.ok, `submit ${stepKey}: ${JSON.stringify(done)}`).toBe(true);
   return done;
+}
+
+/**
+ * ATTR-CUSTOMS-01 — after every customs act from step 7 on, the four facts stay
+ * on their own columns and `reviewed_by` stays the Chef who validated step 7.
+ * Before the repair, finalising the release overwrote it with the field agent,
+ * and the dossier read « Validé par » the wrong person.
+ */
+async function expectCustomsAttribution(
+  stage: string,
+  want: { recorder: string | null; approver: string | null; finaliser: string | null },
+) {
+  const s = await customsReleaseState(fileId);
+  expect(s?.reviewed_by, `${stage}: reviewed_by must stay the step 7 validator`).toBe(transit.id);
+  expect(s?.reviewed_at, `${stage}: the validation instant must not move`).toBe(step7ReviewedAt);
+  expect(s?.bae_recorded_by ?? null, `${stage}: the BAE recorder`).toBe(want.recorder);
+  expect(s?.release_approval_by ?? null, `${stage}: the release approver`).toBe(want.approver);
+  expect(s?.released_by ?? null, `${stage}: the release finaliser`).toBe(want.finaliser);
 }
 
 /**
@@ -536,6 +558,14 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     const approved = await as(transit, () => recordCustomsValidation(customsId));
     expect(approved.ok, `validate: ${JSON.stringify(approved)}`).toBe(true);
 
+    // ATTR-CUSTOMS-01 — the certification names the Chef, on the record AND in
+    // the ledger. Every later customs act in step 13 must leave both untouched.
+    const validated = await customsReleaseState(fileId);
+    expect(validated?.reviewed_by, "reviewed_by is the step 7 validator").toBe(transit.id);
+    expect(validated?.reviewed_at, "…with the instant of the validation").toBeTruthy();
+    step7ReviewedAt = (validated?.reviewed_at as string | null) ?? null;
+    expect(await customsEventActor(customsId, "CUSTOMS_VALIDATED")).toBe(transit.id);
+
     const prep = await execution(fileId, "customs_preparation");
     expect(prep?.state).toBe("COMPLETED");
     expect(prep?.reviewed_by, "the reviewer is recorded").toBe(transit.id);
@@ -892,6 +922,15 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     const bae = await as(field, () => recordBae(fileId, `BAE-JRN-${Date.now()}`));
     expect(bae.ok, `recordBae: ${JSON.stringify(bae)}`).toBe(true);
 
+    // ATTR-CUSTOMS-01 — the recorder is the field agent, on the record and in
+    // the ledger. The trigger used to name whoever held reviewed_by: the Chef.
+    const customsId = await customsIdFor(fileId);
+    await expectCustomsAttribution("after the BAE", { recorder: field.id, approver: null, finaliser: null });
+    expect(
+      await customsEventActor(customsId, "BAE_RECORDED"),
+      "BAE_RECORDED names its recorder, not the step 7 validator",
+    ).toBe(field.id);
+
     // TRANSIT-CUSTODY-05 — recording is not releasing. The reference and its
     // author are on file, the verification is open, and the step stays open too.
     const recorded = await customsReleaseState(fileId);
@@ -949,6 +988,7 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     const refused = await as(transit, () =>
       decideTransitRelease(fileId, "REJECTED", "Référence illisible sur le BAE."));
     expect(refused.ok, `refusal: ${JSON.stringify(refused)}`).toBe(true);
+    await expectCustomsAttribution("after the refusal", { recorder: field.id, approver: transit.id, finaliser: null });
     const stillBlocked = await as(field, () => finalizeTransitRelease(fileId));
     expect((stillBlocked as { error: string }).error).toBe("release_not_approved");
     const refusedState = await customsReleaseState(fileId);
@@ -964,9 +1004,16 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     // the refusal — the field agent can answer the Chef and be looked at again.
     const corrected = await as(field, () => recordBae(fileId, `BAE-JRN-2-${Date.now()}`));
     expect(corrected.ok, `re-record: ${JSON.stringify(corrected)}`).toBe(true);
+    // A correction reopens the verification (the refusal's approver is cleared)
+    // and is a REPLACEMENT, not a second first-recording.
+    await expectCustomsAttribution("after the BAE correction", { recorder: field.id, approver: null, finaliser: null });
+    expect(await customsEventCount(customsId, "BAE_RECORDED")).toBe(1);
+    expect(await customsEventActor(customsId, "BAE_RECORDED")).toBe(field.id);
 
     const verdict = await as(transit, () => decideTransitRelease(fileId, "APPROVED"));
     expect(verdict.ok, `release approval: ${JSON.stringify(verdict)}`).toBe(true);
+    await expectCustomsAttribution("after the approval", { recorder: field.id, approver: transit.id, finaliser: null });
+    expect(await customsEventActor(customsId, "CUSTOMS_RELEASE_APPROVED")).toBe(transit.id);
 
     // APPROVED is a verdict, not a release: until the field agent finalizes,
     // customs is not RELEASED and step 13 still may not close.
@@ -980,6 +1027,7 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     // the person whose step it is. This can fail for no other reason.
     const chefFinalize = await as(transit, () => finalizeTransitRelease(fileId));
     expect(chefFinalize.ok, "the Chef must not be able to finalise").toBe(false);
+    await expectCustomsAttribution("after the Chef's refused finalisation", { recorder: field.id, approver: transit.id, finaliser: null });
 
     const finalized = await as(field, () => finalizeTransitRelease(fileId));
     expect(finalized.ok, `finalize release: ${JSON.stringify(finalized)}`).toBe(true);
@@ -987,11 +1035,22 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     expect(released?.status).toBe("RELEASED");
     expect(released?.release_approval_status).toBe("APPROVED");
 
+    // ATTR-CUSTOMS-01 — THE DEFECT. Finalising used to write reviewed_by = the
+    // field agent. It stays the Chef; the finaliser has its own column, and the
+    // ledger names each act's own author.
+    await expectCustomsAttribution("after the release", { recorder: field.id, approver: transit.id, finaliser: field.id });
+    expect(await customsEventActor(customsId, "CUSTOMS_RELEASE_COMPLETED")).toBe(field.id);
+    expect(await customsEventActor(customsId, "CUSTOMS_STATUS_CHANGED")).toBe(field.id);
+    expect(await customsEventActor(customsId, "CUSTOMS_VALIDATED")).toBe(transit.id);
+    expect(await customsEventCount(customsId, "CUSTOMS_VALIDATED")).toBe(1);
+
     // The release IS the fact that proves this step, so reconciliation closes it
     // — and now promotes from it.
     const s13 = await execution(fileId, "customs_field_clearance");
     expect(s13?.state).toBe("COMPLETED");
     expect(s13?.completion_provenance).toBe("RECONCILED");
+    // …and reconciliation re-attributes nothing.
+    await expectCustomsAttribution("after reconciliation", { recorder: field.id, approver: transit.id, finaliser: field.id });
   });
 
   // --------------------------------------------------------- convergence ----

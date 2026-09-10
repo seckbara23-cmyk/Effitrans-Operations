@@ -229,14 +229,48 @@ export async function customsGovernedElements(fileId: string) {
   return (data ?? null) as Record<string, unknown> | null;
 }
 
-/** The Chef de Transit's verdict on the release, and the status it decides. */
+/**
+ * The Chef de Transit's verdict on the release, the status it decides, and —
+ * ATTR-CUSTOMS-01 — the four step 7 → 13 facts, each on its own column.
+ */
 export async function customsReleaseState(fileId: string) {
   const { data } = await db()
     .from("customs_record")
-    .select("status, bae_reference, bae_recorded_by, release_approval_status, release_approval_by, release_approval_note")
+    .select("status, bae_reference, bae_recorded_by, release_approval_status, release_approval_by, release_approval_note, reviewed_by, reviewed_at, released_by")
     .eq("file_id", fileId)
     .maybeSingle();
   return data ?? null;
+}
+
+/**
+ * ATTR-CUSTOMS-01 — who the LEDGER says performed a customs act: the actor of
+ * the latest event of that type on the record, by `ordinal` (never
+ * `occurred_at`, which events of one transaction share). `undefined` when no
+ * such event exists, so an absent event can never pass for a null actor.
+ * ASSERTION ONLY.
+ */
+export async function customsEventActor(customsId: string, eventType: string): Promise<string | null | undefined> {
+  const { data } = await db()
+    .from("business_event")
+    .select("actor_user_id, ordinal")
+    .eq("subject_type", "customs_record")
+    .eq("subject_id", customsId)
+    .eq("event_type", eventType)
+    .order("ordinal", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return data ? ((data.actor_user_id as string | null) ?? null) : undefined;
+}
+
+/** How many events of a type the ledger holds for a customs record. ASSERTION ONLY. */
+export async function customsEventCount(customsId: string, eventType: string): Promise<number> {
+  const { count } = await db()
+    .from("business_event")
+    .select("id", { count: "exact", head: true })
+    .eq("subject_type", "customs_record")
+    .eq("subject_id", customsId)
+    .eq("event_type", eventType);
+  return count ?? 0;
 }
 
 /** The transport record for a dossier — id + updated_at for the CAS write. */
