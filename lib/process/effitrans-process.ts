@@ -502,7 +502,12 @@ export const EFFITRANS_PROCESS: ProcessStep[] = [
     description:
       "Suivre le dossier auprès de la Douane, obtenir le Bon à Enlever (BAE) et accomplir les formalités de sortie. Le BAE est la porte physique : rien ne quitte la zone douanière sans lui.",
     prerequisites: ["customs_followup"],
-    requiredDocuments: ["BON_A_ENLEVER"],
+    // STEP13-COMPLETION-01 — the completion rule below names TWO facts and only
+    // the first was enforced, so step 13 could close on a BAE reference with the
+    // Chef's verification pending and customs not released — which then closed
+    // the release control for good. ORDER MATTERS: an operator is told about the
+    // BAE first, and about the release once the BAE is on file.
+    requiredDocuments: ["BON_A_ENLEVER", "CUSTOMS_RELEASE"],
     requiredEvidence: ["bae_reference", "bae_obtained_at", "customs_circuit"],
     completionRule: "bae_obtained_and_customs_released",
     rejectsTo: null,

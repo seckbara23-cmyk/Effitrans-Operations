@@ -124,6 +124,14 @@ export const DOCUMENT_MAPPINGS: DocumentMapping[] = [
     note: "UAT-STEP12-FIELD-AGENT-01 — never an upload. Satisfied by the GOVERNED assignment: `customs_field_clearance.assigned_user_id`, written only by `assignTransitStep` (Transit custody + `customs:assign` + an ACTIVE, same-tenant, TRANSIT-mapped assignee, audited before AND after). The registry always declared this as step 12's completion rule (`field_agent_assigned`); nothing enforced it, so the step closed with nobody named and step 13 opened unassigned.",
   },
   {
+    key: "CUSTOMS_RELEASE",
+    labelFr: "Mainlevée finalisée",
+    typeCode: null,
+    status: "structured",
+    steps: ["customs_field_clearance"],
+    note: "STEP13-COMPLETION-01 — never an upload. Satisfied only by customs_record.status = RELEASED, written by recordCustomsRelease after the Chef de Transit's APPROVED verification (TRANSIT-CUSTODY-05). Distinct from BON_A_ENLEVER, which is the BAE reference: recording the BAE opens the verification, it does not release. Before this key, step 13 could be completed on the reference alone, which closed the release control and made the release unrecordable.",
+  },
+  {
     key: "BON_A_ENLEVER",
     labelFr: "Bon à Enlever (BAE)",
     typeCode: "BON_A_ENLEVER",

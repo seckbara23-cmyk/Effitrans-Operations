@@ -142,6 +142,10 @@ export const CLASSIFIED: Readonly<Record<string, RequirementGovernance>> = {
   "gainde_document_submission::GAINDE_SUBMISSION_EVIDENCE": hard(RATTACHEMENT),
   "customs_followup::FIELD_AGENT_ASSIGNMENT": hard(FIELD_AGENT),
   "customs_field_clearance::BON_A_ENLEVER": hard(BAE),
+  // STEP13-COMPLETION-01 — the release half of step 13's completion rule.
+  // Same ruling as the BAE: release safety controls are excluded from every
+  // leniency, and TRANSIT-CUSTODY-05 makes the release the Chef-verified act.
+  "customs_field_clearance::CUSTOMS_RELEASE": hard(BAE),
 
   // ---- Artefacts that ARE the act ----------------------------------------
   //

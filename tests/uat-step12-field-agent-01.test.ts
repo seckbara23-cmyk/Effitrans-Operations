@@ -319,11 +319,12 @@ describe("15/16/17/18 — nothing else moved", () => {
   });
 
   it("the enforcement is NARROW — requiredEvidence stays documentary elsewhere", () => {
-    // Only two steps carry a structured non-upload requirement, and both were
-    // ratified individually. Nothing wired `requiredEvidence` generically.
+    // Every structured non-upload requirement was ratified individually —
+    // STEP13-COMPLETION-01 added CUSTOMS_RELEASE the same way. Nothing wired
+    // `requiredEvidence` generically.
     const structured = DOCUMENT_MAPPINGS.filter((d) => d.typeCode === null).map((d) => d.key);
     expect(structured.sort()).toEqual(
-      ["ACCOUNT_MANAGER_ASSIGNMENT", "CUSTOMS_DOSSIER", "FIELD_AGENT_ASSIGNMENT", "FINAL_INVOICE"].sort(),
+      ["ACCOUNT_MANAGER_ASSIGNMENT", "CUSTOMS_DOSSIER", "CUSTOMS_RELEASE", "FIELD_AGENT_ASSIGNMENT", "FINAL_INVOICE"].sort(),
     );
     expect(code("lib/process/engine/evidence.ts")).not.toMatch(/node\?\.requiredEvidence/);
   });

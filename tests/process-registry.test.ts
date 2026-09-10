@@ -370,18 +370,21 @@ describe("required-document mapping (Deliverable 9)", () => {
     }
   });
 
-  it("covers the 19 official artefacts", () => {
+  it("covers the 20 official artefacts", () => {
     // 17 from the 5.0A registry + ACCOUNT_MANAGER_ASSIGNMENT (OPS-OWNERSHIP-01),
     // the structured designation evidence that gates step 2, +
     // FIELD_AGENT_ASSIGNMENT (UAT-STEP12-FIELD-AGENT-01), the structured
-    // assignment evidence that gates step 12. Both are STRUCTURED: neither is
-    // an upload, and neither adds a document type to the catalogue.
-    expect(DOCUMENT_MAPPINGS).toHaveLength(19);
-    expect(new Set(DOCUMENT_MAPPINGS.map((d) => d.key)).size).toBe(19);
+    // assignment evidence that gates step 12, + CUSTOMS_RELEASE
+    // (STEP13-COMPLETION-01), the finalized mainlevée that step 13's completion
+    // rule always named. All three are STRUCTURED: none is an upload, and none
+    // adds a document type to the catalogue.
+    expect(DOCUMENT_MAPPINGS).toHaveLength(20);
+    expect(new Set(DOCUMENT_MAPPINGS.map((d) => d.key)).size).toBe(20);
     const structuredNoType = DOCUMENT_MAPPINGS
       .filter((d) => d.status === "structured" && d.typeCode === null)
       .map((d) => d.key);
     expect(structuredNoType).toContain("FIELD_AGENT_ASSIGNMENT");
+    expect(structuredNoType).toContain("CUSTOMS_RELEASE");
     expect(structuredNoType).toContain("ACCOUNT_MANAGER_ASSIGNMENT");
   });
 
