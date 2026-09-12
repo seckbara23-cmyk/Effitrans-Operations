@@ -1297,6 +1297,8 @@ export type Database = {
           // MAYA-P1.1 — CEO step 8, Finance registers in GAINDE.
           gainde_registered_at: string | null;
           gainde_registered_by: string | null;
+          // ATTR-CUSTOMS-01 — the release finaliser, its own fact (never reviewed_by).
+          released_by: string | null;
         };
         Insert: {
           sh_position_count?: number | null;
@@ -1345,6 +1347,7 @@ export type Database = {
           intel_version?: number;
           submitted_at?: string | null;
           released_at?: string | null;
+          released_by?: string | null;
         };
         Update: {
           sh_position_count?: number | null;
@@ -1393,6 +1396,7 @@ export type Database = {
           updated_by?: string | null;
           gainde_registered_at?: string | null;
           gainde_registered_by?: string | null;
+          released_by?: string | null;
         };
         Relationships: [
           {

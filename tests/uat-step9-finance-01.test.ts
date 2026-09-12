@@ -301,8 +301,12 @@ describe("the wording says what the act is", () => {
 // ===========================================================================
 describe("the migration ships under the #139+ policy", () => {
   it("it exists, it is the newest, and build-info tracks it", () => {
-    expect(MIGRATION_COUNT).toBe(142);
-    expect(LATEST_MIGRATION).toBe("20261004000001_gainde_payment_registration");
+    // ATTR-CUSTOMS-01 added #143 after this one: the guarantee is that #142
+    // ships and build-info tracks the directory, never that it stays newest.
+    expect(MIGRATION_COUNT).toBeGreaterThanOrEqual(142);
+    expect(LATEST_MIGRATION >= "20261004000001_gainde_payment_registration").toBe(true);
+    expect(readdirSync(fileURLToPath(new URL("../supabase/migrations", import.meta.url))))
+      .toContain("20261004000001_gainde_payment_registration.sql");
     const dir = fileURLToPath(new URL("../supabase/migrations", import.meta.url));
     const files = readdirSync(dir).filter((f) => f.endsWith(".sql")).sort();
     expect(files).toHaveLength(MIGRATION_COUNT);

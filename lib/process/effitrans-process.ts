@@ -313,7 +313,7 @@ export const EFFITRANS_PROCESS: ProcessStep[] = [
       verdict: "missing",
       existing: [
         "role CHIEF_OF_TRANSIT exists and correctly holds customs:release (withheld from the Declarant)",
-        "customs_record.reviewed_by exists — but it is written by releaseCustoms (the BAE step), not a validation step",
+        "customs_record.reviewed_by is the step 7 validator ONLY — ATTR-CUSTOMS-01 stopped record_customs_release overwriting it (the finaliser is released_by)",
       ],
       gaps: [
         "NO maker-checker separation exists anywhere in the codebase — zero code paths check that an approver differs from the preparer",

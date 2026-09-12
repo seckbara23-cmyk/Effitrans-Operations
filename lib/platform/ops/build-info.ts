@@ -13,10 +13,10 @@
  */
 
 /** The latest migration shipped in this build (pinned to the directory by test). */
-export const LATEST_MIGRATION = "20261004000001_gainde_payment_registration";
+export const LATEST_MIGRATION = "20261005000001_customs_actor_attribution";
 
 /** Total migrations shipped in this build (pinned by test). */
-export const MIGRATION_COUNT = 142;
+export const MIGRATION_COUNT = 143;
 
 /** Newest DATA-probeable migration marker: this permission row proves migrations ≥ this point. */
 export const MIGRATION_PROBE = {
