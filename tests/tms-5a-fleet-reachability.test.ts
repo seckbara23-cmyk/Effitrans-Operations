@@ -108,13 +108,16 @@ describe("TMS-5A — the ratified authority is what actually gates the surface",
     const filePage = read("app", "files", "[id]", "page.tsx");
     // `transport:assign` appears three more times on this page (driver identity,
     // the panel prop), so the pin must be the fleet load's OWN expression.
+    // PERF-UX-01 — the fleet load is now a named loader in the page's batch; the
+    // gate is still its own expression, sliced from its own entry to the next.
     const fleetGate = filePage.slice(
-      filePage.indexOf("const fleetOptions"),
-      filePage.indexOf("const canAssign ="),
+      filePage.indexOf("fleetOptions: async () =>"),
+      filePage.indexOf("providerOptions: async () =>"),
     );
     expect(fleetGate).toContain('hasPermission(permissions, "transport:assign")');
     expect(fleetGate).toContain("await listAssignableVehicles()");
-    expect(fleetGate).toContain(": [];");
+    // Without the permission the picker is empty and no query is issued.
+    expect(fleetGate).toContain(": [],");
   });
 
   it("no fleet surface introduces a new permission code", () => {

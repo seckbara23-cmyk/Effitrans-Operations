@@ -393,7 +393,10 @@ describe("WES-1D — a satisfied handoff never comes back", () => {
 
 describe("WES-1E — chauffeur identity is not a tracking feature", () => {
   it("46 — driver assignment is gated on transport:assign ALONE", () => {
-    expect(FILE_PAGE).toMatch(/const assignableDrivers = canAssignDriver && transportRecord/);
+    // PERF-UX-01 — the load is a named loader in the page's dependent batch; its
+    // gate is unchanged: transport:assign and a transport record, never tracking.
+    expect(FILE_PAGE).toMatch(/assignableDrivers: async \(\) => \(canAssignDriver && transportRecord \? await listAssignableDrivers\(\) : \[\]\)/);
+    expect(FILE_PAGE).toMatch(/const canAssignDriver = hasPermission\(permissions, "transport:assign"\);/);
     expect(FILE_PAGE).not.toMatch(/trackingOn && canAssignDriver/);
   });
 
