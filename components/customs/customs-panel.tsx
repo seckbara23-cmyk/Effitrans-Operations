@@ -6,7 +6,6 @@
  * warning. Invokes server-action proxies only.
  */
 import { useRef, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { t } from "@/lib/i18n";
 import { stepGateMessageFr } from "@/lib/process/control-gate";
 import { nextStatuses } from "@/lib/customs/status";
@@ -159,7 +158,6 @@ export function CustomsPanel({
   /** The exact process reason, for a control drawn but not yet actionable. */
   const gateReason = (controlId: string) => gates[controlId]?.reasonFr ?? null;
 
-  const router = useRouter();
   const [pending, startTransition] = useTransition();
   // SCOPED, not global. One `error` string served nine actions and was rendered
   // once, at the very bottom of the panel — immediately below the metadata form's
@@ -193,7 +191,10 @@ export function CustomsPanel({
         setError({ scope, message });
         return;
       }
-      router.refresh();
+      // PERF-UX-01 — a success sets no error and needs no client-side refresh:
+      // every action this panel calls revalidates /files/<id> when it succeeds,
+      // and Next returns the re-rendered dossier inside the action's own
+      // response. Refreshing on top rendered the whole dossier a second time.
     });
   }
 

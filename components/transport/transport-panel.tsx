@@ -77,7 +77,16 @@ export function TransportPanel({
   const [requestNote, setRequestNote] = useState("");
   const tr = t.transport;
 
-  function run(fn: () => Promise<ActionResult>) {
+  /**
+   * PERF-UX-01 — a successful action already re-renders this dossier: it
+   * revalidates /files/<id>, and Next returns the fresh page inside the action's
+   * own response. A router.refresh() on top rendered the whole dossier twice.
+   *
+   * `refresh` is kept ONLY for updateTransport and assignTransport. When the
+   * submitted form changes nothing, both return success before writing — and so
+   * before revalidating — and on that path the refresh is the only re-render.
+   */
+  function run(fn: () => Promise<ActionResult>, { refresh = false }: { refresh?: boolean } = {}) {
     setError(null);
     startTransition(async () => {
       const res = await fn();
@@ -86,7 +95,7 @@ export function TransportPanel({
         setError(map[res.error] ?? tr.errors.generic);
         return;
       }
-      router.refresh();
+      if (refresh) router.refresh();
     });
   }
 
@@ -189,6 +198,7 @@ export function TransportPanel({
         },
         r.updatedAt,
       ),
+      { refresh: true },
     );
   }
 
@@ -220,6 +230,7 @@ export function TransportPanel({
         },
         r.updatedAt,
       ),
+      { refresh: true },
     );
   }
 

@@ -20,7 +20,6 @@
  * rules, with the same server refusing the same things.
  */
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { queueStartStep, queueSubmitStep } from "@/lib/process/queues/actions";
 import type { StepEligibility } from "@/lib/process/step-eligibility";
 import { EVIDENCE_STATUS_FR, processErrorFr } from "@/lib/process/error-fr";
@@ -43,7 +42,6 @@ export function StepActions({
   /** Who holds the step, when somebody does. Claim state must be legible. */
   assigneeLabel: string | null;
 }) {
-  const router = useRouter();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [missing, setMissing] = useState<MissingEvidence[]>([]);
@@ -53,10 +51,13 @@ export function StepActions({
     setMissing([]);
     start(async () => {
       const r = await fn();
-      if (r.ok) {
-        router.refresh();
-        return;
-      }
+      // PERF-UX-01 — no router.refresh() on success. Both actions revalidate this
+      // dossier's two pages when they succeed (the engine's revalidate(fileId):
+      // /files/<id> and /files/<id>/process), and Next returns the re-rendered
+      // page inside the action's own response. A refresh on top rendered the
+      // whole dossier a second time. `pending` covers the action and that
+      // re-render, so the buttons stay disabled until the new page is shown.
+      if (r.ok) return;
       setError(processErrorFr(r.error));
       setMissing(r.missing ?? []);
     });

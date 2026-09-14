@@ -192,7 +192,10 @@ export function FileForm({
     if (mode === "create") {
       run(() => createFile(payload()), (r) => router.push(r.id ? `/files/${r.id}` : "/files"));
     } else if (fileId) {
-      run(() => updateFile(fileId, payload()), () => router.refresh());
+      // PERF-UX-01 — no router.refresh(): `updateFile` revalidates /files/<id>
+      // when it succeeds, so the action's own response already carries the
+      // re-rendered dossier. Refreshing again rendered it twice.
+      run(() => updateFile(fileId, payload()));
     }
   }
 

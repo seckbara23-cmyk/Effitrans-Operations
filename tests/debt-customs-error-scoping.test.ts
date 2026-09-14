@@ -150,9 +150,15 @@ describe("customs errors — clearing and the stale-result race", () => {
     expect(runFn.indexOf("if (seq !== runSeq.current) return;")).toBeLessThan(runFn.indexOf("setError({ scope"));
   });
 
-  it("a success sets no error and refreshes", () => {
+  it("a success sets no error and is refreshed by the action's own revalidation", () => {
     const runFn = panel.slice(panel.indexOf("function run(fn:"), panel.indexOf("const header ="));
-    expect(runFn).toContain("router.refresh();");
+    // PERF-UX-01 — the success branch sets no error. It no longer calls
+    // router.refresh(): every action the panel calls revalidates /files/<id> on
+    // success, and Next returns the re-rendered dossier in the action response.
+    // That proof — each action, each success return — is asserted in
+    // tests/perf-ux-01-phase-1.test.ts, which fails if any of them stops.
+    expect(runFn).not.toContain("router.refresh");
+    expect(runFn.slice(runFn.indexOf("if (!res.ok) {"))).not.toMatch(/setError\(\{ scope[\s\S]*setError\(\{ scope/);
   });
 });
 
