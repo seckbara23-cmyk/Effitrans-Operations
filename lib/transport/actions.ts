@@ -22,6 +22,7 @@ import { AuditActions } from "@/lib/audit/events";
 import { onPodReceived } from "@/lib/handoffs/triggers";
 import { createNotification } from "@/lib/notifications/create";
 import { custTransportStarted, custDelivered } from "@/lib/customer-notify/triggers";
+import { withPerfTrace } from "@/lib/perf/trace";
 import { canPickup, canReceivePod } from "./gates";
 import { canTransition, isTransportStatus } from "./status";
 import {
@@ -332,6 +333,15 @@ export async function updateTransport(
   input: TransportInput,
   expectedUpdatedAt: string,
 ): Promise<ActionResult> {
+  // PERF-UX-01 Phase 0 — timed as one request.
+  return withPerfTrace("action:transport.update", () => runUpdateTransport(id, input, expectedUpdatedAt));
+}
+
+async function runUpdateTransport(
+  id: string,
+  input: TransportInput,
+  expectedUpdatedAt: string,
+): Promise<ActionResult> {
   let user;
   try {
     user = await assertPermission("transport:update");
@@ -351,7 +361,12 @@ export async function updateTransport(
   const patch = buildTransportPatch(input, TRANSPORT_PLANNING_FIELDS, input.clearFields) as TransportPatch;
   if (input.customsOverride !== undefined) patch.customs_override = input.customsOverride;
   // Nothing to write — succeed without touching the row or the audit log.
-  if (isEmptyPatch(patch)) return { ok: true, id };
+  // PERF-UX-01 — but revalidate like every other success, so the response
+  // carries the re-rendered dossier and the panel needs no refresh of its own.
+  if (isEmptyPatch(patch)) {
+    revalidate(rec.file_id);
+    return { ok: true, id };
+  }
 
   const cas = await casUpdate(supabase, id, user.tenantId, expectedUpdatedAt, patch);
   if (cas.status === "refused") return { ok: false, error: refusalReason(cas) };
@@ -384,6 +399,15 @@ export async function assignTransport(
   a: TransportAssignment,
   expectedUpdatedAt: string,
 ): Promise<ActionResult> {
+  // PERF-UX-01 Phase 0 — timed as one request.
+  return withPerfTrace("action:transport.assign", () => runAssignTransport(id, a, expectedUpdatedAt));
+}
+
+async function runAssignTransport(
+  id: string,
+  a: TransportAssignment,
+  expectedUpdatedAt: string,
+): Promise<ActionResult> {
   let user;
   try {
     user = await assertPermission("transport:assign");
@@ -401,7 +425,12 @@ export async function assignTransport(
   if (!(await isFileVisible(user.id, user.tenantId, rec.file_id))) return { ok: false, error: "forbidden" };
 
   const patch = buildTransportPatch(a, TRANSPORT_ASSIGNMENT_FIELDS, a.clearFields) as TransportPatch;
-  if (isEmptyPatch(patch)) return { ok: true, id };
+  // Nothing to write: no row change, no audit — revalidated like any success
+  // (PERF-UX-01, see updateTransport).
+  if (isEmptyPatch(patch)) {
+    revalidate(rec.file_id);
+    return { ok: true, id };
+  }
   patch.assigned_by = user.id;
 
   // TMS-6 — HISTORICAL CARRIER IDENTITY. transport_company already means
@@ -440,6 +469,11 @@ export async function assignTransport(
 }
 
 export async function changeTransportStatus(id: string, toStatus: string): Promise<ActionResult> {
+  // PERF-UX-01 Phase 0 — timed as one request; the body below is unchanged.
+  return withPerfTrace("action:transport.status", () => runChangeTransportStatus(id, toStatus));
+}
+
+async function runChangeTransportStatus(id: string, toStatus: string): Promise<ActionResult> {
   if (!isTransportStatus(toStatus)) return { ok: false, error: "invalid_status" };
   // DELIVERED / POD_RECEIVED are completion steps; others are ordinary updates.
   const permission =

@@ -60,6 +60,26 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   } = await supabase.auth.getUser();
   if (!user) return null;
 
+  // PERF-UX-01 — the role rows are keyed on the AUTHENTICATED id, exactly like the
+  // profile, and read nothing from it. Waiting for the profile before asking for
+  // them cost one full round trip on every request, so the roles request is
+  // issued first and both are in flight together. Nothing about the answer
+  // changes: every check below still runs on the profile, in the same order,
+  // before any role is used, and a refused session still resolves to null.
+  //
+  // Embedded relation result asserted via .returns<T>() (intentional, not a hack).
+  const rolesRequest = Promise.resolve(
+    supabase
+      .from("user_role")
+      .select("role:role_id(code)")
+      .eq("user_id", user.id)
+      .returns<UserRoleRow[]>(),
+  );
+  // A refused session returns before the roles are read. Their request is
+  // already in flight; this keeps a network failure on it from surfacing as an
+  // unhandled rejection. Awaiting `rolesRequest` below still throws as before.
+  rolesRequest.catch(() => undefined);
+
   // Typed via the Database generic on the client. The embedded organization read is
   // the LIFECYCLE ENFORCEMENT input (Phase 6.0D): a tenant user may read their own
   // org row (organization_select_own RLS), so this costs no extra query.
@@ -97,14 +117,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   // before returning (touchStaffSeen never throws), so presence stays reliable.
   const seen = touchStaffSeen(profile.id, profile.last_seen_at);
 
-  // Embedded relation result asserted via .returns<T>() (intentional, not a hack).
-  const { data: roleData } = await supabase
-    .from("user_role")
-    .select("role:role_id(code)")
-    .eq("user_id", user.id)
-    .returns<UserRoleRow[]>();
-
-  await seen;
+  const [{ data: roleData }] = await Promise.all([rolesRequest, seen]);
 
   const roleRows = roleData ?? [];
   const roles = roleRows

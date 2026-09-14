@@ -24,6 +24,7 @@
  * would be a second copy that can drift.
  */
 import "server-only";
+import { getCurrentUser } from "@/lib/auth/current-user";
 import { getServerSupabaseClient } from "@/lib/supabase/server";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { requirePortalUser } from "@/lib/portal/auth";
@@ -121,28 +122,27 @@ export async function readDossierTimeline(
  * is narrower than dossier visibility — someone who can see a dossier is not
  * necessarily allowed to browse the staff directory. Tenant-scoped explicitly:
  * the service role bypasses RLS.
+ *
+ * PERF-UX-01 — the tenant comes from `getCurrentUser()`, the platform's one
+ * authoritative identity resolution. This used to verify the session again
+ * (`auth.getUser()`) and re-read the caller's own tenant row: two round trips
+ * for an answer the render had already established and memoised. The rule is
+ * the same and, if anything, stricter: a disabled user or a blocked tenant
+ * resolves to no identity there, and gets no names here.
  */
 export async function resolveActorNames(ids: (string | null)[]): Promise<Map<string, string>> {
   const unique = Array.from(new Set(ids.filter((id): id is string => Boolean(id))));
   const out = new Map<string, string>();
   if (unique.length === 0) return out;
 
-  const supabase = getServerSupabaseClient();
-  const { data: me } = await supabase.auth.getUser();
-  if (!me?.user) return out;
+  const me = await getCurrentUser();
+  if (!me) return out;
 
   const admin = getAdminSupabaseClient();
-  const { data: self } = await admin
-    .from("app_user")
-    .select("tenant_id")
-    .eq("id", me.user.id)
-    .maybeSingle();
-  if (!self?.tenant_id) return out;
-
   const { data } = await admin
     .from("app_user")
     .select("id, name")
-    .eq("tenant_id", self.tenant_id)
+    .eq("tenant_id", me.tenantId)
     .in("id", unique);
 
   for (const row of data ?? []) {

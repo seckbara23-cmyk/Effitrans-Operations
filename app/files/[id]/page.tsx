@@ -1,7 +1,10 @@
 import { getCanonicalDossierState } from "@/lib/workflow/dossier-state";
 import { serviceScopeStored } from "@/lib/files/service-scope-140";
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import Link from "next/link";
+import { perfStage, withPerfTrace } from "@/lib/perf/trace";
+import { loadBatch } from "@/lib/perf/batch";
 import { PageHeader } from "@/components/ui/page-header";
 import { ProcessJourneyPanel } from "@/components/process/process-journey";
 import { requireUser } from "@/lib/auth/require-user";
@@ -85,7 +88,24 @@ function Notice({ children }: { children: React.ReactNode }) {
   return <div className="surface p-6 text-sm text-slate-600">{children}</div>;
 }
 
+/**
+ * PERF-UX-01 Phase 0 — how this render was requested: a full document load, a
+ * client refresh or navigation (RSC), or the tree a server action returns after
+ * revalidating. Telling them apart is how a double render becomes visible in
+ * the logs. Only the presence of two framework headers is read.
+ */
+function renderKind(): "document" | "rsc" | "action" {
+  const h = headers();
+  if (h.get("next-action")) return "action";
+  if (h.get("rsc")) return "rsc";
+  return "document";
+}
+
 export default async function FileDetailPage({ params }: { params: { id: string } }) {
+  return withPerfTrace("files/[id]", () => renderFileDetailPage(params), renderKind());
+}
+
+async function renderFileDetailPage(params: { id: string }) {
   const header = (title: string) => (
     <PageHeader meta="Opérations" title={title} subtitle={t.files.subtitle} />
   );
@@ -100,7 +120,12 @@ export default async function FileDetailPage({ params }: { params: { id: string 
     return <div className="animate-fade-in space-y-6">{header(t.files.title)}<Notice>{t.files.forbidden}</Notice></div>;
   }
 
-  const file = await getFile(params.id);
+  // PERF-UX-01 — THE DOSSIER GATE STAYS FIRST, AND ALONE. `getFile` reads on the
+  // user-context client, so RLS (`can_read_file`) decides whether this dossier
+  // exists for this viewer. Nothing below starts until it has answered: a
+  // dossier the viewer cannot read must never have its sections fetched, not
+  // even to be discarded.
+  const file = await perfStage("file", () => getFile(params.id));
   if (!file) {
     return <div className="animate-fade-in space-y-6">{header(t.files.title)}<Notice>{t.files.errors.not_found}</Notice></div>;
   }
@@ -110,73 +135,229 @@ export default async function FileDetailPage({ params }: { params: { id: string 
   // authorities. A supervisor may close a dossier without being able to
   // rewrite it.
   const canTransitionStatus = hasPermission(permissions, "file:transition");
-  const clients = hasPermission(permissions, "client:read")
-    ? (await listClients()).map((c) => ({ id: c.id, name: c.name }))
-    : file.clientId
-      ? [{ id: file.clientId, name: file.clientName ?? file.clientId }]
-      : [];
-
-  // MAYA-P0.5-B — candidate parents for « Dossier mère ».
-  // MAYA-P0.8-C: this used to call listFiles(), mapping up to 2000 dossiers
-  // through the search projection (plus a customs read and a MAYA label per
-  // row) to keep two fields. The narrow reader returns exactly those two, under
-  // the same file:read visibility — now enforced by the RLS policy itself.
-  const parentOptions = canUpdate ? await listParentCandidates(file.id) : [];
   // Phase 3.2A — assignment + delete/cancel controls (permission-gated).
-  // TMS-5 — bindable fleet vehicles, only for transport assigners.
-  const fleetOptions = hasPermission(permissions, "transport:assign")
-    ? await listAssignableVehicles()
-    : [];
-  // TMS-6 — approved external subcontractors, same authority as the fleet picker.
-  const providerOptions = hasPermission(permissions, "transport:assign")
-    ? await listAssignableProviders()
-    : [];
   const canAssign = hasPermission(permissions, "file:assign");
   // TMS-1 — a DIFFERENT authority from file:assign: the Responsable client is
   // designated by the Operations Manager, never auto-crowned at creation.
   const canAssignCommercial = hasPermission(permissions, "file:assign:commercial");
   const canManageLifecycle = hasPermission(permissions, "file:delete");
-  const assignableStaff = canAssign || canAssignCommercial ? await listAssignableStaff() : [];
-  const commercialOwner = await getCommercialOwnerPanel(file.id);
-  // QO-1 — commercial origin (devis or « Sans devis »). The link into the
-  // commercial workspace is offered only to commercial-read holders (DEC-C32).
-  const commercialOrigin = await getCommercialOrigin(file.id);
-  // TMS-2 — geographic anchor pickers for the edit form (transport:read only).
-  const geo = canUpdate && hasPermission(permissions, "transport:read")
-    ? await listGeographyOptions()
-    : { ports: [], airports: [] };
   const canLinkCommercial = COMMERCIAL_READ_PERMISSIONS.some((c) => hasPermission(permissions, c));
   const assigneeLabel = file.assigneeName ?? file.assigneeEmail;
-
   // Embedded tasks (only if the user can read tasks).
   const canReadTasks = hasPermission(permissions, "task:read");
   const canUpdateTasks = hasPermission(permissions, "task:update");
-  const tasks = canReadTasks ? await listTasks({ fileId: file.id }) : [];
-  // WES-3A.1 — only people the PINNED policy permits for this dossier's
-  // current step. `listAssignees()` returned every staff member, and the
-  // server had no eligibility check, so any name in the list "worked".
-  const eligible = canUpdateTasks
-    ? await listEligibleAssigneesForFile(file.id)
-    : { assignees: [], resolved: true };
-  const taskAssignees = eligible.assignees;
-
   // Embedded documents (only if the user can read documents).
   const canReadDocs = hasPermission(permissions, "document:read");
-  const [documents, docTypes, missingDocs] = canReadDocs
-    ? await Promise.all([
-        listDocuments(file.id),
-        listDocumentTypes(),
-        getMissingRequiredDocuments(file.id, file.type),
-      ])
-    : [[], [], []];
+  // Embedded customs (only if the user can read customs).
+  const canReadCustoms = hasPermission(permissions, "customs:read");
+  // Embedded transport (only if the user can read transport).
+  const canReadTransport = hasPermission(permissions, "transport:read");
+  // Phase 3.4 — real-time tracking timeline. DARK BY DEFAULT: only when
+  // TRACKING_ENABLED and the user holds tracking:read; otherwise nothing changes.
+  const trackingOn = trackingEnabled();
+  const canReadTracking = hasPermission(permissions, "tracking:read");
+  // Phase 3.4C — dispatcher driver assignment (assign a DRIVER user).
+  // WES-1E: chauffeur IDENTITY assignment is NOT a tracking feature. Gating it
+  // behind TRACKING_ENABLED meant a planner could fill in a driver's name, see no
+  // error, and leave the chauffeur with no mission — GPS configuration silently
+  // controlled who was authenticated. Identity is gated on transport:assign only;
+  // TRACKING_ENABLED still gates GPS sessions, positions and the live map.
+  const canAssignDriver = hasPermission(permissions, "transport:assign");
+  // Embedded finance (finance-role based — NOT inherited from file visibility).
+  const canReadFinance = hasPermission(permissions, "finance:read");
+  // Communications (staff-role based) — timeline + manual email triggers.
+  const canEmail = hasPermission(permissions, "communication:send");
+  const canReadComms = hasPermission(permissions, "communication:read");
+  // WES-4H — Category-B artifacts. `transport:manage` mirrors the server's
+  // own gate in generateArtifact; the server re-checks it regardless.
+  const canGenerateArtifacts = hasPermission(permissions, "transport:manage");
+  // Permission AND route entitlement. `process:handoff:send` is generic — the
+  // Account Manager holds it for other reasons — but this custody transfer is
+  // Operations' (UAT-WF-HANDOFF-01B), and `sendHandoff` refuses anyone else.
+  // Offering the button to someone the server will refuse is the defect
+  // UAT-00009 was about.
+  const canSendToTransit =
+    hasPermission(permissions, "process:handoff:send") &&
+    maySendRoute(routeFor("am_dossier_opening", "coordinator_reception"), user.roles ?? []);
+
+  // ===========================================================================
+  // PERF-UX-01 — EVERY READ THAT NEEDS ONLY THE DOSSIER AND THE PERMISSIONS.
+  //
+  // These were awaited one after another, although none of them reads another's
+  // result — so every section waited for all the sections above it. They now
+  // run together, at most six at a time (lib/perf/batch.ts). Each loader is the
+  // call it replaced, behind the gate it had: a viewer without a permission
+  // still issues no query for that section.
+  // ===========================================================================
+  const {
+    canonical,
+    dossierAccess,
+    intakeState,
+    workView,
+    openHandoff,
+    customsControlVerdicts,
+    servicesAvailable,
+    clients,
+    parentOptions,
+    fleetOptions,
+    providerOptions,
+    assignableStaff,
+    commercialOwner,
+    commercialOrigin,
+    geo,
+    tasks,
+    eligible,
+    documents,
+    docTypes,
+    missingDocs,
+    artifactItems,
+    qc2TimeZone,
+    customsRecord,
+    missingCustomsDocs,
+    finance,
+    communications,
+    transportRecord,
+    trackingEvents,
+    carriage,
+  } = await loadBatch("dossier", 6, {
+    clients: async () =>
+      hasPermission(permissions, "client:read")
+        ? (await listClients()).map((c) => ({ id: c.id, name: c.name }))
+        : file.clientId
+          ? [{ id: file.clientId, name: file.clientName ?? file.clientId }]
+          : [],
+    // MAYA-P0.5-B — candidate parents for « Dossier mère ».
+    // MAYA-P0.8-C: this used to call listFiles(), mapping up to 2000 dossiers
+    // through the search projection (plus a customs read and a MAYA label per
+    // row) to keep two fields. The narrow reader returns exactly those two, under
+    // the same file:read visibility — now enforced by the RLS policy itself.
+    parentOptions: async () => (canUpdate ? await listParentCandidates(file.id) : []),
+    // TMS-5 — bindable fleet vehicles, only for transport assigners.
+    fleetOptions: async () =>
+      hasPermission(permissions, "transport:assign")
+        ? await listAssignableVehicles()
+        : [],
+    // TMS-6 — approved external subcontractors, same authority as the fleet picker.
+    providerOptions: async () =>
+      hasPermission(permissions, "transport:assign")
+        ? await listAssignableProviders()
+        : [],
+    assignableStaff: async () => (canAssign || canAssignCommercial ? await listAssignableStaff() : []),
+    commercialOwner: () => getCommercialOwnerPanel(file.id),
+    // QO-1 — commercial origin (devis or « Sans devis »). The link into the
+    // commercial workspace is offered only to commercial-read holders (DEC-C32).
+    commercialOrigin: async () => await getCommercialOrigin(file.id),
+    // TMS-2 — geographic anchor pickers for the edit form (transport:read only).
+    geo: async () =>
+      canUpdate && hasPermission(permissions, "transport:read")
+        ? await listGeographyOptions()
+        : { ports: [], airports: [] },
+    tasks: async () => (canReadTasks ? await listTasks({ fileId: file.id }) : []),
+    // WES-3A.1 — only people the PINNED policy permits for this dossier's
+    // current step. `listAssignees()` returned every staff member, and the
+    // server had no eligibility check, so any name in the list "worked".
+    eligible: async () =>
+      canUpdateTasks
+        ? await listEligibleAssigneesForFile(file.id)
+        : { assignees: [], resolved: true },
+    documents: async () => (canReadDocs ? await listDocuments(file.id) : []),
+    docTypes: async () => (canReadDocs ? await listDocumentTypes() : []),
+    missingDocs: async () => (canReadDocs ? await getMissingRequiredDocuments(file.id, file.type) : []),
+    // ONE tenant-zone read, shared by every Quality panel on this page.
+    qc2TimeZone: () => getTenantTimezone(),
+    customsRecord: async () => (canReadCustoms ? await getCustomsRecord(file.id) : null),
+    missingCustomsDocs: async () => (canReadCustoms ? await getMissingCustomsDocuments(file.id) : []),
+    transportRecord: async () => (canReadTransport ? await getTransportRecord(file.id) : null),
+    // MAYA-P0.6-D — the dossier's own carriage units. Gated on the SAME
+    // transport:read the panels below use, so an ungated viewer issues no query at
+    // all: the rows are never retrieved, not retrieved and then hidden. Returns
+    // null for a road-only dossier, which has no carriage units by construction.
+    carriage: async () =>
+      canReadTransport && file.shipment
+        ? await getDossierCarriage(file.shipment.id, file.shipment.transportMode)
+        : null,
+    trackingEvents: async () => (trackingOn && canReadTracking ? await getTrackingTimeline(file.id) : []),
+    finance: async () => (canReadFinance ? await getFinanceForFile(file.id) : null),
+    communications: async () => (canReadComms ? await listCommunicationsForFile(file.id) : []),
+    // CANONICAL STATE — viewer-independent, by construction.
+    //
+    // This block used to assemble the workflow input from PERMISSION-GATED reads
+    // (`canReadCustoms ? customsRecord : null`), so a Finance user without
+    // customs:read was told to "prepare the customs declaration" on a dossier
+    // that was delivered, invoiced and paid: absence of permission was read as
+    // absence of progress.
+    //
+    // The state now comes from the ONE resolver, which reads everything on the
+    // admin client and does not know who is asking. The `canRead*` flags still
+    // decide which PANELS render and which ACTIONS appear — never what the
+    // operational truth is.
+    canonical: () => getCanonicalDossierState(file.id, user.tenantId),
+    // WES-3D — the ONE access contract. Everything the ownership panel shows, and
+    // the reason it is visible at all, comes from here.
+    dossierAccess: () => getDossierAccess(file.id),
+    artifactItems: async () => (canReadDocs ? await getArtifactPanel(file.id) : []),
+    openHandoff: () => getOpenHandoffForFile(file.id),
+    // Operations → Transit handoff, surfaced on the dossier itself. `getIntakeState`
+    // returns null when the engine is dark, the dossier has no instance, or the
+    // caller may not read the process — in every one of those cases the section
+    // simply does not render. The prerequisites are resolved from the SAME state
+    // the server action re-checks; the UI is never more permissive than the action.
+    intakeState: () => getIntakeState(file.id),
+    // A7/A8 (GAINDE-04) — the official steps that concern THIS reader, grouped by
+    // the section of the dossier where that work actually happens. Not a second
+    // workflow: the verdicts come from the same evaluator /process and /queues
+    // read, and the buttons call the same two server actions. /process remains the
+    // complete 26-step view and every card links back to the exact step.
+    //
+    // OPS-NEXT-ACTION-01 — ONE model, built once, read by the summary at the top
+    // of this page, by the journey panel and by every section card. Three
+    // consumers, one load: `loadProcessSnapshotForDisplay` is request-memoised.
+    // Building it three times is precisely how the page came to hold three
+    // opinions about what happens next.
+    workView: () =>
+      getDossierWork(file.id, {
+        tenantId: user.tenantId,
+        userId: user.id,
+        permissions,
+        roles: user.roles ?? [],
+      }),
+    // OPS-CUSTOMS-OWNERSHIP-01 — what the SERVER would decide for each customs
+    // control, resolved once. The panel renders this rather than re-deriving
+    // authority from permissions, which is how it came to offer a Chef de Transit
+    // the Déclarant's maker controls.
+    customsControlVerdicts: async () =>
+      canReadCustoms
+        ? await getControlVerdicts(
+            [
+              "customs.create",
+              "customs.update",
+              // DEC-C38 — the Déclarant's own reference capture. A control absent
+              // from this array is drawn UNGATED by the panel's `?? true` fallback,
+              // which is exactly the drift the verdict list exists to end.
+              "customs.declaration_reference",
+              "customs.status",
+              "customs.receivability",
+              "customs.attachment",
+              "customs.gainde_registration",
+              "customs.validation",
+              "customs.bae",
+              "customs.release",
+            ],
+            file.id,
+            user.tenantId,
+            user.id,
+            user.roles ?? [],
+          )
+        : {},
+    servicesAvailable: () => serviceScopeStored(),
+  });
+  const taskAssignees = eligible.assignees;
 
   // MAYA-P0.7-C — Contrôle Qualité N°2. Derived from facts this page already
   // loaded; the only added read is the tenant zone, so an instant is never
   // rendered against the SERVER's clock. `canReadDocs` is passed through
   // deliberately: a viewer without document:read must read "non visible", never
   // "0 documents".
-  // ONE tenant-zone read, shared by every Quality panel on this page.
-  const qc2TimeZone = await getTenantTimezone();
   const qc2 = deriveQC2({
     fileNumber: file.fileNumber,
     createdAt: file.createdAt,
@@ -186,21 +367,6 @@ export default async function FileDetailPage({ params }: { params: { id: string 
     missingRequiredCount: missingDocs.length,
     timeZone: qc2TimeZone,
   });
-
-  // Embedded customs (only if the user can read customs).
-  const canReadCustoms = hasPermission(permissions, "customs:read");
-  const [customsRecord, missingCustomsDocs] = canReadCustoms
-    ? await Promise.all([getCustomsRecord(file.id), getMissingCustomsDocuments(file.id)])
-    : [null, []];
-
-  // D4 — « À revalider »: the record was corrected and is not certified again
-  // yet. Derived from the append-only correction history plus the certification
-  // instant, never stored as a status — a state that can drift from the facts
-  // it summarises is a state that will.
-  const customsAwaitingRevalidation =
-    canReadCustoms && customsRecord !== null && customsRecord.reviewedAt === null
-      ? (await correctionsForRecord(user.tenantId, customsRecord.id)).length > 0
-      : false;
 
   // MAYA-P0.7-D — Contrôle Qualité N°4. Pure derivation from facts already
   // loaded above. Both permission flags are passed through: without
@@ -228,28 +394,12 @@ export default async function FileDetailPage({ params }: { params: { id: string 
       })
     : null;
 
-  // Embedded transport (only if the user can read transport).
-  const canReadTransport = hasPermission(permissions, "transport:read");
-  const transportRecord = canReadTransport ? await getTransportRecord(file.id) : null;
-  // MAYA-P0.6-D — the dossier's own carriage units. Gated on the SAME
-  // transport:read the panels below use, so an ungated viewer issues no query at
-  // all: the rows are never retrieved, not retrieved and then hidden. Returns
-  // null for a road-only dossier, which has no carriage units by construction.
-  const carriage =
-    canReadTransport && file.shipment
-      ? await getDossierCarriage(file.shipment.id, file.shipment.transportMode)
-      : null;
   // UAT-1 — the canonical predicate, not the pre-WES-4 literal. A POD is proof
   // when it is VERIFIED, when it is a legacy APPROVED row, or once WES-5 has
   // consumed it as evidence.
   const podDocument = documents.find((d) => d.typeCode === "DELIVERY_NOTE") ?? null;
   const podApproved = documents.some((d) => d.typeCode === "DELIVERY_NOTE" && isVerified(d.status));
 
-  // Phase 3.4 — real-time tracking timeline. DARK BY DEFAULT: only when
-  // TRACKING_ENABLED and the user holds tracking:read; otherwise nothing changes.
-  const trackingOn = trackingEnabled();
-  const canReadTracking = hasPermission(permissions, "tracking:read");
-  const trackingEvents = trackingOn && canReadTracking ? await getTrackingTimeline(file.id) : [];
   // MAYA-P0.7-E — Contrôle Qualité N°5. Pure derivation from facts already
   // loaded. Three gates are passed through, not assumed: transport:read,
   // document:read, and tracking (feature flag AND tracking:read) — each
@@ -264,22 +414,6 @@ export default async function FileDetailPage({ params }: { params: { id: string 
     timeZone: qc2TimeZone,
   });
 
-  // Phase 3.4C — dispatcher driver assignment (assign a DRIVER user).
-  // WES-1E: chauffeur IDENTITY assignment is NOT a tracking feature. Gating it
-  // behind TRACKING_ENABLED meant a planner could fill in a driver's name, see no
-  // error, and leave the chauffeur with no mission — GPS configuration silently
-  // controlled who was authenticated. Identity is gated on transport:assign only;
-  // TRACKING_ENABLED still gates GPS sessions, positions and the live map.
-  const canAssignDriver = hasPermission(permissions, "transport:assign");
-  // TMS-1C — the mission's external tracking reference. Gated on
-  // transport:read inside the service; null when absent or unauthorized.
-  const missionTracking = transportRecord ? await getMissionTracking(transportRecord.id) : null;
-  const assignableDrivers = canAssignDriver && transportRecord ? await listAssignableDrivers() : [];
-
-  // Embedded finance (finance-role based — NOT inherited from file visibility).
-  const canReadFinance = hasPermission(permissions, "finance:read");
-  const finance = canReadFinance ? await getFinanceForFile(file.id) : null;
-
   // MAYA-P0.7-F — Contrôle Qualité N°6. Pure derivation from the finance
   // projection this page already loaded. `canReadFinance` is passed through:
   // finance visibility is role-based and NOT inherited from dossier access, so
@@ -291,55 +425,12 @@ export default async function FileDetailPage({ params }: { params: { id: string 
     timeZone: qc2TimeZone,
   });
 
-  // Communications (staff-role based) — timeline + manual email triggers.
-  const canEmail = hasPermission(permissions, "communication:send");
-  const canReadComms = hasPermission(permissions, "communication:read");
-  const communications = canReadComms ? await listCommunicationsForFile(file.id) : [];
-
-  // ===========================================================================
-  // CANONICAL STATE — viewer-independent, by construction.
-  //
-  // This block used to assemble the workflow input from PERMISSION-GATED reads
-  // (`canReadCustoms ? customsRecord : null`), so a Finance user without
-  // customs:read was told to "prepare the customs declaration" on a dossier
-  // that was delivered, invoiced and paid: absence of permission was read as
-  // absence of progress.
-  //
-  // The state now comes from the ONE resolver, which reads everything on the
-  // admin client and does not know who is asking. The `canRead*` flags below
-  // still decide which PANELS render and which ACTIONS appear — never what the
-  // operational truth is.
-  // ===========================================================================
-  const canonical = await getCanonicalDossierState(file.id, user.tenantId);
   // The dossier was loaded above, so the resolver cannot miss it; notFound()
   // rather than render half a page against a dossier that vanished mid-request.
   if (!canonical) return null;
   const { lifecycle, projection } = canonical;
-
-  // WES-3D — the ONE access contract. Everything the ownership panel shows, and
-  // the reason it is visible at all, comes from here.
-  const dossierAccess = await getDossierAccess(file.id);
-  // WES-4H — Category-B artifacts. `transport:manage` mirrors the server's
-  // own gate in generateArtifact; the server re-checks it regardless.
-  const canGenerateArtifacts = hasPermission(permissions, "transport:manage");
-  const artifactItems = canReadDocs ? await getArtifactPanel(file.id) : [];
   const currentTask = tasks.find((t) => t.status === "TODO" || t.status === "IN_PROGRESS") ?? null;
 
-  const openHandoff = await getOpenHandoffForFile(file.id);
-  // Operations → Transit handoff, surfaced on the dossier itself. `getIntakeState`
-  // returns null when the engine is dark, the dossier has no instance, or the
-  // caller may not read the process — in every one of those cases the section
-  // simply does not render. The prerequisites are resolved from the SAME state
-  // the server action re-checks; the UI is never more permissive than the action.
-  // Permission AND route entitlement. `process:handoff:send` is generic — the
-  // Account Manager holds it for other reasons — but this custody transfer is
-  // Operations' (UAT-WF-HANDOFF-01B), and `sendHandoff` refuses anyone else.
-  // Offering the button to someone the server will refuse is the defect
-  // UAT-00009 was about.
-  const canSendToTransit =
-    hasPermission(permissions, "process:handoff:send") &&
-    maySendRoute(routeFor("am_dossier_opening", "coordinator_reception"), user.roles ?? []);
-  const intakeState = await getIntakeState(file.id);
   // Same evaluator as the « Processus officiel » screen and as the server
   // action itself, so the two screens cannot disagree about what is missing.
   const transitReadiness = intakeState
@@ -351,7 +442,30 @@ export default async function FileDetailPage({ params }: { params: { id: string 
         steps: intakeState.steps,
       })
     : null;
-  const sla = await getDossierStage(file.id, lifecycle.currentDepartment, lifecycle.currentStep).catch(() => null);
+
+  // ===========================================================================
+  // PERF-UX-01 — THE FOUR READS THAT NEED A RESULT FROM ABOVE.
+  //
+  // Each depends on one loaded value (the customs record, the transport record,
+  // the canonical lifecycle), never on each other, so they run together once
+  // those values exist — and exactly as before, not at all when the value they
+  // need is absent.
+  // ===========================================================================
+  const { customsAwaitingRevalidation, missionTracking, assignableDrivers, sla } = await loadBatch("dependent", 4, {
+    // D4 — « À revalider »: the record was corrected and is not certified again
+    // yet. Derived from the append-only correction history plus the certification
+    // instant, never stored as a status — a state that can drift from the facts
+    // it summarises is a state that will.
+    customsAwaitingRevalidation: async () =>
+      canReadCustoms && customsRecord !== null && customsRecord.reviewedAt === null
+        ? (await correctionsForRecord(user.tenantId, customsRecord.id)).length > 0
+        : false,
+    // TMS-1C — the mission's external tracking reference. Gated on
+    // transport:read inside the service; null when absent or unauthorized.
+    missionTracking: async () => (transportRecord ? await getMissionTracking(transportRecord.id) : null),
+    assignableDrivers: async () => (canAssignDriver && transportRecord ? await listAssignableDrivers() : []),
+    sla: () => getDossierStage(file.id, lifecycle.currentDepartment, lifecycle.currentStep).catch(() => null),
+  });
 
   // Read-only derived risk assessment (Phase 3.1B) — same Risk Engine the
   // Copilot, Control Tower and dashboard use. No persistence, no mutation.
@@ -379,52 +493,7 @@ export default async function FileDetailPage({ params }: { params: { id: string 
   };
   const risk = assessRisk(riskInput);
 
-  // OPS-CUSTOMS-OWNERSHIP-01 — what the SERVER would decide for each customs
-  // control, resolved once. The panel renders this rather than re-deriving
-  // authority from permissions, which is how it came to offer a Chef de Transit
-  // the Déclarant's maker controls.
-  // A7/A8 (GAINDE-04) — the official steps that concern THIS reader, grouped by
-  // the section of the dossier where that work actually happens. Not a second
-  // workflow: the verdicts come from the same evaluator /process and /queues
-  // read, and the buttons call the same two server actions. /process remains the
-  // complete 26-step view and every card links back to the exact step.
-  //
-  // OPS-NEXT-ACTION-01 — ONE model, built once, read by the summary at the top
-  // of this page, by the journey panel and by every section card. Three
-  // consumers, one load: `loadProcessSnapshotForDisplay` is request-memoised.
-  // Building it three times is precisely how the page came to hold three
-  // opinions about what happens next.
-  const workView = await getDossierWork(file.id, {
-    tenantId: user.tenantId,
-    userId: user.id,
-    permissions,
-    roles: user.roles ?? [],
-  });
   const contextualCards = cardsFromWork(file.id, workView);
-
-  const customsControlVerdicts = canReadCustoms
-    ? await getControlVerdicts(
-        [
-          "customs.create",
-          "customs.update",
-          // DEC-C38 — the Déclarant's own reference capture. A control absent
-          // from this array is drawn UNGATED by the panel's `?? true` fallback,
-          // which is exactly the drift the verdict list exists to end.
-          "customs.declaration_reference",
-          "customs.status",
-          "customs.receivability",
-          "customs.attachment",
-          "customs.gainde_registration",
-          "customs.validation",
-          "customs.bae",
-          "customs.release",
-        ],
-        file.id,
-        user.tenantId,
-        user.id,
-        user.roles ?? [],
-      )
-    : {};
 
   /** The cards for one section, or nothing. Never decides anything itself. */
   const cards = (section: DossierSection) =>
@@ -576,7 +645,7 @@ export default async function FileDetailPage({ params }: { params: { id: string 
           </p>
         )}
       </section>
-      <FileForm mode="edit" fileId={file.id} initial={file} clients={clients} parents={parentOptions} canUpdate={canUpdate} ports={geo.ports} airports={geo.airports} servicesAvailable={await serviceScopeStored()} />
+      <FileForm mode="edit" fileId={file.id} initial={file} clients={clients} parents={parentOptions} canUpdate={canUpdate} ports={geo.ports} airports={geo.airports} servicesAvailable={servicesAvailable} />
       {canReadTasks && (
         <TaskPanel
           currentUserId={user.id}

@@ -172,7 +172,10 @@ describe("WES-1B — concurrent transport edits cannot silently overwrite", () =
     // The stale branch returns before writeAudit in both actions.
     for (const fn of ["updateTransport", "assignTransport"]) {
       const start = TRANSPORT_ACTIONS.indexOf(`export async function ${fn}(`);
-      const body = TRANSPORT_ACTIONS.slice(start, TRANSPORT_ACTIONS.indexOf("\n}", start));
+      // PERF-UX-01 — the export is a timing wrapper and the unchanged body is the
+      // unexported function directly beneath it, so the slice runs to the NEXT
+      // export rather than to the wrapper's own closing brace.
+      const body = TRANSPORT_ACTIONS.slice(start, TRANSPORT_ACTIONS.indexOf("\nexport ", start + 1));
       const staleAt = body.indexOf('error: "stale_write" }');
       const auditAt = body.indexOf("writeAudit");
       expect(staleAt, fn).toBeGreaterThan(-1);
@@ -390,7 +393,10 @@ describe("WES-1D — a satisfied handoff never comes back", () => {
 
 describe("WES-1E — chauffeur identity is not a tracking feature", () => {
   it("46 — driver assignment is gated on transport:assign ALONE", () => {
-    expect(FILE_PAGE).toMatch(/const assignableDrivers = canAssignDriver && transportRecord/);
+    // PERF-UX-01 — the load is a named loader in the page's dependent batch; its
+    // gate is unchanged: transport:assign and a transport record, never tracking.
+    expect(FILE_PAGE).toMatch(/assignableDrivers: async \(\) => \(canAssignDriver && transportRecord \? await listAssignableDrivers\(\) : \[\]\)/);
+    expect(FILE_PAGE).toMatch(/const canAssignDriver = hasPermission\(permissions, "transport:assign"\);/);
     expect(FILE_PAGE).not.toMatch(/trackingOn && canAssignDriver/);
   });
 
@@ -433,8 +439,13 @@ describe("WES-1E — chauffeur identity is not a tracking feature", () => {
     const fn = DRIVER_ACTIONS.slice(DRIVER_ACTIONS.indexOf("export async function assignDriverUser"));
     expect(fn).toContain("createNotification(");
     expect(fn).toContain("Nouvelle mission de transport");
-    // No duplicate notification when re-assigning the same driver.
-    expect(fn).toMatch(/rec\.driver_user_id === driverUserId[\s\S]{0,60}return \{ ok: true/);
+    // No duplicate notification when re-assigning the same driver: that branch
+    // returns success before the notification. PERF-UX-01 Phase 1B lets it
+    // revalidate the dossier on the way out, and nothing else.
+    expect(code(fn)).toMatch(
+      /if \(rec\.driver_user_id === driverUserId\) \{\s*revalidatePath\(`\/files\/\$\{rec\.file_id\}`\);\s*revalidatePath\("\/transport"\);\s*return \{ ok: true/,
+    );
+    expect(fn.indexOf("rec.driver_user_id === driverUserId")).toBeLessThan(fn.indexOf("createNotification("));
   });
 
   it("54 — a free-text name never masquerades as an authenticated assignment", () => {

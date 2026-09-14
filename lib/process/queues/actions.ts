@@ -29,6 +29,7 @@ import {
   submitInvoiceToFinance,
 } from "../billing/actions";
 import { isQueueKey } from "./registry";
+import { withPerfTrace } from "@/lib/perf/trace";
 import type { BillingResult } from "../billing/actions";
 import type { EngineResult } from "../engine/types";
 
@@ -59,12 +60,15 @@ export async function queueRejectHandoff(
   return r;
 }
 
+// PERF-UX-01 Phase 0 — « Démarrer » and « Terminer » are the two step actions
+// operators wait on. Timed here, around the engine call and nothing else; the
+// label is a constant and no identifier reaches the log line.
 export async function queueStartStep(
   queueKey: string,
   fileId: string,
   stepKey: string,
 ): Promise<EngineResult> {
-  const r = await activateStep(fileId, stepKey);
+  const r = await withPerfTrace("action:step.start", async () => await activateStep(fileId, stepKey));
   if (r.ok) refresh(queueKey, fileId);
   return r;
 }
@@ -74,7 +78,7 @@ export async function queueSubmitStep(
   fileId: string,
   stepKey: string,
 ): Promise<EngineResult> {
-  const r = await submitStep(fileId, stepKey);
+  const r = await withPerfTrace("action:step.submit", async () => await submitStep(fileId, stepKey));
   if (r.ok) refresh(queueKey, fileId);
   return r;
 }

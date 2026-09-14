@@ -6,7 +6,6 @@
  * gate warnings. Invokes server-action proxies only.
  */
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { t } from "@/lib/i18n";
 import { nextStatuses } from "@/lib/transport/status";
 import {
@@ -71,12 +70,19 @@ export function TransportPanel({
    */
   canRequest?: boolean;
 }) {
-  const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [requestNote, setRequestNote] = useState("");
   const tr = t.transport;
 
+  /**
+   * PERF-UX-01 — no client-side refresh. Every action this panel calls
+   * revalidates /files/<id> before each of its success returns — including the
+   * update and the assignment that write nothing when the form changed nothing —
+   * and Next returns the re-rendered dossier inside the action's own response.
+   * Refreshing on top rendered the whole dossier twice. `pending` spans the
+   * awaited action, so every control stays disabled until that response lands.
+   */
   function run(fn: () => Promise<ActionResult>) {
     setError(null);
     startTransition(async () => {
@@ -84,9 +90,7 @@ export function TransportPanel({
       if (!res.ok) {
         const map = tr.errors as Record<string, string>;
         setError(map[res.error] ?? tr.errors.generic);
-        return;
       }
-      router.refresh();
     });
   }
 

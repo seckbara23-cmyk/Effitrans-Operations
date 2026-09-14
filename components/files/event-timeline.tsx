@@ -24,6 +24,7 @@
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions } from "@/lib/rbac/permissions";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
+import { withPerfTrace } from "@/lib/perf/trace";
 import { readUnifiedTimeline } from "@/lib/unified-timeline/unified";
 import { UnifiedTimelineView } from "./unified-timeline-view";
 
@@ -53,23 +54,27 @@ async function hasLedgerBoundary(tenantId: string): Promise<boolean> {
 }
 
 export async function EventTimeline({ fileId }: { fileId: string }) {
-  const user = await requireUser();
-  const [permissions, page, boundary] = await Promise.all([
-    getEffectivePermissions(user.id),
-    // ONE call. The reader gates both planes and re-scopes every entry to this
-    // dossier and this tenant, so nothing here queries a module table and there
-    // is no per-entry lookup.
-    readUnifiedTimeline({ dossierId: fileId, limit: FIRST_PAGE }),
-    hasLedgerBoundary(user.tenantId),
-  ]);
+  // PERF-UX-01 Phase 0 — React renders this after the page body has returned,
+  // outside the page's own trace, so it is timed on its own line.
+  return withPerfTrace("files/[id]:timeline", async () => {
+    const user = await requireUser();
+    const [permissions, page, boundary] = await Promise.all([
+      getEffectivePermissions(user.id),
+      // ONE call. The reader gates both planes and re-scopes every entry to this
+      // dossier and this tenant, so nothing here queries a module table and there
+      // is no per-entry lookup.
+      readUnifiedTimeline({ dossierId: fileId, limit: FIRST_PAGE }),
+      hasLedgerBoundary(user.tenantId),
+    ]);
 
-  return (
-    <UnifiedTimelineView
-      dossierId={fileId}
-      initialEntries={page.entries}
-      initialCursor={page.nextCursor}
-      permissions={permissions}
-      hasLedgerBoundary={boundary}
-    />
-  );
+    return (
+      <UnifiedTimelineView
+        dossierId={fileId}
+        initialEntries={page.entries}
+        initialCursor={page.nextCursor}
+        permissions={permissions}
+        hasLedgerBoundary={boundary}
+      />
+    );
+  });
 }
