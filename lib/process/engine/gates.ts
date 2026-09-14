@@ -15,6 +15,7 @@
  * PICKUP_READINESS.appliesToFileTypes — we do NOT fabricate a customs requirement
  * for TRP/HND dossiers, which officially have no customs leg.
  */
+import { isVehicleAssigned } from "@/lib/transport/vehicle-identity";
 import { PICKUP_READINESS, evaluatePickupReadiness } from "../effitrans-process";
 import { checkEvidence, fullyPaid, podReceived, type EvidenceSnapshot } from "./evidence";
 import { liveByKey, type ExecutionView } from "./state";
@@ -47,7 +48,7 @@ const nonEmpty = (v: string | null | undefined): boolean => typeof v === "string
  * bon_a_delivrer        an APPROVED BON_A_DELIVRER document
  * pre_gate              an APPROVED PRE_GATE_AUTHORIZATION document
  * bordereau_livraison   an APPROVED BORDEREAU_LIVRAISON document
- * vehicle_assigned      transport_record.vehicle_plate is a real value
+ * vehicle_assigned      transport_record.vehicle_id (fleet) OR vehicle_plate (external/legacy)
  * driver_assigned       transport_record.driver_user_id OR driver_name
  *
  * NOTE: three of these document types do not exist in the catalog until Phase
@@ -66,7 +67,10 @@ export function evaluatePickupGate(
   const preGate = checkEvidence("PRE_GATE_AUTHORIZATION", snap);
   const bl = checkEvidence("BORDEREAU_LIVRAISON", snap);
 
-  const vehicleAssigned = nonEmpty(snap.transport?.vehiclePlate);
+  // TRN-VEHICLE-01 — a bound fleet vehicle is an assignment, exactly as a
+  // linked driver is one line below. The plate alone left every fleet-executed
+  // mission refused here with `no_vehicle_plate`.
+  const vehicleAssigned = isVehicleAssigned({ vehicleId: snap.transport?.vehicleId, plate: snap.transport?.vehiclePlate });
   const driverAssigned = nonEmpty(snap.transport?.driverUserId) || nonEmpty(snap.transport?.driverName);
 
   // The registry owns the operation-type exceptions; we never invent one.

@@ -49,7 +49,7 @@ export default async function DriverMissionDetailPage({ params }: { params: { tr
           <Field label={d.detail.pickupInstr} value={mission.pickupLocation} sub={`${d.missions.plannedPickup} : ${fmt(mission.pickupPlanned)}`} />
           <Field label={d.detail.deliveryInstr} value={mission.deliveryLocation} sub={`${d.missions.plannedDelivery} : ${fmt(mission.deliveryPlanned)}`} />
           <div className="text-xs text-slate-500">
-            {d.missions.vehicle} : {mission.vehiclePlate ?? "—"}
+            {d.missions.vehicle} : {mission.vehicleLabel ?? "—"}
           </div>
         </div>
       </div>

@@ -12,6 +12,7 @@
 import "server-only";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { getCurrentUser } from "@/lib/auth/current-user";
+import { resolveVehicleIdentity } from "@/lib/transport/vehicle-identity";
 import { generatableArtifacts } from "./feasibility";
 import { resolveArtifactSource, type ArtifactSourceInput } from "./source";
 
@@ -39,6 +40,24 @@ export type ArtifactPanelItem = {
 
 type Admin = ReturnType<typeof getAdminSupabaseClient>;
 
+type TransportSourceRow = {
+  pickup_location: string | null;
+  delivery_location: string | null;
+  pickup_planned: string | null;
+  delivery_planned: string | null;
+  driver_name: string | null;
+  driver_user_id: string | null;
+  vehicle_plate: string | null;
+  vehicle_id: string | null;
+  /** TRN-VEHICLE-01 — the bound fleet vehicle, reached through `vehicle_id`. */
+  vehicle: { registration: string | null } | { registration: string | null }[] | null;
+  provider_id: string | null;
+  trailer_or_container: string | null;
+  transport_company: string | null;
+  created_by: string | null;
+  created_at: string | null;
+};
+
 /**
  * Read the authoritative structured records for one dossier.
  * Shared with the generator — one source of truth for "what do we know".
@@ -61,14 +80,15 @@ export async function readArtifactSource(
       .eq("file_id", fileId).eq("tenant_id", tenantId)
       .maybeSingle<Record<string, string | null>>(),
     supabase.from("transport_record")
-      .select("pickup_location, delivery_location, pickup_planned, delivery_planned, driver_name, driver_user_id, vehicle_plate, provider_id, trailer_or_container, transport_company, created_by, created_at")
+      .select("pickup_location, delivery_location, pickup_planned, delivery_planned, driver_name, driver_user_id, vehicle_plate, vehicle_id, vehicle:vehicle_id(registration), provider_id, trailer_or_container, transport_company, created_by, created_at")
       .eq("file_id", fileId).eq("tenant_id", tenantId)
-      .maybeSingle<Record<string, string | null>>(),
+      .maybeSingle<TransportSourceRow>(),
   ]);
 
   if (!file.data) return null;
   const client = Array.isArray(file.data.client) ? file.data.client[0] : file.data.client;
-  const t = transport.data ?? {};
+  const t: Partial<TransportSourceRow> = transport.data ?? {};
+  const vehicle = Array.isArray(t.vehicle) ? t.vehicle[0] : t.vehicle;
   const s = shipment.data ?? {};
 
   let requestedBy: string | null = null;
@@ -94,7 +114,10 @@ export async function readArtifactSource(
     deliveryPlanned: t.delivery_planned ?? null,
     driverName: t.driver_name ?? null,
     driverUserId: t.driver_user_id ?? null,
-    vehiclePlate: t.vehicle_plate ?? null,
+    // TRN-VEHICLE-01 — the fleet registration when a fleet vehicle is bound,
+    // the free-text plate otherwise. A fleet-executed order used to be refused
+    // on « Véhicule » because its plate is, correctly, NULL.
+    vehiclePlate: resolveVehicleIdentity({ registration: vehicle?.registration, plate: t.vehicle_plate }),
     // RQ-18 — the branch signal. Never rendered; it only selects which
     // readiness rule applies.
     providerId: t.provider_id ?? null,

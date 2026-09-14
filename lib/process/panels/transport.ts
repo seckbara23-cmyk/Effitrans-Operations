@@ -18,6 +18,7 @@ import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { scopedFrom } from "@/lib/db/tenant-scope";
 import { hasPermission } from "@/lib/rbac/permissions";
 import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-server";
+import { isVehicleAssigned, resolveVehicleIdentity } from "@/lib/transport/vehicle-identity";
 import { evaluatePickupGate, type GateResult } from "../engine/gates";
 import type { EvidenceSnapshot } from "../engine/evidence";
 import { evaluateBranch, type ExecutionView } from "../engine/state";
@@ -40,6 +41,7 @@ export type TransportRow = {
   fileNumber: string;
   clientName: string;
   transportStatus: string | null;
+  /** TRN-VEHICLE-01 — the fleet registration when bound, else the free-text plate. */
   vehiclePlate: string | null;
   vehicleAssigned: boolean;
   driverName: string | null;
@@ -86,7 +88,7 @@ export async function getTransportPanel(
 
   // (1) live transports
   const { data: transportRows } = await scopedFrom(admin, "transport_record", tenantId)
-    .select("file_id, status, vehicle_plate, driver_name, driver_phone, driver_user_id")
+    .select("file_id, status, vehicle_plate, vehicle_id, vehicle:vehicle_id(registration), driver_name, driver_phone, driver_user_id")
     .is("deleted_at", null)
     .neq("status", "CANCELLED")
     .limit(limit);
@@ -173,6 +175,7 @@ export async function getTransportPanel(
       transport: {
         status: t.status as string,
         vehiclePlate: str(t.vehicle_plate),
+        vehicleId: str(t.vehicle_id),
         driverName: str(t.driver_name),
         driverUserId: str(t.driver_user_id),
       },
@@ -182,7 +185,9 @@ export async function getTransportPanel(
     // The engine's gate — not a reimplementation of it.
     const gate = evaluatePickupGate(snap, [] as ExecutionView[]);
 
-    const vehicleAssigned = !!str(t.vehicle_plate)?.trim();
+    // TRN-VEHICLE-01 — the same two-representation rule the gate applies.
+    const fleetVehicle = t.vehicle as { registration?: string | null } | null | undefined;
+    const vehicleAssigned = isVehicleAssigned({ vehicleId: str(t.vehicle_id), plate: str(t.vehicle_plate) });
     const driverAssigned = !!(str(t.driver_user_id) || str(t.driver_name)?.trim());
     const podApproved = fileDocs.some((d) => d.type_code === "DELIVERY_NOTE" && isVerified(d.status as string));
 
@@ -203,7 +208,7 @@ export async function getTransportPanel(
       fileNumber: (file?.file_number as string) ?? "—",
       clientName: clientById.get((file?.client_id as string) ?? "") ?? "—",
       transportStatus: str(t.status),
-      vehiclePlate: str(t.vehicle_plate),
+      vehiclePlate: resolveVehicleIdentity({ registration: fleetVehicle?.registration, plate: str(t.vehicle_plate) }),
       vehicleAssigned,
       driverName: str(t.driver_name),
       driverAssigned,

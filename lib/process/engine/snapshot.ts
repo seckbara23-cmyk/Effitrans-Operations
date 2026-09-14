@@ -181,7 +181,9 @@ export async function loadProcessSnapshot(
       : Promise.resolve({ data: [] as Row[] }),
     access.transport
       ? scopedFrom(admin, "transport_record", tenantId)
-          .select("status, vehicle_plate, driver_name, driver_user_id")
+          // TRN-VEHICLE-01 — `vehicle_id` is the fleet assignment the pickup
+          // gate must see; a fleet-executed mission has no plate.
+          .select("status, vehicle_plate, vehicle_id, driver_name, driver_user_id")
           .eq("file_id", fileId)
           .is("deleted_at", null)
           .limit(1)
@@ -318,6 +320,7 @@ export async function loadProcessSnapshot(
       ? {
           status: transport.status as string,
           vehiclePlate: s(transport.vehicle_plate),
+          vehicleId: s(transport.vehicle_id),
           driverName: s(transport.driver_name),
           driverUserId: s(transport.driver_user_id),
         }

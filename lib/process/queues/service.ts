@@ -358,7 +358,7 @@ export async function getDepartmentQueue(req: QueueRequest): Promise<QueueResult
       ? scopedFrom(admin, "customs_record", req.tenantId).select("file_id, required, status, bae_reference, declaration_number, external_ref").in("file_id", fileIds).is("deleted_at", null)
       : Promise.resolve({ data: [] as Row[] }),
     access.transport
-      ? scopedFrom(admin, "transport_record", req.tenantId).select("file_id, status, vehicle_plate, driver_name, driver_user_id").in("file_id", fileIds).is("deleted_at", null)
+      ? scopedFrom(admin, "transport_record", req.tenantId).select("file_id, status, vehicle_plate, vehicle_id, driver_name, driver_user_id").in("file_id", fileIds).is("deleted_at", null)
       : Promise.resolve({ data: [] as Row[] }),
     access.finance
       ? scopedFrom(admin, "invoice", req.tenantId).select("file_id, status, due_date").in("file_id", fileIds)
@@ -418,6 +418,7 @@ export async function getDepartmentQueue(req: QueueRequest): Promise<QueueResult
         ? {
             status: trn.status as string,
             vehiclePlate: str(trn.vehicle_plate),
+            vehicleId: str(trn.vehicle_id),
             driverName: str(trn.driver_name),
             driverUserId: str(trn.driver_user_id),
           }

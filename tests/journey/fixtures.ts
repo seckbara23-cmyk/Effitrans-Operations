@@ -80,6 +80,14 @@ export async function identity(label: string): Promise<CurrentUser> {
 export const CLIENT_DEPOSIT_REQUIRED = "00000000-0000-0000-0000-0000000cc001";
 export const CLIENT_NO_DEPOSIT = "00000000-0000-0000-0000-0000000cc002";
 
+/**
+ * TRN-VEHICLE-01 — the one parc vehicle seeded with the identities, so the
+ * journey can bind a FLEET vehicle (vehicle_id set, plate NULL) the way
+ * production does, and prove every reader resolves it.
+ */
+export const FLEET_VEHICLE = "00000000-0000-0000-0000-00000000ee01";
+export const FLEET_VEHICLE_REGISTRATION = "JRN-FLEET-01";
+
 /** Read an execution row — ASSERTION ONLY. The harness never writes these. */
 export async function execution(fileId: string, stepKey: string) {
   const { data } = await db()

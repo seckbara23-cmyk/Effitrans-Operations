@@ -13,6 +13,7 @@ import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { requireDriver } from "./auth";
 import { classifyTrackingHealth, type TrackingHealth } from "@/lib/tracking/health";
 import { buildMapPoints, type MapPoint } from "@/lib/portal/map-points";
+import { resolveVehicleIdentity } from "@/lib/transport/vehicle-identity";
 import type { TransportStatus } from "@/lib/transport/types";
 import type { TrackingEventEntry, TrackingSessionStatus } from "@/lib/tracking/types";
 
@@ -29,7 +30,12 @@ export type DriverMission = {
   pickupPlanned: string | null;
   deliveryPlanned: string | null;
   deliveryActual: string | null;
-  vehiclePlate: string | null;
+  /**
+   * TRN-VEHICLE-01 — the vehicle as the platform names it: the bound fleet
+   * vehicle's registration, else the free-text plate of an external one. A
+   * fleet-executed mission used to read as having no vehicle here.
+   */
+  vehicleLabel: string | null;
   driverName: string | null;
   sessionId: string | null;
   sessionStatus: TrackingSessionStatus | null;
@@ -65,7 +71,7 @@ const DRIVER_EVIDENCE_TYPE_CODES = [
 ];
 
 const TRANSPORT_COLS =
-  "id, file_id, status, pickup_location, delivery_location, pickup_planned, delivery_planned, delivery_actual, vehicle_plate, driver_name, file:file_id(file_number, client:client_id(name))";
+  "id, file_id, status, pickup_location, delivery_location, pickup_planned, delivery_planned, delivery_actual, vehicle_plate, vehicle_id, vehicle:vehicle_id(registration), driver_name, file:file_id(file_number, client:client_id(name))";
 
 type TransportRow = {
   id: string;
@@ -77,6 +83,8 @@ type TransportRow = {
   delivery_planned: string | null;
   delivery_actual: string | null;
   vehicle_plate: string | null;
+  vehicle_id: string | null;
+  vehicle?: { registration: string | null } | null;
   driver_name: string | null;
   file: { file_number: string | null; client: { name: string } | null } | null;
 };
@@ -102,7 +110,7 @@ function toMission(r: TransportRow, session: SessionRow | null, now: Date): Driv
     pickupPlanned: r.pickup_planned,
     deliveryPlanned: r.delivery_planned,
     deliveryActual: r.delivery_actual,
-    vehiclePlate: r.vehicle_plate,
+    vehicleLabel: resolveVehicleIdentity({ registration: r.vehicle?.registration, plate: r.vehicle_plate }),
     driverName: r.driver_name,
     sessionId: session?.id ?? null,
     sessionStatus: (session?.status as TrackingSessionStatus | undefined) ?? null,

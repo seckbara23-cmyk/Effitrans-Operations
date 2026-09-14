@@ -132,6 +132,16 @@ insert into public.client (id, tenant_id, name, email, requires_physical_invoice
   ('00000000-0000-0000-0000-0000000cc002', '00000000-0000-0000-0000-000000000001', 'Journey Client — sans dépôt',    'journey.client.nodeposit@test.local', false)
 on conflict (id) do nothing;
 
+-- TRN-VEHICLE-01 — ONE parc vehicle. Master data like the two clients above
+-- (it moves no dossier): the journey binds it to a transport with NO free-text
+-- plate, exactly as production does for an Effitrans fleet truck, and proves
+-- the pickup gate, the chauffeur's mission and the Ordre de transport all
+-- resolve the vehicle through `vehicle_id`. AVAILABLE and active, so the
+-- availability interlock trigger accepts the binding.
+insert into public.vehicle (id, tenant_id, registration, internal_code, vehicle_type, status, is_active) values
+  ('00000000-0000-0000-0000-00000000ee01', '00000000-0000-0000-0000-000000000001', 'JRN-FLEET-01', 'JRN-01', 'CAMION', 'AVAILABLE', true)
+on conflict (id) do nothing;
+
 -- CI-ONLY PRIVILEGES for the harness's service-role client.
 -- `grant_table_privileges.sql` scoped grants to `authenticated` and explicitly
 -- left service-role writes "out of scope … added per-table when write flows
@@ -165,6 +175,7 @@ declare
   v_users int;
   v_roles int;
   v_clients int;
+  v_vehicles int;
   v_blind int;
   v_quote int;
 begin
@@ -173,10 +184,13 @@ begin
     join public.app_user u on u.id = ur.user_id where u.email like 'journey.%@test.local';
   select count(*) into v_clients from public.client where id in
     ('00000000-0000-0000-0000-0000000cc001', '00000000-0000-0000-0000-0000000cc002');
+  select count(*) into v_vehicles from public.vehicle
+    where id = '00000000-0000-0000-0000-00000000ee01' and status = 'AVAILABLE' and is_active;
 
   if v_users <> 18 then raise exception 'JOURNEY FIXTURES: expected 18 identities, got %', v_users; end if;
   if v_roles <> 18 then raise exception 'JOURNEY FIXTURES: expected 18 role grants, got % (a role code is missing from this tenant)', v_roles; end if;
   if v_clients <> 2 then raise exception 'JOURNEY FIXTURES: expected 2 clients, got %', v_clients; end if;
+  if v_vehicles <> 1 then raise exception 'JOURNEY FIXTURES: expected 1 AVAILABLE parc vehicle, got % (TRN-VEHICLE-01 fixture)', v_vehicles; end if;
 
   -- The negative fixture must actually BE blind, and the quotation lead must
   -- actually be able to see. Asserted here rather than assumed: a fixture that
@@ -204,7 +218,7 @@ begin
     raise exception 'JOURNEY FIXTURES: the quotation lead lacks document:read — migration 124 did not apply';
   end if;
 
-  raise notice 'journey identities ready (% users, % grants, % clients, blind=% quote_reads=%)', v_users, v_roles, v_clients, v_blind, v_quote;
+  raise notice 'journey identities ready (% users, % grants, % clients, % vehicle, blind=% quote_reads=%)', v_users, v_roles, v_clients, v_vehicles, v_blind, v_quote;
 end $$;
 
 commit;

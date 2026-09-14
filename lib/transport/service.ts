@@ -61,6 +61,7 @@ function toRecord(r: RecordRow): TransportRecord {
     vehicleLabel: r.vehicle
       ? (r.vehicle.internal_code ? `${r.vehicle.registration} — ${r.vehicle.internal_code}` : r.vehicle.registration)
       : null,
+    vehicleRegistration: r.vehicle?.registration ?? null,
     trailerOrContainer: r.trailer_or_container,
     transportCompany: r.transport_company,
     deliveryReference: r.delivery_reference,
