@@ -172,7 +172,10 @@ describe("WES-1B — concurrent transport edits cannot silently overwrite", () =
     // The stale branch returns before writeAudit in both actions.
     for (const fn of ["updateTransport", "assignTransport"]) {
       const start = TRANSPORT_ACTIONS.indexOf(`export async function ${fn}(`);
-      const body = TRANSPORT_ACTIONS.slice(start, TRANSPORT_ACTIONS.indexOf("\n}", start));
+      // PERF-UX-01 — the export is a timing wrapper and the unchanged body is the
+      // unexported function directly beneath it, so the slice runs to the NEXT
+      // export rather than to the wrapper's own closing brace.
+      const body = TRANSPORT_ACTIONS.slice(start, TRANSPORT_ACTIONS.indexOf("\nexport ", start + 1));
       const staleAt = body.indexOf('error: "stale_write" }');
       const auditAt = body.indexOf("writeAudit");
       expect(staleAt, fn).toBeGreaterThan(-1);

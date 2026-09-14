@@ -9,6 +9,7 @@
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 import { getPublicEnv } from "@/lib/env";
+import { tracedFetch } from "@/lib/perf/trace";
 import type { Database } from "@/lib/db/types";
 
 export function getServerSupabaseClient() {
@@ -35,6 +36,9 @@ export function getServerSupabaseClient() {
           }
         },
       },
+      // PERF-UX-01 — counts and times requests (auth included) made inside a
+      // traced request. Transparent otherwise: the platform fetch, unchanged.
+      global: { fetch: tracedFetch },
     },
   );
 }

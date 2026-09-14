@@ -22,6 +22,7 @@ import { AuditActions } from "@/lib/audit/events";
 import { onPodReceived } from "@/lib/handoffs/triggers";
 import { createNotification } from "@/lib/notifications/create";
 import { custTransportStarted, custDelivered } from "@/lib/customer-notify/triggers";
+import { withPerfTrace } from "@/lib/perf/trace";
 import { canPickup, canReceivePod } from "./gates";
 import { canTransition, isTransportStatus } from "./status";
 import {
@@ -332,6 +333,15 @@ export async function updateTransport(
   input: TransportInput,
   expectedUpdatedAt: string,
 ): Promise<ActionResult> {
+  // PERF-UX-01 Phase 0 — timed as one request; the body below is unchanged.
+  return withPerfTrace("action:transport.update", () => runUpdateTransport(id, input, expectedUpdatedAt));
+}
+
+async function runUpdateTransport(
+  id: string,
+  input: TransportInput,
+  expectedUpdatedAt: string,
+): Promise<ActionResult> {
   let user;
   try {
     user = await assertPermission("transport:update");
@@ -380,6 +390,15 @@ export async function updateTransport(
  * chauffeur reachable by the driver portal.
  */
 export async function assignTransport(
+  id: string,
+  a: TransportAssignment,
+  expectedUpdatedAt: string,
+): Promise<ActionResult> {
+  // PERF-UX-01 Phase 0 — timed as one request; the body below is unchanged.
+  return withPerfTrace("action:transport.assign", () => runAssignTransport(id, a, expectedUpdatedAt));
+}
+
+async function runAssignTransport(
   id: string,
   a: TransportAssignment,
   expectedUpdatedAt: string,
@@ -440,6 +459,11 @@ export async function assignTransport(
 }
 
 export async function changeTransportStatus(id: string, toStatus: string): Promise<ActionResult> {
+  // PERF-UX-01 Phase 0 — timed as one request; the body below is unchanged.
+  return withPerfTrace("action:transport.status", () => runChangeTransportStatus(id, toStatus));
+}
+
+async function runChangeTransportStatus(id: string, toStatus: string): Promise<ActionResult> {
   if (!isTransportStatus(toStatus)) return { ok: false, error: "invalid_status" };
   // DELIVERED / POD_RECEIVED are completion steps; others are ordinary updates.
   const permission =

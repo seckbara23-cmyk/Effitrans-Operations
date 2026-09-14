@@ -17,6 +17,7 @@ import { isFileVisible } from "@/lib/authz/visibility";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
 import { createNotification } from "@/lib/notifications/create";
+import { withPerfTrace } from "@/lib/perf/trace";
 import type { ActionResult } from "./types";
 
 type Admin = ReturnType<typeof getAdminSupabaseClient>;
@@ -51,6 +52,11 @@ async function isTenantDriver(supabase: Admin, tenantId: string, userId: string)
 }
 
 export async function assignDriverUser(transportId: string, driverUserId: string): Promise<ActionResult> {
+  // PERF-UX-01 Phase 0 — timed as one request; the body below is unchanged.
+  return withPerfTrace("action:driver.assign", () => runAssignDriverUser(transportId, driverUserId));
+}
+
+async function runAssignDriverUser(transportId: string, driverUserId: string): Promise<ActionResult> {
   let user;
   try {
     user = await assertPermission("transport:assign");

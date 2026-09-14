@@ -1,7 +1,9 @@
 import { getCanonicalDossierState } from "@/lib/workflow/dossier-state";
 import { serviceScopeStored } from "@/lib/files/service-scope-140";
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import Link from "next/link";
+import { withPerfTrace } from "@/lib/perf/trace";
 import { PageHeader } from "@/components/ui/page-header";
 import { ProcessJourneyPanel } from "@/components/process/process-journey";
 import { requireUser } from "@/lib/auth/require-user";
@@ -85,7 +87,24 @@ function Notice({ children }: { children: React.ReactNode }) {
   return <div className="surface p-6 text-sm text-slate-600">{children}</div>;
 }
 
+/**
+ * PERF-UX-01 Phase 0 — how this render was requested: a full document load, a
+ * client refresh or navigation (RSC), or the tree a server action returns after
+ * revalidating. Telling them apart is how a double render becomes visible in
+ * the logs. Only the presence of two framework headers is read.
+ */
+function renderKind(): "document" | "rsc" | "action" {
+  const h = headers();
+  if (h.get("next-action")) return "action";
+  if (h.get("rsc")) return "rsc";
+  return "document";
+}
+
 export default async function FileDetailPage({ params }: { params: { id: string } }) {
+  return withPerfTrace("files/[id]", () => renderFileDetailPage(params), renderKind());
+}
+
+async function renderFileDetailPage(params: { id: string }) {
   const header = (title: string) => (
     <PageHeader meta="Opérations" title={title} subtitle={t.files.subtitle} />
   );

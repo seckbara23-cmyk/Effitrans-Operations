@@ -11,6 +11,7 @@
 import "server-only";
 import { createClient } from "@supabase/supabase-js";
 import { getServerEnv } from "@/lib/env";
+import { tracedFetch } from "@/lib/perf/trace";
 import type { Database } from "@/lib/db/types";
 
 export function getAdminSupabaseClient() {
@@ -20,6 +21,9 @@ export function getAdminSupabaseClient() {
     env.SUPABASE_SERVICE_ROLE_KEY,
     {
       auth: { autoRefreshToken: false, persistSession: false },
+      // PERF-UX-01 — counts and times requests made inside a traced request.
+      // Transparent otherwise: the platform fetch, with the same arguments.
+      global: { fetch: tracedFetch },
     },
   );
 }
