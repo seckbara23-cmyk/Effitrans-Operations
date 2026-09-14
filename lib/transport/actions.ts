@@ -333,7 +333,7 @@ export async function updateTransport(
   input: TransportInput,
   expectedUpdatedAt: string,
 ): Promise<ActionResult> {
-  // PERF-UX-01 Phase 0 — timed as one request; the body below is unchanged.
+  // PERF-UX-01 Phase 0 — timed as one request.
   return withPerfTrace("action:transport.update", () => runUpdateTransport(id, input, expectedUpdatedAt));
 }
 
@@ -361,7 +361,12 @@ async function runUpdateTransport(
   const patch = buildTransportPatch(input, TRANSPORT_PLANNING_FIELDS, input.clearFields) as TransportPatch;
   if (input.customsOverride !== undefined) patch.customs_override = input.customsOverride;
   // Nothing to write — succeed without touching the row or the audit log.
-  if (isEmptyPatch(patch)) return { ok: true, id };
+  // PERF-UX-01 — but revalidate like every other success, so the response
+  // carries the re-rendered dossier and the panel needs no refresh of its own.
+  if (isEmptyPatch(patch)) {
+    revalidate(rec.file_id);
+    return { ok: true, id };
+  }
 
   const cas = await casUpdate(supabase, id, user.tenantId, expectedUpdatedAt, patch);
   if (cas.status === "refused") return { ok: false, error: refusalReason(cas) };
@@ -394,7 +399,7 @@ export async function assignTransport(
   a: TransportAssignment,
   expectedUpdatedAt: string,
 ): Promise<ActionResult> {
-  // PERF-UX-01 Phase 0 — timed as one request; the body below is unchanged.
+  // PERF-UX-01 Phase 0 — timed as one request.
   return withPerfTrace("action:transport.assign", () => runAssignTransport(id, a, expectedUpdatedAt));
 }
 
@@ -420,7 +425,12 @@ async function runAssignTransport(
   if (!(await isFileVisible(user.id, user.tenantId, rec.file_id))) return { ok: false, error: "forbidden" };
 
   const patch = buildTransportPatch(a, TRANSPORT_ASSIGNMENT_FIELDS, a.clearFields) as TransportPatch;
-  if (isEmptyPatch(patch)) return { ok: true, id };
+  // Nothing to write: no row change, no audit — revalidated like any success
+  // (PERF-UX-01, see updateTransport).
+  if (isEmptyPatch(patch)) {
+    revalidate(rec.file_id);
+    return { ok: true, id };
+  }
   patch.assigned_by = user.id;
 
   // TMS-6 — HISTORICAL CARRIER IDENTITY. transport_company already means

@@ -13,7 +13,6 @@
  * Identity assignment is not a tracking feature; GPS remains flag-gated.
  */
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { t } from "@/lib/i18n";
 import { assignDriverUser, unassignDriverUser } from "@/lib/transport/driver-actions";
 import type { AssignableDriver } from "@/lib/transport/drivers";
@@ -33,7 +32,6 @@ export function DriverAssign({
   drivers: AssignableDriver[];
   canAssign: boolean;
 }) {
-  const router = useRouter();
   const da = t.transport.driverAssign;
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -41,6 +39,12 @@ export function DriverAssign({
 
   const current = drivers.find((dr) => dr.id === currentDriverUserId) ?? null;
 
+  /**
+   * PERF-UX-01 — no client-side refresh. assignDriverUser and unassignDriverUser
+   * revalidate /files/<id> before every success return, the no-ops included, and
+   * Next returns the re-rendered dossier inside the action's own response.
+   * `pending` spans the awaited action, so both buttons stay disabled until then.
+   */
   function run(fn: () => Promise<ActionResult>) {
     setError(null);
     startTransition(async () => {
@@ -48,9 +52,7 @@ export function DriverAssign({
       if (!res.ok) {
         const map = da.errors as Record<string, string>;
         setError(map[res.error] ?? da.errors.generic);
-        return;
       }
-      router.refresh();
     });
   }
 

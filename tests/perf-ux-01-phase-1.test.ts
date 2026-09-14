@@ -12,6 +12,10 @@
  * 5. EVERY removed `router.refresh()` is backed by proof that each success
  *    return of each action behind it revalidates the dossier route — and every
  *    kept one says why it is kept. A later edit that breaks the proof fails here.
+ * 6. Phase 1B: the success paths that write nothing (an empty transport patch,
+ *    re-assigning the same driver, unassigning nobody) revalidate too, and still
+ *    write, audit and notify nothing — so TransportPanel and DriverAssign no
+ *    longer refresh at all.
  */
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -42,17 +46,43 @@ function block(src: string, open: number): string {
   throw new Error("unbalanced");
 }
 
-/** Every success return in `body`, with the non-blank line just above it. */
-function successReturns(body: string): { line: string; above: string }[] {
+/** Every success return in `body`, with the two non-blank lines just above it. */
+function successReturns(body: string): { line: string; above: string; above2: string }[] {
   const lines = body.split("\n");
-  const out: { line: string; above: string }[] = [];
+  const out: { line: string; above: string; above2: string }[] = [];
   lines.forEach((line, i) => {
     if (!/return \{ ok: true/.test(line)) return;
-    let j = i - 1;
-    while (j >= 0 && lines[j].trim() === "") j--;
-    out.push({ line: line.trim(), above: (lines[j] ?? "").trim() });
+    const prior = lines.slice(0, i).map((l) => l.trim()).filter(Boolean);
+    out.push({ line: line.trim(), above: prior[prior.length - 1] ?? "", above2: prior[prior.length - 2] ?? "" });
   });
   return out;
+}
+
+/** Every .tsx file under app/ and components/ whose source matches `re`. */
+function hostsOf(re: RegExp): string[] {
+  const hosts: string[] = [];
+  const walk = (dir: string) => {
+    for (const e of readdirSync(`${root}${dir}`, { withFileTypes: true })) {
+      const p = `${dir}/${e.name}`;
+      if (e.isDirectory()) walk(p);
+      else if (/\.tsx$/.test(e.name) && re.test(read(p))) hosts.push(p);
+    }
+  };
+  walk("app");
+  walk("components");
+  return hosts.sort();
+}
+
+/** The names a file imports from `module`, in source order. */
+function importedFrom(src: string, module: string): string[] {
+  const end = src.indexOf(`} from "${module}"`);
+  if (end < 0) throw new Error(`no import from ${module}`);
+  return src
+    .slice(src.lastIndexOf("import {", end), end)
+    .replace(/import \{/, "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 // ===========================================================================
@@ -299,17 +329,7 @@ describe("removed router.refresh() — each one proven", () => {
   });
 
   it("StepActions renders only on the two dossier routes those actions revalidate", () => {
-    const hosts: string[] = [];
-    const walk = (dir: string) => {
-      for (const e of readdirSync(`${root}${dir}`, { withFileTypes: true })) {
-        const p = `${dir}/${e.name}`;
-        if (e.isDirectory()) walk(p);
-        else if (/\.tsx$/.test(e.name) && /<(StepActions|ContextualStepCard|DossierWorkSummary)\b/.test(read(p))) hosts.push(p);
-      }
-    };
-    walk("app");
-    walk("components");
-    expect(hosts.sort()).toEqual([
+    expect(hostsOf(/<(StepActions|ContextualStepCard|DossierWorkSummary)\b/)).toEqual([
       "app/files/[id]/page.tsx",
       "app/files/[id]/process/page.tsx",
       "components/process/contextual-step-card.tsx",
@@ -320,13 +340,7 @@ describe("removed router.refresh() — each one proven", () => {
   it("CustomsPanel: every action it calls revalidates /files/<id> before every success return", () => {
     const panel = code("components/customs/customs-panel.tsx");
     expect(panel).not.toMatch(/router|useRouter/);
-    const importEnd = panel.indexOf('} from "@/lib/customs/actions"');
-    const imported = panel
-      .slice(panel.lastIndexOf("import {", importEnd), importEnd)
-      .replace(/import \{/, "")
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
+    const imported = importedFrom(panel, "@/lib/customs/actions");
     expect(imported.length).toBe(11);
     for (const name of imported) {
       const target = name === "releaseCustoms" ? "recordCustomsRelease" : name;
@@ -351,41 +365,120 @@ describe("removed router.refresh() — each one proven", () => {
     expect(returns[0].above).toBe("revalidatePath(`/files/${id}`);");
   });
 
-  it("TransportPanel: refresh removed for the four actions that always revalidate, kept for the two that may not", () => {
+  it("TransportPanel: no refresh at all — every action it calls revalidates /files/<id> before every success return", () => {
     const panel = code("components/transport/transport-panel.tsx");
-    expect(panel).toContain("function run(fn: () => Promise<ActionResult>, { refresh = false }: { refresh?: boolean } = {}) {");
-    expect(panel).toContain("if (refresh) router.refresh();");
-    expect(panel).toContain("run(() => createTransport(fileId))");
-    expect(panel).toContain("run(() => requestTransport(fileId, requestNote.trim() || null))");
-    expect(panel).toContain("run(() => changeTransportStatus(record.id, s))");
-    expect(panel).toContain("run(() => deleteTransport(record.id))");
-    expect(panel.match(/\{ refresh: true \}/g)).toHaveLength(2);
-
-    for (const name of ["createTransport", "requestTransport", "changeTransportStatus", "deleteTransport"]) {
+    expect(panel).not.toMatch(/router|useRouter/);
+    expect(panel).toContain("function run(fn: () => Promise<ActionResult>) {");
+    const imported = importedFrom(panel, "@/lib/transport/actions");
+    expect([...imported].sort()).toEqual([
+      "assignTransport",
+      "changeTransportStatus",
+      "createTransport",
+      "deleteTransport",
+      "requestTransport",
+      "updateTransport",
+    ]);
+    const flat = panel.replace(/\s+/g, " ");
+    for (const name of imported) {
+      // Every call goes through run(), which has no refresh of its own…
+      const calls = flat.match(new RegExp(`\\b${name}\\(`, "g")) ?? [];
+      expect(calls.length, name).toBeGreaterThan(0);
+      expect(flat.split(`run(() => ${name}(`).length - 1, name).toBe(calls.length);
+      // …and every success the action can return has just revalidated the dossier.
       const returns = successReturns(exported(transport, name));
       expect(returns.length, name).toBeGreaterThan(0);
       for (const r of returns) expect(["revalidate(fileId);", "revalidate(rec.file_id);"], `${name}: ${r.line}`).toContain(r.above);
     }
   });
 
-  it("…and the two kept refreshes are kept for a reason the code still shows", () => {
+  it("Phase 1B — updateTransport/assignTransport: the empty-patch success revalidates, and still writes nothing", () => {
     for (const name of ["updateTransport", "assignTransport"]) {
-      // A success that writes nothing and revalidates nothing. If this ever
-      // revalidates too, the refresh for it can go.
-      expect(exported(transport, name)).toContain("if (isEmptyPatch(patch)) return { ok: true, id };");
+      const fn = exported(transport, name);
+      const at = fn.indexOf("if (isEmptyPatch(patch)) {");
+      expect(at, name).toBeGreaterThan(-1);
+      // The branch is exactly: revalidate this dossier, report success.
+      expect(block(fn, fn.indexOf("{", at)).replace(/\s+/g, " "), name).toBe("{ revalidate(rec.file_id); return { ok: true, id }; }");
+      // After every gate; before the compare-and-set write and the audit.
+      expect(at, name).toBeGreaterThan(fn.indexOf("isFileVisible(user.id, user.tenantId, rec.file_id)"));
+      expect(at, name).toBeLessThan(fn.indexOf("casUpdate("));
+      expect(at, name).toBeLessThan(fn.indexOf("writeAudit("));
+    }
+    // assignTransport: before the assigner is stamped and the provider name is read.
+    const assign = exported(transport, "assignTransport");
+    const at = assign.indexOf("if (isEmptyPatch(patch)) {");
+    expect(at).toBeLessThan(assign.indexOf("patch.assigned_by = user.id;"));
+    expect(at).toBeLessThan(assign.indexOf('.from("transport_provider")'));
+  });
+
+  it("DriverAssign: no refresh — both driver actions revalidate /files/<id> before every success return, the no-ops included", () => {
+    const panel = code("components/transport/driver-assign.tsx");
+    expect(panel).not.toMatch(/router|useRouter/);
+    expect(importedFrom(panel, "@/lib/transport/driver-actions")).toEqual(["assignDriverUser", "unassignDriverUser"]);
+    const flat = panel.replace(/\s+/g, " ");
+    expect(flat.match(/\bassignDriverUser\(/g)).toHaveLength(1);
+    expect(flat.match(/\bunassignDriverUser\(/g)).toHaveLength(1);
+    expect(flat).toContain("run(() => assignDriverUser(transportId, selected))");
+    expect(flat).toContain("run(() => unassignDriverUser(transportId))");
+
+    const drivers = code("lib/transport/driver-actions.ts");
+    for (const name of ["assignDriverUser", "unassignDriverUser"]) {
+      const returns = successReturns(exported(drivers, name));
+      // The no-op success and the success after the write — nothing else.
+      expect(returns, name).toHaveLength(2);
+      for (const r of returns) {
+        expect([r.above2, r.above], `${name}: ${r.line}`).toEqual(["revalidatePath(`/files/${rec.file_id}`);", 'revalidatePath("/transport");']);
+      }
     }
   });
 
-  it("DriverAssign and TransitPanel keep their refresh: the proof does not hold for them", () => {
-    // assignDriverUser/unassignDriverUser succeed on a no-op without revalidating.
+  it("Phase 1B — the driver no-ops revalidate, and still write, audit and notify nothing", () => {
     const drivers = code("lib/transport/driver-actions.ts");
-    expect(drivers).toContain("if (rec.driver_user_id === driverUserId) return { ok: true, id: transportId };");
-    expect(drivers).toContain("if (!rec.driver_user_id) return { ok: true, id: transportId };");
-    expect(code("components/transport/driver-assign.tsx")).toContain("router.refresh();");
+    const noop = '{ revalidatePath(`/files/${rec.file_id}`); revalidatePath("/transport"); return { ok: true, id: transportId }; }';
+
+    const assign = exported(drivers, "assignDriverUser");
+    const same = assign.indexOf("if (rec.driver_user_id === driverUserId) {");
+    expect(same).toBeGreaterThan(assign.indexOf("isTenantDriver(supabase, user.tenantId, driverUserId)"));
+    expect(block(assign, assign.indexOf("{", same)).replace(/\s+/g, " ")).toBe(noop);
+    for (const later of [".update(", "writeAudit(", "createNotification("]) expect(same, later).toBeLessThan(assign.indexOf(later));
+
+    const unassign = exported(drivers, "unassignDriverUser");
+    const nobody = unassign.indexOf("if (!rec.driver_user_id) {");
+    expect(nobody).toBeGreaterThan(unassign.indexOf("isFileVisible(user.id, user.tenantId, rec.file_id)"));
+    expect(block(unassign, unassign.indexOf("{", nobody)).replace(/\s+/g, " ")).toBe(noop);
+    for (const later of [".update(", "writeAudit("]) expect(nobody, later).toBeLessThan(unassign.indexOf(later));
+  });
+
+  it("TransportPanel and DriverAssign render only on /files/[id], each with that dossier's own transport record", () => {
+    expect(hostsOf(/<(TransportPanel|DriverAssign)\b/)).toEqual(["app/files/[id]/page.tsx"]);
+    const page = code("app/files/[id]/page.tsx").replace(/\s+/g, " ");
+    expect(page).toContain("<TransportPanel fileId={file.id} record={transportRecord}");
+    expect(page).toContain("<DriverAssign transportId={transportRecord.id}");
+    // The record is read by this dossier's id, so the rec.file_id an action
+    // loads for it IS the page the action was called from.
+    const reader = exported(code("lib/transport/service.ts"), "getTransportRecord");
+    expect(reader).toContain('.eq("tenant_id", user.tenantId)');
+    expect(reader).toContain('.eq("file_id", fileId)');
+  });
+
+  it("TransitPanel keeps its refresh: the proof does not hold for it", () => {
     // The transit actions revalidate no path of their own; the panel lives on
     // /files/<id>/process and its refresh is the only re-render some of them get.
     expect(code("lib/process/engine/transit-actions.ts")).not.toContain("revalidatePath(");
     expect(code("components/process/transit-panel.tsx")).toContain("router.refresh();");
+  });
+
+  it("the framework link every removal relies on: a revalidating action returns the re-rendered page itself", () => {
+    const next = (p: string) => read(`node_modules/next/dist/${p}`);
+    // revalidatePath marks the action's request as having revalidated…
+    expect(next("server/web/spec-extension/revalidate.js")).toContain("store.pathWasRevalidated = true;");
+    // …which is the condition under which a fetch action's response carries the rendered page…
+    expect(next("server/app-render/action-handler.js")).toContain(
+      "skipFlight: !staticGenerationStore.pathWasRevalidated || actionWasForwarded",
+    );
+    // …and the client router installs that page as its new tree, as a refresh would.
+    const reducer = next("client/components/router-reducer/reducers/server-action-reducer.js");
+    expect(reducer).toContain("mutable.cache = cache;");
+    expect(reducer).toContain("mutable.prefetchCache = new Map();");
   });
 
   it("pending still disables every control those panels draw while an action runs", () => {
@@ -394,10 +487,22 @@ describe("removed router.refresh() — each one proven", () => {
       "components/customs/customs-panel.tsx",
       "components/files/file-form.tsx",
       "components/transport/transport-panel.tsx",
+      "components/transport/driver-assign.tsx",
     ]) {
       const src = code(file);
       expect(src, file).toMatch(/useTransition\(\)/);
       expect(src, file).toMatch(/disabled=\{pending/);
+    }
+  });
+
+  it("Phase 1B — every button in the two transport panels is disabled while the one transition is pending", () => {
+    for (const file of ["components/transport/transport-panel.tsx", "components/transport/driver-assign.tsx"]) {
+      const src = code(file);
+      const buttons = src.split("<button").slice(1).map((b) => b.slice(0, b.indexOf("</button>")));
+      expect(buttons.length, file).toBeGreaterThan(0);
+      for (const b of buttons) expect(b, `${file}: <button${b.slice(0, 80)}`).toMatch(/disabled=\{pending\b/);
+      // Every action runs inside the single transition that owns `pending`.
+      expect(src.match(/startTransition\(/g), file).toHaveLength(1);
     }
   });
 });

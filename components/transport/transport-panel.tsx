@@ -6,7 +6,6 @@
  * gate warnings. Invokes server-action proxies only.
  */
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { t } from "@/lib/i18n";
 import { nextStatuses } from "@/lib/transport/status";
 import {
@@ -71,31 +70,27 @@ export function TransportPanel({
    */
   canRequest?: boolean;
 }) {
-  const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [requestNote, setRequestNote] = useState("");
   const tr = t.transport;
 
   /**
-   * PERF-UX-01 — a successful action already re-renders this dossier: it
-   * revalidates /files/<id>, and Next returns the fresh page inside the action's
-   * own response. A router.refresh() on top rendered the whole dossier twice.
-   *
-   * `refresh` is kept ONLY for updateTransport and assignTransport. When the
-   * submitted form changes nothing, both return success before writing — and so
-   * before revalidating — and on that path the refresh is the only re-render.
+   * PERF-UX-01 — no client-side refresh. Every action this panel calls
+   * revalidates /files/<id> before each of its success returns — including the
+   * update and the assignment that write nothing when the form changed nothing —
+   * and Next returns the re-rendered dossier inside the action's own response.
+   * Refreshing on top rendered the whole dossier twice. `pending` spans the
+   * awaited action, so every control stays disabled until that response lands.
    */
-  function run(fn: () => Promise<ActionResult>, { refresh = false }: { refresh?: boolean } = {}) {
+  function run(fn: () => Promise<ActionResult>) {
     setError(null);
     startTransition(async () => {
       const res = await fn();
       if (!res.ok) {
         const map = tr.errors as Record<string, string>;
         setError(map[res.error] ?? tr.errors.generic);
-        return;
       }
-      if (refresh) router.refresh();
     });
   }
 
@@ -198,7 +193,6 @@ export function TransportPanel({
         },
         r.updatedAt,
       ),
-      { refresh: true },
     );
   }
 
@@ -230,7 +224,6 @@ export function TransportPanel({
         },
         r.updatedAt,
       ),
-      { refresh: true },
     );
   }
 

@@ -52,7 +52,7 @@ async function isTenantDriver(supabase: Admin, tenantId: string, userId: string)
 }
 
 export async function assignDriverUser(transportId: string, driverUserId: string): Promise<ActionResult> {
-  // PERF-UX-01 Phase 0 — timed as one request; the body below is unchanged.
+  // PERF-UX-01 Phase 0 — timed as one request.
   return withPerfTrace("action:driver.assign", () => runAssignDriverUser(transportId, driverUserId));
 }
 
@@ -68,7 +68,13 @@ async function runAssignDriverUser(transportId: string, driverUserId: string): P
   if (!rec) return { ok: false, error: "not_found" };
   if (!(await isFileVisible(user.id, user.tenantId, rec.file_id))) return { ok: false, error: "forbidden" };
   if (!(await isTenantDriver(supabase, user.tenantId, driverUserId))) return { ok: false, error: "invalid_driver" };
-  if (rec.driver_user_id === driverUserId) return { ok: true, id: transportId }; // no-op, no notification spam
+  if (rec.driver_user_id === driverUserId) {
+    // No-op: no write, no audit, no notification spam. PERF-UX-01 — revalidated
+    // like any success, so the response carries the re-rendered dossier.
+    revalidatePath(`/files/${rec.file_id}`);
+    revalidatePath("/transport");
+    return { ok: true, id: transportId };
+  }
 
   const { error } = await supabase
     .from("transport_record")
@@ -111,7 +117,12 @@ export async function unassignDriverUser(transportId: string): Promise<ActionRes
   const rec = await loadTransport(supabase, transportId, user.tenantId);
   if (!rec) return { ok: false, error: "not_found" };
   if (!(await isFileVisible(user.id, user.tenantId, rec.file_id))) return { ok: false, error: "forbidden" };
-  if (!rec.driver_user_id) return { ok: true, id: transportId };
+  if (!rec.driver_user_id) {
+    // Already unassigned: no write, no audit — revalidated like any success (PERF-UX-01).
+    revalidatePath(`/files/${rec.file_id}`);
+    revalidatePath("/transport");
+    return { ok: true, id: transportId };
+  }
 
   const { error } = await supabase
     .from("transport_record")

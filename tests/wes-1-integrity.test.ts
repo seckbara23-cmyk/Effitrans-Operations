@@ -439,8 +439,13 @@ describe("WES-1E — chauffeur identity is not a tracking feature", () => {
     const fn = DRIVER_ACTIONS.slice(DRIVER_ACTIONS.indexOf("export async function assignDriverUser"));
     expect(fn).toContain("createNotification(");
     expect(fn).toContain("Nouvelle mission de transport");
-    // No duplicate notification when re-assigning the same driver.
-    expect(fn).toMatch(/rec\.driver_user_id === driverUserId[\s\S]{0,60}return \{ ok: true/);
+    // No duplicate notification when re-assigning the same driver: that branch
+    // returns success before the notification. PERF-UX-01 Phase 1B lets it
+    // revalidate the dossier on the way out, and nothing else.
+    expect(code(fn)).toMatch(
+      /if \(rec\.driver_user_id === driverUserId\) \{\s*revalidatePath\(`\/files\/\$\{rec\.file_id\}`\);\s*revalidatePath\("\/transport"\);\s*return \{ ok: true/,
+    );
+    expect(fn.indexOf("rec.driver_user_id === driverUserId")).toBeLessThan(fn.indexOf("createNotification("));
   });
 
   it("54 — a free-text name never masquerades as an authenticated assignment", () => {
