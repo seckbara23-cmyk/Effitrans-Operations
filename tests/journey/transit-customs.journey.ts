@@ -42,6 +42,7 @@ let ops: CurrentUser;            // OPS_SUPERVISOR — customs:validate (indepen
 let am: CurrentUser;             // ACCOUNT_MANAGER
 let transit: CurrentUser;        // CHIEF_OF_TRANSIT — customs:create AND customs:validate
 let declarant: CurrentUser;      // CUSTOMS_DECLARANT — customs:create/update, NO customs:validate
+let declarant2: CurrentUser;     // CUSTOMS_DECLARANT — the SAME seat, so reassignment proves the assignment and not a grant
 let coordinator: CurrentUser;    // COORDINATOR — the handoff steps
 let customsFinance: CurrentUser; // CUSTOMS_FINANCE_OFFICER — customs:register
 let field: CurrentUser;          // CUSTOMS_FIELD_AGENT — customs:release
@@ -205,6 +206,7 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     am = await identity("am");
     transit = await identity("transit");
     declarant = await identity("declarant");
+    declarant2 = await identity("declarant2");
     coordinator = await identity("coordinator");
     customsFinance = await identity("customsfinance");
     field = await identity("field");
@@ -339,14 +341,96 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     // unreachable and UAT-WF-STEP67-01 could hide behind a direct
     // `approveStep` call. Two distinct people, each in their registry role, is
     // both more faithful and what actually exercises the door.
+    // UAT-DECLARANT-START-01 — step 5 may NOT be closed with nobody named. Its
+    // whole product is the assignment, and closing it empty would promote the
+    // Déclarant's step to no one. The Chef opens it and is refused.
+    const opened = await as(transit, () => activateStep(fileId, "transit_declarant_assignment"));
+    expect(opened.ok, `activate step 5: ${JSON.stringify(opened)}`).toBe(true);
+    const empty = await as(transit, () => submitStep(fileId, "transit_declarant_assignment"));
+    expect(empty.ok, "step 5 must refuse to close before a Déclarant is named").toBe(false);
+    expect((empty as { error: string }).error).toBe("declarant_required");
+    expect((await execution(fileId, "transit_declarant_assignment"))?.state).toBe("ACTIVE");
+
+    // …and naming the Déclarant IS the step: one act, no second button. Before
+    // this, `assignTransitStep` wrote step 6's assignee and left step 5 open —
+    // on EFT-IMP-2026-00012 the named Déclarant then found her own work refused
+    // for five days.
     const assigned = await as(transit, () =>
       assignTransitStep(fileId, "customs_preparation", declarant.id),
     );
     expect(assigned.ok, `assign: ${JSON.stringify(assigned)}`).toBe(true);
     expect((await execution(fileId, "customs_preparation"))?.assigned_user_id).toBe(declarant.id);
 
-    await runStep(transit, "transit_declarant_assignment");
-    expect((await execution(fileId, "transit_declarant_assignment"))?.state).toBe("COMPLETED");
+    const step5 = await execution(fileId, "transit_declarant_assignment");
+    expect(step5?.state, "the assignment closed step 5 itself").toBe("COMPLETED");
+    expect(step5?.submitted_by, "and the Chef who named her is its author").toBe(transit.id);
+    expect((await execution(fileId, "customs_preparation"))?.state).toBe("AVAILABLE");
+
+    // The consequence the defect denied: she can start her own work, now.
+    const hers = await stepEligibility(fileId, "customs_preparation", declarant);
+    expect(hers?.canStart, `the assigned Déclarant may start: ${JSON.stringify(hers)}`).toBe(true);
+  });
+
+  it("step 5 — the Chef may hand the work to another Déclarant before it starts", async () => {
+    // REASSIGNMENT is the same door and the same guards. It moves FUTURE
+    // authority and nothing else: step 5 is already closed and stays closed,
+    // with its original author and instant.
+    const before = await execution(fileId, "transit_declarant_assignment");
+
+    const moved = await as(transit, () =>
+      assignTransitStep(fileId, "customs_preparation", declarant2.id),
+    );
+    expect(moved.ok, `reassign: ${JSON.stringify(moved)}`).toBe(true);
+    expect((await execution(fileId, "customs_preparation"))?.assigned_user_id).toBe(declarant2.id);
+
+    const after = await execution(fileId, "transit_declarant_assignment");
+    expect(after?.state, "a reassignment does not reopen step 5").toBe("COMPLETED");
+    expect(after?.completed_at, "nor rewrite when it was closed").toBe(before?.completed_at);
+    expect(after?.submitted_by, "nor who closed it").toBe(before?.submitted_by);
+
+    // The new holder may act; the former one may not, and learns why.
+    const now = await stepEligibility(fileId, "customs_preparation", declarant2);
+    expect(now?.canStart, "the new Déclarant holds the work").toBe(true);
+    const former = await stepEligibility(fileId, "customs_preparation", declarant);
+    expect(former?.canStart, "the former Déclarant does not").toBe(false);
+    const refused = await as(declarant, () => activateStep(fileId, "customs_preparation"));
+    expect(refused.ok).toBe(false);
+    expect((refused as { error: string }).error).toBe("step_assigned_to_other");
+
+    // The trail names the dossier and both sides of the move.
+    const execId = (await execution(fileId, "customs_preparation"))!.id as string;
+    const trail = await auditFor("process.step.assigned", execId);
+    const last = trail[trail.length - 1] as unknown as {
+      actor_id: string;
+      before: { assigned_user_id: string | null; file_id: string };
+      after: { assigned_user_id: string };
+    };
+    expect(last.actor_id, "the Chef is the actor").toBe(transit.id);
+    expect(last.before.assigned_user_id, "old holder").toBe(declarant.id);
+    expect(last.after.assigned_user_id, "new holder").toBe(declarant2.id);
+    expect(last.before.file_id, "and the dossier is named").toBe(fileId);
+
+    // Naming the same person again is a no-op: no churn in the trail, no second
+    // notification, no state change.
+    const rows = trail.length;
+    const same = await as(transit, () =>
+      assignTransitStep(fileId, "customs_preparation", declarant2.id),
+    );
+    expect(same.ok, "re-assigning the same person is accepted").toBe(true);
+    expect((await auditFor("process.step.assigned", execId)).length, "and records nothing new").toBe(rows);
+
+    // A Déclarant cannot appoint themselves or anybody else.
+    const usurped = await as(declarant, () =>
+      assignTransitStep(fileId, "customs_preparation", declarant.id),
+    );
+    expect(usurped.ok, "assignment is the Chef's seat").toBe(false);
+
+    // Hand it back, so the rest of this journey runs as before.
+    const back = await as(transit, () =>
+      assignTransitStep(fileId, "customs_preparation", declarant.id),
+    );
+    expect(back.ok, `hand back: ${JSON.stringify(back)}`).toBe(true);
+    expect((await execution(fileId, "customs_preparation"))?.assigned_user_id).toBe(declarant.id);
     expect((await execution(fileId, "customs_preparation"))?.state).toBe("AVAILABLE");
   });
 
@@ -360,6 +444,51 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     expect(premature.ok, "step 6 must refuse without CUSTOMS_DOSSIER").toBe(false);
     expect((premature as { error: string }).error).toBe("evidence_missing");
     expect((await execution(fileId, "customs_preparation"))?.state).toBe("ACTIVE");
+  });
+
+  it("the Chef may still change the Déclarant while step 6 is ACTIVE — and history holds", async () => {
+    // UAT-DECLARANT-START-01. Work in progress is the case that matters: the
+    // remedy for an absence must not cost the dossier what has already been
+    // done, and must not leave two people believing the step is theirs.
+    const before = await execution(fileId, "customs_preparation");
+    expect(before?.state).toBe("ACTIVE");
+
+    const moved = await as(transit, () =>
+      assignTransitStep(fileId, "customs_preparation", declarant2.id),
+    );
+    expect(moved.ok, `reassign while ACTIVE: ${JSON.stringify(moved)}`).toBe(true);
+
+    const after = await execution(fileId, "customs_preparation");
+    expect(after?.assigned_user_id, "the work is the new Déclarant's").toBe(declarant2.id);
+    expect(after?.state, "and it is still the same open step").toBe("ACTIVE");
+    expect(after?.started_at, "when it started is not rewritten").toBe(before?.started_at);
+    expect(after?.id, "nor is it a second attempt").toBe(before?.id);
+    expect(after?.submitted_by).toBeNull();
+
+    // Authority moved with it — asserted on the RENDERED verdict, not on an
+    // engine call alone (the lesson of the four previous UAT blockers).
+    const now = await stepEligibility(fileId, "customs_preparation", declarant2);
+    expect(now?.canSubmit, "the new Déclarant may continue the work").toBe(true);
+    const former = await stepEligibility(fileId, "customs_preparation", declarant);
+    expect(former?.canSubmit, "the former one may not").toBe(false);
+    const refused = await as(declarant, () => submitStep(fileId, "customs_preparation"));
+    expect(refused.ok).toBe(false);
+    expect((refused as { error: string }).error).toBe("step_assigned_to_other");
+
+    // Completed steps keep their own actors: step 4 was the Chef's, step 5 too.
+    const step4 = await execution(fileId, "coordinator_reception");
+    expect(step4?.submitted_by, "a reassignment downstream rewrites no history").toBe(transit.id);
+    expect((await execution(fileId, "transit_declarant_assignment"))?.submitted_by).toBe(transit.id);
+
+    // Hand it back to the Déclarant who is preparing this dossier.
+    const back = await as(transit, () =>
+      assignTransitStep(fileId, "customs_preparation", declarant.id),
+    );
+    expect(back.ok, `hand back: ${JSON.stringify(back)}`).toBe(true);
+    const restored = await execution(fileId, "customs_preparation");
+    expect(restored?.assigned_user_id).toBe(declarant.id);
+    expect(restored?.state).toBe("ACTIVE");
+    expect(restored?.started_at, "still the same piece of work").toBe(before?.started_at);
   });
 
   it("step 6 SUBMITS for review rather than completing — it is a maker step", async () => {

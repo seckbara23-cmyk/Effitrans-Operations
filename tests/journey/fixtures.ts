@@ -102,13 +102,21 @@ export async function execution(fileId: string, stepKey: string) {
   return data;
 }
 
-/** Read audit rows for an entity — ASSERTION ONLY. */
+/**
+ * Read audit rows for an entity — ASSERTION ONLY.
+ *
+ * `before` is selected too (UAT-DECLARANT-START-01): a reassignment is a move,
+ * and a trail that shows only where the work landed cannot answer who it was
+ * taken from. Ordered oldest-first so « the latest one » is a fact rather than
+ * whatever the database returned last.
+ */
 export async function auditFor(action: string, entityId: string) {
   const { data } = await db()
     .from("audit_log")
-    .select("action, actor_id, entity, entity_id, after, occurred_at")
+    .select("action, actor_id, entity, entity_id, before, after, occurred_at")
     .eq("action", action)
-    .eq("entity_id", entityId);
+    .eq("entity_id", entityId)
+    .order("occurred_at", { ascending: true });
   return data ?? [];
 }
 

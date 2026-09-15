@@ -31,7 +31,12 @@ import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-s
 import { roleCanonicalDepartment, departmentLabelFr } from "@/lib/organization/departments";
 import { roleLabel, ROLE_DISPLAY_PRIORITY } from "@/lib/navigation/roles";
 import { createNotification } from "@/lib/notifications/create";
-import { receiveHandoff } from "./actions";
+import { activateStep, receiveHandoff, submitStep } from "./actions";
+import {
+  DECLARANT_ASSIGNMENT_STEP,
+  DECLARANT_PREPARATION_STEP,
+} from "@/lib/process/declarant-assignment";
+import { isDone } from "./types";
 import { assignStepTeam, requestProcessDecision, finalizeProcessDecision, openProcessBlocker } from "./structures-actions";
 import { recordBaeReference, recordCustomsRelease, recordCustomsReleaseApproval } from "@/lib/customs/actions";
 import { mayAssignStep, mayApproveRelease, transitCustodyRefusal } from "@/lib/process/handoff-routes";
@@ -42,7 +47,7 @@ import {
   TRANSIT_STAGE_STEP_KEYS,
   type TransitStageView,
 } from "../transit";
-import type { EngineError, EngineResult } from "./types";
+import type { EngineError, EngineResult, StepState } from "./types";
 
 type Admin = ReturnType<typeof getAdminSupabaseClient>;
 // `roles` carries the caller's tenant role codes: a supervisory ACT can be
@@ -502,10 +507,72 @@ async function transitCustody(
 }
 
 /**
+ * Close official step 5 as the act the assignment just performed
+ * (UAT-DECLARANT-START-01). THROUGH THE ENGINE, never around it.
+ *
+ * Step 5's ratified completion rule is `declarant_assigned`: naming the
+ * Déclarant is not a precondition of the step, it IS the step. Before this, the
+ * Chef had to press « Démarrer » then « Terminer » on step 5 by hand afterwards,
+ * and on EFT-IMP-2026-00012 nobody did — so step 6 was never promoted and the
+ * named Déclarant found her own work refused for five days.
+ *
+ * `activateStep` + `submitStep` are the existing doors, called AS THE CHEF, so
+ * every guard still answers for itself: custody, the step's own permission, the
+ * owning-role rule (GUARD 4) and the claim rule (GUARD 3). Nothing here
+ * escalates: a caller whom the engine would refuse on step 5 — an
+ * OPS_SUPERVISOR assigning without the Chef's seat, or a Chef whose colleague
+ * already claimed step 5 — is refused exactly as before, and the assignment
+ * they were entitled to make still stands.
+ *
+ * Idempotent by construction: a step 5 already COMPLETED (every reassignment)
+ * is left untouched.
+ *
+ * Returns the engine's refusal, or null when step 5 is closed — including when
+ * it already was. A DISPOSITION of its own would be a second vocabulary for
+ * facts the caller does not act on.
+ */
+async function closeDeclarantAssignmentStep(
+  admin: Admin,
+  ctx: Ctx,
+  fileId: string,
+  instanceId: string,
+): Promise<EngineError | null> {
+  const { data: row } = await admin
+    .from("process_step_execution")
+    .select("state")
+    .eq("tenant_id", ctx.tenantId)
+    .eq("process_instance_id", instanceId)
+    .eq("step_key", DECLARANT_ASSIGNMENT_STEP)
+    .not("state", "in", "(REJECTED,CANCELLED)")
+    .maybeSingle<{ state: string }>();
+  if (!row) return "not_found";
+  if (isDone(row.state as StepState)) return null; // a reassignment closes nothing twice
+
+  // The ladder PENDING → AVAILABLE → ACTIVE is the engine's, and this does not
+  // shortcut it: custody guarantees `coordinator_reception` is COMPLETED, whose
+  // promotion is what makes step 5 AVAILABLE.
+  if (row.state === "AVAILABLE") {
+    const started = await activateStep(fileId, DECLARANT_ASSIGNMENT_STEP);
+    if (!started.ok) return started.error;
+  } else if (row.state !== "ACTIVE") {
+    return "invalid_state";
+  }
+
+  const done = await submitStep(fileId, DECLARANT_ASSIGNMENT_STEP);
+  return done.ok ? null : done.error;
+}
+
+/**
  * Assign a Transit step (declarant preparation, field follow-up…) to a specific
  * eligible Transit user. Writes only assigned_user_id (the column already
  * exists) — it grants NOTHING and never touches ownership or team targeting.
  * The assignee must be an ACTIVE same-tenant TRANSIT-mapped staff user.
+ *
+ * REASSIGNMENT is the same act and the same door (UAT-DECLARANT-START-01): the
+ * Chef may name somebody else before the work starts or while step 6 is ACTIVE.
+ * It moves FUTURE authority only — `assigned_user_id` is the single column
+ * written, so `started_at`, `submitted_by`, reviews, documents, evidence and
+ * every audit row already recorded keep naming whoever actually did the work.
  */
 export async function assignTransitStep(
   fileId: string,
@@ -554,40 +621,77 @@ export async function assignTransitStep(
     .maybeSingle();
   if (!exec) return fail("not_found");
 
-  const { data: updated, error } = await admin
-    .from("process_step_execution")
-    .update({ assigned_user_id: userId })
-    .eq("id", exec.id)
-    .eq("tenant_id", ctx.tenantId)
-    .eq("state", exec.state) // CAS
-    .select("id");
-  if (error || !updated || updated.length === 0) return fail("invalid_state");
+  const previous = (exec.assigned_user_id as string | null) ?? null;
+  // UAT-DECLARANT-START-01 — naming the person already named changes nothing.
+  // No write, no second audit row, no second notification: pressing « Affecter »
+  // twice must not read in the trail as taking the work from somebody (it is the
+  // same somebody) nor ping them again. The act still CONVERGES — step 5 is
+  // closed below if it is still open, which is the repair path for a dossier
+  // assigned before this rule existed.
+  const unchanged = previous === userId;
 
-  await writeAudit({
-    action: AuditActions.PROCESS_STEP_ASSIGNED,
-    actorId: ctx.userId,
-    tenantId: ctx.tenantId,
-    entity: "process_step_execution",
-    entityId: exec.id,
-    // GUARD 3 (TRANSIT-CUSTODY-03): assigned work belongs to its assignee, so a
-    // REASSIGNMENT takes it from someone. Recording only the new holder made
-    // that invisible; both sides are recorded now.
-    before: { step_key: stepKey, assigned_user_id: (exec.assigned_user_id as string | null) ?? null },
-    after: { step_key: stepKey, assigned_user_id: userId },
-  });
+  if (!unchanged) {
+    const { data: updated, error } = await admin
+      .from("process_step_execution")
+      .update({ assigned_user_id: userId })
+      .eq("id", exec.id)
+      .eq("tenant_id", ctx.tenantId)
+      .eq("state", exec.state) // CAS
+      .select("id");
+    if (error || !updated || updated.length === 0) return fail("invalid_state");
 
-  if (userId !== ctx.userId) {
     const { data: fileRow } = await admin
       .from("operational_file").select("file_number").eq("id", fileId).eq("tenant_id", ctx.tenantId).maybeSingle();
-    await createNotification({
+
+    await writeAudit({
+      action: AuditActions.PROCESS_STEP_ASSIGNED,
+      actorId: ctx.userId,
       tenantId: ctx.tenantId,
-      userId,
-      type: "FILE_ASSIGNED",
-      fileId,
-      title: `Étape Transit qui vous est affectée — ${fileRow?.file_number ?? ""}`.trim(),
-      body: "Une étape du dossier vous a été affectée par le Transit.",
+      entity: "process_step_execution",
+      entityId: exec.id,
+      // GUARD 3 (TRANSIT-CUSTODY-03): assigned work belongs to its assignee, so a
+      // REASSIGNMENT takes it from someone. Recording only the new holder made
+      // that invisible; both sides are recorded now.
+      //
+      // UAT-DECLARANT-START-01 — and the DOSSIER is named on both sides, so one
+      // row answers « who moved which dossier's work, from whom, to whom, when »
+      // without joining back through the execution.
+      before: {
+        step_key: stepKey,
+        assigned_user_id: previous,
+        file_id: fileId,
+        file_number: fileRow?.file_number ?? null,
+      },
+      after: {
+        step_key: stepKey,
+        assigned_user_id: userId,
+        file_id: fileId,
+        file_number: fileRow?.file_number ?? null,
+      },
     });
+
+    if (userId !== ctx.userId) {
+      await createNotification({
+        tenantId: ctx.tenantId,
+        userId,
+        type: "FILE_ASSIGNED",
+        fileId,
+        title: `Étape Transit qui vous est affectée — ${fileRow?.file_number ?? ""}`.trim(),
+        body: "Une étape du dossier vous a été affectée par le Transit.",
+      });
+    }
   }
+
+  // UAT-DECLARANT-START-01 — naming the Déclarant IS official step 5, so the
+  // step closes here rather than waiting for the Chef to remember. Step 6 is
+  // promoted by that completion, through `promoteSuccessors`, exactly as any
+  // other step hands work on. A refusal leaves the assignment standing and step
+  // 5 open for whoever the engine says may close it — the state this dossier
+  // class was already in, never a worse one.
+  if (stepKey === DECLARANT_PREPARATION_STEP) {
+    await closeDeclarantAssignmentStep(admin, ctx, fileId, instance.id);
+  }
+
   return { ok: true, id: exec.id };
 }
 

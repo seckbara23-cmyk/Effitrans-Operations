@@ -34,7 +34,10 @@ insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-00000000aa15', 'journey.collections@test.local'),
   ('00000000-0000-0000-0000-00000000aa16', 'journey.driver@test.local'),
   ('00000000-0000-0000-0000-00000000aa17', 'journey.quotation@test.local'),
-  ('00000000-0000-0000-0000-00000000aa18', 'journey.blindquote@test.local')
+  ('00000000-0000-0000-0000-00000000aa18', 'journey.blindquote@test.local'),
+  -- UAT-DECLARANT-START-01 — a SECOND Déclarant, so reassignment can be proven
+  -- between two real people rather than between a person and themselves.
+  ('00000000-0000-0000-0000-00000000aa19', 'journey.declarant2@test.local')
 on conflict (id) do nothing;
 
 insert into public.app_user (id, tenant_id, email, name, status) values
@@ -55,7 +58,8 @@ insert into public.app_user (id, tenant_id, email, name, status) values
   ('00000000-0000-0000-0000-00000000aa15', '00000000-0000-0000-0000-000000000001', 'journey.collections@test.local',    'Journey Collections',  'active'),
   ('00000000-0000-0000-0000-00000000aa16', '00000000-0000-0000-0000-000000000001', 'journey.driver@test.local',         'Journey Driver',       'active'),
   ('00000000-0000-0000-0000-00000000aa17', '00000000-0000-0000-0000-000000000001', 'journey.quotation@test.local',      'Journey Quotation',    'active'),
-  ('00000000-0000-0000-0000-00000000aa18', '00000000-0000-0000-0000-000000000001', 'journey.blindquote@test.local',     'Journey BlindQuote',   'active')
+  ('00000000-0000-0000-0000-00000000aa18', '00000000-0000-0000-0000-000000000001', 'journey.blindquote@test.local',     'Journey BlindQuote',   'active'),
+  ('00000000-0000-0000-0000-00000000aa19', '00000000-0000-0000-0000-000000000001', 'journey.declarant2@test.local',     'Journey Declarant 2',  'active')
 on conflict (id) do nothing;
 
 -- Role grants: EXACTLY one canonical role each, so a maker/checker proof can
@@ -79,7 +83,11 @@ from (values
   ('00000000-0000-0000-0000-00000000aa14'::uuid, 'COURIER'),
   ('00000000-0000-0000-0000-00000000aa15'::uuid, 'COLLECTIONS_OFFICER'),
   ('00000000-0000-0000-0000-00000000aa16'::uuid, 'DRIVER'),
-  ('00000000-0000-0000-0000-00000000aa17'::uuid, 'QUOTATION_MANAGER')
+  ('00000000-0000-0000-0000-00000000aa17'::uuid, 'QUOTATION_MANAGER'),
+  -- UAT-DECLARANT-START-01 — the same seat as `journey.declarant`, deliberately:
+  -- a reassignment must move authority between two people who are equally
+  -- entitled to the work, so the proof is about the assignment and not a grant.
+  ('00000000-0000-0000-0000-00000000aa19'::uuid, 'CUSTOMS_DECLARANT')
 ) as u(uid, code)
 join public.role r on r.code = u.code and r.tenant_id = '00000000-0000-0000-0000-000000000001'
 on conflict do nothing;
@@ -187,8 +195,8 @@ begin
   select count(*) into v_vehicles from public.vehicle
     where id = '00000000-0000-0000-0000-00000000ee01' and status = 'AVAILABLE' and is_active;
 
-  if v_users <> 18 then raise exception 'JOURNEY FIXTURES: expected 18 identities, got %', v_users; end if;
-  if v_roles <> 18 then raise exception 'JOURNEY FIXTURES: expected 18 role grants, got % (a role code is missing from this tenant)', v_roles; end if;
+  if v_users <> 19 then raise exception 'JOURNEY FIXTURES: expected 19 identities, got %', v_users; end if;
+  if v_roles <> 19 then raise exception 'JOURNEY FIXTURES: expected 19 role grants, got % (a role code is missing from this tenant)', v_roles; end if;
   if v_clients <> 2 then raise exception 'JOURNEY FIXTURES: expected 2 clients, got %', v_clients; end if;
   if v_vehicles <> 1 then raise exception 'JOURNEY FIXTURES: expected 1 AVAILABLE parc vehicle, got % (TRN-VEHICLE-01 fixture)', v_vehicles; end if;
 

@@ -284,12 +284,13 @@ describe("C-4 negative battery — the refusals, in the order a dossier meets th
 
   it("MAKER = CHECKER 6→7 — the preparer cannot validate its own work", async () => {
     need(await as(transit, () => submitStep(fileId, "coordinator_reception")), "step 4");
-    need(await as(transit, () => assignTransitStep(fileId, "customs_preparation", transit.id)), "assign");
     // Step 5 is INTRA-QUEUE: its predecessor is Transit's own, no handoff is
     // ever sent to it, and promotion alone is the whole invitation. It must
     // still start on promotion — the reception rule does not reach it.
-    need(await as(transit, () => activateStep(fileId, "transit_declarant_assignment")), "activate 5");
-    need(await as(transit, () => submitStep(fileId, "transit_declarant_assignment")), "step 5");
+    //
+    // UAT-DECLARANT-START-01 — and naming the Déclarant IS that step: the
+    // assignment activates and completes it, then promotes step 6.
+    need(await as(transit, () => assignTransitStep(fileId, "customs_preparation", transit.id)), "assign");
     need(await as(transit, () => activateStep(fileId, "customs_preparation")), "activate 6");
     need(await as(transit, () => createCustoms(fileId)), "customs");
     for (const code of ["COMMERCIAL_INVOICE", "PACKING_LIST", "CUSTOMS_DECLARATION", "BILL_OF_LADING"]) {

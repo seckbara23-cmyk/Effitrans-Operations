@@ -52,6 +52,7 @@ import {
 } from "./state";
 import { promoteSuccessors } from "./promote";
 import { custodyRefusal, maySendRoute, routeFor, ASSIGNMENT_OWNED_STEPS } from "../handoff-routes";
+import { declarantRequiredRefusal } from "../declarant-assignment";
 import { evaluateControlOwnership } from "../control-ownership";
 import { stepOwningRole } from "../control-ownership-server";
 import { authoritativePickupGate } from "./gate-authority";
@@ -552,6 +553,17 @@ export async function submitStep(fileId: string, stepKey: string): Promise<Engin
     services: st.snapshot!.evidence.services,
   });
   if (!stepApplicability(stepKey, scope).applicable) return fail("step_not_applicable");
+
+  // UAT-DECLARANT-START-01 — step 5 may not close with nobody named.
+  //
+  // Its ratified completion rule IS the assignment (`declarant_assigned`), and
+  // completing it promotes step 6 — the Déclarant's work — to AVAILABLE. Closed
+  // empty, it hands that work to no one and leaves an open step whose owning
+  // role is a seat, not a person. Asked AFTER applicability so a dossier with no
+  // customs leg is told « sans objet » rather than sent to find a Déclarant, and
+  // BEFORE evidence because no document is missing here: a person is.
+  const declarant = declarantRequiredRefusal(stepKey, st.snapshot!.executions);
+  if (declarant) return fail(declarant);
 
   const ev = evaluateStepEvidence(stepKey, st.snapshot!.evidence);
 

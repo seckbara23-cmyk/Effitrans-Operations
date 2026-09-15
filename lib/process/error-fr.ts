@@ -82,6 +82,10 @@ export const PROCESS_ERROR_FR: Record<string, string> = {
 
   // ---- claim and assignment ----------------------------------------------
   step_assigned_to_other: "Cette étape est affectée à une autre personne.",
+  // UAT-DECLARANT-START-01 — the step's own product is the assignment, so the
+  // sentence names the act that closes it rather than a missing document.
+  declarant_required:
+    "Affectez d'abord un Déclarant : cette étape ne peut pas être terminée tant que personne n'est désigné.",
   owner_required: "Le responsable ne peut pas être retiré sans remplaçant.",
   owner_unchanged: "Ce responsable est déjà désigné.",
   file_terminal:
