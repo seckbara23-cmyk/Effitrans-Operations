@@ -120,6 +120,24 @@ export async function auditFor(action: string, entityId: string) {
   return data ?? [];
 }
 
+/**
+ * The WES-3A assignment ledger for a dossier, oldest first — ASSERTION ONLY.
+ *
+ * UAT-DECLARANT-START-01: this is the record that keeps a former assignee's
+ * sight of a dossier they worked on (`user_readable_file_ids` reads it as
+ * previous OR new holder), so the journey asserts the rows rather than the
+ * consequence alone.
+ */
+export async function assignmentEvents(fileId: string, subjectType = "STEP") {
+  const { data } = await db()
+    .from("assignment_event")
+    .select("subject_type, subject_id, previous_user_id, new_user_id, actor_user_id, reason_code, workflow_step_key, provenance, created_at")
+    .eq("file_id", fileId)
+    .eq("subject_type", subjectType)
+    .order("created_at", { ascending: true });
+  return (data ?? []) as Record<string, unknown>[];
+}
+
 /** The single open handoff on a dossier, if any — ASSERTION ONLY. */
 export async function handoffs(fileId: string) {
   const inst = (await db().from("process_instance").select("id").eq("file_id", fileId)).data ?? [];

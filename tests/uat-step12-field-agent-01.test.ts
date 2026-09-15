@@ -161,10 +161,19 @@ describe("6/7/13 — the assignment is audited, governed and idempotent", () => 
     expect(transitActions.match(/PROCESS_STEP_ASSIGNED/g) ?? []).toHaveLength(1);
   });
 
-  it("13 — one writer, one column, CAS — no duplicate assignment or event", () => {
-    expect(w).toMatch(/\.update\(\{ assigned_user_id: userId \}\)/);
-    expect(w, "CAS on the observed state").toMatch(/\.eq\("state", exec\.state\)/);
+  it("13 — one writer, one column, atomic — no duplicate assignment or event", () => {
+    // UAT-DECLARANT-START-01 — the assignee column is no longer written here.
+    // The canonical WES-3A RPC writes it, appends the assignment_event row and
+    // emits the event in ONE transaction, which is what this door always owed
+    // the ledger: « the domain mutation and its mandatory record succeed or
+    // fail together ». The step-13 assignment goes through it exactly like the
+    // Déclarant's, so both leave the same trail.
+    expect(w).toContain('admin.rpc("assign_process_step"');
+    expect(w, "no direct assignee write — the column and the ledger move together")
+      .not.toMatch(/\.update\(\{ assigned_user_id/);
     expect(w).not.toMatch(/\.insert\(/);
+    // The terminal-state pre-read stays: a finished step takes no assignee.
+    expect(w).toMatch(/\.not\("state", "in", "\(REJECTED,CANCELLED,COMPLETED,SKIPPED\)"\)/);
     // The UI never writes the row itself.
     expect(panel).not.toMatch(/process_step_execution/);
     expect(panel).toContain('assignTransitStep(fileId, "customs_field_clearance", fieldAgentId)');

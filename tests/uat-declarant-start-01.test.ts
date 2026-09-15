@@ -182,7 +182,7 @@ describe("the assignment completes step 5 — through the engine, never around i
   });
 
   it("and it runs only after the assignment actually landed", () => {
-    expect(assign.indexOf('.update({ assigned_user_id: userId })'))
+    expect(assign.indexOf('admin.rpc("assign_process_step"'))
       .toBeLessThan(assign.indexOf("closeDeclarantAssignmentStep"));
     // The guards that were already there are all still there, ahead of both.
     for (const guard of [
@@ -193,8 +193,129 @@ describe("the assignment completes step 5 — through the engine, never around i
     ]) {
       expect(assign, guard).toContain(guard);
       expect(assign.indexOf(guard), `${guard} precedes the write`)
-        .toBeLessThan(assign.indexOf(".update({ assigned_user_id: userId })"));
+        .toBeLessThan(assign.indexOf('admin.rpc("assign_process_step"'));
     }
+  });
+});
+
+// ===========================================================================
+describe("the ledger — the canonical mechanism, used rather than restated", () => {
+  const assign = fn(TRANSIT, "assignTransitStep");
+  const LEDGER = read("supabase/migrations/20260727000002_assignment_history.sql");
+  const rpc = LEDGER.slice(
+    LEDGER.indexOf("create or replace function public.assign_process_step"),
+    LEDGER.indexOf("create or replace function public.assign_operational_owner"),
+  );
+
+  it("the assignment goes through assign_process_step, with the ledger's own vocabulary", () => {
+    expect(assign).toContain('admin.rpc("assign_process_step"');
+    expect(assign).toContain('p_reason_code: previous === null ? "INITIAL" : "REASSIGNMENT",');
+    expect(assign).toContain("p_actor: ctx.userId,");
+    expect(assign).toContain("p_execution_id: exec.id as string,");
+    expect(assign).toContain("p_new_user_id: userId,");
+    // Those two codes oblige no free-text reason; the ones that do are not used.
+    expect(assign).not.toMatch(/SUPERVISOR_INTERVENTION|GOVERNANCE/);
+  });
+
+  it("that RPC moves the column, the ledger row and the event together", () => {
+    expect(rpc).toContain("update public.process_step_execution");
+    expect(rpc).toContain("set assigned_user_id = p_new_user_id");
+    expect(rpc).toContain("insert into public.assignment_event");
+    expect(rpc).toContain("emit_business_event");
+    expect(rpc).toContain("'STEP_ASSIGNED'");
+    expect(rpc).toContain("'STEP_REASSIGNED'");
+    // One column, so nothing historical can be rewritten by an assignment.
+    const update = rpc.slice(rpc.indexOf("update public.process_step_execution"), rpc.indexOf("insert into public.assignment_event"));
+    for (const historical of ["started_at", "submitted_by", "completed_at", "reviewed_by", "state ="]) {
+      expect(update, historical).not.toContain(historical);
+    }
+  });
+
+  it("no dual write survives in this door, and no new writer is introduced", () => {
+    expect(assign).not.toMatch(/\.update\(\{ assigned_user_id/);
+    expect(assign).not.toContain("assignment_event");   // never inserted from TypeScript
+    expect(assign).not.toContain("emit_business_event");
+    // The ledger table refuses everyone else: append-only, no INSERT grant.
+    expect(LEDGER).toContain("create trigger trg_assignment_event_no_update");
+    expect(LEDGER).toContain("create trigger trg_assignment_event_no_delete");
+    expect(LEDGER).toContain("grant select on public.assignment_event to authenticated;");
+    expect(LEDGER).not.toMatch(/grant insert on public\.assignment_event/);
+  });
+
+  it("a no-op assignment can never reach the ledger — guarded three times", () => {
+    expect(assign).toContain("const unchanged = previous === userId;");     // 1. this door
+    expect(rpc).toContain("if v_previous is not distinct from p_new_user_id then");  // 2. the RPC
+    expect(LEDGER).toContain("assignment_event: previous and new assignee are identical"); // 3. the table
+  });
+
+  it("the RPC's refusals are named in the engine's vocabulary, never leaked raw", () => {
+    const at = TRANSIT.indexOf("function assignRpcRefusal(");
+    expect(at, "the mapper must exist").toBeGreaterThan(-1);
+    const mapper = TRANSIT.slice(at, TRANSIT.indexOf("\n}", at));
+    expect(assign).toContain("if (error) return fail(assignRpcRefusal(error.message));");
+    expect(mapper).toContain('return "not_found"');
+    expect(mapper).toContain('return "invalid_state"');
+    // Every returned code is a declared EngineError with a French sentence.
+    for (const c of ["not_found", "invalid_state"]) {
+      expect(read("lib/process/engine/types.ts"), c).toContain(`| "${c}"`);
+      expect(PROCESS_ERROR_FR[c], c).toBeTruthy();
+    }
+    // …and every message the RPC can actually raise is one the mapper
+    // recognises. Read from the migration, so a message reworded in SQL cannot
+    // quietly become an unnamed refusal here.
+    const raises = [...rpc.matchAll(/raise exception '([^']+)'/g)].map((m) => m[1].toLowerCase());
+    expect(raises.length, "the RPC must raise something").toBeGreaterThan(0);
+    const fragments = [...mapper.matchAll(/m\.includes\("([^"]+)"\)/g)].map((m) => m[1]);
+    for (const msg of raises) {
+      expect(
+        fragments.some((f) => msg.includes(f)),
+        `the RPC can raise « ${msg} » and the mapper does not recognise it`,
+      ).toBe(true);
+    }
+  });
+
+  it("the concurrency narrowing is recorded where the code was changed", () => {
+    // Ruling 1: the expected-state compare is not restated here, and the
+    // follow-up that would restore it is NAMED in the source rather than
+    // forgotten. Read raw — the marker lives in the comment, which is exactly
+    // where the next person will look.
+    const raw = read("lib/process/engine/transit-actions.ts");
+    expect(raw).toContain("PROCESS-ASSIGN-CAS-01");
+    expect(assign, "the terminal-state pre-read survives").toMatch(
+      /\.not\("state", "in", "\(REJECTED,CANCELLED,COMPLETED,SKIPPED\)"\)/,
+    );
+    expect(assign, "and the compare-and-set it replaced is gone").not.toContain('.eq("state", exec.state)');
+  });
+});
+
+// ===========================================================================
+describe("visibility is not authority", () => {
+  const VISIBILITY = read("supabase/migrations/20260914000001_responsibility_visibility.sql");
+
+  it("the ledger is what preserves a former holder's sight of the dossier", () => {
+    const fnSql = VISIBILITY.slice(VISIBILITY.indexOf("create or replace function public.user_readable_file_ids"));
+    expect(fnSql).toContain("from public.assignment_event ae");
+    expect(fnSql).toContain("(ae.new_user_id = p_user or ae.previous_user_id = p_user)");
+  });
+
+  it("…and grants READ only: every step act still asks who holds the work", () => {
+    // The refusal a former Déclarant meets is about the assignment, not about
+    // the dossier being invisible. Both doors ask, and both ask the same rule.
+    const engine = code("lib/process/engine/actions.ts");
+    expect(engine).toContain("const ownership = assignmentRefusal(");
+    expect(engine).toContain("const ownershipSubmit = assignmentRefusal(");
+    expect(engine).toContain('return execution.assignedUserId === userId ? null : "step_assigned_to_other";');
+    // Customs controls stay bound to the step's own assignment as well.
+    expect(code("lib/process/control-ownership.ts")).toContain('{ allowed: true, reason: "assigned_to_self" }');
+    expect(code("lib/process/control-gate.ts")).toContain('reason: "assigned_to_another"');
+  });
+
+  it("the ledger row itself is readable only by someone who may read the dossier", () => {
+    const LEDGER = read("supabase/migrations/20260727000002_assignment_history.sql");
+    const policy = LEDGER.slice(LEDGER.indexOf("create policy assignment_event_select"), LEDGER.indexOf("grant select on public.assignment_event"));
+    expect(policy).toContain("for select to authenticated");
+    expect(policy).toContain("public.can_read_file(file_id)");
+    expect(policy).not.toMatch(/for (insert|update|delete)/);
   });
 });
 
@@ -205,7 +326,7 @@ describe("reassignment — future authority only", () => {
   it("naming the same person writes nothing and notifies nobody", () => {
     expect(assign).toContain("const unchanged = previous === userId;");
     const guarded = assign.slice(assign.indexOf("if (!unchanged) {"), assign.indexOf("if (stepKey === DECLARANT_PREPARATION_STEP)"));
-    for (const effect of [".update({ assigned_user_id: userId })", "writeAudit", "createNotification"]) {
+    for (const effect of ['admin.rpc("assign_process_step"', "writeAudit", "createNotification"]) {
       expect(guarded, `${effect} happens only on a real change`).toContain(effect);
     }
     // …and the convergence is OUTSIDE that block: re-assigning the same person
@@ -214,13 +335,12 @@ describe("reassignment — future authority only", () => {
     expect(assign.slice(assign.indexOf("closeDeclarantAssignmentStep"))).not.toContain("unchanged");
   });
 
-  it("one column is written, so no history can be rewritten", () => {
-    const updates = assign.match(/\.update\(\{[^}]*\}\)/g) ?? [];
-    expect(updates).toHaveLength(1);
-    expect(updates[0]).toBe(".update({ assigned_user_id: userId })");
-    for (const historical of ["started_at", "submitted_by", "completed_at", "reviewed_by", "state:"]) {
-      expect(updates[0], historical).not.toContain(historical);
-    }
+  it("this door writes no execution column at all — the RPC owns that", () => {
+    // The « one column » guarantee moved INTO the canonical RPC, where it is
+    // asserted against the migration itself (see the ledger block below). What
+    // must hold here is that no second write survives beside it.
+    expect(assign.match(/\.update\(/g) ?? [], "no direct write to any row").toHaveLength(0);
+    expect(assign).toContain('admin.rpc("assign_process_step"');
   });
 
   it("a reassignment stays possible while the work is ACTIVE", () => {
@@ -279,8 +399,12 @@ describe("the panel — the Chef can see the Déclarant AND change them", () => 
 // ===========================================================================
 describe("boundaries", () => {
   it("no third assignment path — the dormant WES-3A writer stays dormant", () => {
+    // The CANONICAL database mechanism is used (that is the point); the dormant
+    // TYPESCRIPT wrapper — with its own seat-eligibility and policy pinning — is
+    // not, and no ledger row is ever written from application code.
+    expect(TRANSIT).toContain('admin.rpc("assign_process_step"');
     expect(TRANSIT).not.toContain("assignProcessStep");
-    expect(TRANSIT).not.toContain("assign_process_step");
+    expect(TRANSIT).not.toContain("@/lib/workflow/access");
     expect(TRANSIT).not.toContain("assignment_event");
     // Still nobody calls it: this fix did not wake it. Scanned, not assumed.
     const callers: string[] = [];
@@ -325,6 +449,19 @@ describe("boundaries", () => {
       'expect(refused.ok, "the former Déclarant may not start work that is no longer hers").toBe(false);',
       'expect((await auditFor("process.step.assigned", execId)).length, "and records nothing new").toBe(rows);',
       'expect(usurped.ok, "assignment is the Chef\'s seat").toBe(false);',
+      // the ledger, and what it buys
+      'expect(events.map((e) => e.reason_code), "initial, then the move").toEqual(["INITIAL", "REASSIGNMENT"]);',
+      'expect(move.previous_user_id, "who lost the work").toBe(declarant.id);',
+      'expect(move.new_user_id, "who gained it").toBe(declarant2.id);',
+      '"a former Déclarant keeps sight of a dossier she worked on",',
+      'expect((refused as { error: string }).error).toBe("step_assigned_to_other");',
+      'expect((await assignmentEvents(fileId)).length, "nor a duplicate ledger event").toBe(ledgerRows);',
+      'expect((await assignmentEvents(fileId)).length, "a refused assignment writes no history").toBe(ledgerRows);',
+      'expect(outsider.ok, "the assignee must be Transit-mapped").toBe(false);',
+      // step 13 leaves the same trail
+      'const s13Events = ledger.filter((e) => e.workflow_step_key === "customs_field_clearance");',
+      'expect(s13Events[0].reason_code).toBe("INITIAL");',
+      "expect(await isFileVisible(field.id, TENANT_A, fileId)).toBe(true);",
     ]) {
       expect(journey, claim).toContain(claim);
     }

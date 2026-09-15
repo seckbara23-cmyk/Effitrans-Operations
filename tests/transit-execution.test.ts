@@ -242,9 +242,16 @@ describe("transit-actions orchestrate EXISTING audited actions only", () => {
 
   it("36 — declarant assignment writes ONLY assigned_user_id and validates TRANSIT eligibility", () => {
     const fn = actions.slice(actions.indexOf("export async function assignTransitStep"), actions.indexOf("export async function requestPaymentGateDecision"));
-    expect(fn).toContain(".update({ assigned_user_id: userId })");
+    // UAT-DECLARANT-START-01 — the assignee column is now written by the
+    // canonical WES-3A RPC, in one transaction with the ledger row and the
+    // event. The guarantee this pin exists for is unchanged and is enforced in
+    // SQL instead of here: `assign_process_step` sets `assigned_user_id` and
+    // nothing else. The terminal-state pre-read replaces the compare-and-set
+    // (PROCESS-ASSIGN-CAS-01 tracks restoring the expected-state guard).
+    expect(fn).toContain('admin.rpc("assign_process_step"');
+    expect(fn).not.toContain(".update({ assigned_user_id");
     expect(fn).toContain('roleCanonicalDepartment(r.code) === "TRANSIT"');
-    expect(fn).toContain('.eq("state", exec.state)'); // CAS
+    expect(fn).toContain('.not("state", "in", "(REJECTED,CANCELLED,COMPLETED,SKIPPED)")');
     expect(fn).not.toContain("owner_user_id");
   });
 

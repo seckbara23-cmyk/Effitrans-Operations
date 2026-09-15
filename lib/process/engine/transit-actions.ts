@@ -507,6 +507,23 @@ async function transitCustody(
 }
 
 /**
+ * Name the canonical assignment RPC's refusals in the engine's vocabulary.
+ *
+ * It raises plain messages rather than SQLSTATEs, and every one of them is
+ * already refused by a pre-check above — so these are the concurrent-loss
+ * cases, not the ordinary ones: the row vanished, or somebody assigned the same
+ * person first. `invalid_state` is what this door has always answered when its
+ * compare-and-set lost.
+ */
+function assignRpcRefusal(message: string): EngineError {
+  const m = (message ?? "").toLowerCase();
+  if (m.includes("not found") || m.includes("not a member")) return "not_found";
+  if (m.includes("unchanged")) return "invalid_state";
+  if (m.includes("not active")) return "not_found";
+  return "invalid_state";
+}
+
+/**
  * Close official step 5 as the act the assignment just performed
  * (UAT-DECLARANT-START-01). THROUGH THE ENGINE, never around it.
  *
@@ -631,14 +648,45 @@ export async function assignTransitStep(
   const unchanged = previous === userId;
 
   if (!unchanged) {
-    const { data: updated, error } = await admin
-      .from("process_step_execution")
-      .update({ assigned_user_id: userId })
-      .eq("id", exec.id)
-      .eq("tenant_id", ctx.tenantId)
-      .eq("state", exec.state) // CAS
-      .select("id");
-    if (error || !updated || updated.length === 0) return fail("invalid_state");
+    // THE CANONICAL ASSIGNMENT MECHANISM (WES-3A), used rather than restated.
+    //
+    // This door used to write `assigned_user_id` itself. That was a dual write
+    // in the one place the ledger's own doctrine forbids it — « the domain
+    // mutation and its mandatory record succeed or fail together … the
+    // application never writes an assignee column directly for these subjects »
+    // — and the missing record had a consequence nobody had connected:
+    // `user_readable_file_ids` grants dossier visibility to anyone named in an
+    // `assignment_event` (as previous OR new holder), so a Déclarant whose work
+    // was reassigned lost sight of a dossier she had legitimately worked on.
+    //
+    // `assign_process_step` updates the column, appends the ledger row and
+    // emits STEP_ASSIGNED / STEP_REASSIGNED in ONE transaction: all three or
+    // none. It is the SAME function `assign_commercial_owner` is used through
+    // in lib/files/actions.ts, and the same one the RLS suite proves atomic by
+    // breaking its event emission on purpose. No new writer is introduced and
+    // the dormant WES-3A TypeScript wrapper stays without callers — authority
+    // for this act remains the guards above, not that module's seat policy.
+    //
+    // ⚠ CONCURRENCY, narrowed deliberately (PROCESS-ASSIGN-CAS-01). The direct
+    // write compared the state it had read (`.eq("state", exec.state)`); the
+    // RPC takes a row lock instead, so two assignments serialise but a step
+    // that becomes terminal between the read above and this call could still
+    // take an assignee. That changes who was ASSIGNED, never who acted —
+    // `submitted_by`, `started_at` and every audit row are untouched. Moving
+    // the expected-state guard into the RPC needs a migration and is tracked
+    // as its own item.
+    const { error } = await admin.rpc("assign_process_step", {
+      p_execution_id: exec.id as string,
+      p_new_user_id: userId,
+      // INITIAL the first time somebody is named, REASSIGNMENT when the work
+      // changes hands. Both are the ledger's own vocabulary; neither obliges a
+      // free-text reason (only SUPERVISOR_INTERVENTION and GOVERNANCE do).
+      p_reason_code: previous === null ? "INITIAL" : "REASSIGNMENT",
+      p_actor: ctx.userId,
+      p_reason: null,
+      p_policy_id: null,
+    });
+    if (error) return fail(assignRpcRefusal(error.message));
 
     const { data: fileRow } = await admin
       .from("operational_file").select("file_number").eq("id", fileId).eq("tenant_id", ctx.tenantId).maybeSingle();

@@ -19,7 +19,7 @@ import {
   identity, execution, auditFor, handoffs, provideEvidence, customsIdFor, customsReleaseState,
   CLIENT_DEPOSIT_REQUIRED, gaindeTaxPayment, customsGovernedElements,
   gaindePayments, gaindePaymentLines, customsRecordRefs, db,
-  customsEventActor, customsEventCount, } from "./fixtures";
+  customsEventActor, customsEventCount, assignmentEvents, TENANT_A, } from "./fixtures";
 import type { CurrentUser } from "@/lib/auth/current-user";
 
 import { createFile, assignCommercialOwner } from "@/lib/files/actions";
@@ -35,6 +35,7 @@ import { assertControlStep } from "@/lib/process/control-gate-server";
 import { getDossierWork } from "@/lib/process/work-service";
 import { evaluateStepAction } from "@/lib/process/step-eligibility";
 import { getEffectivePermissions } from "@/lib/rbac/permissions";
+import { isFileVisible } from "@/lib/authz/visibility";
 import { contextualStatus } from "@/lib/process/contextual/view";
 import { getControlVerdicts } from "@/lib/process/control-ownership-server";
 
@@ -394,17 +395,31 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     const former = await stepEligibility(fileId, "customs_preparation", declarant);
     expect(former?.canStart, "the former Déclarant does not").toBe(false);
 
-    // …and the engine refuses her outright. The code is `forbidden`, not
-    // `step_assigned_to_other`, and the reason is worth recording: dossier
-    // VISIBILITY is itself derived from current assignment
-    // (`user_readable_file_ids`), whose « was verifiably assigned work here
-    // before » clause reads `assignment_event` — a ledger this door does not
-    // write. So losing the work also means losing sight of the dossier. That is
-    // the platform's existing behaviour for every step reassignment, asserted
-    // here rather than assumed, and reported as the follow-up it is.
+    // THE LEDGER records the move, and it is the ledger that keeps the former
+    // Déclarant's sight of a dossier she legitimately worked on:
+    // `user_readable_file_ids` admits whoever an `assignment_event` names as
+    // previous OR new holder. Written by the canonical RPC in the same
+    // transaction as the column, so the two can never disagree.
+    const events = await assignmentEvents(fileId);
+    expect(events.map((e) => e.reason_code), "initial, then the move").toEqual(["INITIAL", "REASSIGNMENT"]);
+    const move = events[events.length - 1];
+    expect(move.previous_user_id, "who lost the work").toBe(declarant.id);
+    expect(move.new_user_id, "who gained it").toBe(declarant2.id);
+    expect(move.actor_user_id, "who decided").toBe(transit.id);
+    expect(move.workflow_step_key).toBe("customs_preparation");
+    expect(move.provenance, "observed, never back-dated").toBe("OBSERVED");
+
+    // VISIBILITY IS NOT AUTHORITY. She still sees the dossier…
+    expect(
+      await isFileVisible(declarant.id, TENANT_A, fileId),
+      "a former Déclarant keeps sight of a dossier she worked on",
+    ).toBe(true);
+    // …and is refused the WORK, with the refusal that names the reason. Before
+    // the ledger row existed this was a bare `forbidden`: the dossier had simply
+    // become invisible to her, which tells an operator nothing.
     const refused = await as(declarant, () => activateStep(fileId, "customs_preparation"));
     expect(refused.ok, "the former Déclarant may not start work that is no longer hers").toBe(false);
-    expect((refused as { error: string }).error).toBe("forbidden");
+    expect((refused as { error: string }).error).toBe("step_assigned_to_other");
 
     // The trail names the dossier and both sides of the move.
     const execId = (await execution(fileId, "customs_preparation"))!.id as string;
@@ -420,19 +435,32 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     expect(last.before.file_id, "and the dossier is named").toBe(fileId);
 
     // Naming the same person again is a no-op: no churn in the trail, no second
-    // notification, no state change.
+    // notification, no state change — and no ledger row, which the database
+    // would refuse anyway (`previous and new assignee are identical`).
     const rows = trail.length;
+    const ledgerRows = events.length;
     const same = await as(transit, () =>
       assignTransitStep(fileId, "customs_preparation", declarant2.id),
     );
     expect(same.ok, "re-assigning the same person is accepted").toBe(true);
     expect((await auditFor("process.step.assigned", execId)).length, "and records nothing new").toBe(rows);
+    expect((await assignmentEvents(fileId)).length, "nor a duplicate ledger event").toBe(ledgerRows);
 
     // A Déclarant cannot appoint themselves or anybody else.
     const usurped = await as(declarant, () =>
       assignTransitStep(fileId, "customs_preparation", declarant.id),
     );
     expect(usurped.ok, "assignment is the Chef's seat").toBe(false);
+    expect((await assignmentEvents(fileId)).length, "a refused assignment writes no history").toBe(ledgerRows);
+
+    // Nor may the Chef name somebody outside the Transit department — the
+    // Account Manager maps to OPERATIONS. Refused by the eligibility check,
+    // before the RPC, so again nothing is recorded.
+    const outsider = await as(transit, () =>
+      assignTransitStep(fileId, "customs_preparation", am.id),
+    );
+    expect(outsider.ok, "the assignee must be Transit-mapped").toBe(false);
+    expect((await assignmentEvents(fileId)).length, "and that refusal writes no history either").toBe(ledgerRows);
 
     // Hand it back, so the rest of this journey runs as before.
     const back = await as(transit, () =>
@@ -1037,6 +1065,21 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     const events = await auditFor("process.step.assigned", s13!.id as string);
     expect(events.length, "the assignment must be audited").toBeGreaterThan(0);
     expect(events[0].actor_id, "attributed to the Coordinator").toBe(coordinator.id);
+
+    // UAT-DECLARANT-START-01 — and step 13 leaves the SAME canonical ledger
+    // trail as the Déclarant's, because it goes through the same door: the
+    // assignment column, the history row and the event move together or not at
+    // all. The Agent de Terrain is now named in the ledger, so this dossier
+    // stays visible to him after the work moves on.
+    const ledger = await assignmentEvents(fileId);
+    const s13Events = ledger.filter((e) => e.workflow_step_key === "customs_field_clearance");
+    expect(s13Events, "one row for the first naming").toHaveLength(1);
+    expect(s13Events[0].reason_code).toBe("INITIAL");
+    expect(s13Events[0].previous_user_id, "nobody held it before").toBeNull();
+    expect(s13Events[0].new_user_id).toBe(field.id);
+    expect(s13Events[0].actor_user_id).toBe(coordinator.id);
+    expect(s13Events[0].subject_id, "the ledger points at the execution row").toBe(s13!.id);
+    expect(await isFileVisible(field.id, TENANT_A, fileId)).toBe(true);
 
     // Now — and only now — step 12 may close.
     const done = await as(coordinator, () => submitStep(fileId, "customs_followup"));
