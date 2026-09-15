@@ -514,11 +514,12 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     expect(former?.isOwner, "the former one no longer owns it").toBe(false);
     expect(former?.claimedByAnother, "it is now held by another").toBe(true);
     expect(former?.canSubmit, "so she cannot close it").toBe(false);
-    // `forbidden` for the same reason as above: the work, and with it the
-    // dossier, is no longer hers.
+    // She keeps sight of the dossier — the ledger row from this very move says
+    // she worked on it — and is refused the WORK, by name.
+    expect(await isFileVisible(declarant.id, TENANT_A, fileId)).toBe(true);
     const refused = await as(declarant, () => submitStep(fileId, "customs_preparation"));
     expect(refused.ok, "work in progress does not stay with its former holder").toBe(false);
-    expect((refused as { error: string }).error).toBe("forbidden");
+    expect((refused as { error: string }).error).toBe("step_assigned_to_other");
 
     // Completed steps keep their own actors: step 4 was the Chef's, step 5 too.
     const step4 = await execution(fileId, "coordinator_reception");
