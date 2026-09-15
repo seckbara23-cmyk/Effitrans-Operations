@@ -322,7 +322,7 @@ describe("boundaries", () => {
       "the Chef may hand the work to another Déclarant before it starts",
       "the Chef may still change the Déclarant while step 6 is ACTIVE — and history holds",
       'expect(after?.started_at, "when it started is not rewritten").toBe(before?.started_at);',
-      'expect((refused as { error: string }).error).toBe("step_assigned_to_other");',
+      'expect(refused.ok, "the former Déclarant may not start work that is no longer hers").toBe(false);',
       'expect((await auditFor("process.step.assigned", execId)).length, "and records nothing new").toBe(rows);',
       'expect(usurped.ok, "assignment is the Chef\'s seat").toBe(false);',
     ]) {

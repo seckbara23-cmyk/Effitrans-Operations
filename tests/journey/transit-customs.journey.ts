@@ -388,14 +388,23 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     expect(after?.completed_at, "nor rewrite when it was closed").toBe(before?.completed_at);
     expect(after?.submitted_by, "nor who closed it").toBe(before?.submitted_by);
 
-    // The new holder may act; the former one may not, and learns why.
+    // The new holder may act; the former one may not.
     const now = await stepEligibility(fileId, "customs_preparation", declarant2);
     expect(now?.canStart, "the new Déclarant holds the work").toBe(true);
     const former = await stepEligibility(fileId, "customs_preparation", declarant);
     expect(former?.canStart, "the former Déclarant does not").toBe(false);
+
+    // …and the engine refuses her outright. The code is `forbidden`, not
+    // `step_assigned_to_other`, and the reason is worth recording: dossier
+    // VISIBILITY is itself derived from current assignment
+    // (`user_readable_file_ids`), whose « was verifiably assigned work here
+    // before » clause reads `assignment_event` — a ledger this door does not
+    // write. So losing the work also means losing sight of the dossier. That is
+    // the platform's existing behaviour for every step reassignment, asserted
+    // here rather than assumed, and reported as the follow-up it is.
     const refused = await as(declarant, () => activateStep(fileId, "customs_preparation"));
-    expect(refused.ok).toBe(false);
-    expect((refused as { error: string }).error).toBe("step_assigned_to_other");
+    expect(refused.ok, "the former Déclarant may not start work that is no longer hers").toBe(false);
+    expect((refused as { error: string }).error).toBe("forbidden");
 
     // The trail names the dossier and both sides of the move.
     const execId = (await execution(fileId, "customs_preparation"))!.id as string;
@@ -467,13 +476,21 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
 
     // Authority moved with it — asserted on the RENDERED verdict, not on an
     // engine call alone (the lesson of the four previous UAT blockers).
+    // Asserted on OWNERSHIP, not on `canSubmit`: the customs dossier does not
+    // exist yet, so evidence blocks submission for everyone at this instant and
+    // a `canSubmit` assertion would prove nothing about who holds the work.
     const now = await stepEligibility(fileId, "customs_preparation", declarant2);
-    expect(now?.canSubmit, "the new Déclarant may continue the work").toBe(true);
+    expect(now?.isOwner, "the work is the new Déclarant's").toBe(true);
+    expect(now?.claimedByAnother, "and is not somebody else's").toBe(false);
     const former = await stepEligibility(fileId, "customs_preparation", declarant);
-    expect(former?.canSubmit, "the former one may not").toBe(false);
+    expect(former?.isOwner, "the former one no longer owns it").toBe(false);
+    expect(former?.claimedByAnother, "it is now held by another").toBe(true);
+    expect(former?.canSubmit, "so she cannot close it").toBe(false);
+    // `forbidden` for the same reason as above: the work, and with it the
+    // dossier, is no longer hers.
     const refused = await as(declarant, () => submitStep(fileId, "customs_preparation"));
-    expect(refused.ok).toBe(false);
-    expect((refused as { error: string }).error).toBe("step_assigned_to_other");
+    expect(refused.ok, "work in progress does not stay with its former holder").toBe(false);
+    expect((refused as { error: string }).error).toBe("forbidden");
 
     // Completed steps keep their own actors: step 4 was the Chef's, step 5 too.
     const step4 = await execution(fileId, "coordinator_reception");
