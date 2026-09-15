@@ -110,6 +110,8 @@ export function TransitPanel({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [declarantId, setDeclarantId] = useState("");
+  /** UAT-DECLARANT-START-01 — the Chef asked to change an existing Déclarant. */
+  const [changingDeclarant, setChangingDeclarant] = useState(false);
   const [fieldAgentId, setFieldAgentId] = useState("");
   const [baeRef, setBaeRef] = useState("");
   const [releaseNote, setReleaseNote] = useState("");
@@ -120,7 +122,12 @@ export function TransitPanel({
   const [obsCustomerMessage, setObsCustomerMessage] = useState("");
   const [showObsForm, setShowObsForm] = useState(false);
 
-  function run(fn: () => Promise<{ ok: boolean } & Record<string, unknown>>, successNotice: string) {
+  function run(
+    fn: () => Promise<{ ok: boolean } & Record<string, unknown>>,
+    successNotice: string,
+    /** Runs only when the server accepted — a refused act leaves the form open. */
+    onSuccess?: () => void,
+  ) {
     setError(null);
     setNotice(null);
     startTransition(async () => {
@@ -128,6 +135,7 @@ export function TransitPanel({
       if (!res.ok) setError(frError(String((res as { error?: string }).error ?? "generic")));
       else {
         setNotice(successNotice);
+        onSuccess?.();
         router.refresh();
       }
     });
@@ -188,15 +196,23 @@ export function TransitPanel({
         ))}
       </ol>
 
-      {/* Declarant assignment */}
+      {/* Declarant assignment.
+
+          UAT-DECLARANT-START-01 — the Chef keeps the seat for the whole customs
+          lifecycle, so the current Déclarant is shown AND remains changeable.
+          Before, the picker disappeared the moment somebody was named: the only
+          way to hand the work to a colleague was a route nobody had, even
+          though `assignTransitStep` has always accepted it. The act is the same
+          one door, with the same guards; the panel decides nothing. */}
       <div className="mt-4 rounded-lg border border-slate-200 p-3">
         <p className="text-xs font-medium text-slate-600">Déclarant en douane</p>
-        {state.declarant ? (
+        {state.declarant && (
           <p className="mt-1 text-sm text-slate-800">
             <strong>{state.declarant.name}</strong>
             {state.declarant.roleLabel ? <span className="text-xs text-slate-500"> · {state.declarant.roleLabel}</span> : null}
           </p>
-        ) : canAssign ? (
+        )}
+        {canAssign && (state.declarant === null || changingDeclarant) ? (
           <div className="mt-1 flex flex-wrap items-center gap-2">
             <select
               aria-label="Choisir le déclarant"
@@ -213,15 +229,45 @@ export function TransitPanel({
             <button
               type="button"
               disabled={pending || !declarantId}
-              onClick={() => run(() => assignTransitStep(fileId, "customs_preparation", declarantId), "Déclarant affecté.")}
+              onClick={() => run(
+                () => assignTransitStep(fileId, "customs_preparation", declarantId),
+                state.declarant ? "Déclarant changé." : "Déclarant affecté.",
+                () => setChangingDeclarant(false),
+              )}
               className="min-h-[36px] rounded-lg bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-900 disabled:opacity-50"
             >
-              Affecter
+              {state.declarant ? "Confirmer le changement" : "Affecter"}
             </button>
+            {changingDeclarant && (
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => setChangingDeclarant(false)}
+                className="min-h-[36px] rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Annuler
+              </button>
+            )}
             {eligibleDeclarants.length === 0 && <p className="text-xs text-amber-700">Aucun déclarant Transit actif.</p>}
           </div>
-        ) : (
+        ) : canAssign && state.declarant ? (
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => setChangingDeclarant(true)}
+            className="mt-1 text-xs font-medium text-indigo-700 hover:underline disabled:opacity-50"
+          >
+            Changer le Déclarant
+          </button>
+        ) : state.declarant === null ? (
           <p className="mt-1 text-xs text-slate-400">Non affecté.</p>
+        ) : null}
+        {/* What a change does, and does not do — said where the act is taken. */}
+        {canAssign && changingDeclarant && (
+          <p className="mt-2 text-[11px] text-slate-500">
+            Le nouveau Déclarant reprend la suite du dossier. Le travail déjà effectué, ses
+            auteurs et l&apos;historique restent inchangés.
+          </p>
         )}
       </div>
 

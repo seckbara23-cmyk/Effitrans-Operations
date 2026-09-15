@@ -193,6 +193,11 @@ export type EngineError =
   // The act belongs to a supervisory seat this caller does not hold — e.g.
   // assigning a Déclarant, which is the Chef de Transit's.
   | "not_authorized_assigner"
+  // UAT-DECLARANT-START-01 — official step 5 IS the Déclarant assignment
+  // (`completionRule: declarant_assigned`), so closing it while nobody is named
+  // would open step 6 to no one. Distinct from `evidence_missing`: no document
+  // is wanted, a person is.
+  | "declarant_required"
   // TRANSIT-CUSTODY-05 — verifying the mainlevée before the Transport leg is
   // the Chef de Transit's seat. Holding `customs:validate` for other acts is
   // not the same as being this dossier's verifier.

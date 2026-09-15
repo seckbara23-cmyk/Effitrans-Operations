@@ -110,9 +110,8 @@ async function carryToValidatedInvoice() {
   need(await as(transit, () => activateStep(fileId, "coordinator_reception")), "activate 4");
   need(await as(transit, () => submitStep(fileId, "coordinator_reception")), "step 4");
 
+  // UAT-DECLARANT-START-01 — the assignment closes step 5 and promotes step 6.
   need(await as(transit, () => assignTransitStep(fileId, "customs_preparation", transit.id)), "assign 6");
-  need(await as(transit, () => activateStep(fileId, "transit_declarant_assignment")), "activate 5");
-  need(await as(transit, () => submitStep(fileId, "transit_declarant_assignment")), "step 5");
 
   need(await as(transit, () => activateStep(fileId, "customs_preparation")), "activate 6");
   need(await as(transit, () => createCustoms(fileId)), "createCustoms");

@@ -138,8 +138,9 @@ async function carryToStep13() {
   await as(transit, () => receiveDossierAtTransit(fileId));
   await runStep(transit, "coordinator_reception");
 
+  // UAT-DECLARANT-START-01 — naming the Déclarant IS step 5, so the assignment
+  // closes it and promotes step 6. No separate run.
   await as(transit, () => assignTransitStep(fileId, "customs_preparation", transit.id));
-  await runStep(transit, "transit_declarant_assignment");
 
   await as(transit, () => activateStep(fileId, "customs_preparation"));
   await as(transit, () => createCustoms(fileId));

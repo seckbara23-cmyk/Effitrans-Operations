@@ -141,8 +141,18 @@ describe("6/7/13 — the assignment is audited, governed and idempotent", () => 
 
   it("6 — the audit records BEFORE and AFTER", () => {
     expect(w).toContain("AuditActions.PROCESS_STEP_ASSIGNED");
-    expect(w).toMatch(/before: \{ step_key: stepKey, assigned_user_id:/);
-    expect(w).toMatch(/after: \{ step_key: stepKey, assigned_user_id: userId \}/);
+    // Asserted on the FACTS, not on their formatting. UAT-DECLARANT-START-01
+    // added the dossier to both sides so one row answers « who moved which
+    // dossier's work, from whom, to whom » without a join; the two holders this
+    // pin exists for are still there, and still on their own side.
+    const flat = w.replace(/\s+/g, " ");
+    const before = flat.slice(flat.indexOf("before: {"), flat.indexOf("after: {"));
+    const after = flat.slice(flat.indexOf("after: {"), flat.indexOf("});", flat.indexOf("after: {")));
+    expect(before).toContain("step_key: stepKey");
+    expect(before).toMatch(/assigned_user_id: previous/);
+    expect(after).toContain("step_key: stepKey");
+    expect(after).toContain("assigned_user_id: userId");
+    for (const side of [before, after]) expect(side).toContain("file_id: fileId");
   });
 
   it("7 — reassignment goes through the same writer, and both holders are recorded", () => {
@@ -151,10 +161,19 @@ describe("6/7/13 — the assignment is audited, governed and idempotent", () => 
     expect(transitActions.match(/PROCESS_STEP_ASSIGNED/g) ?? []).toHaveLength(1);
   });
 
-  it("13 — one writer, one column, CAS — no duplicate assignment or event", () => {
-    expect(w).toMatch(/\.update\(\{ assigned_user_id: userId \}\)/);
-    expect(w, "CAS on the observed state").toMatch(/\.eq\("state", exec\.state\)/);
+  it("13 — one writer, one column, atomic — no duplicate assignment or event", () => {
+    // UAT-DECLARANT-START-01 — the assignee column is no longer written here.
+    // The canonical WES-3A RPC writes it, appends the assignment_event row and
+    // emits the event in ONE transaction, which is what this door always owed
+    // the ledger: « the domain mutation and its mandatory record succeed or
+    // fail together ». The step-13 assignment goes through it exactly like the
+    // Déclarant's, so both leave the same trail.
+    expect(w).toContain('admin.rpc("assign_process_step"');
+    expect(w, "no direct assignee write — the column and the ledger move together")
+      .not.toMatch(/\.update\(\{ assigned_user_id/);
     expect(w).not.toMatch(/\.insert\(/);
+    // The terminal-state pre-read stays: a finished step takes no assignee.
+    expect(w).toMatch(/\.not\("state", "in", "\(REJECTED,CANCELLED,COMPLETED,SKIPPED\)"\)/);
     // The UI never writes the row itself.
     expect(panel).not.toMatch(/process_step_execution/);
     expect(panel).toContain('assignTransitStep(fileId, "customs_field_clearance", fieldAgentId)');

@@ -73,6 +73,10 @@ const ACTION_MODULES = [
  * module directly.
  */
 const LIVENESS_MODULES = ACTION_MODULES.concat([
+  // Pure rule modules that hand a refusal back as a bare string for an action
+  // to wrap — the `handoff-routes.ts` shape, above. UAT-DECLARANT-START-01's
+  // `declarant_required` is produced here and returned by `submitStep`.
+  "lib/process/declarant-assignment.ts",
   "lib/workflow/policy/resolver.ts",
   "lib/files/actions.ts",
   "lib/process/queues/actions.ts",

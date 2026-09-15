@@ -102,14 +102,40 @@ export async function execution(fileId: string, stepKey: string) {
   return data;
 }
 
-/** Read audit rows for an entity — ASSERTION ONLY. */
+/**
+ * Read audit rows for an entity — ASSERTION ONLY.
+ *
+ * `before` is selected too (UAT-DECLARANT-START-01): a reassignment is a move,
+ * and a trail that shows only where the work landed cannot answer who it was
+ * taken from. Ordered oldest-first so « the latest one » is a fact rather than
+ * whatever the database returned last.
+ */
 export async function auditFor(action: string, entityId: string) {
   const { data } = await db()
     .from("audit_log")
-    .select("action, actor_id, entity, entity_id, after, occurred_at")
+    .select("action, actor_id, entity, entity_id, before, after, occurred_at")
     .eq("action", action)
-    .eq("entity_id", entityId);
+    .eq("entity_id", entityId)
+    .order("occurred_at", { ascending: true });
   return data ?? [];
+}
+
+/**
+ * The WES-3A assignment ledger for a dossier, oldest first — ASSERTION ONLY.
+ *
+ * UAT-DECLARANT-START-01: this is the record that keeps a former assignee's
+ * sight of a dossier they worked on (`user_readable_file_ids` reads it as
+ * previous OR new holder), so the journey asserts the rows rather than the
+ * consequence alone.
+ */
+export async function assignmentEvents(fileId: string, subjectType = "STEP") {
+  const { data } = await db()
+    .from("assignment_event")
+    .select("subject_type, subject_id, previous_user_id, new_user_id, actor_user_id, reason_code, workflow_step_key, provenance, created_at")
+    .eq("file_id", fileId)
+    .eq("subject_type", subjectType)
+    .order("created_at", { ascending: true });
+  return (data ?? []) as Record<string, unknown>[];
 }
 
 /** The single open handoff on a dossier, if any — ASSERTION ONLY. */
