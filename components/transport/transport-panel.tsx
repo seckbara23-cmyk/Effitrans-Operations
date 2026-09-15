@@ -8,6 +8,7 @@
 import { useState, useTransition } from "react";
 import { t } from "@/lib/i18n";
 import { nextStatuses } from "@/lib/transport/status";
+import { resolveVehicleIdentity } from "@/lib/transport/vehicle-identity";
 import {
   assignTransport,
   changeTransportStatus,
@@ -200,13 +201,17 @@ export function TransportPanel({
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     const r = record!;
+    // TRN-VEHICLE-01 — with a fleet vehicle bound, the free-text plate is not
+    // drawn (the registration is shown in its place), so it is neither sent nor
+    // compared: omitted ⇒ preserved (WES-1A), never cleared, never rewritten.
+    const fleetBound = Boolean(r.vehicleId);
     run(() =>
       assignTransport(
         r.id,
         {
           driverName: String(fd.get("driverName") ?? ""),
           driverPhone: String(fd.get("driverPhone") ?? ""),
-          vehiclePlate: String(fd.get("vehiclePlate") ?? ""),
+          vehiclePlate: fleetBound ? undefined : String(fd.get("vehiclePlate") ?? ""),
           // TMS-5 — "" means « aucun véhicule du parc »; the explicit clear
           // below is what actually unbinds it (WES-1A: empty never clears
           // implicitly).
@@ -216,7 +221,7 @@ export function TransportPanel({
           clearFields: clearedFields(fd, [
             ["driverName", r.driverName],
             ["driverPhone", r.driverPhone],
-            ["vehiclePlate", r.vehiclePlate],
+            ...(fleetBound ? [] : [["vehiclePlate", r.vehiclePlate] as [string, string | null]]),
             ["vehicleId", r.vehicleId ?? null],
             ["providerId", r.providerId ?? null],
             ["trailerOrContainer", r.trailerOrContainer],
@@ -347,7 +352,22 @@ export function TransportPanel({
                 </select>
               </label>
             )}
-            <Field label={tr.fields.vehiclePlate} name="vehiclePlate" defaultValue={record.vehiclePlate} />
+            {/* TRN-VEHICLE-01 — a bound fleet vehicle IS the immatriculation.
+                Its registration is shown where the plate would be typed, and
+                the free-text input exists only for an external/hired vehicle:
+                the operator is never asked to retype what the parc knows, and
+                nothing is copied into vehicle_plate. */}
+            {record.vehicleId ? (
+              <label className="flex flex-col gap-1 text-xs text-slate-600">
+                {tr.fields.vehiclePlate}
+                <span className="rounded-md border border-slate-100 bg-slate-50 px-2 py-1 text-sm text-slate-700">
+                  {resolveVehicleIdentity({ registration: record.vehicleRegistration, plate: record.vehiclePlate }) ?? "—"}
+                  <span className="ml-1 text-[11px] text-slate-400">(véhicule du parc)</span>
+                </span>
+              </label>
+            ) : (
+              <Field label={tr.fields.vehiclePlate} name="vehiclePlate" defaultValue={record.vehiclePlate} />
+            )}
             <Field label={tr.fields.trailer} name="trailerOrContainer" defaultValue={record.trailerOrContainer} />
             <div className="sm:col-span-2">
               <button

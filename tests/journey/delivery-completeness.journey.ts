@@ -17,16 +17,23 @@ import { fileURLToPath } from "node:url";
 import { as } from "./identity";
 import {
   identity, execution, auditFor, handoffs, provideEvidence, customsIdFor, transportFor,
-  db, sinkMessagesFor, billingRecipientFor, fileRow, invoiceMoney, TENANT_A, CLIENT_DEPOSIT_REQUIRED, gaindeTaxPayment, } from "./fixtures";
+  db, sinkMessagesFor, billingRecipientFor, fileRow, invoiceMoney, TENANT_A, CLIENT_DEPOSIT_REQUIRED, gaindeTaxPayment,
+  FLEET_VEHICLE, FLEET_VEHICLE_REGISTRATION, } from "./fixtures";
 import type { CurrentUser } from "@/lib/auth/current-user";
 
 import { createFile, assignCommercialOwner } from "@/lib/files/actions";
 import { openDossierWorkflow, handDossierToTransit } from "@/lib/process/engine/intake-actions";
 import { submitStep, activateStep, approveStep, sendHandoff, receiveHandoff } from "@/lib/process/engine/actions";
+import { authoritativePickupGate } from "@/lib/process/engine/gate-authority";
 import { declareEvidenceAbsence } from "@/lib/process/evidence-absence-actions";
 import { receiveDossierAtTransit, assignTransitStep, recordBae, decideTransitRelease, finalizeTransitRelease } from "@/lib/process/engine/transit-actions";
 import { createCustoms, changeCustomsStatus } from "@/lib/customs/actions";
 import { createTransport, assignTransport, changeTransportStatus } from "@/lib/transport/actions";
+import { assignDriverUser } from "@/lib/transport/driver-actions";
+import { getDriverMission } from "@/lib/driver/service";
+import { readArtifactSource } from "@/lib/documents/artifacts/service";
+import { resolveArtifactSource } from "@/lib/documents/artifacts/source";
+import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import {
   prepareInvoiceDraft, submitInvoiceToFinance, approveInvoice, emailValidatedInvoice,
 } from "@/lib/process/billing/actions";
@@ -252,6 +259,41 @@ describe("C-4 slice 3a — transport, convergence, delivery, completeness", () =
     // …and the record is untouched by the refusal.
     const after = await transportFor(fileId);
     expect(after.id).toBe(t.id);
+  });
+
+  it("TRN-VEHICLE-01 — a parc vehicle bound WITHOUT a plate is the vehicle, everywhere it is read", async () => {
+    // The production shape of EFT-IMP-2026-00011: the Transport officer picks a
+    // parc vehicle, so `vehicle_id` is set and `vehicle_plate` is — correctly —
+    // NULL. Nothing copies the registration into the plate; every reader must
+    // reach the fleet row instead. The free-text plate recorded at step 14 is
+    // cleared here so the record names the vehicle through the link alone.
+    const t = await transportFor(fileId);
+    const bound = await as(transport, () =>
+      assignTransport(t.id, { vehicleId: FLEET_VEHICLE, clearFields: ["vehiclePlate"] }, t.updatedAt),
+    );
+    expect(bound.ok, `bind the parc vehicle: ${JSON.stringify(bound)}`).toBe(true);
+    const { data: row } = await db().from("transport_record").select("vehicle_id, vehicle_plate").eq("id", t.id).maybeSingle();
+    expect(row).toEqual({ vehicle_id: FLEET_VEHICLE, vehicle_plate: null });
+
+    // The authoritative step-15 gate counts the fleet binding as the vehicle.
+    // (The gate as a whole stays closed — the Bon à Délivrer and the Pre-Gate
+    // are still missing — which the next test proves.)
+    const gate = await authoritativePickupGate(TENANT_A, fileId);
+    expect(gate?.requirements.find((r) => r.key === "vehicle_assigned")?.satisfied, JSON.stringify(gate)).toBe(true);
+    expect(gate?.missing).not.toContain("vehicle_assigned");
+
+    // The chauffeur's mission names the truck by its registration…
+    const linked = await as(transport, () => assignDriverUser(t.id, driverIdentity.id));
+    expect(linked.ok, `assignDriverUser: ${JSON.stringify(linked)}`).toBe(true);
+    const mission = await as(driverIdentity, () => getDriverMission(t.id));
+    expect(mission?.vehicleLabel).toBe(FLEET_VEHICLE_REGISTRATION);
+
+    // …and the Ordre de transport source carries the same identity: whatever
+    // else the order may still lack, it no longer lacks « Véhicule ».
+    const source = await readArtifactSource(getAdminSupabaseClient(), TENANT_A, fileId);
+    expect(source?.vehiclePlate).toBe(FLEET_VEHICLE_REGISTRATION);
+    const order = resolveArtifactSource("TRANSPORT_ORDER", source!);
+    expect(order.ok ? [] : order.missing.map((m) => m.field)).not.toContain("vehiclePlate");
   });
 
   // ------------------------------------------- B. step 15 convergence ----

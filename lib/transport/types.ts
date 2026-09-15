@@ -54,6 +54,11 @@ export type TransportRecord = {
   /** TMS-5 — bound internal fleet vehicle (null for external/hired). */
   vehicleId?: string | null;
   vehicleLabel?: string | null;
+  /**
+   * TRN-VEHICLE-01 — the bound fleet vehicle's registration alone (no internal
+   * code): the effective immatriculation of a fleet-executed transport.
+   */
+  vehicleRegistration?: string | null;
   /** TMS-6 — bound external subcontractor (null for fleet execution). */
   providerId?: string | null;
   providerLabel?: string | null;

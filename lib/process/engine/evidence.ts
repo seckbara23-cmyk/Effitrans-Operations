@@ -83,6 +83,13 @@ export type EvidenceSnapshot = {
     vehiclePlate: string | null;
     driverName: string | null;
     driverUserId: string | null;
+    /**
+     * TRN-VEHICLE-01 — the bound fleet vehicle (`transport_record.vehicle_id`).
+     * A fleet-executed mission carries its vehicle HERE and has no plate; the
+     * pickup gate counts either. Optional so a projection that omits it shows
+     * the stricter view, exactly like `driverUserId` before it.
+     */
+    vehicleId?: string | null;
   } | null;
   invoices: { status: string; balance: number }[];
   /**

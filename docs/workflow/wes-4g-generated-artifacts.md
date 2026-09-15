@@ -29,7 +29,7 @@ Mandatory fields **refuse** generation when absent; the operator sees exactly wh
 | `deliveryLocation` | `transport_record.delivery_location` | ✅ | ✅ |
 | `pickupPlanned` | `transport_record.pickup_planned` | ✅ | ✅ |
 | `driverName` | `transport_record.driver_name` | — | ✅ |
-| `vehiclePlate` | `transport_record.vehicle_plate` | — | ✅ |
+| `vehiclePlate` | `vehicle.registration` through `transport_record.vehicle_id` when a fleet vehicle is bound, else `transport_record.vehicle_plate` (TRN-VEHICLE-01) | — | ✅ |
 
 Optional: `fileType`, `transportMode`, `origin`, `destination`, `cargoType`, `containerRef`,
 `deliveryPlanned`, `trailerOrContainer`, `transportCompany`, `requestedBy`, `requestedAt`.

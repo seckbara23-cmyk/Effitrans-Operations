@@ -83,7 +83,7 @@ export async function getProcessTower(
       ? scopedFrom(admin, "customs_record", tenantId).select("file_id, required, status, bae_reference").in("file_id", fileIds).is("deleted_at", null)
       : Promise.resolve({ data: [] as Row[] }),
     hasPermission(permissions, "transport:read")
-      ? scopedFrom(admin, "transport_record", tenantId).select("file_id, status, vehicle_plate, driver_name, driver_user_id").in("file_id", fileIds).is("deleted_at", null)
+      ? scopedFrom(admin, "transport_record", tenantId).select("file_id, status, vehicle_plate, vehicle_id, driver_name, driver_user_id").in("file_id", fileIds).is("deleted_at", null)
       : Promise.resolve({ data: [] as Row[] }),
     hasPermission(permissions, "document:read")
       ? scopedFrom(admin, "document", tenantId).select("file_id, type_code, status").in("file_id", fileIds).is("deleted_at", null)
@@ -195,6 +195,7 @@ export async function getProcessTower(
         ? {
             status: trn.status as string,
             vehiclePlate: str(trn.vehicle_plate),
+            vehicleId: str(trn.vehicle_id),
             driverName: str(trn.driver_name),
             driverUserId: str(trn.driver_user_id),
           }

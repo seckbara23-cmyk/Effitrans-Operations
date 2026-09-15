@@ -31,6 +31,11 @@ export type ArtifactSourceInput = {
   driverName: string | null;
   /** Set when an AUTHENTICATED driver user is linked, not free text. */
   driverUserId: string | null;
+  /**
+   * The vehicle as the platform names it (TRN-VEHICLE-01): the bound fleet
+   * vehicle's registration first, the free-text plate of an external vehicle
+   * otherwise. The snapshot key keeps its historical name.
+   */
   vehiclePlate: string | null;
   /**
    * RQ-18 — which BRANCH executes this transport. Set when a subcontractor is
