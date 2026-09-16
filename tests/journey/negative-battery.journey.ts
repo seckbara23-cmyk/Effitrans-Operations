@@ -43,6 +43,8 @@ import { completeCollections, closeDossier } from "@/lib/collections/actions";
 let ops: CurrentUser, am: CurrentUser, transit: CurrentUser, declarant: CurrentUser;
 let coordinator: CurrentUser, field: CurrentUser, transport: CurrentUser, pickup: CurrentUser;
 let customsFinance: CurrentUser; // OPS-CUSTOMS-OWNERSHIP-01 — owns step 9
+// UAT-DECLARANT-PICKER-01 — holds CUSTOMS_DECLARANT and CHIEF_OF_TRANSIT, as four production accounts do.
+let declarantChief: CurrentUser;
 let billing: CurrentUser, finance: CurrentUser, collections: CurrentUser, courier: CurrentUser;
 
 let fileId = "";
@@ -75,6 +77,7 @@ describe("C-4 negative battery — the refusals, in the order a dossier meets th
     am = await identity("am");
     transit = await identity("transit");
     declarant = await identity("declarant");
+    declarantChief = await identity("declarantchief");
     coordinator = await identity("coordinator");
     customsFinance = await identity("customsfinance");
     field = await identity("field");
@@ -290,24 +293,30 @@ describe("C-4 negative battery — the refusals, in the order a dossier meets th
     //
     // UAT-DECLARANT-START-01 — and naming the Déclarant IS that step: the
     // assignment activates and completes it, then promotes step 6.
-    need(await as(transit, () => assignTransitStep(fileId, "customs_preparation", transit.id)), "assign");
-    need(await as(transit, () => activateStep(fileId, "customs_preparation")), "activate 6");
-    need(await as(transit, () => createCustoms(fileId)), "customs");
+    // UAT-DECLARANT-PICKER-01 — the preparer must now HOLD CUSTOMS_DECLARANT,
+    // so the maker here is the account that holds both that role and
+    // CHIEF_OF_TRANSIT. That pairing is not a convenience: this test needs a
+    // maker who ALSO holds `customs:validate`, or its refusal would be about a
+    // missing permission and the next test would be a duplicate of it. Four
+    // production accounts hold exactly this pair, so the case is real.
+    need(await as(transit, () => assignTransitStep(fileId, "customs_preparation", declarantChief.id)), "assign");
+    need(await as(declarantChief, () => activateStep(fileId, "customs_preparation")), "activate 6");
+    need(await as(declarantChief, () => createCustoms(fileId)), "customs");
     for (const code of ["COMMERCIAL_INVOICE", "PACKING_LIST", "CUSTOMS_DECLARATION", "BILL_OF_LADING"]) {
-      await provideEvidence(fileId, code, transit, ops);
+      await provideEvidence(fileId, code, declarantChief, ops);
     }
     const customsId = await customsIdFor(fileId);
     for (const st of ["DOCUMENTS_PENDING", "DECLARATION_PREPARED", "DECLARED", "DUTIES_ASSESSED"]) {
-      need(await as(transit, () => changeCustomsStatus(customsId, st)), `customs ${st}`);
+      need(await as(declarantChief, () => changeCustomsStatus(customsId, st)), `customs ${st}`);
     }
-    need(await as(transit, () => submitStep(fileId, "customs_preparation")), "step 6");
+    need(await as(declarantChief, () => submitStep(fileId, "customs_preparation")), "step 6");
 
     const before = await stepState("customs_preparation");
     expect(before.state, "waiting for review").toBe("SUBMITTED");
 
-    // CHIEF_OF_TRANSIT holds customs:create AND customs:validate, so this
-    // refusal is about IDENTITY and not permission.
-    const self = await as(transit, () => approveStep(fileId, "transit_validation"));
+    // The maker holds customs:create AND customs:validate, so this refusal is
+    // about IDENTITY and not permission.
+    const self = await as(declarantChief, () => approveStep(fileId, "transit_validation"));
     expect(self.ok).toBe(false);
     expect(err(self)).toBe("self_validation_forbidden");
 

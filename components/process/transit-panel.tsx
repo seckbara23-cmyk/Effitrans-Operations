@@ -93,9 +93,15 @@ export function TransitPanel({
 }: {
   fileId: string;
   state: TransitState;
-  eligibleDeclarants: TransitAssignee[];
-  /** UAT-STEP12-FIELD-AGENT-01 — offered only when nobody is named yet. */
-  eligibleFieldAgents: TransitAssignee[];
+  /**
+   * UAT-DECLARANT-PICKER-01 — NULL is « the page did not load this list »
+   * (nobody here may assign); an array is « loaded, and this is everybody ».
+   * The empty-state sentence belongs to the second case ONLY: a list that was
+   * never fetched must never be reported as a tenant with no Déclarant.
+   */
+  eligibleDeclarants: TransitAssignee[] | null;
+  /** UAT-STEP12-FIELD-AGENT-01 — the Agent de Terrain candidates, same contract. */
+  eligibleFieldAgents: TransitAssignee[] | null;
   canReceive: boolean;
   canAssign: boolean;
   canRequestDecision: boolean;
@@ -222,7 +228,7 @@ export function TransitPanel({
               className="min-w-[220px] rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
             >
               <option value="">— Choisir un déclarant Transit —</option>
-              {eligibleDeclarants.map((d) => (
+              {(eligibleDeclarants ?? []).map((d) => (
                 <option key={d.id} value={d.id}>{d.name}{d.roleLabel ? ` — ${d.roleLabel}` : ""}</option>
               ))}
             </select>
@@ -248,7 +254,12 @@ export function TransitPanel({
                 Annuler
               </button>
             )}
-            {eligibleDeclarants.length === 0 && <p className="text-xs text-amber-700">Aucun déclarant Transit actif.</p>}
+            {eligibleDeclarants !== null && eligibleDeclarants.length === 0 && (
+              <p className="text-xs text-amber-700">Aucun déclarant Transit actif.</p>
+            )}
+            {eligibleDeclarants === null && (
+              <p className="text-xs text-slate-500">Liste des déclarants non chargée.</p>
+            )}
           </div>
         ) : canAssign && state.declarant ? (
           <button
@@ -310,7 +321,7 @@ export function TransitPanel({
               className="min-w-[220px] rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
             >
               <option value="">— Choisir un Agent de Terrain —</option>
-              {eligibleFieldAgents.map((a) => (
+              {(eligibleFieldAgents ?? []).map((a) => (
                 <option key={a.id} value={a.id}>{a.name}{a.roleLabel ? ` — ${a.roleLabel}` : ""}</option>
               ))}
             </select>
@@ -327,8 +338,11 @@ export function TransitPanel({
             >
               Affecter
             </button>
-            {eligibleFieldAgents.length === 0 && (
+            {eligibleFieldAgents !== null && eligibleFieldAgents.length === 0 && (
               <p className="text-xs text-amber-700">Aucun Agent de Terrain actif.</p>
+            )}
+            {eligibleFieldAgents === null && (
+              <p className="text-xs text-slate-500">Liste des agents non chargée.</p>
             )}
           </div>
         ) : (

@@ -177,19 +177,29 @@ export default async function ProcessInspectorPage({ params }: { params: { id: s
   // getTransitState degrades to null (panel hidden) when the 9.0B structures /
   // the process instance are absent, so nothing here can break the inspector.
   let transit: TransitState | null = null;
-  let eligibleDeclarants: TransitAssignee[] = [];
-  // UAT-STEP12-FIELD-AGENT-01 — the SAME reader, asked for the other role. No
-  // new eligibility rule: `listEligibleTransitAssignees` is already
-  // role-parameterised and already returns only active, same-tenant staff.
-  let eligibleFieldAgents: TransitAssignee[] = [];
+  // UAT-DECLARANT-PICKER-01 — NULL means « not loaded », an array means
+  // « loaded, and this is everybody ». The distinction is the whole fix: the
+  // list used to be fetched only while the slot was empty, so once a Déclarant
+  // was named the page sent an empty array and the panel — which by then
+  // offered « Changer le Déclarant » — reported « Aucun déclarant Transit
+  // actif » to a tenant holding twelve of them. An empty array must mean the
+  // question was asked and the answer was nobody.
+  let eligibleDeclarants: TransitAssignee[] | null = null;
+  // UAT-STEP12-FIELD-AGENT-01 — the SAME reader, asked about the other step. No
+  // new eligibility rule: `listEligibleTransitAssignees` answers with the pure
+  // predicate the assignment door itself enforces.
+  let eligibleFieldAgents: TransitAssignee[] | null = null;
   const canAssignTransit = hasPermission(permissions, "customs:assign");
   if (tenantFlags.transitExecution) {
     transit = await getTransitState(params.id);
-    if (transit && canAssignTransit && !transit.declarant) {
-      eligibleDeclarants = await listEligibleTransitAssignees("CUSTOMS_DECLARANT");
-    }
-    if (transit && canAssignTransit && !transit.fieldAgent) {
-      eligibleFieldAgents = await listEligibleTransitAssignees("CUSTOMS_FIELD_AGENT");
+    // Loaded for whoever may assign, WITHOUT predicting what the panel will
+    // choose to render. Predicting it is what broke: the page guessed the
+    // selector would be hidden, the panel showed it anyway. The reader is
+    // gated on the same permission the assignment requires and is bounded, so
+    // asking every time opens nothing that assigning does not already open.
+    if (transit && canAssignTransit) {
+      eligibleDeclarants = await listEligibleTransitAssignees("customs_preparation");
+      eligibleFieldAgents = await listEligibleTransitAssignees("customs_field_clearance");
     }
   }
   const transitPanel = transit ? (

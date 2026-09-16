@@ -140,19 +140,25 @@ async function carryToStep13() {
 
   // UAT-DECLARANT-START-01 — naming the Déclarant IS step 5, so the assignment
   // closes it and promotes step 6. No separate run.
-  await as(transit, () => assignTransitStep(fileId, "customs_preparation", transit.id));
+  //
+  // UAT-DECLARANT-PICKER-01 — and the person named is a DÉCLARANT. This used to
+  // name the Chef de Transit, which the door accepted because it asked only
+  // whether the assignee mapped to the Transit department. That is no longer
+  // eligibility: the Chef names somebody, he is not the somebody.
+  const assigned6 = await as(transit, () => assignTransitStep(fileId, "customs_preparation", declarant.id));
+  if (!assigned6.ok) throw new Error(`slice 3 assign 6 failed: ${JSON.stringify(assigned6)}`);
 
-  await as(transit, () => activateStep(fileId, "customs_preparation"));
-  await as(transit, () => createCustoms(fileId));
+  await as(declarant, () => activateStep(fileId, "customs_preparation"));
+  await as(declarant, () => createCustoms(fileId));
   for (const code of ["COMMERCIAL_INVOICE", "PACKING_LIST", "CUSTOMS_DECLARATION", "BILL_OF_LADING"]) {
-    await provideEvidence(fileId, code, transit, ops);
+    await provideEvidence(fileId, code, declarant, ops);
   }
   const customsId = await customsIdFor(fileId);
   for (const status of ["DOCUMENTS_PENDING", "DECLARATION_PREPARED", "DECLARED", "DUTIES_ASSESSED"]) {
-    const moved = await as(transit, () => changeCustomsStatus(customsId, status));
+    const moved = await as(declarant, () => changeCustomsStatus(customsId, status));
     if (!moved.ok) throw new Error(`customs -> ${status}: ${JSON.stringify(moved)}`);
   }
-  await as(transit, () => submitStep(fileId, "customs_preparation"));
+  await as(declarant, () => submitStep(fileId, "customs_preparation"));
   await as(ops, () => approveStep(fileId, "transit_validation"));
 
   await runStep(coordinator, "coordinator_to_finance");

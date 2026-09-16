@@ -124,9 +124,14 @@ describe("3/4/5 — who may be assigned", () => {
     expect(w).toMatch(/staff\.status !== "active"/);
   });
 
-  it("5 — a user outside the TRANSIT department is refused", () => {
-    expect(w).toMatch(/roleCanonicalDepartment\(r\.code\) === "TRANSIT"/);
-    expect(w).toMatch(/if \(!isTransit\) return fail\("forbidden"\)/);
+  it("5 — a user who does not hold the step's role is refused", () => {
+    // UAT-DECLARANT-PICKER-01 — the door asks the shared predicate, which for
+    // step 13 requires CUSTOMS_FIELD_AGENT rather than any Transit-mapped role.
+    // That is what the candidate list has always offered here; the door now
+    // agrees with it instead of being broader than it.
+    expect(w).toMatch(/isEligibleAssignee\(/);
+    expect(w).not.toMatch(/roleCanonicalDepartment\(r\.code\) === "TRANSIT"/);
+    expect(w).toMatch(/if \(!eligible\) return fail\("forbidden"\)/);
     // The step must also be one the platform allows to be assigned at all.
     expect(transitActions).toMatch(/ASSIGNABLE_STEP_KEYS\.has\(stepKey\)/);
     expect(transitActions).toContain('"customs_field_clearance"');
@@ -351,9 +356,13 @@ describe("15/16/17/18 — nothing else moved", () => {
 
 // ===========================================================================
 describe("the surface exposes the act, and the governed fact", () => {
-  it("the page asks the EXISTING reader for eligible agents, only when unassigned", () => {
-    expect(processPage).toContain('listEligibleTransitAssignees("CUSTOMS_FIELD_AGENT")');
-    expect(processPage).toMatch(/canAssignTransit && !transit\.fieldAgent/);
+  it("the page asks the EXISTING reader for eligible agents, for whoever may assign", () => {
+    // UAT-DECLARANT-PICKER-01 — asked about the STEP now, and no longer only
+    // while the slot is empty. Predicting what the panel would render is what
+    // made the Déclarant selector report an empty tenant.
+    expect(processPage).toContain('listEligibleTransitAssignees("customs_field_clearance")');
+    expect(processPage).toMatch(/if \(transit && canAssignTransit\) \{/);
+    expect(processPage).not.toMatch(/canAssignTransit && !transit\.fieldAgent/);
     expect(processPage).toContain("eligibleFieldAgents={eligibleFieldAgents}");
   });
 

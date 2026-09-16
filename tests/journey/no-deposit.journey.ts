@@ -111,18 +111,19 @@ async function carryToValidatedInvoice() {
   need(await as(transit, () => submitStep(fileId, "coordinator_reception")), "step 4");
 
   // UAT-DECLARANT-START-01 — the assignment closes step 5 and promotes step 6.
-  need(await as(transit, () => assignTransitStep(fileId, "customs_preparation", transit.id)), "assign 6");
+  // UAT-DECLARANT-PICKER-01 — the Chef names a DÉCLARANT, never himself.
+  need(await as(transit, () => assignTransitStep(fileId, "customs_preparation", declarant.id)), "assign 6");
 
-  need(await as(transit, () => activateStep(fileId, "customs_preparation")), "activate 6");
-  need(await as(transit, () => createCustoms(fileId)), "createCustoms");
+  need(await as(declarant, () => activateStep(fileId, "customs_preparation")), "activate 6");
+  need(await as(declarant, () => createCustoms(fileId)), "createCustoms");
   for (const code of ["COMMERCIAL_INVOICE", "PACKING_LIST", "CUSTOMS_DECLARATION", "BILL_OF_LADING"]) {
-    await provideEvidence(fileId, code, transit, ops);
+    await provideEvidence(fileId, code, declarant, ops);
   }
   const customsId = await customsIdFor(fileId);
   for (const status of ["DOCUMENTS_PENDING", "DECLARATION_PREPARED", "DECLARED", "DUTIES_ASSESSED"]) {
-    need(await as(transit, () => changeCustomsStatus(customsId, status)), `customs ${status}`);
+    need(await as(declarant, () => changeCustomsStatus(customsId, status)), `customs ${status}`);
   }
-  need(await as(transit, () => submitStep(fileId, "customs_preparation")), "step 6");
+  need(await as(declarant, () => submitStep(fileId, "customs_preparation")), "step 6");
   need(await as(ops, () => approveStep(fileId, "transit_validation")), "step 7");
 
   need(await as(coordinator, () => activateStep(fileId, "coordinator_to_finance")), "activate 8");
