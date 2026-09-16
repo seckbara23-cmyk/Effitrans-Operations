@@ -23,6 +23,25 @@
 import { CANONICAL_DEPARTMENTS } from "@/lib/organization/departments";
 import { EMPLOYMENT_TYPES } from "./validate";
 import { EMPLOYEE_STATUS_LABELS_FR } from "./lifecycle";
+import { hrFold } from "./normalize";
+import { FORBIDDEN_COLUMN_LABELS_FR } from "./forbidden-columns";
+
+/**
+ * The department names the operator may type, DERIVED. The hint used to name
+ * four of them in prose and fell a department behind the day TRANSPORT was
+ * ratified (migration 20260910000001), so the template contradicted its own
+ * dropdown and the validator that refuses anything else.
+ */
+const DEPARTMENT_LABELS_FR = CANONICAL_DEPARTMENTS.map((d) => d.labelFr).join(", ");
+
+/**
+ * The sentence that explains catalog matching, once. Poste, Site and Unité are
+ * compared under the ratified fold (lib/hr/normalize), so « SIEGE » finds
+ * « Siège » — and « exact », which the hints used to promise, is not what the
+ * platform does.
+ */
+const FOLD_HINT_FR =
+  "accents, majuscules et espaces multiples sont ignorés à la comparaison ; le reste doit correspondre";
 
 export type EmployeeTemplateColumn = {
   /** Internal field key — what KIND_FIELDS/validation/apply read. */
@@ -39,7 +58,7 @@ export const EMPLOYEE_TEMPLATE_COLUMNS: readonly EmployeeTemplateColumn[] = [
   { field: "last_name", headerFr: "Nom", required: true, hintFr: "Obligatoire" },
   {
     field: "department", headerFr: "Département plateforme", required: true,
-    hintFr: "Obligatoire — choisissez dans la liste : Opérations, Transit, Finance ou Ressources humaines",
+    hintFr: `Obligatoire — choisissez dans la liste : ${DEPARTMENT_LABELS_FR}`,
   },
   { field: "professional_email", headerFr: "Email professionnel", required: false, hintFr: "prenom.nom@exemple.sn" },
   {
@@ -56,19 +75,21 @@ export const EMPLOYEE_TEMPLATE_COLUMNS: readonly EmployeeTemplateColumn[] = [
   },
   {
     field: "org_unit", headerFr: "Unité d'organisation", required: false,
-    hintFr: "Code ou nom exact d'une unité active (Configuration RH)",
+    hintFr: `Code ou nom d'une unité active (Configuration RH) — ${FOLD_HINT_FR}`,
   },
   {
     field: "position", headerFr: "Poste", required: false,
-    hintFr: "Intitulé exact d'un poste actif du catalogue",
+    hintFr: `Intitulé d'un poste actif du catalogue — ${FOLD_HINT_FR}`,
   },
   {
     field: "work_location", headerFr: "Site de travail", required: false,
-    hintFr: "Nom exact d'un site actif",
+    hintFr: `Nom d'un site actif — ${FOLD_HINT_FR}`,
   },
   {
     field: "manager", headerFr: "Responsable hiérarchique", required: false,
-    hintFr: "Matricule (EMP-0001) ou email professionnel d'un employé existant",
+    hintFr:
+      "Matricule d'un employé DÉJÀ enregistré, ou son email professionnel s'il est unique. "
+      + "Un nom ne résout jamais : laissez la colonne vide au premier import, les rattachements se font ensuite",
   },
   {
     field: "status", headerFr: "Statut initial", required: false,
@@ -86,8 +107,10 @@ export const EMPLOYEE_TEMPLATE_OPTIONAL: readonly string[] =
 export const EMPLOYEE_IMPORT_ALLOWED_STATUSES = ["DRAFT", "ACTIVE"] as const;
 
 // A trailing « * » marks a required column in the downloaded template — it is
-// presentation, not identity, so matching strips it first.
-const norm = (s: string) => s.trim().replace(/\s*\*+$/, "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+// presentation, not identity, so matching strips it first. Everything else is
+// THE fold (lib/hr/normalize): one accent/case/whitespace rule for headers and
+// catalog values alike, rather than two implementations that drifted.
+const norm = (s: string) => hrFold(s.trim().replace(/\s*\*+$/, ""));
 
 /**
  * Auto-map source headers onto template fields. Exact French header (accent-
@@ -150,10 +173,20 @@ export function employeeTemplateInstructionRows(): string[][] {
     [],
     ["Règles générales", "", ""],
     ["Saisie", "", "Ligne 1 de l'onglet Employes = en-têtes. Saisissez les employés à partir de la ligne 2 — aucune ligne d'exemple, aucune ligne de consigne."],
+    ["Onglet", "", "Le premier onglet du classeur DOIT être l'onglet des employés. Un onglet vide ou une feuille d'instructions placée devant fait échouer l'import (« fichier vide ou sans en-tête »)."],
     ["Dates", "", "Format AAAA-MM-JJ (ex. 2026-08-14). La colonne Date d'entrée est déjà au format date."],
     ["Téléphones", "", "La colonne Téléphone est en format Texte pour préserver +221… — ne la convertissez pas en nombre."],
-    ["Données de référence", "", "Unité d'organisation, Poste, Site de travail et Responsable hiérarchique sont facultatifs ; s'ils sont renseignés, ils doivent correspondre exactement à la configuration RH existante."],
-    ["Matricule", "", "Le matricule n'est jamais saisi : il est attribué par la plateforme lors de l'application du lot."],
+    [
+      "Données de référence", "",
+      `Unité d'organisation, Poste et Site de travail sont facultatifs ; renseignés, ils doivent exister et être actifs dans la Configuration RH. Comparaison : ${FOLD_HINT_FR}. Si deux entrées du catalogue deviennent identiques après cette normalisation, la ligne est refusée pour ambiguïté — corrigez le catalogue, la plateforme ne choisit jamais à votre place.`,
+    ],
+    [
+      "Responsable hiérarchique", "",
+      "Identifiant uniquement : matricule d'un employé déjà enregistré, ou son email professionnel s'il est le seul à le porter. Un NOM ne résout jamais et un email partagé est refusé pour ambiguïté. Au premier import, laissez la colonne vide : la plateforme attribue les matricules, puis les rattachements se font dans une passe suivante.",
+    ],
+    ["Matricule", "", "Le matricule n'est jamais saisi : il est attribué par la plateforme lors de l'application du lot. Une colonne « matricule » dans votre fichier est simplement ignorée."],
+    ["", "", ""],
+    ["Colonnes INTERDITES", "", `Le fichier est refusé AVANT toute lecture des lignes s'il contient une colonne de : ${FORBIDDEN_COLUMN_LABELS_FR.join(" ; ")}. Le registre du personnel ne conserve aucune de ces données (DEC-B27) : supprimez la colonne entière avant de déposer le fichier. Seul le nom de la colonne est signalé, jamais son contenu.`],
   ];
 }
 

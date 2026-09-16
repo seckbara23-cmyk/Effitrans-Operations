@@ -73,16 +73,23 @@ describe("the import pipeline — real, four-eyed, shallow, endless", () => {
   });
 
   it("HR-B3 landed: validation is deep — duplicates, references, managers", () => {
-    const s = code(ORG);
-    // The row validator resolves references and refuses what it cannot prove.
+    // HR-IMPORT-MAPPING-01 — the row rule is PURE and lives in its own module
+    // now; a "use server" file may export none but async functions, so while it
+    // sat in the action nothing could test the decision itself. The refusal
+    // vocabulary is asserted here, and the behaviour in
+    // tests/hr-import-mapping-01.test.ts.
+    const s = code("lib/hr/import-validate.ts");
     for (const check of ["email_exists", "duplicate_in_file", "duplicate_name_in_file",
                          "unknown_unit", "inactive_unit", "unknown_position", "inactive_position",
                          "unknown_site", "inactive_site", "unknown_manager"]) {
       expect(s, check).toContain(`"${check}"`);
     }
-    // …and nothing is ever CREATED from a spreadsheet value.
-    const validator = s.slice(s.indexOf("function validateEmployeeRow"), s.indexOf("export async function validateHrImport"));
-    expect(validator).not.toMatch(/\.insert\(/);
+    // …and nothing is ever CREATED from a spreadsheet value. The module holds
+    // the whole rule, so the whole module is the scope of that claim.
+    expect(s).not.toMatch(/\.insert\(/);
+    expect(s).not.toMatch(/getAdminSupabaseClient|from\("hr_/);
+    // The action still owns the I/O and still hands the rule its references.
+    expect(code(ORG)).toContain("validateEmployeeRow(parsed, r.source_row_number, employeeRefs");
   });
 
   it("HR-B3 landed: Excel is accepted, server-parsed, size-limited", () => {
