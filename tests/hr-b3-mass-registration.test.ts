@@ -137,7 +137,8 @@ describe("only the apply transition creates employees", () => {
   it("allowDuplicateName is passed deliberately, because validation already policed it", () => {
     expect(action("applyHrImport")).toContain("allowDuplicateName: true");
     // …and the validator DID police it: both in-file and against production.
-    const s = code(ORG);
+    // HR-IMPORT-MAPPING-01 moved that pure rule to its own module.
+    const s = code("lib/hr/import-validate.ts");
     expect(s).toContain('"duplicate_name_in_file"');
     expect(s).toContain('"employee_exists"');
   });

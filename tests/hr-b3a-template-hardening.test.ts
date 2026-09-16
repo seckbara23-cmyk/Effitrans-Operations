@@ -171,7 +171,8 @@ describe("closed vocabularies — one source of truth, human labels accepted", (
   });
 
   it("the validator canonicalizes BEFORE the membership checks — server stays authoritative", () => {
-    const s = code(ORG);
+    // HR-IMPORT-MAPPING-01 — the pure row rule now has its own module.
+    const s = code("lib/hr/import-validate.ts");
     const canon = s.indexOf("canonicalizeEmployeeVocab(f, parsed[f])");
     const membership = s.indexOf('"invalid_department"');
     expect(canon).toBeGreaterThan(-1);

@@ -72,7 +72,11 @@ describe("EMPLOYEES import stays staging-only", () => {
   const o = code("lib/hr/organization-actions.ts");
   it("the kind exists with its validation; apply creates only via the registry", () => {
     expect(o).toContain("EMPLOYEES:");
-    expect(o).toContain('"invalid_department"');
+    // HR-IMPORT-MAPPING-01 — the pure row rule moved to its own module so it
+    // could be tested as behaviour rather than as text; the action still calls
+    // it and still owns the I/O.
+    expect(o).toContain("validateEmployeeRow(parsed, r.source_row_number, employeeRefs");
+    expect(read("lib/hr/import-validate.ts")).toContain('"invalid_department"');
     // HR-B3: apply exists — but ONLY through createEmployee, never an insert.
     expect(o).toContain("applyHrImport");
     expect(o).not.toMatch(/from\("employee"\)\s*\.insert/);

@@ -54,6 +54,11 @@ const ERR: Record<string, string> = {
   file_too_large: "Fichier trop volumineux (max 2 Mo).",
   too_many_rows: "Trop de lignes (max 2 000 par lot).",
   unreadable_file: "Fichier illisible — utilisez le modèle Excel fourni ou un CSV.",
+  // HR-IMPORT-MAPPING-01 — the file was refused BEFORE anything was stored.
+  // The colonnes are named by the server; their contents never leave the file.
+  forbidden_columns:
+    "Colonnes interdites — le registre du personnel ne conserve pas ces données (DEC-B27). "
+    + "Supprimez la ou les colonnes entières, puis redéposez le fichier. Aucune ligne n'a été enregistrée.",
   stage_failed: "Échec de la préparation.",
   wrong_status: "Le lot n'est pas dans l'état requis pour cette action.",
   wrong_kind: "L'application ne concerne que les lots d'employés.",
@@ -93,12 +98,16 @@ export function HrImportStudio({
   const [kind, setKind] = useState<(typeof KINDS)[number]["value"]>("EMPLOYEES");
   const [mappingText, setMappingText] = useState("");
 
-  const run = (fn: () => Promise<{ ok: boolean; error?: string }>) => {
+  const run = (fn: () => Promise<{ ok: boolean; error?: string; messages?: string[] }>) => {
     setError(null);
     start(async () => {
       const res = await fn();
-      if (!res.ok) setError(ERR[res.error ?? ""] ?? ERR.save_failed);
-      else router.refresh();
+      if (!res.ok) {
+        // A refusal may carry operator-facing detail — column NAMES for a
+        // prohibited-data refusal, never a cell value.
+        const base = ERR[res.error ?? ""] ?? ERR.save_failed;
+        setError(res.messages?.length ? `${base} ${res.messages.join(" ; ")}` : base);
+      } else router.refresh();
     });
   };
 

@@ -42,8 +42,16 @@ import { CANONICAL_DEPARTMENTS } from "@/lib/organization/departments";
 import { parseXlsx, looksLikeZip } from "./xlsx";
 import { EMPLOYMENT_TYPES } from "./validate";
 import { createEmployee, transitionEmployee } from "./actions";
+// HR-IMPORT-MAPPING-01 — one fold for every catalog comparison, and the
+// prohibited-data vocabulary the upload is refused on.
+import { resolveByFold } from "./normalize";
+import { forbiddenColumns } from "./forbidden-columns";
+import { validateEmployeeRow, type EmployeeImportRefs } from "./import-validate";
 
-export type HrActionResult = { ok: true; id?: string } | { ok: false; error: string };
+export type HrActionResult =
+  | { ok: true; id?: string }
+  /** `messages` carries operator-facing French detail — column NAMES, never cell values. */
+  | { ok: false; error: string; messages?: string[] };
 
 const HR_PATH = "/departments/hr";
 
@@ -657,6 +665,23 @@ async function stageParsedRows(
   if (rows.length < 2) return { ok: false, error: "empty_file" };
   if (rows.length - 1 > MAX_IMPORT_ROWS) return { ok: false, error: "too_many_rows" };
   const header = rows[0].map((h) => h.trim());
+
+  // HR-IMPORT-MAPPING-01 — PROHIBITED DATA, refused HERE: the first point that
+  // can see the column names and the last point before anything is kept. A
+  // production upload put national-ID numbers and gender under the template's
+  // headers; they were stored verbatim in `raw` and then quoted back inside
+  // validation messages. DEC-B27 forbids the registry those fields outright, so
+  // the file is refused whole — no batch row, no staging row, no error row, and
+  // the refusal names the COLUMN while never reading a cell.
+  const forbidden = forbiddenColumns(header);
+  if (forbidden.length > 0) {
+    return {
+      ok: false,
+      error: "forbidden_columns",
+      messages: forbidden.map((f) => `« ${f.header} » — ${f.reasonFr}`),
+    };
+  }
+
   const body = rows.slice(1).filter((cells) => cells.some((c) => c.trim() !== ""));
   if (body.length === 0) return { ok: false, error: "empty_file" };
 
@@ -714,8 +739,6 @@ const KIND_FIELDS: Record<string, { required: string[]; optional: string[] }> = 
   },
 };
 
-// HR-B3A: derived from THE canonical registry — never a second hard-coded list.
-const DEPARTMENT_CODES: readonly string[] = CANONICAL_DEPARTMENTS.map((d) => d.code);
 
 
 
@@ -723,16 +746,6 @@ const DEPARTMENT_CODES: readonly string[] = CANONICAL_DEPARTMENTS.map((d) => d.c
 // Reference data loaded ONCE per validation run, then applied per row. Every
 // lookup is tenant-scoped; nothing is ever created from a spreadsheet value —
 // an unknown « Comptble » is an error with a readable reason, never a new row.
-
-type EmployeeImportRefs = {
-  units: { id: string; name: string; code: string | null; is_active: boolean }[];
-  positions: { title: string; is_active: boolean }[];
-  locations: { name: string; is_active: boolean }[];
-  employees: {
-    id: string; employee_number: string; professional_email: string | null;
-    first_name: string; last_name: string; status: string;
-  }[];
-};
 
 async function loadEmployeeImportRefs(
   supabase: ReturnType<typeof getAdminSupabaseClient>,
@@ -754,131 +767,7 @@ async function loadEmployeeImportRefs(
   };
 }
 
-const ciEq = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
-const EMAIL_RE = /^\S+@\S+\.\S+$/;
-const PHONE_RE = /^[+0-9 ().\-]{6,}$/;
 
-/** Validate + resolve ONE employee row. Mutates `parsed` with resolved ids and
- *  canonical catalog values; pushes readable French problems. */
-function validateEmployeeRow(
-  parsed: Record<string, string>,
-  rowNumber: number,
-  refs: EmployeeImportRefs,
-  seenEmails: Map<string, number>,
-  seenNames: Map<string, number>,
-  problems: { field: string; code: string; message_fr: string }[],
-): void {
-  const push = (field: string, code: string, message_fr: string) =>
-    problems.push({ field, code, message_fr });
-
-  // HR-B3A: accept the registries' own French labels (« Finance » → FINANCE,
-  // « Brouillon » → DRAFT) — exact, accent/case-insensitive, then validate the
-  // canonical code. The server stays authoritative; Excel dropdowns are UX.
-  for (const f of ["department", "employment_type", "status"] as const) {
-    if (parsed[f]) parsed[f] = canonicalizeEmployeeVocab(f, parsed[f]);
-  }
-
-  if (parsed.department && !DEPARTMENT_CODES.includes(parsed.department)) {
-    push("department", "invalid_department",
-      `Département inconnu : « ${parsed.department} » (attendu : ${DEPARTMENT_CODES.join(", ")})`);
-  }
-  if (parsed.employment_type && !(EMPLOYMENT_TYPES as readonly string[]).includes(parsed.employment_type)) {
-    push("employment_type", "invalid_employment_type",
-      `Type d'emploi inconnu : « ${parsed.employment_type} » (attendu : ${EMPLOYMENT_TYPES.join(", ")})`);
-  }
-  if (parsed.status && !(EMPLOYEE_IMPORT_ALLOWED_STATUSES as readonly string[]).includes(parsed.status)) {
-    push("status", "invalid_status",
-      `Statut initial invalide : « ${parsed.status} » (un import ne crée que DRAFT ou ACTIVE)`);
-  }
-  if (parsed.hire_date) {
-    parsed.hire_date = excelSerialToIsoDate(parsed.hire_date);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(parsed.hire_date) || Number.isNaN(Date.parse(parsed.hire_date))) {
-      push("hire_date", "invalid_date", `Date d'entrée invalide : « ${parsed.hire_date} » (AAAA-MM-JJ attendu)`);
-    }
-  }
-  if (parsed.professional_email) {
-    const email = parsed.professional_email.toLowerCase();
-    if (!EMAIL_RE.test(email)) {
-      push("professional_email", "invalid_email", `Adresse e-mail invalide : « ${parsed.professional_email} »`);
-    } else {
-      const prior = seenEmails.get(email);
-      if (prior !== undefined) {
-        push("professional_email", "duplicate_in_file",
-          `Adresse e-mail en double dans le fichier (déjà ligne ${prior})`);
-      } else {
-        seenEmails.set(email, rowNumber);
-        const existing = refs.employees.find(
-          (e) => e.professional_email && ciEq(e.professional_email, email),
-        );
-        if (existing) {
-          push("professional_email", "email_exists",
-            `Adresse e-mail déjà utilisée (${existing.employee_number})`);
-        }
-      }
-    }
-  }
-  if (parsed.professional_phone && !PHONE_RE.test(parsed.professional_phone)) {
-    const numerified = /^-?\d+(\.\d+)?[eE][+-]?\d+$/.test(parsed.professional_phone);
-    push("professional_phone", "invalid_phone", numerified
-      ? `Téléphone converti en nombre par Excel : « ${parsed.professional_phone} » — utilisez la colonne Texte du modèle fourni et ressaisissez le numéro avec son +`
-      : `Téléphone invalide : « ${parsed.professional_phone} »`);
-  }
-  if (parsed.first_name && parsed.last_name) {
-    const key = `${parsed.first_name.trim().toLowerCase()}|${parsed.last_name.trim().toLowerCase()}`;
-    const prior = seenNames.get(key);
-    if (prior !== undefined) {
-      push("last_name", "duplicate_name_in_file",
-        `Nom en double dans le fichier (déjà ligne ${prior}) — importez l'un des deux manuellement (confirmation d'homonymie)`);
-    } else {
-      seenNames.set(key, rowNumber);
-      const existing = refs.employees.find(
-        (e) => ciEq(e.first_name, parsed.first_name) && ciEq(e.last_name, parsed.last_name)
-          && e.status !== "TERMINATED" && e.status !== "ARCHIVED",
-      );
-      if (existing) {
-        push("last_name", "employee_exists",
-          `Un employé en cours porte déjà ce nom (${existing.employee_number}) — créez-le manuellement pour confirmer l'homonymie`);
-      }
-    }
-  }
-  if (parsed.org_unit) {
-    const byCode = refs.units.filter((u) => u.code && ciEq(u.code, parsed.org_unit));
-    const matches = byCode.length > 0 ? byCode : refs.units.filter((u) => ciEq(u.name, parsed.org_unit));
-    if (matches.length === 0) {
-      push("org_unit", "unknown_unit", `Unité « ${parsed.org_unit} » introuvable`);
-    } else if (matches.length > 1) {
-      push("org_unit", "ambiguous_unit", `Plusieurs unités nommées « ${parsed.org_unit} » — utilisez le code`);
-    } else if (!matches[0].is_active) {
-      push("org_unit", "inactive_unit", `Unité « ${parsed.org_unit} » inactive`);
-    } else {
-      parsed.org_unit_id = matches[0].id;
-    }
-  }
-  if (parsed.position) {
-    const match = refs.positions.find((x) => ciEq(x.title, parsed.position));
-    if (!match) push("position", "unknown_position", `Poste « ${parsed.position} » introuvable au catalogue`);
-    else if (!match.is_active) push("position", "inactive_position", `Poste « ${parsed.position} » inactif`);
-    else parsed.position = match.title; // canonical casing → applied as job_title
-  }
-  if (parsed.work_location) {
-    const match = refs.locations.find((x) => ciEq(x.name, parsed.work_location));
-    if (!match) push("work_location", "unknown_site", `Site de travail « ${parsed.work_location} » introuvable`);
-    else if (!match.is_active) push("work_location", "inactive_site", `Site de travail « ${parsed.work_location} » inactif`);
-    else parsed.work_location = match.name;
-  }
-  if (parsed.manager) {
-    const m = refs.employees.find(
-      (e) => ciEq(e.employee_number, parsed.manager)
-        || (e.professional_email !== null && ciEq(e.professional_email, parsed.manager)),
-    );
-    if (!m) push("manager", "unknown_manager", `Responsable « ${parsed.manager} » introuvable (matricule ou email professionnel d'un employé existant)`);
-    else if (m.status === "TERMINATED" || m.status === "ARCHIVED") {
-      push("manager", "inactive_manager", `Responsable « ${parsed.manager} » n'est plus en activité`);
-    } else {
-      parsed.manager_employee_id = m.id;
-    }
-  }
-}
 
 /** Mapping + Validation + Preview: parse every row, record errors, set VALIDATED. */
 export async function validateHrImport(batchId: string, mapping: Record<string, string>): Promise<HrActionResult> {
