@@ -40,6 +40,7 @@ import { isDone } from "./types";
 import { assignStepTeam, requestProcessDecision, finalizeProcessDecision, openProcessBlocker } from "./structures-actions";
 import { recordBaeReference, recordCustomsRelease, recordCustomsReleaseApproval } from "@/lib/customs/actions";
 import { mayAssignStep, mayApproveRelease, transitCustodyRefusal } from "@/lib/process/handoff-routes";
+import { isEligibleAssignee } from "@/lib/process/transit-eligibility";
 import { isKnownStep } from "./state";
 import {
   deriveTransitStages,
@@ -137,9 +138,12 @@ export type TransitAssignee = {
  * Active same-tenant staff whose roles map to canonical TRANSIT — the eligible
  * declarant / chef directory. Bounded, gated on the same permission the
  * assignment requires, so it can never become a general enumeration path.
- * Optional roleCode narrows to one role (e.g. CUSTOMS_DECLARANT).
+ * UAT-DECLARANT-PICKER-01 — it is asked about a STEP, and it answers with the
+ * SAME pure predicate the assignment door enforces (`isEligibleAssignee`). The
+ * two cannot drift apart again: offering somebody the door would refuse would
+ * mean this function contradicting itself.
  */
-export async function listEligibleTransitAssignees(roleCode?: string): Promise<TransitAssignee[]> {
+export async function listEligibleTransitAssignees(stepKey: string): Promise<TransitAssignee[]> {
   const kill = globalKillSwitch();
   if (!kill.enabled || !kill.transitExecution) return [];
   let user;
@@ -151,14 +155,17 @@ export async function listEligibleTransitAssignees(roleCode?: string): Promise<T
   if (!(await getTenantProcessFlags(user.tenantId)).transitExecution) return [];
 
   const admin = getAdminSupabaseClient();
+  // `status` and `tenant_id` are SELECTED rather than assumed from the filters:
+  // the shared predicate decides on the values actually stored, so narrowing
+  // the query can never quietly become the rule.
   const { data: staff } = await admin
     .from("app_user")
-    .select("id, name, email")
+    .select("id, name, email, status, tenant_id")
     .eq("tenant_id", user.tenantId)
     .eq("status", "active")
     .order("name", { ascending: true })
     .limit(200)
-    .returns<{ id: string; name: string | null; email: string }[]>();
+    .returns<{ id: string; name: string | null; email: string; status: string | null; tenant_id: string | null }[]>();
   if (!staff || staff.length === 0) return [];
 
   const ids = staff.map((s) => s.id);
@@ -179,11 +186,13 @@ export async function listEligibleTransitAssignees(roleCode?: string): Promise<T
   }
 
   return staff
-    .filter((s) => {
-      const held = rolesByUser.get(s.id) ?? [];
-      if (roleCode) return held.includes(roleCode);
-      return held.some((code) => roleCanonicalDepartment(code) === "TRANSIT");
-    })
+    .filter((s) =>
+      isEligibleAssignee(
+        stepKey,
+        { status: s.status, tenantId: s.tenant_id, roleCodes: rolesByUser.get(s.id) ?? [] },
+        user.tenantId,
+      ),
+    )
     .map((s) => {
       const held = new Set(rolesByUser.get(s.id) ?? []);
       const primary = ROLE_DISPLAY_PRIORITY.find((code) => held.has(code)) ?? null;
@@ -616,17 +625,31 @@ export async function assignTransitStep(
   const custody = await transitCustody(admin, ctx.tenantId, instance.id);
   if (custody) return fail(custody);
 
-  // Eligibility: active, same tenant, TRANSIT-mapped.
+  // GUARD 2 (UAT-DECLARANT-PICKER-01). Eligibility to HOLD the step, decided by
+  // the same pure predicate the candidate picker offers from. A person the
+  // picker showed is accepted here, and a person it withheld is refused here,
+  // because it is one function and not two readings of one idea.
+  //
+  // An account that does not exist, sits in another tenant, or is no longer
+  // active is `not_found` rather than `forbidden`: the assignment names nobody
+  // this tenant can see, which is a different answer from naming a colleague
+  // who is not entitled to this work.
   const { data: staff } = await admin
     .from("app_user").select("id, tenant_id, status").eq("id", userId).maybeSingle();
   if (!staff || staff.tenant_id !== ctx.tenantId || staff.status !== "active") return fail("not_found");
   const { data: staffRoles } = await admin
     .from("user_role").select("role:role_id(code)").eq("tenant_id", ctx.tenantId).eq("user_id", userId)
     .returns<{ role: { code: string } | { code: string }[] | null }[]>();
-  const isTransit = (staffRoles ?? [])
+  const heldRoleCodes = (staffRoles ?? [])
     .map((r) => (Array.isArray(r.role) ? r.role[0] : r.role))
-    .some((r) => r && roleCanonicalDepartment(r.code) === "TRANSIT");
-  if (!isTransit) return fail("forbidden");
+    .filter((r): r is { code: string } => Boolean(r))
+    .map((r) => r.code);
+  const eligible = isEligibleAssignee(
+    stepKey,
+    { status: staff.status as string | null, tenantId: staff.tenant_id as string | null, roleCodes: heldRoleCodes },
+    ctx.tenantId,
+  );
+  if (!eligible) return fail("forbidden");
 
   const { data: exec } = await admin
     .from("process_step_execution")

@@ -209,9 +209,24 @@ export function custodyRefusal(
  * capability cannot be narrowed without breaking a documented Coordination
  * responsibility. The STEP is narrowed instead: naming the Déclarant is the
  * Chef de Transit's act, and every other assignable step keeps today's rule.
+ *
+ * ⚠ UAT-DECLARANT-PICKER-01 (ruling C). This map was keyed ONLY on
+ * `transit_declarant_assignment`, and no caller has ever passed that key: the
+ * act of naming the Déclarant writes step 6, so every door passes
+ * `customs_preparation`. `mayAssignStep` therefore returned true and the
+ * ratified restriction above applied to nothing. Thirteen active Coordinators
+ * hold `customs:assign` for step 12, and on any dossier they could see they
+ * could also name or replace the Déclarant. The restriction is now keyed on the
+ * step the act actually writes. The original key is kept alongside it, so the
+ * rule holds whichever of the two a caller names and cannot be sidestepped by
+ * choosing the other.
+ *
+ * Nothing else widens: `customs_field_clearance` is absent on purpose, because
+ * naming the Agent de Terrain IS the Coordinator's documented step-12 work.
  */
 export const ASSIGNMENT_AUTHORITY: Readonly<Record<string, readonly string[]>> = {
   transit_declarant_assignment: ["CHIEF_OF_TRANSIT", "OPS_SUPERVISOR", "SYSTEM_ADMIN"],
+  customs_preparation: ["CHIEF_OF_TRANSIT", "OPS_SUPERVISOR", "SYSTEM_ADMIN"],
 };
 
 export function mayAssignStep(stepKey: string, roleCodes: readonly string[]): boolean {

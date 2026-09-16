@@ -189,7 +189,7 @@ describe("the assignment completes step 5 — through the engine, never around i
       'transitGuard("customs:assign", fileId)',
       'if (!mayAssignStep(stepKey, ctx.roles)) return fail("not_authorized_assigner")',
       "transitCustody(admin, ctx.tenantId, instance.id)",
-      'roleCanonicalDepartment(r.code) === "TRANSIT"',
+      'isEligibleAssignee(',
     ]) {
       expect(assign, guard).toContain(guard);
       expect(assign.indexOf(guard), `${guard} precedes the write`)
@@ -469,7 +469,7 @@ describe("boundaries", () => {
     const seed = read("supabase/tests/journey_identities.sql");
     expect(seed).toContain("journey.declarant2@test.local");
     expect(seed).toContain("('00000000-0000-0000-0000-00000000aa19'::uuid, 'CUSTOMS_DECLARANT')");
-    expect(seed).toContain("expected 19 identities");
+    expect(seed).toContain("expected 23 identities");
   });
 
   it("every journey that assigns a Déclarant stopped running step 5 by hand", () => {

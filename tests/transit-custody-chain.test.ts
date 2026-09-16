@@ -103,11 +103,43 @@ describe("TRANSIT-CUSTODY-03 guard 1 — the Déclarant is named by Transit, onc
   it("the Coordinator keeps `customs:assign` — step 12 is its documented responsibility", () => {
     expect(perms("COORDINATOR")).toContain("customs:assign");
     expect(getStep("customs_followup")!.permissions).toContain("customs:assign");
-    // …and every other assignable step is unnarrowed.
-    for (const key of ["customs_preparation", "customs_followup", "customs_field_clearance"]) {
+    // …and the steps that ARE the Coordinator's own staffing work stay open to
+    // it. Only the Déclarant slot is narrowed.
+    for (const key of ["customs_followup", "customs_field_clearance"]) {
       expect(mayAssignStep(key, ["COORDINATOR"]), key).toBe(true);
     }
-    expect(Object.keys(ASSIGNMENT_AUTHORITY)).toEqual(["transit_declarant_assignment"]);
+    expect(Object.keys(ASSIGNMENT_AUTHORITY).sort())
+      .toEqual(["customs_preparation", "transit_declarant_assignment"]);
+  });
+
+  it("⚠ the Chef's seat is keyed on the step the act WRITES, not on an unused key", () => {
+    // UAT-DECLARANT-PICKER-01 (ruling C). The narrowing existed and applied to
+    // nothing: naming a Déclarant writes step 6, so every caller passes
+    // `customs_preparation`, and `transit_declarant_assignment` — the only key
+    // in the map — was never passed by anybody. Thirteen active Coordinators
+    // hold `customs:assign`; on any dossier they could see, they could name or
+    // replace the Déclarant. The test above USED to assert that as correct.
+    //
+    // So this is pinned from the CALLER's side: the key the door is given.
+    const callers = [
+      read("components/process/transit-panel.tsx"),
+      read("lib/process/engine/transit-actions.ts"),
+    ].join("\n");
+    expect(callers).toContain('assignTransitStep(fileId, "customs_preparation", declarantId)');
+    for (const seat of ["CHIEF_OF_TRANSIT", "OPS_SUPERVISOR", "SYSTEM_ADMIN"]) {
+      expect(mayAssignStep("customs_preparation", [seat]), seat).toBe(true);
+    }
+    for (const outsider of ["COORDINATOR", "CUSTOMS_DECLARANT", "ACCOUNT_MANAGER", "CUSTOMS_FIELD_AGENT"]) {
+      expect(mayAssignStep("customs_preparation", [outsider]), outsider).toBe(false);
+    }
+    // Every step key the door accepts, checked against the rule it must obey:
+    // the two Déclarant keys are seated, the field-agent chain is not.
+    const from = transitActions.indexOf("const ASSIGNABLE_STEP_KEYS");
+    const assignable = transitActions.slice(from, transitActions.indexOf("]);", from));
+    for (const key of ["transit_declarant_assignment", "customs_preparation"]) {
+      expect(assignable, key).toContain(key);
+      expect(mayAssignStep(key, ["COORDINATOR"]), key).toBe(false);
+    }
   });
 
   it("the server enforces both, in assignTransitStep", () => {

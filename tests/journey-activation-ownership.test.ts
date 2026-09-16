@@ -37,22 +37,30 @@ function owningRoles(): Map<string, string> {
   return out;
 }
 
-/** journey fixture label -> the ONE canonical role it holds. */
-function fixtureRoles(): Map<string, string> {
+/**
+ * journey fixture label -> the role codes it holds.
+ *
+ * A SET rather than one code since UAT-DECLARANT-PICKER-01: one fixture
+ * deliberately holds two roles, and reading only the last grant parsed would
+ * have made this guard depend on the order of lines in a SQL file.
+ */
+function fixtureRoles(): Map<string, Set<string>> {
   const sql = read("supabase/tests/journey_identities.sql");
-  const byUid = new Map<string, string>();
+  const byUid = new Map<string, Set<string>>();
   for (const m of sql.matchAll(/\('(00000000-0000-0000-0000-[0-9a-f]{12})'::uuid,\s*'([A-Z_]+)'\)/g)) {
-    byUid.set(m[1], m[2]);
+    const held = byUid.get(m[1]) ?? new Set<string>();
+    held.add(m[2]);
+    byUid.set(m[1], held);
   }
-  const out = new Map<string, string>();
+  const out = new Map<string, Set<string>>();
   for (const m of sql.matchAll(
     /\('(00000000-0000-0000-0000-[0-9a-f]{12})',\s*'[^']+',\s*'journey\.([a-z]+)@test\.local'/g,
   )) {
-    const role = byUid.get(m[1]);
-    if (role) out.set(m[2], role);
+    const held = byUid.get(m[1]);
+    if (held) out.set(m[2], held);
   }
   // The synthetic blind fixture is granted through its own statement.
-  if (sql.includes("JOURNEY_EVIDENCE_BLIND")) out.set("blindquote", "JOURNEY_EVIDENCE_BLIND");
+  if (sql.includes("JOURNEY_EVIDENCE_BLIND")) out.set("blindquote", new Set(["JOURNEY_EVIDENCE_BLIND"]));
   expect(out.size, "journey fixture roles not parsed").toBeGreaterThan(10);
   return out;
 }
@@ -78,9 +86,11 @@ function variableToFixture(): Map<string, string> {
  * that cannot point at its own mechanism is not an exception.
  */
 const EXPLAINED: Record<string, string> = {
-  // The Chef assigns step 6 to himself before starting it. An explicit, audited
-  // assignment is the ratified escape hatch, and every customs journey uses it.
-  "transit::customs_preparation": 'assignTransitStep(fileId, "customs_preparation", transit.id)',
+  // EMPTY, and that is the point. It held one entry — the Chef de Transit
+  // activating step 6 after assigning it to himself — until
+  // UAT-DECLARANT-PICKER-01 ratified that the Déclarant slot requires the
+  // Déclarant role. The journeys now name a Déclarant, so the exception has no
+  // call site and test 03 below would reject it as a stale licence.
 };
 
 type Activation = { file: string; variable: string; stepKey: string; expectsSuccess: boolean };
@@ -127,7 +137,7 @@ describe("every journey activation is performed by the step's owning role", () =
     expect(acts.some((a) => !a.expectsSuccess), "no NEGATIVE activation found").toBe(true);
     expect(owners.get("customs_preparation")).toBe("CUSTOMS_DECLARANT");
     expect(owners.get("cotation")).toBe("QUOTATION_MANAGER");
-    expect(roles.get("quotation")).toBe("QUOTATION_MANAGER");
+    expect(roles.get("quotation")?.has("QUOTATION_MANAGER")).toBe(true);
   });
 
   it("02 — each successful activation is by the owning role, or names its mechanism", () => {
@@ -139,11 +149,11 @@ describe("every journey activation is performed by the step's owning role", () =
       const fixture = vars.get(a.variable);
       if (!fixture) continue; // not an identity() binding — nothing to check
       const held = roles.get(fixture);
-      if (held === owning) continue;
+      if (held?.has(owning)) continue;
       const token = EXPLAINED[`${a.variable}::${a.stepKey}`];
       if (token && read(`tests/journey/${a.file}`).includes(token)) continue;
       problems.push(
-        `${a.file}: ${a.variable} (${held ?? "?"}) activates ${a.stepKey}, owned by ${owning}`,
+        `${a.file}: ${a.variable} (${held ? [...held].join("+") : "?"}) activates ${a.stepKey}, owned by ${owning}`,
       );
     }
     expect(problems, problems.join("\n")).toEqual([]);
@@ -168,9 +178,18 @@ describe("every journey activation is performed by the step's owning role", () =
     }
   });
 
-  it("04 — the fixtures hold exactly one canonical role each", () => {
-    // The seed says so in as many words, and a second role would silently make
-    // one of these pairings pass for the wrong reason.
-    expect(read("supabase/tests/journey_identities.sql")).toContain("EXACTLY one canonical role each");
+  it("04 — the fixtures hold one canonical role each, with one declared exception", () => {
+    // A second role held quietly would make one of these pairings pass for the
+    // wrong reason. The rule and its single exception are both written in the
+    // seed, and the exception must stay single: exactly one fixture holds more
+    // than one role, and it is the one the seed names.
+    const sql = read("supabase/tests/journey_identities.sql");
+    expect(sql).toContain("EXACTLY one canonical role each");
+    expect(sql).toContain("ONE DELIBERATE EXCEPTION");
+
+    const multi = [...fixtureRoles().entries()].filter(([, held]) => held.size > 1);
+    expect(multi.map(([label]) => label), "only the declared dual-role fixture holds two")
+      .toEqual(["declarantchief"]);
+    expect([...multi[0][1]].sort()).toEqual(["CHIEF_OF_TRANSIT", "CUSTOMS_DECLARANT"]);
   });
 });

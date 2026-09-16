@@ -250,7 +250,11 @@ describe("transit-actions orchestrate EXISTING audited actions only", () => {
     // (PROCESS-ASSIGN-CAS-01 tracks restoring the expected-state guard).
     expect(fn).toContain('admin.rpc("assign_process_step"');
     expect(fn).not.toContain(".update({ assigned_user_id");
-    expect(fn).toContain('roleCanonicalDepartment(r.code) === "TRANSIT"');
+    // UAT-DECLARANT-PICKER-01 — eligibility is no longer restated here either.
+    // The door and the candidate list call ONE pure predicate, which is what
+    // stops the interface offering somebody the door would refuse.
+    expect(fn).toContain("isEligibleAssignee(");
+    expect(fn).not.toContain('roleCanonicalDepartment(r.code) === "TRANSIT"');
     expect(fn).toContain('.not("state", "in", "(REJECTED,CANCELLED,COMPLETED,SKIPPED)")');
     expect(fn).not.toContain("owner_user_id");
   });
@@ -333,12 +337,16 @@ describe("transit-actions orchestrate EXISTING audited actions only", () => {
     expect(fn).toContain('transitGuard("process:read", fileId)');
   });
 
-  it("48 — the eligible-assignee directory is gated and TRANSIT-scoped", () => {
+  it("48 — the eligible-assignee directory is gated, bounded, and decides nothing itself", () => {
     const fn = actions.slice(actions.indexOf("export async function listEligibleTransitAssignees"), actions.indexOf("export type TransitState"));
     expect(fn).toContain('assertPermission("customs:assign")');
     expect(fn).toContain('.eq("status", "active")');
-    expect(fn).toContain('roleCanonicalDepartment(code) === "TRANSIT"');
     expect(fn).toContain(".limit(200)");
+    // UAT-DECLARANT-PICKER-01 — the rule is NOT restated here. This reader
+    // filters with the same pure predicate the assignment door enforces, which
+    // is what stops the two from drifting apart again.
+    expect(fn).toContain("isEligibleAssignee(");
+    expect(fn).not.toContain('roleCanonicalDepartment(code) === "TRANSIT"');
   });
 });
 
@@ -437,6 +445,10 @@ describe("transit panel and page wiring", () => {
 
   it("62 — opening authority for declarant assignment is customs:assign on the page", () => {
     expect(page).toContain('hasPermission(permissions, "customs:assign")');
-    expect(page).toContain('listEligibleTransitAssignees("CUSTOMS_DECLARANT")');
+    // UAT-DECLARANT-PICKER-01 — asked about the STEP, so the page cannot pick
+    // its own eligibility rule, and asked WITHOUT predicting whether the panel
+    // will render the selector.
+    expect(page).toContain('listEligibleTransitAssignees("customs_preparation")');
+    expect(page).not.toContain("!transit.declarant");
   });
 });

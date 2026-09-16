@@ -26,7 +26,8 @@ import { createFile, assignCommercialOwner } from "@/lib/files/actions";
 import { openDossierWorkflow, handDossierToTransit } from "@/lib/process/engine/intake-actions";
 import { submitStep, activateStep, approveStep, sendHandoff, receiveHandoff } from "@/lib/process/engine/actions";
 import { declareEvidenceAbsence } from "@/lib/process/evidence-absence-actions";
-import { receiveDossierAtTransit, assignTransitStep, recordBae, decideTransitRelease, finalizeTransitRelease } from "@/lib/process/engine/transit-actions";
+import { receiveDossierAtTransit, assignTransitStep, recordBae, decideTransitRelease, finalizeTransitRelease, listEligibleTransitAssignees } from "@/lib/process/engine/transit-actions";
+import { mayAssignStep } from "@/lib/process/handoff-routes";
 import {
   createCustoms, recordGaindeRegistration, changeCustomsStatus, recordCustomsValidation,
   recordDeclarationReference, updateCustoms, recordCustomsAttachment,
@@ -47,6 +48,11 @@ let declarant2: CurrentUser;     // CUSTOMS_DECLARANT — the SAME seat, so reas
 let coordinator: CurrentUser;    // COORDINATOR — the handoff steps
 let customsFinance: CurrentUser; // CUSTOMS_FINANCE_OFFICER — customs:register
 let field: CurrentUser;          // CUSTOMS_FIELD_AGENT — customs:release
+// UAT-DECLARANT-PICKER-01 — the four shapes the eligibility rule must tell apart.
+let declarantChief: CurrentUser;     // CUSTOMS_DECLARANT + CHIEF_OF_TRANSIT, as four production accounts are
+let declarantArchived: CurrentUser;  // holds the role, account archived
+let foreignDeclarant: CurrentUser;   // a Déclarant of ANOTHER tenant
+let hrTitled: CurrentUser;           // HR job title « Déclarant en douane », no such role
 
 let fileId = "";
 
@@ -211,6 +217,10 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     coordinator = await identity("coordinator");
     customsFinance = await identity("customsfinance");
     field = await identity("field");
+    declarantChief = await identity("declarantchief");
+    declarantArchived = await identity("declarantarchived");
+    foreignDeclarant = await identity("foreigndeclarant");
+    hrTitled = await identity("hrtitled");
 
     const created = await as(am, () =>
       createFile({
@@ -370,6 +380,108 @@ describe("C-4 slice 2 — Transit reception → customs → GAINDE → BAE", () 
     // The consequence the defect denied: she can start her own work, now.
     const hers = await stepEligibility(fileId, "customs_preparation", declarant);
     expect(hers?.canStart, `the assigned Déclarant may start: ${JSON.stringify(hers)}`).toBe(true);
+  });
+
+  it("the candidate list and the door are ONE rule — offered means assignable", async () => {
+    // UAT-DECLARANT-PICKER-01. The reassignment selector reported « Aucun
+    // déclarant Transit actif » on a dossier whose tenant holds twelve of them,
+    // and the two sides of the question had drifted: the list offered exactly
+    // one role code, the door accepted any Transit-mapped role. This asserts
+    // the single rule, from both sides, on the real database.
+    const offered = await as(transit, () => listEligibleTransitAssignees("customs_preparation"));
+    const offeredIds = new Set(offered.map((o) => o.id));
+
+    // (1) an active Déclarant of this tenant is offered …
+    expect(offeredIds.has(declarant.id), "the active Déclarant is a candidate").toBe(true);
+    // (2) … INCLUDING the one who already holds step 6. This is the defect that
+    // opened the audit: the page fetched candidates only while the slot was
+    // empty, so the moment somebody held it the list came back empty and the
+    // panel said nobody existed.
+    expect((await execution(fileId, "customs_preparation"))?.assigned_user_id).toBe(declarant.id);
+    expect(offeredIds.has(declarant.id), "the current holder stays offered, or no change is possible").toBe(true);
+    // (3) … and so is a second one, or « changer » would have nowhere to go.
+    expect(offeredIds.has(declarant2.id), "a second Déclarant is offered").toBe(true);
+    // (4) Several roles, one of them CUSTOMS_DECLARANT, is still eligible.
+    expect(offeredIds.has(declarantChief.id), "holding more roles takes nothing away").toBe(true);
+
+    // (5)–(9) and the shapes that must NOT be offered, each for its own reason.
+    expect(offeredIds.has(transit.id), "the Chef de Transit is not a Déclarant").toBe(false);
+    expect(offeredIds.has(field.id), "nor is the Agent de Terrain").toBe(false);
+    expect(offeredIds.has(declarantArchived.id), "an archived account holds no work").toBe(false);
+    expect(offeredIds.has(foreignDeclarant.id), "another tenant's Déclarant is nobody here").toBe(false);
+    expect(offeredIds.has(hrTitled.id), "an HR job title grants no workflow authority").toBe(false);
+
+    // THE SET, not a sample: exactly the active accounts of this tenant holding
+    // CUSTOMS_DECLARANT, computed independently of the reader under test.
+    const { data: roleRows } = await db()
+      .from("user_role").select("user_id, role:role_id(code)").eq("tenant_id", TENANT_A);
+    const holders = new Set(
+      (roleRows ?? [])
+        .map((r) => {
+          const rel = (r as { role: { code: string } | { code: string }[] | null }).role;
+          const role = Array.isArray(rel) ? rel[0] : rel;
+          return role?.code === "CUSTOMS_DECLARANT" ? (r as { user_id: string }).user_id : null;
+        })
+        .filter((id): id is string => Boolean(id)),
+    );
+    const { data: activeUsers } = await db()
+      .from("app_user").select("id").eq("tenant_id", TENANT_A).eq("status", "active");
+    const expected = new Set((activeUsers ?? []).map((u) => u.id as string).filter((id) => holders.has(id)));
+    expect(offeredIds, "the list IS the rule — no extra name, no missing name").toEqual(expected);
+
+    // THE OTHER DIRECTION. Everyone the list withheld is refused by the door,
+    // so « not offered » and « not assignable » are the same sentence. The
+    // dossier must be untouched by five refused attempts.
+    const before = await execution(fileId, "customs_preparation");
+    const ledgerRows = (await assignmentEvents(fileId)).length;
+    const execId = before!.id as string;
+    const auditRows = (await auditFor("process.step.assigned", execId)).length;
+
+    for (const [who, id] of [
+      ["the Chef de Transit", transit.id],
+      ["the Agent de Terrain", field.id],
+      ["an archived Déclarant", declarantArchived.id],
+      ["another tenant's Déclarant", foreignDeclarant.id],
+      ["an HR-titled non-Déclarant", hrTitled.id],
+    ] as const) {
+      const refused = await as(transit, () => assignTransitStep(fileId, "customs_preparation", id));
+      expect(refused.ok, `${who} must not be assignable as Déclarant`).toBe(false);
+    }
+
+    const after = await execution(fileId, "customs_preparation");
+    expect(after?.assigned_user_id, "five refusals moved nobody").toBe(before?.assigned_user_id);
+    expect(after?.state, "nor changed the step").toBe(before?.state);
+    expect((await assignmentEvents(fileId)).length, "and wrote no history").toBe(ledgerRows);
+    expect((await auditFor("process.step.assigned", execId)).length, "nor an audit row").toBe(auditRows);
+  });
+
+  it("naming the Déclarant is the Chef's seat — `customs:assign` alone is not it", async () => {
+    // UAT-DECLARANT-PICKER-01 (ruling C). `ASSIGNMENT_AUTHORITY` was keyed on a
+    // step key no caller passes, so the ratified Chef-only rule applied to
+    // nothing and thirteen active Coordinators could name the Déclarant on any
+    // dossier they could see. The key now matches the act.
+    expect(mayAssignStep("customs_preparation", coordinator.roles), "the rule itself").toBe(false);
+    expect(mayAssignStep("customs_preparation", transit.roles), "the Chef holds the seat").toBe(true);
+    expect(mayAssignStep("customs_preparation", ops.roles), "so does Operations supervision").toBe(true);
+    // …and nothing was taken from step 12, which IS the Coordinator's own work.
+    expect(mayAssignStep("customs_field_clearance", coordinator.roles), "step 13 is still theirs to staff").toBe(true);
+
+    const before = await execution(fileId, "customs_preparation");
+    const ledgerRows = (await assignmentEvents(fileId)).length;
+    const refused = await as(coordinator, () =>
+      assignTransitStep(fileId, "customs_preparation", declarant2.id),
+    );
+    expect(refused.ok, "a Coordinator may not name the Déclarant").toBe(false);
+    // The door asks whether the dossier is visible BEFORE it asks about the
+    // seat, so which refusal arrives depends on the Coordinator's ground on
+    // this dossier. Both are refusals and both write nothing; the seat rule
+    // itself is pinned above, without a dossier to depend on.
+    const sees = await isFileVisible(coordinator.id, TENANT_A, fileId);
+    expect((refused as { error: string }).error).toBe(sees ? "not_authorized_assigner" : "forbidden");
+
+    expect((await execution(fileId, "customs_preparation"))?.assigned_user_id,
+      "the refusal moved nobody").toBe(before?.assigned_user_id);
+    expect((await assignmentEvents(fileId)).length, "and wrote no ledger row").toBe(ledgerRows);
   });
 
   it("step 5 — the Chef may hand the work to another Déclarant before it starts", async () => {
