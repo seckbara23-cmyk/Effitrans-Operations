@@ -413,42 +413,50 @@ describe("C-4 negative battery — the refusals, in the order a dossier meets th
     need(await as(am, () => submitStep(fileId, "bon_a_delivrer")), "BAD");
     need(await as(am, () => activateStep(fileId, "pre_gate")), "activate pre-gate");
 
-    // ⚠ REVERSED 2026-09-07 (DEC-C48/C49). This inline case used to prove that
-    // pre_gate REFUSES without its document. The Pre-Gate is now SOFT, cited to
-    // the registry's own pickup gate at step 15 — so what is proven here is the
-    // reversal AND its safety rail: the work continues, and the outstanding
-    // artefact is recorded rather than forgotten.
+    // ⚠ REVERSED TWICE; OPS-LENIENCY-02 (2026-09-17) is the settled shape. The
+    // 09-07 slice made the Pre-Gate SOFT and let this activity close without
+    // its document, recording the absence in `evidence_summary`. On dossier
+    // 00011 that produced a COMPLETED step whose own row said the authorization
+    // was missing. The artefact IS this activity's act, so it blocks here.
     //
-    // ⚠⚠ AND HERE IS THE PROOF THAT SOFT IS NOT A HOLE — the most important
-    // assertion in this file, and it was found by CI rather than by design.
+    // TWO REFUSALS, TWO DIFFERENT CONTROLS, and the walk proves both:
     //
-    // Softening the Pre-Gate at its own activity is only defensible because
-    // something ELSE still requires the artefact, and the classification cites
-    // exactly what: the registry's `PICKUP_READINESS` convergence gate at step
-    // 15. That gate is not decorative — `activateStep` consults it through
-    // `authoritativePickupGate` and refuses `gate_blocked`. So the sequence
-    // below is the doctrine, executed:
+    //     the activity REFUSES without the document     (HARD — at its own act)
+    //     step 15 REFUSES without the document          (the convergence gate)
+    //     the document arrives, and both open
     //
-    //     the activity completes without the document   (SOFT — warn, continue)
-    //     step 15 REFUSES without the document          (HARD — at the checkpoint)
-    //     the document arrives, and step 15 opens
-    //
-    // If a later slice ever softened the pickup gate too, this walk would go
-    // green while the artefact quietly stopped being required anywhere. The
-    // refusal below is what stops that.
-    const lenient = await as(am, () => submitStep(fileId, "pre_gate"));
-    expect(lenient.ok, `a SOFT gate must not stop the walk: ${JSON.stringify(lenient)}`).toBe(true);
-    const preGateRow = await stepState("pre_gate");
+    // The second is the one CI found rather than design: the pickup gate reads
+    // the document directly and never consults the governance class, so a
+    // future slice cannot relax the artefact anywhere by touching the matrix.
+    const tooEarly = await as(am, () => submitStep(fileId, "pre_gate"));
+    expect(tooEarly.ok, "the act may not be declared done without its artefact").toBe(false);
+    expect(err(tooEarly)).toBe("evidence_missing");
     expect(
-      (preGateRow.evidence_summary as { missing?: string[] } | null)?.missing,
-      "the outstanding Pre-Gate must still be recorded",
+      ((tooEarly as { missing?: { key: string }[] }).missing ?? []).map((m) => m.key),
+      "the refusal names the document",
     ).toContain("PRE_GATE_AUTHORIZATION");
 
+    // A refusal writes nothing: still ACTIVE, still unstamped.
+    const stillOpen = await stepState("pre_gate");
+    expect(stillOpen.state).toBe("ACTIVE");
+    expect(stillOpen.submittedBy).toBeNull();
+    expect(stillOpen.completedAt).toBeNull();
+
+    // And the convergence gate refuses independently, for the same artefact.
     const tooSoon = await as(pickup, () => activateStep(fileId, "pickup"));
     expect(tooSoon.ok, "the enlèvement must refuse while the Pre-Gate is outstanding").toBe(false);
     expect(err(tooSoon)).toBe("gate_blocked");
 
+    // The authorization arrives — uploaded AND verified — and both open.
     await provideEvidence(fileId, "PRE_GATE_AUTHORIZATION", am, ops);
+    need(await as(am, () => submitStep(fileId, "pre_gate")), "pre-gate with its authorization");
+    const preGateRow = await stepState("pre_gate");
+    expect(preGateRow.state).toBe("COMPLETED");
+    expect(
+      (preGateRow.evidence_summary as { missing?: string[] } | null)?.missing,
+      "nothing outstanding once the artefact is verified",
+    ).toEqual([]);
+
     need(await as(pickup, () => activateStep(fileId, "pickup")), "activate 15");
     const t2 = await transportFor(fileId);
     for (const st of ["PLANNED", "DRIVER_ASSIGNED", "PICKED_UP"]) {
