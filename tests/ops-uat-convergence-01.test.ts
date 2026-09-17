@@ -315,38 +315,39 @@ describe("leniency — governance without unnecessary friction", () => {
   });
 
   it("10 — a SOFT gate warns, names its checkpoint, and permits the transition", () => {
+    // OPS-LENIENCY-02 moved the Bon à Délivrer to HARD, so the exemplar here is
+    // now the one requirement that genuinely fits the SOFT shape: the POD is
+    // obtained DURING the delivery follow-up and formally handed over at step
+    // 17, which is HARD. The doctrine being proven is unchanged.
     const el = evaluateStepAction(
       facts({
-        stepKey: "bon_a_delivrer",
+        stepKey: "am_delivery_followup",
         state: "ACTIVE",
         owningRole: null,
         assignedUserId: DECLARANT.userId,
-        requirements: [{ key: "BON_A_DELIVRER", labelFr: "Bon à Délivrer", status: "missing" }],
+        requirements: [{ key: "SIGNED_DELIVERY_NOTE", labelFr: "Bordereau signé", status: "missing" }],
       }),
-      { ...DECLARANT, permissions: ["document:create"] },
+      { ...DECLARANT, permissions: ["process:delivery:followup"] },
     );
     expect(el.requirements[0].klass).toBe("SOFT_GATE");
     expect(el.requirements[0].blocking).toBe(false);
     expect(el.requirements[0].messageFr).toContain("Information à compléter");
-    expect(el.requirements[0].messageFr).toContain("étape 15");
+    expect(el.requirements[0].messageFr).toContain("étape 17");
     expect(el.canSubmit).toBe(true);
   });
 
-  it("10b — ⚠ AND ITS ARTEFACT IS STILL HARD-REQUIRED AT THE CITED CHECKPOINT", () => {
-    // THE ASSERTION THAT MAKES SOFT DEFENSIBLE, and CI found it before design
-    // did. Softening a requirement at its own activity is only safe because
-    // something ELSE still demands the artefact, and the classification cites
-    // exactly what: the registry's `PICKUP_READINESS` convergence gate.
+  it("10b — ⚠ THE CONVERGENCE GATE IS INDEPENDENT OF ANY CLASSIFICATION", () => {
+    // THE INVARIANT THAT SURVIVED BOTH RULINGS, and CI found it before design
+    // did. When these artefacts were SOFT, this is what made the softening
+    // defensible: something ELSE still demanded them. Now that OPS-LENIENCY-02
+    // has made them HARD at their own activity, it is what stops the reverse
+    // mistake — a future slice concluding that, since the activity now blocks,
+    // the gate may relax.
     //
-    // That gate is NOT decorative. `activateStep` consults it through
+    // Either way the rule is the same: the gate reads the DOCUMENT, never the
+    // governance class. `activateStep` consults it through
     // `authoritativePickupGate` — built from the DOSSIER's facts, not the
-    // caller's filtered snapshot — and refuses `gate_blocked`. So the Bon à
-    // Délivrer and the Pre-Gate stopped blocking their own activity and did
-    // not stop being required: they are required at the enlèvement, which is
-    // what the operator message says.
-    //
-    // If a later slice ever softened the pickup gate as well, the artefacts
-    // would quietly stop being required ANYWHERE. This is what refuses that.
+    // caller's filtered snapshot — and refuses `gate_blocked`.
     const gate = read("lib/process/engine/gates.ts");
     for (const key of ["BON_A_DELIVRER", "PRE_GATE_AUTHORIZATION", "BORDEREAU_LIVRAISON"]) {
       expect(gate, key).toContain(`checkEvidence("${key}", snap)`);
@@ -358,11 +359,12 @@ describe("leniency — governance without unnecessary friction", () => {
     // a governance class cannot reach a join gate.
     expect(code("lib/process/engine/gates.ts")).not.toContain("blocksCompletion");
     expect(code("lib/process/engine/gate-authority.ts")).not.toContain("blocksCompletion");
-    // And the classification points at that gate by name, so the message an
-    // operator reads and the control that enforces it name the same thing.
+    // And the classification still points at that gate by name, so nobody
+    // reading the entry can conclude the artefact stopped being required at the
+    // enlèvement merely because it is now also required earlier.
     for (const [step, key] of [["bon_a_delivrer", "BON_A_DELIVRER"], ["pre_gate", "PRE_GATE_AUTHORIZATION"]] as const) {
       expect(governanceFor(step, key).source, step).toContain("PICKUP_READINESS");
-      expect(governanceFor(step, key).mandatoryAtFr, step).toContain("15");
+      expect(governanceFor(step, key).source, step).toContain("étape 15");
     }
   });
 
@@ -408,27 +410,33 @@ describe("leniency — governance without unnecessary friction", () => {
     expect(code("lib/process/engine/state.ts")).toContain("self_validation_forbidden");
   });
 
-  it("15 — the unclassified BAD / Pre-Gate no longer claim to be ratified blockers", () => {
-    // ⚠ §8, VERBATIM FROM PRODUCTION. Dossier 00011 displayed « Account Manager
-    // — obtenir le Bon à Délivrer » and « … l'autorisation Pre-Gate » as
-    // « bloquante aujourd'hui ; sa classification est en attente de
-    // ratification » — internal governance bookkeeping printed on an operator's
-    // screen, presenting two unexamined requirements as confirmed blockers.
+  it("15 — the BAD / Pre-Gate are ratified blockers AT THEIR OWN ACTIVITY", () => {
+    // ⚠ §8 REMAINS FIXED, AND OPS-LENIENCY-02 CORRECTS WHAT IT OVERSHOT.
     //
-    // They are now SOFT with a cited checkpoint: the registry's own pickup join
-    // gate is what makes them mandatory, at step 15.
+    // §8 was about a SENTENCE: dossier 00011 displayed « bloquante aujourd'hui ;
+    // sa classification est en attente de ratification » — internal governance
+    // bookkeeping printed on an operator's screen. That sentence is still gone.
+    //
+    // The 09-07 fix also RECLASSIFIED these two SOFT, and that went too far. On
+    // the same dossier, « obtenir l'autorisation Pre-Gate » then reached
+    // COMPLETED while recording that the authorization was missing. The artefact
+    // IS the act here, so it blocks at its own activity — and the pickup gate
+    // still requires it at step 15, which is the second checkpoint, not the
+    // first.
     for (const [step, key] of [
       ["bon_a_delivrer", "BON_A_DELIVRER"],
       ["pre_gate", "PRE_GATE_AUTHORIZATION"],
     ] as const) {
       const g = governanceFor(step, key);
-      expect(g.klass, step).toBe("SOFT_GATE");
+      expect(g.klass, step).toBe("HARD_GATE");
       expect(g.ratified, step).toBe(true);
-      expect(g.mandatoryAtFr, step).toContain("étape 15");
+      expect(g.source, step).toContain("OPS-LENIENCY-02");
+      // The second checkpoint is still cited, so nobody reading this entry can
+      // conclude the artefact stopped being required at the enlèvement.
       expect(g.source, step).toContain("PICKUP_READINESS");
-      expect(blocksCompletion(g), step).toBe(false);
+      expect(blocksCompletion(g), step).toBe(true);
     }
-    // The sentence itself is gone from the codebase.
+    // The §8 sentence itself is still gone from the codebase.
     expect(code("lib/process/requirement-class.ts")).not.toContain("bloquante aujourd'hui");
   });
 });

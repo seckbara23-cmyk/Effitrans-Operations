@@ -227,37 +227,58 @@ describe("C-4 slice 1 — Creation → Transit reception", () => {
     }
   });
 
-  it("a SOFT gate lets the work continue — and records what is still outstanding", async () => {
-    // ⚠ REVERSED 2026-09-07 (DEC-C48/C49). This case used to prove that
-    // `pre_gate` REFUSES without PRE_GATE_AUTHORIZATION. Effitrans has since
-    // ruled that an unknown business-completeness requirement must not
-    // automatically block, and the Pre-Gate is now classified SOFT with a cited
-    // checkpoint: the registry's own `PICKUP_READINESS` gate requires it at
-    // step 15, not here. In production this exact requirement was displayed to
-    // an Account Manager as « bloquante aujourd'hui » on dossier 00011.
+  it("the artefact that IS the act — start without it, never finish without it", async () => {
+    // ⚠ REVERSED TWICE, and this is the settled shape (OPS-LENIENCY-02,
+    // 2026-09-17). 09-07 softened the Pre-Gate on the reasoning that an unruled
+    // completeness requirement must not automatically block. That reasoning is
+    // right in general and wrong here: this activity IS « obtenir
+    // l'autorisation Pre-Gate », its completion rule names the authorization
+    // and its only required document is the authorization. On dossier 00011
+    // the softened version let the step reach COMPLETED while recording
+    // « manquant : PRE_GATE_AUTHORIZATION » — a row asserting a fact that had
+    // not happened.
     //
-    // WHAT STILL HAS TO BE TRUE, and is the whole safety of the reversal:
-    // leniency leaves a TRAIL. A step completed with an outstanding SOFT item
-    // records it, so nothing is forgotten — it is simply not in the way.
-    //
-    // The HARD half is proven further down this same file: step 1 on the
-    // sighted dossier still refuses with `evidence_missing` because the devis
-    // and its client acceptance ARE that step's content. Not re-proven here,
-    // because the only HARD gate reachable at this point of the walk would need
-    // the walk reordered around it — and a case wrapped in `if (opened.ok)` is
-    // a case that can never fail.
+    // The invariant this walks, in order:
+    //     START is free          — the work begins before the paper exists
+    //     COMPLETE is refused    — server-side, naming the document
+    //     nothing was written    — a refusal leaves no timestamp behind
+    //     evidence, then done    — verified document, then COMPLETED, clean
     expect(getActivity("pre_gate")!.requiredDocuments).toEqual(["PRE_GATE_AUTHORIZATION"]);
+
+    // START — no document anywhere on this dossier yet.
     const started = await as(am, () => activateStep(fileId, "pre_gate"));
     expect(started.ok, `activate pre_gate: ${JSON.stringify(started)}`).toBe(true);
+    const claimed = await execution(fileId, "pre_gate");
+    expect(claimed?.state, "the work may begin before the paper exists").toBe("ACTIVE");
 
-    const lenient = await as(am, () => submitStep(fileId, "pre_gate"));
-    expect(lenient.ok, `a SOFT gate must not stop the work: ${JSON.stringify(lenient)}`).toBe(true);
+    // COMPLETE — refused, and it names what is missing.
+    const refused = await as(am, () => submitStep(fileId, "pre_gate"));
+    expect(refused.ok, "the act may not be declared done without its artefact").toBe(false);
+    expect((refused as { error: string }).error).toBe("evidence_missing");
+    // The refusal NAMES the artefact — a bare code left an Account Manager
+    // guessing which document the step wanted.
+    const named = (refused as { missing?: { key: string; labelFr: string }[] }).missing ?? [];
+    expect(named.map((m) => m.key)).toContain("PRE_GATE_AUTHORIZATION");
+    expect(named.find((m) => m.key === "PRE_GATE_AUTHORIZATION")?.labelFr).toBeTruthy();
+
+    // NOTHING MOVED. A refusal that leaves a timestamp is not a refusal.
+    const unchanged = await execution(fileId, "pre_gate");
+    expect(unchanged?.state).toBe("ACTIVE");
+    expect(unchanged?.submitted_at).toBeNull();
+    expect(unchanged?.completed_at).toBeNull();
+    expect(unchanged?.evidence_summary).toBeNull();
+
+    // EVIDENCE, THEN DONE. `provideEvidence` uploads AND verifies through the
+    // real actions — an upload alone is deliberately not enough.
+    await provideEvidence(fileId, "PRE_GATE_AUTHORIZATION", am, ops);
+    const done = await as(am, () => submitStep(fileId, "pre_gate"));
+    expect(done.ok, `pre_gate with its authorization: ${JSON.stringify(done)}`).toBe(true);
 
     const after = await execution(fileId, "pre_gate");
     expect(after?.state).toBe("COMPLETED");
-    const summary = after?.evidence_summary as { missing?: string[] } | null;
-    expect(summary?.missing, "the outstanding artefact must still be recorded")
-      .toContain("PRE_GATE_AUTHORIZATION");
+    const summary = after?.evidence_summary as { missing?: string[]; satisfied?: string[] } | null;
+    expect(summary?.missing, "nothing outstanding once the artefact is verified").toEqual([]);
+    expect(summary?.satisfied).toContain("PRE_GATE_AUTHORIZATION");
   });
 
 });

@@ -50,6 +50,19 @@
  *      still records it — `submitStep` writes `evidence_summary.missing` — so
  *      leniency leaves a trail rather than a hole.
  *
+ * ── AND WHAT 2026-09-17 CORRECTED (OPS-LENIENCY-02) ─────────────────────────
+ * The 09-07 reversal went one entry too far. Four transport-readiness
+ * requirements were softened although their artefact IS the act their activity
+ * performs, and on EFT-IMP-2026-00011 that let « obtenir l'autorisation
+ * Pre-Gate » reach COMPLETED while the step itself recorded the authorization
+ * as missing. They are HARD again, cited to `ARTEFACT_IS_THE_ACT` below.
+ *
+ * The doctrine is unchanged and so is rule 1: an unruled requirement still does
+ * not block, and softening is still the default for something obtained in
+ * parallel. What was wrong was the reading, not the rule — and the correction
+ * is narrow: four entries, no new mechanism, and the start of an activity stays
+ * free of its completion evidence.
+ *
  * ── THE ONE PLACE THIS IS READ FROM ─────────────────────────────────────────
  * `blockingRequirements()` is consumed by BOTH `evaluateStepAction` (what a
  * surface offers) and `submitStep` (what the server accepts). They must not
@@ -96,14 +109,43 @@ const RATTACHEMENT =
   "DEC-C40 (ratifié 2026-09-06) — l'étape 11 est le rattachement du Déclarant ET sa vérification ; migration 20260828000001 y porte le fait. Les étapes 12 et 13 (suivi douanier, BAE) reposent sur cette preuve.";
 const FIELD_AGENT =
   "UAT-STEP12-FIELD-AGENT-01 (ratifié 2026-09-09) — l'étape 12 EST « suivre le dossier en douane ET affecter l'Agent de Terrain » ; le registre le déclarait déjà (completionRule `field_agent_assigned`) sans que rien ne l'applique. L'affectation est le produit gouverné de l'étape et fonde la propriété de l'étape 13 : sans elle l'étape 13 s'ouvre sans titulaire. Ce n'est PAS une exception à la doctrine de souplesse — BAD, Pre-Gate et la convergence restent non bloquants jusqu'à leur point ratifié (étape 15).";
-const PICKUP_GATE =
-  "Registre PICKUP_READINESS (Phase 5.0A) — la porte de convergence de l'enlèvement (étape 15) exige cet artefact. C'est la source de première main qui établit QUAND il devient obligatoire.";
+/**
+ * OPS-LENIENCY-02 — « l'artefact qui EST l'acte reste bloquant à sa propre
+ * activité ». Ratifié le 2026-09-17, après l'audit lecture seule de
+ * EFT-IMP-2026-00011.
+ *
+ * Ce qui s'est passé en production. L'activité « obtenir l'autorisation
+ * Pre-Gate » a été démarrée, puis TERMINÉE sans l'autorisation : l'étape a
+ * enregistré elle-même « manquant : PRE_GATE_AUTHORIZATION » tout en passant à
+ * COMPLETED, et le compteur a affiché « 1/3 activités parallèles ». La porte de
+ * convergence, qui lit la preuve directement, répondait au même instant
+ * « Autorisation Pre-Gate obtenue (not_uploaded) ». La ligne affirmait un fait
+ * qui n'avait pas eu lieu.
+ *
+ * Pourquoi la souplesse ne s'applique pas ici. La doctrine dit qu'un artefact
+ * obtenu EN PARALLÈLE peut attendre son point de contrôle. Ces quatre-là ne
+ * sont pas obtenus en parallèle de l'activité : ils SONT l'activité. Le
+ * `completionRule` les nomme (`pre_gate_obtained`, `bon_a_delivrer_obtained`,
+ * `transport_documents_transmitted`) et l'unique `requiredDocuments` est
+ * l'artefact lui-même. Sans lui l'acte n'a pas eu lieu, et le déclarer accompli
+ * n'est pas de la souplesse : c'est une affirmation fausse.
+ *
+ * Ce qui NE change pas. Le démarrage reste libre — on réclame la preuve à la
+ * clôture, jamais au début, et une activité peut rester « en cours » le temps
+ * d'obtenir le document. Et le registre PICKUP_READINESS continue d'exiger le
+ * même artefact à l'étape 15, indépendamment de toute classification : la porte
+ * de convergence ne consulte pas cette matrice et ne doit jamais la consulter.
+ */
+const ARTEFACT_IS_THE_ACT =
+  "OPS-LENIENCY-02 (ratifié 2026-09-17) — l'artefact EST l'acte de cette activité : son completionRule le nomme et son unique requiredDocuments est lui. Terminer sans lui affirme un fait qui n'a pas eu lieu (constaté sur EFT-IMP-2026-00011 : Pre-Gate COMPLETED enregistrant « manquant : PRE_GATE_AUTHORIZATION »). Le démarrage reste libre ; la preuve est exigée à la clôture. Supersède la classification SOFT d'OPS-LENIENCY-01 pour ces seules entrées. Le registre PICKUP_READINESS exige toujours le même artefact à l'étape 15, sans consulter cette matrice.";
 const OBJECT_OF_THE_ACT =
   "L'artefact EST l'objet de l'acte : l'étape consiste à le remettre ou à le transmettre. Sans lui l'étape n'a pas de contenu, et la chaîne 15→26 étant strictement séquentielle, la laisser passer viderait les étapes suivantes.";
 const COTATION =
   "QO-0/QO-1 (ratifié 2026-08-18, docs/commercial/quotation-optional-audit.md) — un dossier PEUT exister sans devis, et le mécanisme ratifié pour cela est le SAUT de l'étape 1 (`skipStep`, motif enregistré, audité, réouvrable), PAS sa clôture à vide. Quand l'étape 1 est vivante, le devis et son acceptation SONT son contenu ; QT609/QT613 (migration 20260806000001) contraignent déjà l'enregistrement de la décision client.";
 
-const AVANT_ENLEVEMENT = "avant l'enlèvement (étape 15 — porte de convergence)";
+// `AVANT_ENLEVEMENT` lived here and named the checkpoint the four transport
+// artefacts were deferred to. OPS-LENIENCY-02 stopped deferring them, so the
+// phrase has no remaining user and is gone rather than left to rot.
 
 // ------------------------------------------------------------- registry ------
 
@@ -165,17 +207,29 @@ export const CLASSIFIED: Readonly<Record<string, RequirementGovernance>> = {
   "courier_deposit::PROOF_OF_DEPOSIT": hard(OBJECT_OF_THE_ACT),
   "administration_proof_handoff::PROOF_OF_DEPOSIT": hard(OBJECT_OF_THE_ACT),
 
-  // ---- SOFT: obtained in parallel, enforced at a NAMED later checkpoint ---
-  // This is the correction OPS-UAT-CONVERGENCE-01 §8 demands. The BAD and the
-  // Pre-Gate are real prerequisites of the enlèvement and the pickup gate says
-  // so; they are NOT reasons to stop an Account Manager from working today.
-  "bon_a_delivrer::BON_A_DELIVRER": soft(AVANT_ENLEVEMENT, PICKUP_GATE),
-  "pre_gate::PRE_GATE_AUTHORIZATION": soft(AVANT_ENLEVEMENT, PICKUP_GATE),
-  "transport_docs_transmission::PRE_GATE_AUTHORIZATION": soft(AVANT_ENLEVEMENT, PICKUP_GATE),
-  "transport_docs_transmission::BORDEREAU_LIVRAISON": soft(AVANT_ENLEVEMENT, PICKUP_GATE),
+  // ---- The three transport-readiness activities (OPS-LENIENCY-02) ----------
+  //
+  // ⚠ REVERSES the SOFT classification OPS-LENIENCY-01 gave these four entries
+  // on 2026-09-07. That slice read them as artefacts obtained in parallel and
+  // deferred them to the pickup gate; they are not obtained in parallel, they
+  // ARE the activity, and deferring them let « obtenir l'autorisation Pre-Gate »
+  // reach COMPLETED while recording that the authorization was missing.
+  //
+  // Each activity keeps its second checkpoint: the pickup gate still refuses
+  // step 15 without the same artefact, reading the document directly. What
+  // changes is that the activity can no longer claim to be done first.
+  "bon_a_delivrer::BON_A_DELIVRER": hard(ARTEFACT_IS_THE_ACT),
+  "pre_gate::PRE_GATE_AUTHORIZATION": hard(ARTEFACT_IS_THE_ACT),
+  "transport_docs_transmission::PRE_GATE_AUTHORIZATION": hard(ARTEFACT_IS_THE_ACT),
+  "transport_docs_transmission::BORDEREAU_LIVRAISON": hard(ARTEFACT_IS_THE_ACT),
 
-  // The POD is obtained during the delivery follow-up and formally handed over
-  // at step 17, which is HARD above and is a strict prerequisite of billing.
+  // ---- SOFT: obtained in parallel, enforced at a NAMED later checkpoint ---
+  //
+  // The POD is the one that genuinely fits that shape, and it stays SOFT: it is
+  // obtained DURING the delivery follow-up, from the driver, and is formally
+  // handed over at step 17 — which is HARD above and a strict prerequisite of
+  // billing. Its artefact is not the act of following the delivery; it is the
+  // result the delivery eventually produces.
   "am_delivery_followup::SIGNED_DELIVERY_NOTE": soft(
     "avant la remise des justificatifs au Coordinateur (étape 17)",
     OBJECT_OF_THE_ACT,
