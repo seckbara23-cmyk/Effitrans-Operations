@@ -32,23 +32,38 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { getNode, ALL_NODE_KEYS } from "@/lib/process/engine/state";
+import { PARALLEL_ACTIVITIES } from "@/lib/process/effitrans-process";
 import { getTenantRoleTemplate } from "@/lib/platform/role-templates";
 import { isRoutedReceiverRole } from "@/lib/process/queues/registry";
 
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(`../${rel}`, import.meta.url)), "utf8");
 
-const OWNING_ROLE_MIGRATION = "supabase/migrations/20260914000001_responsibility_visibility.sql";
+/**
+ * EVERY migration that seeds the owning-role map, in order.
+ *
+ * UAT-PARALLEL-OWNERSHIP-01 — reading only the first one made this invariant
+ * blind to whatever a later migration added, which is exactly how the three
+ * parallel activities went unowned: the registry declared ACCOUNT_MANAGER for
+ * them, the table did not, and nothing here noticed.
+ */
+const OWNING_ROLE_MIGRATIONS = [
+  "supabase/migrations/20260914000001_responsibility_visibility.sql",
+  "supabase/migrations/20261006000001_parallel_activity_owning_roles.sql",
+];
 
 /** (step_key, role_code) exactly as the visibility model reads them. */
 function owningRoles(): { stepKey: string; roleCode: string }[] {
-  const sql = read(OWNING_ROLE_MIGRATION);
-  const start = sql.indexOf("insert into public.process_step_owning_role");
-  expect(start, "the owning-role seed must exist").toBeGreaterThan(-1);
-  const block = sql.slice(start, sql.indexOf(";", start));
-  return [...block.matchAll(/\('([a-z_]+)',\s*'([A-Z_]+)'/g)].map((m) => ({
-    stepKey: m[1],
-    roleCode: m[2],
-  }));
+  const rows: { stepKey: string; roleCode: string }[] = [];
+  for (const migration of OWNING_ROLE_MIGRATIONS) {
+    const sql = read(migration);
+    const start = sql.indexOf("insert into public.process_step_owning_role");
+    expect(start, `the owning-role seed must exist in ${migration}`).toBeGreaterThan(-1);
+    const block = sql.slice(start, sql.indexOf(";", start));
+    for (const m of block.matchAll(/\('([a-z_]+)',\s*'([A-Z_]+)'/g)) {
+      rows.push({ stepKey: m[1], roleCode: m[2] });
+    }
+  }
+  return rows;
 }
 
 type Row = {
@@ -76,8 +91,18 @@ describe("C-4 — every step's owning role can execute it", () => {
 
   it("the mapping is real and complete, so this test cannot pass by finding nothing", () => {
     // A regex that silently matched zero rows would make every assertion below
-    // vacuously true. The 26 official steps each have exactly one owner.
-    expect(rows.length).toBe(26);
+    // vacuously true. The 26 official steps each have exactly one owner, and
+    // UAT-PARALLEL-OWNERSHIP-01 added the 3 parallel activities.
+    expect(rows.length).toBe(29);
+    expect(rows.filter((r) => PARALLEL_ACTIVITIES.some((a) => a.key === r.stepKey)))
+      .toHaveLength(PARALLEL_ACTIVITIES.length);
+    // The two counts are pinned SEPARATELY on purpose. The official process is
+    // 26 numbered steps and that canon did not move here; what moved is the
+    // size of the owning-role map, which now also covers the three UNNUMBERED
+    // parallel activities. `c4-step27-representation` reads the line below as
+    // its record of what a 27th step would cost.
+    expect(rows.filter((r) => !PARALLEL_ACTIVITIES.some((a) => a.key === r.stepKey)))
+      .toHaveLength(26);
     for (const r of rows) {
       expect(ALL_NODE_KEYS, `${r.stepKey} is not a registry node`).toContain(r.stepKey);
       expect(getTenantRoleTemplate(r.owningRole), `${r.owningRole} is not a real role`).toBeDefined();
@@ -187,7 +212,7 @@ describe("C-4 — the step-16 capability, in all three authoritative sources", (
     // The cheap way to make the invariant pass is to reassign the step to a role
     // that already holds the permission. That would contradict the registry's
     // label, department and description, and is refused here.
-    const sql = read(OWNING_ROLE_MIGRATION);
+    const sql = read(OWNING_ROLE_MIGRATIONS[0]);
     expect(sql).toContain("('am_delivery_followup', 'ACCOUNT_MANAGER'");
     const node = getNode("am_delivery_followup") as { department?: string; labelFr?: string };
     expect(node.department).toBe("account_management");
