@@ -112,7 +112,13 @@ describe("C-4 — what adding step 27 would cost, recorded so it is not re-argue
   it("the 26-step count is pinned in the ownership invariant", () => {
     // Changing the canon to 27 would move that assertion and every step-number
     // pin with it. Recorded as a cost, not a blocker.
+    //
+    // UAT-PARALLEL-OWNERSHIP-01 — this pin used to read the invariant's TOTAL
+    // row count, which was 26 only because the owning-role map covered the
+    // numbered steps alone. Giving the three unnumbered parallel activities an
+    // owner made that total 29 without adding a 27th step, so the pin now reads
+    // the count it always meant: the NUMBERED steps. The canon is untouched.
     const invariant = read("tests/c4-step-ownership-invariant.test.ts");
-    expect(invariant).toContain("expect(rows.length).toBe(26)");
+    expect(invariant).toContain(".toHaveLength(26)");
   });
 });

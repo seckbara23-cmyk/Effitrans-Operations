@@ -180,8 +180,8 @@ async function carryToValidatedInvoice() {
     need(await as(transport, () => changeTransportStatus(t3.id, status)), `transport ${status}`);
   }
 
-  need(await as(coordinator, () => activateStep(fileId, "transport_docs_transmission")), "activate transmission");
-  need(await as(coordinator, () => submitStep(fileId, "transport_docs_transmission")), "transmission");
+  need(await as(am, () => activateStep(fileId, "transport_docs_transmission")), "activate transmission");
+  need(await as(am, () => submitStep(fileId, "transport_docs_transmission")), "transmission");
 
   need(await as(coordinator, () => activateStep(fileId, "coordinator_completeness")), "activate 18");
   await provideEvidence(fileId, "RECEIPT", coordinator, ops);

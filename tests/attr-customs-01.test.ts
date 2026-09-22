@@ -320,8 +320,14 @@ describe("migration #143 ships under the #139+ policy", () => {
     }
   });
 
-  it("build-info tracks it as the newest migration", () => {
-    expect(LATEST_MIGRATION).toBe("20261005000001_customs_actor_attribution");
+  it("it shipped, and build-info still tracks the directory", () => {
+    // This asserted `LATEST_MIGRATION === <this slice>` until
+    // UAT-PARALLEL-OWNERSHIP-01 shipped 20261006000001 behind it. That form of
+    // the claim expires the moment ANY later migration lands, which makes it a
+    // tripwire for unrelated work rather than a guard on this one. What this
+    // slice actually needs is that its migration is present and ordered; what
+    // build-info needs is to track the directory, whatever is newest.
+    expect(migrationFiles).toContain("20261005000001_customs_actor_attribution.sql");
     expect(MIGRATION_COUNT).toBe(migrationFiles.length);
     expect(migrationFiles.at(-1)).toBe(`${LATEST_MIGRATION}.sql`);
   });

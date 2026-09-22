@@ -421,9 +421,9 @@ describe("C-4 slice 3a — transport, convergence, delivery, completeness", () =
     // landed before pickup and its evidence is already verified, so it is
     // ordinary work — but closure requires every official step, and a journey
     // that skipped it would meet the gate and never say why.
-    const started = await as(coordinator, () => activateStep(fileId, "transport_docs_transmission"));
+    const started = await as(am, () => activateStep(fileId, "transport_docs_transmission"));
     expect(started.ok, `activate transmission: ${JSON.stringify(started)}`).toBe(true);
-    const done = await as(coordinator, () => submitStep(fileId, "transport_docs_transmission"));
+    const done = await as(am, () => submitStep(fileId, "transport_docs_transmission"));
     expect(done.ok, `submit transmission: ${JSON.stringify(done)}`).toBe(true);
     expect((await execution(fileId, "transport_docs_transmission"))?.state).toBe("COMPLETED");
   });

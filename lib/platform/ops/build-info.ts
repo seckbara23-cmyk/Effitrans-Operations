@@ -13,10 +13,10 @@
  */
 
 /** The latest migration shipped in this build (pinned to the directory by test). */
-export const LATEST_MIGRATION = "20261005000001_customs_actor_attribution";
+export const LATEST_MIGRATION = "20261006000001_parallel_activity_owning_roles";
 
 /** Total migrations shipped in this build (pinned by test). */
-export const MIGRATION_COUNT = 143;
+export const MIGRATION_COUNT = 144;
 
 /** Newest DATA-probeable migration marker: this permission row proves migrations ≥ this point. */
 export const MIGRATION_PROBE = {

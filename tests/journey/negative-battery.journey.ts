@@ -406,9 +406,41 @@ describe("C-4 negative battery — the refusals, in the order a dossier meets th
     expect(after, "no invoice row was created").toBe(before);
   });
 
+  it("AN ACTIVITY IS ITS OWNER'S — a Coordinator holding document:create is refused", async () => {
+    // UAT-PARALLEL-OWNERSHIP-01, from production. On EFT-IMP-2026-00011 this
+    // exact claim SUCCEEDED: « Account Manager — obtenir le Bon à Délivrer »
+    // showed « En cours : Omar Gadiaga », a Coordinator. He was not assigned —
+    // the audit records him activating it himself, at the same instant as the
+    // row's started_at. The owning-role map held the 26 numbered steps only, so
+    // the activity was `unowned_step` and the sole remaining gate was
+    // `document:create`, which fourteen roles hold.
+    //
+    // The Coordinator genuinely holds that permission, which is what makes this
+    // the right adversary: the refusal below is about AUTHORITY, not capability.
+    const before = await stepState("bon_a_delivrer");
+    expect(before.state, "the activity is open and unclaimed").toBe("AVAILABLE");
+
+    const usurped = await as(coordinator, () => activateStep(fileId, "bon_a_delivrer"));
+    expect(usurped.ok, "an Account Manager activity is not a Coordinator's to claim").toBe(false);
+    expect(err(usurped)).toBe("step_gate_not_owning_role");
+
+    // A REFUSAL WRITES NOTHING. No claimant, no state change, no timestamp —
+    // the defect this replaces left all three behind.
+    const unchanged = await stepState("bon_a_delivrer");
+    expect(unchanged.state).toBe("AVAILABLE");
+    expect(unchanged.assigned, "no claimant was recorded").toBeNull();
+    expect(unchanged).toEqual(before);
+
+    // …and the owner is refused nothing.
+    need(await as(am, () => activateStep(fileId, "bon_a_delivrer")), "the Account Manager may claim it");
+    const claimed = await stepState("bon_a_delivrer");
+    expect(claimed.state).toBe("ACTIVE");
+    expect(claimed.assigned).toBe(am.id);
+  });
+
   it("INVOICE WITHOUT LINES cannot be submitted; SELF-VALIDATION is refused", async () => {
-    // Carry to the billing gate through the real chain.
-    need(await as(am, () => activateStep(fileId, "bon_a_delivrer")), "activate BAD");
+    // Carry to the billing gate through the real chain. The Bon à Délivrer was
+    // claimed by its owner in the case above.
     await provideEvidence(fileId, "BON_A_DELIVRER", am, ops);
     need(await as(am, () => submitStep(fileId, "bon_a_delivrer")), "BAD");
     need(await as(am, () => activateStep(fileId, "pre_gate")), "activate pre-gate");
@@ -469,8 +501,8 @@ describe("C-4 negative battery — the refusals, in the order a dossier meets th
     for (const st of ["IN_TRANSIT", "DELIVERED"]) {
       need(await as(transport, () => changeTransportStatus(t3.id, st)), `transport ${st}`);
     }
-    need(await as(coordinator, () => activateStep(fileId, "transport_docs_transmission")), "activate transmission");
-    need(await as(coordinator, () => submitStep(fileId, "transport_docs_transmission")), "transmission");
+    need(await as(am, () => activateStep(fileId, "transport_docs_transmission")), "activate transmission");
+    need(await as(am, () => submitStep(fileId, "transport_docs_transmission")), "transmission");
     need(await as(coordinator, () => activateStep(fileId, "coordinator_completeness")), "activate 18");
     await provideEvidence(fileId, "RECEIPT", coordinator, ops);
     need(await as(coordinator, () => submitStep(fileId, "coordinator_completeness")), "step 18");

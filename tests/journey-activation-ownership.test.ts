@@ -28,12 +28,31 @@ import { fileURLToPath } from "node:url";
 
 const read = (p: string) => readFileSync(fileURLToPath(new URL(`../${p}`, import.meta.url)), "utf8");
 
-/** step_key -> owning role code, from the registry mirror's own seed. */
+/**
+ * step_key -> owning role code, from EVERY migration that seeds the mirror.
+ *
+ * UAT-PARALLEL-OWNERSHIP-01 — this read one migration and matched only rows
+ * whose note began « step N », so the three parallel activities were invisible
+ * to it twice over. A journey activating one of them was skipped by the guard
+ * below rather than checked, which is how a Coordinator self-claiming an
+ * Account Manager activity would have gone unnoticed here.
+ */
 function owningRoles(): Map<string, string> {
-  const sql = read("supabase/migrations/20260914000001_responsibility_visibility.sql");
   const out = new Map<string, string>();
-  for (const m of sql.matchAll(/\('([a-z_]+)',\s*'([A-Z_]+)',\s*'step \d+/g)) out.set(m[1], m[2]);
-  expect(out.size, "owning-role seed not parsed").toBeGreaterThanOrEqual(26);
+  for (const migration of [
+    "supabase/migrations/20260914000001_responsibility_visibility.sql",
+    "supabase/migrations/20261006000001_parallel_activity_owning_roles.sql",
+  ]) {
+    const sql = read(migration);
+    const start = sql.indexOf("insert into public.process_step_owning_role");
+    expect(start, `owning-role seed missing in ${migration}`).toBeGreaterThan(-1);
+    const block = sql.slice(start, sql.indexOf(";", start));
+    for (const m of block.matchAll(/\('([a-z_]+)',\s*'([A-Z_]+)'/g)) out.set(m[1], m[2]);
+  }
+  expect(out.size, "owning-role seed not parsed").toBe(29);
+  for (const key of ["bon_a_delivrer", "pre_gate", "transport_docs_transmission"]) {
+    expect(out.get(key), `${key} must be owned`).toBe("ACCOUNT_MANAGER");
+  }
   return out;
 }
 
