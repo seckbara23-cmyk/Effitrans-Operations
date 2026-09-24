@@ -28,7 +28,7 @@
  *   node scripts/verifier-security-probe.mjs --db-url "postgresql://…@127.0.0.1:54322/postgres"
  */
 import { writeFileSync, mkdtempSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
@@ -60,12 +60,67 @@ function assertDisposable(url) {
   return host;
 }
 
-/** One statement per call — the --db-url path speaks the extended query protocol. */
+/**
+ * ONE STATEMENT PER CALL, and now enforced rather than merely intended.
+ *
+ * `applyFile` runs `supabase db query --db-url … -f`, which reaches Postgres
+ * over the EXTENDED query protocol. That protocol carries exactly one command
+ * per message, so a file holding two statements dies with « cannot insert
+ * multiple commands into a prepared statement » — which is precisely how the
+ * first run of this probe failed, on the migration itself. A comment saying
+ * "one statement per call" did not stop that; this check does.
+ */
 function exec(tgt, name, sql) {
+  assertSingleStatement(name, sql);
   const f = join(TMP, `${name}.sql`);
   writeFileSync(f, sql, "utf8");
   const r = applyFile(tgt, f);
   if (!r.ok) throw new Error(`[probe] setup statement "${name}" failed: ${r.message}`);
+}
+
+/** A trailing `;` is fine; a second statement is the bug this exists to refuse. */
+function assertSingleStatement(name, sql) {
+  const body = String(sql).trim().replace(/;\s*$/, "");
+  if (body.includes(";")) {
+    throw new Error(
+      `[probe] "${name}" holds more than one statement. ` +
+        `exec() sends SQL through the extended query protocol, which accepts one command per ` +
+        `message — use applyMigrationFile() (psql, simple protocol) for multi-statement SQL.`,
+    );
+  }
+}
+
+/**
+ * Apply a REAL migration file — multi-statement, dollar-quoted `do $$ … $$`
+ * bodies and all — the way the rest of this job already runs multi-statement
+ * SQL against the local stack: `psql -v ON_ERROR_STOP=1 -f`.
+ *
+ * WHY PSQL AND NOT THE CLI. psql sends a file over the SIMPLE query protocol,
+ * which is defined to carry several commands in one message and is what makes
+ * `insert …;` followed by `do $$ … $$;` legal in a single body. That matches
+ * the transport the production runner gets through the pooler, so what is
+ * exercised here is the migration as production applies it, not a rewritten
+ * subset of it. `ON_ERROR_STOP=1` makes any failure a non-zero exit instead of
+ * a warning psql would otherwise skip past.
+ *
+ * The file is never read, split or re-implemented here: the probe must exercise
+ * the migration that ships, or it is measuring something else.
+ */
+function applyMigrationFile(url, file) {
+  try {
+    return execFileSync("psql", [url, "-X", "-v", "ON_ERROR_STOP=1", "-f", file], {
+      encoding: "utf8",
+      stdio: "pipe",
+    });
+  } catch (e) {
+    if (e.code === "ENOENT") {
+      throw new Error(
+        "[probe] psql is not on PATH. This probe applies a multi-statement migration and needs " +
+          "the simple query protocol; the CI job already uses psql for every SQL test in it.",
+      );
+    }
+    throw new Error(`[probe] could not apply ${file}: ${(e.stderr || e.stdout || e.message).toString().slice(-1200)}`);
+  }
 }
 
 /** The REAL verifier, against whatever state the caller has just built. */
@@ -107,11 +162,12 @@ function main() {
   console.log(`[probe] target: ${host} (disposable)`);
   console.log(`[probe] verifier under test: ${VERSION}\n`);
 
-  // The migration is `insert … on conflict do nothing`, so applying it against a
-  // database that already has it is a no-op. This makes the probe independent of
-  // whether the caller reset the stack first.
-  const ap = applyFile(tgt, MIGRATION);
-  if (!ap.ok) throw new Error(`[probe] could not apply ${VERSION}: ${ap.message}`);
+  // The migration is `insert … on conflict do nothing` followed by its `do $$`
+  // guard block — TWO statements — so it must go through psql, not the CLI's
+  // extended-protocol path. Re-applying it to a database that already has it is
+  // a no-op that still runs the guards, which is what keeps this probe
+  // independent of whether the caller reset the stack first.
+  applyMigrationFile(url, MIGRATION);
 
   // ---- 1 + 8: the production-shaped state ---------------------------------
   // Broad table grants are what production HAS. Granting them here is the whole
@@ -267,4 +323,9 @@ function main() {
   process.exit(0);
 }
 
-main();
+// Run only when invoked as a script. Exported below so the single-statement
+// guard can be tested for what it DOES rather than for how it is spelled —
+// importing a module that runs itself would have made that test impossible.
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();
+
+export { assertSingleStatement };

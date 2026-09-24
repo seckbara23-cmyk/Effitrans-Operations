@@ -426,6 +426,50 @@ describe("G — CI now exercises a production-shaped database", () => {
     expect(probeAt).toBeLessThan(rehearsalAt);
   });
 
+  it("33 — ⚠ THE PROBE'S OWN REGRESSION: the migration is multi-statement", () => {
+    // PR #10's first CI run died here, before a single adversarial case ran:
+    //   « cannot insert multiple commands into a prepared statement »
+    // The probe had applied the migration through `supabase db query --db-url`,
+    // which reaches Postgres over the EXTENDED query protocol — one command per
+    // message. This migration is an `insert …;` AND a `do $$ … $$;` guard block.
+    //
+    // Pinned here so the rest of this section cannot become vacuous: if the
+    // migration ever collapsed to a single statement, the psql requirement
+    // below would still read green while guarding nothing.
+    const body = code(SLICE).trim().replace(/;\s*$/, "");
+    expect(body).toContain(";");
+    expect(body).toMatch(/insert into public\.process_step_owning_role/);
+    expect(body).toMatch(/do \$\$/);
+  });
+
+  it("34 — so it is applied with psql, never through the prepared-statement path", () => {
+    // psql sends a file over the SIMPLE query protocol, which carries several
+    // commands in one message — the same transport the production runner gets
+    // through the pooler.
+    expect(probe).toContain("applyMigrationFile(url, MIGRATION)");
+    expect(probe).toMatch(/execFileSync\(\s*"psql"/);
+    expect(probe).toContain("ON_ERROR_STOP=1");
+    // The old path must not come back for the migration.
+    expect(probe).not.toContain("applyFile(tgt, MIGRATION)");
+    // …and the file is still the one that ships: never read, split or inlined.
+    expect(probe).toContain("_parallel_activity_owning_roles.sql");
+  });
+
+  it("35 — the single-statement helper REFUSES multi-statement SQL", async () => {
+    // Behavioural, not textual: a comment saying "one statement per call" is
+    // exactly what failed to prevent this, so the guard is tested for what it
+    // does. Importing works because the script only runs main() when invoked
+    // as a script.
+    const mod = await import("../scripts/verifier-security-probe.mjs");
+    expect(() => mod.assertSingleStatement("t", "select 1; select 2")).toThrow(
+      /more than one statement/,
+    );
+    expect(() => mod.assertSingleStatement("t", "create policy p on t for insert to anon with check (true); drop policy p on t")).toThrow();
+    // A single statement still passes, with or without a trailing semicolon.
+    expect(() => mod.assertSingleStatement("t", "grant all on x to anon")).not.toThrow();
+    expect(() => mod.assertSingleStatement("t", "grant all on x to anon;  ")).not.toThrow();
+  });
+
   it("32 — the integrity guard itself was NOT changed: the fix is the verifier", () => {
     // The guard was never wrong. It distinguishes applied-but-unrecorded from
     // not-yet-applied by asking the companion verifier, and it asked correctly;
