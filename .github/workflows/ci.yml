@@ -1300,6 +1300,29 @@ jobs:
       - name: Every migration verifier passes against the applied schema
         run: node scripts/verify-migrations.mjs --db-url "postgresql://postgres:postgres@127.0.0.1:54322/postgres"
 
+      # ---- A VERIFIER MUST STILL PASS ON A PRODUCTION-SHAPED DATABASE ------
+      #
+      # The step above proves each verifier passes HERE. On 2026-09-24 that was
+      # not enough: `20261006000001`'s verifier passed in CI, then failed in
+      # production and left the ledger unwritten on a database that was
+      # correctly protected. It had asserted the ABSENCE of table grants, and
+      # the hosted project grants `arwdDxtm` on every public table to anon and
+      # authenticated by default privileges, enforcing with RLS instead. The
+      # local stack carries no such defaults, so CI never saw it.
+      #
+      # This probe grants exactly those broad privileges — making the local
+      # database look like production — and then removes the protection one way
+      # at a time (RLS off, a write policy for authenticated, one through
+      # PUBLIC, one FOR ALL, the SELECT policy dropped, the ownership rows
+      # corrupted) and requires the REAL verifier file to answer correctly each
+      # time. It finishes by withdrawing the ledger row and requiring the
+      # integrity guard to report SCHEMA_AHEAD_OF_LEDGER rather than clean.
+      #
+      # Every injected state is reverted in a `finally`, and the script refuses
+      # any host that is not local.
+      - name: Verifier security probe — production-shaped grants + failure injection
+        run: node scripts/verifier-security-probe.mjs --db-url "postgresql://postgres:postgres@127.0.0.1:54322/postgres"
+
       # ---- migration toolchain rehearsal (MIG-POLICY) ----------------------
       # Runs LAST, against the same disposable stack, because it deliberately
       # injects failures: bad SQL, a migration that applies but verifies false,

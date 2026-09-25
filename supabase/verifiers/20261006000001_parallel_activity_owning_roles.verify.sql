@@ -134,17 +134,75 @@ checks(label, ok) as (
     -- ---- 7. Only a migration may write an owner ----------------------------
     -- The gate is only as strong as this table. A client that could write it
     -- could grant itself ownership of any step.
-    ('the map is readable but not writable by authenticated or anon', (
-      select not has_table_privilege('authenticated', 'public.process_step_owning_role', 'INSERT')
-         and not has_table_privilege('authenticated', 'public.process_step_owning_role', 'UPDATE')
-         and not has_table_privilege('authenticated', 'public.process_step_owning_role', 'DELETE')
-         and not has_table_privilege('anon', 'public.process_step_owning_role', 'INSERT')
-         and not has_table_privilege('anon', 'public.process_step_owning_role', 'UPDATE')
-         and not has_table_privilege('anon', 'public.process_step_owning_role', 'DELETE')
-    )),
-    ('and row level security is still enabled on it', (
+    --
+    -- ⚠ THIS CHECK ONCE ASKED THE WRONG LAYER, AND IT COST A PRODUCTION RUN.
+    -- It read `has_table_privilege(...,'INSERT'|'UPDATE'|'DELETE')` and required
+    -- those GRANTS to be absent. On 2026-09-24 the runner applied this
+    -- migration's SQL, then failed here, and the ledger was never written — on a
+    -- database that was, and is, correctly protected.
+    --
+    -- The hosted project carries `ALTER DEFAULT PRIVILEGES IN SCHEMA public
+    -- GRANT ALL ON TABLES TO anon, authenticated, service_role` (from both
+    -- `postgres` and `supabase_admin`), so EVERY table in `public` — all 170 of
+    -- them, measured — hands anon and authenticated `arwdDxtm`, and every one of
+    -- them enables RLS. Broad grants are the platform's design; RLS is the
+    -- enforcement. The old check therefore asserted a property no table here
+    -- has, and which THIS MIGRATION NEVER ESTABLISHES: it contains no grant, no
+    -- policy and no RLS statement of any kind. A verifier must assert what its
+    -- own migration makes true.
+    --
+    -- So the question is asked of the layer that actually answers it. Not of
+    -- `pg_policies` text either: policy roles are resolved through `pg_policy`
+    -- OIDs and `pg_has_role`, so a policy granted to PUBLIC, or to any role
+    -- anon/authenticated inherit, is caught the same as one naming them.
+    -- polcmd: 'r'=SELECT 'a'=INSERT 'w'=UPDATE 'd'=DELETE '*'=ALL.
+    ('row level security is enabled on the map', (
       select c.relrowsecurity from pg_class c
        where c.oid = to_regclass('public.process_step_owning_role')
+    )),
+    ('no policy permits anon or authenticated to write the map', (
+      -- RESTRICTIVE policies only ever narrow, so none of them can grant a
+      -- write; only a PERMISSIVE one can, and `*` (ALL) is a write policy too.
+      select not exists (
+        select 1
+          from pg_policy p
+         cross join (values ('anon'), ('authenticated')) as g(rolname)
+         where p.polrelid = to_regclass('public.process_step_owning_role')
+           and p.polpermissive
+           and p.polcmd in ('*', 'a', 'w', 'd')
+           and (
+             0 = any (p.polroles)
+             or exists (
+               select 1 from unnest(p.polroles) as pr(oid)
+                where pg_has_role(g.rolname, pr.oid, 'MEMBER')
+             )
+           )
+      )
+    )),
+    ('the map stays readable: a SELECT policy still reaches authenticated', (
+      -- The other half of the contract. A verifier that only forbade writes
+      -- would pass just as happily on a table nobody can read, which would
+      -- break clause F-1 rather than protect it.
+      select exists (
+        select 1
+          from pg_policy p
+         where p.polrelid = to_regclass('public.process_step_owning_role')
+           and p.polpermissive
+           and p.polcmd in ('*', 'r')
+           and (
+             0 = any (p.polroles)
+             or exists (
+               select 1 from unnest(p.polroles) as pr(oid)
+                where pg_has_role('authenticated', pr.oid, 'MEMBER')
+             )
+           )
+      )
+    )),
+    ('and neither ordinary client role bypasses RLS', (
+      -- Everything above is worth nothing if the role walks past it.
+      select bool_and(not r.rolbypassrls)
+        from pg_roles r
+       where r.rolname in ('anon', 'authenticated')
     ))
   ) as t(label, ok)
 )

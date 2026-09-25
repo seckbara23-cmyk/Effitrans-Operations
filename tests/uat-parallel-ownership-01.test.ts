@@ -287,3 +287,198 @@ describe("E — neighbouring doctrine is untouched", () => {
     expect(code("lib/process/control-ownership.ts")).toContain('reason: "assigned_to_self"');
   });
 });
+
+// ========================================== F. THE VERIFIER'S SECURITY =====
+//
+// UAT-PARALLEL-OWNERSHIP-01-VERIFIER-FIX. Production Run #8 applied this
+// migration's SQL and then failed its verifier, leaving the ledger unwritten on
+// a database that was correctly protected. The verifier had required anon and
+// authenticated to LACK table grants; the hosted project grants `arwdDxtm` on
+// every table in `public` to both by default privileges and enforces with RLS.
+// These tests pin the layer the check is allowed to ask, and the root-cause
+// rule that made asking the wrong one possible.
+
+const VERIFIER = "supabase/verifiers/20261006000001_parallel_activity_owning_roles.verify.sql";
+
+describe("F — the security assertion asks RLS, not GRANTs", () => {
+  const v = read(VERIFIER);
+
+  it("20 — ⚠ THE INCIDENT: it no longer requires write GRANTs to be absent", () => {
+    // The exact shape that failed in production. `has_table_privilege` may not
+    // decide the security question here at all: broad grants are this
+    // platform's design, so the assertion was false on every table in the
+    // database, including 169 that have nothing to do with this slice.
+    expect(v).not.toMatch(/has_table_privilege\s*\(\s*'(anon|authenticated)'/);
+    expect(v).not.toContain("the map is readable but not writable by authenticated or anon");
+  });
+
+  it("21 — it asserts RLS is on, and that neither client role bypasses it", () => {
+    expect(v).toContain("relrowsecurity");
+    expect(v).toContain("rolbypassrls");
+    expect(v).toMatch(/rolname in \('anon', 'authenticated'\)/);
+  });
+
+  it("22 — no PERMISSIVE write policy may reach anon or authenticated", () => {
+    // Catalog-level, not the text of `pg_policies`: roles are resolved through
+    // OIDs so a policy granted to PUBLIC — or to any role those two inherit —
+    // is caught exactly like one that names them.
+    expect(v).toContain("pg_policy");
+    expect(v).toContain("polpermissive");
+    expect(v).toMatch(/polcmd in \('\*', 'a', 'w', 'd'\)/);
+    expect(v).toContain("0 = any (p.polroles)");
+    expect(v).toContain("pg_has_role(g.rolname, pr.oid, 'MEMBER')");
+    // RESTRICTIVE policies only narrow; reading one as a grant would make the
+    // check fail on a database that had just been made SAFER.
+    expect(v).toContain("polpermissive");
+  });
+
+  it("23 — and the map must stay READABLE, or F-1 breaks instead of holding", () => {
+    // A check that only forbade writes would pass just as happily on a table
+    // nobody can read. Both halves, or neither.
+    expect(v).toMatch(/polcmd in \('\*', 'r'\)/);
+    expect(v).toContain("pg_has_role('authenticated', pr.oid, 'MEMBER')");
+  });
+
+  it("24 — ⚠ THE ROOT CAUSE: the migration establishes no security at all", () => {
+    // This is the rule the old check broke, and the one that keeps it broken if
+    // it is ever forgotten: a verifier asserts what ITS migration makes true.
+    // This migration contains no grant, no policy and no RLS statement — so its
+    // verifier may observe the security layer, never demand a shape of it that
+    // the migration did not create.
+    const body = code(SLICE);
+    expect(body).not.toMatch(/\bgrant\b|\brevoke\b/i);
+    expect(body).not.toMatch(/create policy|alter policy|drop policy/i);
+    expect(body).not.toMatch(/row level security/i);
+    expect(body).not.toMatch(/^\s*alter table/im);
+  });
+
+  it("25 — the verifier is still read-only and still returns (ok, detail)", () => {
+    expect(v).toMatch(/bool_and\(ok\)\s+as\s+ok/);
+    expect(v).toMatch(/\bdetail\b/);
+    expect(v).not.toMatch(/^\s*(insert|update|delete|truncate|alter|drop|grant|revoke|create)\s+/im);
+    expect(v).not.toMatch(/\bdo\s+\$\$/i);
+    // A verifier's evidence is the schema, never the ledger.
+    expect(v).not.toContain("supabase_migrations");
+  });
+});
+
+// ================================ G. THE PROBE THAT WOULD HAVE CAUGHT IT ===
+
+describe("G — CI now exercises a production-shaped database", () => {
+  const probe = read("scripts/verifier-security-probe.mjs");
+  const ci = read(".github/workflows/ci.yml");
+
+  it("26 — the probe grants the broad privileges production actually has", () => {
+    // Without this line the probe would test the same forgiving database CI
+    // always had, and would have signed off the failing check exactly as the
+    // original run did.
+    expect(probe).toContain("grant all on ${TABLE} to anon, authenticated");
+    expect(probe).toContain("has_table_privilege");
+  });
+
+  it("27 — it runs the REAL verifier file rather than a copy of its logic", () => {
+    expect(probe).toContain("queryFile(tgt, VERIFIER)");
+    expect(probe).toContain('const VERSION = "20261006000001"');
+    expect(probe).toContain("_parallel_activity_owning_roles.verify.sql");
+  });
+
+  it("28 — it injects every way the protection could be lost", () => {
+    // The three single-command write policies are generated from one list, so
+    // the list IS the assertion — checking for the rendered strings would pass
+    // just as well if two of the three were quietly dropped from it.
+    expect(probe).toContain('[["3", "insert"], ["4", "update"], ["5", "delete"]]');
+    expect(probe).toContain("for ${cmd} to authenticated");
+    for (const fragment of [
+      "disable row level security",
+      "for insert to public",
+      "for all to authenticated",
+      "as restrictive for insert",
+      "drop policy process_step_owning_role_select",
+      "delete from ${TABLE} where step_key = 'pre_gate'",
+      "set role_code = 'COORDINATOR'",
+    ]) {
+      expect(probe, fragment).toContain(fragment);
+    }
+  });
+
+  it("29 — and requires the guard to see SCHEMA_AHEAD_OF_LEDGER", () => {
+    expect(probe).toContain("SCHEMA_AHEAD_OF_LEDGER");
+    expect(probe).toContain('repair(tgt, VERSION, undefined, "reverted")');
+    expect(probe).toContain('repair(tgt, VERSION, undefined, "applied")');
+    expect(probe).toContain("migration-integrity.mjs");
+  });
+
+  it("30 — it refuses any database that is not disposable", () => {
+    expect(probe).toContain("assertDisposable");
+    expect(probe).toContain("LOCAL_HOSTS");
+    expect(probe).toMatch(/finally\s*\{/);
+  });
+
+  it("31 — CI runs it, against the local stack only", () => {
+    expect(ci).toContain("node scripts/verifier-security-probe.mjs --db-url");
+    expect(ci).toContain("127.0.0.1:54322");
+    // After the verifier sweep, before the rehearsal reshapes the ledger.
+    const probeAt = ci.indexOf("verifier-security-probe.mjs");
+    const sweepAt = ci.indexOf("verify-migrations.mjs");
+    const rehearsalAt = ci.indexOf("migration-rehearsal.mjs");
+    expect(sweepAt).toBeGreaterThan(-1);
+    expect(probeAt).toBeGreaterThan(sweepAt);
+    expect(probeAt).toBeLessThan(rehearsalAt);
+  });
+
+  it("33 — ⚠ THE PROBE'S OWN REGRESSION: the migration is multi-statement", () => {
+    // PR #10's first CI run died here, before a single adversarial case ran:
+    //   « cannot insert multiple commands into a prepared statement »
+    // The probe had applied the migration through `supabase db query --db-url`,
+    // which reaches Postgres over the EXTENDED query protocol — one command per
+    // message. This migration is an `insert …;` AND a `do $$ … $$;` guard block.
+    //
+    // Pinned here so the rest of this section cannot become vacuous: if the
+    // migration ever collapsed to a single statement, the psql requirement
+    // below would still read green while guarding nothing.
+    const body = code(SLICE).trim().replace(/;\s*$/, "");
+    expect(body).toContain(";");
+    expect(body).toMatch(/insert into public\.process_step_owning_role/);
+    expect(body).toMatch(/do \$\$/);
+  });
+
+  it("34 — so it is applied with psql, never through the prepared-statement path", () => {
+    // psql sends a file over the SIMPLE query protocol, which carries several
+    // commands in one message — the same transport the production runner gets
+    // through the pooler.
+    expect(probe).toContain("applyMigrationFile(url, MIGRATION)");
+    expect(probe).toMatch(/execFileSync\(\s*"psql"/);
+    expect(probe).toContain("ON_ERROR_STOP=1");
+    // The old path must not come back for the migration.
+    expect(probe).not.toContain("applyFile(tgt, MIGRATION)");
+    // …and the file is still the one that ships: never read, split or inlined.
+    expect(probe).toContain("_parallel_activity_owning_roles.sql");
+  });
+
+  it("35 — the single-statement helper REFUSES multi-statement SQL", async () => {
+    // Behavioural, not textual: a comment saying "one statement per call" is
+    // exactly what failed to prevent this, so the guard is tested for what it
+    // does. Importing works because the script only runs main() when invoked
+    // as a script.
+    const mod = await import("../scripts/verifier-security-probe.mjs");
+    expect(() => mod.assertSingleStatement("t", "select 1; select 2")).toThrow(
+      /more than one statement/,
+    );
+    expect(() => mod.assertSingleStatement("t", "create policy p on t for insert to anon with check (true); drop policy p on t")).toThrow();
+    // A single statement still passes, with or without a trailing semicolon.
+    expect(() => mod.assertSingleStatement("t", "grant all on x to anon")).not.toThrow();
+    expect(() => mod.assertSingleStatement("t", "grant all on x to anon;  ")).not.toThrow();
+  });
+
+  it("32 — the integrity guard itself was NOT changed: the fix is the verifier", () => {
+    // The guard was never wrong. It distinguishes applied-but-unrecorded from
+    // not-yet-applied by asking the companion verifier, and it asked correctly;
+    // the verifier answered falsely. Changing the guard to work around that
+    // would have removed the only evidence it has.
+    const guard = read("scripts/migration-integrity.mjs");
+    expect(guard).toContain("verdict.ok === true");
+    expect(guard).toContain("SCHEMA_AHEAD_OF_LEDGER");
+    expect(guard).not.toContain("process_step_owning_role");
+    expect(guard).not.toContain("20261006000001");
+  });
+});
