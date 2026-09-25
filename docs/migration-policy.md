@@ -129,6 +129,30 @@ is the worked example: it checks nullability, the closed CHECK vocabulary,
 the maker/checker comparison is actually present — every one a property the
 slice would be broken without, and none satisfied by a name alone.
 
+> **A verifier asserts the postconditions ITS OWN migration establishes.** It may
+> *observe* the surrounding environment; it may not *require* a shape of it that
+> the migration never created. `20261006000001` contains no grant, no policy and
+> no RLS statement, yet its first verifier demanded that `anon`/`authenticated`
+> lack `INSERT`/`UPDATE`/`DELETE` table grants. On 2026-09-24 that failed a
+> correct migration against a correctly protected production database and left
+> the ledger unwritten.
+>
+> **On this platform a GRANT is not an effective write ability.** `ALTER DEFAULT
+> PRIVILEGES IN SCHEMA public` grants `arwdDxtm` to `anon`, `authenticated` and
+> `service_role`, so all 170 tables in `public` carry those privileges and all
+> 170 enable RLS: broad grants are the design, **RLS is the enforcement**. Assert
+> the POLICY SET — RLS enabled, no PERMISSIVE policy whose `polcmd` is
+> `*`/`a`/`w`/`d` reaching those roles, the expected read policy still reaching
+> them, and neither role holding `rolbypassrls` — resolving policy roles through
+> `pg_policy.polroles` OIDs and `pg_has_role` so PUBLIC and inherited roles are
+> caught too. `has_table_privilege` answers a different question.
+>
+> **Where an assumption is environment-dependent, CI must construct the
+> production shape before asserting against it.** That check passed a green CI
+> run: the local stack carries no such default privileges.
+> `scripts/verifier-security-probe.mjs` now grants them first, then removes the
+> protection one way at a time. See `docs/incidents/2026-09-24-parallel-activity-owning-roles.md`.
+
 > **Verifiers live in `supabase/verifiers/`, never in `supabase/migrations/`.**
 > The Supabase CLI reads every `<14-digit>_<name>.sql` under `supabase/migrations`
 > as a migration, so a verifier parked there parses as a *second* migration with
@@ -319,6 +343,19 @@ go in this order:
 **HELD is structural.** While any discrepancy exists the guard fails; the guard
 is step 1 of every deployment; so every later migration is blocked. Clearing the
 hold means resolving the discrepancy, not overriding a flag. There is no override.
+
+> **On `VERIFY_FAILED`, the verifier is a suspect too.** "Postconditions false"
+> can mean the database is wrong OR that the verifier asked the wrong question —
+> and the two demand opposite responses. Read the failing label against what the
+> migration actually changed before touching production: on 2026-09-24 an
+> assertion about table GRANTS, which `20261006000001` never sets, failed a
+> database that was correctly protected. Diagnosing it as a data fault would have
+> meant re-applying or unwinding a migration that had already succeeded.
+>
+> Note the knock-on: while that verifier returned `ok=false`, the integrity guard
+> — which tells *applied-but-unrecorded* from *not-yet-applied* by running it —
+> reported `CLEAN_WITH_PENDING` over a real `SCHEMA_AHEAD_OF_LEDGER`. A broken
+> verifier does not merely fail loudly; it can also hide a state silently.
 
 ## Break-glass
 
