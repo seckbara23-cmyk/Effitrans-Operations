@@ -12,6 +12,19 @@
  * - Referrer-Policy: strict-origin-when-cross-origin -> don't leak full URLs
  *   (which can carry ids) to external sites.
  * - Permissions-Policy -> disable powerful features the app never uses.
+ *   ⚠ `geolocation=(self)`, NOT `geolocation=()`. This directive was written in
+ *   Phase 1.18 (2026-06-16) as "features the app never uses" — a month BEFORE
+ *   the driver mobile tracking layer existed (Phase 3.4, migration
+ *   20260710000002), and the two were never reconciled. An empty allowlist tells
+ *   the browser the feature is disallowed for this document, so
+ *   `watchPosition`/`getCurrentPosition` fail with PERMISSION_DENIED
+ *   IMMEDIATELY, no prompt is shown, and neither an Android setting nor a
+ *   per-site grant can override it. On 2026-09-26 that silently defeated the
+ *   whole chauffeur GPS pipeline in production (UAT-DRIVER-LIVE-TRACKING-03):
+ *   session ACTIVE, zero positions, zero queued, and a « Permission de
+ *   localisation refusée » banner the driver could not clear by any means.
+ *   `(self)` grants the feature to THIS origin only — no third party, no
+ *   cross-origin iframe. `tests/driver-geolocation-policy.test.ts` pins it.
  * - Strict-Transport-Security (HSTS) -> force HTTPS. Honored only over HTTPS
  *   (ignored on http://localhost), so it is safe in local dev.
  *
@@ -27,7 +40,7 @@ const securityHeaders = [
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   {
     key: "Permissions-Policy",
-    value: "camera=(), microphone=(), geolocation=(), browsing-topics=()",
+    value: "camera=(), microphone=(), geolocation=(self), browsing-topics=()",
   },
   {
     key: "Strict-Transport-Security",
