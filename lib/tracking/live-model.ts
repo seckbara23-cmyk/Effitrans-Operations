@@ -9,7 +9,53 @@
 import type { TrackingHealth } from "./health";
 import type { MissionLeg, TrackingSessionStatus } from "./types";
 
-export type LiveMissionPoint = { lat: number; lng: number; at: string };
+/**
+ * ONE recorded `tracking_position` row, as the live map reads it.
+ *
+ * `lat`, `lng` and `at` keep exactly the meaning they have always had: the
+ * coordinates of a real fix and the instant the DEVICE recorded it
+ * (`recorded_at`, not `received_at`).
+ *
+ * TRACKING-06A — `headingDegrees`, `speedKph` and `accuracyMeters` are the
+ * REMAINING COLUMNS OF THAT SAME ROW, which the ingest has persisted since
+ * migration 20260710000002 and which this read model simply never selected.
+ * They are metadata about one real recording: nothing here derives, smooths,
+ * estimates or back-fills them, and a row that carries none reports null.
+ *
+ * Optional because the device supplies them at its own discretion — Android
+ * reports `coords.heading` as null whenever the vehicle is stationary, so on a
+ * real road session most parked fixes have no heading at all. Any consumer must
+ * treat absence as "unknown", never as zero.
+ */
+export type LiveMissionPoint = {
+  lat: number;
+  lng: number;
+  at: string;
+  /** Course over ground in degrees clockwise from true north, when the device reported one. */
+  headingDegrees?: number | null;
+  /** Ground speed in km/h, when the device reported one. */
+  speedKph?: number | null;
+  /** Reported horizontal accuracy in metres, when the device reported one. */
+  accuracyMeters?: number | null;
+};
+
+/**
+ * A nullable numeric column of a recorded fix, normalised for the read model.
+ *
+ * TRACKING-06A. `Number(null)` is 0 and `Number("")` is 0, so the obvious
+ * coercion would turn "the device reported no heading" into "heading due
+ * north", "no speed" into "stopped", and "no accuracy" into "accurate to 0 m" —
+ * three facts no row contains. PostgREST may also hand a `double precision`
+ * back as a string, so the parse is done here rather than trusted.
+ *
+ * Returns null for null/undefined/empty/non-finite input, and the number
+ * otherwise. It never invents a value and never rounds one.
+ */
+export function optionalNumber(v: unknown): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : null;
+}
 
 export type LiveMission = {
   transportId: string;
