@@ -19,6 +19,7 @@ import { assertPermission } from "@/lib/auth/require-permission";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { classifyTrackingHealth } from "./health";
 import { missionLeg, type TrackingSessionStatus } from "./types";
+import { optionalNumber } from "./live-model";
 import type { LiveMission, LiveMissionPoint } from "./live-model";
 
 export type { LiveMission, LiveMissionPoint, LiveTrackingKpis } from "./live-model";
@@ -29,6 +30,11 @@ type PositionRow = {
   latitude: number;
   longitude: number;
   recorded_at: string;
+  // TRACKING-06A — the rest of the SAME recorded row. Nullable in the schema
+  // because the device supplies them at its own discretion.
+  heading_degrees: number | null;
+  speed_kph: number | null;
+  accuracy_meters: number | null;
 };
 
 type SessionRow = {
@@ -95,7 +101,12 @@ export async function listLiveMissions(nowIso?: string): Promise<LiveMission[]> 
     lastInstants.length > 0
       ? admin
           .from("tracking_position")
-          .select("transport_id, latitude, longitude, recorded_at")
+          // TRACKING-06A — three more columns of the same row. No extra row is
+          // read and no second query is issued: the newest-instant window below
+          // is unchanged, so this costs one wider projection and nothing else.
+          .select(
+            "transport_id, latitude, longitude, recorded_at, heading_degrees, speed_kph, accuracy_meters",
+          )
           .eq("tenant_id", user.tenantId)
           .in("transport_id", transportIds)
           .in("recorded_at", lastInstants)
@@ -106,7 +117,17 @@ export async function listLiveMissions(nowIso?: string): Promise<LiveMission[]> 
   const latest = new Map<string, LiveMissionPoint>();
   for (const p of (positionsRes.data ?? []) as PositionRow[]) {
     if (!p.transport_id || latest.has(p.transport_id)) continue;
-    latest.set(p.transport_id, { lat: Number(p.latitude), lng: Number(p.longitude), at: p.recorded_at });
+    latest.set(p.transport_id, {
+      lat: Number(p.latitude),
+      lng: Number(p.longitude),
+      at: p.recorded_at,
+      // TRACKING-06A — NULL STAYS NULL. `Number(null)` is 0, and a 0 here would
+      // read as "heading due north" / "stopped" / "perfect accuracy" — three
+      // fabricated facts. Absent means unknown, and only a finite number passes.
+      headingDegrees: optionalNumber(p.heading_degrees),
+      speedKph: optionalNumber(p.speed_kph),
+      accuracyMeters: optionalNumber(p.accuracy_meters),
+    });
   }
 
   const byId = new Map(
