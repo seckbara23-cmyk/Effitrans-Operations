@@ -40,6 +40,12 @@ import maplibregl from "maplibre-gl";
 import { useEffect, useRef, useState } from "react";
 import type { LiveMission, LiveMissionPoint } from "@/lib/tracking/live-model";
 import { canDrawRoute, SENEGAL_VIEW, MAP_LEGEND_FR } from "@/lib/tracking/live-model";
+import {
+  MARKER_EASE_MS,
+  frameAt,
+  rotationFor,
+  shouldEase,
+} from "@/lib/tracking/marker-motion";
 import { MISSION_LEG_LABEL_FR } from "@/lib/tracking/types";
 
 const LEG_COLOR: Record<string, string> = {
@@ -83,25 +89,86 @@ const OSM_RASTER_STYLE: maplibregl.StyleSpecification = {
   layers: [{ id: "osm", type: "raster", source: "osm" }],
 };
 
+/**
+ * One live marker's presentation state, held across refreshes.
+ *
+ * `drawn` is where the marker is currently RENDERED — mid-transition it is a
+ * screen coordinate and nothing more. `fixAt` is the `recorded_at` of the fix it
+ * is heading to, which is how a genuinely new fix is told from a re-render of
+ * the same one. `heading` is the last course the DEVICE reported, never a
+ * derived one.
+ */
+type MarkerEntry = {
+  marker: maplibregl.Marker;
+  el: HTMLElement;
+  drawn: { lat: number; lng: number };
+  fixAt: string | null;
+  heading: number | null;
+  raf: number | null;
+};
+
+/** Operators who asked their system for less motion get placement, not glides. */
+function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  );
+}
+
 function escapeHtml(v: string): string {
   return v.replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string,
   );
 }
 
-/** Marker element: colour AND shape AND an accessible label — never colour alone. */
-function markerElement(m: LiveMission): HTMLElement {
+/**
+ * A vehicle seen from above, nose UP so a rotation of 0° reads as due north.
+ * Local inline SVG: this project carries no icon library, and the only mapping
+ * dependency stays MapLibre. `currentColor` lets one glyph serve every leg.
+ */
+const CAR_GLYPH = `<svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" focusable="false"
+  style="display:block;color:#fff"><path fill="currentColor" d="M12 1.6 9.9 4.3c-.5.6-.8 1.4-.8 2.2v1.1l-3.6 1.6c-.5.2-.8.7-.8 1.2v1.5c0 .3.3.6.7.5l3.7-.8v3.9l-1.8 1.2c-.3.2-.5.5-.5.9v1.4c0 .4.4.7.8.6l3-.9h1.6l3 .9c.4.1.8-.2.8-.6v-1.4c0-.4-.2-.7-.5-.9l-1.8-1.2v-3.9l3.7.8c.4.1.7-.2.7-.5v-1.5c0-.5-.3-1-.8-1.2l-3.6-1.6V6.5c0-.8-.3-1.6-.8-2.2L12 1.6Z"/></svg>`;
+
+/**
+ * Marker element: colour AND shape AND an accessible label — never colour alone.
+ *
+ * TRACKING-06B — the live mission is a VEHICLE, not a dot. `paintMarker` keeps
+ * the element itself reusable across refreshes so a marker is never destroyed
+ * and rebuilt mid-transition (which is what made every new fix look like a
+ * teleport). Shape still distinguishes the return leg, and the label still
+ * states leg and signal in words.
+ */
+function markerElement(m: LiveMission, rotation: { degrees: number | null; fromCurrentFix: boolean }): HTMLElement {
   const el = document.createElement("div");
+  el.setAttribute("role", "img");
+  el.innerHTML = CAR_GLYPH;
+  paintMarker(el, m, rotation);
+  return el;
+}
+
+/** Restyle an EXISTING marker element in place for the mission's current state. */
+function paintMarker(
+  el: HTMLElement,
+  m: LiveMission,
+  rotation: { degrees: number | null; fromCurrentFix: boolean },
+): void {
   const ring = HEALTH_RING[m.health] ?? "#fff";
   const fill = LEG_COLOR[m.leg] ?? "#94a3b8";
   const square = m.leg === "RETURN";
-  el.setAttribute("role", "img");
+  // A restrained live treatment: a green halo only while the signal is genuinely
+  // live. `stale` and `offline` keep their amber and red rings and get no glow,
+  // so a vehicle nobody has heard from can never look healthy.
+  const glow = m.health === "live" ? ",0 0 0 7px rgba(16,185,129,.28)" : "";
+  const heading =
+    rotation.degrees === null
+      ? "cap inconnu"
+      : `cap ${Math.round(rotation.degrees)}°${rotation.fromCurrentFix ? "" : " (dernier cap connu)"}`;
   el.setAttribute(
     "aria-label",
-    `${m.vehicleLabel ?? "Véhicule non renseigné"} — ${MISSION_LEG_LABEL_FR[m.leg]} — ${HEALTH_FR[m.health] ?? m.health}`,
+    `${m.vehicleLabel ?? "Véhicule non renseigné"} — ${MISSION_LEG_LABEL_FR[m.leg]} — ${HEALTH_FR[m.health] ?? m.health} — ${heading}`,
   );
-  el.style.cssText = `height:20px;width:20px;border-radius:${square ? "4px" : "9999px"};background:${fill};box-shadow:0 0 0 3px ${ring},0 1px 3px rgba(0,0,0,.35);cursor:pointer`;
-  return el;
+  el.style.cssText = `display:flex;align-items:center;justify-content:center;height:26px;width:26px;border-radius:${square ? "6px" : "9999px"};background:${fill};box-shadow:0 0 0 3px ${ring}${glow},0 1px 3px rgba(0,0,0,.35);cursor:pointer`;
 }
 
 function popupHtml(m: LiveMission): string {
@@ -110,6 +177,13 @@ function popupHtml(m: LiveMission): string {
   const when = m.lastPosition
     ? new Date(m.lastPosition.at).toLocaleString("fr-FR")
     : null;
+  // TRACKING-06B — two more facts from the SAME recorded fix (TRACKING-06A read
+  // them). `line()` omits a null, so an absent reading stays absent: it is never
+  // rendered as 0 km/h or as perfect accuracy, and neither is derived.
+  const speed =
+    m.lastPosition?.speedKph != null ? `${m.lastPosition.speedKph.toFixed(1)} km/h` : null;
+  const accuracy =
+    m.lastPosition?.accuracyMeters != null ? `± ${Math.round(m.lastPosition.accuracyMeters)} m` : null;
   return `
     <div style="font-size:12px;line-height:1.5;min-width:210px">
       <div style="font-weight:600;color:#0b1a2b">${escapeHtml(m.vehicleLabel ?? "Véhicule non renseigné")}</div>
@@ -118,6 +192,8 @@ function popupHtml(m: LiveMission): string {
       ${line("Phase", MISSION_LEG_LABEL_FR[m.leg])}
       ${line("Signal", HEALTH_FR[m.health] ?? m.health)}
       ${line("Dernière position", when)}
+      ${line("Vitesse relevée", speed)}
+      ${line("Précision", accuracy)}
       ${line("Enlèvement", m.pickupLocation)}
       ${line("Destination", m.deliveryLocation)}
       ${line("Point de retour", m.returnLocation)}
@@ -136,7 +212,7 @@ export function TransportLiveMap({
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
-  const markersRef = useRef<maplibregl.Marker[]>([]);
+  const markersRef = useRef<Map<string, MarkerEntry>>(new Map());
   const [ready, setReady] = useState(false);
   const [webglFailed, setWebglFailed] = useState(false);
 
@@ -178,24 +254,109 @@ export function TransportLiveMap({
     });
     mapRef.current = map;
     return () => {
-      markersRef.current.forEach((mk) => mk.remove());
-      markersRef.current = [];
+      markersRef.current.forEach((e) => {
+        if (e.raf !== null) cancelAnimationFrame(e.raf);
+        e.marker.remove();
+      });
+      markersRef.current.clear();
       map.remove();
       mapRef.current = null;
     };
   }, []);
 
   // ---- markers follow telemetry; the camera does NOT ----------------------
+  //
+  // TRACKING-06B. This used to remove every marker and build new ones on each
+  // refresh, so a new fix arrived as a teleport — and any open popup closed with
+  // it. Markers are now KEYED BY MISSION and survive refreshes: an existing one
+  // is restyled in place and GLIDES to the newly recorded fix.
+  //
+  // The glide is presentation. Its two endpoints are the fix the marker is drawn
+  // at and the fix just recorded; no frame is persisted, transmitted, or offered
+  // as history, and the transition always finishes exactly on the recorded point.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
-    markersRef.current.forEach((mk) => mk.remove());
-    markersRef.current = located.map((m) =>
-      new maplibregl.Marker({ element: markerElement(m) })
-        .setLngLat([m.lastPosition.lng, m.lastPosition.lat])
-        .setPopup(new maplibregl.Popup({ offset: 14, closeButton: true }).setHTML(popupHtml(m)))
-        .addTo(map),
-    );
+    const reg = markersRef.current;
+    const seen = new Set<string>();
+
+    for (const m of located) {
+      seen.add(m.transportId);
+      const p = m.lastPosition;
+      const entry = reg.get(m.transportId);
+      const rotation = rotationFor(p.headingDegrees, entry?.heading ?? null);
+
+      if (!entry) {
+        // First appearance: PLACE it, never fly it in from nowhere.
+        const el = markerElement(m, rotation);
+        const marker = new maplibregl.Marker({ element: el, rotationAlignment: "map" })
+          .setLngLat([p.lng, p.lat])
+          .setPopup(new maplibregl.Popup({ offset: 16, closeButton: true }).setHTML(popupHtml(m)))
+          .addTo(map);
+        if (rotation.degrees !== null) marker.setRotation(rotation.degrees);
+        reg.set(m.transportId, {
+          marker,
+          el,
+          drawn: { lat: p.lat, lng: p.lng },
+          fixAt: p.at,
+          heading: rotation.fromCurrentFix ? rotation.degrees : (rotation.degrees ?? null),
+          raf: null,
+        });
+        continue;
+      }
+
+      paintMarker(entry.el, m, rotation);
+      entry.marker.getPopup()?.setHTML(popupHtml(m));
+      // A recorded course rotates the vehicle. Its ABSENCE changes nothing: the
+      // last course the device actually reported is held, and a mission that has
+      // never reported one is drawn with no orientation claim at all.
+      if (rotation.fromCurrentFix && rotation.degrees !== null) {
+        entry.heading = rotation.degrees;
+        entry.marker.setRotation(rotation.degrees);
+      }
+
+      if (p.at === entry.fixAt) continue; // same recorded fix: nothing moved
+      entry.fixAt = p.at;
+      const to = { lat: p.lat, lng: p.lng };
+
+      if (entry.raf !== null) cancelAnimationFrame(entry.raf);
+      entry.raf = null;
+
+      if (!shouldEase(entry.drawn, to, { reducedMotion: prefersReducedMotion() })) {
+        // A gap too large to have been watched, or motion the operator has asked
+        // to be spared: place the marker on the fact and do not animate a
+        // journey nobody observed.
+        entry.drawn = to;
+        entry.marker.setLngLat([to.lng, to.lat]);
+        continue;
+      }
+
+      const from = { ...entry.drawn };
+      const t0 = performance.now();
+      const step = (now: number) => {
+        const t = Math.min(1, (now - t0) / MARKER_EASE_MS);
+        const at = frameAt(from, to, t);
+        entry.drawn = at;
+        entry.marker.setLngLat([at.lng, at.lat]);
+        if (t < 1) {
+          entry.raf = requestAnimationFrame(step);
+          return;
+        }
+        // Land on the recorded point itself, then stop. Nothing continues.
+        entry.raf = null;
+        entry.drawn = to;
+        entry.marker.setLngLat([to.lng, to.lat]);
+      };
+      entry.raf = requestAnimationFrame(step);
+    }
+
+    // Missions that left the open set take their markers with them.
+    for (const [id, entry] of reg) {
+      if (seen.has(id)) continue;
+      if (entry.raf !== null) cancelAnimationFrame(entry.raf);
+      entry.marker.remove();
+      reg.delete(id);
+    }
     // Deliberately no fitBounds here: a refresh must never yank the view away
     // from an operator who is exploring the map.
   }, [located, ready]);
@@ -304,9 +465,16 @@ export function TransportLiveMap({
         ))}
       </ul>
 
+      {/* TRACKING-06B — the marker now GLIDES between two received positions, so
+          the notice says in as many words which part is evidence and which part
+          is presentation. The recorded positions remain the authority; the
+          movement drawn between them is an animation and is never persisted,
+          reconstructed, or counted as an observed GPS position. */}
       <p className="border-t border-slate-100 px-5 py-2 text-center text-[11px] text-slate-400">
-        Positions réellement enregistrées par l&apos;application chauffeur. Aucun trajet n&apos;est
-        reconstitué ni interpolé.
+        Les positions affichées sont réellement enregistrées par l&apos;application chauffeur. Le
+        déplacement visuel du véhicule entre deux positions reçues est une animation
+        d&apos;affichage ; aucun trajet intermédiaire n&apos;est enregistré, reconstitué ou considéré
+        comme une position GPS observée.
       </p>
     </div>
   );

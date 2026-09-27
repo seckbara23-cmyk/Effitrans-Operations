@@ -301,7 +301,16 @@ describe("TMS-2 — the fleet map is Transport's, not the driver's", () => {
 
   it("only OBSERVED geometry is drawn — no interpolation, no road snapping", () => {
     expect(mapUi).toContain("ONLY OBSERVED GEOMETRY IS DRAWN");
-    expect(mapUi).toContain("Aucun trajet n&apos;est");
+    // TRACKING-06B — the notice was « Aucun trajet n'est reconstitué ni
+    // interpolé ». Still true of the ROUTE, but the marker now glides between two
+    // received positions, so the wording had to say which part is evidence and
+    // which is presentation. The claim pinned here is the one that matters: no
+    // intermediate path is recorded, reconstructed, or treated as observed.
+    // Whitespace-tolerant: the notice is JSX prose and wraps across lines, so a
+    // literal match would break on reformatting rather than on a lost guarantee.
+    const notice = mapUi.replace(/\s+/g, " ");
+    expect(notice).toContain("aucun trajet intermédiaire n&apos;est enregistré, reconstitué ou considéré comme une position GPS observée");
+    expect(notice).toContain("est une animation d&apos;affichage");
     expect(liveServiceRaw).toContain("no interpolation");
     const route = fn(liveService, "getObservedRoute");
     expect(route).toContain('.order("recorded_at", { ascending: true })');

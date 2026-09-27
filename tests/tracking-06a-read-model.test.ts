@@ -165,13 +165,22 @@ describe("06A — the widening, and only the widening", () => {
     expect(service).not.toContain("speedKph > ");
   });
 
-  it("15 — 06B/06C are NOT in this slice", () => {
-    const map = read("components/transport/live-map.tsx");
-    // No animation, no rotation, no vehicle glyph yet.
-    for (const later of ["requestAnimationFrame", "setRotation", "<svg"]) {
-      expect(map, `${later} belongs to a later slice`).not.toContain(later);
+  it("15 — 06A itself still touches no rendering", () => {
+    // SUPERSEDED IN PART, deliberately. This asserted that the map contained no
+    // `requestAnimationFrame`, no `setRotation`, no `<svg>` and still recreated
+    // its markers — i.e. that 06A had shipped the read model WITHOUT the
+    // presentation work. TRACKING-06B is exactly that presentation work, so
+    // those four assertions have done their job and are now false by design;
+    // `tracking-06b-marker.test.ts` owns the rendering contract from here.
+    //
+    // What remains 06A's to guard is that the READ MODEL still contains no
+    // rendering concern of its own.
+    const model = read("lib/tracking/live-model.ts");
+    for (const rendering of ["requestAnimationFrame", "setRotation", "<svg", "maplibre"]) {
+      expect(model.toLowerCase(), `${rendering} is not the read model's business`).not.toContain(
+        rendering.toLowerCase(),
+      );
     }
-    // And the map still recreates markers — untouched by 06A.
-    expect(map).toContain("markersRef.current.forEach((mk) => mk.remove())");
+    expect(service).not.toContain("requestAnimationFrame");
   });
 });
