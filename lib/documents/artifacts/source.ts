@@ -110,6 +110,63 @@ export function mandatoryFieldsFor(
   return MANDATORY[artifactCode];
 }
 
+/**
+ * Source fields an operator fills on the TRANSPORT record (FIN-TRN-DOC-01).
+ *
+ * The mandatory sets above are the contract; this says WHERE a missing one is
+ * corrected. `fileNumber` and `clientName` come from the dossier itself and are
+ * never typed into the transport panel, so pointing an operator there for them
+ * would send them to a form that cannot fix it.
+ *
+ * `vehiclePlate` is listed under its snapshot name; on the panel it is the fleet
+ * vehicle or the free-text plate, resolved exactly as `readArtifactSource` does.
+ */
+const TRANSPORT_OWNED_LIST = [
+  "pickupLocation",
+  "deliveryLocation",
+  "pickupPlanned",
+  "deliveryPlanned",
+  "driverName",
+  "vehiclePlate",
+  "transportCompany",
+  "trailerOrContainer",
+] as const;
+
+/** One of the fields above, as a literal type. */
+export type TransportOwnedSourceField = (typeof TRANSPORT_OWNED_LIST)[number];
+
+// The annotation is the check: every literal above must be a real source field,
+// so renaming one in ArtifactSourceInput breaks the build here rather than
+// silently pointing an operator at a field the panel no longer has.
+export const TRANSPORT_OWNED_SOURCE_FIELDS: readonly (keyof ArtifactSourceInput)[] =
+  TRANSPORT_OWNED_LIST;
+
+const TRANSPORT_OWNED = new Set<string>(TRANSPORT_OWNED_LIST);
+
+/** Is this missing field corrected on the dossier's transport panel? */
+export function isTransportOwnedSourceField(field: string): field is TransportOwnedSourceField {
+  return TRANSPORT_OWNED.has(field);
+}
+
+/**
+ * Which of these artifacts require this source field, on THIS transport's
+ * execution branch.
+ *
+ * Derived from `mandatoryFieldsFor` — the same rule the generator refuses on —
+ * so a surface that says « requis pour l'Ordre de transport » cannot disagree
+ * with the refusal an operator gets when they press Générer. RQ-18 is honoured
+ * for free: a subcontracted transport reports the carrier, not the driver.
+ */
+export function artifactsRequiringSourceField(
+  field: keyof ArtifactSourceInput,
+  artifactCodes: readonly string[],
+  input: Pick<ArtifactSourceInput, "providerId">,
+): string[] {
+  return artifactCodes.filter((code) =>
+    (mandatoryFieldsFor(code, input) ?? []).includes(field),
+  );
+}
+
 /** Human labels for the missing-field report the UI shows. */
 export const SOURCE_FIELD_LABELS_FR: Readonly<Record<string, string>> = {
   fileNumber: "Numéro de dossier",

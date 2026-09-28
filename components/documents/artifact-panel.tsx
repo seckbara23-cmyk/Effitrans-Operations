@@ -13,17 +13,30 @@
  * The missing-field list is the part that earns its place. Before it, an
  * operator facing a refusal had no way to learn WHICH fact was absent, and the
  * only recourse was to guess at the transport record until the button worked.
+ * FIN-TRN-DOC-01 finishes that sentence: where the missing fact is filled IN.
+ *
+ * TWO KINDS OF ROW, because there are two kinds of artifact. One an operator
+ * asks for; one the platform produces as part of another act. The panel used to
+ * render both as the first kind, so « Facture Effitrans » sat behind a disabled
+ * Générer button explaining « Type non générable » — about a document that is
+ * generated, correctly and automatically, at issuance. An automatic row now says
+ * what produces it and offers only what exists: the download.
  */
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { generateArtifact } from "@/lib/documents/artifacts/actions";
 import { createDocumentDownloadUrl } from "@/lib/documents/actions";
-import type { ArtifactPanelItem } from "@/lib/documents/artifacts/service";
+import { isTransportOwnedSourceField } from "@/lib/documents/artifacts/source";
+import type { ArtifactPanelView } from "@/lib/documents/artifacts/service";
 
 const ERRORS_FR: Record<string, string> = {
   forbidden: "Vous n'avez pas l'autorisation de générer ce document.",
   not_found: "Dossier introuvable.",
   artifact_not_generatable: "Ce document n'est pas généré par la plateforme.",
+  // FIN-TRN-DOC-01 — generated, but never on request. Says which act produces
+  // it rather than leaving the operator looking for a button.
+  artifact_not_on_demand:
+    "Ce document est généré automatiquement par la plateforme : il ne se génère pas à la demande.",
   incomplete_source: "Données insuffisantes — complétez le dossier puis régénérez.",
   render_failed: "La génération a échoué.",
   storage_failed: "L'enregistrement du fichier a échoué.",
@@ -36,12 +49,15 @@ const frDateTime = (iso: string | null) =>
 export function ArtifactPanel({
   fileId,
   items,
-  canGenerate,
 }: {
   fileId: string;
-  items: ArtifactPanelItem[];
-  /** Mirrors the server's `transport:manage` gate. Never the authorization. */
-  canGenerate: boolean;
+  /**
+   * Each row carries its OWN authority (DEC-FIN-TRN-01/02): a Demande is the
+   * Account Manager's request, an Ordre is the Transport function's. One
+   * panel-wide flag could not express that. `canGenerate` mirrors the gate the
+   * server action re-asserts; it is never the authorization.
+   */
+  items: ArtifactPanelView[];
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -102,8 +118,17 @@ export function ArtifactPanel({
               </p>
             )}
 
+            {/* An artifact the platform produces by itself. No refusal, no
+                missing-field list, no button that could never work: just the
+                act that creates it, and the download once it exists. */}
+            {!item.onDemand && item.automaticTriggerFr && (
+              <p className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-xs text-slate-600">
+                {item.automaticTriggerFr}
+              </p>
+            )}
+
             {/* WHY generation is unavailable — the exact fields, not a vague refusal. */}
-            {!item.sourceComplete && (
+            {item.sourceComplete === false && (
               <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5">
                 <p className="text-xs font-medium text-amber-900">
                   Données insuffisantes pour générer ce document.
@@ -122,11 +147,23 @@ export function ArtifactPanel({
                   Corrigez le dossier, puis générez — ce document ne peut pas être téléversé
                   manuellement.
                 </p>
+                {/* FIN-TRN-DOC-01 — WHERE. Shown only when a missing field is
+                    actually filled on the transport panel; the dossier's own
+                    number and client are corrected elsewhere and sending an
+                    operator to a form that cannot fix them would waste the trip. */}
+                {item.missing.some((m) => isTransportOwnedSourceField(m.field)) && (
+                  <a
+                    href="#transport-record"
+                    className="mt-1 inline-block text-[11px] font-medium text-amber-900 underline"
+                  >
+                    Compléter dans la section Transport
+                  </a>
+                )}
               </div>
             )}
 
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              {canGenerate && (
+              {item.onDemand && item.canGenerate && (
                 <button
                   onClick={() => generate(item.artifactCode)}
                   disabled={pending || !item.sourceComplete}

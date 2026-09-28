@@ -57,7 +57,14 @@ export async function getProcessState(fileId: string): Promise<ProcessReadModel 
   // Only the VERDICTS are replaced. Every record in the model above is still
   // the permission-filtered one this caller is entitled to see, so nothing
   // restricted is disclosed by this substitution.
-  const gates = await authoritativeGates(user.tenantId, fileId);
+  //
+  // FIN-TRN-DOC-01 — WITH the post-delivery context. This is the read that
+  // renders « Prêt à clôturer », and without those facts the closure gate can
+  // only report the billing/deposit/recovery chain as unevaluated: the display
+  // showed a permanent blocker on every dossier, including ones that were
+  // invoiced, sent and paid. The facts come from the same loader the closure
+  // ACTION evaluates on, so the display and the act cannot disagree.
+  const gates = await authoritativeGates(user.tenantId, fileId, { withClosureContext: true });
   return gates
     ? {
         ...model,

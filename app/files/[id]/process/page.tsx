@@ -15,6 +15,7 @@ import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-s
 import { getProcessState } from "@/lib/process/engine/service";
 import { loadContextualStepFacts } from "@/lib/process/contextual/facts";
 import { EFFITRANS_PROCESS, PARALLEL_ACTIVITIES } from "@/lib/process/effitrans-process";
+import { gateDetailLabelFr } from "@/lib/process/gate-labels";
 import { scopeLabelFr } from "@/lib/process/service-scope";
 
 /** The 26 numbered steps and the 3 parallel activities, from the registry. */
@@ -74,7 +75,21 @@ function Badge({ state, custody }: { state: string; custody?: CustodyState }) {
   );
 }
 
-function Gate({ title, gate }: { title: string; gate: { ready: boolean; requirements: { key: string; labelFr: string; satisfied: boolean; notApplicable: boolean; detail?: string }[] } }) {
+/**
+ * FIN-TRN-DOC-01 — a gate an operator can read.
+ *
+ * Two things changed, both about telling the truth rather than showing the
+ * engine's notes:
+ *
+ *   * the REASON is rendered through `gateDetailLabelFr`, so « Paiement intégral
+ *     encaissé (balance_outstanding) » becomes a French sentence and an
+ *     unmapped code shows nothing at all rather than a raw identifier;
+ *   * a requirement this view could NOT EVALUATE is drawn as such — 🔒, not ❌.
+ *     Marking it failed asserted a defect nobody had established. The badge
+ *     stays « Bloqué » either way, because an unevaluated requirement never
+ *     opens a gate.
+ */
+function Gate({ title, gate }: { title: string; gate: { ready: boolean; requirements: { key: string; labelFr: string; satisfied: boolean; notApplicable: boolean; unauthorized?: boolean; detail?: string }[] } }) {
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-4">
       <div className="mb-3 flex items-center justify-between">
@@ -84,18 +99,25 @@ function Gate({ title, gate }: { title: string; gate: { ready: boolean; requirem
         </span>
       </div>
       <ul className="space-y-1.5">
-        {gate.requirements.map((r) => (
-          <li key={r.key} className="flex items-start gap-2 text-sm">
-            <span className="mt-0.5">
-              {r.notApplicable ? "—" : r.satisfied ? "✅" : "❌"}
-            </span>
-            <span className={r.notApplicable ? "text-slate-400" : "text-slate-700"}>
-              {r.labelFr}
-              {r.notApplicable && <span className="ml-1 text-xs">(non applicable)</span>}
-              {r.detail && <span className="ml-1 text-xs text-red-600">({r.detail})</span>}
-            </span>
-          </li>
-        ))}
+        {gate.requirements.map((r) => {
+          const reason = gateDetailLabelFr(r.detail);
+          return (
+            <li key={r.key} className="flex items-start gap-2 text-sm">
+              <span className="mt-0.5">
+                {r.notApplicable ? "—" : r.unauthorized ? "🔒" : r.satisfied ? "✅" : "❌"}
+              </span>
+              <span className={r.notApplicable || r.unauthorized ? "text-slate-400" : "text-slate-700"}>
+                {r.labelFr}
+                {r.notApplicable && <span className="ml-1 text-xs">(non applicable)</span>}
+                {reason && (
+                  <span className={`ml-1 text-xs ${r.unauthorized ? "text-slate-400" : "text-red-600"}`}>
+                    — {reason}
+                  </span>
+                )}
+              </span>
+            </li>
+          );
+        })}
       </ul>
     </section>
   );

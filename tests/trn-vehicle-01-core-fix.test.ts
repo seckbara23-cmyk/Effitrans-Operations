@@ -272,7 +272,10 @@ describe("the Transport Officer's panel — the parc registration is the immatri
 
   it("the free-text plate input exists only for an external/hired vehicle", () => {
     expect(panel.match(/name="vehiclePlate"/g)).toHaveLength(1);
-    const field = panel.indexOf('<Field label={tr.fields.vehiclePlate} name="vehiclePlate" defaultValue={record.vehiclePlate} />');
+    // Matched by its identifying attributes, not by the whole tag: FIN-TRN-DOC-01
+    // added a `hint` describing which documents need the field, and the rule
+    // under test is WHERE the input sits, not how many props it carries.
+    const field = panel.indexOf('<Field label={tr.fields.vehiclePlate} name="vehiclePlate" defaultValue={record.vehiclePlate}');
     const elseAt = panel.indexOf(") : (", panel.indexOf("{record.vehicleId ? ("));
     expect(field).toBeGreaterThan(elseAt);
   });

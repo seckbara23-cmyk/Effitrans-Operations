@@ -17,7 +17,7 @@
  */
 import { isVehicleAssigned } from "@/lib/transport/vehicle-identity";
 import { PICKUP_READINESS, evaluatePickupReadiness } from "../effitrans-process";
-import { checkEvidence, fullyPaid, podReceived, type EvidenceSnapshot } from "./evidence";
+import { checkEvidence, fullyPaid, hasIssuedInvoice, podReceived, type EvidenceSnapshot } from "./evidence";
 import { liveByKey, type ExecutionView } from "./state";
 import { isDone } from "./types";
 
@@ -27,6 +27,16 @@ export type GateRequirementResult = {
   satisfied: boolean;
   /** True when this requirement does not apply to this dossier type. */
   notApplicable: boolean;
+  /**
+   * True when this view could not EVALUATE the requirement — the facts it needs
+   * were not available here (FIN-TRN-DOC-01).
+   *
+   * Distinct from `!satisfied`, and the distinction is the point: an
+   * unevaluated requirement is not a failing one, and rendering it as a blocker
+   * states a defect the dossier may not have. It never opens the gate either —
+   * see `ready` below.
+   */
+  unauthorized?: boolean;
   /** Why it is not satisfied. Never free text from a user. */
   detail?: string;
 };
@@ -37,7 +47,28 @@ export type GateResult = {
   requirements: GateRequirementResult[];
   /** Keys of the requirements that are blocking. Empty when ready. */
   missing: string[];
+  /**
+   * Keys this view could not evaluate. A gate with any of these is NEVER ready:
+   * not knowing is not the same as passing. Mirrors `ClosureEvaluation`'s own
+   * `unauthorized`, so the two closure surfaces speak one vocabulary.
+   */
+  unauthorized: string[];
 };
+
+/** `ready` only when nothing blocks AND nothing went unevaluated. */
+function settle(key: string, requirements: GateRequirementResult[]): GateResult {
+  const missing = requirements
+    .filter((r) => !r.satisfied && !r.notApplicable && !r.unauthorized)
+    .map((r) => r.key);
+  const unauthorized = requirements.filter((r) => r.unauthorized).map((r) => r.key);
+  return {
+    key,
+    ready: missing.length === 0 && unauthorized.length === 0,
+    requirements,
+    missing,
+    unauthorized,
+  };
+}
 
 const nonEmpty = (v: string | null | undefined): boolean => typeof v === "string" && v.trim().length > 0;
 
@@ -106,11 +137,16 @@ export function evaluatePickupGate(
     };
   });
 
+  // The REGISTRY's verdict is authoritative here — `evaluatePickupReadiness`
+  // owns the operation-type exceptions — so this gate keeps reporting exactly
+  // what it decided. No pickup requirement can be unevaluated: every one of them
+  // is resolved from the snapshot this function was handed.
   return {
     key: "pickup_readiness",
     ready: readiness.ready,
     requirements,
     missing: readiness.missing,
+    unauthorized: [],
   };
 }
 
@@ -150,8 +186,7 @@ export function evaluateBillingGate(executions: ExecutionView[], snap: EvidenceS
     },
   ];
 
-  const missing = requirements.filter((r) => !r.satisfied).map((r) => r.key);
-  return { key: "billing_readiness", ready: missing.length === 0, requirements, missing };
+  return settle("billing_readiness", requirements);
 }
 
 /**
@@ -198,6 +233,7 @@ export function evaluateClosureGate(
   ctx?: ClosureContext,
 ): GateResult {
   const paid = fullyPaid(snap);
+  const invoiced = hasIssuedInvoice(snap);
   const pod = podReceived(snap);
 
   const live = liveByKey(executions);
@@ -231,7 +267,10 @@ export function evaluateClosureGate(
       labelFr: "Paiement intégral encaissé",
       satisfied: paid,
       notApplicable: false,
-      detail: paid ? undefined : "balance_outstanding",
+      // FIN-TRN-DOC-01 — two different facts, two different sentences. The
+      // REQUIREMENT is untouched: a dossier with no invoice is not paid and
+      // does not close. It is simply not "solde restant dû" either.
+      detail: paid ? undefined : invoiced ? "balance_outstanding" : "no_invoice",
     },
   ];
 
@@ -278,18 +317,28 @@ export function evaluateClosureGate(
       },
     );
   } else {
+    // FIN-TRN-DOC-01 — NOT EVALUATED, not failed.
+    //
+    // This branch used to emit one requirement whose state was a flat `false`,
+    // so every dossier on the inspector reported « ❌ Chaîne facturation /
+    // dépôt / recouvrement » — including dossiers whose invoice was validated,
+    // sent and paid. The gate was asserting a defect it had not looked for, and
+    // could never read « Ouvert » for anyone.
+    //
+    // The honest report is that this view did not have the facts. It still
+    // holds the gate shut (`settle` refuses `ready` while anything is
+    // unevaluated), so nothing is opened by not knowing; the display simply
+    // stops claiming a blocker it never established. The authoritative path
+    // supplies the context and never reaches this branch at all.
     requirements.push({
       key: "post_delivery_chain",
       labelFr: "Chaîne facturation / dépôt / recouvrement",
       satisfied: false,
       notApplicable: false,
+      unauthorized: true,
       detail: "post_delivery_context_unavailable",
     });
   }
 
-  const missing = requirements
-    .filter((r) => !r.satisfied && !r.notApplicable)
-    .map((r) => r.key);
-
-  return { key: "closure_readiness", ready: missing.length === 0, requirements, missing };
+  return settle("closure_readiness", requirements);
 }

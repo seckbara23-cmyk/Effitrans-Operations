@@ -275,8 +275,12 @@ describe("navigation and action visibility", () => {
   });
 
   it("Finance roles can VIEW artifacts but cannot generate them", () => {
-    // Generation is gated on transport:manage, which no Finance role holds.
-    expect(code("app/files/[id]/page.tsx")).toContain('hasPermission(permissions, "transport:manage")');
+    // FIN-TRN-DOC-01 — generation is gated on the permission the ARTIFACT
+    // declares (DEC-FIN-TRN-01/02), so the page resolves it per row instead of
+    // testing one hard-coded permission. The rule this test exists for is
+    // unchanged: no Finance role holds EITHER transport permission, so no
+    // Finance role can generate ANY artifact.
+    expect(code("app/files/[id]/page.tsx")).toContain("hasPermission(permissions, item.requiredPermission)");
     const t = read("lib/platform/role-templates.ts");
     // Slice to the NEXT role, not a fixed byte count — a fixed window ran into
     // the following role's permission list.
@@ -284,6 +288,7 @@ describe("navigation and action visibility", () => {
     const next = t.indexOf('key: "', start + 10);
     const finance = t.slice(start, next > start ? next : undefined);
     expect(finance).not.toContain('"transport:manage"');
+    expect(finance).not.toContain('"transport:request"');
   });
 });
 
