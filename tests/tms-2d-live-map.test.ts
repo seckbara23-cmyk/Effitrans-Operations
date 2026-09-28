@@ -211,7 +211,14 @@ describe("TMS-2D — geometry comes only from what was observed", () => {
     const v = mapViewFor(many, []);
     expect(v.kind === "observed" && v.points).toHaveLength(3);
     expect(summarizeLiveMissions(many).tracked).toBe(3);
-    expect(mapUi).toContain("located.map((m) =>");
+    // TRACKING-06B — this pinned `located.map((m) =>`, the array-building shape.
+    // Markers are now KEYED BY MISSION and persist across refreshes (a rebuild
+    // on every refresh is what made each new fix teleport), so the loop builds a
+    // registry instead of an array. The guarantee is unchanged and is asserted
+    // above; what is pinned here is one marker per located mission.
+    expect(mapUi).toContain("for (const m of located)");
+    expect(mapUi).toContain("reg.get(m.transportId)");
+    expect(mapUi).toContain("reg.set(m.transportId,");
   });
 
   it("a mission with no fix contributes no marker", () => {
@@ -370,8 +377,16 @@ describe("TMS-2D — every TMS-2 guarantee survives", () => {
   });
 
   it("the map layer performs no writes and no workflow act", () => {
-    for (const forbidden of [".update(", ".insert(", ".delete(", "submitStep", "transitionFile", "POD", "closure"]) {
+    // TRACKING-06B — `.delete(` left this list. The marker registry is a JS `Map`
+    // and `reg.delete(id)` drops a departed mission's marker; banning the method
+    // name outright forbade correct cleanup while catching no database write.
+    // The reach to a table is what actually matters, so it is asserted directly
+    // below instead.
+    for (const forbidden of [".update(", ".insert(", ".upsert(", ".rpc(", "submitStep", "transitionFile", "POD", "closure"]) {
       expect(mapUi, forbidden).not.toContain(forbidden);
+    }
+    for (const reach of ["supabase", "getAdminSupabaseClient", 'from("']) {
+      expect(mapUi.toLowerCase(), reach).not.toContain(reach.toLowerCase());
     }
   });
 
@@ -407,7 +422,10 @@ describe("TMS-2D — every TMS-2 guarantee survives", () => {
   it("the map layer is read-only — a GPS fix can trigger no write", () => {
     expect(mapUi).not.toMatch(/\bfetch\s*\(/);
     expect(mapUi).not.toMatch(/method:\s*["'](POST|PUT|PATCH|DELETE)/i);
-    expect(mapUi).not.toMatch(/\.(insert|update|upsert|delete)\s*\(/);
+    // `delete` is excluded deliberately: see the note above — `reg.delete(id)` is
+    // marker-registry cleanup, and no table is reachable from this module at all.
+    expect(mapUi).not.toMatch(/\.(insert|update|upsert)\s*\(/);
+    expect(mapUi).not.toMatch(/from\s*\(\s*["'][a-z_]+["']\s*\)/);
     expect(mapUi).not.toMatch(/submitStep|startMission|completeMission|advanceStep|markDelivered/);
     expect(mapUi).not.toMatch(/from\s+["']@\/(lib|app)\/actions/);
     expect(mapUi).not.toMatch(/["']use server["']/);

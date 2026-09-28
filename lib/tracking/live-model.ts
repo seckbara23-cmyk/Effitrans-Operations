@@ -185,8 +185,10 @@ export function canDrawRoute(route: readonly LiveMissionPoint[]): boolean {
 
 /** Legend entries — text and shape, never colour alone (TMS-2D §7). */
 export const MAP_LEGEND_FR: readonly { key: string; labelFr: string; shape: string }[] = [
-  { key: "OUTBOUND", labelFr: "En livraison", shape: "cercle plein" },
-  { key: "RETURN", labelFr: "En retour", shape: "carré sombre" },
+  // TRACKING-06B — the live mission is drawn as a vehicle, so the legend says
+  // so. The RETURN leg stays distinguishable by SHAPE as well as colour.
+  { key: "OUTBOUND", labelFr: "En livraison", shape: "véhicule, halo vert" },
+  { key: "RETURN", labelFr: "En retour", shape: "véhicule, carré sombre" },
   { key: "stale", labelFr: "Signal ancien", shape: "anneau orange" },
   { key: "offline", labelFr: "Signal perdu", shape: "anneau rouge" },
   { key: "returnPoint", labelFr: "Point de retour", shape: "carré" },
