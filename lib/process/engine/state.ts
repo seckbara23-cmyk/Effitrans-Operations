@@ -273,6 +273,25 @@ export function preparerStepFor(validatorStepKey: string): string | null {
   return PAIR_BY_VALIDATOR.get(validatorStepKey)?.preparerStep ?? null;
 }
 
+/**
+ * The validation step that reviews this preparer step, if any — the inverse of
+ * `preparerStepFor` (STEP18-COMPLETENESS-02).
+ *
+ * WHY IT IS NEEDED. Every surface holds the SUBMITTED row, and a SUBMITTED row
+ * is always the PREPARER: `submitStep` moves the preparer to SUBMITTED and
+ * leaves its validator PENDING until `approveStep` completes both. But
+ * `approveStep` and `rejectStep` are addressed by the VALIDATOR key. So a queue
+ * that offered review on the row it holds passed `coordinator_completeness`
+ * where `am_completeness` was required, and the engine answered `unknown_step`.
+ *
+ * Reading it from `MAKER_CHECKER_PAIRS` rather than mapping the one pair by
+ * hand is the point: the same seam stays correct for `customs_validation` and
+ * `invoice_validation`, and for any pair the registry gains later.
+ */
+export function validatorStepFor(preparerStepKey: string): string | null {
+  return PAIR_BY_PREPARER.get(preparerStepKey)?.validatorStep ?? null;
+}
+
 /** Where a rejection at this validation step sends the work back to. */
 export function correctionStepFor(validatorStepKey: string): string | null {
   return PAIR_BY_VALIDATOR.get(validatorStepKey)?.correctionStep ?? null;

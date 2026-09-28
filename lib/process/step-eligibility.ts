@@ -52,7 +52,7 @@
  * become no more permissive than the engine, and where it is stricter (see CLAIM
  * below) that strictness must be a deliberate, recorded product decision.
  */
-import { stepPermission } from "./engine/state";
+import { stepPermission, validatorStepFor } from "./engine/state";
 // The PURE check module, not the server-side permissions facade: this file
 // is read by client components and must not drag a React cache() into them.
 import { hasPermission } from "@/lib/rbac/check";
@@ -88,6 +88,18 @@ export type StepActionFacts = {
   state: string;
   /** process_step_execution.assigned_user_id */
   assignedUserId: string | null;
+  /**
+   * process_step_execution.submitted_by — WHO submitted this step for review.
+   *
+   * STEP18-COMPLETENESS-02. The maker of a maker/checker pair. It is the one
+   * fact that decides whether a surface may offer the REVIEW, and it is never
+   * inferred: a caller that does not supply it gets no review button, because
+   * independence that cannot be demonstrated must not be claimed. The engine
+   * re-checks it regardless — `evaluateMakerChecker` compares identities on
+   * every `approveStep`, so a missing fact here costs a button, never a
+   * control.
+   */
+  submittedBy?: string | null;
   /**
    * Where the step stands in its custody transfer — the FULL state, not a
    * boolean. `awaiting_reception` and `awaiting_transmission` are different
@@ -168,6 +180,28 @@ export type StepEligibility = {
   canStart: boolean;
   /** ACTIVE → SUBMITTED/COMPLETED. */
   canSubmit: boolean;
+  /**
+   * The VALIDATION step that reviews this one, when this step is half of a
+   * ratified maker/checker pair. Null for ordinary steps.
+   *
+   * Surfaces address `approveStep`/`rejectStep` by this key, never by the row's
+   * own — see `validatorStepFor`.
+   */
+  reviewStepKey: string | null;
+  /** The permission the VALIDATOR step requires, exactly as `approveStep` resolves it. */
+  reviewPermission: string | null;
+  /** True when the viewer submitted this step — the maker may never review it. */
+  isSubmitter: boolean;
+  /**
+   * SUBMITTED → COMPLETED, by an INDEPENDENT checker (STEP18-COMPLETENESS-02).
+   *
+   * Exposure only. The engine still enforces the permission, the SUBMITTED
+   * state and — on identity — maker ≠ checker, so this can hide a button the
+   * server would have accepted but can never reveal one it would refuse.
+   */
+  canApprove: boolean;
+  /** SUBMITTED → REJECTED, same authority as the approval. A reason is mandatory. */
+  canReject: boolean;
   /**
    * Why nothing is offered, in the operator's language. Never null when both
    * actions are unavailable and the step is otherwise open — an empty row that
@@ -268,6 +302,57 @@ export function evaluateStepAction(
     mayAct && facts.state === "ACTIVE" && !claimedByAnother
     && !custodyBlocked && !blockedForSubmit;
 
+  // ---------------------------------------------------------------- REVIEW --
+  //
+  // STEP18-COMPLETENESS-02. The checker's half of a ratified maker/checker
+  // pair, which no surface could reach: `StepActions` offered only Démarrer and
+  // Terminer, and neither the coordination nor the account-management queue
+  // declared an `approve` action. A SUBMITTED `coordinator_completeness` was
+  // therefore terminal in the UI — steps 18, 19 and 20 unreachable on every
+  // dossier, with the engine perfectly willing the whole time.
+  //
+  // FOUR CONDITIONS, and each is the engine's own:
+  //
+  //   1. A RATIFIED PAIR. `validatorStepFor` reads MAKER_CHECKER_PAIRS, so a
+  //      step nobody declared reviewable offers nothing. No step key appears
+  //      here; the registry decides.
+  //   2. SUBMITTED. `approveStep` refuses any other state (`invalid_state`),
+  //      and only `submitStep` produces it.
+  //   3. THE VALIDATOR'S PERMISSION — not this row's. `approveStep` guards on
+  //      `getNode(validatorStepKey).permissions[0]`, and for two of the three
+  //      pairs that differs from the preparer's. Asking the preparer's
+  //      permission would have offered the Déclarant the Chef's validation.
+  //   4. MAKER ≠ CHECKER, on IDENTITY. Unknown maker ⇒ no offer: see
+  //      `submittedBy`. This is a courtesy that mirrors the control; the
+  //      control itself is `evaluateMakerChecker`, which refuses regardless
+  //      and cannot be reached around.
+  //
+  // Deliberately NOT conditioned on `isOwner` or `claimedByAnother`. Reviewing
+  // is by definition somebody else's work: the reviewer is not the assignee,
+  // and the row is claimed by the maker precisely because they submitted it.
+  // Ownership here is expressed by holding the VALIDATOR's permission.
+  const reviewStepKey = validatorStepFor(facts.stepKey);
+  const reviewPermission = reviewStepKey === null ? null : stepPermission(reviewStepKey);
+  const isSubmitter =
+    typeof facts.submittedBy === "string"
+    && facts.submittedBy.length > 0
+    && facts.submittedBy === viewer.userId;
+  const mayReview =
+    reviewPermission !== null && hasPermission([...viewer.permissions], reviewPermission);
+  const canApprove =
+    reviewStepKey !== null
+    && facts.state === "SUBMITTED"
+    && mayReview
+    && !isSubmitter
+    // An unknown maker cannot be shown to differ from the viewer.
+    && typeof facts.submittedBy === "string"
+    && facts.submittedBy.length > 0
+    && !custodyBlocked
+    && !notApplicable;
+  // The same authority decides both verdicts — `rejectStep` guards identically
+  // and additionally demands a reason, which the surface collects.
+  const canReject = canApprove;
+
   return {
     permission,
     mayAct,
@@ -281,6 +366,11 @@ export function evaluateStepAction(
     requirements,
     canStart,
     canSubmit,
+    reviewStepKey,
+    reviewPermission,
+    isSubmitter,
+    canApprove,
+    canReject,
     reasonFr: reasonFor({
       facts,
       notApplicable,
@@ -293,6 +383,9 @@ export function evaluateStepAction(
       prerequisitesUnmet,
       canStart,
       canSubmit,
+      reviewStepKey,
+      isSubmitter,
+      mayReview,
     }),
   };
 }
@@ -309,15 +402,31 @@ function reasonFor(input: {
   prerequisitesUnmet: boolean;
   canStart: boolean;
   canSubmit: boolean;
+  reviewStepKey: string | null;
+  isSubmitter: boolean;
+  mayReview: boolean;
 }): string | null {
   const {
     facts, notApplicable, mayAct, isOwner, claimedByAnother, custodyRefusalCode, unauthorized,
-    requirements, prerequisitesUnmet, canStart, canSubmit,
+    requirements, prerequisitesUnmet, canStart, canSubmit, reviewStepKey, isSubmitter, mayReview,
   } = input;
   if (canStart || canSubmit) return null;
   // Out of scope outranks every other explanation: telling somebody which
   // document is missing from work Effitrans is not doing would be noise.
   if (notApplicable) return notApplicable.reasonFr;
+
+  // A step awaiting its independent checker. Previously this returned null —
+  // SUBMITTED is not OFFERABLE — so the maker saw a row with no button and no
+  // sentence and could not tell « done » from « broken ». Three audiences,
+  // three different facts, none of which invites an act the engine refuses.
+  if (facts.state === "SUBMITTED" && reviewStepKey !== null) {
+    if (isSubmitter) {
+      return "Étape soumise. La validation revient à une autre personne habilitée — vous ne pouvez pas valider votre propre contrôle.";
+    }
+    if (!mayReview) return "En attente de validation indépendante.";
+    return null; // the checker: the buttons speak for themselves
+  }
+
   if (!OFFERABLE.has(facts.state)) return null; // nothing to explain yet
   // Order is what an operator can act on first. Both sentences are spoken from
   // the REFUSAL, never from the raw state: an `awaiting_transmission` that does
