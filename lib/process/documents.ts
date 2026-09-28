@@ -216,6 +216,41 @@ export function mapDocument(key: string): DocumentMapping {
   return d;
 }
 
+/**
+ * The OFFICIAL PROCESS name for a document_type CODE, or null when the process
+ * names no artefact of that type (POD-UPLOAD-01).
+ *
+ * The reverse of the mapping above, and the reason it exists: the catalogue and
+ * the official process are two vocabularies over one set of codes, and where
+ * they disagree the process is the one an operator is instructed in. The 5.0D
+ * split renamed the artefact in the REGISTRY — `SIGNED_DELIVERY_NOTE` became
+ * « Bordereau de Livraison signé (POD) » — and deliberately left the catalogue
+ * row alone ("no data migration, no alias, no rewrite"). The catalogue therefore
+ * still answers « Bon de livraison / POD » for the same code, so a surface that
+ * tells an operator to deposit "le bordereau signé" and a dropdown listing the
+ * type they must choose were using different words for one document.
+ *
+ * MANY-TO-ONE, RESOLVED THE SAME WAY `labels.ts` RESOLVES IT. `PAYMENT_RECEIPT`
+ * is claimed by two registry keys (« Reçu » and « Preuve de paiement »), so the
+ * FIRST entry that claims a code wins — deterministic, and stable under
+ * reordering only insofar as the registry is. Last-write-wins would make the
+ * answer depend on declaration order.
+ *
+ * NULL, never a fabricated label: a code the process does not name (a photo
+ * kind, « Autre document ») gets the catalogue's own wording from the caller,
+ * which is the only name it has.
+ */
+const LABEL_BY_TYPE_CODE = new Map<string, string>();
+for (const d of DOCUMENT_MAPPINGS) {
+  if (d.typeCode && !LABEL_BY_TYPE_CODE.has(d.typeCode)) {
+    LABEL_BY_TYPE_CODE.set(d.typeCode, d.labelFr);
+  }
+}
+
+export function documentLabelForTypeCode(typeCode: string): string | null {
+  return LABEL_BY_TYPE_CODE.get(typeCode) ?? null;
+}
+
 /** True when the artefact can actually be captured today (upload or record). */
 export function documentIsCapturable(key: string): boolean {
   const s = mapDocument(key).status;

@@ -16,6 +16,24 @@
  */
 import Link from "next/link";
 import { isVerified, canonicalStatus } from "@/lib/documents/doctrine";
+import { mapDocument } from "@/lib/process/documents";
+
+/**
+ * POD-UPLOAD-01 — the button arrives WITH the type it is asking for.
+ *
+ * « Déposer le bordereau signé » landed on the documents panel and stopped
+ * there, leaving the operator to pick the right entry out of 32 catalogue rows.
+ * The only one whose label contains the words they had just read —
+ * « Bordereau de Livraison » — is the UNSIGNED slip, a different artefact with
+ * a different authority; the signed POD sits three rows down still carrying its
+ * pre-split catalogue name. On EFT-IMP-2026-00013 the signed bordereau was
+ * filed as « Signature de livraison » and nothing advanced: not the transport
+ * receipt, not step 17, not the billing gate.
+ *
+ * The code comes from the registry mapping, never spelled out here: the process
+ * decides which artefact step 17 means, and this panel only carries its answer.
+ */
+const POD = mapDocument("SIGNED_DELIVERY_NOTE");
 
 export type DeliveryProofState = {
   /** Transport status; the panel is hidden entirely before DELIVERED. */
@@ -83,7 +101,7 @@ export function DeliveryProofPanel({ fileId, state }: { fileId: string; state: D
           </p>
           {state.canUpload && (
             <Link
-              href={`/files/${fileId}#documents`}
+              href={`/files/${fileId}?docType=${POD.typeCode}#documents`}
               className="inline-block rounded-lg bg-teal-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-teal-800"
             >
               Déposer le bordereau signé

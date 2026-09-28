@@ -61,7 +61,13 @@ export const DOCUMENT_DOCTRINE: readonly DocumentTypeDoctrine[] = [
   // The official Customs authorization. Effitrans RECEIVES it; it does not
   // issue it and does not approve it.
   { code: "BAE",                   category: "EXTERNAL_EVIDENCE", labelFr: "Bon À Enlever (BAE)",        clientSafe: false, earliestStage: "customs" },
-  { code: "DELIVERY_NOTE",         category: "EXTERNAL_EVIDENCE", labelFr: "Bon de livraison / POD",     clientSafe: true,  earliestStage: "transport" },
+  // POD-UPLOAD-01 — named as the official process names it. The 5.0D split gave
+  // the UNSIGNED slip its own type (`BORDEREAU_LIVRAISON`) and left this row's
+  // June-2026 label untouched, so one code answered to « Bon de livraison / POD »
+  // in the catalogue and « Bordereau de Livraison signé (POD) » in the registry,
+  // on the dossier card and on step 17. The artefact is unchanged; only its name
+  // here catches up. The unsigned twin keeps its own label and its own authority.
+  { code: "DELIVERY_NOTE",         category: "EXTERNAL_EVIDENCE", labelFr: "Bordereau de Livraison signé (POD)", clientSafe: true,  earliestStage: "transport" },
   { code: "PAYMENT_RECEIPT",       category: "EXTERNAL_EVIDENCE", labelFr: "Reçu de paiement",           clientSafe: true,  earliestStage: "finance" },
   { code: "OTHER",                 category: "EXTERNAL_EVIDENCE", labelFr: "Autre document",             clientSafe: false, earliestStage: "documentation" },
 
