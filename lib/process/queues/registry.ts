@@ -79,7 +79,19 @@ export const QUEUES: QueueDef[] = [
     officialRole: "ACCOUNT_MANAGER",
     permission: "process:read",
     requiresReception: true,
-    actions: RECEIVING,
+    // STEP18-COMPLETENESS-02 — this queue owns `am_completeness`, the VALIDATOR
+    // of the ratified `completeness_review` pair, so it may offer the review.
+    // The transit queue already carries the same pair of actions for
+    // `transit_validation`; this is the second of the three, declared for the
+    // same reason and no other.
+    //
+    // A CAPABILITY, NOT AN EXPOSURE. `queue-row-actions` needs BOTH this and
+    // `item.eligibility.canApprove`, which requires a SUBMITTED row, the
+    // validator's permission and a viewer who is not the maker. Adding it to
+    // `coordination` would have been the wrong half of the pair — that queue
+    // holds the PREPARER, and its owner is exactly the person who must not
+    // review it.
+    actions: [...RECEIVING, "approve", "reject"],
   },
   {
     key: "coordination",

@@ -137,6 +137,9 @@ export async function loadContextualStepFacts(
         stepKey: e.stepKey,
         state: e.state,
         assignedUserId: e.assignedUserId ?? null,
+        // STEP18-COMPLETENESS-02 — the maker, so the dossier page can offer the
+        // independent review to everyone EXCEPT them.
+        submittedBy: e.submittedBy ?? null,
         handoffs: snap.handoffs,
         views,
         evidence: evaluateStepEvidence(e.stepKey, snap.evidence),

@@ -57,6 +57,13 @@ const verdict = (over: Partial<StepEligibility> = {}): StepEligibility => ({
   requirements: [],
   canStart: false,
   canSubmit: false,
+  // STEP18-COMPLETENESS-02 — the checker's half. An ordinary step is not part
+  // of a maker/checker pair, so the defaults say so.
+  reviewStepKey: null,
+  reviewPermission: null,
+  isSubmitter: false,
+  canApprove: false,
+  canReject: false,
   reasonFr: null,
   ...over,
 });

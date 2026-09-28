@@ -37,6 +37,16 @@ export function buildStepFacts(input: {
   stepKey: string;
   state: string;
   assignedUserId: string | null;
+  /**
+   * `process_step_execution.submitted_by` — the MAKER, when the step has been
+   * submitted for review (STEP18-COMPLETENESS-02).
+   *
+   * Supplied here rather than at each surface for the reason this whole module
+   * exists: a fact the evaluator needs has exactly one place to come from. Omit
+   * it and the review buttons simply do not appear — a surface can lose a
+   * courtesy by omission, never a control.
+   */
+  submittedBy?: string | null;
   /** Every handoff of the instance — custody is derived here, never guessed. */
   handoffs: readonly RouteHandoffView[];
   /** Every execution of the instance, for the prerequisite test. */
@@ -70,6 +80,7 @@ export function buildStepFacts(input: {
     stepKey: input.stepKey,
     state: input.state,
     assignedUserId: input.assignedUserId,
+    submittedBy: input.submittedBy ?? null,
     // The FULL custody state. A SENT-only boolean was the second divergence:
     // it could not tell « not transmitted yet » from « transmitted, not yet
     // accepted », which are different refusals needing different acts.

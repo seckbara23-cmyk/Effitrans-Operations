@@ -514,6 +514,10 @@ export async function getDepartmentQueue(req: QueueRequest): Promise<QueueResult
         stepKey,
         state,
         assignedUserId: str(e.assigned_user_id),
+        // STEP18-COMPLETENESS-02 — the maker. Already read on this row for the
+        // item's own `submittedBy`; the evaluator needs it to keep the review
+        // away from the person who submitted it.
+        submittedBy: str(e.submitted_by),
         handoffs: instanceHandoffViews,
         views,
         evidence,

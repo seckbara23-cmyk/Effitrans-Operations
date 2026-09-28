@@ -28,6 +28,7 @@ import {
   rejectInvoice,
   submitInvoiceToFinance,
 } from "../billing/actions";
+import { isValidationStep, validatorStepFor } from "../engine/state";
 import { isQueueKey } from "./registry";
 import { withPerfTrace } from "@/lib/perf/trace";
 import type { BillingResult } from "../billing/actions";
@@ -83,24 +84,61 @@ export async function queueSubmitStep(
   return r;
 }
 
-/** The CHECKER approves. The engine refuses if the checker IS the maker. */
+/**
+ * Resolve whichever half of a maker/checker pair a surface is holding to the
+ * VALIDATOR key the engine is addressed by (STEP18-COMPLETENESS-02).
+ *
+ * THE DEFECT THIS CLOSES. Every surface holds the SUBMITTED row, and a SUBMITTED
+ * row is always the PREPARER — `submitStep` moves the preparer to SUBMITTED and
+ * leaves the validator PENDING until `approveStep` completes both. But
+ * `approveStep`/`rejectStep` take the VALIDATOR key and reject anything else
+ * with `unknown_step`. So a queue row offering review passed
+ * `coordinator_completeness` where `am_completeness` was required, and the act
+ * could not have succeeded even once the button existed.
+ *
+ * Resolved from MAKER_CHECKER_PAIRS, never mapped by hand: the same seam stays
+ * correct for `customs_validation`, `invoice_validation` and any pair the
+ * registry gains later. A validator key passed straight through is returned
+ * unchanged, so existing callers that already address the engine correctly —
+ * `approveInvoice`, `finalizeTransitRelease` — are untouched.
+ *
+ * Null when the key is neither half of a pair: the caller then refuses rather
+ * than asking the engine to review something nobody declared reviewable.
+ */
+function resolveValidatorStep(stepKey: string): string | null {
+  if (isValidationStep(stepKey)) return stepKey;
+  return validatorStepFor(stepKey);
+}
+
+/**
+ * The CHECKER approves. The engine refuses if the checker IS the maker.
+ *
+ * `stepKey` may be either half of the pair — see `resolveValidatorStep`.
+ */
 export async function queueApproveStep(
   queueKey: string,
   fileId: string,
-  validatorStepKey: string,
+  stepKey: string,
 ): Promise<EngineResult> {
+  const validatorStepKey = resolveValidatorStep(stepKey);
+  if (!validatorStepKey) return { ok: false, error: "unknown_step" };
   const r = await approveStep(fileId, validatorStepKey);
   if (r.ok) refresh(queueKey, fileId);
   return r;
 }
 
-/** The CHECKER rejects. A reason is mandatory — the engine enforces it. */
+/**
+ * The CHECKER rejects. A reason is mandatory — the engine enforces it, and the
+ * rejection follows the pair's own `rejectsTo`/`correctionStep` contract.
+ */
 export async function queueRejectStep(
   queueKey: string,
   fileId: string,
-  validatorStepKey: string,
+  stepKey: string,
   reason: string,
 ): Promise<EngineResult> {
+  const validatorStepKey = resolveValidatorStep(stepKey);
+  if (!validatorStepKey) return { ok: false, error: "unknown_step" };
   const r = await rejectStep(fileId, validatorStepKey, reason);
   if (r.ok) refresh(queueKey, fileId);
   return r;

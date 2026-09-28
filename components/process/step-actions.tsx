@@ -18,9 +18,29 @@
  * The queue remains a valid work-management surface. What changed is that the
  * dossier page is now an execution surface for the same workflow, on the same
  * rules, with the same server refusing the same things.
+ *
+ * ── AND THE CHECKER'S HALF (STEP18-COMPLETENESS-02) ─────────────────────────
+ * The same defect, one governance layer up. `completeness_review` is one of the
+ * three ratified maker/checker pairs, and it was the only one with no surface
+ * for its APPROVAL: the other two are reached through dedicated domain actions
+ * (the Chef's transit panel, Finance's invoice validation). So a submitted
+ * « Contrôle de complétude du Coordinateur » was terminal in the product —
+ * steps 18, 19 and 20 unreachable on every dossier, while the engine stood
+ * ready the whole time.
+ *
+ * « Valider » and « Rejeter » are the SAME two engine actions the transit and
+ * finance queues already call, addressed through the same queue proxies. This
+ * component still decides nothing: `canApprove` is computed server-side by
+ * `evaluateStepAction`, and `approveStep` re-checks the permission, the state
+ * and maker ≠ checker on identity before it writes anything.
  */
 import { useState, useTransition } from "react";
-import { queueStartStep, queueSubmitStep } from "@/lib/process/queues/actions";
+import {
+  queueApproveStep,
+  queueRejectStep,
+  queueStartStep,
+  queueSubmitStep,
+} from "@/lib/process/queues/actions";
 import type { StepEligibility } from "@/lib/process/step-eligibility";
 import { EVIDENCE_STATUS_FR, processErrorFr } from "@/lib/process/error-fr";
 
@@ -63,6 +83,18 @@ export function StepActions({
     });
   };
 
+  // A rejection sends the work back through the pair's own `rejectsTo`
+  // contract, and the engine refuses an empty motif — so it is collected here
+  // rather than sent blank and bounced. Same prompt the queue already uses.
+  const rejectWithReason = (fn: (reason: string) => Promise<{ ok: boolean; error?: string }>) => {
+    const reason = window.prompt("Motif du rejet (obligatoire) :")?.trim();
+    if (!reason) {
+      setError("Un motif est obligatoire.");
+      return;
+    }
+    run(() => fn(reason));
+  };
+
   const btn = "rounded border px-2.5 py-1 text-xs font-medium transition disabled:opacity-50";
 
   return (
@@ -89,13 +121,43 @@ export function StepActions({
             Terminer
           </button>
         )}
+
+        {/* The CHECKER's half. Never offered to the maker — `canApprove`
+            requires a known submitter who is not this viewer — and the engine
+            refuses on identity regardless. The two actions are addressed by the
+            row's own step key; the queue proxy resolves it to the pair's
+            VALIDATOR before reaching the engine. */}
+        {eligibility.canApprove && (
+          <button
+            type="button"
+            className={`${btn} border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100`}
+            disabled={pending}
+            onClick={() => run(() => queueApproveStep(queueKey, fileId, stepKey))}
+          >
+            Valider
+          </button>
+        )}
+
+        {eligibility.canReject && (
+          <button
+            type="button"
+            className={`${btn} border-red-300 bg-red-50 text-red-800 hover:bg-red-100`}
+            disabled={pending}
+            onClick={() =>
+              rejectWithReason((reason) => queueRejectStep(queueKey, fileId, stepKey, reason))
+            }
+          >
+            Rejeter
+          </button>
+        )}
       </div>
 
       {/* Claim state, so « no button » is never mistaken for « broken ». */}
       {assigneeLabel && (
         <p className="text-[11px] text-slate-500">En cours : {assigneeLabel}</p>
       )}
-      {!eligibility.canStart && !eligibility.canSubmit && eligibility.reasonFr && (
+      {!eligibility.canStart && !eligibility.canSubmit && !eligibility.canApprove
+        && eligibility.reasonFr && (
         <p className="max-w-[18rem] text-right text-[11px] text-slate-500">{eligibility.reasonFr}</p>
       )}
 
