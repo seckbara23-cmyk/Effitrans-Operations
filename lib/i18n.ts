@@ -690,6 +690,19 @@ export const t = {
     save: "Enregistrer",
     saving: "Enregistrement…",
     assign: "Affecter chauffeur / véhicule",
+    // FIN-TRN-DOC-01 — the seam between this panel and « Documents générés ».
+    // The generator refuses a Demande or un Ordre whose mandatory source fields
+    // are absent and names them; until now nothing said they are typed HERE.
+    // Every word below describes a requirement the source contract already
+    // states — no date is proposed, defaulted or derived (DEC-FIN-TRN-03).
+    artifacts: {
+      requiredFor: "Requis pour",
+      blockedTitle: "Documents de transport non générables",
+      blockedIntro: "Ces données manquent sur la mission :",
+      blockedHint:
+        "Renseignez-les ci-dessous, puis générez le document dans « Documents générés ». " +
+        "Aucune date n'est pré-remplie : une date prévue est un engagement, pas une déduction.",
+    },
     podMissing: "POD requis : un bon de livraison approuvé est nécessaire.",
     customsBlocked: "Enlèvement bloqué : dédouanement non libéré (BAE).",
     overrideOn: "Dérogation douane active",

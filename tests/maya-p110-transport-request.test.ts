@@ -112,13 +112,25 @@ describe("request and order are distinct artifacts, one authority", () => {
     expect(mandOrder.slice(0, 260)).toContain('"driverName"');
   });
 
-  it("both are produced under transport:manage — the ASSIGNERS' authority", () => {
-    // The recorded consequence: the AM holds `transport:request` and cannot
-    // produce a Demande de transport. Whether that is wrong is §6's question,
-    // so this pins the CURRENT state rather than asserting a fix.
-    expect(code("lib/documents/artifacts/actions.ts")).toContain('assertPermission("transport:manage")');
-    expect(holders("transport:manage")).not.toContain("ACCOUNT_MANAGER");
+  it("§6 ANSWERED — each artifact is produced under its own authority", () => {
+    // This test used to pin the OPEN state: both artifacts under
+    // `transport:manage`, with the recorded consequence that the AM held a
+    // permission literally named « Raise a transport request » and could
+    // produce no Demande. §6 put the question to Effitrans; it was ratified on
+    // 2026-09-28 as DEC-FIN-TRN-01/02, and the audit's own §6 « real act »
+    // branch is what shipped — per-artifact authority in generateArtifact, no
+    // migration, no new object, no new permission.
+    const map = code("lib/documents/artifacts/authority.ts");
+    expect(map).toContain('DEMANDE_TRANSPORT: "transport:request"');
+    expect(map).toContain('TRANSPORT_ORDER: "transport:manage"');
+    expect(code("lib/documents/artifacts/actions.ts"))
+      .toContain("artifactGenerationPermission(input.artifactCode)");
+
+    // The grants are unchanged — which is the point. The request the AM was
+    // already entitled to raise is now the one they can produce…
     expect(holders("transport:request")).toContain("ACCOUNT_MANAGER");
+    // …and the ORDER stays out of their reach, because they assign nothing.
+    expect(holders("transport:manage")).not.toContain("ACCOUNT_MANAGER");
   });
 
   it("nothing was built: no migration, no new object, no new permission", () => {

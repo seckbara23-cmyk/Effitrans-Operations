@@ -10,6 +10,11 @@ import { t } from "@/lib/i18n";
 import { nextStatuses } from "@/lib/transport/status";
 import { resolveVehicleIdentity } from "@/lib/transport/vehicle-identity";
 import {
+  artifactLabelsRequiringField,
+  transportArtifactGaps,
+  type TransportSourceFields,
+} from "@/lib/documents/artifacts/transport-requirements";
+import {
   assignTransport,
   changeTransportStatus,
   createTransport,
@@ -234,6 +239,36 @@ export function TransportPanel({
 
   const completeTargets = new Set(["DELIVERED", "POD_RECEIVED"]);
 
+  /**
+   * FIN-TRN-DOC-01 — what the transport documents are still waiting on HERE.
+   *
+   * Read through the artifact source contract, never restated: which fields are
+   * mandatory (and for which execution branch) is `mandatoryFieldsFor`'s answer,
+   * so this panel and the refusal an operator meets on Générer cannot disagree.
+   * `vehiclePlate` is resolved exactly as the artifact reader resolves it — a
+   * fleet-bound mission carries its registration, not a plate.
+   */
+  const artifactSource: TransportSourceFields = {
+    pickupLocation: record.pickupLocation,
+    deliveryLocation: record.deliveryLocation,
+    pickupPlanned: record.pickupPlanned,
+    deliveryPlanned: record.deliveryPlanned,
+    driverName: record.driverName,
+    vehiclePlate: resolveVehicleIdentity({
+      registration: record.vehicleRegistration,
+      plate: record.vehiclePlate,
+    }),
+    transportCompany: record.transportCompany,
+    trailerOrContainer: record.trailerOrContainer,
+    providerId: record.providerId ?? null,
+  };
+  const artifactGaps = transportArtifactGaps(artifactSource);
+  /** « Requis pour : … » beside an input. A statement about the contract, not about today's data. */
+  const requiredFor = (field: keyof TransportSourceFields): string | undefined => {
+    const labels = artifactLabelsRequiringField(field, artifactSource);
+    return labels.length > 0 ? `${tr.artifacts.requiredFor} : ${labels.join(" · ")}` : undefined;
+  };
+
   return (
     <section className="space-y-3">
       {header}
@@ -269,6 +304,27 @@ export function TransportPanel({
             </span>
           )}
         </div>
+
+        {/* FIN-TRN-DOC-01 — the transport documents this mission is holding up.
+            Shown to any transport reader, not only to whoever may edit: knowing
+            the Demande is blocked is useful even to someone who has to ask a
+            colleague to unblock it. States only what THIS panel owns — the
+            dossier number and the client are corrected elsewhere, and
+            « Documents générés » stays the authority on overall completeness. */}
+        {artifactGaps.length > 0 && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-2.5">
+            <p className="text-xs font-medium text-amber-900">{tr.artifacts.blockedTitle}</p>
+            <ul className="mt-1 space-y-0.5">
+              {artifactGaps.map((g) => (
+                <li key={g.artifactCode} className="text-[11px] text-amber-800">
+                  {g.labelFr} — {tr.artifacts.blockedIntro}{" "}
+                  <span className="font-medium">{g.missing.map((m) => m.labelFr).join(", ")}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-1 text-[11px] text-amber-700">{tr.artifacts.blockedHint}</p>
+          </div>
+        )}
 
         {/* UAT-1 — Transport's responsibility ENDS at delivery. The signed BL is
             obtained and verified by Operations, and the platform records the
@@ -319,7 +375,7 @@ export function TransportPanel({
         {/* Driver / vehicle assignment */}
         {canAssign && (
           <form onSubmit={onAssign} className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <Field label={tr.fields.driverName} name="driverName" defaultValue={record.driverName} />
+            <Field label={tr.fields.driverName} name="driverName" defaultValue={record.driverName} hint={requiredFor("driverName")} />
             <Field label={tr.fields.driverPhone} name="driverPhone" defaultValue={record.driverPhone} />
             {/* TMS-5 — the INTERNAL fleet vehicle. Only available vehicles are
                 offered; the database refuses an immobilized one independently.
@@ -366,7 +422,7 @@ export function TransportPanel({
                 </span>
               </label>
             ) : (
-              <Field label={tr.fields.vehiclePlate} name="vehiclePlate" defaultValue={record.vehiclePlate} />
+              <Field label={tr.fields.vehiclePlate} name="vehiclePlate" defaultValue={record.vehiclePlate} hint={requiredFor("vehiclePlate")} />
             )}
             <Field label={tr.fields.trailer} name="trailerOrContainer" defaultValue={record.trailerOrContainer} />
             <div className="sm:col-span-2">
@@ -384,11 +440,14 @@ export function TransportPanel({
         {/* Manual metadata */}
         {canUpdate && (
           <form onSubmit={onMeta} className="grid grid-cols-1 gap-2 border-t border-slate-100 pt-3 sm:grid-cols-2">
-            <Field label={tr.fields.pickupLocation} name="pickupLocation" defaultValue={record.pickupLocation} />
-            <Field label={tr.fields.deliveryLocation} name="deliveryLocation" defaultValue={record.deliveryLocation} />
-            <Field label={tr.fields.pickupPlanned} name="pickupPlanned" type="datetime-local" defaultValue={toLocal(record.pickupPlanned)} />
-            <Field label={tr.fields.deliveryPlanned} name="deliveryPlanned" type="datetime-local" defaultValue={toLocal(record.deliveryPlanned)} />
-            <Field label={tr.fields.company} name="transportCompany" defaultValue={record.transportCompany} />
+            <Field label={tr.fields.pickupLocation} name="pickupLocation" defaultValue={record.pickupLocation} hint={requiredFor("pickupLocation")} />
+            <Field label={tr.fields.deliveryLocation} name="deliveryLocation" defaultValue={record.deliveryLocation} hint={requiredFor("deliveryLocation")} />
+            {/* « Enlèvement prévu » is mandatory for BOTH transport documents
+                and is the field EFT-IMP-2026-00013 sat blocked on. Empty stays
+                empty: `toLocal(null)` is "", nothing proposes a date. */}
+            <Field label={tr.fields.pickupPlanned} name="pickupPlanned" type="datetime-local" defaultValue={toLocal(record.pickupPlanned)} hint={requiredFor("pickupPlanned")} />
+            <Field label={tr.fields.deliveryPlanned} name="deliveryPlanned" type="datetime-local" defaultValue={toLocal(record.deliveryPlanned)} hint={requiredFor("deliveryPlanned")} />
+            <Field label={tr.fields.company} name="transportCompany" defaultValue={record.transportCompany} hint={requiredFor("transportCompany")} />
             <Field label={tr.fields.deliveryReference} name="deliveryReference" defaultValue={record.deliveryReference} />
             <label className="flex flex-col gap-1 text-xs text-slate-600 sm:col-span-2">
               {tr.fields.notes}
@@ -426,11 +485,18 @@ function Field({
   name,
   defaultValue,
   type = "text",
+  hint,
 }: {
   label: string;
   name: string;
   defaultValue: string | null;
   type?: string;
+  /**
+   * FIN-TRN-DOC-01 — which generated documents need this field. Derived from
+   * the artifact source contract by the caller; never a hard-coded sentence,
+   * and never a default value for the input.
+   */
+  hint?: string;
 }) {
   return (
     <label className="flex flex-col gap-1 text-xs text-slate-600">
@@ -441,6 +507,7 @@ function Field({
         defaultValue={defaultValue ?? ""}
         className="rounded-md border border-slate-200 px-2 py-1 text-sm"
       />
+      {hint && <span className="text-[11px] text-slate-400">{hint}</span>}
     </label>
   );
 }

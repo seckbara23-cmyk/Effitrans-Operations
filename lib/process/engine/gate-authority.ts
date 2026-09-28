@@ -44,8 +44,15 @@ import "server-only";
  * moved, because only a gate claims to state a fact about the dossier.
  */
 import { loadProcessSnapshot, toViews } from "./snapshot";
-import { evaluateBillingGate, evaluateClosureGate, evaluatePickupGate, type GateResult } from "./gates";
+import {
+  evaluateBillingGate,
+  evaluateClosureGate,
+  evaluatePickupGate,
+  type ClosureContext,
+  type GateResult,
+} from "./gates";
 import { loadProcessSnapshotForDisplay } from "./snapshot-cache";
+import { loadClosureInput } from "@/lib/collections/closure-input";
 
 /**
  * The read set a gate evaluates under. Every domain a gate can consult, so no
@@ -73,10 +80,23 @@ export type AuthoritativeGates = {
  *
  * Returns null when the dossier has no process instance — the caller then has
  * no gate to consult, which is different from a gate that is not satisfied.
+ *
+ * `withClosureContext` (FIN-TRN-DOC-01) adds the post-delivery facts the
+ * closure gate needs — invoice validated / emailed, deposit, corrections —
+ * WITHOUT which it reports that chain as unevaluated. It is opt-in because it
+ * costs a second bounded read that the two hot callers (the billing lane's
+ * readiness check and the pickup gate) have no use for. Display asks for it.
+ *
+ * THE FACTS COME FROM THE EXISTING CLOSURE LOADER, deliberately. `loadClosureInput`
+ * is what `evaluateClosureReadiness` and `closeDossier` already evaluate on, and
+ * it derives the balance from the same `lib/finance/calc` the invoice status is
+ * driven by. A second derivation here would be a second closure doctrine, and
+ * the two would eventually disagree about one dossier.
  */
 export async function authoritativeGates(
   tenantId: string,
   fileId: string,
+  opts: { withClosureContext?: boolean } = {},
 ): Promise<AuthoritativeGates | null> {
   // Same memo, DIFFERENT key: this snapshot is privileged, and the cache is
   // keyed on the permission set precisely so it can never be handed to a
@@ -84,10 +104,30 @@ export async function authoritativeGates(
   const snap = await loadProcessSnapshotForDisplay(tenantId, fileId, [...GATE_FULL_READ]);
   if (!snap?.instance) return null;
   const views = toViews(snap.executions);
+
+  // Loaded under GATE_FULL_READ for the same reason as the snapshot: a gate
+  // states a fact about the DOSSIER, and the caller's own permissions decided
+  // only whether they may act. Null (no instance) leaves the closure gate
+  // reporting its post-delivery chain as unevaluated rather than as failing.
+  let closureContext: ClosureContext | undefined;
+  if (opts.withClosureContext) {
+    const facts = await loadClosureInput(tenantId, fileId, [...GATE_FULL_READ]);
+    if (facts) {
+      closureContext = {
+        invoiceValidated: facts.invoiceValidated,
+        invoiceEmailed: facts.invoiceEmailed,
+        depositRequired: facts.depositRequired,
+        depositProofAccepted: facts.depositProofAccepted,
+        handedToCollections: facts.handedToCollections,
+        unresolvedCorrections: facts.unresolvedCorrections,
+      };
+    }
+  }
+
   return {
     pickup: evaluatePickupGate(snap.evidence, views),
     billing: evaluateBillingGate(views, snap.evidence),
-    closure: evaluateClosureGate(views, snap.evidence),
+    closure: evaluateClosureGate(views, snap.evidence, closureContext),
   };
 }
 

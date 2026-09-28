@@ -168,9 +168,12 @@ async function renderFileDetailPage(params: { id: string }) {
   // Communications (staff-role based) — timeline + manual email triggers.
   const canEmail = hasPermission(permissions, "communication:send");
   const canReadComms = hasPermission(permissions, "communication:read");
-  // WES-4H — Category-B artifacts. `transport:manage` mirrors the server's
-  // own gate in generateArtifact; the server re-checks it regardless.
-  const canGenerateArtifacts = hasPermission(permissions, "transport:manage");
+  // WES-4H — Category-B artifacts. FIN-TRN-DOC-01: the gate is PER ARTIFACT
+  // (DEC-FIN-TRN-01/02), so it is resolved per row against the permission the
+  // artifact itself declares rather than by one panel-wide flag. The server
+  // re-asserts the same permission in generateArtifact regardless.
+  const artifactAuthority = (item: { requiredPermission: string | null }) =>
+    item.requiredPermission !== null && hasPermission(permissions, item.requiredPermission);
   // Permission AND route entitlement. `process:handoff:send` is generic — the
   // Account Manager holds it for other reasons — but this custody transfer is
   // Operations' (UAT-WF-HANDOFF-01B), and `sendHandoff` refuses anyone else.
@@ -803,8 +806,7 @@ async function renderFileDetailPage(params: { id: string }) {
       {canReadDocs && artifactItems.length > 0 && (
         <ArtifactPanel
           fileId={file.id}
-          items={artifactItems}
-          canGenerate={canGenerateArtifacts}
+          items={artifactItems.map((a) => ({ ...a, canGenerate: artifactAuthority(a) }))}
         />
       )}
       {/* §17 — QUALITÉ. The four QC panels used to sit inline between the

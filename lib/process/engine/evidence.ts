@@ -383,6 +383,21 @@ export function fullyPaid(snap: EvidenceSnapshot): boolean {
   return issued.length > 0 && issued.every((i) => i.balance <= 0);
 }
 
+/**
+ * Derived: at least one invoice on this dossier has left DRAFT.
+ *
+ * FIN-TRN-DOC-01 — the second half of `fullyPaid`. That predicate is false for
+ * two completely different dossiers: one whose client owes money, and one that
+ * has never been invoiced at all. Both reported « solde restant dû », which on
+ * EFT-IMP-2026-00013 — at step 15, with no invoice, no charge and no payment —
+ * told the operator a balance was outstanding on an amount nobody had ever
+ * billed. The REQUIREMENT is unchanged and still unsatisfied; only the reason
+ * the operator is given distinguishes the two.
+ */
+export function hasIssuedInvoice(snap: EvidenceSnapshot): boolean {
+  return snap.invoices.some((i) => i.status !== "DRAFT" && i.status !== "VOID");
+}
+
 /** Derived: an APPROVED delivery note (POD) exists on the dossier. */
 export function podReceived(snap: EvidenceSnapshot): boolean {
   return approvedDoc(snap, mapDocument("SIGNED_DELIVERY_NOTE").typeCode!);

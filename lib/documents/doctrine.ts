@@ -70,6 +70,26 @@ export const DOCUMENT_DOCTRINE: readonly DocumentTypeDoctrine[] = [
   // correctly here; the upload path is retired only once generation exists.
   { code: "TRANSPORT_ORDER",       category: "INTERNAL_ARTIFACT", labelFr: "Ordre de transport",         clientSafe: false, earliestStage: "transport" },
 
+  // FIN-TRN-DOC-01 — the REQUEST, which had a generator (WES-4G) and a
+  // mandatory-field contract but no doctrine row at all, so every doctrine
+  // question about it answered null.
+  //
+  //   category    INTERNAL_ARTIFACT — the platform authors it from the dossier,
+  //               the client and the transport record. Corrected on the record
+  //               and regenerated; never uploaded, never edited as a PDF.
+  //   clientSafe  FALSE. It is Effitrans asking its own Transport function to
+  //               move the goods — an internal instruction, like the Ordre it
+  //               precedes. Nothing in it is addressed to the customer, and
+  //               `clientSafe` is what would expose a VERIFIED version through
+  //               the portal, so the conservative value is also the correct one.
+  //   stage       `open`. DEC-FIN-TRN-04: Transport prepares AHEAD of customs,
+  //               and the Account Manager raises this at dossier opening — the
+  //               registry's own step 3. Filing it under `transport` would make
+  //               the request due only once the transport phase had begun,
+  //               which is precisely the sequencing the decision rejects. No
+  //               BAE, no customs state, is involved at any point.
+  { code: "DEMANDE_TRANSPORT",     category: "INTERNAL_ARTIFACT", labelFr: "Demande de transport",       clientSafe: false, earliestStage: "open" },
+
   // UAT-2B — THE ACCOUNTING DOCUMENT. Effitrans' own service invoice, rendered
   // from the Finance invoice record and its persisted lines, carrying the
   // official EFT-INV number.

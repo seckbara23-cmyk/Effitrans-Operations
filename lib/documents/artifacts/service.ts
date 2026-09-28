@@ -13,7 +13,8 @@ import "server-only";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { resolveVehicleIdentity } from "@/lib/transport/vehicle-identity";
-import { generatableArtifacts } from "./feasibility";
+import { automaticTriggerLabelFr, generatableArtifacts, isOnDemandArtifact } from "./feasibility";
+import { artifactGenerationPermission } from "./authority";
 import { resolveArtifactSource, type ArtifactSourceInput } from "./source";
 
 export type ArtifactVersion = {
@@ -31,12 +32,36 @@ export type ArtifactVersion = {
 export type ArtifactPanelItem = {
   artifactCode: string;
   labelFr: string;
-  /** True when every mandatory source field is present. */
-  sourceComplete: boolean;
+  /**
+   * FIN-TRN-DOC-01 — may an operator ASK for this one? False for artifacts the
+   * platform produces as part of another act; those carry no Générer control
+   * and no completeness verdict.
+   */
+  onDemand: boolean;
+  /** For an automatic artifact: the French sentence naming the act. Else null. */
+  automaticTriggerFr: string | null;
+  /**
+   * True when every mandatory source field is present.
+   *
+   * NULL for an automatic artifact — not false. There is no on-demand source
+   * rule to evaluate, so "incomplete" would be a claim the platform cannot
+   * support; the act that produces the document decides its own readiness.
+   */
+  sourceComplete: boolean | null;
   missing: { field: string; labelFr: string }[];
+  /** The permission `generateArtifact` will assert. Null when nobody may ask. */
+  requiredPermission: string | null;
   current: ArtifactVersion | null;
   previous: ArtifactVersion[];
 };
+
+/**
+ * A panel item with this viewer's authority resolved against it.
+ *
+ * The page computes `canGenerate`; the server action re-asserts the SAME
+ * permission, so a forged prop still changes nothing.
+ */
+export type ArtifactPanelView = ArtifactPanelItem & { canGenerate: boolean };
 
 type Admin = ReturnType<typeof getAdminSupabaseClient>;
 
@@ -176,14 +201,25 @@ export async function getArtifactPanel(fileId: string): Promise<ArtifactPanelIte
     isCurrent: v.superseded_by_id === null,
   });
 
+  // EVERY artifact the platform authors is listed — including the ones nobody
+  // requests. Dropping the automatic ones would also drop the way an operator
+  // reaches the official invoice PDF this panel has always offered; what changes
+  // is that the panel now says how each one comes into being instead of asking
+  // all of them the same, wrong question.
   return generatableArtifacts().map((a) => {
     const mine = versions.filter((v) => v.artifact_code === a.code).map(toVersion);
-    const resolution = resolveArtifactSource(a.code, source);
+    const onDemand = isOnDemandArtifact(a.code);
+    // Source completeness is an ON-DEMAND question. Asked only where it means
+    // something — see the type's note on `sourceComplete: null`.
+    const resolution = onDemand ? resolveArtifactSource(a.code, source) : null;
     return {
       artifactCode: a.code,
       labelFr: a.labelFr,
-      sourceComplete: resolution.ok,
-      missing: resolution.ok ? [] : resolution.missing,
+      onDemand,
+      automaticTriggerFr: onDemand ? null : automaticTriggerLabelFr(a.code),
+      sourceComplete: resolution === null ? null : resolution.ok,
+      missing: resolution !== null && !resolution.ok ? resolution.missing : [],
+      requiredPermission: onDemand ? artifactGenerationPermission(a.code) : null,
       current: mine.find((v) => v.isCurrent) ?? null,
       previous: mine.filter((v) => !v.isCurrent),
     };

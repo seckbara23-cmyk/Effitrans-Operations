@@ -44,16 +44,30 @@ describe("WES-4H the panel reaches the generator, and nothing else", () => {
   });
 
   it("shows generation controls only to an authorized user", () => {
+    // SUPERSEDED BY FIN-TRN-DOC-01 (DEC-FIN-TRN-01/02, ratified 2026-09-28).
+    // WES-4H mirrored ONE panel-wide `transport:manage` gate because WES-4G.9
+    // asserted one permission for both artifacts. The Demande is now the
+    // Account Manager's act under `transport:request` and the Ordre stays the
+    // Transport function's under `transport:manage`, so the control is resolved
+    // per row. The RULE this test exists for is unchanged and still asserted:
+    // a generation control renders only where the viewer holds the authority.
     const src = code(PANEL);
-    expect(src).toMatch(/\{canGenerate && \(/);
-    expect(code(PAGE)).toContain('hasPermission(permissions, "transport:manage")');
+    expect(src).toMatch(/\{item\.onDemand && item\.canGenerate && \(/);
+    expect(code(PAGE)).toContain("hasPermission(permissions, item.requiredPermission)");
   });
 
   it("keeps the SERVER authoritative — the prop mirrors the gate, it is not the gate", () => {
     // The action asserts the permission itself, so a forged prop changes nothing.
+    // FIN-TRN-DOC-01: the permission is now the ARTIFACT's own, read from the
+    // ratified map rather than hard-coded — still asserted server-side, still
+    // before any read of the dossier.
     const action = code("lib/documents/artifacts/actions.ts");
-    expect(action).toContain('assertPermission("transport:manage")');
+    expect(action).toContain("artifactGenerationPermission(input.artifactCode)");
+    expect(action).toContain("await assertPermission(permission)");
     expect(action).toContain("isFileVisible");
+    const authority = code("lib/documents/artifacts/authority.ts");
+    expect(authority).toContain('DEMANDE_TRANSPORT: "transport:request"');
+    expect(authority).toContain('TRANSPORT_ORDER: "transport:manage"');
   });
 
   it("offers Générer, Régénérer, Télécharger and the version history", () => {

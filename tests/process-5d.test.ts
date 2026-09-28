@@ -324,7 +324,15 @@ describe("final closure gate (Deliverable 12)", () => {
     // No context => the billing/deposit/collections chain is UNPROVEN, not assumed.
     const g = evaluateClosureGate(allDone(), snap());
     expect(g.ready).toBe(false);
-    expect(g.missing).toContain("post_delivery_chain");
+    // FIN-TRN-DOC-01 — unproven is reported as UNEVALUATED, not as a blocker.
+    // The rule this test exists for is unchanged and still asserted above: an
+    // absent context never opens the gate. What changed is that the display no
+    // longer claims a defect it never established — on the inspector this row
+    // showed « ❌ Chaîne facturation / dépôt / recouvrement » on every dossier,
+    // including invoiced, sent and paid ones.
+    expect(g.missing).not.toContain("post_delivery_chain");
+    expect(g.unauthorized).toContain("post_delivery_chain");
+    expect(g.requirements.find((r) => r.key === "post_delivery_chain")?.unauthorized).toBe(true);
   });
 
   it("skips the deposit ONLY through explicit configuration, never implicitly", () => {

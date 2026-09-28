@@ -131,11 +131,20 @@ describe("C-4 — every AUTHORITATIVE gate call site evaluates on platform state
   it("the operator's readiness display agrees with the engine", () => {
     // Otherwise the workspace reports "not ready" while the action it offers
     // succeeds — the display and the engine disagreeing about one dossier.
+    //
+    // FIN-TRN-DOC-01 strengthens this: the display now also asks for the
+    // post-delivery CONTEXT, without which the closure gate could only report
+    // its billing/deposit/recovery chain as unevaluated — so « Prêt à clôturer »
+    // showed a permanent blocker on every dossier, including invoiced, sent and
+    // paid ones. Same doctrine, one more fact.
     const service = read("lib/process/engine/service.ts");
-    expect(service).toContain("authoritativeGates(user.tenantId, fileId)");
+    expect(service).toContain("authoritativeGates(user.tenantId, fileId, { withClosureContext: true })");
     expect(service).toContain("pickupReadiness: gates.pickup");
     expect(service).toContain("billingReadiness: gates.billing");
     expect(service).toContain("closureReadiness: gates.closure");
+    // The context is the EXISTING closure loader's, not a second derivation.
+    expect(read("lib/process/engine/gate-authority.ts"))
+      .toContain("loadClosureInput(tenantId, fileId, [...GATE_FULL_READ])");
   });
 });
 
@@ -145,8 +154,8 @@ describe("C-4 — the correction confers ZERO new read authority", () => {
   it("the authority module returns VERDICTS only — never records", () => {
     // Structural, not stylistic: if no exported signature can carry a document
     // row, a customs record or an invoice, then no caller can receive one.
-    // GateResult is { key, ready, requirements[], missing[] } — booleans,
-    // labels and reason codes.
+    // GateResult is { key, ready, requirements[], missing[], unauthorized[] } —
+    // booleans, labels and reason codes.
     expect(authority).toContain("Promise<AuthoritativeGates | null>");
     expect(authority).toContain("Promise<GateResult | null>");
     expect(authority).toContain("Promise<boolean>");
