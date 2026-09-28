@@ -3,11 +3,26 @@
 /**
  * Documents panel embedded on a dossier (Phase 1.8). Client component — upload
  * form (multipart via a server action) + list + "missing required" indicator.
+ *
+ * POD-UPLOAD-01 — IT CAN BE ASKED FOR A PARTICULAR DOCUMENT. A surface that
+ * sends an operator here for one named artefact (« Déposer le bordereau
+ * signé ») may pass `?docType=<CODE>`; the form then opens on that type and
+ * says which one it is. Nothing else changes: the operator may still pick
+ * anything in the list, and NOTHING is submitted for them — the deep link
+ * chooses a value in a dropdown, it does not upload a file.
+ *
+ * THE VALIDATION IS THE LIST ITSELF. A requested code is honoured only when it
+ * is one of the `types` this panel actually offers — which is already the
+ * active, non-generatable catalogue. An unknown code, a retired one, a
+ * generated-artifact code and a typo are all simply absent from that list, so
+ * every one of them degrades to the ordinary « Sélectionner un type… » with no
+ * special case to write and nothing to keep in sync.
  */
 import { useRef, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { t } from "@/lib/i18n";
 import { uploadDocument } from "@/lib/documents/actions";
+import { documentLabelForTypeCode } from "@/lib/process/documents";
 import { DocumentRow } from "./document-row";
 import type { DocumentItem, DocumentTypeItem, MissingDocument } from "@/lib/documents/types";
 
@@ -31,9 +46,21 @@ export function DocumentsPanel({
   canEmail?: boolean;
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const formRef = useRef<HTMLFormElement>(null);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+
+  // Honoured only if this panel genuinely offers it — see the header note.
+  const requestedType = searchParams?.get("docType") ?? null;
+  const expected = requestedType ? (types.find((ty) => ty.code === requestedType) ?? null) : null;
+  // The OFFICIAL PROCESS name where the process names this artefact, the
+  // catalogue's own wording otherwise. The two disagree for the signed POD
+  // until the catalogue row is aligned, and the operator was instructed in the
+  // process vocabulary — so that is the one that answers here.
+  const expectedLabel = expected
+    ? (documentLabelForTypeCode(expected.code) ?? expected.labelFr)
+    : null;
 
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -68,7 +95,15 @@ export function DocumentsPanel({
         <form ref={formRef} onSubmit={onSubmit} className="surface flex flex-wrap items-end gap-2 p-3">
           <label className="flex flex-col gap-1 text-xs text-slate-600">
             {t.documents.type}
-            <select name="typeCode" required className="rounded-md border border-slate-200 px-2 py-1 text-sm">
+            {/* `defaultValue`, not `value`: the deep link chooses the opening
+                selection and then gets out of the way — the field stays the
+                operator's, uncontrolled, exactly as it was. */}
+            <select
+              name="typeCode"
+              required
+              defaultValue={expected?.code ?? ""}
+              className="rounded-md border border-slate-200 px-2 py-1 text-sm"
+            >
               <option value="">{t.documents.selectType}</option>
               {types.map((ty) => (
                 <option key={ty.code} value={ty.code}>
@@ -76,6 +111,11 @@ export function DocumentsPanel({
                 </option>
               ))}
             </select>
+            {expectedLabel && (
+              <span className="text-[11px] text-slate-500">
+                {t.documents.expectedType} : {expectedLabel}
+              </span>
+            )}
           </label>
           <label className="flex flex-col gap-1 text-xs text-slate-600">
             {t.documents.file}

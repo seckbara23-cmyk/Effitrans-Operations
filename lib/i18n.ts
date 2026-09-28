@@ -435,6 +435,10 @@ export const t = {
     add: "Ajouter un document",
     type: "Type de document",
     selectType: "Sélectionner un type…",
+    // POD-UPLOAD-01 — shown only when a surface sent the operator here FOR a
+    // named document. It states what is expected and preselects it; it never
+    // submits, and the operator can still choose something else.
+    expectedType: "Type attendu",
     file: "Fichier",
     expiryDate: "Date d'expiration",
     upload: "Téléverser",
@@ -2310,7 +2314,11 @@ export const t = {
           incident: "Photo d'incident",
           delivery: "Photo de livraison",
           signature: "Signature",
-          pod: "Bon de livraison (POD)",
+          // POD-UPLOAD-01 — the `pod` evidence kind uploads a DELIVERY_NOTE
+          // (EVIDENCE_TYPE_CODE), so it is named like one everywhere. The kind
+          // key, its mapping and the driver flow are untouched; `signature`
+          // remains DRIVER_SIGNATURE and is a different artefact.
+          pod: "Bordereau de Livraison signé (POD)",
         },
       },
       delivery: {
