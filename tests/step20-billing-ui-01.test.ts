@@ -158,7 +158,7 @@ describe("step 20 — the Billing Officer can actually draft and submit", () => 
     expect(src).toContain("prepareDraftStep");
     const body = src.slice(src.indexOf("export async function submitInvoiceToFinance"));
     const claim = body.indexOf("prepareDraftStep(c, fileId)");
-    const stamp = body.indexOf("submitted_at: new Date().toISOString()");
+    const stamp = body.indexOf("submitted_at: stampedAt");
     expect(claim).toBeGreaterThan(-1);
     expect(stamp).toBeGreaterThan(-1);
     expect(claim).toBeLessThan(stamp);
@@ -234,7 +234,7 @@ describe("step 20 — the Billing Officer can actually draft and submit", () => 
   it("refuses before the stamp, so a refused submission stays resubmittable", () => {
     const src = code(BILLING);
     const body = src.slice(src.indexOf("export async function submitInvoiceToFinance"));
-    const stamp = body.indexOf("submitted_at: new Date().toISOString()");
+    const stamp = body.indexOf("submitted_at: stampedAt");
     for (const pre of [
       'guard("finance:create"',
       "canSubmitInvoice(",
