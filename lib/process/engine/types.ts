@@ -170,6 +170,13 @@ export type EngineError =
   // Distinct from evidence_missing: the artefact may well exist.
   | "evidence_unauthorized"
   | "gate_blocked"
+  // BILLING-BYPASS-01 — this step's transition belongs to a DOMAIN workflow
+  // whose rules the generic control cannot apply (an invoice must have lines;
+  // the checker must differ from the invoice's own author; a rejection carries
+  // a motif and a new revision). Distinct from every other refusal: nothing is
+  // missing, nobody lacks authority, and the step is open — the act simply has
+  // its own door. See lib/process/domain-owned-steps.ts.
+  | "domain_owned_transition"
   | "self_validation_forbidden"
   | "override_not_allowed"
   | "reason_required"
