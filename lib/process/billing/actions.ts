@@ -36,6 +36,7 @@ import {
   canEmailInvoice,
   canSubmitInvoice,
   canValidateInvoice,
+  draftStepPlan,
   validateRejectionReason,
   type BillingError,
   type InvoiceView,
@@ -197,7 +198,16 @@ async function prepareDispatchStep(
  * `guard("finance:create")`, and `stepPermission("billing_draft")` IS
  * `finance:create` — so this is precisely the act the operator performs with
  * « Démarrer », done at the moment it becomes required rather than left as an
- * unstated precondition. A step claimed by somebody else is never taken.
+ * unstated precondition.
+ *
+ * AND NO AUTHORITY IS WITHHELD EITHER (CI-STEP20-01). The assignee check guards
+ * the CLAIM and only the claim: it refuses to TAKE an AVAILABLE step from whoever
+ * holds it, and says nothing about who may submit an ACTIVE one. That is the
+ * engine's decision, and `submitStep` makes it — `assignmentRefusal` applies the
+ * assignee rule only to the customs chain Transit assigns, not to `billing_draft`.
+ * Restating it here made this helper stricter than the engine and broke the
+ * ratified C-4 path where Billing starts step 20 and OPS_SUPERVISOR submits it.
+ * See `draftStepPlan`.
  */
 async function prepareDraftStep(
   ctx: Ctx,
@@ -209,17 +219,20 @@ async function prepareDraftStep(
   const exec = snap.executions.find(
     (e) => e.stepKey === "billing_draft" && e.state !== "REJECTED" && e.state !== "CANCELLED",
   );
-  if (!exec) return { ready: false, error: "step_completion_failed" };
 
-  if (exec.assignedUserId && exec.assignedUserId !== ctx.userId) {
-    return { ready: false, error: "step_completion_failed" };
+  // THE RULE IS PURE AND LIVES IN ./state. This function loads rows and acts on
+  // the answer; it decides nothing, so the decision can be exercised by a test.
+  switch (draftStepPlan(exec ?? null, ctx.userId)) {
+    case "ready":
+      return { ready: true };
+    case "refuse":
+      return { ready: false, error: "step_completion_failed" };
+    case "claim": {
+      const opened = await activateStep(fileId, "billing_draft");
+      if (!opened.ok) return { ready: false, error: "step_completion_failed" };
+      return { ready: true };
+    }
   }
-  if (exec.state === "ACTIVE") return { ready: true };
-  if (exec.state !== "AVAILABLE") return { ready: false, error: "step_completion_failed" };
-
-  const opened = await activateStep(fileId, "billing_draft");
-  if (!opened.ok) return { ready: false, error: "step_completion_failed" };
-  return { ready: true };
 }
 
 // ------------------------------------------------- 20. draft preparation ----

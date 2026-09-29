@@ -33,6 +33,7 @@ import {
   canEmailInvoice,
   canSubmitInvoice,
   canValidateInvoice,
+  draftStepPlan,
   isEditableDraft,
   MAX_REJECTION_REASON,
   validateRejectionReason,
@@ -41,6 +42,7 @@ import {
 } from "@/lib/process/billing/state";
 import { domainFactSatisfied, DOMAIN_OWNED_STEPS } from "@/lib/process/domain-owned-steps";
 import { canTransitionStep } from "@/lib/process/engine/state";
+import { ASSIGNMENT_OWNED_STEPS } from "@/lib/process/handoff-routes";
 import { getStep } from "@/lib/process/effitrans-process";
 
 const root = join(__dirname, "..");
@@ -62,6 +64,9 @@ const FINANCE_PANEL = "components/finance/finance-panel.tsx";
 const PAGE = "app/files/[id]/page.tsx";
 const LEGACY = "lib/finance/actions.ts";
 
+// The two identities the C-4 journey actually uses across step 20.
+const BILLING_USER = "user-billing-officer";
+const OPS_USER = "user-ops-supervisor";
 const MAKER = "user-billing-maker";
 const CHECKER = "user-finance-checker";
 
@@ -159,10 +164,88 @@ describe("step 20 — the Billing Officer can actually draft and submit", () => 
     expect(claim).toBeLessThan(stamp);
   });
 
-  it("never takes step 20 from whoever already claimed it", () => {
+  /**
+   * CI-STEP20-01 — the exact real-database failure, reproduced.
+   *
+   * The C-4 journey starts step 20 as the Billing Officer and submits as
+   * OPS_SUPERVISOR. That is deliberate: OPS holds finance:create AND
+   * finance:validate, and is the one identity that can then prove maker !=
+   * checker is enforced on IDENTITY rather than on permission. The first
+   * version of `prepareDraftStep` refused any caller who was not the assignee,
+   * in every state — stricter than the engine — and the journey died with
+   * `step_completion_failed` before any invoice was written.
+   *
+   * The original assertion here checked that the assignee comparison EXISTED.
+   * It existed and it was wrong, so the test pinned the defect. It now RUNS the
+   * rule instead.
+   */
+  it("lets a step 20 already ACTIVE be submitted by someone other than its claimer", () => {
+    expect(draftStepPlan({ state: "ACTIVE", assignedUserId: BILLING_USER }, OPS_USER)).toBe("ready");
+    expect(draftStepPlan({ state: "ACTIVE", assignedUserId: BILLING_USER }, BILLING_USER)).toBe("ready");
+    expect(draftStepPlan({ state: "ACTIVE", assignedUserId: null }, OPS_USER)).toBe("ready");
+  });
+
+  it("claims an AVAILABLE step 20 — unheld, or already this caller's", () => {
+    expect(draftStepPlan({ state: "AVAILABLE", assignedUserId: null }, BILLING_USER)).toBe("claim");
+    expect(draftStepPlan({ state: "AVAILABLE", assignedUserId: BILLING_USER }, BILLING_USER)).toBe("claim");
+  });
+
+  it("never TAKES an available step 20 from whoever holds it", () => {
+    expect(draftStepPlan({ state: "AVAILABLE", assignedUserId: BILLING_USER }, OPS_USER)).toBe("refuse");
+  });
+
+  it("refuses a step 20 that cannot accept a submission at all", () => {
+    for (const state of ["PENDING", "SUBMITTED", "COMPLETED", "APPROVED", "BLOCKED", "SKIPPED"]) {
+      expect(draftStepPlan({ state, assignedUserId: null }, BILLING_USER), state).toBe("refuse");
+    }
+    expect(draftStepPlan(null, BILLING_USER)).toBe("refuse");
+  });
+
+  it("decides the claim in the PURE module, and only loads in the server one", () => {
     const src = code(BILLING);
-    const body = src.slice(src.indexOf("async function prepareDraftStep"), src.indexOf("// ---", src.indexOf("async function prepareDraftStep")));
-    expect(body).toMatch(/assignedUserId\s*&&\s*\w+\.assignedUserId\s*!==\s*ctx\.userId/);
+    const start = src.indexOf("async function prepareDraftStep");
+    const body = src.slice(start, src.indexOf("// ---", start));
+    expect(body).toContain("draftStepPlan(exec ?? null, ctx.userId)");
+    // No second opinion about the assignee is stated here any more.
+    expect(body).not.toMatch(/assignedUserId/);
+    expect(body).not.toMatch(/state\s*===\s*"/);
+  });
+
+  /**
+   * The engine is the ONE place that decides who may submit, and it excludes
+   * `billing_draft` from the assignee rule on purpose. Asserted against the
+   * engine's own set so the two cannot drift: if `billing_draft` is ever added
+   * to it, this fails and the helper above has to be revisited deliberately.
+   */
+  it("agrees with the engine about which steps their assignee owns", () => {
+    expect(ASSIGNMENT_OWNED_STEPS.has("billing_draft")).toBe(false);
+    expect(ASSIGNMENT_OWNED_STEPS.has("finance_invoice_validation")).toBe(false);
+    expect(ASSIGNMENT_OWNED_STEPS.has("billing_dispatch")).toBe(false);
+    // …and still applies it where Transit does assign work.
+    expect(ASSIGNMENT_OWNED_STEPS.has("customs_preparation")).toBe(true);
+  });
+
+  /**
+   * Requirement 10 — the C-4 refusal left NO partial write, and that is
+   * structural rather than lucky: every condition the action can pre-check is
+   * checked before the stamp, so a refusal cannot strand the invoice in
+   * `duplicate_submission`.
+   */
+  it("refuses before the stamp, so a refused submission stays resubmittable", () => {
+    const src = code(BILLING);
+    const body = src.slice(src.indexOf("export async function submitInvoiceToFinance"));
+    const stamp = body.indexOf("submitted_at: new Date().toISOString()");
+    for (const pre of [
+      'guard("finance:create"',
+      "canSubmitInvoice(",
+      "billingReady(c, fileId)",
+      "prepareDraftStep(c, fileId)",
+    ]) {
+      expect(body.indexOf(pre), pre).toBeGreaterThan(-1);
+      expect(body.indexOf(pre), pre).toBeLessThan(stamp);
+    }
+    // An invoice that was never stamped is still submittable.
+    expect(canSubmitInvoice(inv({ submittedAt: null })).ok).toBe(true);
   });
 
   it("offers nothing on a step 20 that cannot accept a submission", () => {

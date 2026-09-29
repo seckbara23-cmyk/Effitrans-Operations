@@ -298,3 +298,63 @@ export function billingLaneCapabilities(input: {
   return { can, blockedReason };
 }
 
+// ------------------------------------- claiming step 20 before it is closed ----
+
+/**
+ * What must happen to official step 20 before a submission can land on it.
+ *
+ * `ready`  — nothing to do; the step can already accept the transition.
+ * `claim`  — it is open and unheld, and must be activated first.
+ * `refuse` — it cannot accept a submission, or claiming it would take work
+ *            that belongs to somebody else.
+ */
+export type DraftStepPlan = "ready" | "claim" | "refuse";
+
+/**
+ * PURE, and pure ON PURPOSE (CI-STEP20-01).
+ *
+ * This decision shipped inside `prepareDraftStep`, a helper in a `"use server"`
+ * module that no unit test can execute — so its only coverage was a structural
+ * assertion that the check EXISTED. It existed and it was WRONG, and the
+ * assertion pinned the defect rather than catching it. The rule lives here now
+ * for the same reason `domainFactSatisfied` and `billingLaneCapabilities` do:
+ * a rule a test cannot run is a rule a mutation survives.
+ *
+ * WHAT WAS WRONG. It refused whenever `assigned_user_id` differed from the
+ * caller, in EVERY state — so a step already ACTIVE and claimed by the Billing
+ * Officer could not be submitted by anyone else. That is stricter than the
+ * engine, which is the one place authority is decided: `assignmentRefusal`
+ * applies the assignee rule only to `ASSIGNMENT_OWNED_STEPS` — the customs
+ * chain Transit assigns — and `billing_draft` is deliberately not among them,
+ * because "elsewhere a step is claimed by whoever starts it, which is a
+ * different idea". A claim marker was read as an ownership grant.
+ *
+ * It broke a ratified path. The C-4 journey starts step 20 as the Billing
+ * Officer and submits as OPS_SUPERVISOR, deliberately: OPS holds BOTH
+ * finance:create and finance:validate, and is the one identity that can then
+ * demonstrate that maker != checker is enforced on IDENTITY rather than on
+ * permission. Refusing that submission removed the proof.
+ *
+ * SO THE ASSIGNEE ONLY GUARDS THE CLAIM. When the step is already ACTIVE this
+ * helper writes nothing, so there is no claim to take and nothing for it to
+ * protect; who may submit is then the engine's decision, made once, by
+ * `submitStep` — permission, custody, assignment, service scope, and the
+ * BILLING-BYPASS-01 domain guard, none of which this weakens. When the step is
+ * merely AVAILABLE, activating it WOULD take it, and a step held by somebody
+ * else is still refused.
+ */
+export function draftStepPlan(
+  exec: { state: string; assignedUserId: string | null } | null,
+  userId: string,
+): DraftStepPlan {
+  if (!exec) return "refuse";
+  // Already open: nothing to claim, so the assignee is not this helper's
+  // business. The engine decides who may submit.
+  if (exec.state === "ACTIVE") return "ready";
+  // Only an AVAILABLE step can be claimed at all; AVAILABLE -> SUBMITTED is not
+  // a legal transition, which is why a claim is required rather than optional.
+  if (exec.state !== "AVAILABLE") return "refuse";
+  // Claiming it would take it. Never take a step from whoever holds it.
+  if (exec.assignedUserId && exec.assignedUserId !== userId) return "refuse";
+  return "claim";
+}
