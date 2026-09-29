@@ -63,7 +63,7 @@ export async function genericTransitionAllowed(input: {
   const admin = getAdminSupabaseClient();
   const { data, error } = await admin
     .from("invoice")
-    .select("status, submitted_at, validated_at, rejection_reason")
+    .select("status, submitted_at, validated_at, rejection_reason, invoice_number")
     .eq("tenant_id", input.tenantId)
     .eq("file_id", input.fileId);
 
@@ -76,7 +76,8 @@ export async function genericTransitionAllowed(input: {
     submittedAt: (i.submitted_at as string | null) ?? null,
     validatedAt: (i.validated_at as string | null) ?? null,
     rejectionReason: (i.rejection_reason as string | null) ?? null,
+    invoiceNumber: (i.invoice_number as string | null) ?? null,
   }));
 
-  return domainFactSatisfied(input.transition, invoices);
+  return domainFactSatisfied(input.stepKey, input.transition, invoices);
 }

@@ -29,6 +29,7 @@ import { EmailTriggerButton } from "@/components/mail/email-trigger-button";
 import { InvoiceIntents } from "./invoice-intents";
 import type { ActionResult, InvoiceDetail, PaymentIntentView } from "@/lib/finance/types";
 import type { ProviderName } from "@/lib/finance/payment-intent";
+import { isIssuedStatus } from "@/lib/finance/status";
 
 const STATUS_STYLE: Record<string, string> = {
   DRAFT: "bg-slate-100 text-slate-600",
@@ -307,7 +308,10 @@ export function InvoiceCard({
             {f.invoices.void}
           </button>
         )}
-        {canEmail && invoice.status !== "DRAFT" && invoice.status !== "VOID" && (
+        {/* STEP22-ISSUANCE-INTEGRITY-01 — an official invoice may be sent to the
+            client once it IS one. A VALIDATED invoice has no number yet, and
+            issuing it is the governed step-22 act, not this button. */}
+        {canEmail && isIssuedStatus(invoice.status) && (
           <EmailTriggerButton kind="invoice" id={invoice.id} label={t.communications.emailClient} />
         )}
       </div>

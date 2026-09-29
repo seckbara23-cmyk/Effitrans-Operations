@@ -8,12 +8,15 @@
  */
 import { isVerified } from "@/lib/documents/doctrine";
 import { isActiveFileStatus, isFileStatus } from "@/lib/files/status";
+import { isIssuedStatus } from "@/lib/finance/status";
 
 const DAY = 86_400_000;
 const round1 = (n: number) => Math.round(n * 10) / 10;
 const monthKey = (d: Date) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+// STEP22-ISSUANCE-INTEGRITY-01 — revenue is recognised on an ISSUED invoice.
+// A VALIDATED one has no official number and has never been sent.
 function isIssued(status: string): boolean {
-  return status !== "DRAFT" && status !== "VOID";
+  return isIssuedStatus(status);
 }
 
 // --------------------------------------------------------------- inputs ----

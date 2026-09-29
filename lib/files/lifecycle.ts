@@ -17,6 +17,7 @@
 import type { CanonicalWorkflowInput } from "@/lib/workflow/canonical-input";
 import { isPendingReview, isVerified } from "@/lib/documents/doctrine";
 import { t } from "@/lib/i18n";
+import { isIssuedStatus } from "@/lib/finance/status";
 
 export type StepStatus = "completed" | "current" | "pending" | "blocked" | "skipped";
 export type Department = "opening" | "documentation" | "customs" | "transport" | "finance" | "archive";
@@ -148,7 +149,9 @@ export function getDossierLifecycle(input: CanonicalWorkflowInput): DossierLifec
   const transportBlocked = tStatus === "BLOCKED";
 
   // ---- finance
-  const issued = input.invoices.filter((i) => i.status !== "DRAFT" && i.status !== "VOID");
+  // STEP22-ISSUANCE-INTEGRITY-01 — the billing step is done when the invoice
+  // was issued, not when the checker approved it.
+  const issued = input.invoices.filter((i) => isIssuedStatus(i.status));
   const hasIssued = issued.length > 0;
   const paidDone = hasIssued && issued.every((i) => i.status === "PAID");
 

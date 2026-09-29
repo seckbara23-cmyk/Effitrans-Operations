@@ -27,6 +27,8 @@ import { getEffectivePermissions } from "@/lib/rbac/permissions";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
 import { queueAndSend } from "@/lib/comms/queue";
+import { isProviderConfigured } from "@/lib/comms/provider";
+import { ensureOfficialInvoiceArtifact } from "@/lib/finance/invoice-artifact";
 import { invoiceTotals } from "@/lib/finance/calc";
 import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-server";
 import { activateStep, approveStep, rejectStep, submitStep } from "../engine/actions";
@@ -128,12 +130,23 @@ async function compensationOutcome(
 async function loadInvoiceView(
   tenantId: string,
   invoiceId: string,
-): Promise<{ view: InvoiceView; fileId: string; clientId: string | null } | null> {
+): Promise<{
+  view: InvoiceView;
+  fileId: string;
+  clientId: string | null;
+  /**
+   * The OFFICIAL number, when one is already persisted
+   * (STEP22-ISSUANCE-INTEGRITY-01). Carried beside the pure view rather than
+   * inside it: `InvoiceView` is the shape every maker-checker predicate is
+   * written against, and none of them has an opinion about numbering.
+   */
+  invoiceNumber: string | null;
+} | null> {
   const admin = getAdminSupabaseClient();
   const { data } = await admin
     .from("invoice")
     .select(
-      "id, file_id, client_id, status, submitted_by, submitted_at, validated_by, validated_at, rejection_reason, revision",
+      "id, file_id, client_id, status, submitted_by, submitted_at, validated_by, validated_at, rejection_reason, revision, invoice_number",
     )
     .eq("id", invoiceId)
     .eq("tenant_id", tenantId)
@@ -161,6 +174,7 @@ async function loadInvoiceView(
     },
     fileId: r.file_id as string,
     clientId: str(r.client_id),
+    invoiceNumber: str(r.invoice_number),
   };
 }
 
@@ -719,6 +733,21 @@ export async function emailValidatedInvoice(invoiceId: string): Promise<BillingR
     return { ok: true, id: invoiceId, status: "SENT" };
   }
 
+  // DELIVERY MUST BE POSSIBLE BEFORE ANYTHING IS SPENT
+  // (STEP22-ISSUANCE-INTEGRITY-01, ratified).
+  //
+  // A configured provider that fails at runtime is a retryable incident and does
+  // NOT undo a legitimate issuance. No provider at all is a different fact: the
+  // send cannot succeed now or later under this configuration, so completing
+  // official step 22 on it would record a dispatch that can never happen. On
+  // EFT-IMP-2026-00013 this is exactly what occurred — `provider_not_configured`
+  // burned an official number and the step was closed by hand afterwards.
+  //
+  // Asked BEFORE the number is allocated, because the whole point is to spend
+  // nothing when delivery is impossible. `isProviderConfigured` is the platform's
+  // own check, reused; this introduces no second notion of "configured".
+  if (!isProviderConfigured()) return fail("delivery_not_configured");
+
   // The authorized billing contact: the client's primary contact, else the client
   // record's own email. No contact => no send (we never guess a recipient).
   const { data: contacts } = await admin
@@ -755,12 +784,72 @@ export async function emailValidatedInvoice(invoiceId: string): Promise<BillingR
     })),
   );
 
-  // Number + dates are assigned at SEND time (an unsent invoice has no number).
-  const { data: number } = await admin.rpc("next_invoice_number", { p_tenant: c.tenantId });
+  // ONE official number per invoice, REUSED on any retry.
+  //
+  // `next_invoice_number` increments an unconditional counter, so every call
+  // consumes a value that can never be returned. Whether gaps in the official
+  // sequence are acceptable is an OPEN Effitrans ruling and is deliberately not
+  // touched here; what this does is stop creating them needlessly. An invoice
+  // that already carries a number is re-issuing, not issuing, and asks for
+  // nothing new.
+  let invoiceNumber = loaded.invoiceNumber;
+  if (!invoiceNumber) {
+    const { data: allocated } = await admin.rpc("next_invoice_number", { p_tenant: c.tenantId });
+    invoiceNumber = (allocated as string | null) ?? invoiceId.slice(0, 8);
+  }
   const today = new Date();
   const issueDate = today.toISOString().slice(0, 10);
   const dueDate = new Date(today.getTime() + 30 * 86_400_000).toISOString().slice(0, 10);
-  const invoiceNumber = (number as string | null) ?? invoiceId.slice(0, 8);
+
+  // THE AUTHORITATIVE ISSUANCE FACT, in ONE compare-and-set, BEFORE the send.
+  //
+  // This used to run only after a SUCCESSFUL send, which is why a provider
+  // failure left the invoice VALIDATED while an official number had already been
+  // consumed — and why nothing downstream could tell an issued invoice from a
+  // merely validated one. Number and status are written together, so neither
+  // state this slice forbids (ISSUED with no number; a number with the invoice
+  // still VALIDATED) is representable.
+  //
+  // FENCED on `status = VALIDATED and invoice_number is null`, so a concurrent
+  // second issuance matches zero rows and cannot double-issue.
+  // `issue_date` + `issued_by` ARE the persisted issuance identity — the table has
+  // no separate `issued_at`, and inventing one would be a schema change this slice
+  // is not authorised to make and does not need.
+  const { data: issuedRows } = await admin
+    .from("invoice")
+    .update({
+      status: "ISSUED",
+      invoice_number: invoiceNumber,
+      issue_date: issueDate,
+      due_date: dueDate,
+      issued_by: c.userId,
+    })
+    .eq("id", invoiceId)
+    .eq("tenant_id", c.tenantId)
+    .eq("status", "VALIDATED")
+    .is("invoice_number", null)
+    .select("id");
+  if ((issuedRows?.length ?? 0) !== 1) return fail("duplicate_submission");
+
+  await writeAudit({
+    action: AuditActions.INVOICE_ISSUED,
+    actorId: c.userId,
+    tenantId: c.tenantId,
+    entity: "invoice",
+    entityId: invoiceId,
+    after: { file_id: fileId, invoice_number: invoiceNumber, official_step: "billing_dispatch" },
+  });
+
+  // The official document, from the SAME generator the legacy path uses and
+  // already idempotent — a retry returns the existing artifact rather than a
+  // second, conflicting one. Produced only AFTER the invoice is genuinely
+  // ISSUED, so a FINAL_INVOICE can never represent an unissued invoice.
+  await ensureOfficialInvoiceArtifact({
+    supabase: admin,
+    tenantId: c.tenantId,
+    invoiceId,
+    actorId: c.userId,
+  });
 
   // Branding and rendering are resolved INSIDE queueAndSend — unchanged.
   const sent = await queueAndSend({
@@ -782,9 +871,17 @@ export async function emailValidatedInvoice(invoiceId: string): Promise<BillingR
     clientId: loaded.clientId,
   });
 
+  // DELIVERY IS NOW A SEPARATE CONCERN (ratified). The invoice is issued, its
+  // number is persisted and its official document exists; a runtime failure of a
+  // CONFIGURED provider leaves all of that standing and is retried through the
+  // platform's existing outbox, never by re-issuing. The step still completes,
+  // because a durable outbound record exists and dispatch has genuinely happened
+  // as far as this service can make it happen.
   if (sent.status !== "SENT") {
-    // The message row keeps status/last_error/retry_count — retry is just calling
-    // this action again. The invoice stays VALIDATED and step 22 does NOT advance.
+    // The outbound record is durable and carries status/last_error/retry_count;
+    // retrying it is the platform's existing outbox concern, NOT a re-issuance.
+    // Nothing here is undone: the number is spent, the document exists, and the
+    // client is owed this invoice whether or not the provider answered today.
     await writeAudit({
       action: AuditActions.INVOICE_EMAIL_FAILED,
       actorId: c.userId,
@@ -792,29 +889,19 @@ export async function emailValidatedInvoice(invoiceId: string): Promise<BillingR
       entity: "invoice",
       entityId: invoiceId,
       // Classification only — never the provider error body, never the email body.
-      after: { file_id: fileId, delivery_status: sent.status, retryable: true },
+      after: {
+        file_id: fileId,
+        delivery_status: sent.status,
+        retryable: true,
+        invoice_number: invoiceNumber,
+        invoice_issued: true,
+      },
     });
-    revalidate(fileId);
-    return fail("email_send_failed");
   }
 
-  // Delivered. NOW the invoice becomes ISSUED (and portal-visible).
-  await admin
-    .from("invoice")
-    .update({
-      status: "ISSUED",
-      invoice_number: invoiceNumber,
-      issue_date: issueDate,
-      due_date: dueDate,
-      issued_by: c.userId,
-    })
-    .eq("id", invoiceId)
-    .eq("tenant_id", c.tenantId)
-    .eq("status", "VALIDATED");
-
-  // Step 22 advances ONLY on a successful send — and the result is KEPT. It used
-  // to be discarded, which is how a delivered, issued invoice could leave the
-  // dossier stalled with the caller told "ok".
+  // Step 22 advances on ISSUANCE, and the result is KEPT. It used to advance only
+  // on a successful send, which made an unreachable mail provider indistinguishable
+  // from an unissued invoice — and left the operator closing the step by hand.
   const advanced = await submitStep(fileId, "billing_dispatch");
 
   // The send is audited FIRST and unconditionally: it happened, whatever became
