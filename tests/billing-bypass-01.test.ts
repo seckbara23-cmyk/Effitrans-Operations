@@ -36,7 +36,12 @@ import { validatorStepFor } from "@/lib/process/engine/state";
 import { processErrorFr } from "@/lib/process/error-fr";
 
 const root = join(__dirname, "..");
-const read = (p: string) => readFileSync(join(root, p), "utf8");
+// Repo sources are CRLF on a Windows checkout and LF in CI. Normalising here
+// keeps every assertion below about the CODE rather than about line endings:
+// test 16 asserts the guard's closing delegation and was comparing against a
+// literal LF, so it failed locally and passed in CI. A harness fault, not a
+// finding, and fixing it weakens no assertion.
+const read = (p: string) => readFileSync(join(root, p), "utf8").replace(/\r\n/g, "\n");
 const code = (p: string) => read(p).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 
 const ENGINE = "lib/process/engine/actions.ts";

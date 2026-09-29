@@ -200,3 +200,101 @@ export function billingQueueState(
   if (inv.rejectionReason) return "correction_required";
   return "draft_in_progress";
 }
+
+// ------------------------------------------- the lane, as ONE pure decision ----
+
+/**
+ * Which of the three official billing steps can currently ACCEPT their act.
+ *
+ * Not "is the step done" — "would the transition land". `AVAILABLE -> SUBMITTED`
+ * is not a legal step transition, so step 20 must be claimable or already
+ * claimed for a submission to complete; step 22 is the same, which is why
+ * `prepareDispatchStep` exists. A step that is PENDING, closed, or held by
+ * somebody else is not open.
+ */
+export type LaneStepOpenness = { draftOpen: boolean; dispatchOpen: boolean };
+
+/** What the READER holds. Three permissions, and nothing about identity. */
+export type LanePermissions = { mayCreate: boolean; mayValidate: boolean; mayIssue: boolean };
+
+export type LaneCapabilities = {
+  prepare: boolean;
+  submit: boolean;
+  approve: boolean;
+  reject: boolean;
+  issue: boolean;
+};
+
+export type LaneVerdict = {
+  can: LaneCapabilities;
+  /** The refusal for the act this reader is closest to; null when one is offered. */
+  blockedReason: BillingError | null;
+};
+
+/**
+ * What this reader may do in the billing lane RIGHT NOW — the WHOLE decision,
+ * PURE (STEP20-BILLING-UI-01).
+ *
+ * WHY IT IS HERE AND NOT IN THE PANEL, AND NOT IN THE LOADER. A decision that
+ * lives inside a server-only module cannot be executed by a unit test, so a
+ * mutation to it — an unconditional `true` — passes every test in the suite.
+ * That is not hypothetical: it is exactly how BILLING-BYPASS-01's ninth mutation
+ * probe survived, and the fix ratified there was to extract the rule into a pure
+ * function and leave the server half loading rows. This is the same shape, for
+ * the same reason. `lib/process/billing/lane.ts` loads; this decides.
+ *
+ * IT GRANTS NOTHING. Every answer is built from the predicates directly above —
+ * `canSubmitInvoice`, `canValidateInvoice`, `canEmailInvoice` — which are the
+ * SAME ones the server actions re-run under their own `guard()`. A `true` here
+ * means "the action would accept this today", and is used to decide what to
+ * RENDER; a `false` removes a control from a screen and nothing from a server
+ * action, all of which stay reachable and authoritative.
+ *
+ * FAILS CLOSED: no invoice, no permission, or a step that cannot accept the act
+ * all answer false.
+ */
+export function billingLaneCapabilities(input: {
+  invoice: InvoiceView | null;
+  viewerId: string;
+  billingReady: boolean;
+  perms: LanePermissions;
+  steps: LaneStepOpenness;
+}): LaneVerdict {
+  const { invoice, viewerId, billingReady, perms, steps } = input;
+  const missing = { ok: false as const, error: "invoice_missing" as BillingError };
+
+  const submitCheck = invoice ? canSubmitInvoice(invoice) : missing;
+  const validateCheck = invoice ? canValidateInvoice(invoice, viewerId) : missing;
+  const emailCheck = invoice ? canEmailInvoice(invoice) : missing;
+
+  // The action creates a draft only when the dossier has no OPEN invoice — it
+  // returns the existing row for any DRAFT or VALIDATED one rather than making a
+  // second. The same condition, so the control is never an affordance that does
+  // nothing: offering « Établir le brouillon » beside an invoice already under
+  // Finance review is exactly that.
+  const openInvoice = invoice !== null && (invoice.status === "DRAFT" || invoice.status === "VALIDATED");
+
+  const can: LaneCapabilities = {
+    prepare: perms.mayCreate && billingReady && !openInvoice && steps.draftOpen,
+    submit: perms.mayCreate && billingReady && submitCheck.ok && steps.draftOpen,
+    // MAKER != CHECKER is inside canValidateInvoice, on IDENTITY. Never
+    // re-stated here: one rule, one place, no second opinion to drift.
+    approve: perms.mayValidate && validateCheck.ok,
+    reject: perms.mayValidate && validateCheck.ok,
+    issue: perms.mayIssue && emailCheck.ok && steps.dispatchOpen,
+  };
+
+  let blockedReason: BillingError | null = null;
+  if (!can.prepare && !can.submit && !can.approve && !can.reject && !can.issue) {
+    if (perms.mayCreate && !billingReady) blockedReason = "dossier_not_billing_ready";
+    else if (invoice === null) blockedReason = "invoice_missing";
+    else if (perms.mayValidate && invoice.submittedAt !== null) blockedReason = validateCheck.error ?? null;
+    else if (perms.mayCreate && isEditableDraft(invoice)) blockedReason = submitCheck.error ?? null;
+    else if (perms.mayIssue && invoice.status === "VALIDATED" && !steps.dispatchOpen) {
+      blockedReason = "dispatch_step_not_reached";
+    } else if (perms.mayIssue) blockedReason = emailCheck.error ?? null;
+  }
+
+  return { can, blockedReason };
+}
+

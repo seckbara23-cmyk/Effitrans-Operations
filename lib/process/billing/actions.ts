@@ -177,6 +177,51 @@ async function prepareDispatchStep(
   return { ready: true };
 }
 
+/**
+ * STEP20-BILLING-UI-01 — make step 20 able to REACH SUBMITTED, or refuse before
+ * the invoice is marked.
+ *
+ * `AVAILABLE -> SUBMITTED` is not in ALLOWED_STEP_TRANSITIONS. Promotion from
+ * step 19 leaves `billing_draft` AVAILABLE, so `submitInvoiceToFinance` stamped
+ * `submitted_by`/`submitted_at` on the invoice, then `submitStep` refused with
+ * `invalid_state` — leaving the invoice permanently unsubmittable
+ * (`canSubmitInvoice` now answers `duplicate_submission`) while the official
+ * step said nobody had submitted anything. The audit written on that path
+ * records the split; it does not undo it.
+ *
+ * Nothing about it was visible before this task because no control called the
+ * action. It is the SAME defect `prepareDispatchStep` already fixes for step 22,
+ * and it gets the same fix for the same reason.
+ *
+ * NO AUTHORITY IS CONFERRED. The caller has already passed
+ * `guard("finance:create")`, and `stepPermission("billing_draft")` IS
+ * `finance:create` — so this is precisely the act the operator performs with
+ * « Démarrer », done at the moment it becomes required rather than left as an
+ * unstated precondition. A step claimed by somebody else is never taken.
+ */
+async function prepareDraftStep(
+  ctx: Ctx,
+  fileId: string,
+): Promise<{ ready: true } | { ready: false; error: BillingError }> {
+  const snap = await loadProcessSnapshot(ctx.tenantId, fileId, ctx.permissions);
+  if (!snap?.instance) return { ready: false, error: "step_completion_failed" };
+
+  const exec = snap.executions.find(
+    (e) => e.stepKey === "billing_draft" && e.state !== "REJECTED" && e.state !== "CANCELLED",
+  );
+  if (!exec) return { ready: false, error: "step_completion_failed" };
+
+  if (exec.assignedUserId && exec.assignedUserId !== ctx.userId) {
+    return { ready: false, error: "step_completion_failed" };
+  }
+  if (exec.state === "ACTIVE") return { ready: true };
+  if (exec.state !== "AVAILABLE") return { ready: false, error: "step_completion_failed" };
+
+  const opened = await activateStep(fileId, "billing_draft");
+  if (!opened.ok) return { ready: false, error: "step_completion_failed" };
+  return { ready: true };
+}
+
 // ------------------------------------------------- 20. draft preparation ----
 
 /**
@@ -266,6 +311,11 @@ export async function submitInvoiceToFinance(invoiceId: string): Promise<Billing
   if (!check.ok) return fail(check.error!);
 
   if (!(await billingReady(c, fileId))) return fail("dossier_not_billing_ready");
+
+  // BEFORE the stamp, never after: an invoice marked submitted on a step that
+  // cannot accept the submission is the one state this lane cannot recover from.
+  const step = await prepareDraftStep(c, fileId);
+  if (!step.ready) return fail(step.error);
 
   // CAS: only an unsubmitted DRAFT may be submitted. A concurrent second submit
   // matches zero rows.
