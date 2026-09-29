@@ -53,6 +53,7 @@
  * below) that strictness must be a deliberate, recorded product decision.
  */
 import { stepPermission, validatorStepFor } from "./engine/state";
+import { domainOwnedReasonFr, isGenericTransitionWithdrawn } from "./domain-owned-steps";
 // The PURE check module, not the server-side permissions facade: this file
 // is read by client components and must not drag a React cache() into them.
 import { hasPermission } from "@/lib/rbac/check";
@@ -295,12 +296,22 @@ export function evaluateStepAction(
     prerequisitesUnmet || otherBlocker || facts.state === "BLOCKED" || Boolean(notApplicable);
   const blockedForSubmit = blockedForStart || evidenceBlocked || (unauthorized && !notApplicable);
 
+  // BILLING-BYPASS-01 — a transition a DOMAIN workflow owns is not offered here.
+  //
+  // `billing_draft` declares no required documents, so nothing above could
+  // refuse it and the generic « Terminer » closed step 20 with no invoice at
+  // all. Withdrawing the control is the courtesy; `submitStep` refuses it too,
+  // because this evaluator is read by a client and the engine action is a
+  // `"use server"` endpoint. Starting the step is untouched — claiming the work
+  // is not the act that needs the domain's rules.
+  const submitWithdrawn = isGenericTransitionWithdrawn(facts.stepKey, "submit");
+
   const canStart =
     mayAct && isOwner && facts.state === "AVAILABLE" && !claimedByAnother
     && !custodyBlocked && !blockedForStart;
   const canSubmit =
     mayAct && facts.state === "ACTIVE" && !claimedByAnother
-    && !custodyBlocked && !blockedForSubmit;
+    && !custodyBlocked && !blockedForSubmit && !submitWithdrawn;
 
   // ---------------------------------------------------------------- REVIEW --
   //
@@ -339,6 +350,18 @@ export function evaluateStepAction(
     && facts.submittedBy === viewer.userId;
   const mayReview =
     reviewPermission !== null && hasPermission([...viewer.permissions], reviewPermission);
+  // BILLING-BYPASS-01 — and the REVIEW half, keyed on the VALIDATOR step.
+  //
+  // STEP18-COMPLETENESS-02 added Valider/Rejeter for EVERY ratified pair, which
+  // is right for `completeness_review` — the generic controls ARE the act there
+  // — and wrong for `invoice_validation`, where they are a way around one.
+  // `approveStep` inspects no invoice, so the generic approval completed steps
+  // 20 and 21 on a draft nobody had validated.
+  const reviewWithdrawn =
+    reviewStepKey !== null
+    && (isGenericTransitionWithdrawn(reviewStepKey, "approve")
+      || isGenericTransitionWithdrawn(reviewStepKey, "reject"));
+
   const canApprove =
     reviewStepKey !== null
     && facts.state === "SUBMITTED"
@@ -348,7 +371,8 @@ export function evaluateStepAction(
     && typeof facts.submittedBy === "string"
     && facts.submittedBy.length > 0
     && !custodyBlocked
-    && !notApplicable;
+    && !notApplicable
+    && !reviewWithdrawn;
   // The same authority decides both verdicts — `rejectStep` guards identically
   // and additionally demands a reason, which the surface collects.
   const canReject = canApprove;
@@ -386,6 +410,8 @@ export function evaluateStepAction(
       reviewStepKey,
       isSubmitter,
       mayReview,
+      submitWithdrawn,
+      reviewWithdrawn,
     }),
   };
 }
@@ -405,12 +431,25 @@ function reasonFor(input: {
   reviewStepKey: string | null;
   isSubmitter: boolean;
   mayReview: boolean;
+  submitWithdrawn: boolean;
+  reviewWithdrawn: boolean;
 }): string | null {
   const {
     facts, notApplicable, mayAct, isOwner, claimedByAnother, custodyRefusalCode, unauthorized,
     requirements, prerequisitesUnmet, canStart, canSubmit, reviewStepKey, isSubmitter, mayReview,
+    submitWithdrawn, reviewWithdrawn,
   } = input;
   if (canStart || canSubmit) return null;
+
+  // BILLING-BYPASS-01 — a withdrawn control must never read as a broken one.
+  // Said before every other explanation, because the act is not blocked at all:
+  // it simply has its own door, and the operator needs to be sent there.
+  if (submitWithdrawn && facts.state === "ACTIVE") {
+    return domainOwnedReasonFr(facts.stepKey);
+  }
+  if (reviewWithdrawn && facts.state === "SUBMITTED" && reviewStepKey !== null) {
+    return domainOwnedReasonFr(reviewStepKey);
+  }
   // Out of scope outranks every other explanation: telling somebody which
   // document is missing from work Effitrans is not doing would be noise.
   if (notApplicable) return notApplicable.reasonFr;

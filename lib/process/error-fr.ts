@@ -104,6 +104,11 @@ export const PROCESS_ERROR_FR: Record<string, string> = {
   step_not_applicable:
     "Cette étape ne s'applique pas à ce dossier : le service correspondant n'a pas été demandé. Marquez-la « Sans objet » si elle apparaît encore.",
   gate_blocked: "Porte de convergence bloquée.",
+  // BILLING-BYPASS-01 — the step is open and the actor is authorized; the act
+  // simply has its own door, and that door carries rules this one cannot apply.
+  // Says WHERE to go, never « action impossible ».
+  domain_owned_transition:
+    "Cette étape se termine depuis la facture du dossier, et non par cette action générique.",
   from_step_incomplete: "L'étape d'origine du transfert n'est pas terminée.",
   am_opening_incomplete:
     "Transmission impossible : l'étape d'ouverture et de préparation du dossier n'est pas terminée.",

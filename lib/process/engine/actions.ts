@@ -57,6 +57,7 @@ import { evaluateControlOwnership } from "../control-ownership";
 import { stepOwningRole } from "../control-ownership-server";
 import { authoritativePickupGate } from "./gate-authority";
 import { evaluateStepEvidence, type StepEvidence } from "./evidence";
+import { genericTransitionAllowed } from "./domain-owned-guard";
 import { blockingRequirements } from "../requirement-class";
 import { scopeFromRow, stepApplicability } from "../service-scope";
 import { isDone } from "./types";
@@ -565,6 +566,26 @@ export async function submitStep(fileId: string, stepKey: string): Promise<Engin
   const declarant = declarantRequiredRefusal(stepKey, st.snapshot!.executions);
   if (declarant) return fail(declarant);
 
+  // BILLING-BYPASS-01 — a step whose transition belongs to a DOMAIN workflow may
+  // not be closed by this generic control. `billing_draft` declares no required
+  // documents, so nothing below could refuse it, and the generic « Terminer »
+  // moved step 20 to SUBMITTED with no invoice in existence. This function is a
+  // `"use server"` endpoint, so withdrawing the button was never going to be
+  // enough. The domain action passes because it writes its invoice fact first —
+  // see ./domain-owned-guard for why that is the capability and a parameter
+  // would not have been. Asked AFTER authority and applicability, so an actor
+  // who may not act here is told that first.
+  if (
+    !(await genericTransitionAllowed({
+      tenantId: c.tenantId,
+      fileId,
+      stepKey,
+      transition: "submit",
+    }))
+  ) {
+    return fail("domain_owned_transition");
+  }
+
   const ev = evaluateStepEvidence(stepKey, st.snapshot!.evidence);
 
   // C-4 — evidence the actor cannot SEE may not be evidence the actor CLOSES.
@@ -663,6 +684,24 @@ export async function approveStep(
   if (typeof st === "string") return fail(st);
   if (st.state !== "SUBMITTED") return fail("invalid_state");
 
+  // BILLING-BYPASS-01 — the REVIEW of a domain-owned step belongs to its own
+  // workflow. `approveStep` inspects no invoice at all, so the generic
+  // « Valider » completed steps 20 AND 21 and promoted step 22 while the
+  // invoice stayed a DRAFT — an audit trail asserting Finance had validated a
+  // document that did not exist. `approveInvoice` passes because it writes
+  // VALIDATED before it calls this. Named by the VALIDATOR key, which is what
+  // the ratified map holds.
+  if (
+    !(await genericTransitionAllowed({
+      tenantId: c.tenantId,
+      fileId,
+      stepKey: validatorStepKey,
+      transition: "approve",
+    }))
+  ) {
+    return fail("domain_owned_transition");
+  }
+
   const flags = await getTenantProcessFlags(c.tenantId);
   const decision = evaluateMakerChecker(st.submittedBy, c.userId, {
     overrideFlagOn: flags.overrideAllowed,
@@ -746,6 +785,22 @@ export async function rejectStep(
   const st = await loadStep(c, fileId, preparerKey);
   if (typeof st === "string") return fail(st);
   if (st.state !== "SUBMITTED") return fail("invalid_state");
+
+  // BILLING-BYPASS-01 — same door, same reason. `rejectInvoice` reopens the
+  // draft with its motif and a new revision BEFORE calling this; a generic
+  // rejection would freeze the step and leave the invoice untouched, so the
+  // maker would be asked to correct something the record still shows as
+  // submitted.
+  if (
+    !(await genericTransitionAllowed({
+      tenantId: c.tenantId,
+      fileId,
+      stepKey: validatorStepKey,
+      transition: "reject",
+    }))
+  ) {
+    return fail("domain_owned_transition");
+  }
 
   // A rejection is still a review: the checker may not be the maker.
   const flags = await getTenantProcessFlags(c.tenantId);
