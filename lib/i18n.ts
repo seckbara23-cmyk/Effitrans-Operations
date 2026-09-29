@@ -981,6 +981,20 @@ export const t = {
       not_draft: "Modifiable uniquement en brouillon.",
       no_lines: "Ajoutez au moins une ligne avant d'émettre.",
       numbering_failed: "Échec de la génération du numéro de facture.",
+      // STEP20-INVOICE-02 — six refusals this surface could already produce and
+      // had no words for, so each one reached the operator as « L'action a
+      // échoué. Veuillez réessayer. » Five come from `validateIssuance`, which
+      // runs before an official invoice number is allocated precisely so a
+      // meaningless document is refused while refusing is still free; the sixth
+      // is the submitted-to-Finance freeze. Saying what is wrong is the whole
+      // value of refusing early.
+      awaiting_validation:
+        "Facture transmise à la Finance : elle ne peut plus être modifiée tant qu'elle n'est pas validée ou rejetée.",
+      zero_total: "Le total de la facture est nul : ajoutez au moins une ligne facturable.",
+      negative_total: "Le total de la facture est négatif : corrigez les lignes avant d'émettre.",
+      total_too_large: "Le total de la facture dépasse le plafond autorisé.",
+      due_before_issue: "L'échéance ne peut pas précéder la date d'émission.",
+      invalid_due_date: "Date d'échéance invalide.",
       invalid_transition: "Transition non autorisée.",
       invalid_amount: "Montant invalide.",
       not_payable: "Facture non payable.",

@@ -33,6 +33,9 @@ import { AuditActions } from "@/lib/audit/events";
 import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-server";
 import { createNotification } from "@/lib/notifications/create";
 import { sendHandoff } from "@/lib/process/engine/actions";
+// STEP20-INVOICE-02 — the canonical invoice total, shared with issuance, the
+// invoice card and the closure loader. Never a second calculation.
+import { invoiceTotals } from "./calc";
 import {
   canTransitionFinanceRequest,
   canTransitionEvidence,
@@ -633,23 +636,8 @@ export async function getFinanceState(fileId: string): Promise<FinanceState | nu
       for (const u of users ?? []) names.set(u.id, u.name?.trim() || u.email);
     }
 
-    // Invoice state (existing chain; read-only).
-    const { data: invoices } = await admin
-      .from("invoice")
-      .select("status")
-      .eq("tenant_id", ctx.tenantId)
-      .eq("file_id", fileId)
-      .returns<{ status: string }[]>();
-    const invStatuses = (invoices ?? []).map((i) => i.status);
-    const invoiceState: FinanceState["invoiceState"] = invStatuses.some((s) =>
-      ["ISSUED", "PARTIALLY_PAID", "PAID"].includes(s),
-    )
-      ? "issued"
-      : invStatuses.includes("VALIDATED")
-        ? "validated"
-        : invStatuses.includes("DRAFT")
-          ? "draft"
-          : "none";
+    // Invoice state + the DRAFT's worth (existing chain; read-only).
+    const { invoiceState, invoiceTotal } = await loadInvoiceCondition(admin, ctx.tenantId, fileId);
 
     // Finance blockers + pending payment decision (9.0B tables — tolerate absence).
     let openFinanceBlockers = 0;
@@ -704,6 +692,7 @@ export async function getFinanceState(fileId: string): Promise<FinanceState | nu
       openFinanceBlockers,
       pendingPaymentDecision,
       invoiceState,
+      invoiceTotal,
       invoiceIntentionallyDeferred: false,
     });
 
@@ -743,6 +732,73 @@ export async function getFinanceState(fileId: string): Promise<FinanceState | nu
   }
 }
 
+/**
+ * The dossier's invoice state AND, for a DRAFT, what it is worth
+ * (STEP20-INVOICE-02).
+ *
+ * ONE derivation, deliberately. This existed twice — in `getFinanceState` and
+ * in `evaluateClearanceLive` — as two copies of the same status ladder, so the
+ * panel's verdict and the one `clearFinance` enforces were held together by
+ * nothing but their authors' care. Adding the draft's total to both would have
+ * doubled that. They now read the same function.
+ *
+ * The total comes from `invoiceTotals`, the canonical calculation the invoice
+ * card, `issueInvoice` and the closure loader all use. No second monetary
+ * opinion is introduced here — this only asks it a question.
+ *
+ * VOID invoices are excluded from the total on purpose: a voided invoice is not
+ * this dossier's invoice, and summing its lines would let a cancelled document
+ * pay for the clearance. Only the DRAFT is totalled, because only the DRAFT
+ * tier is gated on value — see `invoiceConditionShortfall`.
+ */
+async function loadInvoiceCondition(
+  admin: Admin,
+  tenantId: string,
+  fileId: string,
+): Promise<{ invoiceState: FinanceState["invoiceState"]; invoiceTotal: number | null }> {
+  const { data: invoices } = await admin
+    .from("invoice")
+    .select("id, status")
+    .eq("tenant_id", tenantId)
+    .eq("file_id", fileId)
+    .returns<{ id: string; status: string }[]>();
+
+  const rows = invoices ?? [];
+  const statuses = rows.map((i) => i.status);
+  const invoiceState: FinanceState["invoiceState"] = statuses.some((s) =>
+    ["ISSUED", "PARTIALLY_PAID", "PAID"].includes(s),
+  )
+    ? "issued"
+    : statuses.includes("VALIDATED")
+      ? "validated"
+      : statuses.includes("DRAFT")
+        ? "draft"
+        : "none";
+
+  // Only a DRAFT is gated on its value, so only a DRAFT is totalled — one
+  // extra read, and only when it can change the answer.
+  if (invoiceState !== "draft") return { invoiceState, invoiceTotal: null };
+
+  const draftIds = rows.filter((i) => i.status === "DRAFT").map((i) => i.id);
+  if (draftIds.length === 0) return { invoiceState, invoiceTotal: 0 };
+
+  const { data: lines } = await admin
+    .from("invoice_line")
+    .select("quantity, unit_amount, tax_rate")
+    .eq("tenant_id", tenantId)
+    .in("invoice_id", draftIds)
+    .returns<{ quantity: number; unit_amount: number; tax_rate: number }[]>();
+
+  const { total } = invoiceTotals(
+    (lines ?? []).map((l) => ({
+      quantity: Number(l.quantity ?? 0),
+      unitAmount: Number(l.unit_amount ?? 0),
+      taxRate: Number(l.tax_rate ?? 0),
+    })),
+  );
+  return { invoiceState, invoiceTotal: total };
+}
+
 /** Live clearance evaluation shared by clearFinance. */
 async function evaluateClearanceLive(
   admin: Admin,
@@ -757,20 +813,7 @@ async function evaluateClearanceLive(
     .eq("file_id", fileId)
     .returns<{ status: string; evidence_status: string }[]>();
 
-  const { data: invoices } = await admin
-    .from("invoice")
-    .select("status")
-    .eq("tenant_id", tenantId)
-    .eq("file_id", fileId)
-    .returns<{ status: string }[]>();
-  const invStatuses = (invoices ?? []).map((i) => i.status);
-  const invoiceState = invStatuses.some((s) => ["ISSUED", "PARTIALLY_PAID", "PAID"].includes(s))
-    ? ("issued" as const)
-    : invStatuses.includes("VALIDATED")
-      ? ("validated" as const)
-      : invStatuses.includes("DRAFT")
-        ? ("draft" as const)
-        : ("none" as const);
+  const { invoiceState, invoiceTotal } = await loadInvoiceCondition(admin, tenantId, fileId);
 
   let openFinanceBlockers = 0;
   let pendingPaymentDecision = false;
@@ -814,6 +857,7 @@ async function evaluateClearanceLive(
     openFinanceBlockers,
     pendingPaymentDecision,
     invoiceState,
+    invoiceTotal,
     invoiceIntentionallyDeferred,
   });
 }

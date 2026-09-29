@@ -135,6 +135,18 @@ export type ClearanceInput = {
   pendingPaymentDecision: boolean;
   /** 'none' | 'draft' | 'validated' | 'issued' — the dossier's invoice state. */
   invoiceState: "none" | "draft" | "validated" | "issued";
+  /**
+   * The DRAFT's total, from `invoiceTotals` — the canonical calculation, never
+   * a second one (STEP20-INVOICE-02).
+   *
+   * Required, and required to be supplied rather than defaulted, because the
+   * whole point of this field is to fail CLOSED: a caller that forgets it must
+   * lose the clearance, not win it. `null` where there is no draft to total —
+   * a VALIDATED or ISSUED invoice has already passed `validateIssuance`, which
+   * refuses a zero, negative or oversized total, so its value is established
+   * and is not re-litigated here.
+   */
+  invoiceTotal: number | null;
   /** An authorized human explicitly deferred invoicing for this dossier. */
   invoiceIntentionallyDeferred: boolean;
 };
@@ -145,7 +157,17 @@ export type ClearanceMissing =
   | "evidence_missing_or_unverified"
   | "open_finance_blockers"
   | "pending_payment_decision"
-  | "invoice_not_generated";
+  | "invoice_not_generated"
+  /**
+   * STEP20-INVOICE-02 — an invoice ROW exists but carries no money.
+   *
+   * Its own code rather than `invoice_not_generated`, because the two need
+   * different acts: one operator must create an invoice, the other must add a
+   * billable line to the one they already have. Telling the second « aucune
+   * facture générée » about a draft sitting in front of them is how a correct
+   * refusal reads as a broken platform.
+   */
+  | "invoice_without_value";
 
 export type ClearanceResult = { ready: boolean; missing: ClearanceMissing[] };
 
@@ -156,6 +178,8 @@ export const CLEARANCE_MISSING_LABELS_FR: Readonly<Record<ClearanceMissing, stri
   open_finance_blockers: "Des points bloquants financiers restent ouverts.",
   pending_payment_decision: "Une décision « continuer avant paiement » est en attente.",
   invoice_not_generated: "Aucune facture générée (ni report explicite de facturation).",
+  invoice_without_value:
+    "Facture en brouillon sans montant : ajoutez au moins une ligne facturable.",
 };
 
 /**
@@ -180,11 +204,45 @@ export function evaluateFinancialClearance(input: ClearanceInput): ClearanceResu
   }
   if (input.openFinanceBlockers > 0) missing.push("open_finance_blockers");
   if (input.pendingPaymentDecision) missing.push("pending_payment_decision");
-  if (input.invoiceState === "none" && !input.invoiceIntentionallyDeferred) {
-    missing.push("invoice_not_generated");
-  }
+  missing.push(...invoiceConditionShortfall(input));
 
   return { ready: missing.length === 0, missing };
+}
+
+/**
+ * The invoice half of financial clearance (STEP20-INVOICE-02).
+ *
+ * THE FAIL-OPEN THIS CLOSES. The rule was `invoiceState === "none"`, and an
+ * invoice ROW is free to create: `createInvoice` inserts a DRAFT with no lines,
+ * no number and no total. So on EFT-IMP-2026-00013 a draft carrying 0 XOF
+ * satisfied « une facture », and the dossier reported « Toutes les conditions
+ * financières sont réunies » beside it. Nothing else on the panel was wrong —
+ * the total really was zero, and the clearance really did say yes. The
+ * existence of an empty row was being read as an invoice having been produced.
+ *
+ * WHAT IS, AND IS NOT, DECIDED HERE. Phase 9.0E ratifies the requirement as
+ * « an invoice (or an explicit, reasoned invoicing deferral) » — it does NOT
+ * say VALIDATED or ISSUED. So a DRAFT still qualifies, exactly as before; what
+ * changes is only that it must be an invoice in the economic sense rather than
+ * an empty row. Whether a positive DRAFT should be enough, or whether clearance
+ * should wait for Finance's validation at step 21, is a question governance has
+ * not answered — and this does not answer it either.
+ *
+ * VALIDATED and ISSUED are not re-checked: both have already passed
+ * `validateIssuance`, which refuses a zero, negative or oversized total before
+ * an official number is allocated. Re-deriving their worth here would be a
+ * second monetary opinion about a figure the issuance path already settled.
+ */
+export function invoiceConditionShortfall(
+  input: Pick<ClearanceInput, "invoiceState" | "invoiceTotal" | "invoiceIntentionallyDeferred">,
+): ClearanceMissing[] {
+  // An authorized, reasoned deferral answers the question outright — unchanged.
+  if (input.invoiceIntentionallyDeferred) return [];
+  if (input.invoiceState === "none") return ["invoice_not_generated"];
+  if (input.invoiceState !== "draft") return [];
+  // A draft with no lines totals 0; a miskeyed one can total below 0. Neither
+  // is an invoice. `null` — a caller that did not total it — fails CLOSED.
+  return (input.invoiceTotal ?? 0) > 0 ? [] : ["invoice_without_value"];
 }
 
 /** Blocker categories that gate financial clearance. */

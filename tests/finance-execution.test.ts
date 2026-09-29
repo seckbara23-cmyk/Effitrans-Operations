@@ -46,6 +46,10 @@ const CLEAR_OK: ClearanceInput = {
   openFinanceBlockers: 0,
   pendingPaymentDecision: false,
   invoiceState: "issued",
+  // STEP20-INVOICE-02 — an ISSUED invoice is not gated on value here: it has
+  // already passed `validateIssuance`, which refuses a zero or negative total
+  // before a number is allocated. `null` is the honest "not totalled".
+  invoiceTotal: null,
   invoiceIntentionallyDeferred: false,
 };
 
