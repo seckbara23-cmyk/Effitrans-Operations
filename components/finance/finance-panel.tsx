@@ -10,6 +10,7 @@ import { useRouter } from "next/navigation";
 import { t } from "@/lib/i18n";
 import { lineAmount } from "@/lib/finance/calc";
 import { createCharge, createInvoice, deleteCharge } from "@/lib/finance/actions";
+import { stepGateMessageFr } from "@/lib/process/control-gate";
 import { InvoiceCard, fmt } from "./invoice-card";
 import type { ActionResult, FinanceForFile } from "@/lib/finance/types";
 
@@ -51,8 +52,13 @@ export function FinancePanel({
     startTransition(async () => {
       const res = await fn();
       if (!res.ok) {
-        const map = f.errors as Record<string, string>;
-        setError(map[res.error] ?? f.errors.generic);
+        // STEP20-INVOICE-02 — resolve the PROCESS GATE first, exactly as the
+        // customs panel does. A control-gate refusal arrives as
+        // `step_gate_<reason>`, matches no key in the finance map, and fell
+        // through to « L'action a échoué. Veuillez réessayer. » — so the
+        // platform knew precisely why it had refused and said nothing. The
+        // refusal itself is unchanged; only its silence is.
+        setError(stepGateMessageFr(res.error) ?? (f.errors as Record<string, string>)[res.error] ?? f.errors.generic);
         return;
       }
       router.refresh();

@@ -24,6 +24,7 @@ import {
   voidInvoice,
 } from "@/lib/finance/actions";
 import { PAYMENT_METHODS } from "@/lib/finance/calc";
+import { stepGateMessageFr } from "@/lib/process/control-gate";
 import { EmailTriggerButton } from "@/components/mail/email-trigger-button";
 import { InvoiceIntents } from "./invoice-intents";
 import type { ActionResult, InvoiceDetail, PaymentIntentView } from "@/lib/finance/types";
@@ -87,8 +88,13 @@ export function InvoiceCard({
     startTransition(async () => {
       const res = await fn();
       if (!res.ok) {
-        const map = f.errors as Record<string, string>;
-        setError(map[res.error] ?? f.errors.generic);
+        // STEP20-INVOICE-02 — the PROCESS GATE first, as the customs panel
+        // already does. This is the card that calls `issueInvoice`, and
+        // issuance is gated on step 22 (`billing_dispatch`): at step 20 the
+        // engine refuses with `step_gate_step_not_open`, which matched nothing
+        // here and became « L'action a échoué. Veuillez réessayer. » on
+        // EFT-IMP-2026-00013. The gate is unchanged; it now speaks.
+        setError(stepGateMessageFr(res.error) ?? (f.errors as Record<string, string>)[res.error] ?? f.errors.generic);
         return;
       }
       router.refresh();
