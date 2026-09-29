@@ -36,6 +36,7 @@ import {
   canEmailInvoice,
   canSubmitInvoice,
   canValidateInvoice,
+  draftStepPlan,
   validateRejectionReason,
   type BillingError,
   type InvoiceView,
@@ -75,6 +76,53 @@ async function guard(permission: string, fileId: string): Promise<Ctx | BillingE
 }
 
 const isErr = (v: Ctx | BillingError): v is BillingError => typeof v === "string";
+
+/**
+ * What became of a compensating write (STEP20-BILLING-ATOMICITY-01).
+ *
+ *   applied               the exact row this invocation wrote was reverted;
+ *   declined_row_changed  the row no longer matches — somebody else moved it,
+ *                         so it is not ours to undo and we leave it alone;
+ *   failed                the revert itself errored and nothing is proven.
+ */
+type CompensationOutcome = "applied" | "declined_row_changed" | "failed";
+
+/**
+ * Run a FENCED compensating update and say what happened.
+ *
+ * WHY COMPENSATION AND NOT A TRANSACTION. The invoice write and the process
+ * transition cannot share one. Everything here speaks PostgREST, where each
+ * request is its own transaction and the client exposes no session to join;
+ * there is no raw Postgres client in this project, and not one SQL function in
+ * the repository writes the engine's own step-execution table. Making the pair
+ * atomic would
+ * mean porting `submitStep`'s guards — permission, custody, assignment, service
+ * scope, evidence, and the BILLING-BYPASS-01 domain guard — into SQL, creating a
+ * second writer of the engine's tables and a second statement of workflow
+ * authority. The shape used instead is the one this codebase already ratified
+ * for the same problem in `lib/comms/dispatch.ts`: acquire by compare-and-set,
+ * attempt the fallible act, compensate on failure, return the original error.
+ *
+ * WHAT IS NEVER COMPENSATED. Only writes that stayed INSIDE the database. An
+ * email that left the building and an official invoice number that was consumed
+ * are facts about the world, and `emailValidatedInvoice` deliberately keeps
+ * both — rolling them back "would be a lie of a different kind". Undo what is
+ * only internal; never undo what escaped.
+ *
+ * FAILS CLOSED. The caller passes a fence naming the exact row-version this
+ * invocation produced — status, actor, the exact timestamp, and the revision.
+ * Anything else matches zero rows and is reported as `declined_row_changed`
+ * rather than forced, so a concurrent legitimate change can never be erased.
+ * Both non-applied outcomes leave precisely the behaviour that shipped before
+ * this, so the worst case of compensating is no worse than not compensating.
+ */
+async function compensationOutcome(
+  query: PromiseLike<{ data: unknown[] | null; error: unknown }>,
+): Promise<CompensationOutcome> {
+  const { data, error } = await query;
+  if (error) return "failed";
+  return (data?.length ?? 0) === 1 ? "applied" : "declined_row_changed";
+}
 
 /** Load the invoice with its official maker-checker fields + line count. */
 async function loadInvoiceView(
@@ -177,6 +225,63 @@ async function prepareDispatchStep(
   return { ready: true };
 }
 
+/**
+ * STEP20-BILLING-UI-01 — make step 20 able to REACH SUBMITTED, or refuse before
+ * the invoice is marked.
+ *
+ * `AVAILABLE -> SUBMITTED` is not in ALLOWED_STEP_TRANSITIONS. Promotion from
+ * step 19 leaves `billing_draft` AVAILABLE, so `submitInvoiceToFinance` stamped
+ * `submitted_by`/`submitted_at` on the invoice, then `submitStep` refused with
+ * `invalid_state` — leaving the invoice permanently unsubmittable
+ * (`canSubmitInvoice` now answers `duplicate_submission`) while the official
+ * step said nobody had submitted anything. The audit written on that path
+ * records the split; it does not undo it.
+ *
+ * Nothing about it was visible before this task because no control called the
+ * action. It is the SAME defect `prepareDispatchStep` already fixes for step 22,
+ * and it gets the same fix for the same reason.
+ *
+ * NO AUTHORITY IS CONFERRED. The caller has already passed
+ * `guard("finance:create")`, and `stepPermission("billing_draft")` IS
+ * `finance:create` — so this is precisely the act the operator performs with
+ * « Démarrer », done at the moment it becomes required rather than left as an
+ * unstated precondition.
+ *
+ * AND NO AUTHORITY IS WITHHELD EITHER (CI-STEP20-01). The assignee check guards
+ * the CLAIM and only the claim: it refuses to TAKE an AVAILABLE step from whoever
+ * holds it, and says nothing about who may submit an ACTIVE one. That is the
+ * engine's decision, and `submitStep` makes it — `assignmentRefusal` applies the
+ * assignee rule only to the customs chain Transit assigns, not to `billing_draft`.
+ * Restating it here made this helper stricter than the engine and broke the
+ * ratified C-4 path where Billing starts step 20 and OPS_SUPERVISOR submits it.
+ * See `draftStepPlan`.
+ */
+async function prepareDraftStep(
+  ctx: Ctx,
+  fileId: string,
+): Promise<{ ready: true } | { ready: false; error: BillingError }> {
+  const snap = await loadProcessSnapshot(ctx.tenantId, fileId, ctx.permissions);
+  if (!snap?.instance) return { ready: false, error: "step_completion_failed" };
+
+  const exec = snap.executions.find(
+    (e) => e.stepKey === "billing_draft" && e.state !== "REJECTED" && e.state !== "CANCELLED",
+  );
+
+  // THE RULE IS PURE AND LIVES IN ./state. This function loads rows and acts on
+  // the answer; it decides nothing, so the decision can be exercised by a test.
+  switch (draftStepPlan(exec ?? null, ctx.userId)) {
+    case "ready":
+      return { ready: true };
+    case "refuse":
+      return { ready: false, error: "step_completion_failed" };
+    case "claim": {
+      const opened = await activateStep(fileId, "billing_draft");
+      if (!opened.ok) return { ready: false, error: "step_completion_failed" };
+      return { ready: true };
+    }
+  }
+}
+
 // ------------------------------------------------- 20. draft preparation ----
 
 /**
@@ -267,11 +372,19 @@ export async function submitInvoiceToFinance(invoiceId: string): Promise<Billing
 
   if (!(await billingReady(c, fileId))) return fail("dossier_not_billing_ready");
 
+  // BEFORE the stamp, never after: an invoice marked submitted on a step that
+  // cannot accept the submission is the one state this lane cannot recover from.
+  const step = await prepareDraftStep(c, fileId);
+  if (!step.ready) return fail(step.error);
+
   // CAS: only an unsubmitted DRAFT may be submitted. A concurrent second submit
   // matches zero rows.
+  // Hoisted so the compensating fence below can name the EXACT value written
+  // here, rather than "some submission".
+  const stampedAt = new Date().toISOString();
   const { data } = await admin
     .from("invoice")
-    .update({ submitted_by: c.userId, submitted_at: new Date().toISOString() })
+    .update({ submitted_by: c.userId, submitted_at: stampedAt })
     .eq("id", invoiceId)
     .eq("tenant_id", c.tenantId)
     .eq("status", "DRAFT")
@@ -287,6 +400,31 @@ export async function submitInvoiceToFinance(invoiceId: string): Promise<Billing
   // awaiting validation while the workflow says nobody submitted anything.
   const advanced = await submitStep(fileId, "billing_draft");
   if (!advanced.ok) {
+    // COMPENSATE. The mark used to be left behind and the audit recorded that it
+    // was — which told the truth about a state nobody could get out of: an
+    // invoice stamped as submitted is no longer submittable (`canSubmitInvoice`
+    // answers `duplicate_submission`) while step 20 says nobody submitted
+    // anything. Nothing left the database here, so the attempt is reversible,
+    // and reversing it is what makes the domain guard's correct fail-closed
+    // survivable rather than permanent.
+    //
+    // FENCED to this invocation's row-version: our actor, our exact timestamp,
+    // still an unvalidated DRAFT, and the revision we read — so a
+    // reject/resubmit cycle or a concurrent validation matches zero rows and is
+    // left alone.
+    const compensation = await compensationOutcome(
+      admin
+        .from("invoice")
+        .update({ submitted_by: null, submitted_at: null })
+        .eq("id", invoiceId)
+        .eq("tenant_id", c.tenantId)
+        .eq("status", "DRAFT")
+        .eq("submitted_by", c.userId)
+        .eq("submitted_at", stampedAt)
+        .is("validated_at", null)
+        .eq("revision", loaded.view.revision)
+        .select("id"),
+    );
     await writeAudit({
       action: AuditActions.PROCESS_DISPATCH_NOT_ADVANCED,
       actorId: c.userId,
@@ -296,8 +434,10 @@ export async function submitInvoiceToFinance(invoiceId: string): Promise<Billing
       after: {
         file_id: fileId,
         step_key: "billing_draft",
-        // The submission mark IS committed; the audit records that, not a denial.
-        invoice_submitted: true,
+        // The ATTEMPT is recorded whatever happened; this says whether the mark
+        // it wrote still stands.
+        invoice_submitted: compensation !== "applied",
+        compensation,
         reason: advanced.error,
       },
     });
@@ -358,7 +498,50 @@ export async function approveInvoice(invoiceId: string): Promise<BillingResult> 
 
   // Sync the official process. The engine re-checks maker != checker on the
   // execution row, so the rule holds even if this action were bypassed.
-  await approveStep(fileId, "finance_invoice_validation");
+  //
+  // THE RESULT IS KEPT (STEP20-BILLING-ATOMICITY-01). It was discarded from the
+  // day this lane was written, so a failed approval returned `ok` while the
+  // invoice said VALIDATED and steps 20/21 never closed — and because the
+  // invoice had left DRAFT, neither the governed lane nor the generic control
+  // could get it back. Reporting success over a stalled dossier is the one
+  // thing C-4 ruled out.
+  const advanced = await approveStep(fileId, "finance_invoice_validation");
+  if (!advanced.ok) {
+    // Purely internal: no number, no email, nothing outside the database. The
+    // invoice returns to AWAITING VALIDATION — an approval never touches
+    // `submitted_at`, so clearing the validation alone restores it — and the
+    // same checker may simply try again. `rejection_reason` is deliberately NOT
+    // restored: the approval nulled a motif belonging to a superseded revision,
+    // and putting it back would show Finance a stale refusal on an invoice that
+    // is merely awaiting review.
+    const compensation = await compensationOutcome(
+      admin
+        .from("invoice")
+        .update({ status: "DRAFT", validated_by: null, validated_at: null })
+        .eq("id", invoiceId)
+        .eq("tenant_id", c.tenantId)
+        .eq("status", "VALIDATED")
+        .eq("validated_by", c.userId)
+        .eq("validated_at", now)
+        .eq("revision", loaded.view.revision)
+        .select("id"),
+    );
+    await writeAudit({
+      action: AuditActions.PROCESS_DISPATCH_NOT_ADVANCED,
+      actorId: c.userId,
+      tenantId: c.tenantId,
+      entity: "invoice",
+      entityId: invoiceId,
+      after: {
+        file_id: fileId,
+        step_key: "finance_invoice_validation",
+        invoice_validated: compensation !== "applied",
+        compensation,
+        reason: advanced.error,
+      },
+    });
+    return fail("step_completion_failed");
+  }
 
   await writeAudit({
     action: AuditActions.INVOICE_VALIDATED,
@@ -420,7 +603,50 @@ export async function rejectInvoice(invoiceId: string, reason: string): Promise<
   if ((data?.length ?? 0) !== 1) return fail("invoice_not_awaiting_validation");
 
   // The engine freezes the rejected step and opens a NEW correction row.
-  await rejectStep(fileId, "finance_invoice_validation", r.value!);
+  //
+  // THE RESULT IS KEPT, for the same reason as the approval above: a discarded
+  // refusal reopened the invoice for correction while step 21 still said it was
+  // awaiting review, and reported that as success.
+  const advanced = await rejectStep(fileId, "finance_invoice_validation", r.value!);
+  if (!advanced.ok) {
+    // Exact reversal of this invocation — not a resurrection. `rejection_reason`
+    // goes back to whatever the row already carried before this rejection wrote
+    // over it, which is the pre-invocation state by definition.
+    const compensation = await compensationOutcome(
+      admin
+        .from("invoice")
+        .update({
+          submitted_at: loaded.view.submittedAt,
+          rejected_by: null,
+          rejected_at: null,
+          rejection_reason: loaded.view.rejectionReason,
+          revision: loaded.view.revision,
+        })
+        .eq("id", invoiceId)
+        .eq("tenant_id", c.tenantId)
+        .eq("status", "DRAFT")
+        .is("submitted_at", null)
+        .eq("rejected_by", c.userId)
+        .eq("rejected_at", now)
+        .eq("revision", loaded.view.revision + 1)
+        .select("id"),
+    );
+    await writeAudit({
+      action: AuditActions.PROCESS_DISPATCH_NOT_ADVANCED,
+      actorId: c.userId,
+      tenantId: c.tenantId,
+      entity: "invoice",
+      entityId: invoiceId,
+      after: {
+        file_id: fileId,
+        step_key: "finance_invoice_validation",
+        invoice_reopened: compensation !== "applied",
+        compensation,
+        reason: advanced.error,
+      },
+    });
+    return fail("step_completion_failed");
+  }
 
   await writeAudit({
     action: AuditActions.INVOICE_VALIDATION_REJECTED,

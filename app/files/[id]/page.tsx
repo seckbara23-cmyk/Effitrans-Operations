@@ -53,6 +53,8 @@ import { getMissionTracking } from "@/lib/transport/tracking-service";
 import { listAssignableDrivers } from "@/lib/transport/drivers";
 import { FinancePanel } from "@/components/finance/finance-panel";
 import { getFinanceForFile } from "@/lib/finance/service";
+import { getBillingLane } from "@/lib/process/billing/lane";
+import { BillingLanePanel } from "@/components/finance/billing-lane-panel";
 import { MailTimeline } from "@/components/mail/mail-timeline";
 import { listCommunicationsForFile } from "@/lib/comms/service";
 import { LifecycleTracker } from "@/components/files/lifecycle-tracker";
@@ -218,6 +220,7 @@ async function renderFileDetailPage(params: { id: string }) {
     customsRecord,
     missingCustomsDocs,
     finance,
+    billingLane,
     communications,
     transportRecord,
     trackingEvents,
@@ -281,6 +284,13 @@ async function renderFileDetailPage(params: { id: string }) {
         : null,
     trackingEvents: async () => (trackingOn && canReadTracking ? await getTrackingTimeline(file.id) : []),
     finance: async () => (canReadFinance ? await getFinanceForFile(file.id) : null),
+    // STEP20-BILLING-UI-01 — the governed billing lane (official steps 20/21/22),
+    // resolved server-side. Returns null when the lane does not apply: engine
+    // dark, tenant disabled, dossier invisible, or NO PROCESS INSTANCE — which
+    // is what leaves a legacy dossier's existing finance controls untouched.
+    // Gated on the same finance:read the finance panel uses, so an ungated
+    // viewer issues no query at all.
+    billingLane: async () => (canReadFinance ? await getBillingLane(file.id) : null),
     communications: async () => (canReadComms ? await listCommunicationsForFile(file.id) : []),
     // CANONICAL STATE — viewer-independent, by construction.
     //
@@ -787,6 +797,11 @@ async function renderFileDetailPage(params: { id: string }) {
       {canReadFinance && cards("finance").length > 0 && (
         <div className="space-y-2">{cards("finance")}</div>
       )}
+      {canReadFinance && billingLane && (
+        <div id="billing-lane" className="scroll-mt-24">
+          <BillingLanePanel view={billingLane} />
+        </div>
+      )}
       {canReadFinance && finance && (
         <div id="finance-panel" className="scroll-mt-24">
           <FinancePanel
@@ -796,6 +811,18 @@ async function renderFileDetailPage(params: { id: string }) {
             canCreate={hasPermission(permissions, "finance:create")}
             canUpdate={hasPermission(permissions, "finance:update")}
             canIssueInvoice={hasPermission(permissions, "finance:issue")}
+            /* STEP20-BILLING-UI-01 — TWO ISSUANCE DOORS, ONE RETIRED WHERE IT
+               CONFLICTS. `issueInvoice` allocates an official number with no
+               Finance validation; the governed step 22 allocates it after one.
+               They can never be open at the same moment (`canIssue` accepts only
+               DRAFT, and step 22 opens only once the invoice is VALIDATED), so
+               the legacy control was not a second live door — it was a dead one
+               on every governed dossier, refused by the control gate after the
+               operator pressed it. Withdrawn from the screen exactly where the
+               governed lane exists, and LEFT INTACT everywhere else: a dossier
+               with no process instance has no step 22, and `evaluateControlGate`
+               deliberately lets it through. The ACTION itself is untouched. */
+            governedLane={billingLane !== null}
             canPayment={hasPermission(permissions, "finance:payment")}
             canVoidInvoice={hasPermission(permissions, "finance:void")}
             canDelete={hasPermission(permissions, "finance:delete")}

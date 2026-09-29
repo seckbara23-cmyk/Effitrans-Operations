@@ -56,6 +56,7 @@ export function InvoiceCard({
   canVoidInvoice,
   canDelete,
   canEmail = false,
+  governedLane = false,
   intents = [],
   paymentsEnabled = false,
   usableProviders = [],
@@ -67,6 +68,14 @@ export function InvoiceCard({
   canVoidInvoice: boolean;
   canDelete: boolean;
   canEmail?: boolean;
+  /**
+   * STEP20-BILLING-UI-01 — the governed billing lane owns issuance on this
+   * dossier (official step 22, after a Finance validation). The legacy
+   * « Émettre » control is withdrawn here when it is true, and ONLY that
+   * control: `issueInvoice` is unchanged and still the right door on a
+   * dossier the engine does not govern, where there is no step 22 to use.
+   */
+  governedLane?: boolean;
   intents?: PaymentIntentView[];
   paymentsEnabled?: boolean;
   usableProviders?: ProviderName[];
@@ -279,7 +288,7 @@ export function InvoiceCard({
 
       {/* Workflow actions */}
       <div className="flex flex-wrap items-center gap-2">
-        {isDraft && canIssueInvoice && (
+        {isDraft && canIssueInvoice && !governedLane && (
           <button
             onClick={() => setDialog({ kind: "issue" })}
             disabled={pending}

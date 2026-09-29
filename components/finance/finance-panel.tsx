@@ -24,6 +24,14 @@ export function FinancePanel({
   canVoidInvoice,
   canDelete,
   canEmail = false,
+  /**
+   * STEP20-BILLING-UI-01 — the governed billing lane (official steps 20/21/22)
+   * exists on this dossier, so ITS panel owns issuance. Withdraws the legacy
+   * « Émettre » control here, and nothing else: every other finance control is
+   * untouched, and `issueInvoice` itself is untouched and still reachable for a
+   * dossier the process engine does not govern, which has no step 22 at all.
+   */
+  governedLane = false,
   podVerified = null,
 }: {
   fileId: string;
@@ -35,6 +43,7 @@ export function FinancePanel({
   canVoidInvoice: boolean;
   canDelete: boolean;
   canEmail?: boolean;
+  governedLane?: boolean;
   /**
    * UAT-1 — read-only. Finance CONSUMES verified evidence; it never uploads or
    * verifies the delivery note. null = not applicable (no transport leg).
@@ -170,6 +179,7 @@ export function FinancePanel({
               canVoidInvoice={canVoidInvoice}
               canDelete={canDelete}
               canEmail={canEmail}
+              governedLane={governedLane}
               intents={finance.intents.filter((i) => i.invoiceId === inv.id)}
               paymentsEnabled={finance.paymentsEnabled}
               usableProviders={finance.usableProviders}
