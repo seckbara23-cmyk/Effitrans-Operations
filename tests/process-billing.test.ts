@@ -274,13 +274,24 @@ describe("validated-invoice email (step 22, Deliverable 6)", () => {
     expect(stepIdx).toBeGreaterThan(sendIdx);
   });
 
-  it("refuses to issue at all when no provider is configured", () => {
-    expect(actions).toContain('if (!isProviderConfigured()) return fail("delivery_not_configured")');
-    // …and refuses BEFORE an official number is spent on an impossible send.
-    const cfgIdx = actions.indexOf("isProviderConfigured()");
+  /**
+   * SUPERSEDED BY STEP22-PORTAL-DELIVERY-01 (ratified). Email is an optional
+   * notification now; the Client Space is the delivery channel, and it derives
+   * visibility from the ISSUED fact itself. So no provider precondition may
+   * stand between a validated invoice and the customer who can already read it.
+   */
+  it("does NOT gate issuance on an email provider", () => {
+    expect(actions).not.toContain("isProviderConfigured");
+    expect(actions).not.toContain("delivery_not_configured");
+    // The ordering that makes that safe is unchanged: the number is persisted
+    // with the ISSUED status BEFORE anything is sent, so an impossible send
+    // cannot burn it.
     const numIdx = actions.indexOf("next_invoice_number");
-    expect(cfgIdx).toBeGreaterThan(0);
-    expect(numIdx).toBeGreaterThan(cfgIdx);
+    const issIdx = actions.indexOf('status: "ISSUED",');
+    const sendIdx = actions.indexOf("const sent = await queueAndSend(");
+    expect(numIdx).toBeGreaterThan(0);
+    expect(issIdx).toBeGreaterThan(numIdx);
+    expect(sendIdx).toBeGreaterThan(issIdx);
   });
 
   it("advances step 22 on ISSUANCE, through the governed action", () => {

@@ -36,11 +36,6 @@ export type BillingError =
   | "invoice_not_validated"
   | "billing_contact_missing"
   | "email_send_failed"
-  // STEP22-ISSUANCE-INTEGRITY-01 — no mail provider is configured, so delivery
-  // cannot succeed now or later. Distinct from `email_send_failed`, which is a
-  // configured provider refusing once: that one is retryable and does not undo
-  // an issuance, and this one must not let step 22 complete at all.
-  | "delivery_not_configured"
   // C-4 — the irreversible-send boundary. Step 22 must be able to COMPLETE
   // before the invoice leaves the building, and if it somehow fails afterwards
   // the caller is told the truth rather than "ok".
@@ -69,9 +64,6 @@ export const BILLING_ERROR_FR: Record<BillingError, string> = {
   validation_reason_required: "Un motif de rejet est obligatoire.",
   invoice_not_validated: "La facture doit être validée par la Finance avant d'être envoyée au client.",
   billing_contact_missing: "Aucun contact de facturation pour ce client.",
-  delivery_not_configured:
-    "L'envoi d'e-mails n'est pas configuré sur cette plateforme : la facture ne peut pas être "
-    + "émise tant que le service d'envoi n'est pas paramétré. Contactez l'administrateur.",
   email_send_failed: "L'envoi de la facture a échoué. Vous pouvez réessayer.",
   dispatch_step_not_reached:
     "L'étape « Émission de la facture » n'est pas encore ouverte sur ce dossier. Rien n'a été envoyé.",
@@ -198,9 +190,12 @@ export function billingQueueState(
 ): BillingQueueState {
   if (!inv) return billingReady ? "draft_missing" : "billing_ready";
   if (inv.status === "ISSUED" || inv.status === "PARTIALLY_PAID" || inv.status === "PAID") {
-    // STEP22-ISSUANCE-INTEGRITY-01 — issuance and delivery are now separate facts.
-    // An issued invoice whose send failed is not « envoyée »: it is issued and
-    // awaiting a retry through the outbox, and saying otherwise hides the incident.
+    // Issuance and delivery are separate facts. An issued invoice whose send
+    // failed is not « envoyée »: it is issued, available to the client in their
+    // Client Space, and awaiting a retry through the outbox. Saying otherwise
+    // hides the incident — and this covers an unconfigured provider too, whose
+    // outbound row fails truthfully and becomes retryable once mail is set up
+    // (STEP22-PORTAL-DELIVERY-01).
     return email === "failed" ? "email_failed_retry" : "emailed";
   }
   if (inv.status === "VALIDATED") {

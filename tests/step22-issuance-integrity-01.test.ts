@@ -399,20 +399,46 @@ describe("governed issuance", () => {
     expect((failed.after as Row).invoice_issued).toBe(true);
   });
 
-  it("G — provider_not_configured refuses BEFORE a number is spent, and step 22 does not complete", async () => {
+  /**
+   * SUPERSEDED BY STEP22-PORTAL-DELIVERY-01 (ratified). This asserted that an
+   * unconfigured provider refuses issuance outright — correct while email WAS
+   * the delivery mechanism. The Client Space is now the authoritative channel
+   * and email is an optional notification, so an unconfigured provider must not
+   * withhold an invoice the customer can already read.
+   *
+   * The reason this is safe is the ORDER, unchanged from the previous slice: the
+   * number is persisted WITH the ISSUED status before anything is attempted, so
+   * an impossible send costs nothing. The old guard existed only because
+   * issuance used to come after the send.
+   */
+  it("G — no provider: the invoice is still ISSUED and step 22 still completes", async () => {
     db.providerConfigured = false;
+    db.sendStatus = "FAILED";
 
     const res = await emailValidatedInvoice(INVOICE);
 
-    expect(res.ok).toBe(false);
-    expect((res as { error: string }).error).toBe("delivery_not_configured");
-    expect(db.counter, "no official number may be burned on an impossible send").toBe(0);
-    expect(db.invoice!.status).toBe("VALIDATED");
-    expect(db.invoice!.invoice_number).toBeNull();
-    expect(db.artifactCalls).toHaveLength(0);
-    expect(db.messages).toHaveLength(0);
-    expect(engine.submitStep).not.toHaveBeenCalled();
-    expect(BILLING_ERROR_FR.delivery_not_configured).toBeTruthy();
+    expect(res.ok, JSON.stringify(res)).toBe(true);
+    expect(db.invoice!.status, "the customer is owed this invoice either way").toBe("ISSUED");
+    expect(db.invoice!.invoice_number, "and it carries its official number").toBe("EFT-INV-2026-00001");
+    expect(db.invoice!.issued_by).toBe(ISSUER);
+    expect(db.invoice!.issue_date).toBeTruthy();
+    expect(db.artifactCalls, "the official document exists").toHaveLength(1);
+    expect(engine.submitStep).toHaveBeenCalledWith(FILE, "billing_dispatch");
+
+    // …the notification failed truthfully, and nothing claims it was delivered.
+    expect(db.messages[0].status).toBe("FAILED");
+    expect(audits.some((a) => a.action === "invoice.emailed"), "no fabricated delivery").toBe(false);
+    const failed = audits.find((a) => a.action === "invoice.email.failed")!;
+    expect((failed.after as Row).retryable).toBe(true);
+    expect((failed.after as Row).invoice_issued).toBe(true);
+  });
+
+  it("G — and the number is spent ON THE INVOICE, never burned", async () => {
+    db.providerConfigured = false;
+    db.sendStatus = "FAILED";
+    await emailValidatedInvoice(INVOICE);
+    expect(db.counter, "exactly one allocation").toBe(1);
+    expect(db.invoice!.invoice_number, "…and it is on the row, not lost").toBe("EFT-INV-2026-00001");
   });
 
   it("H — a retry reuses the number and does not issue twice", async () => {

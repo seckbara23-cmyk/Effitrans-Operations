@@ -96,13 +96,15 @@ describe("C-4 — the SMTP branch is implemented, and implemented honestly", () 
     const billing = read("lib/process/billing/actions.ts");
     const email = billing.slice(billing.indexOf("export async function emailValidatedInvoice"));
 
-    // Delivery must be POSSIBLE before an official number is spent.
-    const configured = email.indexOf("isProviderConfigured()");
+    // STEP22-PORTAL-DELIVERY-01 — the provider precondition is gone: the Client
+    // Space delivers, and email is optional. What still holds, and is what makes
+    // that safe, is that the number is persisted with the ISSUED status BEFORE
+    // anything is attempted, so no send can burn one.
     const numbered = email.indexOf("next_invoice_number");
     const issued = email.indexOf('status: "ISSUED"');
     const sent = email.indexOf("const sent = await queueAndSend(");
-    expect(configured).toBeGreaterThan(-1);
-    expect(numbered).toBeGreaterThan(configured);
+    expect(email).not.toContain("isProviderConfigured");
+    expect(numbered).toBeGreaterThan(-1);
     expect(issued).toBeGreaterThan(numbered);
     expect(sent, "the send comes last, and cannot unspend anything").toBeGreaterThan(issued);
 
