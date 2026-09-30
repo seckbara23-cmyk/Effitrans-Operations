@@ -904,22 +904,26 @@ export async function emailValidatedInvoice(invoiceId: string): Promise<BillingR
   // from an unissued invoice — and left the operator closing the step by hand.
   const advanced = await submitStep(fileId, "billing_dispatch");
 
-  // The send is audited FIRST and unconditionally: it happened, whatever became
-  // of the workflow afterwards.
-  await writeAudit({
-    action: AuditActions.INVOICE_EMAILED,
-    actorId: c.userId,
-    tenantId: c.tenantId,
-    entity: "invoice",
-    entityId: invoiceId,
-    // Recipient + outcome. NEVER the rendered email body.
-    after: {
-      recipient: recipientEmail,
-      invoice_number: invoiceNumber,
-      message_id: sent.id,
-      delivery_status: sent.status,
-    },
-  });
+  // `invoice.emailed` asserts that a message reached the client, so it is written
+  // ONLY when one did. The failure case has its own record above; writing both
+  // would leave an audit trail claiming a delivery and a failure of the same act
+  // — which is the sort of thing an auditor reads and stops trusting.
+  if (sent.status === "SENT") {
+    await writeAudit({
+      action: AuditActions.INVOICE_EMAILED,
+      actorId: c.userId,
+      tenantId: c.tenantId,
+      entity: "invoice",
+      entityId: invoiceId,
+      // Recipient + outcome. NEVER the rendered email body.
+      after: {
+        recipient: recipientEmail,
+        invoice_number: invoiceNumber,
+        message_id: sent.id,
+        delivery_status: sent.status,
+      },
+    });
+  }
   revalidate(fileId);
 
   // C-4 — THE THIRD STATE. Delivery happened and the invoice is genuinely
