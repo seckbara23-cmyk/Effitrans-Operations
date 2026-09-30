@@ -436,7 +436,7 @@ describe("no existing process invariant was weakened", () => {
 
   it("35 — this slice ships no migration", () => {
     const buildInfo = read("lib/platform/ops/build-info.ts");
-    expect(buildInfo).toContain('LATEST_MIGRATION = "20261007000001_delivery_note_signed_label"');
-    expect(buildInfo).toContain("MIGRATION_COUNT = 145");
+    expect(buildInfo).toContain('LATEST_MIGRATION = "20261008000001_step22_00013_recovery"');
+    expect(buildInfo).toContain("MIGRATION_COUNT = 146");
   });
 });
