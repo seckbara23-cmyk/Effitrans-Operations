@@ -26,12 +26,34 @@
 -- unapplied. The migration fences on it (to prove nothing moved BEFORE the
 -- apply); the verifier deliberately does not.
 --
+-- IT ANSWERS FOR A SUBJECT THAT EXISTS IN ONE DATABASE. `verify-migrations.mjs`
+-- runs every APPLIED migration's verifier, and in CI `db reset` applies them
+-- all — against a database that has never held EFT-IMP-2026-00013. Asserting a
+-- corrected dossier there would fail a migration that ran perfectly, which is
+-- precisely the false VERIFY_FAILED the policy warns about.
+--
+-- So the verdict is conditional on the SUBJECT, exactly as the migration's own
+-- gate is: no dossier, nothing to verify, and the detail line says so rather
+-- than claiming a verification that did not happen. What is NOT conditional is
+-- COHERENCE — the dossier and its invoice must either both exist or both not.
+-- That is asserted in every database, so "absent" can never quietly mean
+-- "half-deleted", and on production every postcondition below applies in full.
+--
 -- AND IT NEVER CONSULTS THE MIGRATION LEDGER. `supabase_migrations` is exactly
 -- (version, statements, name); the #140/#141 verifiers compared against an
 -- `inserted_at` that does not exist and took every other check in the file down
 -- with them (MIGRATION-GATE-139-141-REPAIR).
 -- ===========================================================================
-with checks(label, ok) as (
+with subject as (
+  -- The one dossier this correction belongs to. Present in production; absent
+  -- in CI, a fresh stack, or any environment that never carried it.
+  select
+    exists (select 1 from public.operational_file
+             where id = '3567914c-7afe-41fb-be24-adcd779d1e3a') as dossier_present,
+    exists (select 1 from public.invoice
+             where id = '845690b7-9490-4587-8ca5-3338b1cacfe7') as invoice_present
+),
+checks(label, ok) as (
   values
     -- ---- 1. Step 22 is reopened, and the false completion is gone ---------
     ('step 22 billing_dispatch is ACTIVE again', (
@@ -191,9 +213,16 @@ with checks(label, ok) as (
     ))
 )
 select
-  bool_and(ok) as ok,
-  case when bool_and(ok)
-       then 'STEP22-00013-RECOVERY-01 #146 verified: ' || count(*) || '/' || count(*) || ' postconditions hold'
-       else 'STEP22-00013-RECOVERY-01 #146 FAILED: ' || string_agg(label, '; ') filter (where not ok)
+  -- COHERENCE always; the postconditions only where there is a subject.
+  (select dossier_present = invoice_present from subject)
+  and case when (select dossier_present from subject) then bool_and(c.ok) else true end as ok,
+  case
+    when (select dossier_present <> invoice_present from subject)
+      then 'STEP22-00013-RECOVERY-01 #146 INCOHERENT: the dossier and its invoice disagree about existing — one is present without the other'
+    when not (select dossier_present from subject)
+      then 'STEP22-00013-RECOVERY-01 #146 NOT APPLICABLE: EFT-IMP-2026-00013 is absent from this database, so this one-off correction has no subject to verify here'
+    when bool_and(c.ok)
+      then 'STEP22-00013-RECOVERY-01 #146 verified: ' || count(*) || '/' || count(*) || ' postconditions hold'
+    else 'STEP22-00013-RECOVERY-01 #146 FAILED: ' || string_agg(c.label, '; ') filter (where not c.ok)
   end as detail
-from checks;
+from checks c;

@@ -71,6 +71,31 @@
 -- communication row is added or retried, no handoff, no ledger event.
 --
 -- ===========================================================================
+-- A CORRECTION TO ONE PRODUCTION DOSSIER, REPLAYED ON DATABASES THAT NEVER
+-- HAD IT
+-- ===========================================================================
+-- Every migration in this repository is replayed from empty: `supabase start`,
+-- `supabase db reset`, the CI promotion walk. Every earlier data migration
+-- survives that because its subject is SEEDED — the document catalogue, the
+-- owning-role map, a schema column. This one's subject is a single production
+-- dossier that exists in exactly one database in the world, so on a clean
+-- database it has nothing to correct, and the first fence below rejected that
+-- as drift. There is no precedent in this repository for a dossier-specific
+-- correction; this is the first, and the shape it settles on is:
+--
+--   ABSENT SUBJECT  -> vacuous, and PROVEN vacuous. Not "the row is missing so
+--                      skip", which would also swallow a mistyped id on
+--                      production. The dossier, its instance, its invoice and
+--                      both its step rows must ALL be absent together. If the
+--                      dossier is gone while any of its rows survives, that is
+--                      an incoherent database and the migration refuses.
+--   PRESENT SUBJECT -> every fence below applies, unchanged, fail-closed.
+--
+-- So the no-op is licensed by there being no subject, never by the subject
+-- being in an unexpected state. On production the dossier exists, and not one
+-- of the thirteen fences is relaxed.
+--
+-- ===========================================================================
 -- FENCED TO ONE OBSERVED STATE
 -- ===========================================================================
 -- Every identifier and timestamp below was read from production on 2026-09-30
@@ -147,12 +172,34 @@ begin
   -- 1. FENCES — the exact production state this correction was designed for
   -- =========================================================================
 
-  -- ---- 1a. the dossier itself --------------------------------------------
+  -- ---- 1a. IS THERE A SUBJECT AT ALL? ------------------------------------
+  -- A clean database — CI, a fresh local stack, a new environment — has never
+  -- held this dossier, so there is nothing here to correct and nothing to fail
+  -- about. That is a different fact from "the dossier is present and does not
+  -- look as expected", which is drift and must still abort.
+  --
+  -- The absence is PROVEN COMPLETE rather than assumed: if the dossier were
+  -- gone while its instance, its invoice or either step row survived, the
+  -- database would be incoherent — or the identifiers would be wrong — and
+  -- skipping would hide exactly the mistake worth catching.
+  if not exists (select 1 from public.operational_file where id = k_file) then
+    if exists (select 1 from public.process_instance where id = k_instance)
+       or exists (select 1 from public.invoice where id = k_invoice)
+       or exists (select 1 from public.process_step_execution where id in (k_step22, k_step23))
+    then
+      raise exception
+        'STEP22-00013-RECOVERY-01: dossier % is absent but its instance/invoice/step rows are not. The database is incoherent or these identifiers are wrong — refusing to skip.', k_file;
+    end if;
+    raise notice 'STEP22-00013-RECOVERY-01: dossier EFT-IMP-2026-00013 (%) is not present in this database, and neither is any row it owns. This correction has no subject here — no-op.', k_file;
+    return;
+  end if;
+
+  -- ---- 1b. it IS here, so it must be exactly the dossier we mean ---------
   if not exists (
     select 1 from public.operational_file
      where id = k_file and tenant_id = k_tenant and file_number = 'EFT-IMP-2026-00013'
   ) then
-    raise exception 'STEP22-00013-RECOVERY-01: dossier EFT-IMP-2026-00013 (%) not found in tenant %', k_file, k_tenant;
+    raise exception 'STEP22-00013-RECOVERY-01: % exists but is not EFT-IMP-2026-00013 in tenant % — refusing', k_file, k_tenant;
   end if;
 
   select count(*) into n from public.process_instance where file_id = k_file;
@@ -167,7 +214,7 @@ begin
     raise exception 'STEP22-00013-RECOVERY-01: process instance % is not the ACTIVE instance of this dossier', k_instance;
   end if;
 
-  -- ---- 1b. the invoice, which this migration must NOT change -------------
+  -- ---- 1c. the invoice, which this migration must NOT change -------------
   -- Fenced precisely because it is untouched: if it has moved, somebody has
   -- acted on the dossier since the baseline and the correction is stale.
   if not exists (
@@ -183,7 +230,7 @@ begin
       'STEP22-00013-RECOVERY-01: invoice % is no longer the VALIDATED, unnumbered, unissued row this correction was designed against', k_invoice;
   end if;
 
-  -- ---- 1c. step 22, carrying the false completion -------------------------
+  -- ---- 1d. step 22, carrying the false completion -------------------------
   if not exists (
     select 1 from public.process_step_execution
      where id = k_step22 and tenant_id = k_tenant
@@ -199,7 +246,7 @@ begin
     raise exception 'STEP22-00013-RECOVERY-01: step 22 (%) no longer matches the observed false completion', k_step22;
   end if;
 
-  -- ---- 1d. step 23, claimed by Administration ----------------------------
+  -- ---- 1e. step 23, claimed by Administration ----------------------------
   if not exists (
     select 1 from public.process_step_execution
      where id = k_step23 and tenant_id = k_tenant
@@ -213,7 +260,7 @@ begin
     raise exception 'STEP22-00013-RECOVERY-01: step 23 (%) no longer matches the observed Administration claim', k_step23;
   end if;
 
-  -- ---- 1e. step 24 has not begun -----------------------------------------
+  -- ---- 1f. step 24 has not begun -----------------------------------------
   if not exists (
     select 1 from public.process_step_execution
      where process_instance_id = k_instance and step_key = 'courier_deposit'
@@ -222,7 +269,7 @@ begin
     raise exception 'STEP22-00013-RECOVERY-01: step 24 courier_deposit has moved — the correction is no longer safe';
   end if;
 
-  -- ---- 1f. ABSENCE. Step 23 was started and nothing more -----------------
+  -- ---- 1g. ABSENCE. Step 23 was started and nothing more -----------------
   -- If Administration had produced real work — a deposit, a courier, a document,
   -- a handoff — un-promoting the step would destroy it. It produced none, and
   -- this is where that is proven rather than assumed.
@@ -250,7 +297,7 @@ begin
     raise exception 'STEP22-00013-RECOVERY-01: % handoff(s) sent since the baseline', n;
   end if;
 
-  -- ---- 1g. numbering is untouched, and stays untouched -------------------
+  -- ---- 1h. numbering is untouched, and stays untouched -------------------
   if not exists (
     select 1 from public.invoice_counter
      where tenant_id = k_tenant and year = 2026 and next_seq = 2
