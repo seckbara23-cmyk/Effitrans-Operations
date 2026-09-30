@@ -368,9 +368,14 @@ describe("migration · the catalogue row is aligned, and nothing else", () => {
 
   it("build-info tracks the new migration in lockstep", () => {
     const files = readdirSync(join(root, "supabase/migrations")).filter((f) => f.endsWith(".sql")).sort();
+    // The LOCKSTEP invariant — build-info and the directory agree — is general
+    // and stays. Pinning LATEST_MIGRATION to this slice's own version was not:
+    // it asserts that no later slice ever ships a migration, and one now has
+    // (20261008000001, the 00013 recovery). What this slice actually claims is
+    // that ITS migration exists and is tracked, so that is what is asserted.
     expect(MIGRATION_COUNT).toBe(files.length);
     expect(files.at(-1)).toBe(`${LATEST_MIGRATION}.sql`);
-    expect(LATEST_MIGRATION).toBe("20261007000001_delivery_note_signed_label");
+    expect(files).toContain("20261007000001_delivery_note_signed_label.sql");
   });
 
   it("the application does not depend on it having been applied", () => {

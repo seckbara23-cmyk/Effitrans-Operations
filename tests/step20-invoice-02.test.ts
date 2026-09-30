@@ -21,7 +21,7 @@
  * refusals were always right; one of them was silent and the other was absent.
  */
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import {
@@ -354,10 +354,18 @@ describe("scope · nothing beyond Fix 1 and Fix 2", () => {
     }
   });
 
+  /**
+   * RESTATED (STEP22-00013-RECOVERY-01). This pinned the GLOBAL ledger
+   * constants to prove that THIS slice shipped no migration — which breaks the
+   * moment any later slice legitimately ships one, as the 00013 recovery now
+   * has. The claim is about this slice's own files, so that is what it asserts:
+   * no migration in the repository belongs to it.
+   */
   it("33 — this slice ships no migration", () => {
-    const buildInfo = read("lib/platform/ops/build-info.ts");
-    expect(buildInfo).toContain('LATEST_MIGRATION = "20261007000001_delivery_note_signed_label"');
-    expect(buildInfo).toContain("MIGRATION_COUNT = 145");
+    const owned = readdirSync(join(root, "supabase/migrations"))
+      .filter((f) => f.endsWith(".sql"))
+      .filter((f) => /invoice_refusal|clearance|step20_invoice/i.test(f));
+    expect(owned, `unexpected migration for this slice: ${owned.join(", ")}`).toEqual([]);
   });
 
   it("34 — the pure evaluator stays pure", () => {
