@@ -27,7 +27,6 @@ import { getEffectivePermissions } from "@/lib/rbac/permissions";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
 import { queueAndSend } from "@/lib/comms/queue";
-import { isProviderConfigured } from "@/lib/comms/provider";
 import { ensureOfficialInvoiceArtifact } from "@/lib/finance/invoice-artifact";
 import { invoiceTotals } from "@/lib/finance/calc";
 import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-server";
@@ -733,20 +732,29 @@ export async function emailValidatedInvoice(invoiceId: string): Promise<BillingR
     return { ok: true, id: invoiceId, status: "SENT" };
   }
 
-  // DELIVERY MUST BE POSSIBLE BEFORE ANYTHING IS SPENT
-  // (STEP22-ISSUANCE-INTEGRITY-01, ratified).
+  // NO PROVIDER PRECONDITION (STEP22-PORTAL-DELIVERY-01, ratified).
   //
-  // A configured provider that fails at runtime is a retryable incident and does
-  // NOT undo a legitimate issuance. No provider at all is a different fact: the
-  // send cannot succeed now or later under this configuration, so completing
-  // official step 22 on it would record a dispatch that can never happen. On
-  // EFT-IMP-2026-00013 this is exactly what occurred — `provider_not_configured`
-  // burned an official number and the step was closed by hand afterwards.
+  // STEP22-ISSUANCE-INTEGRITY-01 refused issuance outright when no mail provider
+  // was configured, on the premise that email WAS the delivery mechanism. The
+  // ratified premise is now different: the customer's Client Space is the
+  // authoritative channel, and email is an optional secondary notification.
   //
-  // Asked BEFORE the number is allocated, because the whole point is to spend
-  // nothing when delivery is impossible. `isProviderConfigured` is the platform's
-  // own check, reused; this introduces no second notion of "configured".
-  if (!isProviderConfigured()) return fail("delivery_not_configured");
+  // NOTHING IS PUBLISHED HERE, because nothing needs to be. The portal derives
+  // visibility from the genuine issuance fact: `invoice_portal_select` admits
+  // `status IN (ISSUED, PARTIALLY_PAID, PAID)` for the client's own dossiers, so
+  // the CAS below is the delivery — an invoice cannot be issued-but-unavailable,
+  // and a VALIDATED one stays invisible because the database says so, not because
+  // this file remembered to hide it. The official PDF is served by
+  // `/api/invoices/[id]/pdf`, which matches the portal user against the invoice's
+  // own client. A publication step would be a second system asserting what RLS
+  // already derives.
+  //
+  // AND REMOVING THE GUARD IS SAFE ONLY BECAUSE OF THE ORDER BELOW. It existed to
+  // stop an official number being burned by a send that could never succeed. The
+  // number is now persisted WITH the ISSUED status before anything is attempted,
+  // so a failed or impossible send costs nothing — the number is on the invoice,
+  // not lost. Restoring the guard without restoring the old ordering would be the
+  // numbering defect again.
 
   // The authorized billing contact: the client's primary contact, else the client
   // record's own email. No contact => no send (we never guess a recipient).

@@ -748,6 +748,28 @@ describe("C-4 section F — governed billing, and the issuance boundary", () => 
       "nothing may claim the client was emailed",
     ).toBe(0);
 
+    // …and the invoice now satisfies EXACTLY what the Client Space policy admits
+    // (STEP22-PORTAL-DELIVERY-01). `invoice_portal_select` is
+    // `portal_can_read_file(file_id) AND status IN (ISSUED, PARTIALLY_PAID, PAID)`,
+    // so issuance IS delivery: the customer can read this invoice even though no
+    // mail ever left the building.
+    //
+    // DIVISION OF PROOF, deliberately. This journey proves the APPLICATION
+    // produced the state the policy admits, on a real database. That the POLICY
+    // actually enforces it — own client only, VALIDATED invisible, other client
+    // and other tenant denied — is proven by `rls_portal_invoice_test.sql`, which
+    // runs in this same CI job under a real portal JWT. Neither claims the
+    // other's ground.
+    expect(["ISSUED", "PARTIALLY_PAID", "PAID"]).toContain(inv?.status);
+    const { data: owner } = await db()
+      .from("invoice")
+      .select("client_id, file_id")
+      .eq("id", invoiceId)
+      .maybeSingle();
+    expect(owner?.client_id, "and it is attributed to a client, or no portal user could reach it")
+      .toBe(CLIENT_DEPOSIT_REQUIRED);
+    expect(owner?.file_id).toBe(fileId);
+
     // …and step 22 completes: the dispatch happened as far as this service can
     // make it happen, which is what the ratified rule says it must turn on.
     expect((await execution(fileId, "billing_dispatch"))?.state).toBe("COMPLETED");

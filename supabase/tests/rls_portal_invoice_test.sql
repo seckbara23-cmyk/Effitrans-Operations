@@ -4,7 +4,13 @@
 -- their own client's dossier; lines + payments inherit invoice visibility:
 --   * ISSUED own client       -> 1     * PAID own client      -> 1
 --   * DRAFT                    -> 0     * VOID                 -> 0
---   * ISSUED OTHER client      -> 0
+--   * ISSUED OTHER client      -> 0     * VALIDATED own client  -> 0
+--
+-- STEP22-PORTAL-DELIVERY-01 adds the VALIDATED case. The status did not exist
+-- when this test was written, and it is now the one that matters most: the
+-- Client Space is the authoritative delivery channel, so "issued" and "visible"
+-- must be the same instant. A VALIDATED invoice has no official number and has
+-- not been issued — the customer must not see it.
 --   * line/payment of ISSUED   -> 1     * line of DRAFT        -> 0
 --   * staff (finance:read) sees the DRAFT (staff unaffected)  -> 1
 --
@@ -45,7 +51,9 @@ insert into public.invoice (id, tenant_id, file_id, status) values
   ('00000000-0000-0000-0000-0000000091e2', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-00000000fae1', 'DRAFT'),
   ('00000000-0000-0000-0000-0000000091e3', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-00000000fae1', 'VOID'),
   ('00000000-0000-0000-0000-0000000091e4', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-00000000fae1', 'PAID'),
-  ('00000000-0000-0000-0000-0000000091e5', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-00000000fae2', 'ISSUED')
+  ('00000000-0000-0000-0000-0000000091e5', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-00000000fae2', 'ISSUED'),
+  -- Own client, checker-approved, NOT issued: no number, nothing sent.
+  ('00000000-0000-0000-0000-0000000091e6', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-00000000fae1', 'VALIDATED')
 on conflict (id) do nothing;
 
 insert into public.invoice_line (id, tenant_id, invoice_id, description, unit_amount) values
@@ -61,7 +69,7 @@ create temp table _r (check_name text, value int) on commit drop;
 
 do $$
 declare
-  p_issued int; p_paid int; p_draft int; p_void int; p_other int;
+  p_issued int; p_paid int; p_draft int; p_void int; p_other int; p_validated int;
   p_line int; p_line_draft int; p_pay int; staff_draft int;
 begin
   perform set_config('role', 'authenticated', true);
@@ -73,6 +81,7 @@ begin
   select count(*) into p_draft  from public.invoice where id='00000000-0000-0000-0000-0000000091e2';
   select count(*) into p_void   from public.invoice where id='00000000-0000-0000-0000-0000000091e3';
   select count(*) into p_other  from public.invoice where id='00000000-0000-0000-0000-0000000091e5';
+  select count(*) into p_validated from public.invoice where id='00000000-0000-0000-0000-0000000091e6';
   select count(*) into p_line       from public.invoice_line where id='00000000-0000-0000-0000-00000001a1e1';
   select count(*) into p_line_draft from public.invoice_line where id='00000000-0000-0000-0000-00000001a1e2';
   select count(*) into p_pay        from public.payment where id='00000000-0000-0000-0000-00000001a2e1';
@@ -85,13 +94,17 @@ begin
   insert into _r values
     ('portal_issued', p_issued), ('portal_paid', p_paid), ('portal_draft', p_draft),
     ('portal_void', p_void), ('portal_other_client', p_other),
+    ('portal_validated_not_visible', p_validated),
     ('portal_line', p_line), ('portal_line_draft', p_line_draft), ('portal_payment', p_pay),
     ('staff_sees_draft', staff_draft);
 
+  -- coalesce so an UNSET counter fails loudly: `null <> 0` is null, which would
+  -- make the whole guard vacuous and let a deleted probe pass silently.
   if p_issued<>1 or p_paid<>1 or p_draft<>0 or p_void<>0 or p_other<>0
+     or coalesce(p_validated, -1)<>0
      or p_line<>1 or p_line_draft<>0 or p_pay<>1 or staff_draft<>1 then
-    raise exception 'RLS PORTAL INV FAIL: issued=% paid=% draft=% void=% other=% line=% lineDraft=% pay=% staffDraft=%',
-      p_issued, p_paid, p_draft, p_void, p_other, p_line, p_line_draft, p_pay, staff_draft;
+    raise exception 'RLS PORTAL INV FAIL: issued=% paid=% draft=% void=% other=% validated=% line=% lineDraft=% pay=% staffDraft=%',
+      p_issued, p_paid, p_draft, p_void, p_other, p_validated, p_line, p_line_draft, p_pay, staff_draft;
   end if;
 end $$;
 
