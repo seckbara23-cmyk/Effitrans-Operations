@@ -249,17 +249,41 @@ describe("validated-invoice email (step 22, Deliverable 6)", () => {
     expect(actions).toContain('if (!recipientEmail) return fail("billing_contact_missing")');
   });
 
-  it("keeps a FAILED email retryable and does NOT advance step 22", () => {
+  /**
+   * SUPERSEDED BY STEP22-ISSUANCE-INTEGRITY-01 (ratified).
+   *
+   * This pinned « a failed send must not advance step 22 », which made an
+   * unreachable mail provider indistinguishable from an unissued invoice: on
+   * EFT-IMP-2026-00013 the number was already spent, the step was closed by hand
+   * afterwards, and the dossier claimed an invoice had been sent that never was.
+   *
+   * The ratified rule now separates the two facts. A CONFIGURED provider that
+   * fails once is a retryable delivery incident and does not undo issuance; NO
+   * provider at all is refused before anything is spent.
+   */
+  it("keeps a FAILED email retryable WITHOUT undoing a legitimate issuance", () => {
     expect(actions).toContain('if (sent.status !== "SENT")');
     expect(actions).toContain("retryable: true");
-    // The step advance happens only after the failure branch has returned.
-    const failIdx = actions.indexOf('return fail("email_send_failed")');
+    // The failure branch no longer returns: issuance stands and the step advances.
+    expect(actions).not.toContain('return fail("email_send_failed")');
+    const issueIdx = actions.indexOf('status: "ISSUED",');
+    const sendIdx = actions.indexOf("const sent = await queueAndSend(");
     const stepIdx = actions.indexOf('submitStep(fileId, "billing_dispatch")');
-    expect(failIdx).toBeGreaterThan(0);
-    expect(stepIdx).toBeGreaterThan(failIdx);
+    expect(issueIdx, "the invoice is issued BEFORE the send is attempted").toBeGreaterThan(0);
+    expect(sendIdx).toBeGreaterThan(issueIdx);
+    expect(stepIdx).toBeGreaterThan(sendIdx);
   });
 
-  it("advances step 22 ONLY on a successful send", () => {
+  it("refuses to issue at all when no provider is configured", () => {
+    expect(actions).toContain('if (!isProviderConfigured()) return fail("delivery_not_configured")');
+    // …and refuses BEFORE an official number is spent on an impossible send.
+    const cfgIdx = actions.indexOf("isProviderConfigured()");
+    const numIdx = actions.indexOf("next_invoice_number");
+    expect(cfgIdx).toBeGreaterThan(0);
+    expect(numIdx).toBeGreaterThan(cfgIdx);
+  });
+
+  it("advances step 22 on ISSUANCE, through the governed action", () => {
     expect(actions).toContain('await submitStep(fileId, "billing_dispatch");');
   });
 

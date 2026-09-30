@@ -74,6 +74,9 @@ export const GATE_DETAIL_LABELS_FR: Readonly<Record<string, string>> = {
   no_invoice: "Aucune facture émise",
   balance_outstanding: "Facture émise, solde restant dû",
   invoice_not_validated: "Facture non validée par la Finance",
+  // STEP22-ISSUANCE-INTEGRITY-01 — validated is not issued: the invoice has
+  // passed the Finance control but carries no official number yet.
+  invoice_not_issued: "Facture validée mais pas encore émise",
   invoice_not_sent: "Facture non envoyée au client",
   dispute_open: "Litige ouvert sur la facture",
   proof_not_accepted: "Preuve de dépôt physique non validée",

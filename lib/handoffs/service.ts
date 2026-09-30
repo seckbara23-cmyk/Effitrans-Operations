@@ -27,6 +27,7 @@ import {
   type DossierProgress,
   type HandoffType,
 } from "./rules";
+import { isIssuedStatus } from "@/lib/finance/status";
 
 type Admin = ReturnType<typeof getAdminSupabaseClient>;
 export type HandoffResult = "created" | "exists" | "surpassed" | "skipped";
@@ -58,7 +59,9 @@ async function readDossierProgress(
   return {
     customsStatus: (customs.data as { status: string } | null)?.status ?? null,
     transportStatus: (transport.data as { status: string } | null)?.status ?? null,
-    hasIssuedInvoice: (invoices.data ?? []).some((i) => i.status !== "DRAFT" && i.status !== "VOID"),
+    // STEP22-ISSUANCE-INTEGRITY-01 — the milestone is named for issuance and
+    // must mean it; a VALIDATED invoice has not reached it.
+    hasIssuedInvoice: (invoices.data ?? []).some((i) => isIssuedStatus(String(i.status))),
     fileClosed: ((file.data as { status: string } | null)?.status ?? "") === "CLOSED",
     satisfiedTypes: HANDOFF_ORDER.filter((t) => satisfied.has(t)),
   };

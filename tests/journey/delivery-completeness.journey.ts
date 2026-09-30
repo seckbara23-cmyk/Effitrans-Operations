@@ -28,6 +28,7 @@ import { authoritativePickupGate } from "@/lib/process/engine/gate-authority";
 import { declareEvidenceAbsence } from "@/lib/process/evidence-absence-actions";
 import { receiveDossierAtTransit, assignTransitStep, recordBae, decideTransitRelease, finalizeTransitRelease } from "@/lib/process/engine/transit-actions";
 import { createCustoms, changeCustomsStatus } from "@/lib/customs/actions";
+import { retryMessage } from "@/lib/comms/actions";
 import { createTransport, assignTransport, changeTransportStatus } from "@/lib/transport/actions";
 import { assignDriverUser } from "@/lib/transport/driver-actions";
 import { getDriverMission } from "@/lib/driver/service";
@@ -679,81 +680,123 @@ describe("C-4 section F — governed billing, and the issuance boundary", () => 
     expect(inv?.invoice_number, "validation must not allocate an official number").toBeNull();
   });
 
-  it("THE ISSUANCE INVARIANT — a delivery that genuinely FAILS issues nothing", async () => {
-    // The provider is real and configured, so the failure has to be real too:
-    // the SMTP host is pointed at a port nothing is listening on, producing an
-    // actual ECONNREFUSED inside the transport. Nothing is stubbed and no
-    // success is faked — which is the whole reason SMTP was implemented rather
-    // than mocked.
+  /**
+   * SUPERSEDED BY STEP22-ISSUANCE-INTEGRITY-01 (ratified 2026-09-30).
+   *
+   * This case used to assert « a delivery that genuinely FAILS issues nothing ».
+   * Production disproved the premise behind it: on EFT-IMP-2026-00013 the
+   * provider was not configured, the send failed, an official number had already
+   * been consumed, the invoice stayed VALIDATED — and the operator closed step 22
+   * by hand, leaving a dossier that claimed to have sent an invoice it never had.
+   *
+   * The ratified rule separates two facts that were conflated:
+   *
+   *   • NO PROVIDER CONFIGURED — delivery can never succeed, so issuance is
+   *     refused BEFORE an official number is spent. Asserted in the unit suite,
+   *     which can unset the provider; this journey always has a real one.
+   *   • A CONFIGURED PROVIDER THAT FAILS — the invoice is genuinely issued, and a
+   *     transport error does not un-issue it. The failure is recorded, visible
+   *     and retried through the platform's existing outbox.
+   *
+   * The failure here is still REAL: the SMTP host is pointed at a port nothing is
+   * listening on, producing an actual ECONNREFUSED inside the transport. Nothing
+   * is stubbed and no success is faked.
+   */
+  it("THE ISSUANCE INVARIANT — a real delivery failure does not un-issue the invoice", async () => {
+    const recipient = await billingRecipientFor(CLIENT_DEPOSIT_REQUIRED);
+    const before = (await sinkMessagesFor(recipient)).length;
+
     const realPort = process.env.SMTP_PORT;
     process.env.SMTP_PORT = "1";
     const sent = await as(billing, () => emailValidatedInvoice(invoiceId));
     process.env.SMTP_PORT = realPort;
-    expect(sent.ok, "a send that did not happen must not report success").toBe(false);
-    expect((sent as { error: string }).error).toBe("email_send_failed");
 
-    const { data: inv } = await db()
-      .from("invoice")
-      .select("status, invoice_number, issue_date, issued_by")
-      .eq("id", invoiceId)
-      .maybeSingle();
-    expect(inv?.status, "a failed delivery must not issue the invoice").toBe("VALIDATED");
-    expect(inv?.invoice_number, "and must not stamp it with a number").toBeNull();
-    expect(inv?.issue_date).toBeNull();
-    expect(inv?.issued_by).toBeNull();
-
-    expect((await execution(fileId, "billing_dispatch"))?.state).not.toBe("COMPLETED");
-
-    const events = await auditFor("invoice.email.failed", invoiceId);
-    expect(events.length, "a failed delivery must be audited").toBeGreaterThan(0);
-    expect(events[0].actor_id).toBe(billing.id);
-  });
-
-
-  it("step 22 — a REAL SMTP delivery is what issues the invoice", async () => {
-    // The provider is the ordinary `smtp` one, pointed at a disposable sink.
-    // Nothing about this path is test-aware: emailValidatedInvoice does not know
-    // where the mail is going, and the invoice becomes ISSUED for exactly one
-    // reason — a server accepted the message.
-    // Step 22 is NOT pre-claimed here. Since the irreversible-send correction,
-    // emailValidatedInvoice prepares the step itself before anything leaves the
-    // building — and the earlier failed-delivery case already left it ACTIVE, so
-    // claiming it again would be an illegal ACTIVE -> ACTIVE transition.
-    const recipient = await billingRecipientFor(CLIENT_DEPOSIT_REQUIRED);
-    const before = (await sinkMessagesFor(recipient)).length;
-
-    const sent = await as(billing, () => emailValidatedInvoice(invoiceId));
     expect(sent.ok, `emailValidatedInvoice: ${JSON.stringify(sent)}`).toBe(true);
 
-    // THE SINK ACTUALLY RECEIVED IT. Asserted at the destination, not from the
-    // application's own report: "the action said ok" and "a message arrived" are
-    // two different claims, and step 22's contract rests on the second.
-    const after = await sinkMessagesFor(recipient);
-    expect(after.length, "the mail sink must have received the invoice").toBe(before + 1);
+    // NOTHING ARRIVED. Asserted at the destination: the point of this case is
+    // that issuance stands even though delivery demonstrably did not happen.
+    expect((await sinkMessagesFor(recipient)).length, "no mail can have arrived").toBe(before);
 
-    // …and the invoice is ISSUED, with its official identity populated.
+    // …and the invoice is genuinely issued, with its official identity.
     const { data: inv } = await db()
       .from("invoice")
       .select("status, invoice_number, issue_date, due_date, issued_by")
       .eq("id", invoiceId)
       .maybeSingle();
-    expect(inv?.status, "delivery is what issues it").toBe("ISSUED");
-    expect(inv?.invoice_number, "the official number is assigned at issuance").toBeTruthy();
-    expect(inv?.issue_date, "and the issue date").toBeTruthy();
-    expect(inv?.due_date, "and the due date").toBeTruthy();
-    expect(inv?.issued_by, "attributed to the issuer").toBe(billing.id);
+    expect(inv?.status, "a legitimate issuance is not undone by a transport error").toBe("ISSUED");
+    expect(inv?.invoice_number, "the official number is persisted").toBeTruthy();
+    expect(inv?.issue_date).toBeTruthy();
+    expect(inv?.due_date).toBeTruthy();
+    expect(inv?.issued_by).toBe(billing.id);
 
-    // …step 22 completes, on the delivery and not on the click.
+    // …the outbound record exists and carries the failure, retryable.
+    const { data: msg } = await db()
+      .from("communication_message")
+      .select("id, status, last_error")
+      .eq("related_entity", "invoice")
+      .eq("related_entity_id", invoiceId)
+      .maybeSingle();
+    expect(msg?.status, "the failure is durable and visible").toBe("FAILED");
+    expect(msg?.last_error, "and says what went wrong").toBeTruthy();
+
+    // …the failure is audited, and NO delivery is claimed.
+    const failed = await auditFor("invoice.email.failed", invoiceId);
+    expect(failed.length, "a failed delivery must be audited").toBeGreaterThan(0);
+    expect(failed[0].actor_id).toBe(billing.id);
+    expect(
+      (await auditFor("invoice.emailed", invoiceId)).length,
+      "nothing may claim the client was emailed",
+    ).toBe(0);
+
+    // …and step 22 completes: the dispatch happened as far as this service can
+    // make it happen, which is what the ratified rule says it must turn on.
     expect((await execution(fileId, "billing_dispatch"))?.state).toBe("COMPLETED");
 
-    // …the send is audited with the recipient and the outcome.
-    const events = await auditFor("invoice.emailed", invoiceId);
-    expect(events.length, "a delivery must be audited").toBeGreaterThan(0);
-    expect(events[0].actor_id).toBe(billing.id);
-    expect((events[0].after as { recipient?: string })?.recipient).toBe(recipient);
-
-    // …and step 23 becomes eligible — the wall the journey could not cross.
+    // …so step 23 becomes eligible — the wall the journey could not cross.
     expect((await execution(fileId, "administration_deposit_prep"))?.state).toBe("AVAILABLE");
+  });
+
+  /**
+   * The other half of the ratified rule: a failed delivery is retried through the
+   * EXISTING outbox, never by re-issuing. `retryMessage` is the platform's own
+   * action — this slice built no second communication system — and the invoice's
+   * official identity must survive the retry unchanged.
+   */
+  it("step 22 — the failed delivery is retried through the outbox, and nothing is re-issued", async () => {
+    const recipient = await billingRecipientFor(CLIENT_DEPOSIT_REQUIRED);
+    const before = (await sinkMessagesFor(recipient)).length;
+
+    const { data: prior } = await db()
+      .from("invoice")
+      .select("invoice_number, status")
+      .eq("id", invoiceId)
+      .maybeSingle();
+
+    const { data: msg } = await db()
+      .from("communication_message")
+      .select("id")
+      .eq("related_entity", "invoice")
+      .eq("related_entity_id", invoiceId)
+      .maybeSingle();
+
+    // OPS_SUPERVISOR holds communication:manage; Billing does not, and issuance
+    // is not the seat that operates the mail queue.
+    const retried = await as(ops, () => retryMessage(msg!.id as string));
+    expect(retried.ok, `retryMessage: ${JSON.stringify(retried)}`).toBe(true);
+
+    // THE SINK ACTUALLY RECEIVED IT, asserted at the destination.
+    const after = await sinkMessagesFor(recipient);
+    expect(after.length, "the mail sink must have received the invoice").toBe(before + 1);
+
+    // …and the invoice is untouched: same number, same status, no second issuance.
+    const { data: inv } = await db()
+      .from("invoice")
+      .select("invoice_number, status")
+      .eq("id", invoiceId)
+      .maybeSingle();
+    expect(inv?.invoice_number, "the official number is not reallocated").toBe(prior?.invoice_number);
+    expect(inv?.status).toBe("ISSUED");
+    expect(prior?.status).toBe("ISSUED");
   });
 
   it("re-sending cannot issue or bill twice", async () => {

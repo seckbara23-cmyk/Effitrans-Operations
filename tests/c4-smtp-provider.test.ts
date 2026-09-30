@@ -80,16 +80,38 @@ describe("C-4 — the SMTP branch is implemented, and implemented honestly", () 
     expect(provider).toContain('return { ok: false, error: "provider_not_configured" };');
   });
 
-  it("the governed lane still issues ONLY after acceptance", () => {
-    // The invariant this whole exercise exists to keep true.
+  /**
+   * SUPERSEDED BY STEP22-ISSUANCE-INTEGRITY-01 (ratified). This pinned
+   * « issue only after the provider accepts », which conflated two facts: the
+   * invoice being issued, and the email arriving. On EFT-IMP-2026-00013 the
+   * provider was not configured at all, so the number was spent, nothing was
+   * issued, and the step was closed by hand afterwards.
+   *
+   * The ratified rule separates them. No provider configured => refuse before
+   * anything is spent. A CONFIGURED provider failing at runtime => the invoice is
+   * genuinely issued, the failure is a retryable delivery incident, and issuance
+   * is not undone to hide it.
+   */
+  it("the governed lane issues BEFORE the send, and refuses when no provider exists", () => {
     const billing = read("lib/process/billing/actions.ts");
     const email = billing.slice(billing.indexOf("export async function emailValidatedInvoice"));
-    const failed = email.indexOf('return fail("email_send_failed")');
+
+    // Delivery must be POSSIBLE before an official number is spent.
+    const configured = email.indexOf("isProviderConfigured()");
+    const numbered = email.indexOf("next_invoice_number");
     const issued = email.indexOf('status: "ISSUED"');
+    const sent = email.indexOf("const sent = await queueAndSend(");
+    expect(configured).toBeGreaterThan(-1);
+    expect(numbered).toBeGreaterThan(configured);
+    expect(issued).toBeGreaterThan(numbered);
+    expect(sent, "the send comes last, and cannot unspend anything").toBeGreaterThan(issued);
+
+    // A runtime failure is recorded, and no longer reverses the issuance.
     expect(email).toContain('if (sent.status !== "SENT")');
-    expect(failed).toBeGreaterThan(-1);
-    expect(issued).toBeGreaterThan(failed);
+    expect(email).not.toContain('return fail("email_send_failed")');
+
     // …and the write is a CAS on VALIDATED, so it cannot re-issue.
     expect(email).toContain('.eq("status", "VALIDATED")');
+    expect(email).toContain('.is("invoice_number", null)');
   });
 });

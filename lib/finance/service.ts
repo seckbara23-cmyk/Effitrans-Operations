@@ -29,6 +29,7 @@ import type {
   ReconciliationData,
   ReconciliationPayment,
 } from "./types";
+import { isIssuedStatus } from "./status";
 
 type Admin = ReturnType<typeof getAdminSupabaseClient>;
 
@@ -178,7 +179,8 @@ export async function getFinanceForFile(fileId: string): Promise<FinanceForFile>
     ),
   );
 
-  const hasIssued = invoices.some((i) => i.status !== "DRAFT" && i.status !== "VOID");
+  // STEP22-ISSUANCE-INTEGRITY-01 — « Facture émise » must mean issued.
+  const hasIssued = invoices.some((i) => isIssuedStatus(i.status));
   const outstanding = invoices.reduce(
     (s, i) => (i.status === "ISSUED" || i.status === "PARTIALLY_PAID" ? s + i.balance : s),
     0,

@@ -51,6 +51,10 @@ const ELIGIBILITY = "lib/process/step-eligibility.ts";
 const BILLING = "lib/process/billing/actions.ts";
 
 const DRAFT = "billing_draft";
+// STEP22-ISSUANCE-INTEGRITY-01 — the fact rule is keyed on the STEP now, because
+// steps 20 and 22 both close with a `submit` and their facts are different things.
+const DRAFT_STEP = "billing_draft";
+const VALIDATION_STEP = "finance_invoice_validation";
 const VALIDATION = "finance_invoice_validation";
 const DISPATCH = "billing_dispatch";
 const COMPLETENESS = "coordinator_completeness";
@@ -80,8 +84,12 @@ const viewer = (userId: string, permissions: string[]) => ({
 // The ratified map
 // ===========================================================================
 describe("the domain-owned map is explicit and minimal", () => {
-  it("1 — names exactly the two billing steps", () => {
-    expect(Object.keys(DOMAIN_OWNED_STEPS).sort()).toEqual([DRAFT, VALIDATION].sort());
+  // STEP22-ISSUANCE-INTEGRITY-01 (ratified) added the THIRD entry. Step 22 was
+  // thought protected by its FINAL_INVOICE HARD_GATE; the gate was real but its
+  // predicate accepted a VALIDATED invoice, so the generic control closed it on
+  // EFT-IMP-2026-00013 with no number, no document and a failed email.
+  it("1 — names exactly the three billing steps", () => {
+    expect(Object.keys(DOMAIN_OWNED_STEPS).sort()).toEqual([DRAFT, VALIDATION, DISPATCH].sort());
   });
 
   it("2 — withdraws submit from step 20, approve+reject from step 21", () => {
@@ -93,7 +101,7 @@ describe("the domain-owned map is explicit and minimal", () => {
   });
 
   it("3 — and withdraws NOTHING from any other step", () => {
-    for (const step of [DISPATCH, COMPLETENESS, "am_completeness", "pickup", "customs_preparation",
+    for (const step of [COMPLETENESS, "am_completeness", "pickup", "customs_preparation",
                         "transit_validation", "transport_pod_handoff"]) {
       for (const t of ["submit", "approve", "reject"] as const) {
         expect(isGenericTransitionWithdrawn(step, t), `${step}/${t}`).toBe(false);
@@ -182,13 +190,22 @@ describe("generic controls are withdrawn in the UI", () => {
     expect(el.canSubmit).toBe(true);
   });
 
-  it("12 — step 22 is untouched by this slice", () => {
-    expect(isGenericTransitionWithdrawn(DISPATCH, "submit")).toBe(false);
+  // SUPERSEDED BY STEP22-ISSUANCE-INTEGRITY-01. This asserted the premise that
+  // step 22 needed no withdrawal because its evidence protected it. Production
+  // disproved the premise, so the assertion is inverted rather than deleted: the
+  // generic control is now withdrawn here too, and starting the step is still free.
+  it("12 — step 22's generic submit is withdrawn, and Démarrer is not", () => {
+    expect(isGenericTransitionWithdrawn(DISPATCH, "submit")).toBe(true);
     const el = evaluateStepAction(
       facts({ stepKey: DISPATCH, state: "ACTIVE", assignedUserId: MAKER, owningRole: "BILLING_OFFICER" }),
       viewer(MAKER, ["finance:issue"]),
     );
-    expect(el.canSubmit).toBe(true);
+    expect(el.canSubmit, "the governed issuance action is the only way to close it").toBe(false);
+    const open = evaluateStepAction(
+      facts({ stepKey: DISPATCH, state: "AVAILABLE", assignedUserId: null, owningRole: "BILLING_OFFICER" }),
+      viewer(MAKER, ["finance:issue"]),
+    );
+    expect(open.canStart, "claiming the work is not the act").toBe(true);
   });
 });
 
@@ -232,7 +249,7 @@ describe("the server refuses generic transitions on domain-owned steps", () => {
     // It reads the invoice the domain action writes before it moves the step,
     // and DECIDES nothing itself — the rule is pure and tested below.
     expect(g).toContain('.from("invoice")');
-    expect(g).toContain("domainFactSatisfied(input.transition, invoices)");
+    expect(g).toContain("domainFactSatisfied(input.stepKey, input.transition, invoices)");
     expect(g).toContain("if (error) return false;");
     expect(g).toContain("if (!isGenericTransitionWithdrawn(input.stepKey, input.transition)) return true;");
 
@@ -243,60 +260,61 @@ describe("the server refuses generic transitions on domain-owned steps", () => {
     // present but unreachable — a mutation nothing else here would catch,
     // because the function is server-only and cannot be executed in a unit test.
     expect((g.match(/return true;/g) ?? []).length).toBe(1);
-    expect(g.trimEnd().endsWith("return domainFactSatisfied(input.transition, invoices);\n}")).toBe(true);
+    expect(g.trimEnd().endsWith("return domainFactSatisfied(input.stepKey, input.transition, invoices);\n}")).toBe(true);
   });
 
   // ---- the RULE, exercised rather than read ------------------------------
   const inv = (over: Partial<DomainInvoiceFact> = {}): DomainInvoiceFact => ({
-    status: "DRAFT", submittedAt: null, validatedAt: null, rejectionReason: null, ...over,
+    status: "DRAFT", submittedAt: null, validatedAt: null, rejectionReason: null,
+    invoiceNumber: null, ...over,
   });
 
   it("17 — NO invoice: every domain-owned transition is refused", () => {
     for (const t of ["submit", "approve", "reject"] as const) {
-      expect(domainFactSatisfied(t, []), t).toBe(false);
+      expect(domainFactSatisfied(DRAFT_STEP, t, []), t).toBe(false);
     }
   });
 
   it("18 — an EMPTY, unsubmitted draft cannot close step 20 or 21", () => {
     // The exact EFT-IMP-2026-00013 shape: a DRAFT that nobody submitted.
     const draftOnly = [inv()];
-    expect(domainFactSatisfied("submit", draftOnly)).toBe(false);
-    expect(domainFactSatisfied("approve", draftOnly)).toBe(false);
-    expect(domainFactSatisfied("reject", draftOnly)).toBe(false);
+    expect(domainFactSatisfied(DRAFT_STEP, "submit", draftOnly)).toBe(false);
+    expect(domainFactSatisfied(VALIDATION_STEP, "approve", draftOnly)).toBe(false);
+    expect(domainFactSatisfied(VALIDATION_STEP, "reject", draftOnly)).toBe(false);
   });
 
   it("19 — after submitInvoiceToFinance, the step-20 transition is admitted", () => {
     const submitted = [inv({ submittedAt: "2026-09-29T10:00:00Z" })];
-    expect(domainFactSatisfied("submit", submitted)).toBe(true);
+    expect(domainFactSatisfied(DRAFT_STEP, "submit", submitted)).toBe(true);
     // …but the approval still is not: nobody has validated it.
-    expect(domainFactSatisfied("approve", submitted)).toBe(false);
-    expect(domainFactSatisfied("reject", submitted)).toBe(false);
+    expect(domainFactSatisfied(VALIDATION_STEP, "approve", submitted)).toBe(false);
+    expect(domainFactSatisfied(VALIDATION_STEP, "reject", submitted)).toBe(false);
   });
 
   it("20 — after approveInvoice, the step-21 approval is admitted", () => {
     const validated = [inv({ status: "VALIDATED", submittedAt: "t", validatedAt: "t" })];
-    expect(domainFactSatisfied("approve", validated)).toBe(true);
-    expect(domainFactSatisfied("submit", validated)).toBe(true);
+    expect(domainFactSatisfied(VALIDATION_STEP, "approve", validated)).toBe(true);
+    expect(domainFactSatisfied(DRAFT_STEP, "submit", validated)).toBe(true);
   });
 
   it("21 — after rejectInvoice, the rejection is admitted and the approval is not", () => {
     const rejected = [inv({ submittedAt: null, rejectionReason: "montant erroné" })];
-    expect(domainFactSatisfied("reject", rejected)).toBe(true);
-    expect(domainFactSatisfied("approve", rejected)).toBe(false);
+    expect(domainFactSatisfied(VALIDATION_STEP, "reject", rejected)).toBe(true);
+    expect(domainFactSatisfied(VALIDATION_STEP, "approve", rejected)).toBe(false);
   });
 
   it("22 — a legacy ISSUED/PAID invoice is never stranded", () => {
     for (const status of ["ISSUED", "PARTIALLY_PAID", "PAID"]) {
       const legacy = [inv({ status, submittedAt: null })];
-      expect(domainFactSatisfied("submit", legacy), status).toBe(true);
-      expect(domainFactSatisfied("approve", legacy), status).toBe(true);
+      expect(domainFactSatisfied(DRAFT_STEP, "submit", legacy), status).toBe(true);
+      expect(domainFactSatisfied(VALIDATION_STEP, "approve", legacy), status).toBe(true);
     }
   });
 
   it("23 — a VOID invoice alone satisfies nothing", () => {
     const voided = [inv({ status: "VOID" })];
     for (const t of ["submit", "approve", "reject"] as const) {
-      expect(domainFactSatisfied(t, voided), t).toBe(false);
+      expect(domainFactSatisfied(DRAFT_STEP, t, voided), t).toBe(false);
     }
   });
 
@@ -329,17 +347,17 @@ describe("the governed billing actions are NOT blocked", () => {
   it("26 — so each action's own fact admits its own transition, and no other", () => {
     // The state each action writes, and what it unlocks. Exercised, not read:
     // the rule is pure precisely so a mutation to it fails here.
-    const afterSubmit = [{ status: "DRAFT", submittedAt: "t", validatedAt: null, rejectionReason: null }];
-    const afterApprove = [{ status: "VALIDATED", submittedAt: "t", validatedAt: "t", rejectionReason: null }];
-    const afterReject = [{ status: "DRAFT", submittedAt: null, validatedAt: null, rejectionReason: "motif" }];
+    const afterSubmit = [{ status: "DRAFT", submittedAt: "t", validatedAt: null, rejectionReason: null, invoiceNumber: null }];
+    const afterApprove = [{ status: "VALIDATED", submittedAt: "t", validatedAt: "t", rejectionReason: null, invoiceNumber: null }];
+    const afterReject = [{ status: "DRAFT", submittedAt: null, validatedAt: null, rejectionReason: "motif", invoiceNumber: null }];
 
-    expect(domainFactSatisfied("submit", afterSubmit)).toBe(true);
-    expect(domainFactSatisfied("approve", afterSubmit)).toBe(false);
+    expect(domainFactSatisfied(DRAFT_STEP, "submit", afterSubmit)).toBe(true);
+    expect(domainFactSatisfied(VALIDATION_STEP, "approve", afterSubmit)).toBe(false);
 
-    expect(domainFactSatisfied("approve", afterApprove)).toBe(true);
+    expect(domainFactSatisfied(VALIDATION_STEP, "approve", afterApprove)).toBe(true);
 
-    expect(domainFactSatisfied("reject", afterReject)).toBe(true);
-    expect(domainFactSatisfied("approve", afterReject)).toBe(false);
+    expect(domainFactSatisfied(VALIDATION_STEP, "reject", afterReject)).toBe(true);
+    expect(domainFactSatisfied(VALIDATION_STEP, "approve", afterReject)).toBe(false);
   });
 
   it("27 — the billing actions keep their OWN rules — nothing was moved", () => {
@@ -365,9 +383,9 @@ describe("the governed billing actions are NOT blocked", () => {
     // `submitted_at` was never set — is not stranded with neither a generic
     // control nor a governed one. The guard exists to stop a step closing on
     // NOTHING, not to relitigate history.
-    const legacyIssued = [{ status: "ISSUED", submittedAt: null, validatedAt: null, rejectionReason: null }];
-    expect(domainFactSatisfied("submit", legacyIssued)).toBe(true);
-    expect(domainFactSatisfied("approve", legacyIssued)).toBe(true);
+    const legacyIssued = [{ status: "ISSUED", submittedAt: null, validatedAt: null, rejectionReason: null, invoiceNumber: null }];
+    expect(domainFactSatisfied(DRAFT_STEP, "submit", legacyIssued)).toBe(true);
+    expect(domainFactSatisfied(VALIDATION_STEP, "approve", legacyIssued)).toBe(true);
   });
 });
 

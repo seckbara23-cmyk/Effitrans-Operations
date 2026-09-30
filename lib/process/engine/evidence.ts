@@ -16,6 +16,7 @@
  *     empty string is not a BAE.
  */
 import { isVerified } from "@/lib/documents/doctrine";
+import { isIssuedStatus } from "@/lib/finance/status";
 import { DOCUMENT_MAPPINGS, mapDocument } from "../documents";
 import { getNode } from "./state";
 import { amAssignmentRequiredForFileType } from "../applicability";
@@ -308,8 +309,19 @@ export function checkEvidence(key: string, snap: EvidenceSnapshot): EvidenceItem
 
   if (key === "FINAL_INVOICE") {
     if (!snap.access.finance) return { key, labelFr, status: "unauthorized" };
-    const issued = snap.invoices.filter((i) => i.status !== "DRAFT" && i.status !== "VOID");
-    if (issued.length > 0) return { key, labelFr, status: "satisfied" };
+    // STEP22-ISSUANCE-INTEGRITY-01 — the OFFICIAL invoice, which means ISSUED.
+    // This used to accept anything that was not a DRAFT, so a VALIDATED
+    // invoice — approved by the checker, with no number, no issue date and no
+    // official document — satisfied this HARD_GATE and let the generic
+    // control close step 22 on EFT-IMP-2026-00013.
+    if (snap.invoices.some((i) => isIssuedStatus(i.status))) {
+      return { key, labelFr, status: "satisfied" };
+    }
+    // VALIDATED is real progress and is reported as such — awaiting issuance,
+    // never « manquant », because nothing is missing that anyone can upload.
+    if (snap.invoices.some((i) => i.status === "VALIDATED")) {
+      return { key, labelFr, status: "pending_review", detail: "invoice_not_issued" };
+    }
     const draft = snap.invoices.some((i) => i.status === "DRAFT");
     return draft
       ? { key, labelFr, status: "pending_review", detail: "invoice_not_validated" }
@@ -377,9 +389,16 @@ export function evaluateStepEvidence(stepKey: string, snap: EvidenceSnapshot): S
   };
 }
 
-/** Derived: the dossier has issued invoices and none owe a balance. */
+/**
+ * Derived: the dossier has ISSUED invoices and none owe a balance.
+ *
+ * STEP22-ISSUANCE-INTEGRITY-01 — the eighth site of the same loose predicate,
+ * found while fixing the other seven. Only an issued invoice can be collected,
+ * so only an issued one can be fully paid; counting a VALIDATED one would let a
+ * dossier read as settled on an invoice the client has never been sent.
+ */
 export function fullyPaid(snap: EvidenceSnapshot): boolean {
-  const issued = snap.invoices.filter((i) => i.status !== "DRAFT" && i.status !== "VOID");
+  const issued = snap.invoices.filter((i) => isIssuedStatus(i.status));
   return issued.length > 0 && issued.every((i) => i.balance <= 0);
 }
 
@@ -394,8 +413,15 @@ export function fullyPaid(snap: EvidenceSnapshot): boolean {
  * billed. The REQUIREMENT is unchanged and still unsatisfied; only the reason
  * the operator is given distinguishes the two.
  */
+/**
+ * Has an invoice ACTUALLY been issued? (STEP22-ISSUANCE-INTEGRITY-01.)
+ *
+ * Read by the CLOSURE gate. A dossier whose invoice is merely VALIDATED has
+ * not been billed: nothing carries an official number and nothing left the
+ * building, so closing on it would record a collection that cannot exist.
+ */
 export function hasIssuedInvoice(snap: EvidenceSnapshot): boolean {
-  return snap.invoices.some((i) => i.status !== "DRAFT" && i.status !== "VOID");
+  return snap.invoices.some((i) => isIssuedStatus(i.status));
 }
 
 /** Derived: an APPROVED delivery note (POD) exists on the dossier. */

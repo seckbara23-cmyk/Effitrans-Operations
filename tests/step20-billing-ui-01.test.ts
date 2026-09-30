@@ -264,10 +264,10 @@ describe("the generic engine controls remain closed on steps 20 and 21", () => {
   });
 
   it("refuses a generic submit while no invoice has been submitted", () => {
-    expect(domainFactSatisfied("submit", [])).toBe(false);
+    expect(domainFactSatisfied("billing_draft", "submit", [])).toBe(false);
     expect(
-      domainFactSatisfied("submit", [
-        { status: "DRAFT", submittedAt: null, validatedAt: null, rejectionReason: null },
+      domainFactSatisfied("billing_draft", "submit", [
+        { status: "DRAFT", submittedAt: null, validatedAt: null, rejectionReason: null, invoiceNumber: null },
       ]),
     ).toBe(false);
   });
@@ -275,21 +275,21 @@ describe("the generic engine controls remain closed on steps 20 and 21", () => {
   // (8) The generic approveStep / rejectStep still cannot bypass step 21.
   it("refuses a generic approval while the invoice is still a draft", () => {
     expect(
-      domainFactSatisfied("approve", [
-        { status: "DRAFT", submittedAt: "2026-09-29T10:00:00Z", validatedAt: null, rejectionReason: null },
+      domainFactSatisfied("finance_invoice_validation", "approve", [
+        { status: "DRAFT", submittedAt: "2026-09-29T10:00:00Z", validatedAt: null, rejectionReason: null, invoiceNumber: null },
       ]),
     ).toBe(false);
     expect(
-      domainFactSatisfied("approve", [
-        { status: "VALIDATED", submittedAt: "x", validatedAt: "y", rejectionReason: null },
+      domainFactSatisfied("finance_invoice_validation", "approve", [
+        { status: "VALIDATED", submittedAt: "x", validatedAt: "y", rejectionReason: null, invoiceNumber: null },
       ]),
     ).toBe(true);
   });
 
   it("refuses a generic rejection with no motif recorded", () => {
     expect(
-      domainFactSatisfied("reject", [
-        { status: "DRAFT", submittedAt: null, validatedAt: null, rejectionReason: null },
+      domainFactSatisfied("finance_invoice_validation", "reject", [
+        { status: "DRAFT", submittedAt: null, validatedAt: null, rejectionReason: null, invoiceNumber: null },
       ]),
     ).toBe(false);
   });
@@ -303,7 +303,7 @@ describe("the generic engine controls remain closed on steps 20 and 21", () => {
     const g = code(GUARD);
     expect(g).toContain('import "server-only"');
     expect(g).toContain("if (error) return false;");
-    expect(g.trimEnd()).toMatch(/return domainFactSatisfied\(input\.transition, invoices\);\s*}\s*$/);
+    expect(g.trimEnd()).toMatch(/return domainFactSatisfied\(input\.stepKey, input\.transition, invoices\);\s*}\s*$/);
     expect((g.match(/return true;/g) ?? []).length).toBe(1);
 
     const e = code(ENGINE);
@@ -649,8 +649,10 @@ describe("no neighbouring contract was changed", () => {
 
   // (16) The PR #19 billing-bypass contract still holds — asserted above by
   // execution; here as the ratified map's size, which a third entry would break.
-  it("still withdraws generic controls from exactly two steps", () => {
+  it("still withdraws generic controls from exactly the three ratified steps", () => {
+    // STEP22-ISSUANCE-INTEGRITY-01 (ratified) added billing_dispatch as the third.
     expect(Object.keys(DOMAIN_OWNED_STEPS).sort()).toEqual([
+      "billing_dispatch",
       "billing_draft",
       "finance_invoice_validation",
     ]);
