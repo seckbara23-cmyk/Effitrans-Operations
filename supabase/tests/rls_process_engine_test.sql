@@ -7,7 +7,16 @@
 -- READ isolation (RLS):
 --   * OPS_SUPERVISOR tenant-A (file:read:all + process:read) sees A's process
 --     rows and NOT tenant B's
---   * COORDINATOR tenant-A sees only the dossier they coordinate
+--   * CUSTOMS_DECLARANT tenant-A (process:read, NO file:read:all) sees only the
+--     dossier it is attached to, never the unrelated one
+--
+-- SCOPED ACTOR CHANGED (COORDINATOR-TENANT-VISIBILITY-01, 2026-10-01). This
+-- check used COORDINATOR as its relationship-scoped reader. COORDINATOR now
+-- holds the ratified tenant-wide `file:read:all`, so it can no longer stand for
+-- "a reader whose reach is limited to its own dossier". The ASSERTION is the
+-- point and is unchanged — child rows inherit dossier visibility — so the actor
+-- was replaced by a role that genuinely has no tenant-wide read. The `coord_*`
+-- variable names are kept so the diff stays about the role, not the plumbing.
 --   * SYSTEM_ADMIN of tenant B sees only B — a tenant admin never crosses tenants
 --   * DRIVER (no process:read) sees NOTHING
 --   * a portal/platform identity (no app_user row => auth_tenant_id() is null)
@@ -59,7 +68,7 @@ insert into public.user_role (user_id, role_id, tenant_id)
 select u.uid, r.id, r.tenant_id
 from (values
   ('00000000-0000-0000-0000-0000000be001'::uuid, 'OPS_SUPERVISOR', '00000000-0000-0000-0000-000000000001'::uuid),
-  ('00000000-0000-0000-0000-0000000be002'::uuid, 'COORDINATOR',    '00000000-0000-0000-0000-000000000001'::uuid),
+  ('00000000-0000-0000-0000-0000000be002'::uuid, 'CUSTOMS_DECLARANT','00000000-0000-0000-0000-000000000001'::uuid),
   ('00000000-0000-0000-0000-0000000be003'::uuid, 'SYSTEM_ADMIN',   '00000000-0000-0000-0000-0000000000b2'::uuid),
   ('00000000-0000-0000-0000-0000000be004'::uuid, 'DRIVER',         '00000000-0000-0000-0000-000000000001'::uuid)
 ) as u(uid, code, ten)
