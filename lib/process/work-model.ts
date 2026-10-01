@@ -169,8 +169,25 @@ function kindOf(n: WorkNode, frontierBranch: ParallelGroup | null): WorkKind {
   // AVAILABLE, and reachable. Custody and a hard prerequisite are the two ways
   // an available step is genuinely stopped rather than merely somebody else's.
   const e = n.eligibility;
-  const custodyStopped =
-    e.custody === "awaiting_reception" || e.custody === "awaiting_transmission";
+  // WORK-MODEL-CUSTODY-01 — ASK, DO NOT RE-DERIVE.
+  //
+  // This read « awaiting_reception OR awaiting_transmission », which is the rule
+  // for a route that REQUIRES reception. Three of the four routes deliberately do
+  // not, and on those `awaiting_transmission` is the NORMAL resting state: no
+  // handoff row is ever created, so the state never changes and the step was
+  // bucketed as blocked for ever. On EFT-IMP-2026-00013 that put step 23 under
+  // « Bloquées » while every ratified prerequisite was satisfied, FINAL_INVOICE
+  // was satisfied and the engine would have accepted the start — a read model
+  // STRICTER than the server, which is what the contract at the top of
+  // `step-eligibility.ts` forbids.
+  //
+  // `custodyRefusal` is the engine's own verdict, computed by
+  // `custodyRefusalForState` and exposed on `StepEligibility` for exactly this
+  // reason. `step-eligibility` was corrected the same way in
+  // UAT-STEP10-HANDOFF-01, after step 10 of EFT-IMP-2026-00011 became
+  // unstartable for the Coordinator; this file kept the copy it had already
+  // disproved. One rule, one implementation, asked twice.
+  const custodyStopped = e.custodyRefusal !== null;
   const hardStopped = e.requirements.some((r) => r.blocking);
   if (custodyStopped || hardStopped) return "blocked";
   return frontierBranch === null || n.branch === frontierBranch ? "current" : "parallel";
