@@ -42,8 +42,12 @@ with subject as (
     (select count(*) from public.role where code = 'COORDINATOR') as coordinator_roles
 ),
 fn as (
+  -- COMMENTS STRIPPED, so "no special COORDINATOR branch" is a statement about the
+  -- CODE. `pg_get_functiondef` returns body comments too, and migration 148's body
+  -- legitimately discusses the role in prose; matching the raw definition would
+  -- report that discussion as a branch (MAYA-P1).
   select coalesce(
-    (select pg_get_functiondef(p.oid)
+    (select regexp_replace(pg_get_functiondef(p.oid), '--[^\n]*', '', 'g')
        from pg_proc p
        join pg_namespace n on n.oid = p.pronamespace
       where n.nspname = 'public' and p.proname = 'user_readable_file_ids'

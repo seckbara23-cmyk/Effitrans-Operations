@@ -59,24 +59,17 @@ as $$
   where f.tenant_id = p_tenant
     and (
       -- EXPLICIT GOVERNANCE PERMISSION, HELD IN THE TENANT BEING ASKED ABOUT.
+      -- The role must be held IN this tenant and must BELONG to this tenant,
+      -- exactly as the customs-department ground below scopes its own role check.
+      -- The previous form bounded nothing but the rows, so the tenant came from the
+      -- caller's argument; the header of this migration explains it in full.
       --
-      -- This used to be `exists (select 1 from public.get_user_permissions(p_user)
-      -- gp where gp.code = 'file:read:all')`. `get_user_permissions` answers "does
-      -- this user hold this code ANYWHERE" — it joins user_role with no tenant
-      -- filter at all — so the only thing bounding the result was the caller's own
-      -- `p_tenant` argument. Hand it a different tenant's id and a tenant-wide
-      -- reader received that tenant's dossiers.
-      --
-      -- Not reachable from the application: `can_read_file` calls this as
-      -- (auth.uid(), auth_tenant_id()) and `resolveFileScope` passes the session's
-      -- own tenant, so no request can choose p_tenant. But a rule that is safe only
-      -- because its callers are well-behaved is not a tenant boundary, and
-      -- `rls_responsibility_visibility_test` R7b has asserted the opposite since F-1
-      -- — it simply had no tenant-wide holder to exercise it with until COORDINATOR
-      -- became one.
-      --
-      -- Scoped the way this function already scopes the customs-department ground:
-      -- the role must be held IN this tenant and must BELONG to this tenant.
+      -- DELIBERATELY TERSE. `pg_get_functiondef` returns this comment, so anything
+      -- written here is matched by every assertion that inspects the function body.
+      -- The first version of this comment quoted the predicate it replaced and
+      -- named the role that exposed it, and thereby tripped both its own migration
+      -- and the #147 verifier. Explanation belongs in the header, which is outside
+      -- the function body and so outside `prosrc`.
       exists (
         select 1
           from public.user_role ur0
@@ -194,17 +187,26 @@ grant execute on function public.user_readable_file_ids(uuid, uuid) to authentic
 -- ------------------------------------------------------- self-assertions ----
 do $$
 declare
+  v_def text;
   v_src text;
   v_untenanted int;
   v_scoped int;
 begin
-  select pg_get_functiondef(p.oid) into v_src
+  select pg_get_functiondef(p.oid) into v_def
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'public' and p.proname = 'user_readable_file_ids';
 
-  if v_src is null then
+  if v_def is null then
     raise exception 'M148: user_readable_file_ids does not exist after the replace';
   end if;
+
+  -- COMMENTS STRIPPED BEFORE MATCHING. `pg_get_functiondef` reproduces the body
+  -- verbatim, comments included, so a `like` over the raw definition asserts about
+  -- the PROSE as much as the code. MAYA-P1 established this; the first revision of
+  -- this file ignored it and its own explanatory comment — which quoted the
+  -- predicate being removed — made the "the untenanted lookup is gone" assertion
+  -- fail, aborting `supabase start` before any RLS suite ran.
+  v_src := regexp_replace(v_def, '--[^\n]*', '', 'g');
 
   -- ---- 1. the change itself ---------------------------------------------
   if v_src not like '%ur0.tenant_id = p_tenant%' or v_src not like '%r0.tenant_id = p_tenant%' then

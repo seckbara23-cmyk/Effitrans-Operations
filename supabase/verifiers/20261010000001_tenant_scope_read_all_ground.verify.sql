@@ -24,8 +24,12 @@
 -- with them (MIGRATION-GATE-139-141-REPAIR).
 -- ===========================================================================
 with fn as (
+  -- COMMENTS STRIPPED. `pg_get_functiondef` reproduces the body verbatim, comments
+  -- included, so matching the raw definition asserts about prose as well as code —
+  -- MAYA-P1's lesson, and the thing that made migration 148's first revision abort
+  -- `supabase start` by tripping over its own explanatory comment.
   select coalesce(
-    (select pg_get_functiondef(p.oid)
+    (select regexp_replace(pg_get_functiondef(p.oid), '--[^\n]*', '', 'g')
        from pg_proc p
        join pg_namespace n on n.oid = p.pronamespace
       where n.nspname = 'public' and p.proname = 'user_readable_file_ids'

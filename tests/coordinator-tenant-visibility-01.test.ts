@@ -518,6 +518,44 @@ describe("4 — visibility widened; the tenant did not", () => {
     expect(body).toContain("h.status = 'SENT'");
   });
 
+  /**
+   * CI-148b: EVERY prosrc ASSERTION STRIPS COMMENTS FIRST.
+   *
+   * `pg_get_functiondef` reproduces the function body verbatim, comments included,
+   * so a `like` over the raw definition asserts about the PROSE as much as the
+   * code. MAYA-P1 established this. Migration 148's first revision ignored it: its
+   * explanatory comment quoted the predicate it was removing, so
+   * `v_src like '%get_user_permissions%'` was true and the migration raised
+   * "the untenanted lookup is still in the body" about its own documentation —
+   * aborting `supabase start` a second time, before any RLS suite ran. The same
+   * comment named the role, which would have tripped #147's no-special-branch
+   * check too.
+   */
+  it("every assertion over pg_get_functiondef strips comments before matching", () => {
+    for (const f of [SCOPE_MIGRATION, SCOPE_VERIFIER, VERIFIER]) {
+      const sql = sqlCode(f);
+      if (!sql.includes("pg_get_functiondef")) continue;
+      expect(sql, `${f} must strip comments from the definition it inspects`).toMatch(
+        /regexp_replace\(\s*(?:v_def|pg_get_functiondef\([^)]*\))\s*,\s*'--\[\^\\n\]\*'\s*,\s*''\s*,\s*'g'\s*\)/,
+      );
+    }
+  });
+
+  it("…and the function body stays free of the tokens those assertions ban", () => {
+    // Belt and braces: stripping is the fix, but a body that does not quote the
+    // code it replaced cannot trip even an assertion that forgets to strip.
+    const m = read(SCOPE_MIGRATION);
+    const body = m.slice(m.indexOf("as $$") + 5, m.indexOf("$$;"));
+    expect(body, "the body must not quote the predicate it removed").not.toContain(
+      "get_user_permissions",
+    );
+    expect(body, "and must not name the role, or #147's check reads prose as a branch")
+      .not.toContain("COORDINATOR");
+    // the explanation still exists — in the header, which is outside prosrc
+    const header = m.slice(0, m.indexOf("create or replace function"));
+    expect(header).toContain("get_user_permissions");
+  });
+
   it("the 148 verifier names every ground individually, with real predicates", () => {
     // R9/R10: asserting a couple of labels let a whole check be deleted, or
     // replaced by `src is not null`, with this suite still green. The verifier is
