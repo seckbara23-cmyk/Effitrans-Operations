@@ -63,7 +63,17 @@ const SEED = "supabase/seed.sql";
 const TEMPLATES = "lib/platform/role-templates.ts";
 const VISIBILITY = "lib/authz/visibility.ts";
 const RESOLVER = "lib/workflow/access/resolver.ts";
-const FN = "supabase/migrations/20260914000001_responsibility_visibility.sql";
+/**
+ * The migration that currently DEFINES `user_readable_file_ids`. Migration 148
+ * replaced it to tenant-scope the governance ground, so this points there — a
+ * `create or replace` makes the newest definition the only live one, which is
+ * exactly how migration 121 managed to delete four grounds unnoticed.
+ */
+const FN = "supabase/migrations/20261010000001_tenant_scope_read_all_ground.sql";
+/** Where the F-1 body it was built from still lives, for the preservation check. */
+const FN_PREV = "supabase/migrations/20260914000001_responsibility_visibility.sql";
+const SCOPE_MIGRATION = "supabase/migrations/20261010000001_tenant_scope_read_all_ground.sql";
+const SCOPE_VERIFIER = "supabase/verifiers/20261010000001_tenant_scope_read_all_ground.verify.sql";
 const POLICY = "supabase/migrations/20260614000005_scope_visibility.sql";
 const RLS_VIS = "supabase/tests/rls_visibility_test.sql";
 const RLS_RESP = "supabase/tests/rls_responsibility_visibility_test.sql";
@@ -71,14 +81,20 @@ const RLS_RESP = "supabase/tests/rls_responsibility_visibility_test.sql";
 const perms = (key: string) =>
   TENANT_ROLE_TEMPLATES.find((t) => t.key === key)?.permissions ?? [];
 
-/** The body of `user_readable_file_ids` ALONE -- not the rest of its migration. */
+/**
+ * The EXECUTABLE body of `user_readable_file_ids` alone — not the rest of its
+ * migration, and not its prose. Comments are stripped because the file documents
+ * the defect it fixed by quoting it: migration 148's header explains the old
+ * `get_user_permissions` lookup and names COORDINATOR, and an assertion that
+ * confused that explanation for a live ground would be asserting about English.
+ */
 const fnBody = () => {
   const fn = read(FN);
   const from = fn.indexOf("create or replace function public.user_readable_file_ids");
   const to = fn.indexOf("grant execute on function public.user_readable_file_ids");
   expect(from, "the function must still be defined in this migration").toBeGreaterThan(-1);
   expect(to).toBeGreaterThan(from);
-  return fn.slice(from, to);
+  return fn.slice(from, to).replace(/^\s*--.*$/gm, "");
 };
 
 /**
@@ -243,7 +259,7 @@ describe("2 — the reach is tenant-wide and unconditional", () => {
 
   it("and it is the FIRST ground of the database rule, ahead of every relationship", () => {
     const body = fnBody();
-    const all = body.indexOf("'file:read:all'");
+    const all = body.indexOf("p0.code = 'file:read:all'");
     for (const relationship of [
       "f.account_manager_id = p_user",
       "f.coordinator_id = p_user",
@@ -454,6 +470,136 @@ describe("4 — visibility widened; the tenant did not", () => {
     for (const f of ["lib/process/queues/service.ts", "lib/process/journeys/service.ts"]) {
       expect(code(f), f).toContain("scopedFrom(");
     }
+  });
+
+  /**
+   * CI-148: THE GROUND ITSELF IS NOW TENANT-BOUNDED, NOT JUST THE ROWS.
+   *
+   * `user_readable_file_ids(p_user, p_tenant)` bounded its rows with
+   * `f.tenant_id = p_tenant`, but its first ground asked only whether the user
+   * holds `file:read:all` AT ALL — `get_user_permissions` joins `user_role` with
+   * no tenant filter. So for a tenant-wide reader the tenant came entirely from
+   * the ARGUMENT, and passing another tenant's id returned that tenant's
+   * dossiers.
+   *
+   * No request could do that: `can_read_file` calls (auth.uid(),
+   * auth_tenant_id()) and `resolveFileScope` passes the session's own tenant. But
+   * `rls_responsibility_visibility_test` R7b has asserted the opposite since F-1,
+   * and it passed only because every role it tested cross-tenant lacked the
+   * permission. Granting it to COORDINATOR made that suite the first thing to
+   * exercise the ground — and it failed, on the first CI run where the RLS suites
+   * ran at all.
+   */
+  it("the governance ground requires the permission to be held IN the tenant asked about", () => {
+    const body = fnBody();
+    // BOTH clauses, matched so neither can stand in for the other: the string
+    // "r0.tenant_id = p_tenant" is a SUBSTRING of "ur0.tenant_id = p_tenant", so a
+    // plain toContain for the role clause passes with the role clause deleted.
+    expect(body, "the membership must be in this tenant").toMatch(
+      /\band ur0\.tenant_id = p_tenant\b/,
+    );
+    expect(body, "and the role itself must belong to this tenant").toMatch(
+      /\band r0\.tenant_id = p_tenant\b/,
+    );
+    expect(body).toContain("p0.code = 'file:read:all'");
+    // the untenanted lookup is what the defect was
+    expect(body, "get_user_permissions has no tenant filter").not.toContain("get_user_permissions");
+  });
+
+  it("…and no ground was neutralised in place while keeping its tables", () => {
+    // Dropping a ground is visible; DISABLING one is not. `where false`, `and
+    // false` or `1 = 0` would leave every table name and every assertion above
+    // satisfied while the ground stopped matching anything.
+    const body = fnBody();
+    for (const neutraliser of [/\bwhere\s+false\b/i, /\band\s+false\b/i, /\b1\s*=\s*0\b/, /\bfalse\s+and\b/i]) {
+      expect(body, `neutralised ground: ${neutraliser}`).not.toMatch(neutraliser);
+    }
+    // and the handoff ground still carries the bound that makes it expire
+    expect(body).toContain("h.status = 'SENT'");
+  });
+
+  it("the 148 verifier names every ground individually, with real predicates", () => {
+    // R9/R10: asserting a couple of labels let a whole check be deleted, or
+    // replaced by `src is not null`, with this suite still green. The verifier is
+    // the thing that runs months from now, so its CONTENT is pinned.
+    const v = sqlCode(SCOPE_VERIFIER);
+    expect(v).toMatch(/src like '%ur0\.tenant_id = p_tenant%' from fn/);
+    expect(v).toMatch(/src like '%r0\.tenant_id = p_tenant%' from fn/);
+    expect(v).toMatch(/src not like '%get_user_permissions%' from fn/);
+    expect(v).toMatch(/src like '%where f\.tenant_id = p_tenant%' from fn/);
+    for (const ground of [
+      "f.account_manager_id = p_user",
+      "f.coordinator_id = p_user",
+      "f.created_by = p_user",
+      "pi.owner_user_id = p_user",
+      "t.assigned_to = p_user",
+      "e.assigned_user_id = p_user",
+      "assignment_event ae",
+      "customs_record c",
+      "process_step_receiving_role",
+      "process_step_owning_role",
+      "ex.assigned_user_id is null",
+    ]) {
+      expect(v, `the verifier must assert ground ${ground}`).toContain(ground);
+    }
+    // one row of the values list per ground, so a deletion changes the count
+    expect((v.match(/\('ground: /g) ?? []).length).toBeGreaterThanOrEqual(10);
+    // read-only contract
+    expect(v).not.toMatch(/\bdo\s+\$\$/i);
+    expect(v).not.toMatch(/supabase_migrations/i);
+  });
+
+  it("…and that narrowing removed the foreign tenant, not anybody's own tenant", () => {
+    // Asserted at apply time against whatever database it runs on, and again by
+    // the verifier: the set of tenant-wide readers must be identical before and
+    // after. Measured read-only on production first: 34 and 34.
+    const sql = sqlCode(SCOPE_MIGRATION);
+    expect(sql).toMatch(/v_scoped\s*<>\s*v_untenanted[\s\S]{0,200}refusing to narrow/);
+    expect(sqlCode(SCOPE_VERIFIER)).toContain("no tenant-wide reader lost their own tenant");
+  });
+
+  it("the replace preserved EVERY other read ground — the migration-121 lesson", () => {
+    // A `create or replace` written from a stale body is how migration 121 lost
+    // four grounds with its own assertions passing. Both the migration and the
+    // verifier name each ground individually; here the two bodies are compared.
+    const now = fnBody();
+    const prev = read(FN_PREV);
+    const prevBody = prev.slice(
+      prev.indexOf("create or replace function public.user_readable_file_ids"),
+      prev.indexOf("grant execute on function public.user_readable_file_ids"),
+    );
+    for (const ground of [
+      "f.account_manager_id = p_user",
+      "f.coordinator_id = p_user",
+      "f.created_by = p_user",
+      "pi.owner_user_id = p_user",
+      "t.assigned_to = p_user",
+      "e.assigned_user_id = p_user",
+      "assignment_event ae",
+      "customs_record c",
+      "process_step_receiving_role",
+      "process_step_owning_role",
+      "ex.assigned_user_id is null",
+      "ex.state in ('AVAILABLE', 'ACTIVE', 'BLOCKED', 'SUBMITTED')",
+    ]) {
+      expect(prevBody, `${ground} must be in the body it was built from`).toContain(ground);
+      expect(now, `${ground} must survive the replace`).toContain(ground);
+    }
+    // and it is still a definer function, or the ground cannot be evaluated
+    expect(now).toContain("security definer");
+    expect(now).toContain("set search_path = public");
+  });
+
+  it("the cross-tenant assertion that caught this is still in the F-1 suite, unweakened", () => {
+    const resp = read(RLS_RESP);
+    expect(resp).toContain("FAIL R7a: cross-tenant read");
+    expect(resp).toContain("FAIL R7b: tenant-A user read tenant-C file by passing tenant C");
+    expect(resp).toContain("FAIL R7c: tenant-C coordinator lost their own legitimate read");
+    // R7b is the one the grant broke. It must still call the function DIRECTLY
+    // with a foreign tenant — routing it through RLS would hide the hole again.
+    expect(resp).toMatch(
+      /user_readable_file_ids\(coord_a, t_c\)[\s\S]{0,160}FAIL R7b/,
+    );
   });
 
   it("both tenants are proven, both directions, against a real database", () => {
@@ -762,7 +908,7 @@ describe("8 — every dossier-count surface resolves from a compatible scope", (
     const vis = code(VISIBILITY);
     expect(vis).toContain('allPermission: "file:read:all" | "task:read:all"');
     const body = fnBody();
-    expect(body).toContain("gp.code = 'file:read:all'");
+    expect(body).toContain("p0.code = 'file:read:all'");
     expect(body).not.toContain("task:read:all");
     expect(perms("COORDINATOR")).not.toContain("task:read:all");
   });
