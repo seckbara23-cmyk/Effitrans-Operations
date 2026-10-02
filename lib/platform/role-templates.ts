@@ -205,6 +205,22 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     permissions: [
       "client:read", "customs:assign", "customs:create", "customs:read", "customs:update",
       "document:create", "document:read", "document:update", "file:read", "file:transition", "file:update", ...BASE,
+      // COORDINATOR-TENANT-VISIBILITY-01 (ratified 2026-10-01) — the control
+      // tower SEES the whole tenant. Every other read ground answers "is this
+      // dossier attached to you personally?", so a Coordinator could not open a
+      // dossier it had not personally handled: coordonateur.demo resolved to
+      // ZERO readable dossiers out of fourteen. Assignment and custody decide
+      // what a Coordinator may ACT ON; they must not decide what it may SEE.
+      //
+      // SEE ≠ ACT, and this grant is read-only by construction. Every consumer
+      // of file:read:all is a read path (listFiles, queues, journeys, SLA,
+      // department/customs/docintel/transport services) or the RLS ground in
+      // user_readable_file_ids. Step completion, transition, assignment,
+      // handoff reception and every mutation keep their own permission checks,
+      // which this does not touch. The one non-read consumer —
+      // resolveDossierAccess — deliberately EXCLUDES platform governance from
+      // canActOnCurrentStep, canCompleteAssignedTask and canIntervene.
+      "file:read:all",
       "process:completeness:review", ...PROCESS_HANDOFF, "process:manage", "process:read",
       "task:create", "task:delete", "task:read", "task:update", "tracking:read", "tracking:write",
       "transport:assign", "transport:create", "transport:manage", "transport:read", "transport:update",

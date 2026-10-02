@@ -4,8 +4,16 @@
 -- document:read:
 --   * manager (OPS_SUPERVISOR, file:read:all + document:read) sees docs on any
 --     tenant-A dossier, but NOT tenant B (isolation)
---   * COORDINATOR (document:read, coordinates fileX) sees fileX's doc, not the
---     unrelated fileY's
+--   * DOCUMENTATION_OFFICER (document:read, NO file:read:all, coordinates
+--     fileX) sees fileX's doc, not the unrelated fileY's
+--
+-- SCOPED ACTOR CHANGED (COORDINATOR-TENANT-VISIBILITY-01, 2026-10-01). This
+-- check used COORDINATOR as its relationship-scoped reader. COORDINATOR now
+-- holds the ratified tenant-wide `file:read:all`, so it can no longer stand for
+-- "a reader whose reach is limited to its own dossier". The ASSERTION is the
+-- point and is unchanged — child rows inherit dossier visibility — so the actor
+-- was replaced by a role that genuinely has no tenant-wide read. The `coord_*`
+-- variable names are kept so the diff stays about the role, not the plumbing.
 --   * QUOTATION_MANAGER (no document:read) sees nothing
 -- Expected: see the final assertion (raises on any mismatch).
 --
@@ -33,7 +41,7 @@ insert into public.user_role (user_id, role_id, tenant_id)
 select u.uid, r.id, r.tenant_id
 from (values
   ('00000000-0000-0000-0000-0000000000d1'::uuid, 'OPS_SUPERVISOR'),
-  ('00000000-0000-0000-0000-0000000000d2'::uuid, 'COORDINATOR'),
+  ('00000000-0000-0000-0000-0000000000d2'::uuid, 'DOCUMENTATION_OFFICER'),
   ('00000000-0000-0000-0000-0000000000d3'::uuid, 'QUOTATION_MANAGER')
 ) as u(uid, code)
 join public.role r on r.code = u.code and r.tenant_id = '00000000-0000-0000-0000-000000000001'

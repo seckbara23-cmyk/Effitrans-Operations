@@ -1600,3 +1600,45 @@ from public.role r
 join public.permission p on p.code = 'incident:adjudicate'
 where r.tenant_id = '00000000-0000-0000-0000-000000000001' and r.code = 'COMPLIANCE_HSSE'
 on conflict do nothing;
+
+-- ===========================================================================
+-- COORDINATOR-TENANT-VISIBILITY-01 (ratified 2026-10-01)
+-- The control tower SEES the whole tenant.
+-- ===========================================================================
+-- Every read ground in `user_readable_file_ids` other than this permission asks
+-- "is this dossier attached to you personally?" — commercial ownership, creation,
+-- an assigned task or step, assignment history, an open handoff to your role, or
+-- an OPEN UNASSIGNED step your role owns. A Coordinator who had not personally
+-- handled a dossier matched none of them, so coordonateur.demo@effitrans.sn
+-- resolved to ZERO readable dossiers out of the tenant's fourteen while being
+-- the seat that is supposed to oversee all of them.
+--
+-- The ratified rule: visibility is tenant-wide regardless of who created the
+-- dossier, who the Account Manager is, who the current assignee is, who holds
+-- custody, which department or step is current, and whether the Coordinator ever
+-- touched it. Closed and cancelled dossiers included — no SELECT policy and no
+-- list surface filters on lifecycle state, so they stay readable through the
+-- surfaces that already expose them.
+--
+-- SEE ≠ ACT. This is `file:read:all` and nothing else. Step completion,
+-- transitions, assignment, handoff reception, custody and every domain mutation
+-- keep the permission checks they already had; none of them consults this code.
+-- `task:read:all` is deliberately NOT granted: task reach widens only as a
+-- DERIVED consequence of `can_read_task`'s existing `file_id in
+-- user_readable_file_ids` ground, which is the same read, not a second grant.
+--
+-- STRICT TENANT ISOLATION IS UNAFFECTED. `user_readable_file_ids` is bounded by
+-- `f.tenant_id = p_tenant` and `operational_file_select` independently requires
+-- `tenant_id = auth_tenant_id()`; the admin-client readers re-apply
+-- `.eq("tenant_id", user.tenantId)` even when the scope is `all`.
+--
+-- Mirror of 20261009000001_coordinator_tenant_read.sql (existing tenants) and
+-- lib/platform/role-templates.ts (provisioning). tests/role-templates.test.ts
+-- asserts the three sources agree.
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'file:read:all'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code = 'COORDINATOR'
+on conflict do nothing;

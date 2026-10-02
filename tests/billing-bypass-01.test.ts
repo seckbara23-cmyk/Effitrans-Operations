@@ -19,7 +19,7 @@
  * client-reachable endpoints. Hiding buttons is a courtesy; the server refuses.
  */
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import {
@@ -435,8 +435,12 @@ describe("no existing process invariant was weakened", () => {
   });
 
   it("35 — this slice ships no migration", () => {
-    const buildInfo = read("lib/platform/ops/build-info.ts");
-    expect(buildInfo).toContain('LATEST_MIGRATION = "20261008000001_step22_00013_recovery"');
-    expect(buildInfo).toContain("MIGRATION_COUNT = 146");
+    // PINNED LOCALLY, NOT GLOBALLY. This originally pinned LATEST_MIGRATION and
+    // MIGRATION_COUNT to prove a claim about THIS slice, so every LATER slice's
+    // migration failed a test that never meant anything about it — the third time
+    // that pattern has had to be undone. The claim is "billing-bypass added no
+    // migration of its own", so that is what is asserted.
+    const names = readdirSync(join(root, "supabase/migrations")).filter((f) => f.endsWith(".sql"));
+    expect(names.filter((f) => /domain_owned|billing_bypass|billing_dispatch/i.test(f))).toEqual([]);
   });
 });

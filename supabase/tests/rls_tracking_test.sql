@@ -3,8 +3,16 @@
 -- Proves the three read audiences on tracking_event / tracking_position:
 --   * staff  (OPS_SUPERVISOR, tracking:read + file:read:all) sees ALL tenant-A
 --     tracking rows, NEVER tenant B (isolation).
---   * staff  (COORDINATOR, tracking:read, coordinates fileX) sees fileX rows,
---     not the unrelated fileY.
+--   * staff  (WAREHOUSE_COORDINATOR, tracking:read, NO file:read:all,
+--     coordinates fileX) sees fileX rows, not the unrelated fileY.
+--
+-- SCOPED ACTOR CHANGED (COORDINATOR-TENANT-VISIBILITY-01, 2026-10-01). This
+-- check used COORDINATOR as its relationship-scoped reader. COORDINATOR now
+-- holds the ratified tenant-wide `file:read:all`, so it can no longer stand for
+-- "a reader whose reach is limited to its own dossier". The ASSERTION is the
+-- point and is unchanged — child rows inherit dossier visibility — so the actor
+-- was replaced by a role that genuinely has no tenant-wide read. The `coord_*`
+-- variable names are kept so the diff stays about the role, not the plumbing.
 --   * no-perm (QUOTATION_MANAGER) sees none.
 --   * driver (DRIVER role, driver_user_id on fileX's transport) sees fileX rows
 --     via is_assigned_driver, but NOT fileY (not their transport). Fails
@@ -41,7 +49,7 @@ insert into public.user_role (user_id, role_id, tenant_id)
 select u.uid, r.id, r.tenant_id
 from (values
   ('00000000-0000-0000-0000-000000d40001'::uuid, 'OPS_SUPERVISOR'),
-  ('00000000-0000-0000-0000-000000d40002'::uuid, 'COORDINATOR'),
+  ('00000000-0000-0000-0000-000000d40002'::uuid, 'WAREHOUSE_COORDINATOR'),
   ('00000000-0000-0000-0000-000000d40003'::uuid, 'QUOTATION_MANAGER'),
   ('00000000-0000-0000-0000-000000d40004'::uuid, 'DRIVER')
 ) as u(uid, code)
