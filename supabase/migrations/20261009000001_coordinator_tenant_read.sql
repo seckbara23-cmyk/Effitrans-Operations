@@ -85,25 +85,57 @@ on conflict do nothing;
 do $$
 declare
   v_roles int;
-  v_granted int;
+  v_missing int;
+  v_perm int;
   v_act int;
   v_ground boolean;
 begin
-  -- 1. EVERY COORDINATOR role row carries it. An unqualified insert would have
-  --    been silent about reaching none of them.
-  select count(*) into v_roles from public.role where code = 'COORDINATOR';
-  if v_roles = 0 then
-    raise exception 'M147: no COORDINATOR role exists — the grant had no subject, which means the seed/provisioning source is not what this migration assumed';
+  -- 0. UNCONDITIONAL — THE PERMISSION MUST BE IN THE CATALOGUE. The grant above
+  --    joins on `p.code = 'file:read:all'`, so a renamed or mistyped code makes
+  --    it insert nothing at all, silently. This is the fence that works on EVERY
+  --    database including an empty one, which is exactly what the assertion it
+  --    replaced could not do.
+  select count(*) into v_perm from public.permission where code = 'file:read:all';
+  if v_perm <> 1 then
+    raise exception 'M147: permission file:read:all is not in the catalogue (found %) — this grant would confer nothing', v_perm;
   end if;
 
-  select count(*) into v_granted
-  from public.role r
-  join public.role_permission rp on rp.role_id = r.id
-  join public.permission p on p.id = rp.permission_id
-  where r.code = 'COORDINATOR' and p.code = 'file:read:all';
+  -- 1. THE POSTCONDITION: no COORDINATOR role row is left without it.
+  --
+  --    ZERO COORDINATOR ROLES IS LEGITIMATE, AND IS THE CLEAN-STACK CASE.
+  --    `public.role` is populated by supabase/seed.sql, which `supabase start`
+  --    and `db reset` run AFTER every migration — and no migration in this
+  --    repository creates a COORDINATOR row (the two that mention the code,
+  --    20260710000002 and 20260713000001, only GRANT to it). So on a fresh stack
+  --    this migration necessarily runs against a role table that has no
+  --    Coordinator, grants nothing, and is correct to do so: the seed carries the
+  --    same grant for the tenant it creates, and the RLS suites then prove the
+  --    result empirically.
+  --
+  --    That is the shape every prior grant migration already has — 20260710000002,
+  --    20260713000001, 20260728000003 (file:transition) and 20260916000001
+  --    (document:read) are each an unqualified `insert … select … on conflict do
+  --    nothing` that is a deliberate no-op on a clean database. The first revision
+  --    of this file raised when no COORDINATOR existed, which asserted the SEED's
+  --    state rather than this migration's postcondition, and failed CI at « Start
+  --    local Supabase » before a single RLS suite could run.
+  --
+  --    Phrased as "none missing" rather than "granted = roles" so it says the same
+  --    thing at zero roles as at a thousand, instead of being true by arithmetic
+  --    accident.
+  select count(*) into v_roles from public.role where code = 'COORDINATOR';
 
-  if v_granted <> v_roles then
-    raise exception 'M147: expected % COORDINATOR grant(s) of file:read:all, got %', v_roles, v_granted;
+  select count(*) into v_missing
+  from public.role r
+  where r.code = 'COORDINATOR'
+    and not exists (
+      select 1
+        from public.role_permission rp
+        join public.permission p on p.id = rp.permission_id
+       where rp.role_id = r.id and p.code = 'file:read:all');
+
+  if v_missing <> 0 then
+    raise exception 'M147: % of % COORDINATOR role(s) did not receive file:read:all', v_missing, v_roles;
   end if;
 
   -- 2. THE GRANT IS READ-ONLY. A visibility fix that quietly handed the control
@@ -136,5 +168,11 @@ begin
     raise exception 'M147: user_readable_file_ids has no file:read:all ground — this grant would confer nothing';
   end if;
 
-  raise notice 'M147 OK: file:read:all granted to % COORDINATOR role(s); no mutation permission added', v_granted;
+  -- Says which case it took, so a clean-stack apply is distinguishable in the log
+  -- from a real tenant apply instead of both reading as a bare "OK".
+  if v_roles = 0 then
+    raise notice 'M147 OK: no COORDINATOR role exists yet (clean stack — supabase/seed.sql creates roles after migrations and carries the same grant); catalogue and visibility ground verified';
+  else
+    raise notice 'M147 OK: file:read:all held by all % COORDINATOR role(s); no mutation permission added', v_roles;
+  end if;
 end $$;

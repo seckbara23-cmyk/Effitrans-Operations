@@ -152,6 +152,51 @@ describe("1 — COORDINATOR receives file:read:all", () => {
     }
   });
 
+  /**
+   * CI-147: THE MIGRATION MUST NO-OP ON A CLEAN STACK, NOT REFUSE TO APPLY.
+   *
+   * `supabase start` / `db reset` apply every migration and THEN supabase/seed.sql.
+   * The seed is what creates `public.organization` (line 10) and therefore every
+   * `public.role` row — no migration creates a COORDINATOR, and the two that
+   * mention the code (20260710000002, 20260713000001) only grant to it. So the
+   * role table is EMPTY while migrations run, and 20260710000002 says so itself:
+   * « Same idiom as the role_permission grants below, which already no-op on
+   * clean. »
+   *
+   * The first revision of this migration raised when no COORDINATOR existed. That
+   * asserted the SEED's state rather than its own postcondition, and failed PR #25
+   * at « Start local Supabase » — which aborts the whole rls-tests job, so not one
+   * RLS suite ran. A grant migration may assert what it DID, never that somebody
+   * else had already run.
+   */
+  it("applies as a deliberate no-op on a clean stack — it never demands a seeded role", () => {
+    const sql = sqlCode(MIGRATION);
+    // No existence precondition on the role: that is the seed's business.
+    expect(sql).not.toMatch(/if\s+v_roles\s*=\s*0\s+then[\s\S]{0,80}raise exception/i);
+    expect(sql).not.toMatch(/raise exception[^;]{0,160}no COORDINATOR role exists/i);
+    // The postcondition is phrased so it says the same thing at zero roles as at
+    // a thousand, instead of being true by arithmetic accident.
+    expect(sql).toMatch(/v_missing\s*<>\s*0[\s\S]{0,160}did not receive file:read:all/);
+    expect(sql).toMatch(/and not exists \([\s\S]{0,260}p\.code = 'file:read:all'\)/);
+    // …and the fence that DOES work on an empty database: a renamed or mistyped
+    // permission code makes the grant insert nothing, silently, and zero roles
+    // would never have revealed it.
+    expect(sql).toMatch(/v_perm\s*<>\s*1[\s\S]{0,140}not in the catalogue/);
+  });
+
+  it("…and every other grant migration already had that shape, which is why they passed", () => {
+    // Stated as a comparison because the fix was to REJOIN an established
+    // contract, not to invent a looser one.
+    for (const m of [
+      "supabase/migrations/20260728000003_file_transition_permission.sql",
+      "supabase/migrations/20260916000001_quotation_manager_document_read.sql",
+    ]) {
+      const sql = sqlCode(m);
+      expect(sql, m).toMatch(/insert into public\.role_permission[\s\S]{0,400}on conflict do nothing;/);
+      expect(sql, m).not.toMatch(/raise exception[^;]{0,200}no [A-Z_]+ role exists/i);
+    }
+  });
+
   it("the migration ships a verifier that asserts the grant, not just its own success", () => {
     const v = sqlCode(VERIFIER);
     // THE PREDICATE, NOT THE LABEL. A label survives having its check replaced by
