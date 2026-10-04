@@ -39,6 +39,9 @@ function shipmentRow(tenantId: string, fileId: string, s: ShipmentInput | undefi
     file_id: fileId,
     transport_mode: s?.transportMode ?? null,
     incoterm: s?.incoterm?.trim() || null,
+    // INCOTERM-CATALOG-01 — the contractual place, persisted independently of
+    // origin/destination. Recorded as given; it carries no rule of its own.
+    incoterm_place: s?.incotermPlace?.trim() || null,
     origin: s?.origin?.trim() || null,
     destination: s?.destination?.trim() || null,
     cargo_type: s?.cargoType?.trim() || null,

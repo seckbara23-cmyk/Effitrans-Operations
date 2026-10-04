@@ -11,7 +11,21 @@ export type StaffOption = { id: string; label: string };
 
 export type ShipmentInput = {
   transportMode?: TransportMode | null;
+  /**
+   * INCOTERM-CATALOG-01 — an Incoterms(R) 2020 code. Typed `string` rather than
+   * `Incoterm` for the same reason `cargoForm` is: the form hands over whatever
+   * the operator chose, and `validateFile` is what refuses a non-canonical value
+   * before the round trip (shipment_incoterm_check refuses it again in the DB).
+   * Optional; absence is always valid.
+   */
   incoterm?: string | null;
+  /**
+   * The named place or port the Incoterm attaches to — « CIF Dakar ». A
+   * CONTRACTUAL location, deliberately not the route: `origin`/`destination`
+   * below remain the shipment route, and the TMS-2 anchors remain the geography.
+   * Optional, and meaningless on its own.
+   */
+  incotermPlace?: string | null;
   origin?: string | null;
   destination?: string | null;
   cargoType?: string | null;
@@ -221,6 +235,8 @@ export type FileDetail = {
     id: string;
     transportMode: TransportMode | null;
     incoterm: string | null;
+    /** INCOTERM-CATALOG-01 — the contractual place, never the route. */
+    incotermPlace: string | null;
     origin: string | null;
     destination: string | null;
     cargoType: string | null;

@@ -740,6 +740,7 @@ export type Database = {
           file_id: string;
           transport_mode: string | null;
           incoterm: string | null;
+          incoterm_place: string | null;
           origin: string | null;
           destination: string | null;
           cargo_type: string | null;
@@ -797,6 +798,7 @@ export type Database = {
           file_id: string;
           transport_mode?: string | null;
           incoterm?: string | null;
+          incoterm_place?: string | null;
           origin?: string | null;
           destination?: string | null;
           cargo_type?: string | null;
@@ -852,6 +854,7 @@ export type Database = {
           file_id?: string;
           transport_mode?: string | null;
           incoterm?: string | null;
+          incoterm_place?: string | null;
           origin?: string | null;
           destination?: string | null;
           cargo_type?: string | null;
