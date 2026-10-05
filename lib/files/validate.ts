@@ -4,6 +4,7 @@
  */
 import type { FileInput, FileType, TransportMode } from "./types";
 import { isCargoForm } from "./taxonomy";
+import { isIncoterm } from "./incoterms";
 
 const FILE_TYPES: FileType[] = ["IMP", "EXP", "TRP", "HND"];
 const MODES: TransportMode[] = ["SEA", "AIR", "ROAD", "MULTIMODAL"];
@@ -28,6 +29,12 @@ export function validateFile(input: FileInput): string | null {
   // valid, and none of these can block a dossier from being created.
   const s = input.shipment;
   if (s?.cargoForm && !isCargoForm(s.cargoForm)) return "invalid_cargo_form";
+  // INCOTERM-CATALOG-01 — the vocabulary is closed. An EMPTY incoterm is not an
+  // invalid one: the selector's "none" option sends "", and `shipmentRow` turns
+  // that into NULL, which the column and this rule both accept. The named place
+  // is deliberately unvalidated beyond that — no Incoterm-specific location rule
+  // is invented in this slice.
+  if (s?.incoterm && !isIncoterm(s.incoterm)) return "invalid_incoterm";
   if (
     invalidAmount(s?.quantity) || invalidAmount(s?.netWeightKg) ||
     invalidAmount(s?.grossWeightKg) || invalidAmount(s?.volumeM3) ||

@@ -22,6 +22,7 @@ import { deriveQC5 } from "@/lib/files/qc5";
 import { deriveQC4 } from "@/lib/files/qc4";
 import { deriveQC2 } from "@/lib/files/qc2";
 import { deriveMayaLabelFromRow, isCargoForm, CARGO_FORM_LABELS_FR } from "@/lib/files/taxonomy";
+import { formatIncoterm } from "@/lib/files/incoterms";
 import { canCancel } from "@/lib/files/status";
 import { listClients } from "@/lib/clients/service";
 import { FileForm } from "@/components/files/file-form";
@@ -621,6 +622,16 @@ async function renderFileDetailPage(params: { id: string }) {
           <Fact label="Dossier mère" value={file.parentFileNumber} />
           <Fact label="Échéance de traitement" value={file.processingDueDate} />
           <Fact label="Entrée en magasin" value={file.shipment?.warehouseEntryDate ?? null} />
+          {/* INCOTERM-CATALOG-01 — the commercial condition and the place it
+              attaches to, composed by the ONE formatter so « CIF — Dakar » reads
+              the same here as anywhere else. A place without a term renders as
+              absent rather than inventing an Incoterm out of a location. This is
+              a FACT: nothing on this page derives a service, a step or a
+              responsibility from it. */}
+          <Fact
+            label="Incoterm"
+            value={formatIncoterm(file.shipment?.incoterm, file.shipment?.incotermPlace)}
+          />
           <Fact
             label="Marchandise"
             value={[

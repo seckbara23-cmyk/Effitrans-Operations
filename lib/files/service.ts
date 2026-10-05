@@ -354,7 +354,7 @@ export async function getFile(id: string): Promise<FileDetail | null> {
   const { data: shipment } = await supabase
     .from("shipment")
     .select(
-      "id, transport_mode, incoterm, origin, destination, cargo_type, carrier_name, vessel_or_flight, bl_awb_ref, container_ref, cargo_form, quantity, quantity_unit, net_weight_kg, gross_weight_kg, volume_m3, package_count, goods_description, supplier_name, warehouse_entry_date, origin_port_id, destination_port_id, origin_airport_id, destination_airport_id",
+      "id, transport_mode, incoterm, incoterm_place, origin, destination, cargo_type, carrier_name, vessel_or_flight, bl_awb_ref, container_ref, cargo_form, quantity, quantity_unit, net_weight_kg, gross_weight_kg, volume_m3, package_count, goods_description, supplier_name, warehouse_entry_date, origin_port_id, destination_port_id, origin_airport_id, destination_airport_id",
     )
     .eq("file_id", id)
     .maybeSingle();
@@ -406,6 +406,7 @@ export async function getFile(id: string): Promise<FileDetail | null> {
           id: shipment.id,
           transportMode: shipment.transport_mode as TransportMode | null,
           incoterm: shipment.incoterm,
+          incotermPlace: shipment.incoterm_place,
           origin: shipment.origin,
           destination: shipment.destination,
           cargoType: shipment.cargo_type,

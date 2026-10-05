@@ -8,6 +8,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { t } from "@/lib/i18n";
 import { CARGO_FORMS, CARGO_FORM_LABELS_FR } from "@/lib/files/taxonomy";
+import { INCOTERMS, incotermOptionLabel } from "@/lib/files/incoterms";
 import { createFile, updateFile } from "@/lib/files/actions";
 import type {
   ActionResult,
@@ -94,6 +95,7 @@ export function FileForm({
   const s = initial?.shipment;
   const [transportMode, setTransportMode] = useState<TransportMode | "">(s?.transportMode ?? "");
   const [incoterm, setIncoterm] = useState(s?.incoterm ?? "");
+  const [incotermPlace, setIncotermPlace] = useState(s?.incotermPlace ?? "");
   const [origin, setOrigin] = useState(s?.origin ?? "");
   const [destination, setDestination] = useState(s?.destination ?? "");
   const [cargoType, setCargoType] = useState(s?.cargoType ?? "");
@@ -145,6 +147,10 @@ export function FileForm({
       shipment: {
         transportMode: transportMode || null,
         incoterm,
+        // INCOTERM-CATALOG-01 — the place is contractual only in relation to a
+        // term, so it is dropped when no Incoterm is selected rather than stored
+        // as an orphan location nothing can interpret.
+        incotermPlace: incoterm ? incotermPlace : null,
         origin,
         destination,
         cargoType,
@@ -278,8 +284,28 @@ export function FileForm({
                 ))}
               </select>
             </Field>
+            {/* INCOTERM-CATALOG-01 — a governed selector, not free text. The
+                option shows the term so nobody memorises codes; only the CODE is
+                ever persisted, and shipment_incoterm_check refuses the rest. */}
             <Field label={t.files.form.incoterm}>
-              <input className={input} value={incoterm} disabled={!editable} onChange={(e) => setIncoterm(e.target.value)} />
+              <select className={input} value={incoterm} disabled={!editable} onChange={(e) => setIncoterm(e.target.value)}>
+                <option value="">{t.common.none}</option>
+                {INCOTERMS.map((c) => (
+                  <option key={c} value={c}>{incotermOptionLabel(c)}</option>
+                ))}
+              </select>
+            </Field>
+            {/* The contractual place — « CIF Dakar ». Separate from Origine and
+                Destination, which describe the route, and shown only once a term
+                is chosen because a place alone states no condition. */}
+            <Field label={t.files.form.incotermPlace}>
+              <input
+                className={input}
+                value={incotermPlace}
+                disabled={!editable || !incoterm}
+                placeholder={incoterm ? "" : "—"}
+                onChange={(e) => setIncotermPlace(e.target.value)}
+              />
             </Field>
             <Field label={t.files.form.cargoType}>
               <input className={input} value={cargoType} disabled={!editable} onChange={(e) => setCargoType(e.target.value)} />

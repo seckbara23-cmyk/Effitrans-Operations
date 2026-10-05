@@ -39,6 +39,7 @@ const FILE: FileDetail = {
     id: "11111111-1111-1111-1111-111111111111",
     transportMode: "SEA",
     incoterm: "CIF",
+    incotermPlace: "Dakar",
     origin: "Shanghai",
     destination: "Dakar",
     cargoType: "Électronique",
