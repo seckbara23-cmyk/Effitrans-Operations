@@ -27,7 +27,7 @@ import { submitStep, activateStep, approveStep, sendHandoff, receiveHandoff } fr
 import { authoritativePickupGate } from "@/lib/process/engine/gate-authority";
 import { declareEvidenceAbsence } from "@/lib/process/evidence-absence-actions";
 import { receiveDossierAtTransit, assignTransitStep, recordBae, decideTransitRelease, finalizeTransitRelease } from "@/lib/process/engine/transit-actions";
-import { createCustoms, changeCustomsStatus } from "@/lib/customs/actions";
+import { createCustoms, changeCustomsStatus, recordCustomsValidation } from "@/lib/customs/actions";
 import { retryMessage } from "@/lib/comms/actions";
 import { createTransport, assignTransport, changeTransportStatus } from "@/lib/transport/actions";
 import { assignDriverUser } from "@/lib/transport/driver-actions";
@@ -160,7 +160,13 @@ async function carryToStep13() {
     if (!moved.ok) throw new Error(`customs -> ${status}: ${JSON.stringify(moved)}`);
   }
   await as(declarant, () => submitStep(fileId, "customs_preparation"));
-  await as(ops, () => approveStep(fileId, "transit_validation"));
+  // UAT-CUSTOMS-SINGLE-DOOR-01 — step 7 is crossed through the SAME door
+  // production uses. `recordCustomsValidation` certifies the customs record
+  // (reviewed_by + reviewed_at, one update) and only then approves the pair.
+  // The generic `approveStep` used to stand here and is now refused with
+  // `domain_owned_transition` — it completed the workflow while leaving the
+  // record uncertified, which is exactly what stranded EFT-IMP-2026-00014.
+  await as(transit, () => recordCustomsValidation(customsId));
 
   await runStep(coordinator, "coordinator_to_finance");
   await handOver(coordinator, ops, "coordinator_to_finance", "gainde_registration");
