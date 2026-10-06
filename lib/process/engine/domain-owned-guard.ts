@@ -38,7 +38,8 @@ import "server-only";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import {
   domainFactSatisfied,
-  isGenericTransitionWithdrawn,
+  domainOwnedStep,
+  type DomainFacts,
   type DomainInvoiceFact,
   type GenericTransition,
 } from "../domain-owned-steps";
@@ -49,8 +50,16 @@ type Row = Record<string, unknown>;
  * May this GENERIC transition proceed on this step?
  *
  * True for every step the ratified map does not name — the overwhelming
- * majority — so this costs nothing outside the two billing steps and can never
- * change an unrelated refusal.
+ * majority — so this costs nothing outside the four governed steps and can
+ * never change an unrelated refusal.
+ *
+ * THE SOURCE IS READ FROM THE MAP, NOT ASSUMED (UAT-CUSTOMS-SINGLE-DOOR-01).
+ * This loaded `invoice` unconditionally, which was right while every entry was
+ * a billing step. `transit_validation` is certified on the CUSTOMS record, and
+ * loading invoices for it would have fed the invoice rule an empty set and
+ * refused the only legitimate door — `validateCustoms`'s own internal
+ * `approveStep` — on every dossier. So each entry declares its `factSource` and
+ * this function loads exactly that one.
  */
 export async function genericTransitionAllowed(input: {
   tenantId: string;
@@ -58,9 +67,36 @@ export async function genericTransitionAllowed(input: {
   stepKey: string;
   transition: GenericTransition;
 }): Promise<boolean> {
-  if (!isGenericTransitionWithdrawn(input.stepKey, input.transition)) return true;
+  const owned = domainOwnedStep(input.stepKey);
+  if (!owned || !owned.withdraws.includes(input.transition)) return true;
 
   const admin = getAdminSupabaseClient();
+
+  if (owned.factSource === "customs_record") {
+    const { data, error } = await admin
+      .from("customs_record")
+      .select("reviewed_at, reviewed_by")
+      .eq("tenant_id", input.tenantId)
+      .eq("file_id", input.fileId)
+      .is("deleted_at", null)
+      .maybeSingle();
+
+    // FAIL CLOSED, as below: a read that did not answer is not permission.
+    if (error) return false;
+
+    const row = (data ?? null) as Row | null;
+    const facts: DomainFacts = {
+      source: "customs_record",
+      customs: row
+        ? {
+            reviewedAt: (row.reviewed_at as string | null) ?? null,
+            reviewedBy: (row.reviewed_by as string | null) ?? null,
+          }
+        : null,
+    };
+    return domainFactSatisfied(input.stepKey, input.transition, facts);
+  }
+
   const { data, error } = await admin
     .from("invoice")
     .select("status, submitted_at, validated_at, rejection_reason, invoice_number")
@@ -79,5 +115,5 @@ export async function genericTransitionAllowed(input: {
     invoiceNumber: (i.invoice_number as string | null) ?? null,
   }));
 
-  return domainFactSatisfied(input.stepKey, input.transition, invoices);
+  return domainFactSatisfied(input.stepKey, input.transition, { source: "invoice", invoices });
 }

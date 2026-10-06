@@ -244,8 +244,23 @@ describe("D, E · action exposure", () => {
       permissions: ["customs:validate"],
       roles: ["CHIEF_TRANSIT"],
     });
-    expect(chef.canApprove).toBe(true);
+    // SUPERSEDED BY UAT-CUSTOMS-SINGLE-DOOR-01 — this asserted
+    // `chef.canApprove === true`, which is the generic approval the customs pair
+    // no longer offers: on EFT-IMP-2026-00014 it completed steps 6 and 7 with
+    // `customs_record.reviewed_at` still NULL. The VALIDATION now has exactly
+    // one door, « Valider — Chef de Transit ».
+    //
+    // What E2b exists to prove is untouched and is still proven below: the
+    // permission consulted is the VALIDATOR's, not the submitted row's. The
+    // Déclarant is refused and the Chef is not — the difference simply shows on
+    // the half that still has a generic control.
+    expect(chef.reviewPermission).toBe("customs:validate");
+    expect(chef.canApprove, "withdrawn: the customs record is certified on its own panel").toBe(false);
+    expect(chef.reasonFr).toMatch(/Valider — Chef de Transit/);
+    // REJECT is the half that proves the permission split, and it survives:
+    // there is no `rejectCustoms`, so withdrawing it would delete the act.
     expect(chef.canReject).toBe(true);
+    expect(declarant.canReject, "the preparer still gets no review of their own work").toBe(false);
   });
 
   it("E3 — an UNKNOWN maker is never assumed to be somebody else", () => {

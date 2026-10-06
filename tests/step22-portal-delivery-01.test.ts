@@ -34,7 +34,11 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { isIssuedStatus } from "@/lib/finance/status";
 import { BILLING_ERROR_FR } from "@/lib/process/billing/state";
-import { domainFactSatisfied, DOMAIN_OWNED_STEPS } from "@/lib/process/domain-owned-steps";
+import {
+  domainFactSatisfied,
+  DOMAIN_OWNED_STEPS,
+  type DomainInvoiceFact,
+} from "@/lib/process/domain-owned-steps";
 
 const root = join(__dirname, "..");
 const read = (p: string) => readFileSync(join(root, p), "utf8").replace(/\r\n/g, "\n");
@@ -209,13 +213,13 @@ describe("nothing from the issuance-integrity slice was weakened", () => {
     const f = (over: Record<string, unknown> = {}) => ({
       status: "VALIDATED", submittedAt: "t", validatedAt: "t",
       rejectionReason: null, invoiceNumber: null, ...over,
-    }) as Parameters<typeof domainFactSatisfied>[2][number];
+    }) as DomainInvoiceFact;
 
-    expect(domainFactSatisfied("billing_dispatch", "submit", [f()])).toBe(false);
-    expect(domainFactSatisfied("billing_dispatch", "submit", [f({ status: "ISSUED" })])).toBe(false);
-    expect(domainFactSatisfied("billing_dispatch", "submit", [f({ invoiceNumber: "n" })])).toBe(false);
+    expect(domainFactSatisfied("billing_dispatch", "submit", { source: "invoice", invoices: [f()] })).toBe(false);
+    expect(domainFactSatisfied("billing_dispatch", "submit", { source: "invoice", invoices: [f({ status: "ISSUED" })] })).toBe(false);
+    expect(domainFactSatisfied("billing_dispatch", "submit", { source: "invoice", invoices: [f({ invoiceNumber: "n" })] })).toBe(false);
     expect(
-      domainFactSatisfied("billing_dispatch", "submit", [f({ status: "ISSUED", invoiceNumber: "n" })]),
+      domainFactSatisfied("billing_dispatch", "submit", { source: "invoice", invoices: [f({ status: "ISSUED", invoiceNumber: "n" })] }),
     ).toBe(true);
   });
 
