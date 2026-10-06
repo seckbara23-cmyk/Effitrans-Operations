@@ -34,7 +34,9 @@ import { submitStep, activateStep, approveStep, sendHandoff, receiveHandoff } fr
 import { skipStep } from "@/lib/process/engine/structures-actions";
 import { declareEvidenceAbsence } from "@/lib/process/evidence-absence-actions";
 import { receiveDossierAtTransit, assignTransitStep, recordBae, decideTransitRelease, finalizeTransitRelease } from "@/lib/process/engine/transit-actions";
-import { createCustoms, changeCustomsStatus, recordGaindeRegistration } from "@/lib/customs/actions";
+import {
+  createCustoms, changeCustomsStatus, recordGaindeRegistration, recordCustomsValidation,
+} from "@/lib/customs/actions";
 import { createTransport, assignTransport, changeTransportStatus } from "@/lib/transport/actions";
 import {
   prepareInvoiceDraft, submitInvoiceToFinance, approveInvoice, emailValidatedInvoice,
@@ -124,7 +126,13 @@ async function carryToValidatedInvoice() {
     need(await as(declarant, () => changeCustomsStatus(customsId, status)), `customs ${status}`);
   }
   need(await as(declarant, () => submitStep(fileId, "customs_preparation")), "step 6");
-  need(await as(ops, () => approveStep(fileId, "transit_validation")), "step 7");
+  // UAT-CUSTOMS-SINGLE-DOOR-01 — step 7 is crossed through the SAME door
+  // production uses. `recordCustomsValidation` certifies the customs record
+  // (reviewed_by + reviewed_at, one update) and only then approves the pair.
+  // The generic `approveStep` used to stand here and is now refused with
+  // `domain_owned_transition` — it completed the workflow while leaving the
+  // record uncertified, which is exactly what stranded EFT-IMP-2026-00014.
+  need(await as(transit, () => recordCustomsValidation(customsId)), "step 7 — certify + approve");
 
   need(await as(coordinator, () => activateStep(fileId, "coordinator_to_finance")), "activate 8");
   need(await as(coordinator, () => submitStep(fileId, "coordinator_to_finance")), "step 8");

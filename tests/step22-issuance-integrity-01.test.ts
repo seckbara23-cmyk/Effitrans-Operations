@@ -206,7 +206,7 @@ const fact = (over: Row = {}) => ({
   rejectionReason: null,
   invoiceNumber: null,
   ...over,
-}) as Parameters<typeof domainFactSatisfied>[2][number];
+}) as import("@/lib/process/domain-owned-steps").DomainInvoiceFact;
 
 function seed(over: Row = {}) {
   db.invoice = {
@@ -324,19 +324,19 @@ describe("the generic control can no longer close step 22", () => {
 
   it("C — the fact is ISSUANCE: a status AND an official number", () => {
     // The exact 00013 shape: validated, no number.
-    expect(domainFactSatisfied("billing_dispatch", "submit", [fact()])).toBe(false);
+    expect(domainFactSatisfied("billing_dispatch", "submit", { source: "invoice", invoices: [fact()] })).toBe(false);
     // A number alone, or an issued status alone, is not enough either.
-    expect(domainFactSatisfied("billing_dispatch", "submit", [fact({ invoiceNumber: "EFT-INV-2026-00002" })])).toBe(false);
-    expect(domainFactSatisfied("billing_dispatch", "submit", [fact({ status: "ISSUED" })])).toBe(false);
+    expect(domainFactSatisfied("billing_dispatch", "submit", { source: "invoice", invoices: [fact({ invoiceNumber: "EFT-INV-2026-00002" })] })).toBe(false);
+    expect(domainFactSatisfied("billing_dispatch", "submit", { source: "invoice", invoices: [fact({ status: "ISSUED" })] })).toBe(false);
     expect(
-      domainFactSatisfied("billing_dispatch", "submit", [fact({ status: "ISSUED", invoiceNumber: "EFT-INV-2026-00002" })]),
+      domainFactSatisfied("billing_dispatch", "submit", { source: "invoice", invoices: [fact({ status: "ISSUED", invoiceNumber: "EFT-INV-2026-00002" })] }),
     ).toBe(true);
   });
 
   it("the rule is keyed on the STEP, so step 20's fact cannot admit step 22", () => {
     const submittedDraft = [fact({ status: "DRAFT", invoiceNumber: null })];
-    expect(domainFactSatisfied("billing_draft", "submit", submittedDraft)).toBe(true);
-    expect(domainFactSatisfied("billing_dispatch", "submit", submittedDraft)).toBe(false);
+    expect(domainFactSatisfied("billing_draft", "submit", { source: "invoice", invoices: submittedDraft })).toBe(true);
+    expect(domainFactSatisfied("billing_dispatch", "submit", { source: "invoice", invoices: submittedDraft })).toBe(false);
   });
 
   /**
@@ -359,7 +359,7 @@ describe("the generic control can no longer close step 22", () => {
   });
 
   it("fails closed for an unknown domain-owned step", () => {
-    expect(domainFactSatisfied("some_future_step", "submit", [fact({ status: "PAID", invoiceNumber: "n" })])).toBe(false);
+    expect(domainFactSatisfied("some_future_step", "submit", { source: "invoice", invoices: [fact({ status: "PAID", invoiceNumber: "n" })] })).toBe(false);
   });
 });
 

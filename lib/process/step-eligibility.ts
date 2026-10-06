@@ -357,12 +357,28 @@ export function evaluateStepAction(
   // — and wrong for `invoice_validation`, where they are a way around one.
   // `approveStep` inspects no invoice, so the generic approval completed steps
   // 20 and 21 on a draft nobody had validated.
-  const reviewWithdrawn =
-    reviewStepKey !== null
-    && (isGenericTransitionWithdrawn(reviewStepKey, "approve")
-      || isGenericTransitionWithdrawn(reviewStepKey, "reject"));
+  // SPLIT PER TRANSITION (UAT-CUSTOMS-SINGLE-DOOR-01). This was one OR-ed flag
+  // because both billing pairs withdraw approve and reject together.
+  // `transit_validation` withdraws ONLY approve — there is no `rejectCustoms`,
+  // so the Chef must keep the generic rejection — and an OR would have hidden
+  // « Rejeter » along with « Valider », leaving no way to refuse a bad
+  // declaration at all. For the billing pairs both halves are withdrawn, so
+  // every flag below keeps the value it had.
+  const approveWithdrawn =
+    reviewStepKey !== null && isGenericTransitionWithdrawn(reviewStepKey, "approve");
+  const rejectWithdrawn =
+    reviewStepKey !== null && isGenericTransitionWithdrawn(reviewStepKey, "reject");
+  /** Either half withdrawn — the step has a domain door worth naming. */
+  const reviewWithdrawn = approveWithdrawn || rejectWithdrawn;
 
-  const canApprove =
+  /**
+   * Everything a review needs EXCEPT which transition the domain map withdrew.
+   *
+   * Named so the two verdicts below cannot drift: the same authority decides
+   * both — `rejectStep` guards identically and additionally demands a reason,
+   * which the surface collects — and they differ in exactly one term.
+   */
+  const reviewBaseAllowed =
     reviewStepKey !== null
     && facts.state === "SUBMITTED"
     && mayReview
@@ -371,11 +387,10 @@ export function evaluateStepAction(
     && typeof facts.submittedBy === "string"
     && facts.submittedBy.length > 0
     && !custodyBlocked
-    && !notApplicable
-    && !reviewWithdrawn;
-  // The same authority decides both verdicts — `rejectStep` guards identically
-  // and additionally demands a reason, which the surface collects.
-  const canReject = canApprove;
+    && !notApplicable;
+
+  const canApprove = reviewBaseAllowed && !approveWithdrawn;
+  const canReject = reviewBaseAllowed && !rejectWithdrawn;
 
   return {
     permission,

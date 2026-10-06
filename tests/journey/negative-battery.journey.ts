@@ -34,7 +34,9 @@ import { submitStep, activateStep, approveStep, sendHandoff, receiveHandoff } fr
 import { declareEvidenceAbsence } from "@/lib/process/evidence-absence-actions";
 import { getStep } from "@/lib/process/effitrans-process";
 import { receiveDossierAtTransit, assignTransitStep, recordBae, decideTransitRelease, finalizeTransitRelease } from "@/lib/process/engine/transit-actions";
-import { createCustoms, changeCustomsStatus, recordGaindeRegistration } from "@/lib/customs/actions";
+import {
+  createCustoms, changeCustomsStatus, recordGaindeRegistration, recordCustomsValidation,
+} from "@/lib/customs/actions";
 import { createTransport, assignTransport, changeTransportStatus } from "@/lib/transport/actions";
 import { prepareInvoiceDraft, submitInvoiceToFinance, approveInvoice, emailValidatedInvoice } from "@/lib/process/billing/actions";
 import { addInvoiceLine, recordPayment, verifyPayment } from "@/lib/finance/actions";
@@ -314,16 +316,38 @@ describe("C-4 negative battery — the refusals, in the order a dossier meets th
     const before = await stepState("customs_preparation");
     expect(before.state, "waiting for review").toBe("SUBMITTED");
 
-    // The maker holds customs:create AND customs:validate, so this refusal is
-    // about IDENTITY and not permission.
+    // UAT-CUSTOMS-SINGLE-DOOR-01 — THE GENERIC DOOR IS NOW CLOSED FIRST.
+    //
+    // This asserted `self_validation_forbidden`, and that was the right answer
+    // while the generic approval was a legal way to cross step 7. It is no
+    // longer one: `approveStep` asks `genericTransitionAllowed` BEFORE it
+    // reaches the maker/checker decision, so the refusal an engine caller now
+    // meets is the domain one. THIS IS THE EXPECTED SECURITY BEHAVIOUR — on
+    // EFT-IMP-2026-00014 this very call completed steps 6 and 7 with
+    // `customs_record.reviewed_at` still NULL.
     const self = await as(declarantChief, () => approveStep(fileId, "transit_validation"));
     expect(self.ok).toBe(false);
-    expect(err(self)).toBe("self_validation_forbidden");
+    expect(err(self), "the generic door is withdrawn, certified or not").toBe("domain_owned_transition");
+
+    // AND THE IDENTITY RULE IS STILL ENFORCED — at the door that now owns the
+    // act. The maker holds customs:create AND customs:validate, so this refusal
+    // is about IDENTITY and not permission, which is what this test exists for.
+    const customsIdSelf = await customsIdFor(fileId);
+    const atTheDoor = await as(declarantChief, () => recordCustomsValidation(customsIdSelf));
+    expect(atTheDoor.ok, "the preparer may not certify their own declaration").toBe(false);
+    expect(err(atTheDoor)).toBe("self_validation");
+
+    // …and nothing was certified by either refusal.
+    const notCertified = (await db().from("customs_record")
+      .select("reviewed_at, reviewed_by").eq("id", customsIdSelf).maybeSingle()).data;
+    expect(notCertified?.reviewed_at, "no certification from a refused call").toBeNull();
+    expect(notCertified?.reviewed_by).toBeNull();
 
     const after = await stepState("customs_preparation");
     expect(after, "no reviewer, no completion, nothing moved").toEqual(before);
     expect((await stepState("transit_validation")).state).not.toBe("COMPLETED");
   });
+
 
   it("UNAUTHORIZED VALIDATION — an actor without customs:validate is refused differently", async () => {
     const before = await stepState("customs_preparation");
@@ -333,10 +357,48 @@ describe("C-4 negative battery — the refusals, in the order a dossier meets th
     expect(await stepState("customs_preparation")).toEqual(before);
   });
 
+  /**
+   * UAT-CUSTOMS-SINGLE-DOOR-01 — the invariant, stated as a test against the
+   * real database rather than inferred from the unit suite.
+   *
+   * The generic approval is refused while the record is uncertified, EVEN for an
+   * actor who holds every permission and is nobody's maker. Then the legitimate
+   * door certifies and crosses in one act. Those two facts together are the
+   * whole fix.
+   */
+  it("SINGLE DOOR — generic approval is refused uncertified; the customs door certifies and crosses", async () => {
+    const customsId = await customsIdFor(fileId);
+
+    const uncertified = (await db().from("customs_record")
+      .select("reviewed_at, reviewed_by").eq("id", customsId).maybeSingle()).data;
+    expect(uncertified?.reviewed_at, "precondition: not yet certified").toBeNull();
+
+    // The Chef de Transit OWNS step 7 and prepared nothing here, so the only
+    // thing standing between them and the step is the missing certification.
+    // (`ops` holds customs:validate but not CHIEF_OF_TRANSIT, so the customs
+    // door would refuse it `not_owning_role` — a different, correct refusal.)
+    const generic = await as(transit, () => approveStep(fileId, "transit_validation"));
+    expect(generic.ok, "generic approval without certification").toBe(false);
+    expect(err(generic)).toBe("domain_owned_transition");
+    expect((await stepState("transit_validation")).state).not.toBe("COMPLETED");
+
+    // The real door: certify, then cross — one act, in that order.
+    need(await as(transit, () => recordCustomsValidation(customsId)), "certify + approve");
+
+    const certified = (await db().from("customs_record")
+      .select("reviewed_at, reviewed_by").eq("id", customsId).maybeSingle()).data;
+    expect(certified?.reviewed_at, "the instant is written").toBeTruthy();
+    expect(certified?.reviewed_by, "and the author").toBe(transit.id);
+    expect((await stepState("customs_preparation")).state).toBe("COMPLETED");
+    expect((await stepState("transit_validation")).state).toBe("COMPLETED");
+  });
+
   // ------------------------------------------------------------- pickup ----
 
   it("PICKUP BEFORE CONVERGENCE — one branch landed is not both", async () => {
-    need(await as(ops, () => approveStep(fileId, "transit_validation")), "step 7");
+    // Step 7 was crossed by the single-door test above, through
+    // `recordCustomsValidation`. Crossing it again here would meet
+    // `already_validated`, which is the certification refusing to happen twice.
     need(await as(coordinator, () => activateStep(fileId, "coordinator_to_finance")), "activate 8");
     need(await as(coordinator, () => submitStep(fileId, "coordinator_to_finance")), "step 8");
     need(await as(coordinator, () => sendHandoff(fileId, "coordinator_to_finance", "gainde_registration")), "send 9");

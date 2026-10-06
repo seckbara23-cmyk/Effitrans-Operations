@@ -264,33 +264,33 @@ describe("the generic engine controls remain closed on steps 20 and 21", () => {
   });
 
   it("refuses a generic submit while no invoice has been submitted", () => {
-    expect(domainFactSatisfied("billing_draft", "submit", [])).toBe(false);
+    expect(domainFactSatisfied("billing_draft", "submit", { source: "invoice", invoices: [] })).toBe(false);
     expect(
-      domainFactSatisfied("billing_draft", "submit", [
+      domainFactSatisfied("billing_draft", "submit", { source: "invoice", invoices: [
         { status: "DRAFT", submittedAt: null, validatedAt: null, rejectionReason: null, invoiceNumber: null },
-      ]),
+      ] }),
     ).toBe(false);
   });
 
   // (8) The generic approveStep / rejectStep still cannot bypass step 21.
   it("refuses a generic approval while the invoice is still a draft", () => {
     expect(
-      domainFactSatisfied("finance_invoice_validation", "approve", [
+      domainFactSatisfied("finance_invoice_validation", "approve", { source: "invoice", invoices: [
         { status: "DRAFT", submittedAt: "2026-09-29T10:00:00Z", validatedAt: null, rejectionReason: null, invoiceNumber: null },
-      ]),
+      ] }),
     ).toBe(false);
     expect(
-      domainFactSatisfied("finance_invoice_validation", "approve", [
+      domainFactSatisfied("finance_invoice_validation", "approve", { source: "invoice", invoices: [
         { status: "VALIDATED", submittedAt: "x", validatedAt: "y", rejectionReason: null, invoiceNumber: null },
-      ]),
+      ] }),
     ).toBe(true);
   });
 
   it("refuses a generic rejection with no motif recorded", () => {
     expect(
-      domainFactSatisfied("finance_invoice_validation", "reject", [
+      domainFactSatisfied("finance_invoice_validation", "reject", { source: "invoice", invoices: [
         { status: "DRAFT", submittedAt: null, validatedAt: null, rejectionReason: null, invoiceNumber: null },
-      ]),
+      ] }),
     ).toBe(false);
   });
 
@@ -303,7 +303,14 @@ describe("the generic engine controls remain closed on steps 20 and 21", () => {
     const g = code(GUARD);
     expect(g).toContain('import "server-only"');
     expect(g).toContain("if (error) return false;");
-    expect(g.trimEnd()).toMatch(/return domainFactSatisfied\(input\.stepKey, input\.transition, invoices\);\s*}\s*$/);
+    // UAT-CUSTOMS-SINGLE-DOOR-01 — the guard now loads the source each entry
+    // DECLARES, so the closing delegation names the invoice facts explicitly
+    // instead of a bare `invoices`. The property asserted is unchanged: the
+    // delegation is the last thing the function does, so nothing can wave a
+    // transition through beneath it.
+    expect(g.trimEnd()).toMatch(
+      /return domainFactSatisfied\(input\.stepKey, input\.transition, \{ source: "invoice", invoices \}\);\s*}\s*$/,
+    );
     expect((g.match(/return true;/g) ?? []).length).toBe(1);
 
     const e = code(ENGINE);
@@ -649,13 +656,22 @@ describe("no neighbouring contract was changed", () => {
 
   // (16) The PR #19 billing-bypass contract still holds — asserted above by
   // execution; here as the ratified map's size, which a third entry would break.
-  it("still withdraws generic controls from exactly the three ratified steps", () => {
-    // STEP22-ISSUANCE-INTEGRITY-01 (ratified) added billing_dispatch as the third.
+  it("still withdraws generic controls from exactly the ratified steps", () => {
+    // STEP22-ISSUANCE-INTEGRITY-01 (ratified) added billing_dispatch as the third;
+    // UAT-CUSTOMS-SINGLE-DOOR-01 (ratified 2026-10-06) added transit_validation
+    // as the fourth. This test belongs to the BILLING slice, so what it actually
+    // guards is that the billing three are unchanged and that the newcomer took
+    // nothing from them.
     expect(Object.keys(DOMAIN_OWNED_STEPS).sort()).toEqual([
       "billing_dispatch",
       "billing_draft",
       "finance_invoice_validation",
+      "transit_validation",
     ]);
+    expect(DOMAIN_OWNED_STEPS.billing_draft.withdraws).toEqual(["submit"]);
+    expect(DOMAIN_OWNED_STEPS.finance_invoice_validation.withdraws.slice().sort())
+      .toEqual(["approve", "reject"]);
+    expect(DOMAIN_OWNED_STEPS.billing_dispatch.withdraws).toEqual(["submit"]);
   });
 
   it("introduces no migration and no schema change", () => {

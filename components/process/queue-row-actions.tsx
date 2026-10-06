@@ -109,26 +109,38 @@ export function QueueRowActions({ item, queue }: { item: QueueItem; queue: Queue
           </button>
         )}
 
-        {/* The CHECKER half. The engine still refuses if this user is the maker. */}
-        {item.state === "SUBMITTED" && (offers("approve") && el.mayAct) && (
-          <>
-            <button
-              className={`${btn} border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100`}
-              disabled={pending}
-              onClick={() => run(() => queueApproveStep(queue.key, item.fileId, item.stepKey))}
-            >
-              Valider
-            </button>
-            <button
-              className={`${btn} border-red-300 bg-red-50 text-red-800 hover:bg-red-100`}
-              disabled={pending}
-              onClick={() =>
-                rejectWithReason((reason) => queueRejectStep(queue.key, item.fileId, item.stepKey, reason))
-              }
-            >
-              Rejeter
-            </button>
-          </>
+        {/* The CHECKER half, from the SHARED derivation — UAT-CUSTOMS-SINGLE-DOOR-01.
+            This read `item.state === "SUBMITTED" && offers("approve") && el.mayAct`,
+            a third copy of the rule that ignored two things the dossier page
+            already honoured: the maker/checker identity test, and whether a
+            DOMAIN action owns this transition. So the queue kept offering
+            « Valider » on `transit_validation` after the dossier page stopped —
+            the server refused it, but the operator was invited to try. The
+            comment above says why that cannot stand: two execution surfaces
+            cannot be kept honest by two copies of one rule.
+
+            The two verdicts are now separate, because `transit_validation`
+            withdraws `approve` alone: the Chef loses the generic validation and
+            keeps the rejection, which has no other door. */}
+        {offers("approve") && el.canApprove && (
+          <button
+            className={`${btn} border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100`}
+            disabled={pending}
+            onClick={() => run(() => queueApproveStep(queue.key, item.fileId, item.stepKey))}
+          >
+            Valider
+          </button>
+        )}
+        {offers("approve") && el.canReject && (
+          <button
+            className={`${btn} border-red-300 bg-red-50 text-red-800 hover:bg-red-100`}
+            disabled={pending}
+            onClick={() =>
+              rejectWithReason((reason) => queueRejectStep(queue.key, item.fileId, item.stepKey, reason))
+            }
+          >
+            Rejeter
+          </button>
         )}
 
         <a
