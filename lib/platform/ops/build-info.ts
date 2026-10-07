@@ -13,10 +13,10 @@
  */
 
 /** The latest migration shipped in this build (pinned to the directory by test). */
-export const LATEST_MIGRATION = "20261011000001_incoterm_catalog";
+export const LATEST_MIGRATION = "20261012000001_00014_customs_validation_recovery";
 
 /** Total migrations shipped in this build (pinned by test). */
-export const MIGRATION_COUNT = 149;
+export const MIGRATION_COUNT = 150;
 
 /** Newest DATA-probeable migration marker: this permission row proves migrations ≥ this point. */
 export const MIGRATION_PROBE = {
