@@ -138,7 +138,29 @@ jobs:
       # correct one. The structural check — contiguous applied prefix, pending
       # suffix above it — is now always on, and ORDERING is enforced where it
       # belongs: the runner refuses any target that is not the earliest pending.
+      #
+      # IT IS SKIPPED FOR RECORD-ONLY, AND ONLY FOR RECORD-ONLY (MIG-LEDGER-151).
+      #
+      # This guard refuses when the repository and the ledger disagree. That is
+      # exactly the state `record_only` exists to repair, so running it as a
+      # PRE-condition made the recovery unreachable: production workflow #19
+      # stopped here on the `SCHEMA_AHEAD_OF_LEDGER` finding it was dispatched
+      # to resolve, and the record step never ran. A gate that blocks its own
+      # remedy is not protection, it is a deadlock.
+      #
+      # Nothing is weakened. APPLY and DRY RUN are gated exactly as before — an
+      # apply on top of a disagreeing ledger is still refused up front. What
+      # replaces the gate for record-only is STRICTER, not looser, because it is
+      # specific to the repair: the runner requires the live verifier to pass,
+      # the encoding proof to reproduce every recorded migration, exactly ONE
+      # pending version which must be the target, no hard findings, and the row
+      # to be genuinely absent before it writes.
+      #
+      # And the guard is not skipped, only MOVED: it runs after every mode
+      # below, where a record-only run must leave it reporting CLEAN or the job
+      # goes red.
       - name: Migration-integrity guard (structural; ordering is the runner's)
+        if: ${{ !inputs.record_only }}
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: node scripts/migration-integrity.mjs --linked
@@ -168,6 +190,21 @@ jobs:
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: node scripts/migrate-production.mjs --linked --version "${{ inputs.version }}" --record-only
+
+      # THE GUARD THAT WAS SKIPPED ABOVE, RUN HERE, AND MANDATORY.
+      #
+      # Record-only trades a pre-execution gate for a post-execution one. This
+      # is the other half of that trade and it has no `continue-on-error`: the
+      # reconciliation must leave the repository and the ledger in agreement —
+      # CLEAN, nothing pending, no findings — or this step exits non-zero and
+      # the run is red. A reconciliation that did not reconcile fails loudly
+      # rather than reporting success and leaving the next deployment held.
+      - name: Record-only must leave integrity CLEAN
+        id: record_integrity
+        if: ${{ inputs.record_only }}
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: node scripts/migration-integrity.mjs --linked
 
       # Runs even on failure: the operator needs to know WHICH state production
       # ended in, and that reading must come from the guard rather than from the
