@@ -143,7 +143,8 @@ function main() {
       fail.push(
         `SCHEMA_AHEAD_OF_LEDGER ${version} — its verifier passes against this database, so the ` +
           `migration IS applied but is not recorded in the ledger. Record it with ` +
-          `\`supabase migration repair --status applied ${version}\` after confirming; do NOT re-apply the SQL.`,
+          `Record it through the governed record-only path — Actions → Migrate production → ` +
+          `version ${version}, record_only: true — after confirming; do NOT re-apply the SQL.`,
       );
     } else {
       log(`[integrity] ${version}: not applied (verifier ok=${verdict ? verdict.ok : "no row"}) — normal for a pending migration`);
