@@ -142,8 +142,8 @@ function main() {
     if (verdict && verdict.ok === true) {
       fail.push(
         `SCHEMA_AHEAD_OF_LEDGER ${version} — its verifier passes against this database, so the ` +
-          `migration IS applied but is not recorded in the ledger. Record it with ` +
-          `Record it through the governed record-only path — Actions → Migrate production → ` +
+          `migration IS applied but is not recorded in the ledger. Record it through the ` +
+          `governed record-only path — Actions → Migrate production → ` +
           `version ${version}, record_only: true — after confirming; do NOT re-apply the SQL.`,
       );
     } else {

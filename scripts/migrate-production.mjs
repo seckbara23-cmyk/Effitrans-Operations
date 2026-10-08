@@ -28,7 +28,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { target, applyFile, queryFile, repair, query } from "./migration/exec.mjs";
 import { repoMigrations, remoteLedger, reconcile, validateTarget, crossCheckCli, classify, LEDGER_STATUS } from "./migration/ledger.mjs";
-import { proveFormat, recordOne, statementsOf } from "./migration/ledger-record.mjs";
+import { proveFormat, recordOne, statementsOf, isRecorded } from "./migration/ledger-record.mjs";
 
 const STATE = {
   OK: { code: 0, name: "APPLIED_AND_RECORDED" },
@@ -170,6 +170,17 @@ function main() {
   // governed way to finish. This mode records that one row and touches nothing
   // else. It never applies SQL; the apply branch below is unreachable from here.
   if (args.recordOnly) {
+    // THE TARGET MUST BE A REMOTE ONE, NAMED EXPLICITLY. `target()` already
+    // refuses to default, so there is no implicit production; this adds the one
+    // case that would be meaningless rather than dangerous — a local stack,
+    // where `supabase db reset` writes the ledger itself, so a missing row
+    // there is a different problem with a different remedy.
+    if (tgt.kind === "local") {
+      stop(STATE.PREFLIGHT, [
+        `--record-only refuses the local target: ${tgt.label}.`,
+        `A local ledger is written by \`db reset\`; a gap there is not this repair's subject.`,
+      ]);
+    }
     if (!pre || pre.ok !== true) {
       stop(STATE.PREFLIGHT, [
         `--record-only refuses: ${version}'s verifier does NOT pass against this database.`,
@@ -178,6 +189,49 @@ function main() {
       ]);
     }
     log(`[migrate]   verifier already passes — the SQL is applied and unrecorded`);
+
+    // ---- the preconditions that REPLACE the pre-execution integrity gate ----
+    //
+    // The workflow skips that gate for this mode, because the discrepancy it
+    // refuses on is the one being repaired (MIG-LEDGER-151, workflow #19). What
+    // stands in its place is narrower and stricter: the gate asks "do the
+    // repository and the ledger agree?", which must be NO for a repair to be
+    // needed at all. These ask "is the disagreement EXACTLY the one expected?"
+    const expected = [];
+    if (state.hard.length) {
+      expected.push(
+        `the ledger has structural findings that this repair does not address: ` +
+          state.hard.map((h) => `${h.code} ${h.version}`).join(", "),
+      );
+    }
+    // Exactly one missing entry, and it is the version we were asked to record.
+    // Two pending versions means something else is also unrecorded, and a
+    // record-only run must not be the thing that decides which.
+    if (state.pending.length !== 1) {
+      expected.push(`expected exactly ONE pending version, found ${state.pending.length}: [${state.pending.join(", ")}]`);
+    } else if (state.pending[0] !== version) {
+      expected.push(`the single pending version is ${state.pending[0]}, not the requested ${version}`);
+    }
+    if (state.ledgerCount !== state.repoCount - 1) {
+      expected.push(`expected the ledger to be exactly one row behind the repository, found ${state.ledgerCount} vs ${state.repoCount}`);
+    }
+    // Read the row's absence directly rather than inferring it from the
+    // reconcile above: the one fact this mode is about should be checked
+    // against the database, not against a derived view of it.
+    if (isRecorded(tgt, version)) {
+      expected.push(`${version} is ALREADY in the ledger — there is nothing to reconcile`);
+    }
+    if (expected.length) {
+      stop(STATE.PREFLIGHT, [
+        `--record-only refuses: the ledger discrepancy is not the expected one.`,
+        ...expected,
+        `Nothing was written. Diagnose before retrying; do NOT re-apply the SQL.`,
+      ]);
+    }
+    log(
+      `[migrate]   exactly one entry missing (${version}), ledger ${state.ledgerCount}/${state.repoCount}, ` +
+        `no structural findings, row confirmed absent`,
+    );
 
     // The encoding must be proven against rows the CLI itself wrote, at the
     // moment of use. A splitter that is wrong about an existing migration has
@@ -221,6 +275,9 @@ function main() {
     if (after.pending.length !== 0) problems.push(`pending is [${after.pending.join(", ")}], expected empty`);
     if (cls.status !== LEDGER_STATUS.CLEAN) problems.push(`integrity is ${cls.status}, expected CLEAN`);
     if (after.hard.length) problems.push(`hard findings: ${after.hard.map((h) => h.code).join(", ")}`);
+    // Asked of the database directly, not of the reconcile above, for the same
+    // reason the pre-check is: this is the one fact the whole mode is about.
+    if (!isRecorded(tgt, version)) problems.push(`${version} is still absent from the ledger`);
     if (!stillVerified) problems.push(`${version}'s verifier no longer passes after recording`);
     if (problems.length) stop(STATE.POST_MISMATCH, problems);
 
