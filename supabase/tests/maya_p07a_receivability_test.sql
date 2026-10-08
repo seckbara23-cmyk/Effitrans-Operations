@@ -106,7 +106,7 @@ end $$;
 -- ---------------------------------------------------------------------------
 do $$
 declare v_status text; v_at timestamptz; v_by uuid; v_note text;
-        ev_before int; ev_after int; st_before text; st_after text;
+        ev_before int; ev_after int; st_before text; st_after text; v_src text;
 begin
   select status into st_before from public.customs_record where id='00000000-0000-0000-0000-0000000d7a01';
   select count(*) into ev_before from public.business_event
@@ -122,8 +122,20 @@ begin
   select count(*) into ev_after from public.business_event
    where event_type='CUSTOMS_RECEIVABILITY_DECIDED' and subject_id='00000000-0000-0000-0000-0000000d7a01';
 
+  -- UAT-RECEVABILITE-01 — THE LANE, not just the event. Counting the appended
+  -- row proved the emission happened; it never proved WHICH source it claimed.
+  -- Production's copy of this RPC passed a bare 'rpc', which
+  -- business_event_source_check has never admitted, so every real call raised
+  -- 23514 and rolled back the decision — while this test stayed green against
+  -- a correctly-built database. Assert the value the constraint actually
+  -- allows, so a wrong lane fails here instead of only in production.
+  select source into v_src from public.business_event
+   where event_type='CUSTOMS_RECEIVABILITY_DECIDED' and subject_id='00000000-0000-0000-0000-0000000d7a01'
+   order by occurred_at desc limit 1;
+
   insert into _r values
     ('decision_recorded', case when v_status='NON_RECEVABLE' then 1 else 0 end),
+    ('event_source_is_policy_rpc', case when v_src='policy_rpc' then 1 else 0 end),
     ('date_written_by_server', case when v_at is not null then 1 else 0 end),
     ('author_recorded', case when v_by='00000000-0000-0000-0000-0000007a0a01' then 1 else 0 end),
     ('reason_trimmed', case when v_note='facture manquante' then 1 else 0 end),
@@ -135,6 +147,9 @@ begin
   end if;
   if ev_after - ev_before <> 1 then
     raise exception 'QC3 event FAIL: expected exactly 1 appended event, got %', ev_after - ev_before;
+  end if;
+  if v_src is distinct from 'policy_rpc' then
+    raise exception 'QC3 source FAIL: the ledger event must declare source policy_rpc, got %', v_src;
   end if;
   if st_before is distinct from st_after then
     raise exception 'QC3 GATE FAIL: recevabilite must not move the customs status (% -> %)', st_before, st_after;
