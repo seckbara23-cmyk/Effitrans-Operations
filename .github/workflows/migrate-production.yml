@@ -24,6 +24,15 @@ on:
         required: false
         default: true
         type: boolean
+      # MIG-LEDGER-151 — the recovery for a migration that APPLIED but was never
+      # recorded. It applies no SQL and refuses unless the version's verifier
+      # already passes against production, so it cannot assert an apply that did
+      # not happen. Same `production-db` approval as every other mode.
+      record_only:
+        description: "Record an ALREADY-APPLIED migration in the ledger. Applies no SQL."
+        required: false
+        default: false
+        type: boolean
       reason:
         description: "Why this is being deployed now (recorded in the run log)"
         required: true
@@ -136,17 +145,29 @@ jobs:
 
       - name: Dry run
         id: dry_run_step
-        if: ${{ inputs.dry_run }}
+        if: ${{ inputs.dry_run && !inputs.record_only }}
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: node scripts/migrate-production.mjs --linked --version "${{ inputs.version }}" --dry-run
 
       - name: Apply, verify, record, re-verify
         id: apply_step
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !inputs.dry_run && !inputs.record_only }}
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: node scripts/migrate-production.mjs --linked --version "${{ inputs.version }}"
+
+      # LEDGER-ONLY. Applies no SQL: the runner refuses unless the version's
+      # verifier already passes, proves its ledger encoding against rows the CLI
+      # itself wrote, writes ONE row, and then re-reads the ledger to confirm.
+      # `record_only` wins over `dry_run` so a dispatch that leaves dry_run at
+      # its default cannot silently do nothing.
+      - name: Record only (ledger reconciliation, no apply)
+        id: record_step
+        if: ${{ inputs.record_only }}
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: node scripts/migrate-production.mjs --linked --version "${{ inputs.version }}" --record-only
 
       # Runs even on failure: the operator needs to know WHICH state production
       # ended in, and that reading must come from the guard rather than from the
@@ -174,11 +195,11 @@ jobs:
             echo "| field | value |"
             echo "| --- | --- |"
             echo "| version | ${{ inputs.version }} |"
-            echo "| mode | ${{ inputs.dry_run && 'DRY RUN' || 'APPLY' }} |"
+            echo "| mode | ${{ inputs.record_only && 'RECORD ONLY (no SQL applied)' || (inputs.dry_run && 'DRY RUN' || 'APPLY') }} |"
             echo "| reason | ${{ inputs.reason }} |"
             echo "| actor | ${{ github.actor }} |"
             echo "| commit | ${{ github.sha }} |"
-            echo "| MIGRATION RESULT | ${{ inputs.dry_run && steps.dry_run_step.outcome || steps.apply_step.outcome }} |"
+            echo "| MIGRATION RESULT | ${{ inputs.record_only && steps.record_step.outcome || (inputs.dry_run && steps.dry_run_step.outcome || steps.apply_step.outcome) }} |"
             echo "| POST-RUN INTEGRITY RESULT | ${{ steps.post_integrity.outcome }} |"
             echo "| job status | ${{ job.status }} |"
             echo ""

@@ -27,7 +27,8 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { target, applyFile, queryFile, repair, query } from "./migration/exec.mjs";
-import { repoMigrations, remoteLedger, reconcile, validateTarget, crossCheckCli } from "./migration/ledger.mjs";
+import { repoMigrations, remoteLedger, reconcile, validateTarget, crossCheckCli, classify, LEDGER_STATUS } from "./migration/ledger.mjs";
+import { proveFormat, recordOne, statementsOf } from "./migration/ledger-record.mjs";
 
 const STATE = {
   OK: { code: 0, name: "APPLIED_AND_RECORDED" },
@@ -53,6 +54,9 @@ function parseArgs(argv) {
     else if (v === "--version") a.version = argv[++i];
     else if (v === "--dry-run") a.dryRun = true;
     else if (v === "--allow-dirty-tree") a.requireCleanTree = false;
+    // MIG-LEDGER-151 — record an ALREADY-APPLIED migration and nothing else.
+    // Never applies SQL; refuses unless the live verifier already passes.
+    else if (v === "--record-only") a.recordOnly = true;
   }
   // Assemble the project-ref target only when BOTH halves are present. A ref
   // without a pooler URL is not a target, it is half of one — and `target()`
@@ -159,11 +163,81 @@ function main() {
   } catch {
     pre = null; // expected: objects absent
   }
+  // ---- step 1b: --record-only ---------------------------------------------
+  // THE RECOVERY PATH FOR EXACTLY THIS STATE (MIG-LEDGER-151). Workflow #18
+  // applied 20261013000001, its verifier passed 13/13, and the recording step
+  // wrote nothing — leaving a live schema the ledger denies and, until now, no
+  // governed way to finish. This mode records that one row and touches nothing
+  // else. It never applies SQL; the apply branch below is unreachable from here.
+  if (args.recordOnly) {
+    if (!pre || pre.ok !== true) {
+      stop(STATE.PREFLIGHT, [
+        `--record-only refuses: ${version}'s verifier does NOT pass against this database.`,
+        `Recording it would assert an apply that did not happen — the ledger gap of`,
+        `September 2026 in the opposite direction. ${pre ? `verifier said: ${pre.detail}` : "the verifier returned no row"}`,
+      ]);
+    }
+    log(`[migrate]   verifier already passes — the SQL is applied and unrecorded`);
+
+    // The encoding must be proven against rows the CLI itself wrote, at the
+    // moment of use. A splitter that is wrong about an existing migration has
+    // no business encoding a new one.
+    log("[migrate] step 2 — prove the ledger encoding against the CLI's own rows");
+    const proof = proveFormat(tgt, repo.map((x) => ({ ...x, recorded: ledger.some((l) => l.version === x.version) })));
+    if (!proof.ok) {
+      stop(STATE.PREFLIGHT, [
+        `the ledger encoding could not be proven, so nothing was recorded.`,
+        proof.detail,
+        ...proof.mismatches.slice(0, 6),
+      ]);
+    }
+    log(`[migrate]   ${proof.detail}`);
+
+    log("[migrate] step 3 — record the one row");
+    const statements = statementsOf(m.path);
+    const rec = recordOne(tgt, { version, name: m.name, statements });
+    if (!rec.ok) {
+      stop(STATE.SCHEMA_AHEAD, [
+        `recording ${version} did not take effect; production is still ahead of the ledger.`,
+        rec.detail,
+        `Do NOT re-apply the SQL.`,
+      ]);
+    }
+    log(`[migrate]   ${rec.detail}`);
+
+    log("[migrate] step 4 — post-record verification");
+    const after = reconcile(repo, remoteLedger(tgt));
+    const cls = classify(after);
+    const stillVerified = (() => {
+      try {
+        const rows = queryFile(tgt, m.verifier);
+        return rows.length === 1 && rows[0].ok === true;
+      } catch {
+        return false;
+      }
+    })();
+    const problems = [];
+    if (after.ledgerCount !== after.repoCount) problems.push(`ledger ${after.ledgerCount} vs repository ${after.repoCount}`);
+    if (after.pending.length !== 0) problems.push(`pending is [${after.pending.join(", ")}], expected empty`);
+    if (cls.status !== LEDGER_STATUS.CLEAN) problems.push(`integrity is ${cls.status}, expected CLEAN`);
+    if (after.hard.length) problems.push(`hard findings: ${after.hard.map((h) => h.code).join(", ")}`);
+    if (!stillVerified) problems.push(`${version}'s verifier no longer passes after recording`);
+    if (problems.length) stop(STATE.POST_MISMATCH, problems);
+
+    log("");
+    log(`[migrate] ✓ RECORDED — ledger ${after.ledgerCount}/${after.repoCount}, pending 0, integrity ${cls.status},`);
+    log(`[migrate]   ${version} present exactly once as '${m.name}', verifier still passing.`);
+    log(`[migrate]   No SQL was applied and no other row was touched.`);
+    process.exit(0);
+  }
+
   if (pre && pre.ok === true) {
     stop(STATE.SCHEMA_AHEAD, [
       `${version} is not in the ledger, but its verifier already passes.`,
       `The SQL is applied and unrecorded. Do NOT re-apply it.`,
-      `Record it: supabase migration repair --linked --status applied ${version}`,
+      `Record it with the governed record-only path:`,
+      `  Actions → Migrate production → version ${version}, record_only: true`,
+      `or locally: node scripts/migrate-production.mjs --linked --version ${version} --record-only`,
     ]);
   }
 

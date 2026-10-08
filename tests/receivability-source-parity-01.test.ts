@@ -155,16 +155,26 @@ describe("UAT-RECEVABILITE-01 — source contract", () => {
 });
 
 describe("UAT-RECEVABILITE-01 — migration 151 restores parity without inventing", () => {
-  it("04 — it reuses the authoritative body BYTE-FOR-BYTE", () => {
+  it("04 — it reuses the authoritative body, character for character", () => {
     // The strongest form of "do not invent a new implementation": the function
-    // definition and its privilege block are the same characters in both
-    // files. A hand-retyped near-copy fails here.
+    // definition and its privilege block are the same text in both files. A
+    // hand-retyped near-copy fails here.
+    //
+    // LINE ENDINGS ARE NORMALISED, and that is not a loosening. The two files
+    // are stored differently — 20260824000001 with LF, 20261013000001 with
+    // CRLF, because it was assembled on a Windows working copy — so a raw
+    // comparison fails on 88 invisible \r characters while every meaningful
+    // character matches. Normalising keeps the claim this test exists to make
+    // (the body is the authoritative one, not a rewrite) and drops the one
+    // difference that carries no meaning. Re-writing an APPLIED migration to
+    // make a test pass would be the wrong repair by far.
     const slice = (src: string) => {
-      const start = src.indexOf("create or replace function public.record_customs_receivability(");
+      const s = src.replace(/\r\n/g, "\n");
+      const start = s.indexOf("create or replace function public.record_customs_receivability(");
       expect(start, "function not found").toBeGreaterThan(-1);
-      const end = src.indexOf("to service_role;", start);
+      const end = s.indexOf("to service_role;", start);
       expect(end, "grant block not found").toBeGreaterThan(start);
-      return src.slice(start, end + "to service_role;".length);
+      return s.slice(start, end + "to service_role;".length);
     };
     expect(slice(read(PARITY))).toBe(slice(read(ORIGIN)));
   });

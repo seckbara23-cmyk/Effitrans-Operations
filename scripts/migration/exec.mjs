@@ -242,10 +242,54 @@ export function applyFile(tgt, file, opts) {
  */
 export function repair(tgt, version, opts, status = "applied") {
   const r = run(["migration", "repair", ...tgt.flags, "--status", status, version], opts);
-  if (r.code !== 0) return { ok: false, message: (r.stderr || r.stdout).slice(-2000) };
-  const out = r.stdout + r.stderr;
-  if (/Migration history repaired|repaired/i.test(out)) return { ok: true, message: "" };
-  return { ok: false, message: `unexpected repair output: ${out.slice(-800)}` };
+
+  // THE OUTCOME IS LEDGER STATE, NOT CLI PROSE (MIG-LEDGER-151).
+  //
+  // This used to return ok only when the output matched /repaired/i. On
+  // 2026-10-08 production workflow #18 ran this against 20261013000001 and the
+  // CLI printed nothing but "Initialising login role... Connecting to remote
+  // database..." — no success line, no error line. The runner reported
+  // SCHEMA_AHEAD_OF_LEDGER, which was the RIGHT verdict for the wrong reason:
+  // the row was genuinely absent, but this function could not have told the
+  // difference between "it did not record" and "it recorded and said so
+  // differently". A string match cannot distinguish those, and one of them is
+  // an incident while the other is a false alarm that would hold every
+  // subsequent deployment.
+  //
+  // So the question asked is now the only one that matters: IS THE ROW THERE?
+  const v = String(version).replace(/[^0-9]/g, "");
+  let present;
+  try {
+    const rows = query(
+      tgt,
+      `select count(*)::int as n from supabase_migrations.schema_migrations where version = '${v}';`,
+    );
+    present = Number(rows[0]?.n ?? 0) > 0;
+  } catch (e) {
+    return {
+      ok: false,
+      message:
+        `the repair ran but the ledger could not be read back, so its effect is unknown: ` +
+        String(e.message).slice(-600),
+    };
+  }
+
+  const want = status === "applied";
+  if (present === want) {
+    // A non-zero exit whose effect nonetheless landed is reported, not hidden:
+    // the state is right, and the operator still needs to know the CLI complained.
+    return {
+      ok: true,
+      message: r.code === 0 ? "" : `(the CLI exited ${r.code}, but the ledger now reflects '${status}')`,
+    };
+  }
+  const said = ((r.stderr || r.stdout) || "(the CLI printed nothing)").trim().slice(-800);
+  return {
+    ok: false,
+    message:
+      `the ledger does not reflect '${status}' for ${v} after the repair ` +
+      `(exit ${r.code}). CLI said: ${said}`,
+  };
 }
 
 /** `supabase migration list`, parsed. Used only to cross-check our own view. */
