@@ -35,6 +35,14 @@
  * treated as not configured: every imagery licence this project considered
  * requires on-map attribution, and a missing credit is a licence breach, not a
  * cosmetic gap.
+ *
+ * TILE SIZE IS EXPLICIT. A provider serves tiles of ONE pixel size: 256 for
+ * classic XYZ rasters, 512 for the Esri static basemap tiles. MapLibre must
+ * be told which — declaring 256 for 512-px tiles fetches one zoom level too
+ * deep and draws every label at half scale. `TRANSPORT_SATELLITE_TILE_SIZE`
+ * accepts exactly "256" or "512", defaults to 256 (every configuration that
+ * predates the setting is unchanged), and any other value disables satellite
+ * rather than guessing.
  */
 import type { StyleSpecification } from "maplibre-gl";
 
@@ -45,6 +53,10 @@ export const BASEMAP_LABEL_FR: Readonly<Record<BasemapKey, string>> = {
   satellite: "Satellite",
 };
 
+/** The only pixel sizes a raster source is declared with here. */
+export type SatelliteTileSize = 256 | 512;
+export const DEFAULT_TILE_SIZE: SatelliteTileSize = 256;
+
 /** What the server hands the map when satellite imagery is configured. */
 export type SatelliteTiles = {
   /** Raster tile template with {z} {x} {y} tokens (https only). */
@@ -53,6 +65,8 @@ export type SatelliteTiles = {
   attribution: string;
   /** Optional transparent labels template drawn above the imagery. */
   labels: string | null;
+  /** Pixel size of one tile as the provider serves it; applies to both templates. */
+  tileSize: SatelliteTileSize;
   /** Open on satellite rather than plan. Only honoured when configured. */
   defaultOn: boolean;
 };
@@ -62,6 +76,7 @@ export type SatelliteEnv = {
   TRANSPORT_SATELLITE_ATTRIBUTION?: string;
   TRANSPORT_SATELLITE_LABELS_TILE_URL?: string;
   TRANSPORT_SATELLITE_DEFAULT?: string;
+  TRANSPORT_SATELLITE_TILE_SIZE?: string;
 };
 
 export const MAX_TILE_TEMPLATE_LENGTH = 2000;
@@ -82,8 +97,22 @@ export function isValidTileTemplate(v: unknown): v is string {
 }
 
 /**
+ * The tile size as the environment states it: unset or empty means 256 (what
+ * every configuration was drawn with before the setting existed); the exact
+ * strings "256" and "512" are accepted; anything else — padding included — is
+ * null, which disables satellite. Strings only: this is environment input.
+ */
+export function parseTileSize(v: unknown): SatelliteTileSize | null {
+  if (v == null || v === "") return DEFAULT_TILE_SIZE;
+  if (v === "256") return 256;
+  if (v === "512") return 512;
+  return null;
+}
+
+/**
  * Resolve the satellite configuration from raw env strings. Returns null —
- * "not configured" — for anything less than a valid template plus a credit.
+ * "not configured" — for anything less than a valid template, a credit and a
+ * recognised tile size (see `parseTileSize`).
  * A labels template that fails validation disables ONLY the labels.
  */
 export function resolveSatelliteConfig(env: SatelliteEnv): SatelliteTiles | null {
@@ -91,6 +120,8 @@ export function resolveSatelliteConfig(env: SatelliteEnv): SatelliteTiles | null
   if (!isValidTileTemplate(tiles)) return null;
   const attribution = (env.TRANSPORT_SATELLITE_ATTRIBUTION ?? "").trim();
   if (attribution.length === 0) return null;
+  const tileSize = parseTileSize(env.TRANSPORT_SATELLITE_TILE_SIZE);
+  if (tileSize === null) return null;
   const labels = isValidTileTemplate(env.TRANSPORT_SATELLITE_LABELS_TILE_URL)
     ? env.TRANSPORT_SATELLITE_LABELS_TILE_URL
     : null;
@@ -98,6 +129,7 @@ export function resolveSatelliteConfig(env: SatelliteEnv): SatelliteTiles | null
     tiles,
     attribution,
     labels,
+    tileSize,
     defaultOn: env.TRANSPORT_SATELLITE_DEFAULT === "true",
   };
 }
@@ -122,7 +154,7 @@ export function buildSatelliteStyle(cfg: SatelliteTiles): StyleSpecification {
       [SATELLITE_SOURCE_ID]: {
         type: "raster",
         tiles: [cfg.tiles],
-        tileSize: 256,
+        tileSize: cfg.tileSize,
         attribution: cfg.attribution,
       },
     },
@@ -132,7 +164,7 @@ export function buildSatelliteStyle(cfg: SatelliteTiles): StyleSpecification {
     style.sources[SATELLITE_LABELS_SOURCE_ID] = {
       type: "raster",
       tiles: [cfg.labels],
-      tileSize: 256,
+      tileSize: cfg.tileSize,
     };
     style.layers.push({ id: SATELLITE_LABELS_SOURCE_ID, type: "raster", source: SATELLITE_LABELS_SOURCE_ID });
   }

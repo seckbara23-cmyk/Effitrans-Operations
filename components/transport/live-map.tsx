@@ -272,7 +272,10 @@ export function TransportLiveMap({
         zoom: SENEGAL_VIEW.zoom,
         pitch: SENEGAL_VIEW.pitch,     // genuine WebGL pitch
         bearing: SENEGAL_VIEW.bearing, // genuine WebGL bearing
-        attributionControl: { compact: true },
+        // Responsive attribution: the full credit on maps at least 640 px wide,
+        // an accessible toggle below that. Imagery licences require the credit
+        // to be readable, not merely present behind a closed button.
+        attributionControl: {},
         maxPitch: 75,
       });
     } catch {
