@@ -34,6 +34,17 @@
  *
  * THE CAMERA IS THE OPERATOR'S. Nothing ever yanks the view back to a mission
  * while someone is exploring: framing happens only when they ask for it.
+ *
+ * A SECOND BASEMAP — SATELLITE — AND WHAT IT DOES NOT CHANGE. The plan above
+ * stays the default and the fallback. When the server hands this component a
+ * satellite configuration (a prop — this file reads no environment and names
+ * no vendor), a « Plan / Satellite » switch appears. Switching replaces the
+ * raster style only: the camera keeps its pitch, bearing and position, the
+ * markers are DOM overlays and stay put, and the observed-route layer is redrawn
+ * on the new style from the same recorded fixes. If the imagery refuses to load
+ * (credential, quota, outage) the map reverts to the plan by itself and says so.
+ * Telemetry, GPS markers, headings, popups and the no-interpolation rule are
+ * untouched: a basemap is scenery, never evidence.
  */
 import "maplibre-gl/dist/maplibre-gl.css";
 import maplibregl from "maplibre-gl";
@@ -47,6 +58,14 @@ import {
   shouldEase,
 } from "@/lib/tracking/marker-motion";
 import { MISSION_LEG_LABEL_FR } from "@/lib/tracking/types";
+import {
+  BASEMAP_LABEL_FR,
+  buildSatelliteStyle,
+  initialBasemap,
+  isSatelliteSourceError,
+  type BasemapKey,
+  type SatelliteTiles,
+} from "@/lib/tracking/basemaps";
 
 const LEG_COLOR: Record<string, string> = {
   OUTBOUND: "#0d9488",
@@ -205,16 +224,36 @@ function popupHtml(m: LiveMission): string {
 export function TransportLiveMap({
   missions,
   route,
+  satellite = null,
 }: {
   missions: LiveMission[];
   /** Observed positions for one focused mission, oldest first. */
   route?: LiveMissionPoint[];
+  /**
+   * Satellite imagery, resolved and validated on the SERVER. null = not
+   * configured: no switch is drawn and the map is the plan it has always been.
+   */
+  satellite?: SatelliteTiles | null;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markersRef = useRef<Map<string, MarkerEntry>>(new Map());
   const [ready, setReady] = useState(false);
   const [webglFailed, setWebglFailed] = useState(false);
+
+  // ---- basemap choice -------------------------------------------------------
+  // Opens on the plan unless imagery is configured AND asked for as default.
+  // Held in a ref as well so map event handlers (registered once) read the
+  // current choice rather than a stale closure.
+  const satelliteRef = useRef<SatelliteTiles | null>(satellite);
+  satelliteRef.current = satellite;
+  const [basemap, setBasemap] = useState<BasemapKey>(() => initialBasemap(satellite));
+  const basemapRef = useRef<BasemapKey>(basemap);
+  // Bumped every time a style finishes loading, so style layers (the observed
+  // route) are re-added after a swap; DOM markers need nothing.
+  const [styleEpoch, setStyleEpoch] = useState(0);
+  const [styleBusy, setStyleBusy] = useState(false);
+  const [imageryUnavailable, setImageryUnavailable] = useState(false);
 
   const located = missions.filter(
     (m): m is LiveMission & { lastPosition: LiveMissionPoint } => m.lastPosition != null,
@@ -225,14 +264,18 @@ export function TransportLiveMap({
     if (mapRef.current || !containerRef.current) return;
     let map: maplibregl.Map;
     try {
+      const cfg = satelliteRef.current;
       map = new maplibregl.Map({
         container: containerRef.current,
-        style: OSM_RASTER_STYLE,
+        style: basemapRef.current === "satellite" && cfg ? buildSatelliteStyle(cfg) : OSM_RASTER_STYLE,
         center: [SENEGAL_VIEW.lng, SENEGAL_VIEW.lat],
         zoom: SENEGAL_VIEW.zoom,
         pitch: SENEGAL_VIEW.pitch,     // genuine WebGL pitch
         bearing: SENEGAL_VIEW.bearing, // genuine WebGL bearing
-        attributionControl: { compact: true },
+        // Responsive attribution: the full credit on maps at least 640 px wide,
+        // an accessible toggle below that. Imagery licences require the credit
+        // to be readable, not merely present behind a closed button.
+        attributionControl: {},
         maxPitch: 75,
       });
     } catch {
@@ -242,6 +285,30 @@ export function TransportLiveMap({
     }
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true, showCompass: true }), "top-right");
     map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
+    // Fires for the first style and after every swap.
+    map.on("style.load", () => {
+      setStyleBusy(false);
+      setStyleEpoch((n) => n + 1);
+    });
+    // Imagery that cannot be fetched (refused credential, quota, outage) must
+    // never leave the operator staring at a blank canvas: fall back to the plan
+    // and say so. Plan-tile hiccups are not the imagery's and are left alone.
+    map.on("error", (evt) => {
+      const imagery =
+        basemapRef.current === "satellite" &&
+        isSatelliteSourceError(evt as unknown as { sourceId?: unknown; error?: unknown });
+      if (!imagery) {
+        // A registered listener silences the library's own console report, so
+        // every other error is reported here exactly as it was before.
+        console.error(evt.error);
+        return;
+      }
+      basemapRef.current = "plan";
+      setBasemap("plan");
+      setImageryUnavailable(true);
+      setStyleBusy(true);
+      map.setStyle(OSM_RASTER_STYLE, { diff: false });
+    });
     map.on("load", () => {
       // Frame the country on first paint; from here the camera is the user's.
       map.fitBounds(SENEGAL_VIEW.bounds as unknown as [number, number, number, number], {
@@ -388,7 +455,26 @@ export function TransportLiveMap({
       source: id,
       paint: { "line-color": "#0d9488", "line-width": 3 },
     });
-  }, [route, ready]);
+    // `styleEpoch`: a basemap swap drops every style layer, so the route is
+    // re-added — from the same recorded fixes — once the new style has loaded.
+  }, [route, ready, styleEpoch]);
+
+  // ---- basemap: Plan ⇄ Satellite -------------------------------------------
+  // `setStyle` replaces sources and layers but keeps the camera (pitch,
+  // bearing, position) and the DOM markers. Nothing here reads telemetry, and
+  // the 30 s refresh never touches this choice: the component instance — and
+  // this state — survive a server re-render.
+  function switchBasemap(next: BasemapKey) {
+    const map = mapRef.current;
+    const cfg = satelliteRef.current;
+    if (!map || next === basemapRef.current) return;
+    if (next === "satellite" && !cfg) return;
+    basemapRef.current = next;
+    setBasemap(next);
+    setImageryUnavailable(false);
+    setStyleBusy(true);
+    map.setStyle(next === "satellite" && cfg ? buildSatelliteStyle(cfg) : OSM_RASTER_STYLE, { diff: false });
+  }
 
   function flyToSenegal() {
     mapRef.current?.fitBounds(SENEGAL_VIEW.bounds as unknown as [number, number, number, number], {
@@ -421,7 +507,30 @@ export function TransportLiveMap({
         <span className="text-xs text-slate-500">
           Carte opérationnelle — Sénégal. Inclinaison et rotation disponibles (clic droit ou Ctrl + glisser).
         </span>
-        <span className="flex gap-2">
+        <span className="flex flex-wrap items-center gap-2">
+          {/* Drawn only when imagery is configured — an unconfigured map is unchanged. */}
+          {satellite && (
+            <span
+              role="group"
+              aria-label="Fond de carte"
+              className="inline-flex overflow-hidden rounded border border-slate-200 text-[11px]"
+            >
+              {(["plan", "satellite"] as const).map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  aria-pressed={basemap === k}
+                  disabled={styleBusy}
+                  onClick={() => switchBasemap(k)}
+                  className={`px-2 py-1 ${
+                    basemap === k ? "bg-navy-900 text-white" : "bg-white text-slate-600 hover:bg-slate-50"
+                  } disabled:opacity-60`}
+                >
+                  {BASEMAP_LABEL_FR[k]}
+                </button>
+              ))}
+            </span>
+          )}
           <button
             type="button"
             onClick={flyToSenegal}
@@ -439,6 +548,15 @@ export function TransportLiveMap({
           </button>
         </span>
       </div>
+
+      {imageryUnavailable && (
+        <p
+          role="status"
+          className="border-b border-amber-100 bg-amber-50 px-4 py-1.5 text-[11px] text-amber-800"
+        >
+          Imagerie satellite indisponible (accès refusé, quota ou service) — retour automatique au plan.
+        </p>
+      )}
 
       <div className="relative">
         <div ref={containerRef} className="h-[380px] w-full sm:h-[520px]" />
