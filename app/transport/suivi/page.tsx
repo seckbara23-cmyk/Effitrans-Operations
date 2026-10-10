@@ -19,6 +19,7 @@ import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { listLiveMissions, summarizeLiveMissions, countSessionsEndedToday } from "@/lib/tracking/live-service";
 import { MISSION_LEG_LABEL_FR } from "@/lib/tracking/types";
 import { trackingEnabled } from "@/lib/tracking/config";
+import { getSatelliteTiles } from "@/lib/tracking/basemap-config";
 import { LiveRefresh } from "@/components/transport/live-refresh";
 
 export const metadata: Metadata = { title: "Suivi en direct" };
@@ -113,7 +114,10 @@ export default async function TransportLiveTrackingPage() {
           its own empty-state card and a documented fallback viewport; only the
           telemetry on it changes. It is deliberately outside the conditional
           below, which governs the mission LIST alone. */}
-      <TransportLiveMap missions={missions} />
+      {/* TRANSPORT-MAP-SATELLITE-01 — the imagery provider is resolved HERE, on
+          the server, from server-only variables, and reaches the map as a plain
+          prop. Unconfigured → null → the map is exactly what it was. */}
+      <TransportLiveMap missions={missions} satellite={getSatelliteTiles()} />
 
       {missions.length === 0 ? (
         <div className="surface p-6 text-sm text-slate-500">
