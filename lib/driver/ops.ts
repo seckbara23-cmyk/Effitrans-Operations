@@ -18,7 +18,7 @@ import { driverMobileTrackingEnabled } from "@/lib/tracking/config";
 import { isCustomerSafeByDefault } from "@/lib/tracking/events";
 import { isValidCoordinate } from "@/lib/tracking/position";
 import type { TrackingActionResult, TrackingEventType } from "@/lib/tracking/types";
-import { driverContext, loadAssignedTransport, currentSession, notifyDispatchers } from "./mission-auth";
+import { driverContext, loadAssignedTransport, liveSessionOrError, notifyDispatchers } from "./mission-auth";
 import { isDriverEventKind, isDelayCategory, isIncidentCategory, isIncidentSeverity, delayDedupKey } from "./event-kinds";
 
 const FUTURE_SKEW_MS = 120_000;
@@ -56,8 +56,9 @@ export async function recordDriverEvent(transportId: string, input: DriverEventI
   const supabase = getAdminSupabaseClient();
   const rec = await loadAssignedTransport(supabase, user, transportId);
   if (!rec) return { ok: false, error: "forbidden" };
-  const sess = await currentSession(supabase, user, transportId);
-  if (!sess) return { ok: false, error: "no_session" };
+  const live = await liveSessionOrError(supabase, user, transportId);
+  if (!live.ok) return { ok: false, error: live.error };
+  const sess = live.session;
 
   const oc = occurredAtOr(Date.now(), input.occurredAt);
   if (!oc.ok) return { ok: false, error: "invalid_timestamp" };
@@ -110,8 +111,9 @@ export async function reportDelay(transportId: string, input: DelayInput): Promi
   const supabase = getAdminSupabaseClient();
   const rec = await loadAssignedTransport(supabase, user, transportId);
   if (!rec) return { ok: false, error: "forbidden" };
-  const sess = await currentSession(supabase, user, transportId);
-  if (!sess) return { ok: false, error: "no_session" };
+  const live = await liveSessionOrError(supabase, user, transportId);
+  if (!live.ok) return { ok: false, error: live.error };
+  const sess = live.session;
 
   const c = coords(input.latitude, input.longitude);
   if (!c) return { ok: false, error: "invalid_coordinate" };
@@ -171,8 +173,9 @@ export async function reportIncident(transportId: string, input: IncidentInput):
   const supabase = getAdminSupabaseClient();
   const rec = await loadAssignedTransport(supabase, user, transportId);
   if (!rec) return { ok: false, error: "forbidden" };
-  const sess = await currentSession(supabase, user, transportId);
-  if (!sess) return { ok: false, error: "no_session" };
+  const live = await liveSessionOrError(supabase, user, transportId);
+  if (!live.ok) return { ok: false, error: live.error };
+  const sess = live.session;
 
   const c = coords(input.latitude, input.longitude);
   if (!c) return { ok: false, error: "invalid_coordinate" };

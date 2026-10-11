@@ -2273,6 +2273,10 @@ export const t = {
         ARRIVED_NEAR_DESTINATION: "Proche de la destination",
         DELIVERY_ATTEMPTED: "Tentative de livraison",
         recorded: "Événement enregistré.",
+        // UAT-TRANSPORT-POD-FIX-01 — « Enlèvement confirmé » records what the
+        // driver SAW. The official pickup is the office's act (step 15), so the
+        // confirmation must not read as though the dossier had moved.
+        pickupReported: "Enlèvement signalé. Le bureau doit encore enregistrer l'enlèvement officiel.",
       },
       delay: {
         title: "Signaler un retard",
@@ -2347,12 +2351,17 @@ export const t = {
         confirmed: "Livraison confirmée.",
         warning: "Cette action marque la mission comme livrée et clôture le suivi.",
         done: "Mission livrée.",
+        // Why the button is absent — actionable, and never a blank refusal.
+        pickupPending: "Livraison indisponible : enlèvement officiel non enregistré.",
+        pickupPendingHelp:
+          "Votre confirmation d'enlèvement est bien enregistrée. Demandez au coordinateur d'enregistrer l'enlèvement officiel du dossier ; la confirmation de livraison sera alors disponible.",
+        cancelled: "Mission annulée — aucune livraison ne peut être confirmée.",
       },
       locationNote: "Votre position actuelle est jointe automatiquement lorsqu'elle est disponible.",
       cancel: "Annuler",
     },
     errors: {
-      forbidden: "Action non autorisée.",
+      forbidden: "Action non autorisée pour cette mission.",
       tracking_disabled: "Le suivi mobile n'est pas activé.",
       invalid_state: "Action impossible dans l'état actuel de la mission.",
       not_found: "Mission introuvable.",
@@ -2373,7 +2382,17 @@ export const t = {
       file_too_large: "Fichier trop volumineux (max 25 Mo).",
       invalid_transition: "Livraison impossible dans l'état actuel de la mission.",
       upload_failed: "Échec de l'envoi du fichier.",
+      // UAT-TRANSPORT-POD-FIX-01 — this code existed with no sentence behind it,
+      // so a failed integrity hash reached the driver as "l'action a échoué".
+      hash_failed: "Le fichier n'a pas pu être préparé. Reprenez la photo ou le document.",
       create_failed: "Enregistrement impossible.",
+      // UAT-TRANSPORT-POD-FIX-01 — precise, safe refusals. Each names what the
+      // driver can do next; none leaks an internal detail.
+      session_completed: "Cette mission est terminée. Contactez le bureau pour toute correction.",
+      pickup_not_recorded:
+        "Le bureau n'a pas encore enregistré l'enlèvement officiel. La livraison ne peut pas encore être confirmée.",
+      mission_cancelled: "Cette mission a été annulée.",
+      network: "Connexion interrompue. Vérifiez votre réseau, puis réessayez.",
       already_delivered: "La livraison a déjà été confirmée.",
       generic: "L'action a échoué. Veuillez réessayer.",
     },

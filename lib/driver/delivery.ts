@@ -28,7 +28,8 @@ import { isValidCoordinate } from "@/lib/tracking/position";
 import type { TrackingActionResult } from "@/lib/tracking/types";
 import { deliverTransport } from "@/lib/transport/transition";
 import { deliveredDedupKey } from "./event-kinds";
-import { driverContext, loadAssignedTransport, currentSession } from "./mission-auth";
+import { driverContext, loadAssignedTransport, liveSessionOrError } from "./mission-auth";
+import { deliveryBlock } from "./mission-gates";
 
 const FUTURE_SKEW_MS = 120_000;
 
@@ -53,8 +54,17 @@ export async function confirmDelivery(transportId: string, input: ConfirmDeliver
   const supabase = getAdminSupabaseClient();
   const rec = await loadAssignedTransport(supabase, user, transportId);
   if (!rec) return { ok: false, error: "forbidden" };
-  const sess = await currentSession(supabase, user, transportId);
-  if (!sess) return { ok: false, error: "no_session" };
+  const live = await liveSessionOrError(supabase, user, transportId);
+  if (!live.ok) return { ok: false, error: live.error };
+  const sess = live.session;
+
+  // UAT-TRANSPORT-POD-FIX-01 — say WHY before asking her to fix anything else.
+  // `deliverTransport` below stays the authority (it re-checks the state
+  // machine); this only NAMES the refusal. The reason the UAT hit was the
+  // official pickup: nobody at the office had recorded it, so the record sat
+  // at DRIVER_ASSIGNED and the driver read « Transition non autorisée. »
+  const blocked = deliveryBlock(rec.status);
+  if (blocked) return { ok: false, error: blocked };
 
   // Timestamp + coordinates.
   const now = Date.now();

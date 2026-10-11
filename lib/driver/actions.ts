@@ -18,10 +18,11 @@ import { isDriver } from "./auth";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
 import { driverMobileTrackingEnabled } from "@/lib/tracking/config";
-import type { TrackingActionResult } from "@/lib/tracking/types";
+import type { TrackingActionResult, TrackingSessionStatus } from "@/lib/tracking/types";
+import { LIVE_SESSION_STATUSES } from "./mission-gates";
 
 type Admin = ReturnType<typeof getAdminSupabaseClient>;
-export type SessionActionResult = TrackingActionResult & { sessionId?: string };
+export type SessionActionResult = TrackingActionResult & { sessionId?: string; status?: TrackingSessionStatus };
 
 async function driverCtx(): Promise<CurrentUser | null> {
   const user = await getCurrentUser();
@@ -61,15 +62,25 @@ export async function startMission(transportId: string): Promise<SessionActionRe
   if (!tr || tr.driver_user_id !== user.id) return { ok: false, error: "forbidden" };
   if (tr.status === "CANCELLED" || tr.status === "POD_RECEIVED") return { ok: false, error: "invalid_state" };
 
-  // Idempotent: reuse the existing ACTIVE session if present.
-  const active = await supabase
+  // Idempotent: reuse the session this mission ALREADY has.
+  //
+  // UAT-TRANSPORT-POD-FIX-01 (D5). Matching ACTIVE alone let a SECOND live
+  // session be inserted beside a PAUSED or RETURNING one — the unique index
+  // covers ACTIVE only — which would split one return leg across two rows and
+  // leave one of them never completed. The status is returned so the screen
+  // cannot show a paused session as though it were sharing.
+  const { data: liveRows } = await supabase
     .from("tracking_session")
-    .select("id")
+    .select("id, status")
     .eq("tenant_id", user.tenantId)
     .eq("transport_id", transportId)
-    .eq("status", "ACTIVE")
-    .maybeSingle();
-  if (active.data) return { ok: true, id: active.data.id, sessionId: active.data.id };
+    .in("status", [...LIVE_SESSION_STATUSES])
+    .order("started_at", { ascending: false })
+    .limit(1);
+  const existing = (liveRows ?? [])[0];
+  if (existing) {
+    return { ok: true, id: existing.id, sessionId: existing.id, status: existing.status as TrackingSessionStatus };
+  }
 
   const { data, error } = await supabase
     .from("tracking_session")
@@ -89,7 +100,7 @@ export async function startMission(transportId: string): Promise<SessionActionRe
     // Race: the unique active-session index rejected a concurrent double-tap.
     if (error && /duplicate|unique/i.test(error.message)) {
       const again = await supabase.from("tracking_session").select("id").eq("tenant_id", user.tenantId).eq("transport_id", transportId).eq("status", "ACTIVE").maybeSingle();
-      if (again.data) return { ok: true, id: again.data.id, sessionId: again.data.id };
+      if (again.data) return { ok: true, id: again.data.id, sessionId: again.data.id, status: "ACTIVE" };
     }
     return { ok: false, error: error?.message ?? "start_failed" };
   }
@@ -113,7 +124,7 @@ export async function startMission(transportId: string): Promise<SessionActionRe
     created_by: user.id,
   });
   revalidate(transportId);
-  return { ok: true, id: data.id, sessionId: data.id };
+  return { ok: true, id: data.id, sessionId: data.id, status: "ACTIVE" };
 }
 
 export async function pauseTracking(sessionId: string): Promise<SessionActionResult> {
