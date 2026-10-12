@@ -134,10 +134,15 @@ describe("BINDING-01 — legitimate CI, local and pre-configuration states survi
 // ═══════════ strict mode only ever tightens ════════════════════════════════
 
 describe("BINDING-01 — strict mode", () => {
-  it("11 — turns every unverifiable state into a refusal", () => {
+  it("11 — turns every unverifiable state into a refusal: no expectation, unknown host, nothing bound", () => {
     for (const input of [
+      // PRODUCTION_SUPABASE_PROJECT_REF not installed → nothing to compare
       { supabaseUrl: prodUrl, vercelEnv: "production", productionRef: undefined },
+      // a host whose project cannot be identified
       { supabaseUrl: "https://gateway.example.test", vercelEnv: "preview", productionRef: PROD },
+      // no Supabase URL at all — absence is not proof of isolation
+      { supabaseUrl: undefined, vercelEnv: "preview", productionRef: PROD },
+      { supabaseUrl: "", vercelEnv: "production", productionRef: PROD },
     ]) {
       expect(evaluateBinding({ ...input, strict: false }).ok).toBe(true);
       const v = evaluateBinding({ ...input, strict: true });
@@ -150,10 +155,28 @@ describe("BINDING-01 — strict mode", () => {
     const v = evaluateBinding({ supabaseUrl: prodUrl, vercelEnv: "preview", productionRef: PROD, strict: false });
     expect(v.ok).toBe(false);
     // and the verified / local states are unaffected by strictness
+    // Proven states are unaffected by strictness — a loopback stack IS proof.
     expect(evaluateBinding({ supabaseUrl: stagingUrl, vercelEnv: "preview", productionRef: PROD, strict: true }).ok).toBe(true);
     expect(evaluateBinding({ supabaseUrl: "http://127.0.0.1:54321", vercelEnv: undefined, productionRef: PROD, strict: true }).ok).toBe(true);
-    expect(evaluateBinding({ supabaseUrl: undefined, vercelEnv: "preview", productionRef: PROD, strict: true }).ok).toBe(true);
+    expect(evaluateBinding({ supabaseUrl: prodUrl, vercelEnv: "production", productionRef: PROD, strict: true }).ok).toBe(true);
     expect(pure).not.toMatch(/ALLOW_PRODUCTION|FORCE_BINDING|SKIP_BINDING|BYPASS_BINDING/i);
+  });
+
+  it("12b — strict refuses exactly the three unproven states, and the default allows them", () => {
+    const unproven = ["unconfigured", "unverified_no_expectation", "unverified_host"];
+    const cases: Array<[string, Parameters<typeof evaluateBinding>[0]]> = [
+      ["unconfigured", { supabaseUrl: undefined, vercelEnv: "preview", productionRef: PROD }],
+      ["unverified_no_expectation", { supabaseUrl: prodUrl, vercelEnv: "preview", productionRef: undefined }],
+      ["unverified_host", { supabaseUrl: "https://gw.example.test", vercelEnv: "preview", productionRef: PROD }],
+    ];
+    for (const [label, input] of cases) {
+      const lax = evaluateBinding({ ...input, strict: false });
+      expect(lax.ok, label).toBe(true);
+      expect(lax.status, label).toBe(label);
+      expect(isVerified(lax), label).toBe(false);
+      expect(evaluateBinding({ ...input, strict: true }).ok, label).toBe(false);
+    }
+    expect(unproven.some((s) => VERIFIED_STATUSES.includes(s))).toBe(false);
   });
 });
 
@@ -318,6 +341,19 @@ describe("BINDING-01 — wiring", () => {
     expect(probe).toMatch(/method:\s*["']GET|fetch\(target/);
     expect(probe).not.toMatch(/method:\s*["'](POST|PUT|PATCH|DELETE)/i);
     expect(probe).not.toMatch(/SERVICE_ROLE|Authorization/i);
+  });
+
+  it("29 — and its exit code is trustworthy: no process.exit after a fetch, and an unreachable host FAILS", () => {
+    const probe = strip(read("scripts/gate/verify-deployment-binding.mjs"));
+    // `process.exit()` while undici's sockets are closing trips a libuv
+    // assertion on Windows and hands the shell 127 instead of the verdict —
+    // observed during verification. exitCode + a drained loop is reliable.
+    expect(probe).not.toContain("process.exit(");
+    expect(probe).toContain("process.exitCode = code");
+    // "I could not check" must never be reported as "all clear".
+    expect(probe).toContain("} catch (e) {");
+    expect(probe).toContain("unreachable (");
+    expect(probe).toContain('fail(1, "Cannot compare');
   });
 });
 

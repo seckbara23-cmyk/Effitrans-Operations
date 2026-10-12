@@ -23,14 +23,36 @@ const url = args[0];
 const otherIdx = args.indexOf("--expect-isolated-from");
 const other = otherIdx === -1 ? null : args[otherIdx + 1];
 
+/**
+ * EXIT CODES ARE THE CONTRACT, so this script never calls `process.exit()` after
+ * a fetch. Doing so on Windows trips a libuv assertion
+ * (`!(handle->flags & UV_HANDLE_CLOSING)`) while undici's sockets are still
+ * closing, and the shell receives 127 instead of the verdict — observed, not
+ * theorised. Setting `process.exitCode` and letting the loop drain is reliable;
+ * `connection: close` keeps no socket alive to wait for.
+ */
+function fail(code, message) {
+  if (message) console.error(message);
+  process.exitCode = code;
+}
+
 if (!url || url.startsWith("--")) {
-  console.error("usage: node scripts/gate/verify-deployment-binding.mjs <url> [--expect-isolated-from <url>]");
-  process.exit(2);
+  fail(2, "usage: node scripts/gate/verify-deployment-binding.mjs <url> [--expect-isolated-from <url>]");
 }
 
 async function probe(base) {
   const target = `${base.replace(/\/+$/, "")}/api/version`;
-  const res = await fetch(target, { redirect: "manual", headers: { "User-Agent": "effitrans-binding-probe" } });
+  let res;
+  try {
+    res = await fetch(target, {
+      redirect: "manual",
+      headers: { "User-Agent": "effitrans-binding-probe", connection: "close" },
+    });
+  } catch (e) {
+    // Unreachable host, DNS failure, TLS refusal. "I could not check" must never
+    // be reported as "all clear", so this is a failure, not a pass.
+    return { ok: false, why: `unreachable (${e instanceof Error ? e.message : "network error"})` };
+  }
   if (res.status >= 300 && res.status < 400) {
     const loc = res.headers.get("location") ?? "";
     const sealed = loc.includes("vercel.com/sso-api");
@@ -61,29 +83,27 @@ function describe(label, p) {
   );
 }
 
-const a = await probe(url);
-describe("deployment", a);
+if (process.exitCode === undefined) {
+  const a = await probe(url);
+  describe("deployment", a);
 
-if (!other) {
-  if (!a.ok) process.exit(1);
-  if (a.db.envClass !== "production" && a.db.status === "verified_production") {
-    console.error("REFUSED: a non-production deployment is bound to the production project.");
-    process.exit(1);
+  if (!other) {
+    if (!a.ok) {
+      fail(1);
+    } else if (a.db.envClass !== "production" && a.db.status === "verified_production") {
+      fail(1, "REFUSED: a non-production deployment is bound to the production project.");
+    } else if (!a.db.verified) {
+      console.warn("WARNING: binding not verified — PRODUCTION_SUPABASE_PROJECT_REF is probably unset on that deployment.");
+    }
+  } else {
+    const b = await probe(other);
+    describe("reference  ", b);
+    if (!a.ok || !b.ok) {
+      fail(1, "Cannot compare: one of the two deployments is unreadable.");
+    } else if (a.db.refFingerprint && a.db.refFingerprint === b.db.refFingerprint) {
+      fail(1, "REFUSED: both deployments are bound to the SAME database. Transactional UAT would write real data.");
+    } else {
+      console.log("OK — the two deployments are bound to different databases.");
+    }
   }
-  if (!a.db.verified) {
-    console.warn("WARNING: binding not verified — PRODUCTION_SUPABASE_PROJECT_REF is probably unset on that deployment.");
-  }
-  process.exit(0);
 }
-
-const b = await probe(other);
-describe("reference  ", b);
-if (!a.ok || !b.ok) {
-  console.error("Cannot compare: one of the two deployments is unreadable.");
-  process.exit(1);
-}
-if (a.db.refFingerprint && a.db.refFingerprint === b.db.refFingerprint) {
-  console.error("REFUSED: both deployments are bound to the SAME database. Transactional UAT would write real data.");
-  process.exit(1);
-}
-console.log("OK — the two deployments are bound to different databases.");
