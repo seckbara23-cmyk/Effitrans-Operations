@@ -11,10 +11,16 @@
 import "server-only";
 import { createClient } from "@supabase/supabase-js";
 import { getServerEnv } from "@/lib/env";
+import { assertSupabaseBinding } from "@/lib/env/binding-runtime";
 import { tracedFetch } from "@/lib/perf/trace";
 import type { Database } from "@/lib/db/types";
 
 export function getAdminSupabaseClient() {
+  // EFF-STAGING-ISOLATION-02 — the service-role key bypasses RLS, so this is
+  // the single most consequential line in the platform: 237 modules reach the
+  // database through here. A deployment bound to a database it may not touch
+  // is refused BEFORE a client exists to touch it with.
+  assertSupabaseBinding();
   const env = getServerEnv();
   return createClient<Database>(
     env.NEXT_PUBLIC_SUPABASE_URL,

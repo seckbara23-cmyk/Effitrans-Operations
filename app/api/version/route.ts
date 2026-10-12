@@ -9,8 +9,16 @@
  *
  * Off-Vercel (local `next start`, CI) the fields are null and `hosted` is false — the
  * verification script treats that as "cannot attest" rather than a failure.
+ *
+ * EFF-STAGING-ISOLATION-02 adds `db`: WHICH database this deployment is bound to,
+ * as a hint plus a hash prefix plus the guard's verdict — never a key, a URL, a
+ * host or a full project ref. EFF-PR33-PREVIEW-DATA-ISOLATION-01 could not
+ * establish whether a Preview shared the production database because previews are
+ * sealed and the binding was invisible from outside. This makes that question one
+ * unauthenticated request, for any deployment, forever.
  */
 import { NextResponse } from "next/server";
+import { bindingReport } from "@/lib/env/binding-runtime";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -21,5 +29,6 @@ export async function GET() {
     ref: process.env.VERCEL_GIT_COMMIT_REF ?? null,
     env: process.env.VERCEL_ENV ?? null,
     hosted: process.env.VERCEL === "1",
+    db: bindingReport(),
   });
 }

@@ -9,10 +9,15 @@
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 import { getPublicEnv } from "@/lib/env";
+import { assertSupabaseBinding } from "@/lib/env/binding-runtime";
 import { tracedFetch } from "@/lib/perf/trace";
 import type { Database } from "@/lib/db/types";
 
 export function getServerSupabaseClient() {
+  // EFF-STAGING-ISOLATION-02 — RLS-bound, yet six modules write through this
+  // client (portal activation, password changes, customer notifications), so
+  // it is not a read-only path and gets the same guard.
+  assertSupabaseBinding();
   const env = getPublicEnv();
   const cookieStore = cookies();
 

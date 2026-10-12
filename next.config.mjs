@@ -34,6 +34,12 @@
  * hydration. Tracked as a follow-up (report-only first). See
  * docs/phase-1.18-operational-hardening.md §C2.
  */
+import {
+  bindingRefusalMessage,
+  bindingSummary,
+  evaluateBinding,
+} from "./lib/env/project-binding.mjs";
+
 const securityHeaders = [
   { key: "X-Frame-Options", value: "SAMEORIGIN" },
   { key: "X-Content-Type-Options", value: "nosniff" },
@@ -47,6 +53,26 @@ const securityHeaders = [
     value: "max-age=63072000; includeSubDomains; preload",
   },
 ];
+
+// EFF-STAGING-ISOLATION-02 — refuse a forbidden database binding at BUILD time.
+// This is the layer that protects the BROWSER: NEXT_PUBLIC_SUPABASE_URL is baked
+// into the client bundle here, so a Preview bound to Production must never get as
+// far as producing one. Next loads this file for `build`, `dev` and `start`, which
+// is why the check lives here as well as in the prebuild script — a Vercel project
+// whose Build Command was overridden would skip the script but never this.
+const binding = evaluateBinding({
+  supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
+  vercelEnv: process.env.VERCEL_ENV,
+  productionRef: process.env.PRODUCTION_SUPABASE_PROJECT_REF,
+  strict: process.env.ENV_BINDING_STRICT === "true",
+});
+if (!binding.ok) {
+  console.error(bindingRefusalMessage(binding));
+  throw new Error(bindingSummary(binding));
+}
+// The once-per-build advisory for an UNVERIFIED binding is printed by
+// scripts/check-env-binding.mjs (prebuild): Next loads this config in several
+// processes, so warning here would repeat it four times. This is the hard gate.
 
 const nextConfig = {
   reactStrictMode: true,
