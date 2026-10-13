@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "node scripts/check-env-binding.mjs --dotenv",
     "dev": "next dev",
+    "prebuild": "node scripts/check-env-binding.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
@@ -21,7 +23,8 @@
     "test:rls": "node scripts/guard-local-db.mjs && psql \"$DATABASE_URL\" -f supabase/tests/rls_tenant_isolation_test.sql",
     "migration:guard": "node scripts/migration-integrity.mjs",
     "migration:verify": "node scripts/verify-migrations.mjs",
-    "migration:apply": "node scripts/migrate-production.mjs"
+    "migration:apply": "node scripts/migrate-production.mjs",
+    "check:binding": "node scripts/check-env-binding.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.0",
