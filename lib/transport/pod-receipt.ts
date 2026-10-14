@@ -12,11 +12,18 @@
  * ===========================================================================
  * The AUTHORIZING ACT is the document verification, which already required
  * `document:approve` and passed maker-checker. This function is not a second
- * user-facing action: it is unexported from any server-action surface, takes an
- * already-authorized context, and is reachable ONLY from the verified-document
- * path in `runReview`. Granting Operations `transport:complete` would have been
- * the wrong fix — it would let them move transport rows directly, for any
- * reason, with no evidence at all.
+ * user-facing action: it is unexported from any server-action surface and takes
+ * an already-authorized context. Three governed paths reach it, and each one
+ * supplies its own fact through someone entitled to record it:
+ *   1. the verified-document path in `runReview` — the verification itself;
+ *   2. the office DELIVERED transition, which asserted `transport:complete`;
+ *   3. the shared DELIVERED transition the assigned driver goes through, whose
+ *      authority over that single transport is the assignment.
+ * Whichever of the two facts arrives last, the evidence gate below is
+ * re-evaluated in full, so no path can produce a receipt the manual one would
+ * have refused. Granting Operations `transport:complete` would have been the
+ * wrong fix — it would let them move transport rows directly, for any reason,
+ * with no evidence at all.
  *
  * It does NOT weaken the gate. It re-evaluates `canReceivePod` over the SAME
  * `isVerified` document statuses the manual path uses, so an automatic receipt

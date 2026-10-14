@@ -31,7 +31,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { readFileSync } from "node:fs";
 import { as } from "./identity";
-import { identity, db, auditFor, transportFor, TENANT_A, CLIENT_DEPOSIT_REQUIRED } from "./fixtures";
+import { identity, db, auditFor, fileRow, transportFor, TENANT_A, CLIENT_DEPOSIT_REQUIRED } from "./fixtures";
 import type { CurrentUser } from "@/lib/auth/current-user";
 
 import { createFile, assignCommercialOwner } from "@/lib/files/actions";
@@ -163,7 +163,31 @@ async function driverDocuments(fileId: string) {
 let A: Mission; // PICKED_UP, assigned to `driver` — the narrative mission
 let B: Mission; // DRIVER_ASSIGNED, assigned to `driver` — the incident's shape
 let C: Mission; // PICKED_UP — used for the completed-session refusals
+let D: Mission; // PICKED_UP + workflow — repeated delivery callbacks
+let E: Mission; // PICKED_UP + workflow — delivery BEFORE the note is verified
 let sessionA = "";
+
+/**
+ * WHO may verify a DELIVERY_NOTE on this dossier, asked of the policy rather
+ * than guessed. Same reasoning as M3.2: hardcoding a seat tests the guess.
+ */
+async function policyVerifier(fileId: string): Promise<CurrentUser> {
+  const gov = await resolveDocumentGovernance({ tenantId: TENANT_A, fileId, typeCode: "DELIVERY_NOTE" });
+  expect(gov.resolved, "the workflow must resolve a policy for this dossier").toBe(true);
+  const v = candidates.find((u) => u.roles.some((r) => gov.verifierRoles.includes(r)));
+  expect(v, `no seeded identity holds any of [${gov.verifierRoles.join(", ")}]`).toBeTruthy();
+  return v!;
+}
+
+/** The dossier's own status history, oldest first. ASSERTION ONLY. */
+async function fileTransitions(fileId: string) {
+  const { data } = await db()
+    .from("file_state_transition")
+    .select("from_status, to_status, actor_id, tenant_id")
+    .eq("file_id", fileId)
+    .order("occurred_at", { ascending: true });
+  return data ?? [];
+}
 
 beforeAll(async () => {
   // The driver lane is DARK BY DEFAULT and reads its flags at call time
@@ -192,6 +216,11 @@ beforeAll(async () => {
   A = await mission({ pickedUp: true, openWorkflow: true });
   B = await mission({ pickedUp: false });
   C = await mission({ pickedUp: true });
+  // M8 — the convergence orderings. Both need the governed workflow: a dossier
+  // left in DRAFT is deliberately NOT advanced by a transport row, and only an
+  // open workflow can resolve a verifier seat for the delivery note.
+  D = await mission({ pickedUp: true, openWorkflow: true });
+  E = await mission({ pickedUp: true, openWorkflow: true });
 });
 
 // ═══════════ M4 — one mission, one live session ════════════════════════════
@@ -417,9 +446,14 @@ describe("M1 — the assigned driver confirms delivery DURING the return leg", (
     expect(done.ok, `confirmDelivery failed: ${JSON.stringify(done)}`).toBe(true);
   });
 
-  it("M1.3 — the transport is DELIVERED, stamped, and attributed to her", async () => {
+  it("M1.3 — the delivery is recorded, stamped, and attributed to her", async () => {
     const t = await transportRow(A.transportId);
-    expect(t!.status).toBe("DELIVERED");
+    // EFF-POD-FINANCE-CONVERGENCE-01. The row reads POD_RECEIVED rather than
+    // DELIVERED because this dossier's delivery note was verified back in
+    // M3.2, so recording the delivery supplied the one fact the receipt was
+    // still missing and it fired at once — see M1.6. The DELIVERY itself is
+    // what is asserted here, through its own stamp and its own audit row.
+    expect(t!.status).toBe("POD_RECEIVED");
     expect(t!.delivery_actual).not.toBeNull();
 
     const audit = await auditFor("transport.delivered", A.transportId);
@@ -473,21 +507,43 @@ describe("M1 — the assigned driver confirms delivery DURING the return leg", (
     expect(engaged.has(A.transportId), "a delivered mission must not keep its vehicle").toBe(false);
   });
 
-  it("M1.6 — delivering produces no POD receipt, even with verified evidence already on file", async () => {
-    // A verified DELIVERY_NOTE has sat on this dossier since M3.2, so
-    // `canReceivePod` is satisfiable — and the record still does not advance.
+  it("M1.6 — ORDERING 1 (verified first): the receipt she earned is recorded, not lost", async () => {
+    // A verified DELIVERY_NOTE has sat on this dossier since M3.2, where the
+    // receipt refused `not_delivered` because nothing had been delivered yet
+    // (M3.3). Her delivery supplies that missing fact, so the receipt fires on
+    // the spot — the same retry the office branch has always performed.
     //
-    // RECORDED AS A FACT, NOT ENDORSED. The STAFF path
-    // (`changeTransportStatus -> DELIVERED`) retries
-    // `recordPodReceiptFromVerifiedEvidence` precisely for this convergence
-    // case; the DRIVER path (`confirmDelivery -> deliverTransport`) does not,
-    // so a dossier whose note was verified BEFORE the driver confirmed waits
-    // for a re-verification or the manual receipt. That asymmetry predates
-    // UAT-TRANSPORT-POD-FIX-01 and is outside its scope; this assertion exists
-    // so that whoever changes it has to change a test and say why.
+    // THIS ASSERTION WAS INVERTED, deliberately and on the record. It used to
+    // pin « delivering produces no POD receipt », which is what the platform
+    // did: the same verified evidence plus the same delivery reached Finance
+    // when the office recorded it and never when the driver did. The brief
+    // EFF-POD-FINANCE-CONVERGENCE-01 corrects that asymmetry. What did NOT
+    // change is the gate: see M8.1, where a delivery with the note still in
+    // PENDING_REVIEW reaches no receipt at all.
     const t = await transportRow(A.transportId);
-    expect(t!.status).toBe("DELIVERED");
+    expect(t!.status).toBe("POD_RECEIVED");
+
+    // ONE receipt, carrying honest provenance: a person verified the evidence
+    // and the platform recorded the consequence. The actor is the driver
+    // because her call supplied the second fact; the source says it was not a
+    // click on a Transport screen.
+    const receipt = await auditFor("transport.pod_received", A.transportId);
+    expect(receipt).toHaveLength(1);
+    expect((receipt[0].before as { status?: string } | null)?.status).toBe("DELIVERED");
+    expect((receipt[0].after as { source?: string } | null)?.source).toBe("AUTOMATIC_ON_POD_VERIFICATION");
+    expect(receipt[0].actor_id).toBe(driver.id);
+
+    // `pod_document_id` stays null on BOTH paths — neither the manual receipt
+    // nor the automatic one populates it. Asserted so this reads as a known
+    // property of the column rather than a gap this change introduced.
     expect(t!.pod_document_id).toBeNull();
+
+    // And the dossier followed the transport fact instead of being left behind
+    // at IN_PROGRESS while the lifecycle already offered « Clôturer ».
+    expect((await fileRow(A.fileId))!.status).toBe("DELIVERED");
+    const hist = await fileTransitions(A.fileId);
+    expect(hist.filter((r) => r.to_status === "DELIVERED")).toHaveLength(1);
+    expect(hist.filter((r) => r.to_status === "DELIVERED")[0].actor_id).toBe(driver.id);
   });
 
   it("M1.7 — a second delivery is refused twice over: first by the ended session…", async () => {
@@ -498,13 +554,14 @@ describe("M1 — the assigned driver confirms delivery DURING the return leg", (
     expect((again as { error: string }).error).toBe("session_completed");
   });
 
-  it("M1.8 — …and then by the state machine, once she has a live session again", async () => {
+  it("M1.8 — …and the finished dossier cannot be reopened to try again", async () => {
+    // Her delivery took this transport all the way to POD_RECEIVED (M1.6), and
+    // tracking refuses to start on a POD_RECEIVED record — so she cannot even
+    // get back to a live session. The state-machine refusal on a second
+    // delivery is still proved, on a run that stopped at DELIVERED: M8.3.
     const restarted = await as(driver, () => startMission(A.transportId));
-    expect(restarted.ok, JSON.stringify(restarted)).toBe(true);
-
-    const again = await as(driver, () => confirmDelivery(A.transportId, { recipientName: "Again" }));
-    expect(again.ok).toBe(false);
-    expect((again as { error: string }).error).toBe("already_delivered");
+    expect(restarted.ok, JSON.stringify(restarted)).toBe(false);
+    expect((restarted as { error: string }).error).toBe("invalid_state");
 
     // One delivery, one event, one audit row — whatever she tapped.
     expect((await events(A.transportId)).filter((e) => e.type === "DELIVERED")).toHaveLength(1);
@@ -624,11 +681,113 @@ describe("M5 — a COMPLETED session refuses every driver write, and says which"
   });
 });
 
+// ═══════════ M8 — the convergence, in both orderings ══════════════════════
+
+describe("M8 — delivery and POD verification converge, whichever arrives first", () => {
+  let podE = "";
+
+  it("M8.1 — ORDERING 2 (delivered first): the dossier follows, an UNVERIFIED note earns nothing", async () => {
+    const started = await as(driver, () => startMission(E.transportId));
+    expect(started.ok, JSON.stringify(started)).toBe(true);
+
+    const fd = new FormData();
+    fd.set("kind", "pod");
+    fd.set("file", new File(["%PDF-1.4 signed delivery note"], "pod.pdf", { type: "application/pdf" }));
+    const up = await as(driver, () => uploadDriverEvidence(E.transportId, fd));
+    expect(up.ok, `uploadDriverEvidence failed: ${JSON.stringify(up)}`).toBe(true);
+    podE = (up as { id: string }).id;
+
+    const done = await as(driver, () =>
+      confirmDelivery(E.transportId, { recipientName: "M. Amadou Diop" }),
+    );
+    expect(done.ok, `confirmDelivery failed: ${JSON.stringify(done)}`).toBe(true);
+
+    // THE GATE HELD, and this is the assertion that proves the convergence did
+    // not weaken it. Her own scan sits in PENDING_REVIEW, which `isVerified`
+    // does not accept, so `canReceivePod` is unsatisfied and the receipt
+    // refused `evidence_missing`. A driver cannot hand herself a POD receipt
+    // by delivering and uploading — a second person must still verify.
+    const pod = (await driverDocuments(E.fileId)).find((d) => d.id === podE);
+    expect(pod!.status).toBe("PENDING_REVIEW");
+    const t = await transportRow(E.transportId);
+    expect(t!.status).toBe("DELIVERED");
+    expect(await auditFor("transport.pod_received", E.transportId)).toHaveLength(0);
+
+    // R1 all the same: the dossier follows the delivery on its own, with no
+    // POD receipt involved. This is the inconsistent operational-file status a
+    // successful driver delivery used to leave behind — the lifecycle reads
+    // transport and offered closure while the dossier was still IN_PROGRESS.
+    expect((await fileRow(E.fileId))!.status).toBe("DELIVERED");
+    expect((await fileTransitions(E.fileId)).filter((r) => r.to_status === "DELIVERED")).toHaveLength(1);
+  });
+
+  it("M8.2 — then the verification completes it, through the one existing receipt", async () => {
+    const verifier = await policyVerifier(E.fileId);
+    const ok = await as(verifier, () => verifyDocument(podE));
+    expect(ok.ok, `verifyDocument failed: ${JSON.stringify(ok)}`).toBe(true);
+
+    const t = await transportRow(E.transportId);
+    expect(t!.status).toBe("POD_RECEIVED");
+    const receipt = await auditFor("transport.pod_received", E.transportId);
+    expect(receipt).toHaveLength(1);
+    expect(receipt[0].actor_id).toBe(verifier.id);
+    expect((receipt[0].after as { source?: string } | null)?.source).toBe("AUTOMATIC_ON_POD_VERIFICATION");
+
+    // THE POINT OF THE WHOLE BRIEF: both orderings end in the same place. A was
+    // verified then delivered, E was delivered then verified, and neither
+    // needed anyone to press a second button.
+    expect((await transportRow(A.transportId))!.status).toBe(t!.status);
+    expect((await fileRow(A.fileId))!.status).toBe((await fileRow(E.fileId))!.status);
+    expect((await fileTransitions(E.fileId)).filter((r) => r.to_status === "DELIVERED")).toHaveLength(1);
+  });
+
+  it("M8.3 — repeated delivery callbacks change nothing after the first", async () => {
+    const started = await as(driver, () => startMission(D.transportId));
+    expect(started.ok, JSON.stringify(started)).toBe(true);
+
+    const first = await as(driver, () =>
+      confirmDelivery(D.transportId, { recipientName: "Mme Aïssatou Fall" }),
+    );
+    expect(first.ok, JSON.stringify(first)).toBe(true);
+
+    // Her delivery ended the session, so an immediate retry meets that guard.
+    const retry = await as(driver, () => confirmDelivery(D.transportId, { recipientName: "Again" }));
+    expect(retry.ok).toBe(false);
+    expect((retry as { error: string }).error).toBe("session_completed");
+
+    // This run carries NO verified note, so it stopped at DELIVERED — tracking
+    // will therefore restart, and the state machine is the guard that answers.
+    const again = await as(driver, () => startMission(D.transportId));
+    expect(again.ok, JSON.stringify(again)).toBe(true);
+    const third = await as(driver, () => confirmDelivery(D.transportId, { recipientName: "Again" }));
+    expect(third.ok).toBe(false);
+    expect((third as { error: string }).error).toBe("already_delivered");
+
+    // ONE of everything, after three delivery calls.
+    expect((await transportRow(D.transportId))!.status).toBe("DELIVERED");
+    expect(await auditFor("transport.delivered", D.transportId)).toHaveLength(1);
+    expect((await events(D.transportId)).filter((e) => e.type === "DELIVERED")).toHaveLength(1);
+    expect(await auditFor("transport.pod_received", D.transportId)).toHaveLength(0);
+    expect((await fileTransitions(D.fileId)).filter((r) => r.to_status === "DELIVERED")).toHaveLength(1);
+  });
+
+  it("M8.4 — and a repeated verification adds no second receipt", async () => {
+    // E is already POD_RECEIVED. Whatever a second verification answers, the
+    // receipt is compare-and-set on DELIVERED, so no route produces a second
+    // transition, a second audit row or a second dossier advance.
+    const verifier = await policyVerifier(E.fileId);
+    await as(verifier, () => verifyDocument(podE));
+    expect((await transportRow(E.transportId))!.status).toBe("POD_RECEIVED");
+    expect(await auditFor("transport.pod_received", E.transportId)).toHaveLength(1);
+    expect((await fileTransitions(E.fileId)).filter((r) => r.to_status === "DELIVERED")).toHaveLength(1);
+  });
+});
+
 // ═══════════ tenancy and scope ═════════════════════════════════════════════
 
 describe("driver writes stay inside one tenant and one mission", () => {
   it("every row the driver lane created carries tenant A", async () => {
-    for (const m of [A, B, C]) {
+    for (const m of [A, B, C, D, E]) {
       for (const row of await sessions(m.transportId)) expect(row.tenant_id).toBe(TENANT_A);
       for (const row of await events(m.transportId)) expect(row.tenant_id).toBe(TENANT_A);
       for (const row of await driverDocuments(m.fileId)) expect(row.tenant_id).toBe(TENANT_A);
