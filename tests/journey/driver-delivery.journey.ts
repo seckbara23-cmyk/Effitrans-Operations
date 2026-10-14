@@ -37,6 +37,7 @@ import type { CurrentUser } from "@/lib/auth/current-user";
 import { createFile, assignCommercialOwner } from "@/lib/files/actions";
 import { openDossierWorkflow } from "@/lib/process/engine/intake-actions";
 import { resolveDocumentGovernance } from "@/lib/documents/governance";
+import { isVerified } from "@/lib/documents/doctrine";
 import { createTransport, changeTransportStatus } from "@/lib/transport/actions";
 import { assignDriverUser } from "@/lib/transport/driver-actions";
 import { startMission, pauseTracking, resumeTracking, startReturnLeg, stopMission } from "@/lib/driver/actions";
@@ -351,8 +352,15 @@ describe("M3 — evidence captured on the return leg is recorded, and never self
     const byPolicy = await as(verifier!, () => verifyDocument(podId));
     expect(byPolicy.ok, `verifyDocument failed: ${JSON.stringify(byPolicy)}`).toBe(true);
 
+    // Asserted through the platform's OWN predicate, not a spelling. The
+    // verification landed the document on `CONSUMED_AS_EVIDENCE` — a canonical
+    // verified status (VERIFIED_CANONICAL_STATUSES), because verifying evidence
+    // that satisfies a step consumes that version. `isVerified` is the same
+    // check `canReceivePod` and the POD gate apply, so this asserts the fact
+    // that matters rather than one of the two words it can wear.
     const pod = (await driverDocuments(A.fileId)).find((d) => d.id === podId);
-    expect(pod!.status).toBe("VERIFIED");
+    expect(pod!.status, "the POD must no longer be awaiting review").not.toBe("PENDING_REVIEW");
+    expect(isVerified(pod!.status), `status ${pod!.status} must count as verified`).toBe(true);
   });
 
   it("M3.3 — verified evidence does NOT advance a transport that has not been delivered", async () => {
