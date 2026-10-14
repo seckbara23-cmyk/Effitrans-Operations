@@ -469,7 +469,7 @@ describe("boundaries", () => {
     const seed = read("supabase/tests/journey_identities.sql");
     expect(seed).toContain("journey.declarant2@test.local");
     expect(seed).toContain("('00000000-0000-0000-0000-00000000aa19'::uuid, 'CUSTOMS_DECLARANT')");
-    expect(seed).toContain("expected 23 identities");
+    expect(seed).toContain("expected 24 identities");
   });
 
   it("every journey that assigns a Déclarant stopped running step 5 by hand", () => {

@@ -34,7 +34,9 @@ import { as } from "./identity";
 import { identity, db, auditFor, transportFor, TENANT_A, CLIENT_DEPOSIT_REQUIRED } from "./fixtures";
 import type { CurrentUser } from "@/lib/auth/current-user";
 
-import { createFile } from "@/lib/files/actions";
+import { createFile, assignCommercialOwner } from "@/lib/files/actions";
+import { openDossierWorkflow } from "@/lib/process/engine/intake-actions";
+import { resolveDocumentGovernance } from "@/lib/documents/governance";
 import { createTransport, changeTransportStatus } from "@/lib/transport/actions";
 import { assignDriverUser } from "@/lib/transport/driver-actions";
 import { startMission, pauseTracking, resumeTracking, startReturnLeg, stopMission } from "@/lib/driver/actions";
@@ -48,11 +50,28 @@ let am: CurrentUser; // ACCOUNT_MANAGER — the only journey identity holding fi
 let driver: CurrentUser; // DRIVER — the assignee
 let driver2: CurrentUser; // DRIVER — a second one, so « somebody else's mission » is a real person
 let courier: CurrentUser; // COURIER — holds no driver identity at all
+/**
+ * The staff identities a bound verifier seat might name. The journey reads the
+ * policy and picks from these rather than hardcoding one, so a change to the
+ * seat binding retargets the test instead of breaking it.
+ */
+let candidates: CurrentUser[];
 
 /** One mission, built through the ordinary actions by people who may perform them. */
 type Mission = { fileId: string; transportId: string };
 
-async function mission(options: { pickedUp: boolean; assignTo?: CurrentUser }): Promise<Mission> {
+async function mission(options: {
+  pickedUp: boolean;
+  assignTo?: CurrentUser;
+  /**
+   * Open the governed workflow. Needed wherever a DOCUMENT is verified:
+   * document governance resolves the verifier seat from the dossier's process
+   * instance and its current step (lib/documents/governance.ts), and an unbound
+   * seat is EMPTY rather than permissive — so with no workflow nobody may
+   * verify anything, which is the platform behaving correctly.
+   */
+  openWorkflow?: boolean;
+}): Promise<Mission> {
   const created = await as(am, () =>
     createFile({
       type: "IMP",
@@ -68,6 +87,20 @@ async function mission(options: { pickedUp: boolean; assignTo?: CurrentUser }): 
   );
   expect(created.ok, `createFile failed: ${JSON.stringify(created)}`).toBe(true);
   const fileId = (created as { id: string }).id;
+
+  if (options.openWorkflow) {
+    // The ratified sequence (OPS-OWNERSHIP-01 K3, as lifecycle.journey.ts does
+    // it): the Responsable client is designated BEFORE the opening act, which
+    // is what completes step 2. No SQL, no step forced.
+    const owned = await as(ops, () =>
+      assignCommercialOwner({ fileId, userId: am.id, reasonCode: "INITIAL" }),
+    );
+    expect(owned.ok, `assignCommercialOwner failed: ${JSON.stringify(owned)}`).toBe(true);
+    const opened = await as(ops, () =>
+      openDossierWorkflow(fileId, { ownerUserId: ops.id, skipCotation: true }),
+    );
+    expect(opened.ok, `openDossierWorkflow failed: ${JSON.stringify(opened)}`).toBe(true);
+  }
 
   const made = await as(ops, () => createTransport(fileId));
   expect(made.ok, `createTransport failed: ${JSON.stringify(made)}`).toBe(true);
@@ -144,8 +177,18 @@ beforeAll(async () => {
   driver = await identity("driver");
   driver2 = await identity("driver2");
   courier = await identity("courier");
+  candidates = [
+    ops,
+    am,
+    await identity("transit"),
+    await identity("coordinator"),
+    await identity("documentation"),
+    await identity("declarantchief"),
+  ];
 
-  A = await mission({ pickedUp: true });
+  // A carries the document assertions, so A gets the governed workflow. B and C
+  // never verify anything, and are left deliberately lighter.
+  A = await mission({ pickedUp: true, openWorkflow: true });
   B = await mission({ pickedUp: false });
   C = await mission({ pickedUp: true });
 });
@@ -273,7 +316,7 @@ describe("M3 — evidence captured on the return leg is recorded, and never self
     expect(pod!.file_id).toBe(A.fileId);
   });
 
-  it("M3.2 — she cannot approve it herself; a different authorized person can", async () => {
+  it("M3.2 — she cannot approve it herself; the person POLICY names can", async () => {
     // Two independent reasons refuse her, and the test does not need to tell
     // them apart: a DRIVER holds no `document:approve`, AND the maker ≠ checker
     // rule forbids the uploader from verifying their own upload (enforced in
@@ -283,8 +326,30 @@ describe("M3 — evidence captured on the return leg is recorded, and never self
     const self = await as(driver, () => verifyDocument(podId));
     expect(self.ok, "a driver must not approve her own POD").toBe(false);
 
-    const byOps = await as(ops, () => verifyDocument(podId));
-    expect(byOps.ok, `verifyDocument failed: ${JSON.stringify(byOps)}`).toBe(true);
+    // WHO may verify is POLICY, bound per step, so the journey ASKS instead of
+    // assuming. An earlier version hardcoded the Operations supervisor and was
+    // refused `not_a_verifier` — which was the platform being right and the
+    // test being wrong. Asserting a guess would only have tested the guess.
+    const gov = await resolveDocumentGovernance({
+      tenantId: TENANT_A,
+      fileId: A.fileId,
+      typeCode: "DELIVERY_NOTE",
+    });
+    expect(gov.resolved, "the workflow must resolve a policy for this dossier").toBe(true);
+    expect(gov.processInstanceId, "…which requires the dossier's workflow to be open").not.toBeNull();
+    expect(
+      gov.verifierRoles.length,
+      "policy must bind a verifier seat for this step, or nobody could ever approve a POD",
+    ).toBeGreaterThan(0);
+
+    const verifier = candidates.find((u) => u.roles.some((r) => gov.verifierRoles.includes(r)));
+    expect(
+      verifier,
+      `no seeded identity holds any of the bound verifier roles [${gov.verifierRoles.join(", ")}]`,
+    ).toBeTruthy();
+
+    const byPolicy = await as(verifier!, () => verifyDocument(podId));
+    expect(byPolicy.ok, `verifyDocument failed: ${JSON.stringify(byPolicy)}`).toBe(true);
 
     const pod = (await driverDocuments(A.fileId)).find((d) => d.id === podId);
     expect(pod!.status).toBe("VERIFIED");
@@ -369,11 +434,35 @@ describe("M1 — the assigned driver confirms delivery DURING the return leg", (
   });
 
   it("M1.5 — the session is completed AFTER the transition, never before", async () => {
+    // EFF-LOCAL-UAT-04 — this is the assertion that caught the defect: the
+    // completion filter was ["ACTIVE", "PAUSED"] and the session was RETURNING,
+    // so it stayed RETURNING while the audit row claimed otherwise.
     const rows = await sessions(A.transportId);
     expect(rows).toHaveLength(1);
     expect(rows[0].status).toBe("COMPLETED");
     expect(rows[0].ended_at).not.toBeNull();
     expect((await events(A.transportId)).some((e) => e.type === "TRACKING_STOPPED")).toBe(true);
+
+    // …and the trail agrees with the row, exactly once, attributed to her.
+    const closed = await auditFor("tracking.session.completed", rows[0].id);
+    expect(closed).toHaveLength(1);
+    expect(closed[0].actor_id).toBe(driver.id);
+    expect((closed[0].after as { reason?: string } | null)?.reason).toBe("delivered");
+  });
+
+  it("M1.5b — the vehicle is free again: no open session claims this mission", async () => {
+    // The exact input lib/fleet/service.ts reads to decide availability — it
+    // counts ACTIVE|PAUSED|RETURNING as « en mission ». While the session stayed
+    // RETURNING after delivery, the vehicle was engaged by a mission that had
+    // already finished, and nothing would ever have released it.
+    const { data: open } = await db()
+      .from("tracking_session")
+      .select("transport_id")
+      .eq("tenant_id", TENANT_A)
+      .in("status", ["ACTIVE", "PAUSED", "RETURNING"])
+      .not("transport_id", "is", null);
+    const engaged = new Set((open ?? []).map((r) => r.transport_id));
+    expect(engaged.has(A.transportId), "a delivered mission must not keep its vehicle").toBe(false);
   });
 
   it("M1.6 — delivering produces no POD receipt, even with verified evidence already on file", async () => {
@@ -412,6 +501,14 @@ describe("M1 — the assigned driver confirms delivery DURING the return leg", (
     // One delivery, one event, one audit row — whatever she tapped.
     expect((await events(A.transportId)).filter((e) => e.type === "DELIVERED")).toHaveLength(1);
     expect(await auditFor("transport.delivered", A.transportId)).toHaveLength(1);
+
+    // And the refused attempts recorded NO completion: the session-completion
+    // audit row and the TRACKING_STOPPED event are written only when a session
+    // row actually moved, so a refusal cannot leave a false trail behind it.
+    const firstSession = (await sessions(A.transportId)).find((s) => s.status === "COMPLETED");
+    expect(firstSession, "the delivered session is still the completed one").toBeTruthy();
+    expect(await auditFor("tracking.session.completed", firstSession!.id)).toHaveLength(1);
+    expect((await events(A.transportId)).filter((e) => e.type === "TRACKING_STOPPED")).toHaveLength(1);
   });
 });
 
@@ -492,10 +589,16 @@ describe("M5 — a COMPLETED session refuses every driver write, and says which"
     expect((event as { error: string }).error).toBe("session_completed");
   });
 
-  it("M5.3 — and nothing moved: no delivery, no document, no event", async () => {
+  it("M5.3 — and nothing moved: no delivery, no document, no event, no false completion", async () => {
     const t = await transportRow(C.transportId);
     expect(t!.status).toBe("PICKED_UP");
     expect(t!.delivery_actual).toBeNull();
+
+    // The refused delivery must not have written a SECOND completion record for
+    // a session that `stopMission` had already closed. One close, one audit row.
+    const closed = (await sessions(C.transportId)).find((s) => s.status === "COMPLETED");
+    expect(await auditFor("tracking.session.completed", closed!.id)).toHaveLength(1);
+    expect((await events(C.transportId)).filter((e) => e.type === "TRACKING_STOPPED")).toHaveLength(1);
     expect((await driverDocuments(C.fileId)).filter((d) => d.type_code === "DELIVERY_NOTE")).toHaveLength(0);
     expect((await events(C.transportId)).some((e) => e.type === "DELIVERED")).toBe(false);
   });
