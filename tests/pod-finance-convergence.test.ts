@@ -124,3 +124,55 @@ describe("CONVERGENCE — no governance control moved", () => {
     expect(files.filter((f) => f.endsWith(".sql"))).toHaveLength(151);
   });
 });
+
+describe("ATOMICITY — one delivery, however many ask at once", () => {
+  const CAS = '.eq("status", from)';
+  const LOSES = 'if ((moved?.length ?? 0) !== 1) return { ok: false, error: "invalid_transition" };';
+
+  it("11 — the delivery write is a compare-and-set on the status it read", () => {
+    expect(shared).toContain(CAS);
+    // observable: PostgREST reports no error for an UPDATE that matched nothing
+    const update = shared.indexOf('status: "DELIVERED", delivery_actual');
+    const select = shared.indexOf('.select("id")', update);
+    expect(select).toBeGreaterThan(update);
+    expect(shared.indexOf(CAS)).toBeGreaterThan(update);
+    expect(shared.indexOf(CAS)).toBeLessThan(select);
+  });
+
+  it("12 — the loser is refused BEFORE anything claims a delivery happened", () => {
+    expect(shared).toContain(LOSES);
+    const refusal = shared.indexOf(LOSES);
+    expect(refusal).toBeGreaterThan(-1);
+    for (const claim of [
+      "AuditActions.TRANSPORT_DELIVERED",
+      "custDelivered(",
+      ADVANCE,
+      RECEIPT,
+      "revalidatePath(",
+    ]) {
+      expect(shared.indexOf(claim), claim).toBeGreaterThan(refusal);
+    }
+  });
+
+  it("13 — and the caller writes no event and closes no session for a refusal", () => {
+    const guard = delivery.indexOf("if (!delivered.ok) return delivered;");
+    expect(guard).toBeGreaterThan(-1);
+    // the DELIVERED evidence event and the session completion are both after it
+    expect(delivery.indexOf('type: "DELIVERED"')).toBeGreaterThan(guard);
+    expect(delivery.indexOf('status: "COMPLETED"')).toBeGreaterThan(guard);
+    expect(delivery.indexOf("TRACKING_SESSION_COMPLETED")).toBeGreaterThan(guard);
+    expect(delivery.indexOf("TRACKING_STOPPED")).toBeGreaterThan(guard);
+    // and the transition is still what decides, not the in-memory gate
+    expect(delivery.indexOf("deliverTransport(supabase,")).toBeLessThan(guard);
+  });
+
+  it("14 — the session completion is itself gated on a row having moved", () => {
+    // EFF-LOCAL-UAT-04 kept: the completion audit and TRACKING_STOPPED are
+    // written only inside the `completed?.length === 1` branch, so a session
+    // that matched nothing leaves no trail claiming it closed.
+    expect(delivery).toContain("if ((completed?.length ?? 0) === 1) {");
+    const gated = delivery.indexOf("if ((completed?.length ?? 0) === 1) {");
+    expect(delivery.indexOf("TRACKING_SESSION_COMPLETED")).toBeGreaterThan(gated);
+    expect(delivery.indexOf("TRACKING_STOPPED")).toBeGreaterThan(gated);
+  });
+});

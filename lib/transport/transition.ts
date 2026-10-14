@@ -57,12 +57,36 @@ export async function deliverTransport(
 ): Promise<ActionResult> {
   const from = rec.status as TransportStatus;
   if (!canTransition(from, "DELIVERED")) return { ok: false, error: "invalid_transition" };
-  const { error } = await supabase
+
+  // ATOMIC. The status predicate makes this a compare-and-set on the very row
+  // version the caller's `canTransition` was decided against, so of two
+  // simultaneous confirmations exactly ONE can move the record. Without it both
+  // passed the in-memory check and both wrote, which left two
+  // `transport.delivered` audit rows claiming the same transition — and the
+  // office branch already refused that case through its own `updated_at`
+  // compare-and-set. `.select("id")` is what makes the outcome observable:
+  // PostgREST reports no error for an UPDATE that matched nothing.
+  //
+  // THE LOSER RETURNS A REFUSAL, and everything that would claim a delivery
+  // happens after this point: the audit row, the customer notice, the dossier
+  // advance, the POD retry, and — in the caller — the DELIVERED tracking event
+  // and the session completion, which `confirmDelivery` reaches only through
+  // `if (!delivered.ok) return delivered;`. A losing or stale request therefore
+  // writes nothing at all and invents no delivery timestamp.
+  const { data: moved, error } = await supabase
     .from("transport_record")
     .update({ status: "DELIVERED", delivery_actual: deliveredAt ?? new Date().toISOString() })
     .eq("id", rec.id)
-    .eq("tenant_id", actor.tenantId);
+    .eq("tenant_id", actor.tenantId)
+    .eq("status", from)
+    .select("id");
   if (error) return { ok: false, error: error.message };
+  // `invalid_transition` rather than a new code: at the moment of the write the
+  // transition from the status we read was no longer available, which is what
+  // that refusal already means, and the driver lane already has a precise
+  // French sentence for it. A retry then meets `deliveryBlock` first and is
+  // told `already_delivered`, which is the more specific truth once committed.
+  if ((moved?.length ?? 0) !== 1) return { ok: false, error: "invalid_transition" };
 
   await writeAudit({
     action: AuditActions.TRANSPORT_DELIVERED,

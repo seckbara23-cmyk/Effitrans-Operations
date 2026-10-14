@@ -165,6 +165,8 @@ let B: Mission; // DRIVER_ASSIGNED, assigned to `driver` — the incident's shap
 let C: Mission; // PICKED_UP — used for the completed-session refusals
 let D: Mission; // PICKED_UP + workflow — repeated delivery callbacks
 let E: Mission; // PICKED_UP + workflow — delivery BEFORE the note is verified
+let F: Mission; // PICKED_UP + workflow — two confirmations at once, no note
+let G: Mission; // PICKED_UP + workflow — two confirmations at once, note verified
 let sessionA = "";
 
 /**
@@ -221,6 +223,9 @@ beforeAll(async () => {
   // open workflow can resolve a verifier seat for the delivery note.
   D = await mission({ pickedUp: true, openWorkflow: true });
   E = await mission({ pickedUp: true, openWorkflow: true });
+  // M9 — the concurrency pair.
+  F = await mission({ pickedUp: true, openWorkflow: true });
+  G = await mission({ pickedUp: true, openWorkflow: true });
 });
 
 // ═══════════ M4 — one mission, one live session ════════════════════════════
@@ -783,11 +788,112 @@ describe("M8 — delivery and POD verification converge, whichever arrives first
   });
 });
 
+// ═══════════ M9 — two confirmations in flight at once ═════════════════════
+
+describe("M9 — simultaneous confirmations produce exactly one delivery", () => {
+  /**
+   * The loser's REFUSAL CODE is not pinned to one value, deliberately. Three
+   * honest guards can answer first depending on how PostgreSQL schedules the
+   * two requests: `already_delivered` if this request re-read the row after the
+   * winner committed, `session_completed` if the winner had already closed the
+   * shared session, and `invalid_transition` from the compare-and-set itself
+   * when both were in flight before either wrote. Pinning one would be pinning
+   * the scheduler. What IS deterministic — and what the correction is for — is
+   * that exactly one of every record exists afterwards.
+   */
+  const REFUSALS = ["invalid_transition", "already_delivered", "session_completed"];
+
+  it("M9.1 — two concurrent calls: one succeeds, one is refused, nothing is doubled", async () => {
+    const started = await as(driver, () => startMission(F.transportId));
+    expect(started.ok, JSON.stringify(started)).toBe(true);
+
+    // GENUINE CONCURRENCY against PostgreSQL: both requests are in flight
+    // before either has committed, which is precisely the case the in-memory
+    // `canTransition` check cannot decide. The same identity is used on both
+    // sides because the harness holds the current user in a module variable —
+    // two DIFFERENT identities in flight would race the identity rather than
+    // the row, and would prove nothing about the database.
+    const [a, b] = await Promise.all([
+      as(driver, () => confirmDelivery(F.transportId, { recipientName: "Mme Coumba Sow" })),
+      as(driver, () => confirmDelivery(F.transportId, { recipientName: "Mme Coumba Sow" })),
+    ]);
+
+    const won = [a, b].filter((r) => r.ok);
+    const lost = [a, b].filter((r) => !r.ok);
+    expect(won, `exactly one must succeed: ${JSON.stringify([a, b])}`).toHaveLength(1);
+    expect(lost).toHaveLength(1);
+    expect(REFUSALS, JSON.stringify(lost[0])).toContain((lost[0] as { error: string }).error);
+
+    // ONE of every record. Before the compare-and-set, both requests passed the
+    // in-memory check and both wrote, leaving two `transport.delivered` audit
+    // rows claiming the same transition.
+    const t = await transportRow(F.transportId);
+    expect(t!.status).toBe("DELIVERED");
+    expect(t!.delivery_actual).not.toBeNull();
+    expect(await auditFor("transport.delivered", F.transportId)).toHaveLength(1);
+    const ev = await events(F.transportId);
+    expect(ev.filter((e) => e.type === "DELIVERED")).toHaveLength(1);
+    expect(ev.filter((e) => e.type === "TRACKING_STOPPED")).toHaveLength(1);
+    expect((await fileTransitions(F.fileId)).filter((r) => r.to_status === "DELIVERED")).toHaveLength(1);
+
+    // One session, closed once, with one attributed completion audit.
+    const closed = (await sessions(F.transportId)).filter((s) => s.status === "COMPLETED");
+    expect(closed).toHaveLength(1);
+    expect(await auditFor("tracking.session.completed", closed[0].id)).toHaveLength(1);
+
+    // No verified note on this run, so no receipt. The gate is untouched by
+    // concurrency just as it is by ordering.
+    expect(await auditFor("transport.pod_received", F.transportId)).toHaveLength(0);
+  });
+
+  it("M9.2 — and with a verified note already on file, exactly ONE POD receipt", async () => {
+    const started = await as(driver, () => startMission(G.transportId));
+    expect(started.ok, JSON.stringify(started)).toBe(true);
+
+    const fd = new FormData();
+    fd.set("kind", "pod");
+    fd.set("file", new File(["%PDF-1.4 signed delivery note"], "pod.pdf", { type: "application/pdf" }));
+    const up = await as(driver, () => uploadDriverEvidence(G.transportId, fd));
+    expect(up.ok, `uploadDriverEvidence failed: ${JSON.stringify(up)}`).toBe(true);
+
+    const verifier = await policyVerifier(G.fileId);
+    const ver = await as(verifier, () => verifyDocument((up as { id: string }).id));
+    expect(ver.ok, `verifyDocument failed: ${JSON.stringify(ver)}`).toBe(true);
+
+    // Nothing has been delivered, so the receipt refused `not_delivered` and
+    // the transport still stands where the office left it.
+    expect((await transportRow(G.transportId))!.status).toBe("PICKED_UP");
+    expect(await auditFor("transport.pod_received", G.transportId)).toHaveLength(0);
+
+    const [a, b] = await Promise.all([
+      as(driver, () => confirmDelivery(G.transportId, { recipientName: "M. Ousmane Bâ" })),
+      as(driver, () => confirmDelivery(G.transportId, { recipientName: "M. Ousmane Bâ" })),
+    ]);
+    expect([a, b].filter((r) => r.ok), JSON.stringify([a, b])).toHaveLength(1);
+    expect(REFUSALS, JSON.stringify([a, b])).toContain(
+      ([a, b].filter((r) => !r.ok)[0] as { error: string }).error,
+    );
+
+    // The winner carried the consequences through exactly once. Two defences
+    // hold here, not one: the delivery compare-and-set admits a single winner,
+    // and the receipt's own compare-and-set on DELIVERED would still admit a
+    // single transition even if both had reached it.
+    const t = await transportRow(G.transportId);
+    expect(t!.status).toBe("POD_RECEIVED");
+    expect(await auditFor("transport.delivered", G.transportId)).toHaveLength(1);
+    const receipt = await auditFor("transport.pod_received", G.transportId);
+    expect(receipt).toHaveLength(1);
+    expect((receipt[0].after as { source?: string } | null)?.source).toBe("AUTOMATIC_ON_POD_VERIFICATION");
+    expect((await fileRow(G.fileId))!.status).toBe("DELIVERED");
+    expect((await fileTransitions(G.fileId)).filter((r) => r.to_status === "DELIVERED")).toHaveLength(1);
+  });
+});
+
 // ═══════════ tenancy and scope ═════════════════════════════════════════════
 
 describe("driver writes stay inside one tenant and one mission", () => {
   it("every row the driver lane created carries tenant A", async () => {
-    for (const m of [A, B, C, D, E]) {
+    for (const m of [A, B, C, D, E, F, G]) {
       for (const row of await sessions(m.transportId)) expect(row.tenant_id).toBe(TENANT_A);
       for (const row of await events(m.transportId)) expect(row.tenant_id).toBe(TENANT_A);
       for (const row of await driverDocuments(m.fileId)) expect(row.tenant_id).toBe(TENANT_A);
