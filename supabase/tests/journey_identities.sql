@@ -283,8 +283,11 @@ begin
   select count(*) into v_vehicles from public.vehicle
     where id = '00000000-0000-0000-0000-00000000ee01' and status = 'AVAILABLE' and is_active;
 
-  if v_users <> 23 then raise exception 'JOURNEY FIXTURES: expected 23 identities, got %', v_users; end if;
-  if v_roles <> 24 then raise exception 'JOURNEY FIXTURES: expected 24 role grants, got % (a role code is missing from this tenant)', v_roles; end if;
+  -- EFF-LOCAL-UAT-02 — 23 -> 24 identities and 24 -> 25 grants: `journey.driver2`
+  -- (aa24, DRIVER). These counts exist so the fixture cannot be resized without
+  -- somebody saying why, and they did their job — the first push failed here.
+  if v_users <> 24 then raise exception 'JOURNEY FIXTURES: expected 24 identities, got %', v_users; end if;
+  if v_roles <> 25 then raise exception 'JOURNEY FIXTURES: expected 25 role grants, got % (a role code is missing from this tenant)', v_roles; end if;
   if v_clients <> 2 then raise exception 'JOURNEY FIXTURES: expected 2 clients, got %', v_clients; end if;
   if v_vehicles <> 1 then raise exception 'JOURNEY FIXTURES: expected 1 AVAILABLE parc vehicle, got % (TRN-VEHICLE-01 fixture)', v_vehicles; end if;
 
