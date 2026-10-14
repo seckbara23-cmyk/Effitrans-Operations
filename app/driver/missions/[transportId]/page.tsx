@@ -4,6 +4,7 @@ import { driverMobileTrackingEnabled } from "@/lib/tracking/config";
 import { MissionTracker } from "@/components/driver/mission-tracker";
 import { MissionActions } from "@/components/driver/mission-actions";
 import { t } from "@/lib/i18n";
+import { isLiveSession } from "@/lib/driver/mission-gates";
 
 export const dynamic = "force-dynamic";
 
@@ -61,9 +62,12 @@ export default async function DriverMissionDetailPage({ params }: { params: { tr
         trackingEnabled={trackingOn}
       />
 
+      {/* UAT-TRANSPORT-POD-FIX-01 — a mission on its RETURN leg is still live: it
+          used to read as "no session" here, which is what hid the delivery action
+          from a driver who had already turned around. */}
       <MissionActions
         transportId={mission.transportId}
-        sessionActive={mission.sessionStatus === "ACTIVE" || mission.sessionStatus === "PAUSED"}
+        sessionActive={isLiveSession(mission.sessionStatus)}
         status={mission.status}
         evidence={mission.evidence}
         trackingEnabled={trackingOn}

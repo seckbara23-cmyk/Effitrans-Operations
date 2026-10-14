@@ -11,6 +11,7 @@ import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { getCurrentUser, type CurrentUser } from "@/lib/auth/current-user";
 import { createNotification } from "@/lib/notifications/create";
 import { isDriver } from "./auth";
+import { isLiveSession, sessionBlock, type SessionBlock } from "./mission-gates";
 
 type Admin = ReturnType<typeof getAdminSupabaseClient>;
 
@@ -33,20 +34,42 @@ export async function loadAssignedTransport(supabase: Admin, user: CurrentUser, 
   return { id: data.id, file_id: data.file_id, status: data.status };
 }
 
-export type CurrentSession = { id: string; status: string; file_id: string };
+export type LiveSession = { id: string; status: string; file_id: string };
 
-/** The live (ACTIVE or PAUSED) session for the transport, or null. */
-export async function currentSession(supabase: Admin, user: CurrentUser, transportId: string): Promise<CurrentSession | null> {
+export type LiveSessionLookup =
+  | { ok: true; session: LiveSession }
+  | { ok: false; error: SessionBlock };
+
+/**
+ * The live session to record against — or the REASON there is none.
+ *
+ * UAT-TRANSPORT-POD-FIX-01. This matched ACTIVE|PAUSED and returned null,
+ * which cost the 2026-10-10 UAT its delivery twice over: a session on the
+ * RETURN leg counted as no session at all, and "none" and "already finished"
+ * reached the driver as one sentence. RETURNING is a live session now (see
+ * ./mission-gates), and a finished one is reported as finished, so the screen
+ * can tell her to call the office instead of to start a mission that is over.
+ *
+ * Still ONE query, still tenant- and transport-scoped. A live row wins even
+ * when a finished one is newer, so a stray extra row cannot mask a mission
+ * that is still under way.
+ */
+export async function liveSessionOrError(
+  supabase: Admin,
+  user: CurrentUser,
+  transportId: string,
+): Promise<LiveSessionLookup> {
   const { data } = await supabase
     .from("tracking_session")
     .select("id, status, file_id")
     .eq("tenant_id", user.tenantId)
     .eq("transport_id", transportId)
-    .in("status", ["ACTIVE", "PAUSED"])
     .order("started_at", { ascending: false })
-    .limit(1);
-  const row = (data ?? [])[0];
-  return row ? { id: row.id, status: row.status, file_id: row.file_id } : null;
+    .limit(5);
+  const rows = data ?? [];
+  const live = rows.find((r) => isLiveSession(r.status));
+  if (live) return { ok: true, session: { id: live.id, status: live.status, file_id: live.file_id } };
+  return { ok: false, error: sessionBlock(rows[0]?.status ?? null) ?? "no_session" };
 }
 
 /** Notify the dossier's dispatch owners (account manager / coordinator / creator). */

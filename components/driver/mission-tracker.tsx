@@ -146,6 +146,9 @@ export function MissionTracker({ transportId, initialSessionId, initialSessionSt
         return;
       }
       onOk(r);
+    } catch {
+      // UAT-TRANSPORT-POD-FIX-01 — a lost connection is named, not swallowed.
+      setError(d.errors.network);
     } finally {
       setPending(false);
     }
@@ -162,7 +165,11 @@ export function MissionTracker({ transportId, initialSessionId, initialSessionSt
     setConsentOpen(false);
     await act(() => startMission(transportId), (r) => {
       setSessionId(r.sessionId ?? null);
-      setStatus("ACTIVE");
+      // UAT-TRANSPORT-POD-FIX-01 (D5) — start is idempotent and may hand back a
+      // session that is PAUSED or RETURNING. Show the state we actually got:
+      // announcing "sharing" over a paused session would be a lie, and the
+      // watch would then feed an endpoint that refuses its fixes.
+      setStatus(r.status ?? "ACTIVE");
     });
   }
   async function onPause() {

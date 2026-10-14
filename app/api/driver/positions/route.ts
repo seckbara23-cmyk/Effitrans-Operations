@@ -4,7 +4,7 @@
  * The ONLY write path for driver GPS. Server-derives ALL trusted associations
  * (tenant, file, transport, driver) from the tracking session — the client
  * supplies only the sessionId + positions. Rejects: unauthenticated / non-DRIVER,
- * flag off, session not ACTIVE, session not owned by the caller, oversized batch,
+ * flag off, session not accepting positions, session not owned by the caller, oversized batch,
  * invalid coords/timestamps, excessive replay. Idempotent (pre-filter by key +
  * the unique index backstop). Audits batch ACCEPTANCE (count) — never per point.
  */
@@ -13,6 +13,7 @@ import { getCurrentUser } from "@/lib/auth/current-user";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { isDriver } from "@/lib/driver/auth";
 import { driverMobileTrackingEnabled } from "@/lib/tracking/config";
+import { acceptsPositions } from "@/lib/driver/mission-gates";
 import { validatePositionBatch, MAX_POSITION_BATCH, type RawDriverPosition } from "@/lib/driver/batch";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
@@ -48,7 +49,14 @@ export async function POST(req: Request) {
     .eq("tenant_id", user.tenantId)
     .maybeSingle();
   if (!session || session.driver_id !== user.id) return new NextResponse("Forbidden", { status: 403 });
-  if (session.status !== "ACTIVE") return NextResponse.json({ error: "session_not_active" }, { status: 409 });
+  // UAT-TRANSPORT-POD-FIX-01 — the RETURN leg keeps transmitting. TMS-2 ratified
+  // that the client holds its watch open through it, while this endpoint accepted
+  // ACTIVE alone and answered 409 to every fix after « Démarrer le retour » —
+  // which the control tower then showed as a lost signal. PAUSED stays refused
+  // (the driver withdrew consent for that interval), COMPLETED and CANCELLED too.
+  if (!acceptsPositions(session.status)) {
+    return NextResponse.json({ error: "session_not_active" }, { status: 409 });
+  }
 
   const now = new Date();
   const { accepted, rejected } = validatePositionBatch(positions, now);

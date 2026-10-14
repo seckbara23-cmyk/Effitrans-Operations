@@ -324,8 +324,8 @@ describe("the CI fixtures carry every shape these rules must tell apart", () => 
     expect(seed, "…and must carry the job title that makes it a temptation")
       .toContain("'Déclarant en douane', 'ACTIVE')");
 
-    expect(seed).toContain("expected 23 identities");
-    expect(seed).toContain("expected 24 role grants");
+    expect(seed).toContain("expected 24 identities");
+    expect(seed).toContain("expected 25 role grants");
     // The seed refuses to load at all if any of these drift — asserted here so
     // the guard itself cannot be deleted quietly.
     for (const guard of [

@@ -28,7 +28,8 @@ import { isValidCoordinate } from "@/lib/tracking/position";
 import type { TrackingActionResult } from "@/lib/tracking/types";
 import { deliverTransport } from "@/lib/transport/transition";
 import { deliveredDedupKey } from "./event-kinds";
-import { driverContext, loadAssignedTransport, currentSession } from "./mission-auth";
+import { driverContext, loadAssignedTransport, liveSessionOrError } from "./mission-auth";
+import { deliveryBlock, LIVE_SESSION_STATUSES } from "./mission-gates";
 
 const FUTURE_SKEW_MS = 120_000;
 
@@ -53,8 +54,17 @@ export async function confirmDelivery(transportId: string, input: ConfirmDeliver
   const supabase = getAdminSupabaseClient();
   const rec = await loadAssignedTransport(supabase, user, transportId);
   if (!rec) return { ok: false, error: "forbidden" };
-  const sess = await currentSession(supabase, user, transportId);
-  if (!sess) return { ok: false, error: "no_session" };
+  const live = await liveSessionOrError(supabase, user, transportId);
+  if (!live.ok) return { ok: false, error: live.error };
+  const sess = live.session;
+
+  // UAT-TRANSPORT-POD-FIX-01 — say WHY before asking her to fix anything else.
+  // `deliverTransport` below stays the authority (it re-checks the state
+  // machine); this only NAMES the refusal. The reason the UAT hit was the
+  // official pickup: nobody at the office had recorded it, so the record sat
+  // at DRIVER_ASSIGNED and the driver read « Transition non autorisée. »
+  const blocked = deliveryBlock(rec.status);
+  if (blocked) return { ok: false, error: blocked };
 
   // Timestamp + coordinates.
   const now = Date.now();
@@ -117,23 +127,42 @@ export async function confirmDelivery(transportId: string, input: ConfirmDeliver
     });
 
   // 3) Complete the session — ONLY reached because the transition succeeded.
-  await supabase
+  //
+  // EFF-LOCAL-UAT-04. This matched ["ACTIVE", "PAUSED"] and ignored its own
+  // result, which the real-database journey caught: a delivery confirmed on the
+  // RETURN leg matched no row, so the session stayed RETURNING for ever — and
+  // because lib/fleet/service.ts counts ACTIVE|PAUSED|RETURNING as an open
+  // session, the vehicle stayed « en mission » with no mission left to run.
+  // Worse, the audit row and the TRACKING_STOPPED event were written anyway, so
+  // the trail said completed while the row said returning.
+  //
+  // The set is now the shared one, so it cannot drift from the read path again,
+  // and both records are written ONLY if a row actually moved. A session that is
+  // already COMPLETED or CANCELLED matches nothing and is left exactly as it is.
+  const { data: completed } = await supabase
     .from("tracking_session")
     .update({ status: "COMPLETED", ended_at: new Date().toISOString() })
     .eq("id", sess.id)
     .eq("tenant_id", user.tenantId)
-    .in("status", ["ACTIVE", "PAUSED"]);
-  await writeAudit({ action: AuditActions.TRACKING_SESSION_COMPLETED, actorId: user.id, tenantId: user.tenantId, entity: "tracking_session", entityId: sess.id, after: { reason: "delivered" } });
-  await supabase.from("tracking_event").insert({
-    tenant_id: user.tenantId,
-    file_id: rec.file_id,
-    transport_id: transportId,
-    tracking_session_id: sess.id,
-    type: "TRACKING_STOPPED",
-    source: "driver_mobile",
-    customer_visible: false,
-    created_by: user.id,
-  });
+    .in("status", [...LIVE_SESSION_STATUSES])
+    .select("id");
+
+  if ((completed?.length ?? 0) === 1) {
+    await writeAudit({ action: AuditActions.TRACKING_SESSION_COMPLETED, actorId: user.id, tenantId: user.tenantId, entity: "tracking_session", entityId: sess.id, after: { reason: "delivered" } });
+    await supabase.from("tracking_event").insert({
+      tenant_id: user.tenantId,
+      file_id: rec.file_id,
+      transport_id: transportId,
+      tracking_session_id: sess.id,
+      type: "TRACKING_STOPPED",
+      source: "driver_mobile",
+      customer_visible: false,
+      created_by: user.id,
+    });
+  }
+  // The DELIVERY itself stands either way: it is the recorded fact, already
+  // transitioned and audited above. A session that could not be closed is a
+  // tracking loose end, not a reason to tell her the delivery failed.
 
   revalidatePath(`/driver/missions/${transportId}`);
   revalidatePath("/driver");

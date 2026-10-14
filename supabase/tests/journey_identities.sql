@@ -64,7 +64,12 @@ insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-00000000aa20', 'journey.declarantchief@test.local'),
   ('00000000-0000-0000-0000-00000000aa21', 'journey.declarantarchived@test.local'),
   ('00000000-0000-0000-0000-00000000aa22', 'journey.foreigndeclarant@test.local'),
-  ('00000000-0000-0000-0000-00000000aa23', 'journey.hrtitled@test.local')
+  ('00000000-0000-0000-0000-00000000aa23', 'journey.hrtitled@test.local'),
+  -- EFF-LOCAL-UAT-02 — a SECOND driver, for the same reason aa19 is a second
+  -- Déclarant: « the assigned driver's delivery » is only a meaningful claim if
+  -- somebody else could plausibly have attempted it. Without her, the
+  -- assignment guard could only be proven against an unassigned mission.
+  ('00000000-0000-0000-0000-00000000aa24', 'journey.driver2@test.local')
 on conflict (id) do nothing;
 
 insert into public.app_user (id, tenant_id, email, name, status) values
@@ -94,7 +99,8 @@ insert into public.app_user (id, tenant_id, email, name, status) values
   ('00000000-0000-0000-0000-00000000aa20', '00000000-0000-0000-0000-000000000001', 'journey.declarantchief@test.local', 'Journey Declarant-Chief','active'),
   ('00000000-0000-0000-0000-00000000aa21', '00000000-0000-0000-0000-000000000001', 'journey.declarantarchived@test.local','Journey Declarant Archived','archived'),
   ('00000000-0000-0000-0000-00000000aa22', '00000000-0000-0000-0000-0000000000f2', 'journey.foreigndeclarant@test.local','Journey Foreign Declarant','active'),
-  ('00000000-0000-0000-0000-00000000aa23', '00000000-0000-0000-0000-000000000001', 'journey.hrtitled@test.local',       'Journey HR Titled',    'active')
+  ('00000000-0000-0000-0000-00000000aa23', '00000000-0000-0000-0000-000000000001', 'journey.hrtitled@test.local',       'Journey HR Titled',    'active'),
+  ('00000000-0000-0000-0000-00000000aa24', '00000000-0000-0000-0000-000000000001', 'journey.driver2@test.local',        'Journey Driver 2',     'active')
 on conflict (id) do nothing;
 
 -- Role grants: EXACTLY one canonical role each, so a maker/checker proof can
@@ -142,7 +148,10 @@ from (values
   ('00000000-0000-0000-0000-00000000aa21'::uuid, 'CUSTOMS_DECLARANT'),
   -- An HR job title of « Déclarant en douane » and no Déclarant role. The
   -- employment record is seeded below; it must grant nothing.
-  ('00000000-0000-0000-0000-00000000aa23'::uuid, 'TRANSPORT_OFFICER')
+  ('00000000-0000-0000-0000-00000000aa23'::uuid, 'TRANSPORT_OFFICER'),
+  -- EFF-LOCAL-UAT-02 — the same seat as `journey.driver`, deliberately: the
+  -- refusal being proven is about ASSIGNMENT, not about a missing grant.
+  ('00000000-0000-0000-0000-00000000aa24'::uuid, 'DRIVER')
 ) as u(uid, code)
 join public.role r on r.code = u.code and r.tenant_id = '00000000-0000-0000-0000-000000000001'
 on conflict do nothing;
@@ -274,8 +283,11 @@ begin
   select count(*) into v_vehicles from public.vehicle
     where id = '00000000-0000-0000-0000-00000000ee01' and status = 'AVAILABLE' and is_active;
 
-  if v_users <> 23 then raise exception 'JOURNEY FIXTURES: expected 23 identities, got %', v_users; end if;
-  if v_roles <> 24 then raise exception 'JOURNEY FIXTURES: expected 24 role grants, got % (a role code is missing from this tenant)', v_roles; end if;
+  -- EFF-LOCAL-UAT-02 — 23 -> 24 identities and 24 -> 25 grants: `journey.driver2`
+  -- (aa24, DRIVER). These counts exist so the fixture cannot be resized without
+  -- somebody saying why, and they did their job — the first push failed here.
+  if v_users <> 24 then raise exception 'JOURNEY FIXTURES: expected 24 identities, got %', v_users; end if;
+  if v_roles <> 25 then raise exception 'JOURNEY FIXTURES: expected 25 role grants, got % (a role code is missing from this tenant)', v_roles; end if;
   if v_clients <> 2 then raise exception 'JOURNEY FIXTURES: expected 2 clients, got %', v_clients; end if;
   if v_vehicles <> 1 then raise exception 'JOURNEY FIXTURES: expected 1 AVAILABLE parc vehicle, got % (TRN-VEHICLE-01 fixture)', v_vehicles; end if;
 

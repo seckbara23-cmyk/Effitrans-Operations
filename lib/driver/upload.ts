@@ -25,7 +25,7 @@ import { validateDocumentInput } from "@/lib/documents/validate";
 import { buildStoragePath, fileExtension, removeObject, sha256Hex, uploadObject } from "@/lib/documents/storage";
 import type { ActionResult } from "@/lib/documents/types";
 import { EVIDENCE_TYPE_CODE, isAllowedEvidenceMime, isEvidenceKind, type EvidenceKind } from "./event-kinds";
-import { driverContext, loadAssignedTransport, currentSession } from "./mission-auth";
+import { driverContext, loadAssignedTransport, liveSessionOrError } from "./mission-auth";
 
 /**
  * Upload a piece of driver evidence for an assigned mission.
@@ -50,8 +50,9 @@ export async function uploadDriverEvidence(transportId: string, formData: FormDa
   const rec = await loadAssignedTransport(supabase, user, transportId);
   if (!rec) return { ok: false, error: "forbidden" };
   // Evidence is captured during a live mission.
-  const sess = await currentSession(supabase, user, transportId);
-  if (!sess) return { ok: false, error: "no_session" };
+  const live = await liveSessionOrError(supabase, user, transportId);
+  if (!live.ok) return { ok: false, error: live.error };
+  const sess = live.session;
 
   const typeCode = EVIDENCE_TYPE_CODE[kind];
   const { data: type } = await supabase

@@ -16,6 +16,7 @@ import { buildMapPoints, type MapPoint } from "@/lib/portal/map-points";
 import { resolveVehicleIdentity } from "@/lib/transport/vehicle-identity";
 import type { TransportStatus } from "@/lib/transport/types";
 import type { TrackingEventEntry, TrackingSessionStatus } from "@/lib/tracking/types";
+import { isLiveSession } from "./mission-gates";
 
 type Admin = ReturnType<typeof getAdminSupabaseClient>;
 
@@ -90,12 +91,14 @@ type TransportRow = {
 };
 type SessionRow = { id: string; transport_id: string | null; status: string; last_position_at: string | null; started_at: string };
 
-/** The current/most-recent session for a transport (ACTIVE preferred, else latest). */
+/** The current/most-recent session for a transport (a LIVE one preferred, else latest). */
 function pickSession(rows: SessionRow[], transportId: string): SessionRow | null {
   const forTransport = rows.filter((s) => s.transport_id === transportId);
   if (forTransport.length === 0) return null;
-  const active = forTransport.find((s) => s.status === "ACTIVE" || s.status === "PAUSED");
-  return active ?? forTransport[0]; // rows are ordered started_at desc
+  // UAT-TRANSPORT-POD-FIX-01 — a RETURNING session is live too. It used to fall
+  // through to "the latest row", which was right only while no newer row existed.
+  const live = forTransport.find((s) => isLiveSession(s.status));
+  return live ?? forTransport[0]; // rows are ordered started_at desc
 }
 
 function toMission(r: TransportRow, session: SessionRow | null, now: Date): DriverMission {

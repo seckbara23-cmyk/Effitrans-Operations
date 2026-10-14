@@ -15,6 +15,7 @@ import { t } from "@/lib/i18n";
 import { recordDriverEvent, reportDelay, reportIncident } from "@/lib/driver/ops";
 import { uploadDriverEvidence } from "@/lib/driver/upload";
 import { confirmDelivery } from "@/lib/driver/delivery";
+import { deliveryBlock } from "@/lib/driver/mission-gates";
 import { DRIVER_EVENT_KINDS, DELAY_CATEGORIES, INCIDENT_CATEGORIES, INCIDENT_SEVERITIES } from "@/lib/driver/event-kinds";
 import type { MissionEvidence } from "@/lib/driver/service";
 
@@ -29,7 +30,6 @@ type Props = {
 };
 
 const EVIDENCE_KINDS = ["pickup", "cargo", "seal", "incident", "delivery", "signature", "pod"] as const;
-const DELIVERED_STATES = new Set(["DELIVERED", "POD_RECEIVED", "CANCELLED"]);
 
 function currentCoords(): Promise<{ latitude: number; longitude: number } | null> {
   return new Promise((resolve) => {
@@ -54,7 +54,16 @@ export function MissionActions({ transportId, sessionActive, status, evidence, t
   function run(action: () => Promise<Result>, okMsg: string, after?: () => void) {
     setFeedback(null);
     startTransition(async () => {
-      const r = await action();
+      // UAT-TRANSPORT-POD-FIX-01 — a dropped connection used to reject silently:
+      // the driver pressed, nothing happened, and no reason was given. A network
+      // failure now says so and invites a retry; the action itself is unchanged.
+      let r: Result;
+      try {
+        r = await action();
+      } catch {
+        setFeedback({ ok: false, msg: d.errors.network });
+        return;
+      }
       if (!r.ok) {
         setFeedback({ ok: false, msg: errText(r.error) });
         return;
@@ -73,7 +82,11 @@ export function MissionActions({ transportId, sessionActive, status, evidence, t
     );
   }
 
-  const delivered = DELIVERED_STATES.has(status);
+  // UAT-TRANSPORT-POD-FIX-01 — ONE predicate decides what the screen offers and
+  // what the server would accept, so the two can no longer disagree: the UAT
+  // offered a delivery button the state machine was always going to refuse.
+  const deliveryUnavailable = deliveryBlock(status);
+  const closed = deliveryUnavailable === "already_delivered" || deliveryUnavailable === "mission_cancelled";
 
   return (
     <section className="space-y-3">
@@ -81,7 +94,7 @@ export function MissionActions({ transportId, sessionActive, status, evidence, t
         <h2 className="text-sm font-semibold text-navy-900">{o.title}</h2>
       </div>
 
-      {!sessionActive && !delivered && (
+      {!sessionActive && !closed && (
         <p className="rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">{o.needSession}</p>
       )}
 
@@ -101,7 +114,10 @@ export function MissionActions({ transportId, sessionActive, status, evidence, t
               disabled={pending}
               onClick={async () => {
                 const coords = await currentCoords();
-                run(() => recordDriverEvent(transportId, { type: kind, ...(coords ?? {}) }), o.events.recorded);
+                run(
+                  () => recordDriverEvent(transportId, { type: kind, ...(coords ?? {}) }),
+                  kind === "PICKUP_CONFIRMED" ? o.events.pickupReported : o.events.recorded,
+                );
               }}
               className="rounded-lg border border-slate-200 px-2 py-2.5 text-xs font-medium text-navy-800 hover:bg-slate-50 disabled:opacity-50"
             >
@@ -129,7 +145,7 @@ export function MissionActions({ transportId, sessionActive, status, evidence, t
           />
         )}
 
-        {!delivered ? (
+        {deliveryUnavailable === null ? (
           <>
             <PanelButton label={o.delivery.title} active={panel === "delivery"} onClick={() => setPanel(panel === "delivery" ? null : "delivery")} primary />
             {panel === "delivery" && (
@@ -143,8 +159,19 @@ export function MissionActions({ transportId, sessionActive, status, evidence, t
               />
             )}
           </>
+        ) : deliveryUnavailable === "pickup_not_recorded" ? (
+          <div role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
+            <p className="font-medium">{o.delivery.pickupPending}</p>
+            <p className="mt-1">{o.delivery.pickupPendingHelp}</p>
+          </div>
         ) : (
-          <p className="rounded-lg border border-slate-200 bg-slate-50 p-2 text-center text-xs font-medium text-slate-500">{o.delivery.done}</p>
+          <p className="rounded-lg border border-slate-200 bg-slate-50 p-2 text-center text-xs font-medium text-slate-500">
+            {deliveryUnavailable === "mission_cancelled"
+              ? o.delivery.cancelled
+              : deliveryUnavailable === "already_delivered"
+                ? o.delivery.done
+                : d.errors.invalid_transition}
+          </p>
         )}
       </div>
 
