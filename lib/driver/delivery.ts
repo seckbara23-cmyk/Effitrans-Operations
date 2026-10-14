@@ -16,8 +16,14 @@
  *    event carries a per-transport dedup_key.
  *  - The tracking session is completed ONLY after the DELIVERED transition
  *    succeeds — a failed transition leaves the session live.
- *  - Finance handoff is NOT fired here; it stays the staff POD_RECEIVED approval
- *    step (driver POD scans land in PENDING_REVIEW).
+ *  - The driver's own POD scans land in PENDING_REVIEW and are NEVER verified by
+ *    this lane: a driver cannot approve their own evidence.
+ *  - EFF-POD-FINANCE-CONVERGENCE-01. The DELIVERED transition carries the same
+ *    consequences here as in the office — the dossier follows the transport
+ *    fact, and a POD receipt already earned by a SEPARATELY verified delivery
+ *    note is recorded rather than lost. Those live in the shared transition, on
+ *    the unchanged documentary gate; confirming a delivery with no verified
+ *    delivery note still reaches no receipt and no Finance handoff.
  */
 import { revalidatePath } from "next/cache";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
