@@ -981,6 +981,10 @@ export const t = {
       not_draft: "Modifiable uniquement en brouillon.",
       no_lines: "Ajoutez au moins une ligne avant d'émettre.",
       numbering_failed: "Échec de la génération du numéro de facture.",
+      // CTRL-C-4A — the losing side of two simultaneous issuances. The invoice
+      // is already issued and its official number is final; the refused request
+      // wrote nothing.
+      already_issued: "Cette facture a déjà été émise : son numéro officiel est définitif.",
       // STEP20-INVOICE-02 — six refusals this surface could already produce and
       // had no words for, so each one reached the operator as « L'action a
       // échoué. Veuillez réessayer. » Five come from `validateIssuance`, which
