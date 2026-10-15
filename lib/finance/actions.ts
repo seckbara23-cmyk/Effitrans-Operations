@@ -323,12 +323,41 @@ export async function issueInvoice(id: string, dueDate?: string | null): Promise
 
   const due = dueDate || dueDateFromTerm(issueDate, DEFAULT_PAYMENT_TERM_DAYS);
 
-  const { error } = await supabase
+  // CTRL-C-4A — ATOMIC. This read-then-write had no database guarantee: two
+  // simultaneous issuances both passed `canIssue` above, both drew a number,
+  // and both wrote — so one official number was overwritten and lost while TWO
+  // audit rows claimed the invoice had been issued, each naming a different
+  // number. The predicates below make this a compare-and-set on the very row
+  // version `canIssue` was decided against, so exactly ONE can write.
+  // `.select("id")` is what makes the outcome observable: PostgREST reports no
+  // error for an UPDATE that matched nothing.
+  //
+  // The fence is the same one the governed lane already applies
+  // (`lib/process/billing/actions.ts`, status + null-number), reused rather
+  // than reinvented. The status predicate is `DRAFT`, which is exactly what
+  // `canIssue` already requires: this makes the EXISTING eligibility atomic and
+  // changes it in no way. Whether a DRAFT should be issuable at all without
+  // passing through VALIDATED is the separate CTRL-C-4B question, untouched.
+  //
+  // THE LOSER WRITES NOTHING. Everything that records an issuance comes after
+  // this point — the audit row, the official PDF, the customer notice — so a
+  // losing request leaves no trail claiming an issuance happened.
+  const { data: issued, error } = await supabase
     .from("invoice")
     .update({ status: "ISSUED", invoice_number: number, issue_date: issueDate, due_date: due, issued_by: user.id })
     .eq("id", id)
-    .eq("tenant_id", user.tenantId);
+    .eq("tenant_id", user.tenantId)
+    .eq("status", "DRAFT")
+    .is("invoice_number", null)
+    .select("id");
   if (error) return { ok: false, error: error.message };
+  // A lost race leaves the number this call drew UNUSED. `invoice_counter` is an
+  // atomic upsert, so numbering stays UNIQUE but is not gapless — that is the
+  // pre-existing allocator contract, and a gap is the safe outcome here: the
+  // alternative would be assigning a second number to an already-issued
+  // invoice. Refusing is correct, and the operator is told the invoice is
+  // already issued rather than « L'action a échoué ».
+  if ((issued?.length ?? 0) !== 1) return { ok: false, error: "already_issued" };
 
   await writeAudit({ action: AuditActions.INVOICE_ISSUED, actorId: user.id, tenantId: user.tenantId, entity: "invoice", entityId: id, after: { invoice_number: number, total: check.total, issue_date: issueDate, due_date: due } });
 
