@@ -235,9 +235,18 @@ checks(label, ok) as (
     )),
 
     -- ---- 10. privilege shape: definer, and service_role only --------------
-    ('all four functions are SECURITY DEFINER with a pinned search_path', (
+    ('all four functions are SECURITY DEFINER', (
       select (select count(*) from fn where secdef) = 4
-         and (select count(*) from fn where body ilike '%search_path = public, pg_temp%') = 4
+    )),
+    -- Asserted from `proconfig`, not from the printed body: pg_get_functiondef
+    -- renders the clause as `SET search_path TO 'public', 'pg_temp'`, so a
+    -- match on the `=` form reported a healthy database as broken. proconfig is
+    -- where the setting actually lives, and it is quoting-independent.
+    ('all four pin search_path to public, pg_temp', (
+      select (select count(*) from fn
+               where cfg like '%search_path=%'
+                 and cfg like '%public%'
+                 and cfg like '%pg_temp%') = 4
     )),
     ('the three RPCs are executable by service_role only', (
       select coalesce((
