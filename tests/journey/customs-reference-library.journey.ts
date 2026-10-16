@@ -266,7 +266,10 @@ describe("R4 — the full governed path, and what it makes visible", () => {
 
     const r = await row(id);
     expect(r!.status).toBe("PUBLISHED");
-    expect(r!.published_by).toBe(chief.id);
+    // REF-1-PUBLISH-GATE: the APPROVER publishes, and the submitter is someone
+    // else. Asserting `chief` here was the pre-maker-checker expectation.
+    expect(r!.published_by).toBe(chief2.id);
+    expect(r!.submitted_for_publication_by).toBe(chief.id);
     expect(r!.published_at).toBeTruthy();
     expect(r!.licence_status).toBe("INTERNAL_ONLY");
     // A licence short of redistribution never sets the redistribution flag.
@@ -274,7 +277,7 @@ describe("R4 — the full governed path, and what it makes visible", () => {
 
     const audit = await auditFor("customs.reference.published", id);
     expect(audit.length).toBe(1);
-    expect(audit[0].actor_id).toBe(chief.id);
+    expect(audit[0].actor_id).toBe(chief2.id);
 
     // The reader can now see it and fetch the bytes.
     const lib = await as(declarant, () => getLibrary());
