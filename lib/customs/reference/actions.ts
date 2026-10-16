@@ -39,7 +39,8 @@ import { assertPermission } from "@/lib/auth/require-permission";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
 import { isLicenceStatus, publicationBlockers, type ReferenceActionResult } from "./types";
-import type { LicenceStatus, ReferenceCategory, ReferenceStatus } from "./types";
+import type { LicenceStatus, ReferenceCategory, ReferenceStatus, ScanStatus } from "./types";
+import { dispatchScan, scanningAvailable } from "./scan";
 
 const LIBRARY_PATH = "/customs/reference";
 
@@ -52,6 +53,10 @@ type GovernedRow = {
   legal_version_verified: boolean;
   title: string;
   supersedes_id: string | null;
+  scan_status: ScanStatus;
+  submitted_for_publication_by: string | null;
+  storage_path: string;
+  content_sha256: string;
 };
 
 /** Load a row the caller is entitled to govern. Tenant-scoped, always. */
@@ -63,7 +68,8 @@ async function loadGoverned(
   const { data } = await supabase
     .from("customs_reference_document")
     .select(
-      "id, category, status, licence_status, provenance_verified, legal_version_verified, title, supersedes_id",
+      "id, category, status, licence_status, provenance_verified, legal_version_verified, title, "
+      + "supersedes_id, scan_status, submitted_for_publication_by, storage_path, content_sha256",
     )
     .eq("id", id)
     .eq("tenant_id", tenantId)
@@ -197,72 +203,33 @@ export async function publishDocument(id: string): Promise<ReferenceActionResult
   const doc = await loadGoverned(supabase, id, user.tenantId);
   if (!doc) return { ok: false, error: "not_found" };
 
-  // Named refusals, in the operator's terms, before the constraint speaks.
+  // Named refusals, in the operator's terms, before the database speaks. This
+  // decides nothing: `publish_customs_reference` re-checks every one of them
+  // under a row lock, and it is the only thing that can actually publish.
   const blockers = publicationBlockers({
     status: doc.status,
     category: doc.category,
     licenceStatus: doc.licence_status,
     provenanceVerified: doc.provenance_verified,
     legalVersionVerified: doc.legal_version_verified,
+    scanStatus: doc.scan_status,
+    submittedForPublicationBy: doc.submitted_for_publication_by,
+    approverId: user.id,
   });
   if (blockers.length > 0) return { ok: false, error: blockers[0] };
 
-  // ---- supersession comes FIRST, and the order is load-bearing -------------
-  // `uq_customs_reference_one_current` admits one PUBLISHED, un-superseded row
-  // per (tenant, category, reference_code). Publishing a replacement while its
-  // predecessor is still current would therefore violate that index and fail.
-  // So the predecessor is retired first, and the publish is compensated if it
-  // does not land.
-  //
-  // The CAS predicate is `superseded_by_id is null`, so a concurrent publisher
-  // who already retired this predecessor matches zero rows and we stop rather
-  // than overwrite their supersession with ours.
-  const supersededAt = new Date().toISOString();
-  if (doc.supersedes_id) {
-    const { data: retired, error: retireErr } = await supabase
-      .from("customs_reference_document")
-      .update({ superseded_by_id: id, superseded_at: supersededAt })
-      .eq("id", doc.supersedes_id)
-      .eq("tenant_id", user.tenantId)
-      .is("superseded_by_id", null)
-      .select("id");
-    if (retireErr) return { ok: false, error: retireErr.message };
-    if ((retired?.length ?? 0) !== 1) {
-      return { ok: false, error: "predecessor_already_superseded" };
-    }
-  }
+  // ONE transaction for the predecessor's retirement and this publication.
+  // REF-1-HARDEN left those as two PostgREST writes with a compensating undo
+  // and a stated residual window; this closes it.
+  const { data, error } = await supabase.rpc("publish_customs_reference", {
+    p_document: id,
+    p_tenant: user.tenantId,
+    p_approver: user.id,
+  });
+  if (error) return { ok: false, error: error.message };
 
-  const publishedAt = new Date().toISOString();
-  const { data: moved, error } = await supabase
-    .from("customs_reference_document")
-    .update({ status: "PUBLISHED", published_by: user.id, published_at: publishedAt })
-    .eq("id", id)
-    .eq("tenant_id", user.tenantId)
-    .eq("status", "QUARANTINE")
-    .select("id");
-
-  // Compensate a failed publish by restoring the predecessor. The predicate is
-  // `superseded_by_id = id`, which is OUR supersession and nobody else's, so
-  // this can never clobber a concurrent publisher's work.
-  //
-  // RESIDUAL, AND STATED RATHER THAN HIDDEN: a crash between the two writes
-  // leaves the predecessor retired while the replacement is still QUARANTINE,
-  // so that business key shows no current version until the replacement is
-  // published — one click, and visible in the list. PostgREST cannot span two
-  // rows in one transaction; closing this window entirely needs a definer RPC,
-  // which is REF-2 work and is not pretended to exist here.
-  if (error || (moved?.length ?? 0) !== 1) {
-    if (doc.supersedes_id) {
-      await supabase
-        .from("customs_reference_document")
-        .update({ superseded_by_id: null, superseded_at: null })
-        .eq("id", doc.supersedes_id)
-        .eq("tenant_id", user.tenantId)
-        .eq("superseded_by_id", id);
-    }
-    if (error) return { ok: false, error: error.message };
-    return { ok: false, error: "already_published" };
-  }
+  const outcome = String(data ?? "");
+  if (outcome !== "published") return { ok: false, error: outcome };
 
   await writeAudit({
     action: AuditActions.CUSTOMS_REFERENCE_PUBLISHED,
@@ -276,8 +243,121 @@ export async function publishDocument(id: string): Promise<ReferenceActionResult
       title: doc.title,
       category: doc.category,
       licence_status: doc.licence_status,
-      published_at: publishedAt,
+      scan_status: doc.scan_status,
+      submitted_by: doc.submitted_for_publication_by,
+      approved_by: user.id,
     },
+  });
+  revalidatePath(LIBRARY_PATH);
+  return { ok: true, id };
+}
+
+/**
+ * Submit for publication — the MAKER's act.
+ *
+ * Separate from approval on purpose: publication asserts that a text is the
+ * current authoritative law, and that assertion now carries two actors and two
+ * moments. The same permission governs both halves, because splitting it into
+ * `submit` and `approve` codes would let a tenant grant one without the other
+ * and quietly recreate single-handed publication from the other side. The
+ * separation that matters is between two PEOPLE on one document, and the
+ * database enforces it as a property of the row.
+ */
+export async function submitForPublication(id: string): Promise<ReferenceActionResult> {
+  let user;
+  try { user = await assertPermission("customs:reference:publish"); }
+  catch { return { ok: false, error: "forbidden" }; }
+
+  const supabase = getAdminSupabaseClient();
+  const { data, error } = await supabase.rpc("submit_customs_reference_for_publication", {
+    p_document: id,
+    p_tenant: user.tenantId,
+    p_actor: user.id,
+  });
+  if (error) return { ok: false, error: error.message };
+
+  const outcome = String(data ?? "");
+  if (outcome !== "submitted") return { ok: false, error: outcome };
+
+  await writeAudit({
+    action: AuditActions.CUSTOMS_REFERENCE_SUBMITTED,
+    actorId: user.id,
+    tenantId: user.tenantId,
+    entity: "customs_reference_document",
+    entityId: id,
+    after: { submitted_by: user.id },
+  });
+  revalidatePath(LIBRARY_PATH);
+  return { ok: true, id };
+}
+
+/**
+ * Hand the stored object to the malware scanner.
+ *
+ * It moves UNSCANNED or ERROR to SCANNING and dispatches. It CANNOT produce a
+ * verdict: only the signed callback can, through a database function this
+ * module has no way of reaching. With no scanner configured it refuses rather
+ * than pretending, which leaves the document unpublishable — the correct
+ * failure, and the one the absence of a scanner should cause.
+ *
+ * A failed dispatch puts the status back, so a document is never stranded in
+ * SCANNING by an outage that never started.
+ */
+export async function requestScan(id: string): Promise<ReferenceActionResult> {
+  let user;
+  try { user = await assertPermission("customs:reference:publish"); }
+  catch { return { ok: false, error: "forbidden" }; }
+
+  if (!scanningAvailable()) return { ok: false, error: "scanner_unavailable" };
+
+  const supabase = getAdminSupabaseClient();
+  const doc = await loadGoverned(supabase, id, user.tenantId);
+  if (!doc) return { ok: false, error: "not_found" };
+  if (doc.status === "WITHDRAWN") return { ok: false, error: "withdrawn" };
+  if (doc.scan_status !== "UNSCANNED" && doc.scan_status !== "ERROR") {
+    return { ok: false, error: "scan_not_requestable" };
+  }
+
+  const previous = doc.scan_status;
+  const { data: moved, error } = await supabase
+    .from("customs_reference_document")
+    .update({
+      scan_status: "SCANNING",
+      scan_requested_at: new Date().toISOString(),
+      scan_requested_by: user.id,
+    })
+    .eq("id", id)
+    .eq("tenant_id", user.tenantId)
+    .eq("scan_status", previous)
+    .select("id");
+  if (error) return { ok: false, error: error.message };
+  if ((moved?.length ?? 0) !== 1) return { ok: false, error: "scan_not_requestable" };
+
+  const sent = await dispatchScan({
+    documentId: id,
+    tenantId: user.tenantId,
+    storagePath: doc.storage_path,
+    sha256: doc.content_sha256,
+  });
+  if (!sent.ok) {
+    // Put it back: SCANNING with nothing scanning is a lie about the state.
+    await supabase
+      .from("customs_reference_document")
+      .update({ scan_status: previous })
+      .eq("id", id)
+      .eq("tenant_id", user.tenantId)
+      .eq("scan_status", "SCANNING");
+    return { ok: false, error: sent.error };
+  }
+
+  await writeAudit({
+    action: AuditActions.CUSTOMS_REFERENCE_SCAN_REQUESTED,
+    actorId: user.id,
+    tenantId: user.tenantId,
+    entity: "customs_reference_document",
+    entityId: id,
+    before: { scan_status: previous },
+    after: { scan_status: "SCANNING", sha256: doc.content_sha256 },
   });
   revalidatePath(LIBRARY_PATH);
   return { ok: true, id };
@@ -313,6 +393,9 @@ export async function withdrawDocument(
       status: "WITHDRAWN",
       withdrawn_by: user.id,
       withdrawn_at: withdrawnAt,
+      // OPERATOR, not SCAN: a person ended this one, and the coherence CHECK
+      // keeps the two kinds of withdrawal distinguishable for ever.
+      withdrawn_source: "OPERATOR",
       notes: trimmed,
     })
     .eq("id", id)

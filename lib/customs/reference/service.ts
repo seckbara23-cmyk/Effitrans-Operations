@@ -24,6 +24,7 @@ import type {
   ReferenceCategory,
   ReferenceDocument,
   ReferenceStatus,
+  ScanStatus,
 } from "./types";
 
 const COLUMNS =
@@ -31,7 +32,8 @@ const COLUMNS =
   + "supersedes_id, superseded_by_id, superseded_at, size_bytes, content_sha256, status, "
   + "licence_status, redistribution_allowed, licence_note, provenance_verified, "
   + "legal_version_verified, uploaded_by, uploaded_at, published_by, published_at, "
-  + "withdrawn_at, notes";
+  + "withdrawn_at, notes, scan_status, scan_completed_at, scanner_name, scan_detail, "
+  + "submitted_for_publication_by, submitted_for_publication_at";
 
 type Row = {
   id: string;
@@ -59,6 +61,12 @@ type Row = {
   published_at: string | null;
   withdrawn_at: string | null;
   notes: string | null;
+  scan_status: string;
+  scan_completed_at: string | null;
+  scanner_name: string | null;
+  scan_detail: string | null;
+  submitted_for_publication_by: string | null;
+  submitted_for_publication_at: string | null;
 };
 
 function toDocument(r: Row): ReferenceDocument {
@@ -88,6 +96,12 @@ function toDocument(r: Row): ReferenceDocument {
     publishedAt: r.published_at,
     withdrawnAt: r.withdrawn_at,
     notes: r.notes,
+    scanStatus: r.scan_status as ScanStatus,
+    scanCompletedAt: r.scan_completed_at,
+    scannerName: r.scanner_name,
+    scanDetail: r.scan_detail,
+    submittedForPublicationBy: r.submitted_for_publication_by,
+    submittedForPublicationAt: r.submitted_for_publication_at,
   };
 }
 

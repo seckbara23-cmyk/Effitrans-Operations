@@ -105,6 +105,13 @@ export const AuditActions = {
   // Explanatory Notes) may limit who may read it, and a licence obligation
   // cannot be evidenced without an access record.
   CUSTOMS_REFERENCE_ACCESSED: "customs.reference.accessed",
+  // REF-1-PUBLISH-GATE — the maker's act, and the scan lifecycle.
+  CUSTOMS_REFERENCE_SUBMITTED: "customs.reference.submitted",
+  CUSTOMS_REFERENCE_SCAN_REQUESTED: "customs.reference.scan_requested",
+  // A scanner is not a user. `system.`-prefixed because the audit validator
+  // requires an actor for everything else, and inventing a principal for a
+  // machine is what OPS-SEC-2A's SYSTEM lane refuses to do.
+  SYSTEM_CUSTOMS_REFERENCE_SCANNED: "system.customs.reference.scanned",
   // TMS-6 — external transport subcontractors. Master data, not a dossier
   // fact, so the dossier-scoped business-event ledger is deliberately unused.
   PROVIDER_CREATED: "transport_provider.created",

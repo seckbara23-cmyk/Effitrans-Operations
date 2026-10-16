@@ -22,12 +22,29 @@ export type ReferenceCategory = (typeof REFERENCE_CATEGORIES)[number];
 export const REFERENCE_STATUSES = ["QUARANTINE", "PUBLISHED", "WITHDRAWN"] as const;
 export type ReferenceStatus = (typeof REFERENCE_STATUSES)[number];
 
+export const SCAN_STATUSES = [
+  "UNSCANNED",
+  "SCANNING",
+  "CLEAN",
+  "INFECTED",
+  "ERROR",
+] as const;
+export type ScanStatus = (typeof SCAN_STATUSES)[number];
+
 export const LICENCE_STATUSES = [
   "RESTRICTED",
   "INTERNAL_ONLY",
   "APPROVED_REDISTRIBUTION",
 ] as const;
 export type LicenceStatus = (typeof LICENCE_STATUSES)[number];
+
+export const SCAN_LABEL_FR: Record<ScanStatus, string> = {
+  UNSCANNED: "Non analysé",
+  SCANNING: "Analyse en cours",
+  CLEAN: "Analyse antivirus : sain",
+  INFECTED: "Analyse antivirus : infecté",
+  ERROR: "Analyse antivirus : échec",
+};
 
 export const CATEGORY_LABEL_FR: Record<ReferenceCategory, string> = {
   LEGISLATION: "Code des douanes et textes législatifs",
@@ -79,6 +96,12 @@ export type ReferenceDocument = {
   licenceNote: string | null;
   provenanceVerified: boolean;
   legalVersionVerified: boolean;
+  scanStatus: ScanStatus;
+  scanCompletedAt: string | null;
+  scannerName: string | null;
+  scanDetail: string | null;
+  submittedForPublicationBy: string | null;
+  submittedForPublicationAt: string | null;
   uploadedBy: string;
   uploadedAt: string;
   publishedBy: string | null;
@@ -113,6 +136,10 @@ export function publicationBlockers(doc: {
   licenceStatus: LicenceStatus;
   provenanceVerified: boolean;
   legalVersionVerified: boolean;
+  scanStatus?: ScanStatus;
+  submittedForPublicationBy?: string | null;
+  /** The would-be approver, so self-approval is named before it is attempted. */
+  approverId?: string | null;
 }): string[] {
   const out: string[] = [];
   if (doc.status === "PUBLISHED") out.push("already_published");
@@ -120,6 +147,24 @@ export function publicationBlockers(doc: {
   if (!doc.provenanceVerified) out.push("provenance_unverified");
   if (!doc.legalVersionVerified) out.push("legal_version_unverified");
   if (doc.licenceStatus === "RESTRICTED") out.push("licence_unresolved");
+  // REF-1-PUBLISH-GATE. Only CLEAN passes; UNSCANNED, SCANNING, INFECTED and
+  // ERROR are each named so the operator learns which one applies. The database
+  // refuses all four regardless — this only explains.
+  if (doc.scanStatus !== undefined && doc.scanStatus !== "CLEAN") {
+    out.push(
+      doc.scanStatus === "UNSCANNED" ? "scan_required"
+        : doc.scanStatus === "SCANNING" ? "scan_in_progress"
+        : doc.scanStatus === "INFECTED" ? "scan_infected"
+        : "scan_error",
+    );
+  }
+  // Maker-checker: something must have been proposed, by someone else.
+  if (doc.submittedForPublicationBy !== undefined) {
+    if (!doc.submittedForPublicationBy) out.push("not_submitted");
+    else if (doc.approverId && doc.approverId === doc.submittedForPublicationBy) {
+      out.push("self_approval_forbidden");
+    }
+  }
   if (
     LICENCE_PENDING_CATEGORIES.includes(doc.category)
     && doc.licenceStatus !== "APPROVED_REDISTRIBUTION"

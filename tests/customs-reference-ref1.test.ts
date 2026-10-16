@@ -63,6 +63,8 @@ const viewRoute = strip(read("app/api/customs/reference/[id]/pdf/route.ts"));
 const actions = strip(read("lib/customs/reference/actions.ts"));
 const service = strip(read("lib/customs/reference/service.ts"));
 const seed = strip(read("supabase/seed.sql"));
+const gate = strip(read("supabase/migrations/20261017000001_customs_reference_publication_gate.sql"));
+const gateVerifier = read("supabase/verifiers/20261017000001_customs_reference_publication_gate.verify.sql");
 const templates = strip(read("lib/platform/role-templates.ts"));
 
 /** A minimal, valid PDF buffer of at least MIN_UPLOAD_BYTES. */
@@ -265,12 +267,15 @@ describe("REF-1 — the safe defaults are the database's, not the code's", () =>
     expect(uploadRoute).toContain('status: "QUARANTINE"');
   });
 
-  it("17 — nothing in the slice can publish except the publish action", () => {
+  it("17 — exactly one thing in the slice can set PUBLISHED, and it is in the database", () => {
     expect(uploadRoute).not.toContain("publishDocument");
-    expect((actions.match(/\.update\(\{ status: "PUBLISHED"/g) ?? []).length).toBe(1);
-    // The other occurrence is the audit payload: a record of the move, not a
-    // second way to perform it.
-    expect((actions.match(/status: "PUBLISHED"/g) ?? []).length).toBe(2);
+    // REF-1-PUBLISH-GATE moved publication into `publish_customs_reference`.
+    // The application no longer writes the status at all, which is stronger
+    // than it writing it once: there is no second code path to audit.
+    expect(actions).not.toContain('.update({ status: "PUBLISHED"');
+    expect(actions).toContain('supabase.rpc("publish_customs_reference"');
+    // …and the RPC sets it exactly once.
+    expect((gate.match(/set\s+status\s+=\s+'PUBLISHED'/g) ?? []).length).toBe(1);
   });
 });
 
@@ -353,8 +358,12 @@ describe("REF-1 — authority, and who may not reach the library at all", () => 
     expect(uploadRoute).toContain('hasPermission(permissions, "customs:reference:publish")');
     expect(viewRoute).toContain('hasPermission(permissions, "customs:reference:read")');
     expect(service).toContain('assertPermission("customs:reference:read")');
-    // All four governance acts, each gated on publish.
-    expect((actions.match(/assertPermission\("customs:reference:publish"\)/g) ?? []).length).toBe(4);
+    // All SIX governance acts, each gated on publish: the original four plus
+    // REF-1-PUBLISH-GATE's submission and scan request.
+    expect((actions.match(/assertPermission\("customs:reference:publish"\)/g) ?? []).length).toBe(6);
+    for (const act of ["submitForPublication", "requestScan"]) {
+      expect(actions, act).toContain(`export async function ${act}(`);
+    }
     // …and the read permission is never what authorises a write.
     expect(actions).not.toContain('assertPermission("customs:reference:read")');
   });
@@ -453,19 +462,27 @@ describe("REF-1 — the acts are atomic and attributed", () => {
     ]) {
       expect(actions, guard).toContain(guard);
     }
-    expect(actions).toContain('.eq("status", "QUARANTINE")');
+    // The publication CAS is now the RPC's own row count under a row lock,
+    // which is strictly stronger than a PostgREST predicate.
+    expect(gate).toContain("and status = 'QUARANTINE'");
+    expect(gate).toContain("get diagnostics v_retired = row_count;");
+    expect(gate).toContain("for update");
   });
 
-  it("35 — supersession precedes publication, and a failed publish is compensated", () => {
-    const retire = actions.indexOf('.update({ superseded_by_id: id, superseded_at: supersededAt })');
-    const publish = actions.indexOf('.update({ status: "PUBLISHED"');
+  it("35 — supersession and publication are now ONE transaction, so there is nothing to compensate", () => {
+    // REF-1-HARDEN did this as two PostgREST writes with a compensating undo
+    // and a disclosed residual window. Part C closed it: both writes live in
+    // `publish_customs_reference`, so a failure anywhere rolls back both.
+    const fn = gate.slice(gate.indexOf("function public.publish_customs_reference"));
+    const retire = fn.indexOf("set superseded_by_id = p_document");
+    const publish = fn.indexOf("set status       = 'PUBLISHED'");
     expect(retire).toBeGreaterThan(-1);
     expect(publish).toBeGreaterThan(retire);
-    // The retirement CAS cannot overwrite a concurrent publisher's.
-    expect(actions).toContain('.is("superseded_by_id", null)');
-    // The compensation is fenced to OUR supersession.
-    expect(actions).toContain('.eq("superseded_by_id", id)');
-    expect(actions).toContain("superseded_by_id: null, superseded_at: null");
+    // The retirement still cannot overwrite a concurrent publisher's.
+    expect(fn).toContain("and superseded_by_id is null");
+    expect(fn).toContain("predecessor_already_superseded");
+    // And the application no longer carries an undo, because it cannot half-fail.
+    expect(actions).not.toContain("superseded_by_id: null, superseded_at: null");
   });
 
   it("36 — the audit row follows the move, never precedes it", () => {
@@ -567,9 +584,9 @@ describe("REF-1 — French, and the inventory", () => {
   it("44 — one migration ships, with its companion verifier, and the inventory agrees", () => {
     const files = readdirSync(fileURLToPath(new URL("../supabase/migrations", import.meta.url)))
       .filter((f) => f.endsWith(".sql"));
-    expect(files).toHaveLength(152);
-    expect(MIGRATION_COUNT).toBe(152);
-    expect(LATEST_MIGRATION).toBe("20261016000001_customs_reference_library");
+    expect(files).toHaveLength(153);
+    expect(MIGRATION_COUNT).toBe(153);
+    expect(LATEST_MIGRATION).toBe("20261017000001_customs_reference_publication_gate");
     expect(verifier).toContain("ok boolean, detail text");
     expect(verifier).toContain("customs_reference_document");
     // The verifier asserts the POLICY, not table privileges: on Supabase
@@ -707,11 +724,242 @@ describe("REF-1-HARDEN — the four corrections", () => {
   it("53 — the hardening added no permission, no role grant and no second migration", () => {
     const files = readdirSync(fileURLToPath(new URL("../supabase/migrations", import.meta.url)))
       .filter((f) => f.endsWith(".sql"));
-    // Corrections to an UNAPPLIED migration belong in it, not in a successor.
-    expect(files).toHaveLength(152);
+    // Corrections to an UNAPPLIED migration belong in it; NEW CAPABILITY gets
+    // its own, which is why the publication gate is #153 and not an edit.
+    expect(files).toHaveLength(153);
     expect((migration.match(/insert into public\.permission/g) ?? []).length).toBe(1);
     expect((migration.match(/insert into public\.role_permission/g) ?? []).length).toBe(2);
     const publishGrant = migration.slice(migration.indexOf("p.code = 'customs:reference:publish'"));
     expect(publishGrant).toContain("'SYSTEM_ADMIN', 'CHIEF_OF_TRANSIT'");
+  });
+});
+
+// ===========================================================================
+describe("REF-1-PUBLISH-GATE — Part A: nothing is published unscanned", () => {
+  it("54 — the scan lifecycle is a database CHECK, defaulting to UNSCANNED", () => {
+    expect(gate).toContain("add column if not exists scan_status text not null default 'UNSCANNED'");
+    const chk = gate.slice(gate.indexOf("customs_reference_scan_status_check"));
+    for (const v of ["UNSCANNED", "SCANNING", "CLEAN", "INFECTED", "ERROR"]) {
+      expect(chk.slice(0, 400), v).toContain(`'${v}'`);
+    }
+  });
+
+  it("55 — publication requires CLEAN bound to THESE bytes and THIS object", () => {
+    const chk = gate.slice(
+      gate.indexOf("customs_reference_publication_requires_clean_scan"),
+      gate.indexOf("-- 4. PUBLICATION REQUIRES TWO DISTINCT ACTORS"),
+    );
+    expect(chk).toContain("scan_status = 'CLEAN'");
+    // The binding is what makes a clearance non-transferable between objects.
+    expect(chk).toContain("scanned_sha256 = content_sha256");
+    expect(chk).toContain("scanned_storage_path = storage_path");
+  });
+
+  it("56 — only the trusted recorder can record CLEAN", () => {
+    // THE trust boundary. Every write in this platform uses the service role,
+    // so "the application decides" would be no boundary at all.
+    expect(gate).toContain("guard_customs_reference_scan_status");
+    expect(gate).toContain("before insert or update on public.customs_reference_document");
+    const fn = gate.slice(
+      gate.indexOf("function public.guard_customs_reference_scan_status"),
+      gate.indexOf("drop trigger if exists trg_customs_reference_scan_guard"),
+    );
+    expect(fn).toContain("effitrans.scan_recorder");
+    expect(fn).toContain("only the trusted scan recorder may record a CLEAN verdict");
+    // Transaction-local, so it cannot leak to another statement or a pooled
+    // connection.
+    expect(gate).toContain("perform set_config('effitrans.scan_recorder', 'customs_reference', true);");
+    expect(fn).toContain("cannot be re-bound");
+  });
+
+  it("57 — the recorder refuses a verdict about other bytes, and evidences every one", () => {
+    const fn = gate.slice(gate.indexOf("function public.record_customs_reference_scan"));
+    expect(fn).toContain("binding_mismatch");
+    expect(fn).toContain("p_sha256 is distinct from v_doc.content_sha256");
+    expect(fn).toContain("p_storage_path is distinct from v_doc.storage_path");
+    expect(fn).toContain("insert into public.customs_reference_scan");
+    expect(fn).toContain("for update");
+  });
+
+  it("58 — a rescan that disagrees invalidates the clearance and retires the document", () => {
+    const fn = gate.slice(gate.indexOf("function public.record_customs_reference_scan"));
+    expect(fn).toContain("scanned_sha256       = null");
+    expect(fn).toContain("'WITHDRAWN'");
+    expect(fn).toContain("'SCAN'");
+    // A scanner has no seat in app_user, so a SCAN withdrawal carries no actor
+    // — and the coherence CHECK admits that case and only that case.
+    const coh = gate.slice(gate.indexOf("customs_reference_withdrawal_coherent"));
+    expect(coh).toContain("withdrawn_source = 'OPERATOR' and withdrawn_by is not null");
+    expect(coh).toContain("withdrawn_source = 'SCAN'");
+  });
+
+  it("59 — scan evidence is append-only and readable only by publishers", () => {
+    expect(gate).toContain("create table if not exists public.customs_reference_scan");
+    expect(gate).toContain("execute function public.prevent_mutation()");
+    expect(gate).toContain("alter table public.customs_reference_scan enable row level security");
+    const pol = gate.slice(gate.indexOf("customs_reference_scan_select on public.customs_reference_scan"));
+    expect(pol).toContain("public.auth_tenant_id()");
+    expect(pol).toContain("customs:reference:publish");
+    expect(TENANT_SCOPED_TABLES.has("customs_reference_scan")).toBe(true);
+  });
+
+  it("60 — there is NO scanner in this codebase, and the adapter fails closed", () => {
+    const scan = strip(read("lib/customs/reference/scan.ts"));
+    // Both halves required: an endpoint with no secret would mean believing
+    // unauthenticated verdicts.
+    expect(scan).toContain("CUSTOMS_SCAN_ENDPOINT");
+    expect(scan).toContain("CUSTOMS_SCAN_CALLBACK_SECRET");
+    expect(scan).toContain("if (!endpoint || !callbackSecret) return null;");
+    // Nothing here invents a verdict.
+    expect(scan).not.toContain('verdict: "CLEAN"');
+    expect(scan).not.toMatch(/return\s*\{\s*ok:\s*true,\s*payload:\s*\{[^}]*CLEAN/);
+    // No default endpoint, so an unconfigured deployment cannot be pointed at
+    // somebody else's scanner by accident.
+    expect(scan).not.toMatch(/https?:\/\//);
+  });
+
+  it("61 — the callback is HMAC-authenticated and accepts no session", () => {
+    const cb = strip(read("app/api/customs/reference/scan-callback/route.ts"));
+    expect(cb).toContain("parseCallback(raw, signature)");
+    expect(cb).toContain("await request.text()");
+    // A person cannot be a scanner.
+    expect(cb).not.toContain("getCurrentUser");
+    expect(cb).not.toContain("getCurrentPortalUser");
+    expect(cb).not.toContain("assertPermission");
+    // Unconfigured => refuse everything.
+    expect(cb).toContain('error: "scanner_unavailable" }, { status: 503 }');
+    // It records through the RPC; it never writes the document itself.
+    expect(cb).toContain('supabase.rpc("record_customs_reference_scan"');
+    expect(cb).not.toContain('.from("customs_reference_document")');
+    // No human actor: the audit action is system-prefixed.
+    expect(AuditActions.SYSTEM_CUSTOMS_REFERENCE_SCANNED).toBe("system.customs.reference.scanned");
+    expect(cb).toContain("AuditActions.SYSTEM_CUSTOMS_REFERENCE_SCANNED");
+  });
+
+  it("62 — a failed dispatch does not leave the document stranded in SCANNING", () => {
+    const fn = actions.slice(actions.indexOf("export async function requestScan"));
+    expect(fn).toContain('if (!scanningAvailable()) return { ok: false, error: "scanner_unavailable" };');
+    expect(fn).toContain('.eq("scan_status", previous)');
+    expect(fn).toContain('.update({ scan_status: previous })');
+    expect(fn).toContain('.eq("scan_status", "SCANNING")');
+    // And it can never record a verdict.
+    expect(fn).not.toContain("CLEAN");
+  });
+
+  it("63 — NO exception, override or bypass exists anywhere in the slice", () => {
+    // The authorising brief asked for a general-purpose malware exception NOT
+    // to be built. Asserted rather than assumed, in both layers.
+    for (const [name, src] of [["gate", gate], ["actions", actions], ["migration", migration]] as const) {
+      expect(src, name).not.toMatch(/\b(bypass_scan|scan_override|force_publish|skip_scan|publish_anyway)\b/);
+    }
+    expect(gate).not.toMatch(/add column[^;]*\b(override|bypass|exempt|exception)\b/);
+    expect(gateVerifier).toContain("no override, bypass or exception column exists");
+  });
+});
+
+// ===========================================================================
+describe("REF-1-PUBLISH-GATE — Part B: two people, enforced by the row", () => {
+  it("64 — publication requires a submission and a DIFFERENT approver", () => {
+    const chk = gate.slice(
+      gate.indexOf("customs_reference_publication_requires_two_actors"),
+      gate.indexOf("customs_reference_submission_coherent"),
+    );
+    expect(chk).toContain("submitted_for_publication_by is not null");
+    expect(chk).toContain("published_by <> submitted_for_publication_by");
+  });
+
+  it("65 — the RPC refuses self-approval and an unsubmitted document by name", () => {
+    const fn = gate.slice(gate.indexOf("function public.publish_customs_reference"));
+    expect(fn).toContain("if v_doc.submitted_for_publication_by is null then return 'not_submitted'");
+    expect(fn).toContain("self_approval_forbidden");
+    expect(fn).toContain("v_doc.submitted_for_publication_by = p_approver");
+  });
+
+  it("66 — both human acts assert the NOMINATED actor's authority, not the caller's", () => {
+    // The service role is transport, not authority (OPS-SEC-2A).
+    for (const [fnName, actor] of [
+      ["submit_customs_reference_for_publication", "p_actor"],
+      ["publish_customs_reference", "p_approver"],
+    ] as const) {
+      const fn = gate.slice(gate.indexOf(`function public.${fnName}`));
+      expect(fn, fnName).toContain(
+        `assert_actor_authority(${actor}, p_tenant, 'customs:reference:publish', 'SERVICE')`,
+      );
+    }
+    // The scan recorder deliberately does NOT, because there is no human and
+    // the SYSTEM lane fails closed by ratification.
+    const rec = gate.slice(
+      gate.indexOf("function public.record_customs_reference_scan"),
+      gate.indexOf("function public.submit_customs_reference_for_publication"),
+    );
+    expect(rec).not.toContain("assert_actor_authority");
+  });
+
+  it("67 — the three RPCs are service_role-only definers", () => {
+    for (const fn of ["record_customs_reference_scan",
+                      "submit_customs_reference_for_publication",
+                      "publish_customs_reference"]) {
+      expect(gate, fn).toContain(`revoke execute on function public.${fn}`);
+      expect(gate, fn).toContain(`to service_role`);
+      expect(gate, `${fn} from authenticated`).toMatch(
+        new RegExp(`revoke execute on function public\\.${fn}[^;]*from authenticated`),
+      );
+    }
+    expect((gate.match(/security definer/g) ?? []).length).toBe(4);
+    expect((gate.match(/set search_path = public, pg_temp/g) ?? []).length).toBe(4);
+  });
+
+  it("68 — no new permission code, and publish stays with two roles", () => {
+    // Splitting publish into submit/approve codes would let a tenant grant one
+    // without the other and recreate single-handed publication sideways.
+    expect(gate).not.toContain("insert into public.permission");
+    expect(gate).not.toContain("insert into public.role_permission");
+    expect(gate).toContain("customs:reference:publish");
+  });
+
+  it("69 — the UI names self-approval and the scan gate before the database does", () => {
+    const panel = strip(read("components/customs/reference-library-panel.tsx"));
+    expect(panel).toContain("submitForPublication");
+    expect(panel).toContain("requestScan");
+    expect(panel).toContain("approverId: viewerId");
+    expect(panel).toContain("SCAN_LABEL_FR[doc.scanStatus]");
+    const errors = t.customs.reference.errors as Record<string, string>;
+    for (const code of ["scan_required", "scan_in_progress", "scan_infected", "scan_error",
+                        "scan_binding_mismatch", "scanner_unavailable", "not_submitted",
+                        "self_approval_forbidden", "dispatch_failed", "scan_not_requestable"]) {
+      expect(errors[code], code).toBeTruthy();
+      expect(errors[code].length, code).toBeGreaterThan(20);
+    }
+  });
+
+  it("70 — publicationBlockers names every non-CLEAN state and self-approval", () => {
+    const base = {
+      status: "QUARANTINE" as const,
+      category: "LEGISLATION" as const,
+      licenceStatus: "INTERNAL_ONLY" as const,
+      provenanceVerified: true,
+      legalVersionVerified: true,
+      submittedForPublicationBy: "maker",
+      approverId: "checker",
+    };
+    expect(publicationBlockers({ ...base, scanStatus: "CLEAN" })).toEqual([]);
+    expect(publicationBlockers({ ...base, scanStatus: "UNSCANNED" })).toContain("scan_required");
+    expect(publicationBlockers({ ...base, scanStatus: "SCANNING" })).toContain("scan_in_progress");
+    expect(publicationBlockers({ ...base, scanStatus: "INFECTED" })).toContain("scan_infected");
+    expect(publicationBlockers({ ...base, scanStatus: "ERROR" })).toContain("scan_error");
+    expect(publicationBlockers({ ...base, scanStatus: "CLEAN", submittedForPublicationBy: null }))
+      .toContain("not_submitted");
+    expect(publicationBlockers({ ...base, scanStatus: "CLEAN", approverId: "maker" }))
+      .toContain("self_approval_forbidden");
+  });
+
+  it("71 — migration 153 ships with its verifier and touches no unrelated table", () => {
+    expect(gateVerifier).toContain("ok boolean, detail text");
+    expect(gateVerifier).toContain("CUSTOMS-REF-01A #153");
+    expect(strip(gateVerifier)).not.toContain("has_table_privilege('authenticated'");
+    for (const forbidden of ["invoice", "transport_record", "process_step", "customs_record",
+                             "operational_file", "document_type"]) {
+      expect(gate, forbidden).not.toContain(forbidden);
+    }
   });
 });

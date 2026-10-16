@@ -68,7 +68,7 @@ export default async function CustomsReferencePage() {
         {t.customs.reference.authorityDisclaimer}
       </div>
 
-      <ReferenceLibraryPanel documents={documents} canPublish={canPublish} />
+      <ReferenceLibraryPanel documents={documents} canPublish={canPublish} viewerId={user.id} />
 
       <p className="text-xs text-slate-500">
         <Link href="/customs" className="underline hover:no-underline">

@@ -56,6 +56,7 @@ export const TENANT_SCOPED_TABLES = new Set<string>([
   // creates it: every read of it runs through the service-role client, so an
   // unscoped one would be a cross-tenant leak that RLS does not backstop.
   "customs_reference_document",
+  "customs_reference_scan",
   "transport_record",
   // TMS-6 — external transport subcontractors (migration 118).
   "transport_provider",

@@ -28,6 +28,8 @@ import {
   publishDocument,
   recordLicenceRuling,
   recordVerifications,
+  requestScan,
+  submitForPublication,
   withdrawDocument,
 } from "@/lib/customs/reference/actions";
 import { getLibrary, getReferenceDocument, getVersionHistory } from "@/lib/customs/reference/service";
@@ -35,6 +37,7 @@ import { getLibrary, getReferenceDocument, getVersionHistory } from "@/lib/custo
 const FOREIGN_TENANT = "00000000-0000-0000-0000-0000000000f2";
 
 let chief: CurrentUser;      // CHIEF_OF_TRANSIT — holds read AND publish
+let chief2: CurrentUser;     // a SECOND CHIEF_OF_TRANSIT — the checker half
 let declarant: CurrentUser;  // CUSTOMS_DECLARANT — holds read only
 let driver: CurrentUser;     // DRIVER — holds neither
 
@@ -102,18 +105,53 @@ async function row(id: string) {
   return data as Record<string, unknown> | null;
 }
 
-/** Drive a document all the way to PUBLISHED, the governed way. */
+/**
+ * Record a scan verdict the way the scanner would: through the trusted
+ * recorder. The journey cannot call the callback route's HMAC path without a
+ * configured secret, so it calls the function the route calls — which is also
+ * the only thing in the database allowed to produce a CLEAN state.
+ */
+async function recordScan(id: string, verdict: "CLEAN" | "INFECTED" | "ERROR") {
+  const r = await row(id);
+  const { data, error } = await db().rpc("record_customs_reference_scan", {
+    p_document: id,
+    p_tenant: TENANT_A,
+    p_verdict: verdict,
+    p_sha256: String(r!.content_sha256),
+    p_storage_path: String(r!.storage_path),
+    p_scanner_name: "journey-scanner",
+    p_scanner_version: "1.0",
+    p_engine_ref: `jr-${id.slice(0, 8)}`,
+    p_detail: null,
+  });
+  expect(error).toBeNull();
+  return String(data ?? "");
+}
+
+/**
+ * Drive a document all the way to PUBLISHED, the governed way — which now means
+ * verifications, a licence ruling, a CLEAN scan, a submission by one person and
+ * approval by ANOTHER.
+ */
 async function publishFully(id: string, licence = "INTERNAL_ONLY") {
   await as(chief, () => recordVerifications(id, { provenance: true, legalVersion: true }));
-  await as(chief, () => recordLicenceRuling(id, licence, "Communiqué par la DGD le 2026-10-16."));
-  return as(chief, () => publishDocument(id));
+  await as(chief, () => recordLicenceRuling(id, licence, "Communiqué par la DGD le 2026-10-17."));
+  expect(await recordScan(id, "CLEAN")).toBe("clean");
+  expect(await as(chief, () => submitForPublication(id))).toEqual({ ok: true, id });
+  return as(chief2, () => publishDocument(id));
 }
 
 beforeAll(async () => {
   chief = await identity("transit");
+  // REF-1-PUBLISH-GATE: publication needs a second, equally entitled person.
+  // `declarantchief` holds CHIEF_OF_TRANSIT (and CUSTOMS_DECLARANT), so the
+  // maker-checker proof is about IDENTITY and not about a missing grant.
+  chief2 = await identity("declarantchief");
   declarant = await identity("declarant");
   driver = await identity("driver");
   expect(chief.roles).toContain("CHIEF_OF_TRANSIT");
+  expect(chief2.roles).toContain("CHIEF_OF_TRANSIT");
+  expect(chief2.id).not.toBe(chief.id);
   expect(declarant.roles).toContain("CUSTOMS_DECLARANT");
   expect(driver.roles).toContain("DRIVER");
 });
@@ -198,6 +236,11 @@ describe("R3 — publication is refused until every fact is recorded", () => {
     expect(await as(chief, () => publishDocument(id)))
       .toEqual({ ok: false, error: "licence_unresolved" });
 
+    // REF-1-PUBLISH-GATE extends the same ladder: a licence is not enough.
+    await as(chief, () => recordLicenceRuling(id, "INTERNAL_ONLY", "source"));
+    expect(await as(chief, () => publishDocument(id)))
+      .toEqual({ ok: false, error: "scan_required" });
+
     // Still quarantined, still unpublished, and no publication audit exists.
     const r = await row(id);
     expect(r!.status).toBe("QUARANTINE");
@@ -248,7 +291,7 @@ describe("R4 — the full governed path, and what it makes visible", () => {
     const { body } = await upload(chief, { title: "Deux fois — R4b" });
     const id = body.id!;
     expect(await publishFully(id)).toEqual({ ok: true, id });
-    expect(await as(chief, () => publishDocument(id)))
+    expect(await as(chief2, () => publishDocument(id)))
       .toEqual({ ok: false, error: "already_published" });
     expect((await auditFor("customs.reference.published", id)).length).toBe(1);
   });
@@ -265,8 +308,10 @@ describe("R5 — the HS Explanatory Notes licence fence", () => {
     const id = body.id!;
     await as(chief, () => recordVerifications(id, { provenance: true, legalVersion: true }));
     await as(chief, () => recordLicenceRuling(id, "INTERNAL_ONLY", "Reçu par courriel, licence non communiquée."));
+    expect(await recordScan(id, "CLEAN")).toBe("clean");
+    await as(chief, () => submitForPublication(id));
 
-    expect(await as(chief, () => publishDocument(id)))
+    expect(await as(chief2, () => publishDocument(id)))
       .toEqual({ ok: false, error: "explanatory_notes_licence_required" });
     expect((await row(id))!.status).toBe("QUARANTINE");
   });
@@ -281,11 +326,21 @@ describe("R5 — the HS Explanatory Notes licence fence", () => {
     // Bypass the action entirely and write the publication directly. The CHECK
     // is what must stop this, because the action is not the only possible
     // writer of a service-role update.
+    // Everything the OTHER gates want is in place, so the refusal below can
+    // only be the Explanatory-Notes licence fence.
+    expect(await recordScan(id, "CLEAN")).toBe("clean");
+    await db()
+      .from("customs_reference_document")
+      .update({
+        submitted_for_publication_by: chief.id,
+        submitted_for_publication_at: new Date().toISOString(),
+      })
+      .eq("id", id);
     const { error } = await db()
       .from("customs_reference_document")
       .update({
         status: "PUBLISHED",
-        published_by: chief.id,
+        published_by: chief2.id,
         published_at: new Date().toISOString(),
         provenance_verified: true,
         legal_version_verified: true,
@@ -328,6 +383,8 @@ describe("R6 — a reader reads, and nothing else", () => {
     expect(await as(declarant, () => recordLicenceRuling(id, "INTERNAL_ONLY", "x")))
       .toEqual({ ok: false, error: "forbidden" });
     expect(await as(declarant, () => withdrawDocument(id, "motif"))).toEqual({ ok: false, error: "forbidden" });
+    expect(await as(declarant, () => submitForPublication(id))).toEqual({ ok: false, error: "forbidden" });
+    expect(await as(declarant, () => requestScan(id))).toEqual({ ok: false, error: "forbidden" });
     // Nothing moved.
     const r = await row(id);
     expect(r!.status).toBe("QUARANTINE");
@@ -429,9 +486,11 @@ describe("R8 — replacement preserves the history", () => {
     const b = await upload(chief, { title: "Unicité B", category: "REGIME_LIST", referenceCode: "UQ-R8" });
     await as(chief, () => recordVerifications(b.body.id!, { provenance: true, legalVersion: true }));
     await as(chief, () => recordLicenceRuling(b.body.id!, "INTERNAL_ONLY", "source"));
+    expect(await recordScan(b.body.id!, "CLEAN")).toBe("clean");
+    await as(chief, () => submitForPublication(b.body.id!));
     const { error } = await db()
       .from("customs_reference_document")
-      .update({ status: "PUBLISHED", published_by: chief.id, published_at: new Date().toISOString() })
+      .update({ status: "PUBLISHED", published_by: chief2.id, published_at: new Date().toISOString() })
       .eq("id", b.body.id!);
     expect(error).toBeTruthy();
     expect(String(error!.message)).toContain("uq_customs_reference_one_current");
@@ -738,5 +797,306 @@ describe("R14 — F4: a withdrawn document is frozen", () => {
     const r = await row(id);
     expect(r!.licence_status).toBe("INTERNAL_ONLY");
     expect(r!.provenance_verified).toBe(true);
+  });
+});
+
+// ===========================================================================
+describe("R15 — the publication matrix: every scan state, attempted", () => {
+  /** A document with everything EXCEPT a scan verdict and an approver. */
+  async function readyExceptScan(title: string) {
+    const { body } = await upload(chief, { title });
+    const id = body.id!;
+    await as(chief, () => recordVerifications(id, { provenance: true, legalVersion: true }));
+    await as(chief, () => recordLicenceRuling(id, "INTERNAL_ONLY", "Source DGD."));
+    await as(chief, () => submitForPublication(id));
+    return id;
+  }
+
+  it("UNSCANNED — refused, and nothing moves", async () => {
+    const id = await readyExceptScan("Matrice UNSCANNED");
+    expect((await row(id))!.scan_status).toBe("UNSCANNED");
+    expect(await as(chief2, () => publishDocument(id)))
+      .toEqual({ ok: false, error: "scan_required" });
+    expect((await row(id))!.status).toBe("QUARANTINE");
+  });
+
+  it("SCANNING — refused: an outstanding verdict is not a pass", async () => {
+    const id = await readyExceptScan("Matrice SCANNING");
+    // Reached the way the application reaches it, without a configured
+    // scanner: the status move is the application's, the verdict never comes.
+    await db().from("customs_reference_document")
+      .update({ scan_status: "SCANNING", scan_requested_at: new Date().toISOString() })
+      .eq("id", id);
+    expect(await as(chief2, () => publishDocument(id)))
+      .toEqual({ ok: false, error: "scan_in_progress" });
+  });
+
+  it("INFECTED — refused", async () => {
+    const id = await readyExceptScan("Matrice INFECTED");
+    expect(await recordScan(id, "INFECTED")).toBe("infected");
+    expect(await as(chief2, () => publishDocument(id)))
+      .toEqual({ ok: false, error: "scan_infected" });
+    expect((await row(id))!.status).toBe("QUARANTINE");
+  });
+
+  it("ERROR — refused: an outage fails CLOSED", async () => {
+    const id = await readyExceptScan("Matrice ERROR");
+    expect(await recordScan(id, "ERROR")).toBe("error");
+    expect(await as(chief2, () => publishDocument(id)))
+      .toEqual({ ok: false, error: "scan_error" });
+  });
+
+  it("CLEAN from an unauthorized writer — the database refuses the state itself", async () => {
+    const id = await readyExceptScan("Matrice CLEAN forgé");
+    const r = await row(id);
+    // The service-role client is the most privileged thing the application
+    // has, and it still cannot manufacture a clearance.
+    const { error } = await db().from("customs_reference_document").update({
+      scan_status: "CLEAN",
+      scanned_sha256: String(r!.content_sha256),
+      scanned_storage_path: String(r!.storage_path),
+      scan_completed_at: new Date().toISOString(),
+      scanner_name: "forged",
+    }).eq("id", id);
+    expect(error).toBeTruthy();
+    expect(String(error!.message)).toContain("trusted scan recorder");
+    expect((await row(id))!.scan_status).toBe("UNSCANNED");
+    expect(await as(chief2, () => publishDocument(id)))
+      .toEqual({ ok: false, error: "scan_required" });
+  });
+
+  it("CLEAN about the wrong bytes — refused by the recorder", async () => {
+    const id = await readyExceptScan("Matrice mauvaise empreinte");
+    const { data } = await db().rpc("record_customs_reference_scan", {
+      p_document: id,
+      p_tenant: TENANT_A,
+      p_verdict: "CLEAN",
+      p_sha256: "f".repeat(64),
+      p_storage_path: "somewhere/else.pdf",
+      p_scanner_name: "journey-scanner",
+      p_scanner_version: null,
+      p_engine_ref: null,
+      p_detail: null,
+    });
+    expect(String(data)).toBe("binding_mismatch");
+    expect((await row(id))!.scan_status).toBe("UNSCANNED");
+  });
+
+  it("CLEAN from the trusted process, approved by a second person — published", async () => {
+    const id = await readyExceptScan("Matrice CLEAN");
+    expect(await recordScan(id, "CLEAN")).toBe("clean");
+    expect(await as(chief2, () => publishDocument(id))).toEqual({ ok: true, id });
+
+    const r = await row(id);
+    expect(r!.status).toBe("PUBLISHED");
+    expect(r!.scan_status).toBe("CLEAN");
+    // The clearance is bound to the object it examined.
+    expect(r!.scanned_sha256).toBe(r!.content_sha256);
+    expect(r!.scanned_storage_path).toBe(r!.storage_path);
+    // Two different people, both recorded.
+    expect(r!.submitted_for_publication_by).toBe(chief.id);
+    expect(r!.published_by).toBe(chief2.id);
+  });
+
+  it("every verdict leaves append-only evidence", async () => {
+    const id = await readyExceptScan("Matrice preuves");
+    await recordScan(id, "ERROR");
+    await recordScan(id, "CLEAN");
+    const { data } = await db()
+      .from("customs_reference_scan")
+      .select("verdict, sha256, scanner_name")
+      .eq("document_id", id)
+      .order("recorded_at", { ascending: true });
+    expect((data ?? []).map((r) => (r as { verdict: string }).verdict)).toEqual(["ERROR", "CLEAN"]);
+    // …and it cannot be rewritten or removed.
+    const upd = await db().from("customs_reference_scan")
+      .update({ verdict: "CLEAN" }).eq("document_id", id);
+    expect(upd.error).toBeTruthy();
+    const del = await db().from("customs_reference_scan").delete().eq("document_id", id);
+    expect(del.error).toBeTruthy();
+  });
+
+  it("a rescan that turns INFECTED retires a PUBLISHED document", async () => {
+    const id = await readyExceptScan("Matrice rescan");
+    expect(await recordScan(id, "CLEAN")).toBe("clean");
+    expect(await as(chief2, () => publishDocument(id))).toEqual({ ok: true, id });
+
+    // New signatures, same bytes: the clearance is revoked and the document
+    // cannot stay published.
+    expect(await recordScan(id, "INFECTED")).toBe("withdrawn_by_scan");
+    const r = await row(id);
+    expect(r!.status).toBe("WITHDRAWN");
+    expect(r!.scan_status).toBe("INFECTED");
+    expect(r!.withdrawn_source).toBe("SCAN");
+    // No human is credited with a machine's decision.
+    expect(r!.withdrawn_by).toBeNull();
+    // And it is no longer consultable by a reader.
+    const lib = await as(declarant, () => getLibrary());
+    expect(lib.documents.map((d) => d.id)).not.toContain(id);
+  });
+});
+
+// ===========================================================================
+describe("R16 — maker-checker on publication", () => {
+  async function scannedAndLicensed(title: string) {
+    const { body } = await upload(chief, { title });
+    const id = body.id!;
+    await as(chief, () => recordVerifications(id, { provenance: true, legalVersion: true }));
+    await as(chief, () => recordLicenceRuling(id, "INTERNAL_ONLY", "Source DGD."));
+    expect(await recordScan(id, "CLEAN")).toBe("clean");
+    return id;
+  }
+
+  it("an unsubmitted document cannot be published", async () => {
+    const id = await scannedAndLicensed("MC non transmis");
+    expect(await as(chief2, () => publishDocument(id)))
+      .toEqual({ ok: false, error: "not_submitted" });
+  });
+
+  it("the SAME person cannot submit and approve", async () => {
+    const id = await scannedAndLicensed("MC auto-approbation");
+    expect(await as(chief, () => submitForPublication(id))).toEqual({ ok: true, id });
+    expect(await as(chief, () => publishDocument(id)))
+      .toEqual({ ok: false, error: "self_approval_forbidden" });
+    expect((await row(id))!.status).toBe("QUARANTINE");
+  });
+
+  it("…and the DATABASE refuses it, not just the action", async () => {
+    const id = await scannedAndLicensed("MC auto-approbation SQL");
+    await as(chief, () => submitForPublication(id));
+    // Straight past the action, with the service role.
+    const { error } = await db().from("customs_reference_document").update({
+      status: "PUBLISHED",
+      published_by: chief.id,            // the submitter
+      published_at: new Date().toISOString(),
+    }).eq("id", id);
+    expect(error).toBeTruthy();
+    expect(String(error!.message)).toContain("customs_reference_publication_requires_two_actors");
+    expect((await row(id))!.status).toBe("QUARANTINE");
+  });
+
+  it("a different authorized person CAN approve, and both are recorded", async () => {
+    const id = await scannedAndLicensed("MC approbation");
+    await as(chief, () => submitForPublication(id));
+    expect(await as(chief2, () => publishDocument(id))).toEqual({ ok: true, id });
+    const r = await row(id);
+    expect(r!.submitted_for_publication_by).toBe(chief.id);
+    expect(r!.published_by).toBe(chief2.id);
+    expect((await auditFor("customs.reference.submitted", id)).length).toBe(1);
+    expect((await auditFor("customs.reference.published", id)).length).toBe(1);
+  });
+
+  it("a submission cannot be re-made, or made on a published document", async () => {
+    const id = await scannedAndLicensed("MC double transmission");
+    await as(chief, () => submitForPublication(id));
+    expect(await as(chief2, () => submitForPublication(id)))
+      .toEqual({ ok: false, error: "already_submitted" });
+    await as(chief2, () => publishDocument(id));
+    expect(await as(chief, () => submitForPublication(id)))
+      .toEqual({ ok: false, error: "already_published" });
+  });
+
+  it("the RPCs refuse an actor who does not hold the permission", async () => {
+    const id = await scannedAndLicensed("MC sans autorité");
+    // Straight to the function, nominating the Déclarant. OPS-SEC-2A's SERVICE
+    // lane checks the NOMINATED actor, so the service role is transport here,
+    // not authority.
+    const { error } = await db().rpc("submit_customs_reference_for_publication", {
+      p_document: id, p_tenant: TENANT_A, p_actor: declarant.id,
+    });
+    expect(error).toBeTruthy();
+    expect(String(error!.message)).toContain("customs:reference:publish");
+  });
+
+  it("cross-tenant: neither RPC will touch another tenant's document", async () => {
+    const { data } = await db()
+      .from("customs_reference_document")
+      .select("id")
+      .eq("tenant_id", FOREIGN_TENANT)
+      .limit(1);
+    const foreign = (data ?? [])[0] as { id: string } | undefined;
+    expect(foreign).toBeTruthy();
+
+    const sub = await db().rpc("submit_customs_reference_for_publication", {
+      p_document: foreign!.id, p_tenant: TENANT_A, p_actor: chief.id,
+    });
+    expect(String(sub.data ?? "")).toBe("not_found");
+
+    const pub = await db().rpc("publish_customs_reference", {
+      p_document: foreign!.id, p_tenant: TENANT_A, p_approver: chief2.id,
+    });
+    expect(String(pub.data ?? "")).toBe("not_found");
+
+    // And a scan verdict cannot be aimed across the boundary either.
+    const scan = await db().rpc("record_customs_reference_scan", {
+      p_document: foreign!.id, p_tenant: TENANT_A, p_verdict: "CLEAN",
+      p_sha256: "a".repeat(64), p_storage_path: "x", p_scanner_name: "journey-scanner",
+      p_scanner_version: null, p_engine_ref: null, p_detail: null,
+    });
+    expect(String(scan.data ?? "")).toBe("not_found");
+  });
+});
+
+// ===========================================================================
+describe("R17 — Part C: replacement publication is now one transaction", () => {
+  it("the predecessor is retired and the successor published atomically", async () => {
+    const v1 = await upload(chief, {
+      title: "TEC — R17", category: "TARIFF", referenceCode: "TEC-R17",
+    });
+    expect(await publishFully(v1.body.id!)).toEqual({ ok: true, id: v1.body.id });
+
+    const v2 = await upload(chief, {
+      title: "TEC — R17 éd. 2", category: "TARIFF",
+      referenceCode: "TEC-R17", supersedesId: v1.body.id!,
+    });
+    expect(await publishFully(v2.body.id!)).toEqual({ ok: true, id: v2.body.id });
+
+    const r1 = await row(v1.body.id!);
+    const r2 = await row(v2.body.id!);
+    expect(r1!.superseded_by_id).toBe(v2.body.id);
+    expect(r1!.superseded_at).toBeTruthy();
+    expect(r1!.status).toBe("PUBLISHED");   // published, and now superseded
+    expect(r2!.status).toBe("PUBLISHED");
+    expect(r2!.superseded_at).toBeNull();
+    const history = await as(chief, () => getVersionHistory("TEC-R17", "TARIFF"));
+    expect(history.map((d) => d.version)).toEqual([2, 1]);
+  });
+
+  it("a refused publication leaves the predecessor untouched — no half-applied state", async () => {
+    const v1 = await upload(chief, {
+      title: "Socle — R17b", category: "CIRCULAR", referenceCode: "CIRC-R17B",
+    });
+    await publishFully(v1.body.id!);
+
+    const v2 = await upload(chief, {
+      title: "Socle — R17b éd. 2", category: "CIRCULAR",
+      referenceCode: "CIRC-R17B", supersedesId: v1.body.id!,
+    });
+    const id2 = v2.body.id!;
+    // Everything except the scan, so the RPC refuses AFTER it would have
+    // reached the supersession step had the checks been ordered badly.
+    await as(chief, () => recordVerifications(id2, { provenance: true, legalVersion: true }));
+    await as(chief, () => recordLicenceRuling(id2, "INTERNAL_ONLY", "source"));
+    await as(chief, () => submitForPublication(id2));
+    expect(await as(chief2, () => publishDocument(id2)))
+      .toEqual({ ok: false, error: "scan_required" });
+
+    // The predecessor is still the current edition: nothing was retired on the
+    // strength of a publication that did not happen.
+    const r1 = await row(v1.body.id!);
+    expect(r1!.superseded_by_id).toBeNull();
+    expect(r1!.superseded_at).toBeNull();
+    expect(r1!.status).toBe("PUBLISHED");
+  });
+
+  it("an operator withdrawal records its source as OPERATOR", async () => {
+    const { body } = await upload(chief, { title: "Retrait opérateur — R17c" });
+    const id = body.id!;
+    await publishFully(id);
+    expect(await as(chief, () => withdrawDocument(id, "Remplacé par la DGD.")))
+      .toEqual({ ok: true, id });
+    const r = await row(id);
+    expect(r!.withdrawn_source).toBe("OPERATOR");
+    expect(r!.withdrawn_by).toBe(chief.id);
   });
 });

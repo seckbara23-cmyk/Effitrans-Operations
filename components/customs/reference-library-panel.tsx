@@ -17,6 +17,7 @@ import { useRouter } from "next/navigation";
 import {
   CATEGORY_LABEL_FR,
   LICENCE_LABEL_FR,
+  SCAN_LABEL_FR,
   LICENCE_PENDING_CATEGORIES,
   LICENCE_STATUSES,
   REFERENCE_CATEGORIES,
@@ -30,6 +31,8 @@ import {
   publishDocument,
   recordLicenceRuling,
   recordVerifications,
+  requestScan,
+  submitForPublication,
   withdrawDocument,
 } from "@/lib/customs/reference/actions";
 import { t } from "@/lib/i18n";
@@ -41,6 +44,15 @@ const STATUS_STYLE: Record<string, string> = {
   PUBLISHED: "bg-teal-50 text-teal-700",
   QUARANTINE: "bg-amber-50 text-amber-800",
   WITHDRAWN: "bg-slate-100 text-slate-500",
+};
+
+/** Only CLEAN is reassuring, and only CLEAN lets anything be published. */
+const SCAN_STYLE: Record<string, string> = {
+  CLEAN: "bg-teal-50 text-teal-700",
+  SCANNING: "bg-sky-50 text-sky-700",
+  INFECTED: "bg-red-50 text-red-700",
+  ERROR: "bg-red-50 text-red-700",
+  UNSCANNED: "bg-slate-100 text-slate-600",
 };
 
 function Badge({ children, className }: { children: React.ReactNode; className?: string }) {
@@ -59,9 +71,12 @@ function formatSize(bytes: number): string {
 export function ReferenceLibraryPanel({
   documents,
   canPublish,
+  viewerId,
 }: {
   documents: ReferenceDocument[];
   canPublish: boolean;
+  /** Needed to name self-approval BEFORE the database refuses it. */
+  viewerId: string;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -108,7 +123,12 @@ export function ReferenceLibraryPanel({
 
             <ul className="mt-4 space-y-4">
               {docs.map((doc) => {
-                const blockers = publicationBlockers(doc);
+                const blockers = publicationBlockers({
+                  ...doc,
+                  scanStatus: doc.scanStatus,
+                  submittedForPublicationBy: doc.submittedForPublicationBy,
+                  approverId: viewerId,
+                });
                 const isOpen = selected === doc.id;
                 return (
                   <li key={doc.id} className="rounded-lg border border-slate-200 p-4">
@@ -125,6 +145,9 @@ export function ReferenceLibraryPanel({
                       <div className="flex flex-wrap items-center gap-2">
                         <Badge className={STATUS_STYLE[doc.status]}>{STATUS_LABEL_FR[doc.status]}</Badge>
                         <Badge>{LICENCE_LABEL_FR[doc.licenceStatus]}</Badge>
+                        <Badge className={SCAN_STYLE[doc.scanStatus]}>
+                          {SCAN_LABEL_FR[doc.scanStatus]}
+                        </Badge>
                         {doc.supersededAt && <Badge>Remplacé</Badge>}
                       </div>
                     </div>
@@ -197,6 +220,44 @@ export function ReferenceLibraryPanel({
                         </div>
 
                         <LicenceForm doc={doc} pending={pending} run={run} />
+
+                        {/* The scan gate. Requesting is possible only before a
+                            verdict exists, or after one failed. */}
+                        {(doc.scanStatus === "UNSCANNED" || doc.scanStatus === "ERROR") && (
+                          <div className="flex flex-wrap items-center gap-3">
+                            <button
+                              type="button"
+                              disabled={pending}
+                              onClick={() => run(() => requestScan(doc.id))}
+                              className="rounded border border-slate-300 px-3 py-1.5 text-xs hover:bg-slate-50 disabled:opacity-50"
+                            >
+                              {t.customs.reference.actions.requestScan}
+                            </button>
+                            <span className="text-xs text-slate-500">
+                              {t.customs.reference.scanRequiredNotice}
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Maker-checker. The submitter is shown so the second
+                            person knows whose proposal they are approving. */}
+                        {!doc.submittedForPublicationBy ? (
+                          <button
+                            type="button"
+                            disabled={pending}
+                            onClick={() => run(() => submitForPublication(doc.id))}
+                            className="rounded border border-slate-300 px-3 py-1.5 text-xs hover:bg-slate-50 disabled:opacity-50"
+                          >
+                            {t.customs.reference.actions.submitForPublication}
+                          </button>
+                        ) : (
+                          <p className="text-xs text-slate-500">
+                            {t.customs.reference.submittedNotice}
+                            {doc.submittedForPublicationBy === viewerId
+                              ? ` ${t.customs.reference.submittedBySelfNotice}`
+                              : ""}
+                          </p>
+                        )}
 
                         <div className="flex flex-wrap items-center gap-3">
                           <button

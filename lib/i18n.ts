@@ -716,7 +716,13 @@ export const t = {
         verifyLegalVersion: "Attester la version en vigueur",
         recordLicence: "Enregistrer la licence",
         history: "Historique des versions",
+        requestScan: "Lancer l'analyse antivirus",
+        submitForPublication: "Transmettre pour publication",
       },
+      scanRequiredNotice:
+        "Aucune publication n'est possible sans une analyse antivirus concluante.",
+      submittedNotice: "Transmis pour publication ; l'approbation revient à une autre personne habilitée.",
+      submittedBySelfNotice: "(vous êtes l'auteur de cette transmission)",
       verification: {
         provenanceVerified: "Provenance attestée",
         provenancePending: "Provenance non attestée",
@@ -770,6 +776,28 @@ export const t = {
           "Le code de référence doit être identique à celui de l'édition remplacée : une nouvelle édition reste le même document.",
         audit_failed:
           "La journalisation a échoué : le téléversement a été annulé et aucun document n'a été conservé. Réessayez.",
+        // REF-1-PUBLISH-GATE — the scan gate and maker-checker.
+        scan_required:
+          "Ce document n'a pas été analysé : la publication est impossible tant qu'une analyse antivirus n'a pas abouti.",
+        scan_in_progress:
+          "L'analyse antivirus est en cours : la publication sera possible une fois le résultat enregistré.",
+        scan_infected:
+          "L'analyse antivirus a détecté une menace : ce document ne peut pas être publié et a été retiré de la consultation.",
+        scan_error:
+          "L'analyse antivirus n'a pas abouti : par précaution, la publication reste impossible. Relancez l'analyse.",
+        scan_binding_mismatch:
+          "Le résultat d'analyse ne correspond pas au fichier enregistré : la publication est refusée.",
+        scanner_unavailable:
+          "Aucun service d'analyse antivirus n'est configuré : la publication est impossible. Contactez l'administrateur.",
+        dispatch_failed:
+          "L'analyse antivirus n'a pas pu être lancée. Réessayez dans quelques instants.",
+        not_submitted:
+          "Ce document doit d'abord être transmis pour publication par une première personne.",
+        already_submitted: "Ce document a déjà été transmis pour publication.",
+        self_approval_forbidden:
+          "Vous avez transmis ce document pour publication : son approbation revient à une autre personne habilitée.",
+        scan_not_requestable:
+          "Une analyse ne peut être lancée que sur un document en quarantaine non encore analysé.",
         lineage_invalid:
           "Cette nouvelle édition ne correspond pas au document qu'elle remplace (catégorie ou code de référence différent)." ,
         // Route-level refusals the upload form can surface verbatim.
