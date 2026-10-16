@@ -762,6 +762,16 @@ export const t = {
         licence_note_required:
           "Indiquez la source de cette décision de licence : qui l'a communiquée, et quand.",
         reason_required: "Un motif est obligatoire pour retirer un document.",
+        // REF-1-HARDEN — the business key is mandatory, inherited on
+        // replacement, and the audit trail cannot be skipped.
+        reference_code_required:
+          "Le code de référence est obligatoire : c'est lui qui identifie le document d'une édition à l'autre.",
+        reference_code_mismatch:
+          "Le code de référence doit être identique à celui de l'édition remplacée : une nouvelle édition reste le même document.",
+        audit_failed:
+          "La journalisation a échoué : le téléversement a été annulé et aucun document n'a été conservé. Réessayez.",
+        lineage_invalid:
+          "Cette nouvelle édition ne correspond pas au document qu'elle remplace (catégorie ou code de référence différent)." ,
         // Route-level refusals the upload form can surface verbatim.
         invalid_input: "La requête est incomplète ou mal formée.",
         unavailable:

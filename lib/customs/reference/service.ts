@@ -40,7 +40,7 @@ type Row = {
   source_authority: string;
   edition: string | null;
   published_on: string | null;
-  reference_code: string | null;
+  reference_code: string;
   version: number;
   supersedes_id: string | null;
   superseded_by_id: string | null;

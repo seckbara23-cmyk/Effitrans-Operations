@@ -66,7 +66,7 @@ export type ReferenceDocument = {
   sourceAuthority: string;
   edition: string | null;
   publishedOn: string | null;
-  referenceCode: string | null;
+  referenceCode: string;
   version: number;
   supersedesId: string | null;
   supersededById: string | null;

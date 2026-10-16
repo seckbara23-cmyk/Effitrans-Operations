@@ -220,6 +220,49 @@ checks(label, ok) as (
           from idx where indexname = 'uq_customs_reference_one_current'), false)
     )),
 
+    -- REF-1-HARDEN (F2). The index is partial on the LIFECYCLE only. It used to
+    -- be partial on `reference_code is not null` as well, which left every
+    -- code-less document outside the one-current-edition rule entirely.
+    ('reference_code is NOT NULL, so no row escapes the uniqueness rule', (
+      select coalesce((select attnotnull from cols where attname = 'reference_code'), false)
+    )),
+    ('… and the index is no longer predicated on reference_code', (
+      select coalesce((
+        select indexdef not like '%reference_code is not null%'
+          from idx where indexname = 'uq_customs_reference_one_current'), false)
+    )),
+    ('reference_code refuses an empty string', (
+      select exists (
+        select 1 from con where def like '%reference_code%' and def like '%btrim%'
+      )
+    )),
+
+    -- REF-1-HARDEN (F2). A replacement inherits its predecessor's identity, and
+    -- the rule is in the database because the route is not the only writer.
+    ('the lineage trigger is installed, BEFORE INSERT', (
+      select exists (select 1 from trg where tgname = 'trg_customs_reference_lineage')
+    )),
+    ('… and it compares tenant, category and reference code with the predecessor', (
+      select coalesce((
+        select body like '%new.supersedes_id%'
+           and body like '%p.tenant_id is distinct from new.tenant_id%'
+           and body like '%p.category is distinct from new.category%'
+           and body like '%p.reference_code is distinct from new.reference_code%'
+           and body like '%p.superseded_by_id is not null%'
+          from trg where tgname = 'trg_customs_reference_lineage'), false)
+    )),
+
+    -- REF-1-HARDEN (F4). A withdrawn document is frozen: its licence and its
+    -- verifications cannot be re-stated once nobody can consult it.
+    ('a WITHDRAWN document''s licence and verifications are frozen', (
+      select coalesce((
+        select body like '%old.status = ''WITHDRAWN'' and new.status = ''WITHDRAWN''%'
+           and body like '%new.licence_status is distinct from old.licence_status%'
+           and body like '%new.redistribution_allowed is distinct from old.redistribution_allowed%'
+           and body like '%new.provenance_verified is distinct from old.provenance_verified%'
+          from trg where tgname = 'trg_customs_reference_identity'), false)
+    )),
+
     -- ---- 10. the bucket is private and PDF-only --------------------------
     ('the customs-reference bucket exists and is PRIVATE', (
       select coalesce((select not public from bucket), false)

@@ -78,6 +78,7 @@ const validInput = {
   declaredSize: 2048,
   title: "Code des douanes",
   sourceAuthority: "Direction Générale des Douanes",
+  referenceCode: "CODE-DOUANES",
   categoryValid: true,
   publishedOn: "2022-01-01",
 };
@@ -127,6 +128,11 @@ describe("REF-1 — upload validation decides from the BYTES", () => {
       .toEqual({ ok: false, error: "authority_required" });
     expect(validateUpload({ ...validInput, categoryValid: false }))
       .toEqual({ ok: false, error: "category_invalid" });
+    // REF-1-HARDEN (F2) — the business key is mandatory.
+    expect(validateUpload({ ...validInput, referenceCode: "   " }))
+      .toEqual({ ok: false, error: "reference_code_required" });
+    expect(validateUpload({ ...validInput, referenceCode: null }))
+      .toEqual({ ok: false, error: "reference_code_required" });
     expect(validateUpload({ ...validInput, publishedOn: "01/01/2022" }))
       .toEqual({ ok: false, error: "published_on_invalid" });
     // Absent is fine; malformed is not.
@@ -586,5 +592,126 @@ describe("REF-1 — French, and the inventory", () => {
     ]) {
       expect(migration, forbidden).not.toContain(forbidden);
     }
+  });
+});
+
+// ===========================================================================
+describe("REF-1-HARDEN — the four corrections", () => {
+  it("46 — F2: reference_code is NOT NULL and the uniqueness rule is unconditional", () => {
+    expect(migration).toContain("reference_code          text not null check (btrim(reference_code) <> '')");
+    const uq = migration.slice(migration.indexOf("uq_customs_reference_one_current"));
+    const stmt = uq.slice(0, uq.indexOf(";"));
+    // The lifecycle predicate stays; the reference_code predicate is gone, so
+    // no row can sit outside the one-current-edition rule any more.
+    expect(stmt).toContain("where status = 'PUBLISHED' and superseded_at is null");
+    expect(stmt).not.toContain("reference_code is not null");
+    // The lineage index lost its NULL predicate too, so every edition of every
+    // document is indexed by its key.
+    const lineage = migration.slice(migration.indexOf("idx_customs_reference_lineage"));
+    expect(lineage.slice(0, lineage.indexOf(";"))).not.toContain("reference_code is not null");
+  });
+
+  it("47 — F2: a replacement's lineage is enforced by the DATABASE, on insert", () => {
+    expect(migration).toContain("enforce_customs_reference_lineage");
+    expect(migration).toContain("before insert on public.customs_reference_document");
+    const fn = migration.slice(
+      migration.indexOf("function public.enforce_customs_reference_lineage"),
+      migration.indexOf("drop trigger if exists trg_customs_reference_lineage"),
+    );
+    for (const rule of ["tenant", "category", "reference code", "already been replaced"]) {
+      expect(fn, rule).toContain(rule);
+    }
+    // It compares against the PREDECESSOR's row, not against the insert.
+    expect(fn).toContain("where id = new.supersedes_id");
+    expect(fn).toContain("p.reference_code is distinct from new.reference_code");
+    expect(fn).toContain("security definer");
+    expect(fn).toContain("set search_path = public, pg_temp");
+  });
+
+  it("48 — F2: the route inherits the predecessor's key and never the form's", () => {
+    expect(uploadRoute).toContain("effectiveCode = prior.reference_code;");
+    expect(uploadRoute).toContain('error: "reference_code_mismatch"');
+    expect(uploadRoute).toContain("reference_code: effectiveCode,");
+    // The raw form value is not what lands in the row.
+    const insert = uploadRoute.slice(
+      uploadRoute.indexOf(".insert({"),
+      uploadRoute.indexOf('.select("id")', uploadRoute.indexOf(".insert({")),
+    );
+    expect(insert).not.toContain("reference_code: referenceCode");
+  });
+
+  it("49 — F3: a failed audit deletes the row and the object, in that order", () => {
+    // Anchored on the AUDIT call, not on the first `try` in the file: the
+    // formData parse is also a try/catch, and the insert-failure path removes
+    // the object before this one even runs.
+    const tail = uploadRoute.slice(uploadRoute.indexOf("await writeAudit({"));
+    expect(tail).toContain("writeAudit({");
+    expect(tail).toContain("} catch {");
+    const del = tail.indexOf(".delete()");
+    const rm = tail.indexOf("remove([path])");
+    expect(del).toBeGreaterThan(-1);
+    // Row first, then object: a row with no object is visible and fixable, an
+    // object with no row is unaccountable.
+    expect(rm).toBeGreaterThan(del);
+    expect(tail).toContain('error: "audit_failed"');
+    // The success path still returns 201 only after the audit landed. Measured
+    // inside `tail`, because an index from the whole file is not comparable
+    // with one from a slice of it.
+    expect(tail.indexOf("status: 201")).toBeGreaterThan(rm);
+  });
+
+  it("50 — F4: a withdrawn document is frozen, in the action and in the database", () => {
+    const fn = actions.slice(
+      actions.indexOf("export async function recordLicenceRuling"),
+      actions.indexOf("export async function publishDocument"),
+    );
+    expect(fn).toContain('if (doc.status === "WITHDRAWN") return { ok: false, error: "withdrawn" };');
+    expect(fn).toContain('.neq("status", "WITHDRAWN")');
+    // …and the trigger refuses it whatever the writer.
+    const trg = migration.slice(migration.indexOf("function public.protect_customs_reference_identity"));
+    expect(trg).toContain("old.status = 'WITHDRAWN' and new.status = 'WITHDRAWN'");
+    for (const col of ["licence_status", "redistribution_allowed", "licence_note",
+                       "provenance_verified", "legal_version_verified"]) {
+      expect(trg, col).toContain(`new.${col} is distinct from old.${col}`);
+    }
+    expect(trg).toContain("a withdrawn document is frozen");
+  });
+
+  it("51 — F1: a pgTAP RLS test exists and CI runs it", () => {
+    const rls = read("supabase/tests/rls_customs_reference_test.sql");
+    expect(rls).toContain("customs_reference_document");
+    // Non-destructive, like every other RLS test in the suite.
+    expect(rls).toContain("begin;");
+    expect(rls).toContain("rollback;");
+    // It drives real authenticated identities through the policy.
+    expect(rls).toContain("set_config('role', 'authenticated', true)");
+    expect(rls).toContain("request.jwt.claims");
+    // The five required cases.
+    for (const probe of ["reader_published", "publisher_quarantine", "reader_quarantine",
+                         "noperm_published", "foreign_published"]) {
+      expect(rls, probe).toContain(probe);
+    }
+    // And CI executes it — a test nobody runs is not evidence.
+    const ci = read(".github/workflows/ci.yml");
+    expect(ci).toContain("supabase/tests/rls_customs_reference_test.sql");
+  });
+
+  it("52 — the French sentences for the new refusals exist", () => {
+    const errors = t.customs.reference.errors as Record<string, string>;
+    for (const code of ["reference_code_required", "reference_code_mismatch", "audit_failed"]) {
+      expect(errors[code], code).toBeTruthy();
+      expect(errors[code].length, code).toBeGreaterThan(20);
+    }
+  });
+
+  it("53 — the hardening added no permission, no role grant and no second migration", () => {
+    const files = readdirSync(fileURLToPath(new URL("../supabase/migrations", import.meta.url)))
+      .filter((f) => f.endsWith(".sql"));
+    // Corrections to an UNAPPLIED migration belong in it, not in a successor.
+    expect(files).toHaveLength(152);
+    expect((migration.match(/insert into public\.permission/g) ?? []).length).toBe(1);
+    expect((migration.match(/insert into public\.role_permission/g) ?? []).length).toBe(2);
+    const publishGrant = migration.slice(migration.indexOf("p.code = 'customs:reference:publish'"));
+    expect(publishGrant).toContain("'SYSTEM_ADMIN', 'CHIEF_OF_TRANSIT'");
   });
 });

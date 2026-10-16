@@ -399,7 +399,12 @@ function UploadForm({
 
         <label className="block text-xs">
           <span className="font-medium text-slate-700">{t.customs.reference.fields.referenceCode}</span>
-          <input name="referenceCode" className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5" />
+          <input
+            name="referenceCode"
+            required
+            placeholder="TEC, CODE-DOUANES, CIRC-2026-014…"
+            className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5"
+          />
         </label>
 
         {replaceable.length > 0 && (

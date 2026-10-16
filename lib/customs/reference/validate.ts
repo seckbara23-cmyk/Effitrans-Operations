@@ -52,6 +52,7 @@ export type UploadRefusal =
   | "size_mismatch"
   | "title_required"
   | "authority_required"
+  | "reference_code_required"
   | "category_invalid"
   | "published_on_invalid";
 
@@ -81,6 +82,7 @@ export function validateUpload(input: {
   declaredSize: number | null;
   title: string;
   sourceAuthority: string;
+  referenceCode: string | null;
   categoryValid: boolean;
   publishedOn: string | null;
 }): UploadValidation {
@@ -107,6 +109,11 @@ export function validateUpload(input: {
   if (input.title.trim().length === 0) return { ok: false, error: "title_required" };
   if (input.sourceAuthority.trim().length === 0) {
     return { ok: false, error: "authority_required" };
+  }
+  // REF-1-HARDEN (F2). The business key is what makes « which edition is in
+  // force? » answerable, and what the one-current-edition index is keyed on.
+  if ((input.referenceCode ?? "").trim().length === 0) {
+    return { ok: false, error: "reference_code_required" };
   }
   if (input.publishedOn !== null && !/^\d{4}-\d{2}-\d{2}$/.test(input.publishedOn)) {
     return { ok: false, error: "published_on_invalid" };

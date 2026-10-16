@@ -180,6 +180,17 @@ jobs:
           PGPASSWORD: postgres
         run: psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/rls_customs_test.sql
 
+      # REF-1-HARDEN (F1). The migration verifier proves the library's policy is
+      # PRESENT and SELECT-only; this proves it REFUSES — a reader denied a
+      # quarantined row, a publisher allowed one, a staff user holding neither
+      # permission denied everything, and a holder of the permission in another
+      # tenant denied tenant A's. It also proves the write boundary: SELECT is
+      # the only privilege granted, so publication cannot happen from a client.
+      - name: Run RLS customs reference library test (CUSTOMS-REF-01A)
+        env:
+          PGPASSWORD: postgres
+        run: psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/rls_customs_reference_test.sql
+
       # MIGRATION-139-APPROVAL-01 §9 — the customs duties breakdown is ratified
       # INTERNAL data (DEC-C39). `customs_record` is exposed to the portal by a
       # policy with NO column list, which is why #139 put the figures in their

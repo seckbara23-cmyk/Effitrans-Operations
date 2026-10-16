@@ -71,8 +71,15 @@ create table if not exists public.customs_reference_document (
   -- The date the SOURCE was published by its authority — not the upload date.
   published_on            date,
   -- A stable business key for « the same document, later edition », e.g.
-  -- 'CET' or 'CODE-DOUANES'. Optional; drives the one-current-version index.
-  reference_code          text,
+  -- 'CET' or 'CODE-DOUANES'.
+  --
+  -- MANDATORY, and that is the REF-1-HARDEN correction (F2). It was optional,
+  -- and `uq_customs_reference_one_current` is a PARTIAL index predicated on it
+  -- being present — so a document uploaded without a code sat outside the
+  -- one-current-edition rule entirely, and « which text is in force? » had no
+  -- answer for it. A reference document without a business key is not a
+  -- reference; a circular has a number, and so does everything else here.
+  reference_code          text not null check (btrim(reference_code) <> ''),
 
   -- ---- version lineage ---------------------------------------------------
   version                 integer not null default 1 check (version >= 1),
@@ -177,14 +184,15 @@ create index if not exists idx_customs_reference_tenant_status
   on public.customs_reference_document (tenant_id, status, published_on desc);
 
 create index if not exists idx_customs_reference_lineage
-  on public.customs_reference_document (tenant_id, reference_code, version desc)
-  where reference_code is not null;
+  on public.customs_reference_document (tenant_id, reference_code, version desc);
 
--- ONE live published version per business key. Partial, so superseded and
--- withdrawn editions accumulate freely — the history is the point.
+-- ONE live published version per business key. Still partial on the LIFECYCLE,
+-- so superseded and withdrawn editions accumulate freely — the history is the
+-- point — but no longer partial on `reference_code`, which is now NOT NULL and
+-- therefore always carries the rule (F2).
 create unique index if not exists uq_customs_reference_one_current
   on public.customs_reference_document (tenant_id, category, reference_code)
-  where status = 'PUBLISHED' and superseded_at is null and reference_code is not null;
+  where status = 'PUBLISHED' and superseded_at is null;
 
 -- A superseding document is claimed by exactly one predecessor.
 create unique index if not exists uq_customs_reference_supersedes
@@ -229,6 +237,28 @@ begin
     end if;
   end if;
 
+  -- REF-1-HARDEN (F4) — A WITHDRAWN DOCUMENT IS FROZEN.
+  --
+  -- `recordVerifications` already refused a withdrawn document and
+  -- `recordLicenceRuling` did not, so a licence could be re-ruled on a document
+  -- nobody can consult — a governance statement about a retired text, recorded
+  -- as though it still mattered. The application refuses it too; this is the
+  -- layer that does not depend on remembering to.
+  --
+  -- The withdrawal itself is still allowed through (old.status <> 'WITHDRAWN'),
+  -- and so is a future un-withdrawal, which would be its own governed act.
+  if old.status = 'WITHDRAWN' and new.status = 'WITHDRAWN' then
+    if new.licence_status is distinct from old.licence_status
+       or new.redistribution_allowed is distinct from old.redistribution_allowed
+       or new.licence_note is distinct from old.licence_note
+       or new.provenance_verified is distinct from old.provenance_verified
+       or new.legal_version_verified is distinct from old.legal_version_verified
+    then
+      raise exception
+        'customs_reference_document: a withdrawn document is frozen — its licence and verifications cannot be changed (document %)', old.id;
+    end if;
+  end if;
+
   return new;
 end;
 $$;
@@ -237,6 +267,66 @@ drop trigger if exists trg_customs_reference_identity on public.customs_referenc
 create trigger trg_customs_reference_identity
   before update on public.customs_reference_document
   for each row execute function public.protect_customs_reference_identity();
+
+-- REF-1-HARDEN (F2) — A REPLACEMENT INHERITS ITS PREDECESSOR'S IDENTITY.
+--
+-- The upload route checked the tenant, the category and "not already
+-- superseded", and nothing checked the BUSINESS KEY: a replacement could carry
+-- a different `reference_code`, which silently split one document's history
+-- across two keys and moved the new edition out from under the predecessor's
+-- one-current-edition rule. The route still checks all four, so an operator
+-- gets a French sentence rather than a constraint — but the rule lives here,
+-- because the route is not the only possible writer of a service-role insert.
+--
+-- INSERT-only by design: `supersedes_id` is immutable afterwards (the identity
+-- trigger does not list it, so this is the one moment it is set).
+create or replace function public.enforce_customs_reference_lineage()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare p record;
+begin
+  if new.supersedes_id is null then
+    return new;
+  end if;
+
+  select tenant_id, category, reference_code, superseded_by_id
+    into p
+    from public.customs_reference_document
+   where id = new.supersedes_id;
+
+  if not found then
+    raise exception
+      'customs_reference_document: the document being replaced does not exist (%)', new.supersedes_id;
+  end if;
+  if p.tenant_id is distinct from new.tenant_id then
+    raise exception
+      'customs_reference_document: a replacement may not cross tenants (%)', new.supersedes_id;
+  end if;
+  if p.category is distinct from new.category then
+    raise exception
+      'customs_reference_document: a replacement must keep the category of the edition it replaces (%)', new.supersedes_id;
+  end if;
+  if p.reference_code is distinct from new.reference_code then
+    raise exception
+      'customs_reference_document: a replacement must keep the reference code of the edition it replaces (% vs %)',
+      new.reference_code, p.reference_code;
+  end if;
+  if p.superseded_by_id is not null then
+    raise exception
+      'customs_reference_document: that edition has already been replaced (%)', new.supersedes_id;
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_customs_reference_lineage on public.customs_reference_document;
+create trigger trg_customs_reference_lineage
+  before insert on public.customs_reference_document
+  for each row execute function public.enforce_customs_reference_lineage();
 
 drop trigger if exists trg_customs_reference_updated_at on public.customs_reference_document;
 create trigger trg_customs_reference_updated_at

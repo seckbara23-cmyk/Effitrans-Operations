@@ -47,6 +47,14 @@ function pdf(size = 4096): Uint8Array {
   return b;
 }
 
+/**
+ * REF-1-HARDEN (F2) - `reference_code` is NOT NULL and one PUBLISHED,
+ * un-superseded edition is allowed per (tenant, category, code). So every
+ * upload needs a key, and cases that are not about lineage need a DISTINCT one
+ * or they would collide on publication and prove nothing about what they test.
+ */
+let seq = 0;
+
 type UploadFields = {
   category?: string;
   title?: string;
@@ -65,7 +73,7 @@ async function upload(actor: CurrentUser, f: UploadFields = {}) {
   form.set("category", f.category ?? "LEGISLATION");
   form.set("title", f.title ?? "Code des douanes");
   form.set("sourceAuthority", f.sourceAuthority ?? "Direction Générale des Douanes");
-  if (f.referenceCode) form.set("referenceCode", f.referenceCode);
+  form.set("referenceCode", f.referenceCode ?? `AUTO-${(seq += 1)}`);
   if (f.edition) form.set("edition", f.edition);
   if (f.publishedOn) form.set("publishedOn", f.publishedOn);
   if (f.supersedesId) form.set("supersedesId", f.supersedesId);
@@ -402,10 +410,11 @@ describe("R8 — replacement preserves the history", () => {
   });
 
   it("a replacement may not cross categories", async () => {
-    const first = await upload(chief, { title: "Catégorie — R8c", category: "CIRCULAR" });
+    const first = await upload(chief, { title: "Catégorie — R8c", category: "CIRCULAR", referenceCode: "R8C" });
     const res = await upload(chief, {
       title: "Mauvaise catégorie",
       category: "TARIFF",
+      referenceCode: "R8C",
       supersedesId: first.body.id!,
     });
     expect(res.status).toBe(409);
@@ -439,6 +448,7 @@ describe("R9 — tenancy", () => {
       category: "LEGISLATION",
       title: "Texte d'un autre tenant — R9",
       source_authority: "Autre administration",
+      reference_code: "R9-FOREIGN",
       storage_path: `${FOREIGN_TENANT}/${foreignId}.pdf`,
       mime_type: "application/pdf",
       size_bytes: 4096,
@@ -461,12 +471,17 @@ describe("R9 — tenancy", () => {
   it("a replacement cannot be chained onto another tenant's document", async () => {
     const { data } = await db()
       .from("customs_reference_document")
-      .select("id")
+      .select("id, reference_code, category")
       .eq("tenant_id", FOREIGN_TENANT)
       .limit(1);
-    const foreign = (data ?? [])[0] as { id: string } | undefined;
+    const foreign = (data ?? [])[0] as
+      { id: string; reference_code: string; category: string } | undefined;
     expect(foreign).toBeTruthy();
-    const res = await upload(chief, { title: "Chaînage interdit — R9b", supersedesId: foreign!.id });
+    const res = await upload(chief, {
+      title: "Chaînage interdit — R9b",
+      referenceCode: "R9-FOREIGN",
+      supersedesId: foreign!.id,
+    });
     expect(res.status).toBe(404);
     expect(res.body.error).toBe("predecessor_not_found");
   });
@@ -579,5 +594,149 @@ describe("R12 — withdrawal ends consultability and destroys nothing", () => {
     expect(await as(chief, () => recordVerifications(id, { provenance: true })))
       .toEqual({ ok: false, error: "withdrawn" });
     expect(await as(chief, () => publishDocument(id))).toEqual({ ok: false, error: "withdrawn" });
+  });
+});
+
+// ===========================================================================
+describe("R13 — F2: a replacement inherits its predecessor's business key", () => {
+  it("the route refuses a replacement whose code disagrees", async () => {
+    const v1 = await upload(chief, {
+      title: "TEC — R13", category: "TARIFF", referenceCode: "TEC-R13",
+    });
+    expect(v1.status).toBe(201);
+    const bad = await upload(chief, {
+      title: "TEC nouvelle édition", category: "TARIFF",
+      referenceCode: "TEC-DIFFERENT", supersedesId: v1.body.id!,
+    });
+    expect(bad.status).toBe(409);
+    expect(bad.body.error).toBe("reference_code_mismatch");
+  });
+
+  it("a matching code is accepted and the lineage is recorded", async () => {
+    const v1 = await upload(chief, {
+      title: "Code — R13b", category: "LEGISLATION", referenceCode: "CODE-R13B",
+    });
+    const v2 = await upload(chief, {
+      title: "Code — R13b éd. 2", category: "LEGISLATION",
+      referenceCode: "CODE-R13B", supersedesId: v1.body.id!,
+    });
+    expect(v2.status).toBe(201);
+    const r2 = await row(v2.body.id!);
+    expect(r2!.reference_code).toBe("CODE-R13B");
+    expect(r2!.version).toBe(2);
+    // Both editions answer to the same key, which is what makes the history one
+    // document rather than two.
+    const history = await as(chief, () => getVersionHistory("CODE-R13B", "LEGISLATION"));
+    expect(history.map((d) => d.version)).toEqual([2, 1]);
+  });
+
+  it("the DATABASE refuses a mismatched lineage even without the route", async () => {
+    // The route is not the only possible writer of a service-role insert, so
+    // the rule has to exist below it. This bypasses the route entirely.
+    const v1 = await upload(chief, {
+      title: "Socle — R13c", category: "CIRCULAR", referenceCode: "CIRC-R13C",
+    });
+    const id = crypto.randomUUID();
+    const { error } = await db().from("customs_reference_document").insert({
+      id,
+      tenant_id: TENANT_A,
+      category: "CIRCULAR",
+      title: "Édition au mauvais code",
+      source_authority: "DGD",
+      reference_code: "CIRC-AUTRE",
+      supersedes_id: v1.body.id!,
+      storage_path: `${TENANT_A}/${id}.pdf`,
+      mime_type: "application/pdf",
+      size_bytes: 4096,
+      content_sha256: "d".repeat(64),
+      uploaded_by: chief.id,
+    });
+    expect(error).toBeTruthy();
+    expect(String(error!.message)).toContain("reference code");
+    expect(await row(id)).toBeNull();
+  });
+
+  it("…and refuses a replacement that crosses tenants", async () => {
+    const { data } = await db()
+      .from("customs_reference_document")
+      .select("id, reference_code, category")
+      .eq("tenant_id", FOREIGN_TENANT)
+      .limit(1);
+    const foreign = (data ?? [])[0] as
+      { id: string; reference_code: string; category: string } | undefined;
+    expect(foreign).toBeTruthy();
+    const id = crypto.randomUUID();
+    const { error } = await db().from("customs_reference_document").insert({
+      id,
+      tenant_id: TENANT_A,
+      category: foreign!.category,
+      title: "Chaînage inter-tenant",
+      source_authority: "DGD",
+      reference_code: foreign!.reference_code,
+      supersedes_id: foreign!.id,
+      storage_path: `${TENANT_A}/${id}.pdf`,
+      mime_type: "application/pdf",
+      size_bytes: 4096,
+      content_sha256: "e".repeat(64),
+      uploaded_by: chief.id,
+    });
+    expect(error).toBeTruthy();
+    expect(String(error!.message)).toContain("cross tenants");
+  });
+
+  it("an upload with no business key is refused", async () => {
+    const form = new FormData();
+    form.set("category", "LEGISLATION");
+    form.set("title", "Sans code — R13e");
+    form.set("sourceAuthority", "DGD");
+    form.set("file", new File([pdf()], "d.pdf", { type: "application/pdf" }));
+    const res = await as(chief, () =>
+      uploadRoute(new Request("http://localhost/x", { method: "POST", body: form })),
+    );
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toBe("reference_code_required");
+  });
+});
+
+// ===========================================================================
+describe("R14 — F4: a withdrawn document is frozen", () => {
+  it("the action refuses a licence ruling on a withdrawn document", async () => {
+    const { body } = await upload(chief, { title: "Gelé — R14" });
+    const id = body.id!;
+    await publishFully(id);
+    await as(chief, () => withdrawDocument(id, "Remplacé par la DGD."));
+
+    expect(await as(chief, () => recordLicenceRuling(id, "APPROVED_REDISTRIBUTION", "nouvelle source")))
+      .toEqual({ ok: false, error: "withdrawn" });
+
+    const r = await row(id);
+    expect(r!.licence_status).toBe("INTERNAL_ONLY");
+    expect(r!.redistribution_allowed).toBe(false);
+  });
+
+  it("the DATABASE refuses it too, licence and verifications alike", async () => {
+    const { body } = await upload(chief, { title: "Gelé — R14b" });
+    const id = body.id!;
+    await publishFully(id);
+    await as(chief, () => withdrawDocument(id, "motif"));
+
+    for (const patch of [
+      { licence_status: "APPROVED_REDISTRIBUTION" },
+      { redistribution_allowed: true },
+      { licence_note: "réécrit" },
+      { provenance_verified: false },
+      { legal_version_verified: false },
+    ]) {
+      const { error } = await db()
+        .from("customs_reference_document")
+        .update(patch)
+        .eq("id", id);
+      expect(error, JSON.stringify(patch)).toBeTruthy();
+      expect(String(error!.message)).toContain("frozen");
+    }
+
+    const r = await row(id);
+    expect(r!.licence_status).toBe("INTERNAL_ONLY");
+    expect(r!.provenance_verified).toBe(true);
   });
 });

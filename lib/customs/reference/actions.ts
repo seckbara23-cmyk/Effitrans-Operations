@@ -148,6 +148,11 @@ export async function recordLicenceRuling(
   const supabase = getAdminSupabaseClient();
   const doc = await loadGoverned(supabase, id, user.tenantId);
   if (!doc) return { ok: false, error: "not_found" };
+  // REF-1-HARDEN (F4) — a withdrawn document is frozen. `recordVerifications`
+  // already refused one and this did not, so a licence could be re-ruled on a
+  // text nobody can consult. `trg_customs_reference_identity` refuses it in the
+  // database too; this is the half that gives the operator a sentence.
+  if (doc.status === "WITHDRAWN") return { ok: false, error: "withdrawn" };
 
   const { data: moved, error } = await supabase
     .from("customs_reference_document")
@@ -158,9 +163,10 @@ export async function recordLicenceRuling(
     })
     .eq("id", id)
     .eq("tenant_id", user.tenantId)
+    .neq("status", "WITHDRAWN")
     .select("id");
   if (error) return { ok: false, error: error.message };
-  if ((moved?.length ?? 0) !== 1) return { ok: false, error: "not_found" };
+  if ((moved?.length ?? 0) !== 1) return { ok: false, error: "withdrawn" };
 
   await writeAudit({
     action: AuditActions.CUSTOMS_REFERENCE_LICENCE_RECORDED,

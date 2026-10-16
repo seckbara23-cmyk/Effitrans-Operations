@@ -83,6 +83,7 @@ export async function POST(request: Request) {
     declaredSize: upload?.size ?? null,
     title,
     sourceAuthority,
+    referenceCode,
     categoryValid: isReferenceCategory(category),
     publishedOn,
   });
@@ -96,13 +97,22 @@ export async function POST(request: Request) {
   // Its version is read HERE rather than trusted from the form, and the tenant
   // filter is what stops a replacement being chained onto another tenant's row.
   let version = 1;
+  // REF-1-HARDEN (F2) — the key the row is INSERTED with. For a replacement it
+  // is the PREDECESSOR'S, never the form's: a new edition of the TEC is still
+  // the TEC. `trg_customs_reference_lineage` enforces the same rule in the
+  // database, so this is the friendly half of a guarantee that does not depend
+  // on it.
+  let effectiveCode = (referenceCode ?? "").trim();
   if (supersedesId) {
     const { data: prior } = await supabase
       .from("customs_reference_document")
-      .select("id, version, category, superseded_by_id")
+      .select("id, version, category, reference_code, superseded_by_id")
       .eq("id", supersedesId)
       .eq("tenant_id", user.tenantId)
-      .maybeSingle<{ id: string; version: number; category: string; superseded_by_id: string | null }>();
+      .maybeSingle<{
+        id: string; version: number; category: string;
+        reference_code: string; superseded_by_id: string | null;
+      }>();
     if (!prior) return NextResponse.json({ error: "predecessor_not_found" }, { status: 404 });
     if (prior.superseded_by_id) {
       return NextResponse.json({ error: "predecessor_already_superseded" }, { status: 409 });
@@ -111,6 +121,12 @@ export async function POST(request: Request) {
     if (prior.category !== category) {
       return NextResponse.json({ error: "category_mismatch" }, { status: 409 });
     }
+    // A supplied code that disagrees is a mistake worth naming, not something
+    // to silently overwrite: the operator meant one of the two.
+    if (effectiveCode !== prior.reference_code) {
+      return NextResponse.json({ error: "reference_code_mismatch" }, { status: 409 });
+    }
+    effectiveCode = prior.reference_code;
     version = prior.version + 1;
   }
 
@@ -137,7 +153,7 @@ export async function POST(request: Request) {
       source_authority: sourceAuthority.trim(),
       edition,
       published_on: publishedOn,
-      reference_code: referenceCode,
+      reference_code: effectiveCode,
       version,
       supersedes_id: supersedesId,
       storage_path: path,
@@ -161,25 +177,48 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "save_failed" }, { status: 500 });
   }
 
-  await writeAudit({
-    action: supersedesId
-      ? AuditActions.CUSTOMS_REFERENCE_REPLACED
-      : AuditActions.CUSTOMS_REFERENCE_UPLOADED,
-    actorId: user.id,
-    tenantId: user.tenantId,
-    entity: "customs_reference_document",
-    entityId: documentId,
-    after: {
-      category,
-      title: title.trim(),
-      source_authority: sourceAuthority.trim(),
-      version,
-      supersedes_id: supersedesId,
-      size_bytes: bytes.length,
-      sha256,
-      status: "QUARANTINE",
-    },
-  });
+  // REF-1-HARDEN (F3) — COMPENSATE A FAILED AUDIT.
+  //
+  // `writeAudit` throws when the event cannot be written (WES-9: a failed
+  // mandatory event aborts its action). Without this the route returned 500
+  // while the row and the object survived — an uploaded document with no
+  // record of who put it there, which is precisely what the audit trail
+  // exists to make impossible. The HR upload path already compensates this
+  // way; this brings the library into line with it.
+  //
+  // The order is deliberate: the ROW first, then the object. A row with no
+  // object is a broken link an operator can see and act on; an object with no
+  // row is a file nobody can see, delete or account for.
+  try {
+    await writeAudit({
+      action: supersedesId
+        ? AuditActions.CUSTOMS_REFERENCE_REPLACED
+        : AuditActions.CUSTOMS_REFERENCE_UPLOADED,
+      actorId: user.id,
+      tenantId: user.tenantId,
+      entity: "customs_reference_document",
+      entityId: documentId,
+      after: {
+        category,
+        title: title.trim(),
+        source_authority: sourceAuthority.trim(),
+        reference_code: effectiveCode,
+        version,
+        supersedes_id: supersedesId,
+        size_bytes: bytes.length,
+        sha256,
+        status: "QUARANTINE",
+      },
+    });
+  } catch {
+    await supabase
+      .from("customs_reference_document")
+      .delete()
+      .eq("id", documentId)
+      .eq("tenant_id", user.tenantId);
+    await supabase.storage.from(BUCKET).remove([path]);
+    return NextResponse.json({ error: "audit_failed" }, { status: 500 });
+  }
 
   // 201 with the quarantine state said out loud: the caller must not read this
   // as "the document is now available".
