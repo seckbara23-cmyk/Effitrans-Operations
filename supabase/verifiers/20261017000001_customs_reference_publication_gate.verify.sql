@@ -52,6 +52,10 @@ fn as (
   select p.proname,
          p.oid,
          p.prosecdef as secdef,
+         -- `proconfig` is where SET clauses actually live. The printed body
+         -- renders them as `SET search_path TO 'public', 'pg_temp'`, so a match
+         -- on the `=` form finds nothing and reports a healthy database broken.
+         coalesce(array_to_string(p.proconfig, ','), '') as cfg,
          regexp_replace(pg_get_functiondef(p.oid), '--[^\n]*', '', 'g') as body
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public'
