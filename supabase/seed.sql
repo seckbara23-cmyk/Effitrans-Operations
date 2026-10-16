@@ -628,6 +628,39 @@ where r.tenant_id = '00000000-0000-0000-0000-000000000001'
   and r.code in ('SYSTEM_ADMIN', 'OPS_SUPERVISOR', 'CUSTOMS_FINANCE_OFFICER')
 on conflict do nothing;
 
+-- ---------------------------------------------------------------------------
+-- CUSTOMS-REF-01A / REF-1 — the Customs Reference Library.
+--
+-- MIRRORED FROM MIGRATION 152, and the mirror is not redundant. The migration's
+-- grants join `public.role`, which is EMPTY while migrations run on a fresh
+-- database: the roles are created HERE, afterwards. So the migration seeds the
+-- permission catalogue (role-independent, and it does apply) while the grants
+-- have to be restated here or CI would run with the permissions defined and
+-- granted to nobody. Both lists must stay identical to the migration's.
+-- ---------------------------------------------------------------------------
+insert into public.permission (code, module, action, data_scope, description) values
+  ('customs:reference:read',    'customs', 'read',    'all', 'Consulter la bibliothèque douanière de référence'),
+  ('customs:reference:publish', 'customs', 'approve', 'all', 'Téléverser, publier, remplacer et retirer les documents de référence douaniers')
+on conflict (code) do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'customs:reference:read'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'CEO', 'OPS_SUPERVISOR', 'COORDINATOR',
+                 'CHIEF_OF_TRANSIT', 'CUSTOMS_DECLARANT', 'CUSTOMS_FIELD_AGENT',
+                 'CUSTOMS_FINANCE_OFFICER', 'DOCUMENTATION_OFFICER', 'COMPLIANCE_HSSE')
+on conflict do nothing;
+
+insert into public.role_permission (role_id, permission_id)
+select r.id, p.id
+from public.role r
+join public.permission p on p.code = 'customs:reference:publish'
+where r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  and r.code in ('SYSTEM_ADMIN', 'CHIEF_OF_TRANSIT')
+on conflict do nothing;
+
 insert into public.role_permission (role_id, permission_id)
 select r.id, p.id
 from public.role r

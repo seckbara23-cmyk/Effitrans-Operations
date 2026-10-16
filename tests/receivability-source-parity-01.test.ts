@@ -293,8 +293,12 @@ describe("UAT-RECEVABILITE-01 — the verifier is the check that would have caug
 
 describe("UAT-RECEVABILITE-01 — ledger", () => {
   it("15 — the migration ledger constants match the committed files", () => {
+    // The hardcoded "this slice is the newest migration" pin was removed by
+    // CUSTOMS-REF-01A (#152): it asserted something about every FUTURE slice
+    // rather than about this one. The two surviving assertions state the claim
+    // in full — the constants describe the committed directory — and they
+    // self-maintain.
     expect(MIGRATION_COUNT).toBe(MIGRATIONS.length);
-    expect(LATEST_MIGRATION).toBe("20261013000001_receivability_source_parity");
     expect(MIGRATIONS[MIGRATIONS.length - 1]).toBe(`${LATEST_MIGRATION}.sql`);
   });
 

@@ -412,12 +412,14 @@ describe("MIG-LEDGER-151 — the workflow keeps the same protection", () => {
     // The ledger is metadata about migrations. Repairing it WITH a migration
     // would put the repair inside the thing being repaired — and #152 would
     // itself need recording, by the mechanism that just failed.
+    // PINNED LOCALLY (billing-bypass-01 test 35 ruling): the claim is that the
+    // ledger repair shipped no migration, not that this slice is the newest one.
     const files = readdirSync(fileURLToPath(new URL("../supabase/migrations", import.meta.url)))
       .filter((f) => f.endsWith(".sql") && !f.endsWith(".verify.sql"))
       .sort();
-    expect(files).toHaveLength(151);
-    expect(files[files.length - 1]).toBe("20261013000001_receivability_source_parity.sql");
-    expect(MIGRATION_COUNT).toBe(151);
-    expect(LATEST_MIGRATION).toBe("20261013000001_receivability_source_parity");
+    expect(files.filter((f) => /ledger_repair|migration_ledger|record_only/i.test(f))).toEqual([]);
+    // The constants must still describe the directory they ship with.
+    expect(MIGRATION_COUNT).toBe(files.length);
+    expect(files[files.length - 1]).toBe(`${LATEST_MIGRATION}.sql`);
   });
 });

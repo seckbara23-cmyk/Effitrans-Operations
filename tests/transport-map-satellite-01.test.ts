@@ -260,10 +260,16 @@ describe("SATELLITE-01 — nothing about tracking changed", () => {
   });
 
   it("27 — no migration, no schema, no policy: the ledger is exactly where it was", () => {
+    // PINNED LOCALLY, NOT GLOBALLY (the billing-bypass-01 test 35 ruling).
+    // A global count or a LATEST_MIGRATION pin made every LATER slice's
+    // migration fail a test that never meant anything about it. The claim is
+    // that THIS slice added no migration of its own, so that is what is
+    // asserted. Updated by CUSTOMS-REF-01A, which legitimately ships #152.
     const files = readdirSync(fileURLToPath(new URL("../supabase/migrations", import.meta.url)))
       .filter((f) => f.endsWith(".sql") && !f.endsWith(".verify.sql"));
-    expect(files).toHaveLength(151);
-    expect(MIGRATION_COUNT).toBe(151);
+    expect(files.filter((f) => /satellite|basemap|esri/i.test(f))).toEqual([]);
+    // The constant still has to describe the directory it ships with.
+    expect(MIGRATION_COUNT).toBe(files.length);
   });
 
   it("28 — the refresh mechanism is untouched", () => {

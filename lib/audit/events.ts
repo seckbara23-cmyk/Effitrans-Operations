@@ -92,6 +92,19 @@ export const AuditActions = {
   CUSTOMS_RELEASED: "customs.released",
   CUSTOMS_BLOCKED: "customs.blocked",
   CUSTOMS_DELETED: "customs.deleted",
+  // CUSTOMS-REF-01A — the Customs Reference Library. These are LIBRARY events,
+  // not dossier events: they carry no file_id and nothing in the dossier
+  // business-event ledger corresponds to them, by design.
+  CUSTOMS_REFERENCE_UPLOADED: "customs.reference.uploaded",
+  CUSTOMS_REFERENCE_PUBLISHED: "customs.reference.published",
+  CUSTOMS_REFERENCE_REPLACED: "customs.reference.replaced",
+  CUSTOMS_REFERENCE_WITHDRAWN: "customs.reference.withdrawn",
+  CUSTOMS_REFERENCE_LICENCE_RECORDED: "customs.reference.licence_recorded",
+  CUSTOMS_REFERENCE_VERIFIED: "customs.reference.verified",
+  // Consultation is audited because the licence of some material (the HS
+  // Explanatory Notes) may limit who may read it, and a licence obligation
+  // cannot be evidenced without an access record.
+  CUSTOMS_REFERENCE_ACCESSED: "customs.reference.accessed",
   // TMS-6 — external transport subcontractors. Master data, not a dossier
   // fact, so the dossier-scoped business-event ledger is deliberately unused.
   PROVIDER_CREATED: "transport_provider.created",
