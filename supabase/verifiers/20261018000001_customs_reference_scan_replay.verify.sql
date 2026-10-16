@@ -61,9 +61,11 @@ checks(label, ok) as (
     )),
     -- Partial, so a verdict with no nonce stays representable: what is
     -- forbidden is REUSING one, not omitting one.
+    -- ILIKE throughout: `indexdef` is Postgres's own rendering, which
+    -- uppercases `WHERE (callback_nonce IS NOT NULL)`.
     ('… and it is PARTIAL on the nonce being present', (
       select coalesce((
-        select indexdef ilike '%where%' and indexdef like '%callback_nonce is not null%'
+        select indexdef ilike '%where%' and indexdef ilike '%callback_nonce is not null%'
           from idx where indexname = 'uq_customs_reference_scan_nonce'), false)
     )),
 

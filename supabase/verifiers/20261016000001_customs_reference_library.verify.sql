@@ -226,9 +226,13 @@ checks(label, ok) as (
     ('reference_code is NOT NULL, so no row escapes the uniqueness rule', (
       select coalesce((select attnotnull from cols where attname = 'reference_code'), false)
     )),
+    -- ILIKE, NOT LIKE. `pg_indexes.indexdef` re-renders the DDL and uppercases
+    -- its keywords (`WHERE (... IS NOT NULL)`), so the lowercase form this
+    -- check first used could never match — and because the assertion is
+    -- NEGATIVE it passed vacuously, reporting a guarantee it was not testing.
     ('… and the index is no longer predicated on reference_code', (
       select coalesce((
-        select indexdef not like '%reference_code is not null%'
+        select indexdef not ilike '%reference_code is not null%'
           from idx where indexname = 'uq_customs_reference_one_current'), false)
     )),
     ('reference_code refuses an empty string', (
