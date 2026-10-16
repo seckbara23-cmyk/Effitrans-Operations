@@ -17,7 +17,7 @@
  * NO DOSSIER IS CREATED BY THIS FILE. That is the point of the slice: a
  * reference document belongs to no dossier, so the journey needs none.
  */
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, afterEach } from "vitest";
 import { as } from "./identity";
 import { identity, db, auditFor, TENANT_A } from "./fixtures";
 import type { CurrentUser } from "@/lib/auth/current-user";
@@ -111,7 +111,11 @@ async function row(id: string) {
  * configured secret, so it calls the function the route calls — which is also
  * the only thing in the database allowed to produce a CLEAN state.
  */
-async function recordScan(id: string, verdict: "CLEAN" | "INFECTED" | "ERROR") {
+async function recordScan(
+  id: string,
+  verdict: "CLEAN" | "INFECTED" | "ERROR",
+  nonce?: string,
+) {
   const r = await row(id);
   const { data, error } = await db().rpc("record_customs_reference_scan", {
     p_document: id,
@@ -123,6 +127,8 @@ async function recordScan(id: string, verdict: "CLEAN" | "INFECTED" | "ERROR") {
     p_scanner_version: "1.0",
     p_engine_ref: `jr-${id.slice(0, 8)}`,
     p_detail: null,
+    // SCANNER-01: unique per call unless a case is deliberately replaying one.
+    p_nonce: nonce ?? `jn-${crypto.randomUUID()}`,
   });
   expect(error).toBeNull();
   return String(data ?? "");
@@ -1101,5 +1107,158 @@ describe("R17 — Part C: replacement publication is now one transaction", () =>
     const r = await row(id);
     expect(r!.withdrawn_source).toBe("OPERATOR");
     expect(r!.withdrawn_by).toBe(chief.id);
+  });
+});
+
+// ===========================================================================
+describe("R18 — SCANNER-01: a verdict cannot be replayed", () => {
+  it("the same nonce twice is refused, and changes nothing", async () => {
+    const { body } = await upload(chief, { title: "Replay — R18" });
+    const id = body.id!;
+    const nonce = `fixed-${crypto.randomUUID()}`;
+
+    expect(await recordScan(id, "CLEAN", nonce)).toBe("clean");
+    expect((await row(id))!.scan_status).toBe("CLEAN");
+
+    // THE ATTACK, exactly: the identical callback arriving a second time.
+    expect(await recordScan(id, "CLEAN", nonce)).toBe("replayed");
+
+    // One evidence row, not two: the refusal happens on the insert.
+    const { data } = await db()
+      .from("customs_reference_scan")
+      .select("id, callback_nonce")
+      .eq("document_id", id);
+    expect((data ?? []).length).toBe(1);
+  });
+
+  it("a captured CLEAN cannot resurrect a clearance a rescan revoked", async () => {
+    // The concrete harm the nonce exists to prevent. A document is cleared and
+    // published; a rescan finds a signature and retires it; the original CLEAN
+    // callback is replayed. Without the nonce the library's own evidence would
+    // then say the current verdict was clean on a file its scanner rejected.
+    const { body } = await upload(chief, { title: "Replay après rescan — R18b" });
+    const id = body.id!;
+    const cleanNonce = `clean-${crypto.randomUUID()}`;
+
+    await as(chief, () => recordVerifications(id, { provenance: true, legalVersion: true }));
+    await as(chief, () => recordLicenceRuling(id, "INTERNAL_ONLY", "Source DGD."));
+    expect(await recordScan(id, "CLEAN", cleanNonce)).toBe("clean");
+    await as(chief, () => submitForPublication(id));
+    expect(await as(chief2, () => publishDocument(id))).toEqual({ ok: true, id });
+
+    expect(await recordScan(id, "INFECTED")).toBe("withdrawn_by_scan");
+    expect((await row(id))!.scan_status).toBe("INFECTED");
+
+    // Replay the original clearance.
+    expect(await recordScan(id, "CLEAN", cleanNonce)).toBe("replayed");
+
+    const r = await row(id);
+    expect(r!.scan_status).toBe("INFECTED");   // still revoked
+    expect(r!.status).toBe("WITHDRAWN");
+    expect(r!.scanned_sha256).toBeNull();
+  });
+
+  it("a DIFFERENT nonce for the same document is accepted — a rescan is legitimate", async () => {
+    const { body } = await upload(chief, { title: "Rescan légitime — R18c" });
+    const id = body.id!;
+    expect(await recordScan(id, "ERROR")).toBe("error");
+    expect(await recordScan(id, "CLEAN")).toBe("clean");
+    const { data } = await db()
+      .from("customs_reference_scan")
+      .select("verdict")
+      .eq("document_id", id)
+      .order("recorded_at", { ascending: true });
+    expect((data ?? []).map((r) => (r as { verdict: string }).verdict)).toEqual(["ERROR", "CLEAN"]);
+  });
+
+  it("a nonce is unique per document, not globally — two documents may share one", async () => {
+    // Scoping it per document is deliberate: a scanner that derives its nonce
+    // from its own job id must not be unable to scan a second file.
+    const a = await upload(chief, { title: "Nonce A — R18d" });
+    const b = await upload(chief, { title: "Nonce B — R18d" });
+    const shared = `shared-${crypto.randomUUID()}`;
+    expect(await recordScan(a.body.id!, "CLEAN", shared)).toBe("clean");
+    expect(await recordScan(b.body.id!, "CLEAN", shared)).toBe("clean");
+  });
+});
+
+// ===========================================================================
+describe("R19 — SCANNER-01: outage and a lost scan", () => {
+  const savedEnv = { ...process.env };
+  afterEach(() => { process.env = { ...savedEnv }; });
+
+  it("with no scanner configured, a scan cannot be requested at all", async () => {
+    delete process.env.CUSTOMS_SCAN_ENDPOINT;
+    delete process.env.CUSTOMS_SCAN_CALLBACK_SECRET;
+    const { body } = await upload(chief, { title: "Sans scanner — R19" });
+    expect(await as(chief, () => requestScan(body.id!)))
+      .toEqual({ ok: false, error: "scanner_unavailable" });
+    // Still UNSCANNED, and therefore still unpublishable.
+    expect((await row(body.id!))!.scan_status).toBe("UNSCANNED");
+  });
+
+  it("an unreachable scanner leaves the document where it was, not SCANNING", async () => {
+    // A configured-but-dead endpoint is the outage case. The status must not be
+    // left claiming a scan is in progress when nothing is scanning.
+    process.env.CUSTOMS_SCAN_ENDPOINT = "http://127.0.0.1:1/scan";
+    process.env.CUSTOMS_SCAN_CALLBACK_SECRET = "journey-secret-not-real";
+    const { body } = await upload(chief, { title: "Scanner injoignable — R19b" });
+    const id = body.id!;
+
+    const res = await as(chief, () => requestScan(id));
+    expect(res).toEqual({ ok: false, error: "dispatch_failed" });
+    expect((await row(id))!.scan_status).toBe("UNSCANNED");
+    // And publication is still refused for the right reason.
+    await as(chief, () => recordVerifications(id, { provenance: true, legalVersion: true }));
+    await as(chief, () => recordLicenceRuling(id, "INTERNAL_ONLY", "src"));
+    await as(chief, () => submitForPublication(id));
+    expect(await as(chief2, () => publishDocument(id)))
+      .toEqual({ ok: false, error: "scan_required" });
+  });
+
+  it("a FRESH SCANNING document cannot be re-requested", async () => {
+    process.env.CUSTOMS_SCAN_ENDPOINT = "http://127.0.0.1:1/scan";
+    process.env.CUSTOMS_SCAN_CALLBACK_SECRET = "journey-secret-not-real";
+    const { body } = await upload(chief, { title: "Scan en cours — R19c" });
+    const id = body.id!;
+    await db().from("customs_reference_document")
+      .update({ scan_status: "SCANNING", scan_requested_at: new Date().toISOString() })
+      .eq("id", id);
+    expect(await as(chief, () => requestScan(id)))
+      .toEqual({ ok: false, error: "scan_not_requestable" });
+    expect((await row(id))!.scan_status).toBe("SCANNING");
+  });
+
+  it("a LOST scan can be re-requested, so a document is never stranded", async () => {
+    // Before SCANNER-01 only UNSCANNED and ERROR were requestable, so a verdict
+    // that never arrived left the document unpublishable AND unfixable.
+    process.env.CUSTOMS_SCAN_ENDPOINT = "http://127.0.0.1:1/scan";
+    process.env.CUSTOMS_SCAN_CALLBACK_SECRET = "journey-secret-not-real";
+    const { body } = await upload(chief, { title: "Scan perdu — R19d" });
+    const id = body.id!;
+    await db().from("customs_reference_document")
+      .update({
+        scan_status: "SCANNING",
+        scan_requested_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+      })
+      .eq("id", id);
+
+    // Reached the dispatch, which then fails against the dead endpoint — proof
+    // the eligibility check let it through rather than refusing upfront.
+    expect(await as(chief, () => requestScan(id)))
+      .toEqual({ ok: false, error: "dispatch_failed" });
+    // Reverted to SCANNING, which is where it was: no state invented.
+    expect((await row(id))!.scan_status).toBe("SCANNING");
+  });
+
+  it("a withdrawn document is never scanned again", async () => {
+    process.env.CUSTOMS_SCAN_ENDPOINT = "http://127.0.0.1:1/scan";
+    process.env.CUSTOMS_SCAN_CALLBACK_SECRET = "journey-secret-not-real";
+    const { body } = await upload(chief, { title: "Retiré puis scan — R19e" });
+    const id = body.id!;
+    await publishFully(id);
+    await as(chief, () => withdrawDocument(id, "motif"));
+    expect(await as(chief, () => requestScan(id)))
+      .toEqual({ ok: false, error: "withdrawn" });
   });
 });

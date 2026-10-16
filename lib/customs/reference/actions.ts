@@ -40,9 +40,16 @@ import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
 import { isLicenceStatus, publicationBlockers, type ReferenceActionResult } from "./types";
 import type { LicenceStatus, ReferenceCategory, ReferenceStatus, ScanStatus } from "./types";
-import { dispatchScan, scanningAvailable } from "./scan";
+import {
+  dispatchScan,
+  newScanNonce,
+  scanningAvailable,
+  SCAN_DOWNLOAD_TTL_SECONDS,
+  SCAN_TIMEOUT_MS,
+} from "./scan";
 
 const LIBRARY_PATH = "/customs/reference";
+const BUCKET = "customs-reference";
 
 type GovernedRow = {
   id: string;
@@ -57,6 +64,7 @@ type GovernedRow = {
   submitted_for_publication_by: string | null;
   storage_path: string;
   content_sha256: string;
+  scan_requested_at: string | null;
 };
 
 /** Load a row the caller is entitled to govern. Tenant-scoped, always. */
@@ -69,7 +77,8 @@ async function loadGoverned(
     .from("customs_reference_document")
     .select(
       "id, category, status, licence_status, provenance_verified, legal_version_verified, title, "
-      + "supersedes_id, scan_status, submitted_for_publication_by, storage_path, content_sha256",
+      + "supersedes_id, scan_status, submitted_for_publication_by, storage_path, content_sha256, "
+      + "scan_requested_at",
     )
     .eq("id", id)
     .eq("tenant_id", tenantId)
@@ -314,9 +323,32 @@ export async function requestScan(id: string): Promise<ReferenceActionResult> {
   const doc = await loadGoverned(supabase, id, user.tenantId);
   if (!doc) return { ok: false, error: "not_found" };
   if (doc.status === "WITHDRAWN") return { ok: false, error: "withdrawn" };
-  if (doc.scan_status !== "UNSCANNED" && doc.scan_status !== "ERROR") {
+
+  // SCANNER-01 — A LOST SCAN MUST BE RETRYABLE.
+  //
+  // Only UNSCANNED and ERROR were requestable, so a verdict that never arrived
+  // left the document SCANNING for ever with no way to ask again: unpublishable
+  // AND unfixable. A request older than SCAN_TIMEOUT_MS is now treated as lost.
+  // This is not a timeout that decays to a pass — publication still requires
+  // CLEAN, so the worst case of being wrong here is one extra scan.
+  const requestedAt = doc.scan_requested_at ? Date.parse(doc.scan_requested_at) : NaN;
+  const scanLost =
+    doc.scan_status === "SCANNING"
+    && Number.isFinite(requestedAt)
+    && Date.now() - requestedAt > SCAN_TIMEOUT_MS;
+
+  if (doc.scan_status !== "UNSCANNED" && doc.scan_status !== "ERROR" && !scanLost) {
     return { ok: false, error: "scan_not_requestable" };
   }
+
+  // THE CREDENTIAL THE SCANNER NEEDS. The bucket is private with no
+  // storage.objects policy, so a path alone is a name nobody outside this
+  // server can read. One object, five minutes. See SCAN_DOWNLOAD_TTL_SECONDS
+  // for why the viewer deliberately does the opposite.
+  const { data: link, error: linkErr } = await supabase.storage
+    .from(BUCKET)
+    .createSignedUrl(doc.storage_path, SCAN_DOWNLOAD_TTL_SECONDS);
+  if (linkErr || !link?.signedUrl) return { ok: false, error: "dispatch_failed" };
 
   const previous = doc.scan_status;
   const { data: moved, error } = await supabase
@@ -338,6 +370,8 @@ export async function requestScan(id: string): Promise<ReferenceActionResult> {
     tenantId: user.tenantId,
     storagePath: doc.storage_path,
     sha256: doc.content_sha256,
+    downloadUrl: link.signedUrl,
+    nonce: newScanNonce(),
   });
   if (!sent.ok) {
     // Put it back: SCANNING with nothing scanning is a lie about the state.
@@ -357,7 +391,9 @@ export async function requestScan(id: string): Promise<ReferenceActionResult> {
     entity: "customs_reference_document",
     entityId: id,
     before: { scan_status: previous },
-    after: { scan_status: "SCANNING", sha256: doc.content_sha256 },
+    // The nonce is recorded so a verdict can be traced to the request that
+    // asked for it. The signed URL is NOT recorded: it is a credential.
+    after: { scan_status: "SCANNING", sha256: doc.content_sha256, nonce: sent.nonce, retried: scanLost },
   });
   revalidatePath(LIBRARY_PATH);
   return { ok: true, id };

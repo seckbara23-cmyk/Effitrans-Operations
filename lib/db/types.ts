@@ -1261,8 +1261,8 @@ export type Database = {
       // REF-1-PUBLISH-GATE — append-only malware-scan evidence. No Update type:
       // `prevent_mutation()` blocks UPDATE and DELETE for every role.
       customs_reference_scan: {
-        Row: { id: string; tenant_id: string; document_id: string; sha256: string; storage_path: string; verdict: string; scanner_name: string; scanner_version: string | null; engine_ref: string | null; detail: string | null; recorded_at: string; recorded_by: string | null };
-        Insert: { id?: string; tenant_id: string; document_id: string; sha256: string; storage_path: string; verdict: string; scanner_name: string; scanner_version?: string | null; engine_ref?: string | null; detail?: string | null; recorded_by?: string | null };
+        Row: { id: string; tenant_id: string; document_id: string; sha256: string; storage_path: string; verdict: string; scanner_name: string; scanner_version: string | null; engine_ref: string | null; detail: string | null; recorded_at: string; recorded_by: string | null; callback_nonce: string | null };
+        Insert: { id?: string; tenant_id: string; document_id: string; sha256: string; storage_path: string; verdict: string; scanner_name: string; scanner_version?: string | null; engine_ref?: string | null; detail?: string | null; recorded_by?: string | null; callback_nonce?: string | null };
         Update: never;
         Relationships: [];
       };
@@ -5058,7 +5058,7 @@ export type Database = {
           p_document: string; p_tenant: string; p_verdict: string;
           p_sha256: string; p_storage_path: string; p_scanner_name: string;
           p_scanner_version?: string | null; p_engine_ref?: string | null;
-          p_detail?: string | null;
+          p_detail?: string | null; p_nonce?: string | null;
         };
         Returns: string;
       };

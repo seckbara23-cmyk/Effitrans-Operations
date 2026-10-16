@@ -45,6 +45,10 @@ export async function POST(request: Request) {
   if (!parsed.ok) {
     const status = parsed.error === "bad_signature" ? 401
       : parsed.error === "scanner_unavailable" ? 503
+      // A stale callback is a REPLAY attempt or a badly lagged scanner; either
+      // way it is refused, and 409 says "not acceptable now" rather than
+      // "malformed".
+      : parsed.error === "stale_callback" ? 409
       : 400;
     return NextResponse.json({ error: parsed.error }, { status });
   }
@@ -62,12 +66,19 @@ export async function POST(request: Request) {
     p_scanner_version: p.scannerVersion,
     p_engine_ref: p.engineRef,
     p_detail: p.detail,
+    p_nonce: p.nonce,
   });
   if (error) return NextResponse.json({ error: "record_failed" }, { status: 503 });
 
   const outcome = String(data ?? "");
   // The function's own refusals. `binding_mismatch` is the interesting one: a
   // verdict that does not describe this document's bytes.
+  // `replayed` is the database's own refusal: this callback's nonce has been
+  // recorded before, so nothing was written. Reported distinctly from the
+  // other refusals because it is the one that means somebody re-sent a message.
+  if (outcome === "replayed") {
+    return NextResponse.json({ error: "replayed" }, { status: 409 });
+  }
   if (outcome === "not_found" || outcome === "binding_mismatch"
       || outcome === "invalid_verdict" || outcome === "scanner_required") {
     return NextResponse.json({ error: outcome }, { status: 409 });
@@ -87,6 +98,7 @@ export async function POST(request: Request) {
       sha256: p.sha256,
       engine_ref: p.engineRef,
       scanner_version: p.scannerVersion,
+      nonce: p.nonce,
     },
   });
 

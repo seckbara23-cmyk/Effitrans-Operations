@@ -65,6 +65,8 @@ const service = strip(read("lib/customs/reference/service.ts"));
 const seed = strip(read("supabase/seed.sql"));
 const gate = strip(read("supabase/migrations/20261017000001_customs_reference_publication_gate.sql"));
 const gateVerifier = read("supabase/verifiers/20261017000001_customs_reference_publication_gate.verify.sql");
+const replay = strip(read("supabase/migrations/20261018000001_customs_reference_scan_replay.sql"));
+const replayVerifier = read("supabase/verifiers/20261018000001_customs_reference_scan_replay.verify.sql");
 const templates = strip(read("lib/platform/role-templates.ts"));
 
 /** A minimal, valid PDF buffer of at least MIN_UPLOAD_BYTES. */
@@ -332,9 +334,18 @@ describe("REF-1 — the bytes leave the server one way only", () => {
     expect(viewRoute).not.toContain("getPublicUrl");
     expect(viewRoute).toContain('"Cache-Control": "private, no-store"');
     expect(viewRoute).toContain('"Content-Type": "application/pdf"');
-    // No module in this slice hands out a URL.
-    expect(actions).not.toContain("createSignedUrl");
+    // No module hands a URL to a PERSON. SCANNER-01 added exactly one signed
+    // URL to the slice — the scanner's download link — and the distinction is
+    // the point: a viewer link can be pasted into a chat and licence-restricted
+    // material redistributed, which is what the licence gate exists to prevent;
+    // the scanner is one automated consumer with no UI, and the alternative is
+    // handing it credentials to the whole bucket.
     expect(service).not.toContain("createSignedUrl");
+    expect((actions.match(/createSignedUrl/g) ?? []).length).toBe(1);
+    const scanFn = actions.slice(actions.indexOf("export async function requestScan"));
+    expect(scanFn).toContain("createSignedUrl");
+    // …and it is scoped to ONE object with a short TTL, not to the bucket.
+    expect(scanFn).toContain("createSignedUrl(doc.storage_path, SCAN_DOWNLOAD_TTL_SECONDS)");
   });
 
   it("24 — a failed insert does not leave the object behind", () => {
@@ -584,9 +595,9 @@ describe("REF-1 — French, and the inventory", () => {
   it("44 — one migration ships, with its companion verifier, and the inventory agrees", () => {
     const files = readdirSync(fileURLToPath(new URL("../supabase/migrations", import.meta.url)))
       .filter((f) => f.endsWith(".sql"));
-    expect(files).toHaveLength(153);
-    expect(MIGRATION_COUNT).toBe(153);
-    expect(LATEST_MIGRATION).toBe("20261017000001_customs_reference_publication_gate");
+    expect(files).toHaveLength(154);
+    expect(MIGRATION_COUNT).toBe(154);
+    expect(LATEST_MIGRATION).toBe("20261018000001_customs_reference_scan_replay");
     expect(verifier).toContain("ok boolean, detail text");
     expect(verifier).toContain("customs_reference_document");
     // The verifier asserts the POLICY, not table privileges: on Supabase
@@ -726,7 +737,7 @@ describe("REF-1-HARDEN — the four corrections", () => {
       .filter((f) => f.endsWith(".sql"));
     // Corrections to an UNAPPLIED migration belong in it; NEW CAPABILITY gets
     // its own, which is why the publication gate is #153 and not an edit.
-    expect(files).toHaveLength(153);
+    expect(files).toHaveLength(154);
     expect((migration.match(/insert into public\.permission/g) ?? []).length).toBe(1);
     expect((migration.match(/insert into public\.role_permission/g) ?? []).length).toBe(2);
     const publishGrant = migration.slice(migration.indexOf("p.code = 'customs:reference:publish'"));
@@ -814,8 +825,10 @@ describe("REF-1-PUBLISH-GATE — Part A: nothing is published unscanned", () => 
     expect(scan).not.toContain('verdict: "CLEAN"');
     expect(scan).not.toMatch(/return\s*\{\s*ok:\s*true,\s*payload:\s*\{[^}]*CLEAN/);
     // No default endpoint, so an unconfigured deployment cannot be pointed at
-    // somebody else's scanner by accident.
-    expect(scan).not.toMatch(/https?:\/\//);
+    // somebody else's scanner by accident. The scanner's download link is a
+    // PARAMETER minted by the caller, never a literal in here.
+    expect(scan).not.toMatch(/https?:\/\/[a-z]/);
+    expect(scan).toContain("downloadUrl: string;");
   });
 
   it("61 — the callback is HMAC-authenticated and accepts no session", () => {
@@ -961,5 +974,87 @@ describe("REF-1-PUBLISH-GATE — Part B: two people, enforced by the row", () =>
                              "operational_file", "document_type"]) {
       expect(gate, forbidden).not.toContain(forbidden);
     }
+  });
+});
+
+// ===========================================================================
+describe("SCANNER-01 — the integration is end-to-end executable", () => {
+  it("72 — the scanner is given a CREDENTIAL, not just a path", () => {
+    // THE GAP THIS CLOSED. The bucket is private with no storage.objects
+    // policy, so a `storage_path` alone is a name nothing outside the server
+    // can read: the workflow was not executable at all.
+    const fn = actions.slice(actions.indexOf("export async function requestScan"));
+    expect(fn).toContain(".createSignedUrl(doc.storage_path, SCAN_DOWNLOAD_TTL_SECONDS)");
+    expect(fn).toContain("downloadUrl: link.signedUrl");
+    // Minting it is a precondition, not best-effort.
+    expect(fn).toContain('if (linkErr || !link?.signedUrl) return { ok: false, error: "dispatch_failed" };');
+    // A credential is never written to the audit trail.
+    const audit = fn.slice(fn.indexOf("writeAudit"));
+    expect(audit).not.toContain("signedUrl");
+    expect(audit).not.toContain("downloadUrl");
+  });
+
+  it("73 — the dispatch is SIGNED, so the scanner can authenticate us too", () => {
+    const scan = strip(read("lib/customs/reference/scan.ts"));
+    expect(scan).toContain('"x-effitrans-signature": hmacSha256Hex(cfg.callbackSecret, body)');
+    // Signed over the exact bytes sent, not a re-serialisation.
+    expect(scan).toContain("const body = JSON.stringify({");
+    expect(scan).toContain("body,");
+    expect(scan).toContain("nonce: req.nonce");
+    expect(scan).toContain("issued_at: new Date().toISOString()");
+  });
+
+  it("74 — replay is refused in the DATABASE, not only by a clock", () => {
+    expect(replay).toContain("add column if not exists callback_nonce text");
+    const idx = replay.slice(replay.indexOf("uq_customs_reference_scan_nonce"));
+    expect(idx).toContain("(tenant_id, document_id, callback_nonce)");
+    expect(idx).toContain("where callback_nonce is not null");
+    // The refusal happens on the evidence insert, which is BEFORE the document
+    // update — so a replay changes no state at all.
+    const fn = replay.slice(replay.indexOf("function public.record_customs_reference_scan"));
+    expect(fn).toContain("exception when unique_violation then");
+    expect(fn).toContain("return 'replayed'");
+    expect(fn.indexOf("insert into public.customs_reference_scan"))
+      .toBeLessThan(fn.indexOf("effitrans.scan_recorder"));
+  });
+
+  it("75 — the 9-argument recorder is DROPPED, not left as an overload", () => {
+    // An overload pair would mean a caller that omitted the nonce silently
+    // reaching the unprotected function — the defect, by accident.
+    expect(replay).toContain("drop function if exists public.record_customs_reference_scan(");
+    expect(replay).toContain("p_nonce           text default null");
+    // Re-granted on the new signature, and still service_role only.
+    expect(replay).toMatch(/revoke execute on function public\.record_customs_reference_scan\([^)]*\) from authenticated/);
+    expect(replay).toContain("to service_role");
+  });
+
+  it("76 — a lost scan can be retried, and a fresh one cannot", () => {
+    const fn = actions.slice(actions.indexOf("export async function requestScan"));
+    expect(fn).toContain("SCAN_TIMEOUT_MS");
+    expect(fn).toContain('doc.scan_status === "SCANNING"');
+    expect(fn).toContain("const scanLost =");
+    // Fail-closed: a retry window is not a pass. Publication still needs CLEAN.
+    expect(fn).not.toContain('scan_status: "CLEAN"');
+    expect(fn).toContain('doc.scan_status !== "UNSCANNED" && doc.scan_status !== "ERROR" && !scanLost');
+  });
+
+  it("77 — the callback refuses a stale message and reports a replay distinctly", () => {
+    const cb = strip(read("app/api/customs/reference/scan-callback/route.ts"));
+    expect(cb).toContain('parsed.error === "stale_callback" ? 409');
+    expect(cb).toContain('if (outcome === "replayed")');
+    expect(cb).toContain("p_nonce: p.nonce");
+  });
+
+  it("78 — migration 154 ships with its verifier and widens nothing", () => {
+    expect(replayVerifier).toContain("ok boolean, detail text");
+    expect(replayVerifier).toContain("SCANNER-01 #154");
+    expect(replay).not.toContain("insert into public.permission");
+    expect(replay).not.toContain("insert into public.role_permission");
+    for (const forbidden of ["invoice", "transport_record", "process_step",
+                             "customs_record", "operational_file"]) {
+      expect(replay, forbidden).not.toContain(forbidden);
+    }
+    // And the publication gate is untouched: still CLEAN-only, still two actors.
+    expect(replay).not.toContain("customs_reference_publication_requires");
   });
 });

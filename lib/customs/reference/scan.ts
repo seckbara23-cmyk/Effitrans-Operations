@@ -25,7 +25,8 @@
  * There is no timeout that degrades to a pass and no "assume clean" branch.
  */
 import "server-only";
-import { verifyHmacSignature } from "@/lib/finance/providers/sign";
+import { randomUUID } from "node:crypto";
+import { hmacSha256Hex, verifyHmacSignature } from "@/lib/finance/providers/sign";
 
 /** The verdicts the database will accept. Nothing else is a scan result. */
 export const SCAN_VERDICTS = ["CLEAN", "INFECTED", "ERROR"] as const;
@@ -37,6 +38,32 @@ export type ScanStatus = (typeof SCAN_STATUSES)[number];
 export function isScanVerdict(v: unknown): v is ScanVerdict {
   return typeof v === "string" && (SCAN_VERDICTS as readonly string[]).includes(v);
 }
+
+/**
+ * How long the scanner's download link lives.
+ *
+ * Long enough for a queued worker to fetch a large PDF, short enough that a
+ * leaked link is worthless by the time anyone could use it. This is the ONE
+ * place in the library that mints a signed URL, and the reasoning differs from
+ * the viewer's on purpose: the viewer serves PEOPLE, where a link can be pasted
+ * into a chat and licence-restricted material redistributed, so it streams
+ * bytes instead. The scanner is a single automated consumer with no UI, and the
+ * alternative — handing it service-role credentials to the whole bucket — is
+ * strictly worse than a five-minute link to one object.
+ */
+export const SCAN_DOWNLOAD_TTL_SECONDS = 300;
+
+/**
+ * How long a SCANNING document may wait before the request is considered lost.
+ *
+ * A verdict that never arrives must not strand a document for ever: after this,
+ * a publisher may ask again. It is NOT a timeout that decays to a pass —
+ * publication still requires CLEAN, so a lost scan simply stays unpublishable.
+ */
+export const SCAN_TIMEOUT_MS = 30 * 60 * 1000;
+
+/** A callback older than this is refused, whatever its signature says. */
+export const CALLBACK_MAX_SKEW_MS = 5 * 60 * 1000;
 
 export type ScannerConfig = {
   /** Where a scan is requested. */
@@ -76,11 +103,27 @@ export type ScanRequest = {
   tenantId: string;
   storagePath: string;
   sha256: string;
+  /**
+   * A short-lived signed URL for the exact object.
+   *
+   * WITHOUT THIS THE WORKFLOW DOES NOT EXIST. The bucket is private and has no
+   * `storage.objects` policy, so a `storage_path` alone is a name the scanner
+   * has no way to read. The caller mints the link; this module never holds
+   * storage credentials.
+   */
+  downloadUrl: string;
+  /** Echoed back in the verdict; makes a replayed callback collide. */
+  nonce: string;
 };
 
 export type ScanDispatch =
-  | { ok: true }
+  | { ok: true; nonce: string }
   | { ok: false; error: "scanner_unavailable" | "dispatch_failed" };
+
+/** A nonce for one dispatch. Unique per (document, attempt), never reused. */
+export function newScanNonce(): string {
+  return randomUUID();
+}
 
 /**
  * Hand an object to the scanner.
@@ -97,21 +140,33 @@ export async function dispatchScan(req: ScanRequest): Promise<ScanDispatch> {
   const cfg = scannerConfig();
   if (!cfg) return { ok: false, error: "scanner_unavailable" };
 
+  // SIGNED OUTBOUND, under the same shared secret. Authentication has to work
+  // in both directions: without this the scanner cannot tell a genuine request
+  // from anyone who learned its endpoint, and would happily fetch and scan
+  // whatever URL a stranger handed it.
+  const body = JSON.stringify({
+    document_id: req.documentId,
+    tenant_id: req.tenantId,
+    storage_path: req.storagePath,
+    sha256: req.sha256,
+    download_url: req.downloadUrl,
+    nonce: req.nonce,
+    issued_at: new Date().toISOString(),
+  });
+
   try {
     const res = await fetch(cfg.endpoint, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        document_id: req.documentId,
-        tenant_id: req.tenantId,
-        storage_path: req.storagePath,
-        sha256: req.sha256,
-      }),
+      headers: {
+        "Content-Type": "application/json",
+        "x-effitrans-signature": hmacSha256Hex(cfg.callbackSecret, body),
+      },
+      body,
       // A dispatch is not a verdict: a slow scanner must not hold a request
       // open, and a timeout here leaves the document unpublishable.
       signal: AbortSignal.timeout(10_000),
     });
-    return res.ok ? { ok: true } : { ok: false, error: "dispatch_failed" };
+    return res.ok ? { ok: true, nonce: req.nonce } : { ok: false, error: "dispatch_failed" };
   } catch {
     return { ok: false, error: "dispatch_failed" };
   }
@@ -126,11 +181,13 @@ export type CallbackPayload = {
   scannerVersion: string | null;
   engineRef: string | null;
   detail: string | null;
+  /** The dispatch's nonce, echoed back. Recorded, and unique per document. */
+  nonce: string;
 };
 
 export type CallbackParse =
   | { ok: true; payload: CallbackPayload }
-  | { ok: false; error: "scanner_unavailable" | "bad_signature" | "invalid_payload" };
+  | { ok: false; error: "scanner_unavailable" | "bad_signature" | "invalid_payload" | "stale_callback" };
 
 /**
  * Authenticate and parse a scanner callback.
@@ -143,7 +200,11 @@ export type CallbackParse =
  * not ERROR and certainly not CLEAN — this function never decides anything
  * about an object, it only decides whether a message is authentic.
  */
-export function parseCallback(rawBody: string, signature: string | null): CallbackParse {
+export function parseCallback(
+  rawBody: string,
+  signature: string | null,
+  now: number = Date.now(),
+): CallbackParse {
   const cfg = scannerConfig();
   if (!cfg) return { ok: false, error: "scanner_unavailable" };
   if (!signature || !verifyHmacSignature(cfg.callbackSecret, rawBody, signature)) {
@@ -168,6 +229,20 @@ export function parseCallback(rawBody: string, signature: string | null): Callba
   if (!isScanVerdict(verdict)) return { ok: false, error: "invalid_payload" };
   if (!/^[0-9a-f]{64}$/.test(sha256)) return { ok: false, error: "invalid_payload" };
 
+  // REPLAY, FIRST LAYER. An HMAC proves WHO sent a message and says nothing
+  // about WHEN or whether it is the first time. A captured CLEAN callback
+  // stayed valid for ever; a freshness window makes it worthless once the
+  // window closes. The second layer is the unique nonce in the database, which
+  // does not depend on either clock being right.
+  const nonce = str("nonce");
+  if (nonce.length < 8) return { ok: false, error: "invalid_payload" };
+
+  const issuedAt = Date.parse(str("issued_at"));
+  if (!Number.isFinite(issuedAt)) return { ok: false, error: "invalid_payload" };
+  if (Math.abs(now - issuedAt) > CALLBACK_MAX_SKEW_MS) {
+    return { ok: false, error: "stale_callback" };
+  }
+
   const opt = (k: string): string | null => (str(k).length > 0 ? str(k) : null);
 
   return {
@@ -181,6 +256,7 @@ export function parseCallback(rawBody: string, signature: string | null): Callba
       scannerVersion: opt("scanner_version"),
       engineRef: opt("engine_ref"),
       detail: opt("detail"),
+      nonce,
     },
   };
 }
