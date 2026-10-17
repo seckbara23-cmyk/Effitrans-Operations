@@ -43,6 +43,30 @@ function isPublicPath(pathname: string): boolean {
     pathname.startsWith("/portal/auth") || // /portal/auth/callback, /portal/auth/update-password
     pathname.startsWith("/card") || // DBC-3 — public digital business cards (token capability)
     pathname === "/api/version" || // 8.0B gate C1 — secret-free build-info for deploy verification
+    // CALLBACK-MIDDLEWARE-F1 — the malware scanner's verdict callback.
+    //
+    // A MACHINE CANNOT HOLD A SESSION COOKIE, so this redirected to /login and
+    // the handler never ran. Worse than a visible failure: a 307 preserves the
+    // method and body, `fetch` follows redirects by default, and /login answers
+    // 200 with HTML — so the scanner read `res.ok` as true and reported a
+    // DELIVERED verdict while the database was never told. Every log said
+    // success and no document could ever leave SCANNING.
+    //
+    // Session-free is correct here, not a concession. The route authenticates
+    // the caller by HMAC-SHA256 over the raw body with a constant-time compare,
+    // refuses a verdict whose nonce has been recorded before, refuses one
+    // outside a 5-minute freshness window, and answers 503 when no scanner is
+    // configured at all. It never consults `getCurrentUser`, so a browser
+    // session would grant it nothing; and it cannot write a document itself —
+    // it calls a definer RPC that re-checks the verdict against the document's
+    // current bytes. Adding a cookie requirement would not make any of that
+    // stronger; it only made the endpoint unreachable by the one caller it has.
+    //
+    // EXACT EQUALITY, deliberately. `startsWith("/api")` would expose every API
+    // route in the application, and `startsWith` on this prefix would expose
+    // any future sibling. A machine-facing route earns its own line here, with
+    // its own authentication argument written down.
+    pathname === "/api/customs/reference/scan-callback" ||
     pathname === "/offline" // 8.3 PWA — public offline fallback (pre-cached by the service worker)
   );
 }

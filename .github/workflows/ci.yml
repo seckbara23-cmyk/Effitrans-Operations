@@ -37,6 +37,28 @@ jobs:
       - name: Unit tests
         run: npm test
 
+      # CALLBACK-F1B — the scanning worker's own contract suite.
+      #
+      # IT NEEDS ITS OWN STEP because `npm test` cannot reach it: vitest is
+      # configured with `include: ["tests/**/*.test.ts"]` and the worker is
+      # `.mjs` under `workers/`, so these 25 tests were passing only on a
+      # developer's machine and nothing in CI would have noticed them
+      # regressing. That mattered concretely — six of them are the regression
+      # suite for CALLBACK-MIDDLEWARE-F1, where a redirect followed to a login
+      # page was read as a delivered malware verdict.
+      #
+      # No install: the worker is Node standard library only, by design, so
+      # there is no lockfile to restore and nothing to audit. `node --test` on
+      # the explicit file rather than the directory, which is also what works
+      # on Windows for the same suite.
+      #
+      # A failure here fails the job. The step carries no failure-tolerance key
+      # of any kind, which `process-engine-schema.test.ts` enforces across this
+      # whole file by substring — so this comment deliberately does not spell
+      # that key out either.
+      - name: Worker contract tests (clamav scanner)
+        run: node --test workers/clamav-scanner/test/contract.test.mjs
+
       - name: Build
         run: npm run build
 
@@ -179,6 +201,17 @@ jobs:
         env:
           PGPASSWORD: postgres
         run: psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/rls_customs_test.sql
+
+      # REF-1-HARDEN (F1). The migration verifier proves the library's policy is
+      # PRESENT and SELECT-only; this proves it REFUSES — a reader denied a
+      # quarantined row, a publisher allowed one, a staff user holding neither
+      # permission denied everything, and a holder of the permission in another
+      # tenant denied tenant A's. It also proves the write boundary: SELECT is
+      # the only privilege granted, so publication cannot happen from a client.
+      - name: Run RLS customs reference library test (CUSTOMS-REF-01A)
+        env:
+          PGPASSWORD: postgres
+        run: psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/rls_customs_reference_test.sql
 
       # MIGRATION-139-APPROVAL-01 §9 — the customs duties breakdown is ratified
       # INTERNAL data (DEC-C39). `customs_record` is exposed to the portal by a

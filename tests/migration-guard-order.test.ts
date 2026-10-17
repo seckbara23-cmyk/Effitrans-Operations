@@ -21,6 +21,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { MIGRATION_COUNT } from "@/lib/platform/ops/build-info";
 
 const read = (p: string) => readFileSync(fileURLToPath(new URL(`../${p}`, import.meta.url)), "utf8");
 const WORKFLOW = read(".github/workflows/migrate-production.yml");
@@ -243,7 +244,10 @@ describe("MIG-LEDGER-151 — wrong target, wrong version, wrong state fail close
     // the precondition is "the single pending one", never a literal.
     const files = readdirSync(fileURLToPath(new URL("../supabase/migrations", import.meta.url)))
       .filter((f) => f.endsWith(".sql") && !f.endsWith(".verify.sql"));
-    expect(files).toHaveLength(151);
+    // Against the shipped constant, not a literal: this test's claim is about
+    // the runner's branch logic, and a hard-coded count made every later slice
+    // trip an assertion that says nothing about it (billing-bypass-01 test 35).
+    expect(files).toHaveLength(MIGRATION_COUNT);
     const branch = recordOnlyBranch();
     expect(branch).not.toMatch(/version\s*===\s*["']20261013000001["']/);
     expect(branch).toContain("state.pending[0] !== version");

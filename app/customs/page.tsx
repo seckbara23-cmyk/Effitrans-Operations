@@ -65,6 +65,21 @@ export default async function CustomsPage({
         {CUSTOMS_STATUSES.map((s) => pill(t.customs.statuses[s], s))}
       </div>
 
+      {/* CUSTOMS-REF-01A — the reference library. Shown only to holders of the
+          library permission, so the link never leads to a refusal page. */}
+      {hasPermission(permissions, "customs:reference:read") && (
+        <Link
+          href="/customs/reference"
+          className="surface flex items-center justify-between gap-3 p-4 text-sm transition hover:border-teal-300"
+        >
+          <span>
+            <span className="font-medium text-slate-900">{t.customs.reference.title}</span>
+            <span className="mt-1 block text-xs text-slate-500">{t.customs.reference.subtitle}</span>
+          </span>
+          <span aria-hidden className="text-slate-400">→</span>
+        </Link>
+      )}
+
       {rows.length === 0 ? (
         <Notice>{t.customs.empty}</Notice>
       ) : (

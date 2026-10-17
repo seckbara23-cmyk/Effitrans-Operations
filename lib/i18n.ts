@@ -673,6 +673,186 @@ export const t = {
         "La validation est enregistrée, mais l'étape officielle n'a pas pu être clôturée. Signalez-le : le dossier reste en attente au niveau du processus.",
       generic: "L'action a échoué. Veuillez réessayer.",
     },
+    // CUSTOMS-REF-01A / REF-1 — the Customs Reference Library.
+    reference: {
+      title: "Bibliothèque douanière de référence",
+      subtitle:
+        "Textes officiels consultés par le service Dédouanement : Code des douanes, TEC, liste des régimes, circulaires.",
+      forbidden: "Vous n'avez pas l'autorisation de consulter la bibliothèque douanière.",
+      empty: "Aucun document de référence publié.",
+      emptyCategory: "Aucun document publié dans cette catégorie.",
+      // Said on every surface, because « présent dans la bibliothèque » and
+      // « texte en vigueur » are not the same claim and must never be read as
+      // one. Nothing here is a legal warranty.
+      authorityDisclaimer:
+        "Les documents de cette bibliothèque sont fournis à titre de référence interne. Vérifiez toujours la version en vigueur auprès de la Direction Générale des Douanes avant de vous en prévaloir.",
+      quarantineNotice:
+        "Ce document est en quarantaine : il n'a pas été analysé et n'est pas consultable par les lecteurs. La plateforme ne dispose pas d'analyse antivirus — ouvrez-le avec prudence et uniquement pour l'évaluer.",
+      licencePendingNotice:
+        "Les Notes explicatives du Système harmonisé sont protégées par le droit d'auteur de l'OMD. Leur licence n'a pas encore été communiquée : elles ne peuvent pas être publiées tant qu'une autorisation explicite n'est pas enregistrée.",
+      regimes: "Régimes douaniers",
+      regimesNone: "Tous régimes",
+      regimesHint:
+        "Séparez par des virgules. Laissez vide si le texte ne vise pas un régime particulier.",
+      search: {
+        legend: "Rechercher dans la bibliothèque",
+        q: "Titre, code ou édition",
+        qPlaceholder: "ex. tarif extérieur, CET, circulaire 2024",
+        regime: "Régime douanier",
+        source: "Autorité de publication",
+        version: "Édition (numéro)",
+        status: "État de publication",
+        anyStatus: "Tous les états",
+        anyCategory: "Tous les types",
+        currentOnly: "Éditions en vigueur uniquement",
+        apply: "Rechercher",
+        reset: "Réinitialiser",
+        results: "{count} document(s)",
+        none: "Aucun document ne correspond à cette recherche.",
+      },
+      scannerAbsent: {
+        title: "Aucun analyseur antivirus n'est configuré",
+        body:
+          "Les documents peuvent être téléversés, décrits et vérifiés, mais aucune publication n'est possible : la plateforme exige une analyse antivirus concluante liée aux octets stockés. Les documents restent en quarantaine, consultables uniquement par les publicateurs.",
+        action: "Analyse indisponible",
+      },
+      lifecycle: {
+        pendingVerification: "En attente de vérification",
+        approved: "Prêt à publier",
+        published: "Publié",
+        withdrawn: "Retiré",
+      },
+      directUpload: {
+        notice:
+          "Au-delà de 4 Mo, le fichier est transféré directement vers le stockage privé, puis vérifié par la plateforme avant d'être enregistré.",
+        uploading: "Transfert en cours…",
+        verifying: "Vérification des octets reçus…",
+        tooLarge: "50 Mo au maximum.",
+      },
+      fields: {
+        category: "Catégorie",
+        title: "Intitulé",
+        sourceAuthority: "Autorité émettrice",
+        edition: "Édition",
+        publishedOn: "Date de publication officielle",
+        referenceCode: "Code de référence",
+        version: "Version",
+        status: "Statut",
+        licence: "Licence",
+        uploadedAt: "Téléversé le",
+        publishedAt: "Publié le",
+        size: "Taille",
+        checksum: "Empreinte SHA-256",
+        notes: "Remarques",
+      },
+      actions: {
+        upload: "Téléverser un document",
+        replace: "Remplacer par une nouvelle édition",
+        view: "Consulter",
+        publish: "Publier",
+        withdraw: "Retirer",
+        verifyProvenance: "Attester la provenance",
+        verifyLegalVersion: "Attester la version en vigueur",
+        recordLicence: "Enregistrer la licence",
+        history: "Historique des versions",
+        requestScan: "Lancer l'analyse antivirus",
+        submitForPublication: "Transmettre pour publication",
+      },
+      scanRequiredNotice:
+        "Aucune publication n'est possible sans une analyse antivirus concluante.",
+      submittedNotice: "Transmis pour publication ; l'approbation revient à une autre personne habilitée.",
+      submittedBySelfNotice: "(vous êtes l'auteur de cette transmission)",
+      verification: {
+        provenanceVerified: "Provenance attestée",
+        provenancePending: "Provenance non attestée",
+        legalVersionVerified: "Version en vigueur attestée",
+        legalVersionPending: "Version en vigueur non attestée",
+      },
+      errors: {
+        forbidden: "Vous n'avez pas l'autorisation d'effectuer cette action.",
+        not_found: "Document introuvable.",
+        missing_file: "Aucun fichier n'a été fourni.",
+        mime_not_pdf: "Seuls les fichiers PDF sont acceptés.",
+        not_a_pdf:
+          "Ce fichier n'est pas un PDF : son contenu ne correspond pas à l'extension annoncée.",
+        too_large:
+          "Ce fichier dépasse la taille maximale acceptée par ce formulaire (4 Mo). Les documents volumineux nécessitent le téléversement direct, prévu dans un lot ultérieur.",
+        too_small: "Ce fichier est trop petit pour être un document de référence.",
+        size_mismatch:
+          "La taille annoncée ne correspond pas au contenu reçu : le téléversement a été refusé.",
+        title_required: "L'intitulé est obligatoire.",
+        authority_required: "L'autorité émettrice est obligatoire.",
+        category_invalid: "La catégorie sélectionnée n'est pas valide.",
+        published_on_invalid: "La date de publication officielle est invalide.",
+        upload_failed: "Le téléversement a échoué. Veuillez réessayer.",
+        save_failed: "L'enregistrement a échoué : le fichier n'a pas été conservé.",
+        predecessor_not_found: "Le document à remplacer est introuvable.",
+        predecessor_already_superseded:
+          "Ce document a déjà été remplacé par une autre édition.",
+        category_mismatch:
+          "Une nouvelle édition doit appartenir à la même catégorie que le document remplacé.",
+        nothing_to_record: "Aucune attestation n'a été sélectionnée.",
+        withdrawn: "Ce document a été retiré : il ne peut plus être modifié.",
+        already_published: "Ce document est déjà publié.",
+        already_withdrawn: "Ce document est déjà retiré.",
+        provenance_unverified:
+          "La provenance de ce document n'a pas encore été attestée : la publication est impossible.",
+        legal_version_unverified:
+          "La version en vigueur n'a pas encore été attestée : la publication est impossible.",
+        licence_unresolved:
+          "Aucune licence n'a été enregistrée pour ce document : la publication est impossible.",
+        explanatory_notes_licence_required:
+          "Les Notes explicatives du Système harmonisé ne peuvent être publiées qu'avec une autorisation de rediffusion explicite.",
+        licence_invalid: "La licence sélectionnée n'est pas valide.",
+        licence_note_required:
+          "Indiquez la source de cette décision de licence : qui l'a communiquée, et quand.",
+        reason_required: "Un motif est obligatoire pour retirer un document.",
+        // REF-1-HARDEN — the business key is mandatory, inherited on
+        // replacement, and the audit trail cannot be skipped.
+        reference_code_required:
+          "Le code de référence est obligatoire : c'est lui qui identifie le document d'une édition à l'autre.",
+        reference_code_mismatch:
+          "Le code de référence doit être identique à celui de l'édition remplacée : une nouvelle édition reste le même document.",
+        audit_failed:
+          "La journalisation a échoué : le téléversement a été annulé et aucun document n'a été conservé. Réessayez.",
+        // REF-1-PUBLISH-GATE — the scan gate and maker-checker.
+        scan_required:
+          "Ce document n'a pas été analysé : la publication est impossible tant qu'une analyse antivirus n'a pas abouti.",
+        scan_in_progress:
+          "L'analyse antivirus est en cours : la publication sera possible une fois le résultat enregistré.",
+        scan_infected:
+          "L'analyse antivirus a détecté une menace : ce document ne peut pas être publié et a été retiré de la consultation.",
+        scan_error:
+          "L'analyse antivirus n'a pas abouti : par précaution, la publication reste impossible. Relancez l'analyse.",
+        scan_binding_mismatch:
+          "Le résultat d'analyse ne correspond pas au fichier enregistré : la publication est refusée.",
+        scanner_unavailable:
+          "Aucun service d'analyse antivirus n'est configuré : la publication est impossible. Contactez l'administrateur.",
+        dispatch_failed:
+          "L'analyse antivirus n'a pas pu être lancée. Réessayez dans quelques instants.",
+        not_submitted:
+          "Ce document doit d'abord être transmis pour publication par une première personne.",
+        already_submitted: "Ce document a déjà été transmis pour publication.",
+        self_approval_forbidden:
+          "Vous avez transmis ce document pour publication : son approbation revient à une autre personne habilitée.",
+        scan_not_requestable:
+          "Une analyse ne peut être lancée que sur un document en quarantaine non encore analysé.",
+        lineage_invalid:
+          "Cette nouvelle édition ne correspond pas au document qu'elle remplace (catégorie ou code de référence différent)." ,
+        // Route-level refusals the upload form can surface verbatim.
+        invalid_input: "La requête est incomplète ou mal formée.",
+        unavailable:
+          "Le document est momentanément indisponible. Réessayez dans quelques instants.",
+        invalid_upload_id: "Ticket de téléversement invalide.",
+        upload_not_found: "Le fichier téléversé est introuvable ; recommencez le téléversement.",
+        sha256_mismatch:
+          "Les octets reçus ne correspondent pas au fichier choisi ; le téléversement a été refusé.",
+        ticket_failed: "Impossible d'ouvrir un téléversement direct pour le moment.",
+        regime_too_long: "Un régime douanier ne peut dépasser 48 caractères.",
+        too_many_regimes: "24 régimes douaniers au maximum par document.",
+        generic: "L'action a échoué. Veuillez réessayer.",
+      },
+    },
   },
   transport: {
     title: "Transport",

@@ -1246,6 +1246,26 @@ export type Database = {
         Update: never;
         Relationships: [];
       };
+      // CUSTOMS-REF-01A / REF-1 — the Customs Reference Library. Carries no
+      // file_id: it is deliberately not a dossier document.
+      customs_reference_document: {
+        Row: { id: string; tenant_id: string; category: string; title: string; source_authority: string; edition: string | null; published_on: string | null; reference_code: string; customs_regimes: string[]; version: number; scan_status: string; scan_requested_at: string | null; scan_requested_by: string | null; scan_completed_at: string | null; scanned_sha256: string | null; scanned_storage_path: string | null; scanner_name: string | null; scanner_version: string | null; scan_detail: string | null; submitted_for_publication_by: string | null; submitted_for_publication_at: string | null; withdrawn_source: string | null; supersedes_id: string | null; superseded_by_id: string | null; superseded_at: string | null; storage_path: string; mime_type: string; size_bytes: number; content_sha256: string; status: string; licence_status: string; redistribution_allowed: boolean; licence_note: string | null; provenance_verified: boolean; legal_version_verified: boolean; uploaded_by: string; uploaded_at: string; published_by: string | null; published_at: string | null; withdrawn_by: string | null; withdrawn_at: string | null; notes: string | null; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; category: string; title: string; source_authority: string; edition?: string | null; published_on?: string | null; reference_code: string; customs_regimes?: string[]; version?: number; supersedes_id?: string | null; storage_path: string; mime_type: string; size_bytes: number; content_sha256: string; status?: string; licence_status?: string; redistribution_allowed?: boolean; licence_note?: string | null; provenance_verified?: boolean; legal_version_verified?: boolean; uploaded_by: string; notes?: string | null };
+        // The identity columns are absent on purpose: migration 152's
+        // `trg_customs_reference_identity` refuses to change the stored object,
+        // its checksum, its version or its uploader, so offering them here
+        // would type a write the database will reject.
+        Update: { customs_regimes?: string[]; status?: string; licence_status?: string; redistribution_allowed?: boolean; licence_note?: string | null; provenance_verified?: boolean; legal_version_verified?: boolean; superseded_by_id?: string | null; superseded_at?: string | null; published_by?: string | null; published_at?: string | null; withdrawn_by?: string | null; withdrawn_at?: string | null; withdrawn_source?: string | null; notes?: string | null; title?: string; edition?: string | null; published_on?: string | null; scan_status?: string; scan_requested_at?: string | null; scan_requested_by?: string | null };
+        Relationships: [];
+      };
+      // REF-1-PUBLISH-GATE — append-only malware-scan evidence. No Update type:
+      // `prevent_mutation()` blocks UPDATE and DELETE for every role.
+      customs_reference_scan: {
+        Row: { id: string; tenant_id: string; document_id: string; sha256: string; storage_path: string; verdict: string; scanner_name: string; scanner_version: string | null; engine_ref: string | null; detail: string | null; recorded_at: string; recorded_by: string | null; callback_nonce: string | null };
+        Insert: { id?: string; tenant_id: string; document_id: string; sha256: string; storage_path: string; verdict: string; scanner_name: string; scanner_version?: string | null; engine_ref?: string | null; detail?: string | null; recorded_by?: string | null; callback_nonce?: string | null };
+        Update: never;
+        Relationships: [];
+      };
       customs_record: {
         Row: {
           sh_position_count: number | null;
@@ -5030,6 +5050,26 @@ export type Database = {
       };
       // MAYA-P0.7-A — Quality Control N°3. Writes the decision AND appends the
       // ledger event in one transaction; service_role only.
+      // REF-1-PUBLISH-GATE — the publication gate's three doors. All
+      // service_role-only definers; the first takes no actor because a scanner
+      // is not a user, the other two assert the NOMINATED actor's authority.
+      record_customs_reference_scan: {
+        Args: {
+          p_document: string; p_tenant: string; p_verdict: string;
+          p_sha256: string; p_storage_path: string; p_scanner_name: string;
+          p_scanner_version?: string | null; p_engine_ref?: string | null;
+          p_detail?: string | null; p_nonce?: string | null;
+        };
+        Returns: string;
+      };
+      submit_customs_reference_for_publication: {
+        Args: { p_document: string; p_tenant: string; p_actor: string };
+        Returns: string;
+      };
+      publish_customs_reference: {
+        Args: { p_document: string; p_tenant: string; p_approver: string };
+        Returns: string;
+      };
       record_customs_receivability: {
         Args: { p_customs_id: string; p_status: string; p_note: string | null; p_actor: string };
         Returns: Json;

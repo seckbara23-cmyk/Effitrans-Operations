@@ -65,6 +65,8 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     description: "Tenant administrator — manages users, roles and configuration for the company. Full operational read + admin.",
     requiredForEveryTenant: true,
     permissions: [
+      // CUSTOMS-REF-01A — publication authority: asserts that a text is the current one.
+      "customs:reference:read", "customs:reference:publish",
       // FIN-AGING-2 — administers, does NOT approve. No import_approve, validate,
       // finalize, share or template_manage: platform administration is not
       // financial signoff authority (ratified D-11).
@@ -125,6 +127,8 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     description: "Governance — full company visibility (read-only across modules), no daily admin.",
     requiredForEveryTenant: false,
     permissions: [
+      // CUSTOMS-REF-01A — consultation of the customs reference library.
+      "customs:reference:read",
       // FIN-AGING-2 — reads and exports; no sharing authority unless later ratified.
       "finance:aging:export", "finance:aging:print", "finance:aging:read",
       "analytics:read", "audit:read:all", "client:read", "communication:read", "customs:read",
@@ -203,6 +207,8 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     description: "Control tower — coordinates operations across customs, documents and transport.",
     requiredForEveryTenant: false,
     permissions: [
+      // CUSTOMS-REF-01A — consultation of the customs reference library.
+      "customs:reference:read",
       "client:read", "customs:assign", "customs:create", "customs:read", "customs:update",
       "document:create", "document:read", "document:update", "file:read", "file:transition", "file:update", ...BASE,
       // COORDINATOR-TENANT-VISIBILITY-01 (ratified 2026-10-01) — the control
@@ -246,6 +252,8 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     requiredForEveryTenant: false,
     businessProfile: "customsBroker",
     permissions: [
+      // CUSTOMS-REF-01A — publication authority: asserts that a text is the current one.
+      "customs:reference:read", "customs:reference:publish",
       "customs:assign", "customs:create", "customs:read", "customs:release", "customs:update",
       // customs:validate — the CHECKER half of official step 7. Deliberately NOT
       // held by CUSTOMS_DECLARANT: the preparer must never be able to validate.
@@ -276,6 +284,8 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     requiredForEveryTenant: false,
     businessProfile: "customsBroker",
     permissions: [
+      // CUSTOMS-REF-01A — consultation of the customs reference library.
+      "customs:reference:read",
       "customs:create", "customs:read", "customs:update",
       // D4 (RATIFIED 2026-08-28) — may RECERTIFY a corrected record, and only
       // that. This is not customs:validate and confers none of it: first
@@ -297,6 +307,8 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     description: "Document control — manages the dossier document set.",
     requiredForEveryTenant: false,
     permissions: [
+      // CUSTOMS-REF-01A — consultation of the customs reference library.
+      "customs:reference:read",
       "customs:read", "document:create", "document:read", "document:update", "file:read", ...BASE,
       "task:read", "task:update", "tracking:read", "transport:read",
       // Phase 8.7 — Messaging Center. Documentation department inbox.
@@ -375,6 +387,8 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     description: "Supervision + milestone validation across operations and finance.",
     requiredForEveryTenant: false,
     permissions: [
+      // CUSTOMS-REF-01A — consultation of the customs reference library.
+      "customs:reference:read",
       "analytics:read", "client:read", "communication:manage", "communication:read",
       "communication:send", "customs:create", "customs:delete", "customs:read", "customs:release",
       "customs:update", "document:approve", "document:create", "document:delete", "document:read",
@@ -435,6 +449,8 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     description: "Audit / compliance read across the company, plus document approval.",
     requiredForEveryTenant: false,
     permissions: [
+      // CUSTOMS-REF-01A — consultation of the customs reference library.
+      "customs:reference:read",
       "audit:read:all", "customs:read", "document:approve", "document:read", "file:read",
       "file:read:all", ...BASE, "process:read", "task:read", "task:read:all", "tracking:read",
       "transport:read", "logistics:copilot:read",
@@ -508,6 +524,8 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     requiredForEveryTenant: false,
     businessProfile: "customsBroker",
     permissions: [
+      // CUSTOMS-REF-01A — consultation of the customs reference library.
+      "customs:reference:read",
       "customs:read", "customs:register", "file:read", "finance:read", ...BASE,
       ...PROCESS_HANDOFF, "process:read", "logistics:copilot:read",
       // Phase 8.7 — Messaging Center. Customs department inbox.
@@ -524,6 +542,8 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
     requiredForEveryTenant: false,
     businessProfile: "customsBroker",
     permissions: [
+      // CUSTOMS-REF-01A — consultation of the customs reference library.
+      "customs:reference:read",
       "customs:read", "customs:release", "customs:update", "document:create", "document:read",
       "file:read", ...BASE, ...PROCESS_HANDOFF, "process:read", "logistics:copilot:read",
       // Phase 8.7 — Messaging Center. Customs department inbox.

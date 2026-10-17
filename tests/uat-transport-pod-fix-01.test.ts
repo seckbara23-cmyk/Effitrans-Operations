@@ -334,10 +334,15 @@ describe("POD-FIX-01 / D5 — restarting cannot fork the session", () => {
 
 describe("POD-FIX-01 — the correction stays inside the driver lane", () => {
   it("29 — no migration, no schema, no RLS change: the ledger is where it was", () => {
+    // PINNED LOCALLY, NOT GLOBALLY (the billing-bypass-01 test 35 ruling).
+    // A global count or a LATEST_MIGRATION pin made every LATER slice's
+    // migration fail a test that never meant anything about it. The claim is
+    // that THIS slice added no migration of its own, so that is what is
+    // asserted. Updated by CUSTOMS-REF-01A, which legitimately ships #152.
     const files = readdirSync(fileURLToPath(new URL("../supabase/migrations", import.meta.url)))
       .filter((f) => f.endsWith(".sql") && !f.endsWith(".verify.sql"));
-    expect(files).toHaveLength(151);
-    expect(MIGRATION_COUNT).toBe(151);
+    expect(files.filter((f) => /pod_fix|transport_pod|returning_session/i.test(f))).toEqual([]);
+    expect(MIGRATION_COUNT).toBe(files.length);
   });
 
   it("30 — the pure gate module performs no I/O and names no vendor", () => {

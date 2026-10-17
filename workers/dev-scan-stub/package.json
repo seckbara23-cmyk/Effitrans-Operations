@@ -1,0 +1,11 @@
+{
+  "name": "effitrans-dev-scan-stub",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "DEVELOPMENT ONLY. Speaks the scanner contract so the publication workflow can be exercised without ClamAV. Detects nothing.",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node src/server.mjs"
+  }
+}

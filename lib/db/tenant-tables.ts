@@ -52,6 +52,11 @@ export const TENANT_SCOPED_TABLES = new Set<string>([
   "document",
   "customs_correction",
   "customs_record",
+  // CUSTOMS-REF-01A — the reference library. Registered with the slice that
+  // creates it: every read of it runs through the service-role client, so an
+  // unscoped one would be a cross-tenant leak that RLS does not backstop.
+  "customs_reference_document",
+  "customs_reference_scan",
   "transport_record",
   // TMS-6 — external transport subcontractors (migration 118).
   "transport_provider",

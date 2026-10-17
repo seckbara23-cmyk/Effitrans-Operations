@@ -136,7 +136,13 @@ describe("CTRL-C-4A — nothing else moved", () => {
   });
 
   it("11 — this slice ships no migration", () => {
-    const files = readdirSync(fileURLToPath(new URL("../supabase/migrations", import.meta.url)));
-    expect(files.filter((f) => f.endsWith(".sql"))).toHaveLength(151);
+    // PINNED LOCALLY, NOT GLOBALLY (the billing-bypass-01 test 35 ruling).
+    // A global count or a LATEST_MIGRATION pin made every LATER slice's
+    // migration fail a test that never meant anything about it. The claim is
+    // that THIS slice added no migration of its own, so that is what is
+    // asserted. Updated by CUSTOMS-REF-01A, which legitimately ships #152.
+    const files = readdirSync(fileURLToPath(new URL("../supabase/migrations", import.meta.url)))
+      .filter((f) => f.endsWith(".sql"));
+    expect(files.filter((f) => /issuance|invoice_number|ctrl_c_4a/i.test(f))).toEqual([]);
   });
 });
