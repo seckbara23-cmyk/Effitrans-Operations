@@ -37,6 +37,28 @@ jobs:
       - name: Unit tests
         run: npm test
 
+      # CALLBACK-F1B — the scanning worker's own contract suite.
+      #
+      # IT NEEDS ITS OWN STEP because `npm test` cannot reach it: vitest is
+      # configured with `include: ["tests/**/*.test.ts"]` and the worker is
+      # `.mjs` under `workers/`, so these 25 tests were passing only on a
+      # developer's machine and nothing in CI would have noticed them
+      # regressing. That mattered concretely — six of them are the regression
+      # suite for CALLBACK-MIDDLEWARE-F1, where a redirect followed to a login
+      # page was read as a delivered malware verdict.
+      #
+      # No install: the worker is Node standard library only, by design, so
+      # there is no lockfile to restore and nothing to audit. `node --test` on
+      # the explicit file rather than the directory, which is also what works
+      # on Windows for the same suite.
+      #
+      # A failure here fails the job. The step carries no failure-tolerance key
+      # of any kind, which `process-engine-schema.test.ts` enforces across this
+      # whole file by substring — so this comment deliberately does not spell
+      # that key out either.
+      - name: Worker contract tests (clamav scanner)
+        run: node --test workers/clamav-scanner/test/contract.test.mjs
+
       - name: Build
         run: npm run build
 
