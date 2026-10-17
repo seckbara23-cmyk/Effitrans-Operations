@@ -595,9 +595,9 @@ describe("REF-1 — French, and the inventory", () => {
   it("44 — one migration ships, with its companion verifier, and the inventory agrees", () => {
     const files = readdirSync(fileURLToPath(new URL("../supabase/migrations", import.meta.url)))
       .filter((f) => f.endsWith(".sql"));
-    expect(files).toHaveLength(154);
-    expect(MIGRATION_COUNT).toBe(154);
-    expect(LATEST_MIGRATION).toBe("20261018000001_customs_reference_scan_replay");
+    expect(files).toContain("20261016000001_customs_reference_library.sql");
+    expect(MIGRATION_COUNT).toBe(files.length);
+    expect(files.at(-1)).toBe(`${LATEST_MIGRATION}.sql`);
     expect(verifier).toContain("ok boolean, detail text");
     expect(verifier).toContain("customs_reference_document");
     // The verifier asserts the POLICY, not table privileges: on Supabase
@@ -737,7 +737,12 @@ describe("REF-1-HARDEN — the four corrections", () => {
       .filter((f) => f.endsWith(".sql"));
     // Corrections to an UNAPPLIED migration belong in it; NEW CAPABILITY gets
     // its own, which is why the publication gate is #153 and not an edit.
-    expect(files).toHaveLength(154);
+    expect(files.filter((f) => f.includes("customs_reference"))).toEqual([
+      "20261016000001_customs_reference_library.sql",
+      "20261017000001_customs_reference_publication_gate.sql",
+      "20261018000001_customs_reference_scan_replay.sql",
+      "20261019000001_customs_reference_regime_axis.sql",
+    ]);
     expect((migration.match(/insert into public\.permission/g) ?? []).length).toBe(1);
     expect((migration.match(/insert into public\.role_permission/g) ?? []).length).toBe(2);
     const publishGrant = migration.slice(migration.indexOf("p.code = 'customs:reference:publish'"));

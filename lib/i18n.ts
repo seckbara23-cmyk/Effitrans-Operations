@@ -690,6 +690,39 @@ export const t = {
         "Ce document est en quarantaine : il n'a pas été analysé et n'est pas consultable par les lecteurs. La plateforme ne dispose pas d'analyse antivirus — ouvrez-le avec prudence et uniquement pour l'évaluer.",
       licencePendingNotice:
         "Les Notes explicatives du Système harmonisé sont protégées par le droit d'auteur de l'OMD. Leur licence n'a pas encore été communiquée : elles ne peuvent pas être publiées tant qu'une autorisation explicite n'est pas enregistrée.",
+      regimes: "Régimes douaniers",
+      regimesNone: "Tous régimes",
+      regimesHint:
+        "Séparez par des virgules. Laissez vide si le texte ne vise pas un régime particulier.",
+      search: {
+        legend: "Rechercher dans la bibliothèque",
+        q: "Titre, code ou édition",
+        qPlaceholder: "ex. tarif extérieur, CET, circulaire 2024",
+        regime: "Régime douanier",
+        source: "Autorité de publication",
+        version: "Édition (numéro)",
+        status: "État de publication",
+        anyStatus: "Tous les états",
+        anyCategory: "Tous les types",
+        currentOnly: "Éditions en vigueur uniquement",
+        apply: "Rechercher",
+        reset: "Réinitialiser",
+        results: "{count} document(s)",
+        none: "Aucun document ne correspond à cette recherche.",
+      },
+      lifecycle: {
+        pendingVerification: "En attente de vérification",
+        approved: "Prêt à publier",
+        published: "Publié",
+        withdrawn: "Retiré",
+      },
+      directUpload: {
+        notice:
+          "Au-delà de 4 Mo, le fichier est transféré directement vers le stockage privé, puis vérifié par la plateforme avant d'être enregistré.",
+        uploading: "Transfert en cours…",
+        verifying: "Vérification des octets reçus…",
+        tooLarge: "50 Mo au maximum.",
+      },
       fields: {
         category: "Catégorie",
         title: "Intitulé",
@@ -804,6 +837,13 @@ export const t = {
         invalid_input: "La requête est incomplète ou mal formée.",
         unavailable:
           "Le document est momentanément indisponible. Réessayez dans quelques instants.",
+        invalid_upload_id: "Ticket de téléversement invalide.",
+        upload_not_found: "Le fichier téléversé est introuvable ; recommencez le téléversement.",
+        sha256_mismatch:
+          "Les octets reçus ne correspondent pas au fichier choisi ; le téléversement a été refusé.",
+        ticket_failed: "Impossible d'ouvrir un téléversement direct pour le moment.",
+        regime_too_long: "Un régime douanier ne peut dépasser 48 caractères.",
+        too_many_regimes: "24 régimes douaniers au maximum par document.",
         generic: "L'action a échoué. Veuillez réessayer.",
       },
     },

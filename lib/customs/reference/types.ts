@@ -84,6 +84,8 @@ export type ReferenceDocument = {
   edition: string | null;
   publishedOn: string | null;
   referenceCode: string;
+  /** REF-2. Normalised, de-duplicated, sorted. Empty = not regime-specific. */
+  customsRegimes: string[];
   version: number;
   supersedesId: string | null;
   supersededById: string | null;
@@ -116,6 +118,10 @@ export type ReferenceActionResult =
 
 export function isReferenceCategory(v: unknown): v is ReferenceCategory {
   return typeof v === "string" && (REFERENCE_CATEGORIES as readonly string[]).includes(v);
+}
+
+export function isReferenceStatus(v: unknown): v is ReferenceStatus {
+  return typeof v === "string" && (REFERENCE_STATUSES as readonly string[]).includes(v);
 }
 
 export function isLicenceStatus(v: unknown): v is LicenceStatus {
@@ -172,4 +178,49 @@ export function publicationBlockers(doc: {
     out.push("explanatory_notes_licence_required");
   }
   return out;
+}
+
+/**
+ * The four publication states an operator needs to see. REF-2.
+ *
+ * DERIVED, NEVER STORED. There is no fifth column recording « approved »:
+ * readiness is a function of the conditions migration 153 actually checks, so
+ * deriving it is what keeps the badge honest. A stored flag would be one more
+ * thing that could disagree with the gate.
+ *
+ * WHY SELF-APPROVAL IS NOT CONSIDERED HERE. `publicationBlockers` also reports
+ * `self_approval_forbidden`, which depends on WHO is looking. That is a fact
+ * about the viewer, not about the document: the same row would read « ready »
+ * to one publisher and « pending » to another, which is not what a status
+ * column means. So this answers « is this document ready for somebody to
+ * publish? » and the button, which is about the viewer, keeps using
+ * `publicationBlockers`.
+ */
+export type ReferenceLifecycle =
+  | "pendingVerification"
+  | "approved"
+  | "published"
+  | "withdrawn";
+
+export function referenceLifecycle(doc: {
+  status: ReferenceStatus;
+  category: ReferenceCategory;
+  licenceStatus: LicenceStatus;
+  provenanceVerified: boolean;
+  legalVersionVerified: boolean;
+  scanStatus: ScanStatus;
+}): ReferenceLifecycle {
+  if (doc.status === "WITHDRAWN") return "withdrawn";
+  if (doc.status === "PUBLISHED") return "published";
+  // QUARANTINE. Ready only when every condition the database checks is met —
+  // and the scan is one of them, so with no scanner nothing reaches `approved`.
+  const blockers = publicationBlockers({
+    status: doc.status,
+    category: doc.category,
+    licenceStatus: doc.licenceStatus,
+    provenanceVerified: doc.provenanceVerified,
+    legalVersionVerified: doc.legalVersionVerified,
+    scanStatus: doc.scanStatus,
+  });
+  return blockers.length === 0 ? "approved" : "pendingVerification";
 }

@@ -394,6 +394,93 @@ begin
   end if;
 end $$;
 
+-- ===========================================================================
+-- PART 5 — REF-2: the regime axis normalises itself, and grants nothing.
+-- ===========================================================================
+-- WHY THIS IS HERE AND NOT ONLY IN THE VERIFIER. The verifier asserts that the
+-- trigger EXISTS, is security-invoker and watches the right column. It cannot
+-- assert that the trigger WORKS: that needs a write. These checks perform the
+-- writes, so a normaliser that was present but wrong would be caught here
+-- rather than by an operator wondering why 'transit' does not match 'TRANSIT'.
+do $$
+declare
+  normalised   text[];
+  bounded      boolean := false;
+  over_long    boolean := false;
+  reader_writes int;
+begin
+  perform set_config('role', 'postgres', true);
+
+  -- Trim, upper-case, de-duplicate, sort, and drop blanks and NULLs in one go.
+  update public.customs_reference_document
+     set customs_regimes = array[' transit ', 'MISE EN CONSOMMATION', 'Transit', '', null]
+   where id = '00000000-0000-0000-0000-00000000cfd1';
+
+  select customs_regimes into normalised
+    from public.customs_reference_document
+   where id = '00000000-0000-0000-0000-00000000cfd1';
+
+  if normalised is distinct from array['MISE EN CONSOMMATION', 'TRANSIT'] then
+    raise exception 'REGIME NORMALISE FAIL: got %', normalised;
+  end if;
+
+  -- An entry over 48 characters is REFUSED, not silently shortened: a row
+  -- searchable under a name nobody typed is worse than a rejected write.
+  begin
+    update public.customs_reference_document
+       set customs_regimes = array[repeat('x', 49)]
+     where id = '00000000-0000-0000-0000-00000000cfd1';
+  exception when others then
+    over_long := true;
+  end;
+
+  -- And the array is bounded, so the GIN index cannot be used as a DoS surface.
+  begin
+    update public.customs_reference_document
+       set customs_regimes = (select array_agg('R' || g::text) from generate_series(1, 25) g)
+     where id = '00000000-0000-0000-0000-00000000cfd1';
+  exception when others then
+    bounded := true;
+  end;
+
+  -- The new column is NOT a new write path. A plain reader still cannot write
+  -- this table, and adding a searchable column must not have changed that.
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims',
+    json_build_object('sub','00000000-0000-0000-0000-00000000cfa1','role','authenticated')::text, true);
+  begin
+    update public.customs_reference_document
+       set customs_regimes = array['FORGED']
+     where id = '00000000-0000-0000-0000-00000000cfd1';
+    reader_writes := 1;
+  exception when others then
+    reader_writes := 0;
+  end;
+  -- An UPDATE with no permitting policy affects zero rows rather than raising,
+  -- so "no exception" is not success: the row must be UNCHANGED.
+  perform set_config('role', 'postgres', true);
+  if exists (
+    select 1 from public.customs_reference_document
+     where id = '00000000-0000-0000-0000-00000000cfd1'
+       and customs_regimes @> array['FORGED']
+  ) then
+    reader_writes := 1;
+  else
+    reader_writes := 0;
+  end if;
+
+  insert into _r values
+    ('regime_normalised',            case when normalised = array['MISE EN CONSOMMATION','TRANSIT'] then 1 else 0 end),
+    ('regime_over_long_refused',     case when over_long then 1 else 0 end),
+    ('regime_cardinality_bounded',   case when bounded then 1 else 0 end),
+    ('regime_reader_write_blocked',  case when reader_writes = 0 then 1 else 0 end);
+
+  if not over_long or not bounded or reader_writes <> 0 then
+    raise exception 'REF-2 REGIME FAIL: over_long=% bounded=% reader_writes=%',
+      over_long, bounded, reader_writes;
+  end if;
+end $$;
+
 select check_name, value from _r order by check_name;
 
 rollback;

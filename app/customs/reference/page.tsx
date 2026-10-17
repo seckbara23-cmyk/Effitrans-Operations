@@ -16,6 +16,8 @@ import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { getLibrary } from "@/lib/customs/reference/service";
 import { ReferenceLibraryPanel } from "@/components/customs/reference-library-panel";
+import { ReferenceSearch } from "@/components/customs/reference-search";
+import { isReferenceCategory, isReferenceStatus } from "@/lib/customs/reference/types";
 import { t } from "@/lib/i18n";
 
 export const metadata: Metadata = { title: t.customs.reference.title };
@@ -25,7 +27,26 @@ function Notice({ children }: { children: React.ReactNode }) {
   return <div className="surface p-6 text-sm text-slate-600">{children}</div>;
 }
 
-export default async function CustomsReferencePage() {
+/**
+ * REF-2 — the search axes arrive as search parameters.
+ *
+ * Every one is re-read and re-validated here; the form is a convenience, not a
+ * contract. `getLibrary` applies the viewer's permission itself, so a
+ * hand-typed `?status=QUARANTINE` cannot widen what a plain reader sees.
+ */
+type SearchParams = Record<string, string | string[] | undefined>;
+
+const one = (v: string | string[] | undefined): string | undefined => {
+  const raw = Array.isArray(v) ? v[0] : v;
+  const trimmed = (raw ?? "").trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+};
+
+export default async function CustomsReferencePage({
+  searchParams,
+}: {
+  searchParams?: Promise<SearchParams>;
+}) {
   const header = (
     <PageHeader
       meta="Dédouanement"
@@ -54,7 +75,26 @@ export default async function CustomsReferencePage() {
     );
   }
 
-  const { documents, canPublish } = await getLibrary();
+  const sp = (await searchParams) ?? {};
+  const q = one(sp.q);
+  const categoryParam = one(sp.category);
+  const regime = one(sp.regime);
+  const source = one(sp.source);
+  const versionParam = one(sp.version);
+  const statusParam = one(sp.status);
+  const currentOnly = one(sp.currentOnly) === "1";
+
+  // An unrecognised value is DROPPED rather than passed through: a typo in the
+  // query string must narrow nothing, and must never reach a filter.
+  const category = isReferenceCategory(categoryParam) ? categoryParam : undefined;
+  const status = isReferenceStatus(statusParam) ? statusParam : undefined;
+  const versionNumber = Number(versionParam);
+  const version =
+    Number.isInteger(versionNumber) && versionNumber > 0 ? versionNumber : undefined;
+
+  const { documents, canPublish } = await getLibrary({
+    q, category, regime, source, version, status, currentOnly,
+  });
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -67,6 +107,12 @@ export default async function CustomsReferencePage() {
       >
         {t.customs.reference.authorityDisclaimer}
       </div>
+
+      <ReferenceSearch
+        canPublish={canPublish}
+        current={{ q, category, regime, source, version: versionParam, status, currentOnly }}
+        resultCount={documents.length}
+      />
 
       <ReferenceLibraryPanel documents={documents} canPublish={canPublish} viewerId={user.id} />
 

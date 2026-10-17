@@ -23,6 +23,7 @@ import {
   REFERENCE_CATEGORIES,
   STATUS_LABEL_FR,
   publicationBlockers,
+  referenceLifecycle,
   type LicenceStatus,
   type ReferenceCategory,
   type ReferenceDocument,
@@ -35,6 +36,8 @@ import {
   submitForPublication,
   withdrawDocument,
 } from "@/lib/customs/reference/actions";
+import { MAX_UPLOAD_BYTES } from "@/lib/customs/reference/validate";
+import { getBrowserSupabaseClient } from "@/lib/supabase/client";
 import { t } from "@/lib/i18n";
 
 const errors = t.customs.reference.errors as Record<string, string>;
@@ -47,6 +50,13 @@ const STATUS_STYLE: Record<string, string> = {
 };
 
 /** Only CLEAN is reassuring, and only CLEAN lets anything be published. */
+const LIFECYCLE_STYLE: Record<string, string> = {
+  pendingVerification: "border-amber-200 bg-amber-50 text-amber-900",
+  approved: "border-sky-200 bg-sky-50 text-sky-900",
+  published: "border-emerald-200 bg-emerald-50 text-emerald-900",
+  withdrawn: "border-slate-300 bg-slate-100 text-slate-700",
+};
+
 const SCAN_STYLE: Record<string, string> = {
   CLEAN: "bg-teal-50 text-teal-700",
   SCANNING: "bg-sky-50 text-sky-700",
@@ -141,8 +151,24 @@ export function ReferenceLibraryPanel({
                           {doc.publishedOn ? ` · ${doc.publishedOn}` : ""}
                           {` · v${doc.version} · ${formatSize(doc.sizeBytes)}`}
                         </p>
+                        {/* REF-2. Empty means « not regime-specific » — the
+                            Customs Code, the tariff — and never « unknown ». */}
+                        <p className="mt-1 text-xs text-slate-500">
+                          {t.customs.reference.regimes}
+                          {" : "}
+                          {doc.customsRegimes.length > 0
+                            ? doc.customsRegimes.join(", ")
+                            : t.customs.reference.regimesNone}
+                        </p>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
+                        {/* REF-2. Listed first, because « can I rely on this
+                            document? » is the question an operator opens the
+                            library with, and the three badges after it are the
+                            reasons behind this one's answer. */}
+                        <Badge className={LIFECYCLE_STYLE[referenceLifecycle(doc)]}>
+                          {t.customs.reference.lifecycle[referenceLifecycle(doc)]}
+                        </Badge>
                         <Badge className={STATUS_STYLE[doc.status]}>{STATUS_LABEL_FR[doc.status]}</Badge>
                         <Badge>{LICENCE_LABEL_FR[doc.licenceStatus]}</Badge>
                         <Badge className={SCAN_STYLE[doc.scanStatus]}>
@@ -382,22 +408,122 @@ function UploadForm({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [category, setCategory] = useState<ReferenceCategory>("LEGISLATION");
+  /** Which leg of a direct upload is running, for the operator. */
+  const [phase, setPhase] = useState<string | null>(null);
 
   const replaceable = documents.filter((d) => d.category === category && !d.supersededById);
 
+  /**
+   * REF-2 — ONE form, two transports, chosen by the file's size.
+   *
+   * At or under `MAX_UPLOAD_BYTES` the bytes go through the REF-1 route
+   * unchanged. That path is CI-verified and is deliberately left alone: a
+   * 2 MB circular has no reason to take a three-request detour.
+   *
+   * Above it, the bytes cannot fit in a serverless request at all, so they go
+   * straight to the private bucket under a short-lived signed upload URL and
+   * `/finalize` reads them back, verifies them and writes the row. Both paths
+   * land the same row in the same QUARANTINE state.
+   */
   async function submit(form: FormData) {
     setBusy(true);
     setError(null);
+    setPhase(null);
     try {
-      const res = await fetch("/api/customs/reference/upload", { method: "POST", body: form });
-      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
-      if (!res.ok || !body.ok) setError(sentence(body.error ?? "generic"));
-      else onDone();
+      const file = form.get("file");
+      const picked = file instanceof File ? file : null;
+
+      if (picked && picked.size > MAX_UPLOAD_BYTES) {
+        await submitDirect(form, picked);
+      } else {
+        const res = await fetch("/api/customs/reference/upload", { method: "POST", body: form });
+        const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+        if (!res.ok || !body.ok) setError(sentence(body.error ?? "generic"));
+        else onDone();
+      }
     } catch {
       setError(sentence("generic"));
     } finally {
       setBusy(false);
+      setPhase(null);
     }
+  }
+
+  /** The metadata both transports send, read from the one form. */
+  function metadataOf(form: FormData): Record<string, string | number | null> {
+    const g = (k: string): string | null => {
+      const v = form.get(k);
+      const str = typeof v === "string" ? v.trim() : "";
+      return str.length > 0 ? str : null;
+    };
+    return {
+      category: g("category") ?? "",
+      title: g("title") ?? "",
+      sourceAuthority: g("sourceAuthority") ?? "",
+      edition: g("edition"),
+      publishedOn: g("publishedOn"),
+      referenceCode: g("referenceCode"),
+      supersedesId: g("supersedesId"),
+      notes: g("notes"),
+      customsRegimes: g("customsRegimes"),
+    };
+  }
+
+  async function submitDirect(form: FormData, picked: File) {
+    const meta = metadataOf(form);
+
+    // 1 — ask for a ticket. The metadata is validated here too, so a missing
+    // reference code is refused BEFORE a 40 MB transfer rather than after it.
+    const ticketRes = await fetch("/api/customs/reference/upload-url", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...meta, declaredSize: picked.size }),
+    });
+    const ticket = (await ticketRes.json().catch(() => ({}))) as {
+      ok?: boolean; error?: string; uploadId?: string; path?: string; token?: string;
+    };
+    if (!ticketRes.ok || !ticket.ok || !ticket.path || !ticket.token || !ticket.uploadId) {
+      setError(sentence(ticket.error ?? "generic"));
+      return;
+    }
+
+    // 2 — hash locally, so the server can refuse a transfer that did not
+    // arrive intact instead of recording a document nobody chose.
+    const digest = await crypto.subtle.digest("SHA-256", await picked.arrayBuffer());
+    const sha256 = [...new Uint8Array(digest)]
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+
+    // 3 — the bytes, straight to the private bucket. The anon key carries no
+    // storage permission of its own; the signed token authorises this one path.
+    setPhase(t.customs.reference.directUpload.uploading);
+    const supabase = getBrowserSupabaseClient();
+    const { error: upErr } = await supabase.storage
+      .from("customs-reference")
+      .uploadToSignedUrl(ticket.path, ticket.token, picked, {
+        contentType: "application/pdf",
+      });
+    if (upErr) {
+      setError(sentence("upload_failed"));
+      return;
+    }
+
+    // 4 — the boundary. The server reads the bytes back, validates them and
+    // decides whether a document exists.
+    setPhase(t.customs.reference.directUpload.verifying);
+    const finRes = await fetch("/api/customs/reference/finalize", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...meta,
+        uploadId: ticket.uploadId,
+        declaredSize: picked.size,
+        sha256,
+      }),
+    });
+    const fin = (await finRes.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+    if (!finRes.ok || !fin.ok) setError(sentence(fin.error ?? "generic"));
+    else onDone();
   }
 
   return (
@@ -416,6 +542,16 @@ function UploadForm({
         <div role="alert" className="rounded border border-red-200 bg-red-50 p-3 text-xs text-red-800">
           {error}
         </div>
+      )}
+
+      {/* Said up front, because the operator is about to wait: above 4 Mo the
+          transfer takes a different route and a visibly longer time. */}
+      <p className="rounded border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+        {t.customs.reference.directUpload.notice}
+      </p>
+
+      {phase && (
+        <p role="status" className="text-xs text-slate-600">{phase}</p>
       )}
 
       <div className="grid gap-3 sm:grid-cols-2">
@@ -479,6 +615,16 @@ function UploadForm({
             </select>
           </label>
         )}
+
+        <label className="block text-xs sm:col-span-2">
+          <span className="font-medium text-slate-700">{t.customs.reference.regimes}</span>
+          <input
+            name="customsRegimes"
+            placeholder="MISE EN CONSOMMATION, TRANSIT, ADMISSION TEMPORAIRE"
+            className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5"
+          />
+          <span className="mt-1 block text-slate-500">{t.customs.reference.regimesHint}</span>
+        </label>
 
         <label className="block text-xs sm:col-span-2">
           <span className="font-medium text-slate-700">Fichier PDF</span>

@@ -19,6 +19,7 @@ import "server-only";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
+import { normalizeRegimes } from "./validate";
 import type {
   LicenceStatus,
   ReferenceCategory,
@@ -28,7 +29,8 @@ import type {
 } from "./types";
 
 const COLUMNS =
-  "id, category, title, source_authority, edition, published_on, reference_code, version, "
+  "id, category, title, source_authority, edition, published_on, reference_code, "
+  + "customs_regimes, version, "
   + "supersedes_id, superseded_by_id, superseded_at, size_bytes, content_sha256, status, "
   + "licence_status, redistribution_allowed, licence_note, provenance_verified, "
   + "legal_version_verified, uploaded_by, uploaded_at, published_by, published_at, "
@@ -43,6 +45,7 @@ type Row = {
   edition: string | null;
   published_on: string | null;
   reference_code: string;
+  customs_regimes: string[] | null;
   version: number;
   supersedes_id: string | null;
   superseded_by_id: string | null;
@@ -78,6 +81,10 @@ function toDocument(r: Row): ReferenceDocument {
     edition: r.edition,
     publishedOn: r.published_on,
     referenceCode: r.reference_code,
+    // `?? []` is not defensiveness about the column's NOT NULL: PostgREST can
+    // legitimately omit it from a narrowed select, and an undefined here would
+    // crash every consumer that maps over it.
+    customsRegimes: r.customs_regimes ?? [],
     version: r.version,
     supersedesId: r.supersedes_id,
     supersededById: r.superseded_by_id,
@@ -105,6 +112,23 @@ function toDocument(r: Row): ReferenceDocument {
   };
 }
 
+/** The axes the library can be narrowed by. REF-2. */
+export type LibraryFilter = {
+  category?: ReferenceCategory;
+  /** Free text over title, reference code and edition. */
+  q?: string;
+  /** One regime, matched by containment against the normalised array. */
+  regime?: string;
+  /** Substring of the publishing authority. */
+  source?: string;
+  /** An exact edition number. */
+  version?: number;
+  /** Publication state. Ignored for a reader, who only ever sees PUBLISHED. */
+  status?: ReferenceStatus;
+  /** Only editions nothing has superseded. */
+  currentOnly?: boolean;
+};
+
 export type LibraryView = {
   documents: ReferenceDocument[];
   /** Whether this viewer may upload, publish, replace and withdraw. */
@@ -120,9 +144,7 @@ export type LibraryView = {
  * filter is not left to RLS: a service-role read bypasses the policy, so the
  * application must re-state the rule rather than inherit it.
  */
-export async function getLibrary(filter?: {
-  category?: ReferenceCategory;
-}): Promise<LibraryView> {
+export async function getLibrary(filter?: LibraryFilter): Promise<LibraryView> {
   const user = await assertPermission("customs:reference:read");
   const permissions = await getEffectivePermissions(user.id);
   const canPublish = hasPermission(permissions, "customs:reference:publish");
@@ -137,13 +159,66 @@ export async function getLibrary(filter?: {
   if (!canPublish) query = query.eq("status", "PUBLISHED");
   if (filter?.category) query = query.eq("category", filter.category);
 
+  // REF-2 — the structured axes, applied in the database.
+  //
+  // EVERY ONE OF THESE IS A SINGLE-COLUMN FILTER, and that is a security
+  // choice rather than a stylistic one. PostgREST's `or=` takes a RAW filter
+  // expression, so building one from operator-supplied text means a `,` or a
+  // `)` in a search box changes which rows come back. supabase-js URL-encodes
+  // the value of a single-column filter, so these cannot be escaped from.
+  // The free-text axes are matched in TypeScript below for the same reason.
+  if (filter?.regime) {
+    const r = normalizeRegimes([filter.regime]);
+    // Containment, so a document tagged with several regimes matches each.
+    if (r.ok && r.regimes.length === 1) query = query.contains("customs_regimes", r.regimes);
+  }
+  if (filter?.source) query = query.ilike("source_authority", `%${filter.source.trim()}%`);
+  if (typeof filter?.version === "number" && Number.isInteger(filter.version)) {
+    query = query.eq("version", filter.version);
+  }
+  // A publisher may narrow to a publication state; a plain reader is already
+  // pinned to PUBLISHED above and this must not widen that.
+  if (filter?.status && canPublish) query = query.eq("status", filter.status);
+  if (filter?.currentOnly) query = query.is("superseded_by_id", null);
+
   const { data } = await query
     .order("category", { ascending: true })
     .order("published_on", { ascending: false, nullsFirst: false })
     .order("version", { ascending: false })
     .returns<Row[]>();
 
-  return { documents: (data ?? []).map(toDocument), canPublish };
+  // The free-text axis, matched here rather than in the query.
+  //
+  // It spans three columns (title, reference code, edition), which in PostgREST
+  // would mean an `or=` expression built from the operator's own text. The
+  // library is reference material — statutory texts, tariff editions and
+  // circulars, counted in tens per tenant — so matching in memory costs
+  // nothing measurable and removes the injection surface completely. If this
+  // table ever grows past a few thousand rows, the right answer is a generated
+  // tsvector column and a GIN index, not a hand-built filter string.
+  const documents = (data ?? []).map(toDocument);
+  return { documents: matchesText(documents, filter?.q), canPublish };
+}
+
+/** Case- and accent-insensitive containment over the human-readable axes. */
+function matchesText(docs: ReferenceDocument[], q?: string): ReferenceDocument[] {
+  const needle = fold(q ?? "");
+  if (needle.length === 0) return docs;
+  return docs.filter((d) =>
+    fold(d.title).includes(needle)
+    || fold(d.referenceCode).includes(needle)
+    || fold(d.edition ?? "").includes(needle));
+}
+
+/**
+ * Lower-case and strip diacritics.
+ *
+ * « Arrêté » must be findable by typing "arrete": these are French statutory
+ * titles and an operator searching a tariff schedule should not have to
+ * reproduce its accents.
+ */
+function fold(s: string): string {
+  return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
 }
 
 /**
