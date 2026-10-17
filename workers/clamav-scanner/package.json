@@ -1,0 +1,12 @@
+{
+  "name": "effitrans-clamav-scanner",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "ClamAV scanning worker for the Effitrans Customs Reference Library. Node standard library only — no dependencies by design.",
+  "scripts": {
+    "start": "node src/server.mjs",
+    "test": "node --test test/contract.test.mjs"
+  },
+  "engines": { "node": ">=20" }
+}
