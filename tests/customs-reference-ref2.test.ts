@@ -511,6 +511,44 @@ describe("REF-2 — the lifecycle badge is derived, and honest", () => {
 });
 
 // ===========================================================================
+describe("REF-2 — a document that cannot be scanned is handled, not hidden", () => {
+  const panel = strip(read("components/customs/reference-library-panel.tsx"));
+  const actions = strip(read("lib/customs/reference/actions.ts"));
+
+  it("61 — the operator is told up front, not after pressing a button", () => {
+    // Attesting provenance and a licence on a document that can never move is
+    // wasted work; the notice belongs above the upload form.
+    expect(panel).toContain("scannerConfigured");
+    expect(panel).toContain("t.customs.reference.scannerAbsent.title");
+    expect(page).toContain("scannerConfigured={scanningAvailable()}");
+  });
+
+  it("62 — the scan button is disabled when there is no scanner", () => {
+    expect(panel).toContain("disabled={pending || !scannerConfigured}");
+  });
+
+  it("63 — but the UI flag is DISPLAY ONLY: the action still refuses server-side", () => {
+    // This is the one that matters. A forged or stale `true` must not make a
+    // scan believable — it can only produce the same refusal one click later.
+    expect(actions).toContain('if (!scanningAvailable()) return { ok: false, error: "scanner_unavailable" };');
+    // And the client never decides it: the panel holds no env read.
+    expect(panel).not.toContain("process.env");
+  });
+
+  it("64 — with no scanner, nothing can be publishable", () => {
+    // The gate, restated as a predicate: UNSCANNED always blocks.
+    expect(referenceLifecycle({
+      status: "QUARANTINE",
+      category: "LEGISLATION",
+      licenceStatus: "APPROVED_REDISTRIBUTION",
+      provenanceVerified: true,
+      legalVersionVerified: true,
+      scanStatus: "UNSCANNED",
+    })).toBe("pendingVerification");
+  });
+});
+
+// ===========================================================================
 describe("REF-2 — the development stub cannot become a production bypass", () => {
   it("52 — the APPLICATION has no stub mode at all", () => {
     // The strongest form of "impossible to activate through a Production

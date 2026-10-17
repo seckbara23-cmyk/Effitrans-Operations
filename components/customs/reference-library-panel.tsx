@@ -82,11 +82,22 @@ export function ReferenceLibraryPanel({
   documents,
   canPublish,
   viewerId,
+  scannerConfigured,
 }: {
   documents: ReferenceDocument[];
   canPublish: boolean;
   /** Needed to name self-approval BEFORE the database refuses it. */
   viewerId: string;
+  /**
+   * Whether a malware scanner is configured at all. REF-2.
+   *
+   * DISPLAY ONLY. `requestScan` re-checks this server-side and refuses with
+   * `scanner_unavailable` regardless of what this prop says, so a stale or
+   * forged `true` cannot cause a scan to be believed — it would only produce
+   * the same refusal one click later. It is here so an operator is told up
+   * front rather than discovering it by pressing a button.
+   */
+  scannerConfigured: boolean;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -109,6 +120,21 @@ export function ReferenceLibraryPanel({
       {message && (
         <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
           {message}
+        </div>
+      )}
+
+      {/* REF-2 — said ONCE, at the top, instead of per-document. With no
+          scanner nothing can reach CLEAN, so nothing in this library is
+          publishable; an operator should learn that before uploading, not
+          after attesting provenance and a licence on a document that cannot
+          move. The gate itself is unchanged and still refuses server-side. */}
+      {!scannerConfigured && canPublish && (
+        <div
+          role="note"
+          className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900"
+        >
+          <p className="font-semibold">{t.customs.reference.scannerAbsent.title}</p>
+          <p className="mt-1 text-xs">{t.customs.reference.scannerAbsent.body}</p>
         </div>
       )}
 
@@ -253,11 +279,13 @@ export function ReferenceLibraryPanel({
                           <div className="flex flex-wrap items-center gap-3">
                             <button
                               type="button"
-                              disabled={pending}
+                              disabled={pending || !scannerConfigured}
                               onClick={() => run(() => requestScan(doc.id))}
                               className="rounded border border-slate-300 px-3 py-1.5 text-xs hover:bg-slate-50 disabled:opacity-50"
                             >
-                              {t.customs.reference.actions.requestScan}
+                              {scannerConfigured
+                                ? t.customs.reference.actions.requestScan
+                                : t.customs.reference.scannerAbsent.action}
                             </button>
                             <span className="text-xs text-slate-500">
                               {t.customs.reference.scanRequiredNotice}

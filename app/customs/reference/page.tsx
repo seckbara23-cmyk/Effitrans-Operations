@@ -15,6 +15,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { requireUser } from "@/lib/auth/require-user";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { getLibrary } from "@/lib/customs/reference/service";
+import { scanningAvailable } from "@/lib/customs/reference/scan";
 import { ReferenceLibraryPanel } from "@/components/customs/reference-library-panel";
 import { ReferenceSearch } from "@/components/customs/reference-search";
 import { isReferenceCategory, isReferenceStatus } from "@/lib/customs/reference/types";
@@ -114,7 +115,12 @@ export default async function CustomsReferencePage({
         resultCount={documents.length}
       />
 
-      <ReferenceLibraryPanel documents={documents} canPublish={canPublish} viewerId={user.id} />
+      <ReferenceLibraryPanel
+        documents={documents}
+        canPublish={canPublish}
+        viewerId={user.id}
+        scannerConfigured={scanningAvailable()}
+      />
 
       <p className="text-xs text-slate-500">
         <Link href="/customs" className="underline hover:no-underline">

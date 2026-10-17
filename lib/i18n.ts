@@ -710,6 +710,12 @@ export const t = {
         results: "{count} document(s)",
         none: "Aucun document ne correspond à cette recherche.",
       },
+      scannerAbsent: {
+        title: "Aucun analyseur antivirus n'est configuré",
+        body:
+          "Les documents peuvent être téléversés, décrits et vérifiés, mais aucune publication n'est possible : la plateforme exige une analyse antivirus concluante liée aux octets stockés. Les documents restent en quarantaine, consultables uniquement par les publicateurs.",
+        action: "Analyse indisponible",
+      },
       lifecycle: {
         pendingVerification: "En attente de vérification",
         approved: "Prêt à publier",
