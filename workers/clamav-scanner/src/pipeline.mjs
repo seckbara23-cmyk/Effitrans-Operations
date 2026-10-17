@@ -200,8 +200,50 @@ export async function deliver(job, outcome, cfg, deps = {}) {
           "x-effitrans-signature": hmacHex(cfg.secret, body),
         },
         body,
+        // CALLBACK-MIDDLEWARE-F1 — DO NOT FOLLOW REDIRECTS.
+        //
+        // The default is `follow`, and that turned a routing defect into a
+        // silent success: edge middleware answered 307 to /login, a 307
+        // preserves method and body, so this POST was replayed at /login, which
+        // returned 200 with an HTML page — and `res.ok` was true. The verdict
+        // was discarded and this function reported it delivered.
+        //
+        // With `manual` the 3xx arrives here as a 3xx and is named below.
+        redirect: "manual",
       });
-      if (res.ok) return { ok: true, attempts: attempt + 1 };
+
+      // A REDIRECT IS A MISCONFIGURATION, NOT A TRANSIENT FAULT. Something is
+      // intercepting the callback — wrong URL, or an auth layer that does not
+      // know this endpoint is machine-facing. Retrying cannot fix routing, and
+      // failing loudly once is what gets it noticed.
+      if (res.status >= 300 && res.status < 400) {
+        return {
+          ok: false,
+          attempts: attempt + 1,
+          status: res.status,
+          permanent: true,
+          error: `callback_redirected_to_${res.headers.get("location") ?? "unknown"}`,
+        };
+      }
+
+      // A 2xx IS NOT ENOUGH; IT MUST ALSO BE THE API ANSWERING. The endpoint
+      // replies with JSON. Anything else — an HTML page, an empty body from a
+      // proxy, a captive portal — means this reached something that is not the
+      // callback handler, and treating it as an acknowledgement is exactly the
+      // mistake that hid this defect.
+      if (res.ok) {
+        const kind = (res.headers.get("content-type") ?? "").toLowerCase();
+        if (!kind.includes("application/json")) {
+          return {
+            ok: false,
+            attempts: attempt + 1,
+            status: res.status,
+            permanent: true,
+            error: `callback_not_json_${kind.split(";")[0] || "unknown"}`,
+          };
+        }
+        return { ok: true, attempts: attempt + 1 };
+      }
 
       // 409 means Effitrans has already recorded this verdict (replayed) or
       // refuses the binding. Retrying cannot change either, so stop.

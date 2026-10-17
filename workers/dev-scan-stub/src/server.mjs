@@ -172,7 +172,34 @@ async function deliver(job, outcome) {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-effitrans-signature": hmacHex(body) },
       body,
+      // CALLBACK-MIDDLEWARE-F1 — the same hardening as the real worker, and for
+      // a reason beyond consistency: this stub is what a developer uses to
+      // decide the workflow functions. If it followed a redirect to /login and
+      // logged ok=true, it would hide exactly the defect it exists to exercise.
+      redirect: "manual",
     });
+
+    const kind = (res.headers.get("content-type") ?? "").toLowerCase();
+    const redirected = res.status >= 300 && res.status < 400;
+    const notJson = res.ok && !kind.includes("application/json");
+
+    if (redirected || notJson) {
+      log("callback.rejected", {
+        document_id: job.document_id,
+        status: res.status,
+        reason: redirected ? "redirected" : "not_json",
+        location: redirected ? res.headers.get("location") : null,
+        content_type: kind.split(";")[0] || null,
+      });
+      console.error(
+        `\n  [dev-scan-stub] THE CALLBACK DID NOT REACH THE HANDLER (${res.status}).\n`
+          + `  ${redirected ? `It was redirected to ${res.headers.get("location")}.` : `It answered ${kind || "an unknown type"}, not JSON.`}\n`
+          + "  The verdict was NOT recorded. Check that the callback path is\n"
+          + "  reachable without a session (CALLBACK-MIDDLEWARE-F1).\n",
+      );
+      return;
+    }
+
     log("callback.result", { document_id: job.document_id, status: res.status, ok: res.ok });
   } catch (e) {
     log("callback.failed", { document_id: job.document_id, message: e?.message ?? "unknown" });
