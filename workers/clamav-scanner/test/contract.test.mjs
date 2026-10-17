@@ -252,7 +252,12 @@ test("callback: the verdict is signed, carries the nonce and a fresh issued_at",
   const r = await deliver(job, { verdict: "CLEAN", detail: null, engineRef: null }, cfg, {
     fetchImpl: async (url, init) => {
       captured = { url, init };
-      return new Response("", { status: 200 });
+      // JSON, because the real endpoint answers NextResponse.json(...) and
+      // `deliver` now refuses a 2xx that is not the API answering.
+      return new Response('{"ok":true}', {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
     },
   });
 
@@ -313,7 +318,12 @@ test("cross-tenant: the worker echoes back the tenant it was given, never a diff
   await deliver(job, { verdict: "CLEAN", detail: null, engineRef: null }, cfg, {
     fetchImpl: async (_u, init) => {
       body = JSON.parse(init.body);
-      return new Response("", { status: 200 });
+      // JSON, because the real endpoint answers NextResponse.json(...) and
+      // `deliver` now refuses a 2xx that is not the API answering.
+      return new Response('{"ok":true}', {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
     },
   });
   assert.equal(body.tenant_id, "tenant-a");
@@ -329,4 +339,100 @@ test("no fabricated clearance: nothing in this suite asserts a real scan passed"
   // plumbing around it. Real detection is proven by EICAR against a running
   // container, and is reported as pending until that runs.
   assert.ok(true);
+});
+
+// ===========================================================================
+// CALLBACK-MIDDLEWARE-F1 — a redirect or an HTML page is NOT a delivered
+// verdict.
+//
+// This is the regression suite for the defect that made the whole scanner
+// integration fail silently: edge middleware answered 307 → /login, fetch
+// followed it, /login answered 200 with HTML, and `deliver` reported success.
+// ===========================================================================
+const deliverJob = {
+  documentId: "d", tenantId: "t", storagePath: "p", sha256: PDF_SHA, nonce: "n12345678",
+};
+const CLEAN_OUTCOME = { verdict: "CLEAN", detail: null, engineRef: null };
+
+test("callback: a 307 is NOT success, is permanent, and names where it went", async () => {
+  let calls = 0;
+  const r = await deliver(deliverJob, CLEAN_OUTCOME, cfg, {
+    fetchImpl: async () => {
+      calls += 1;
+      return new Response("", { status: 307, headers: { location: "/login" } });
+    },
+    sleep: async () => {},
+  });
+  assert.equal(r.ok, false, "a redirect must never be read as a delivered verdict");
+  assert.equal(r.permanent, true, "routing cannot be fixed by retrying");
+  assert.match(r.error, /callback_redirected_to_\/login/);
+  assert.equal(calls, 1, "a misconfiguration is reported once, not four times");
+});
+
+test("callback: an HTML 200 is NOT success — the login page is not an acknowledgement", async () => {
+  // The exact shape of the production defect: after following the redirect the
+  // worker saw 200 text/html and `res.ok === true`.
+  const r = await deliver(deliverJob, CLEAN_OUTCOME, cfg, {
+    fetchImpl: async () =>
+      new Response("<!DOCTYPE html><html><body>Connexion</body></html>", {
+        status: 200,
+        headers: { "content-type": "text/html; charset=utf-8" },
+      }),
+    sleep: async () => {},
+  });
+  assert.equal(r.ok, false, "HTML is not the callback API answering");
+  assert.equal(r.permanent, true);
+  assert.match(r.error, /callback_not_json_text\/html/);
+});
+
+test("callback: a 200 with no content-type at all is refused too", async () => {
+  const r = await deliver(deliverJob, CLEAN_OUTCOME, cfg, {
+    fetchImpl: async () => new Response("", { status: 200 }),
+    sleep: async () => {},
+  });
+  assert.equal(r.ok, false, "an unidentifiable 200 is not an acknowledgement");
+  assert.equal(r.permanent, true);
+});
+
+test("callback: redirect: manual is actually requested, not merely intended", async () => {
+  // Without this the default `follow` applies and the 307 above never reaches
+  // the checks at all — the assertion that makes them meaningful.
+  let init = null;
+  await deliver(deliverJob, CLEAN_OUTCOME, cfg, {
+    fetchImpl: async (_u, i) => {
+      init = i;
+      return new Response('{"ok":true}', { status: 200, headers: { "content-type": "application/json" } });
+    },
+  });
+  assert.equal(init.redirect, "manual");
+});
+
+test("callback: a JSON 200 is still success, so the happy path is unchanged", async () => {
+  const r = await deliver(deliverJob, CLEAN_OUTCOME, cfg, {
+    fetchImpl: async () =>
+      new Response('{"ok":true,"outcome":"recorded"}', {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+  });
+  assert.equal(r.ok, true);
+  assert.equal(r.attempts, 1);
+});
+
+test("callback: a failed delivery reports failure — no fabricated scan evidence", async () => {
+  // The worker is the only thing that can tell Effitrans a verdict exists. If
+  // delivery failed it must say so: the document then stays SCANNING and the
+  // 30-minute lost-scan window lets a publisher ask again. Nothing is
+  // published on the strength of a verdict that never arrived.
+  for (const res of [
+    new Response("", { status: 307, headers: { location: "/login" } }),
+    new Response("<html></html>", { status: 200, headers: { "content-type": "text/html" } }),
+    new Response("", { status: 500 }),
+  ]) {
+    const r = await deliver(deliverJob, CLEAN_OUTCOME, cfg, {
+      fetchImpl: async () => res.clone(),
+      sleep: async () => {},
+    });
+    assert.equal(r.ok, false, `status ${res.status} must not report success`);
+  }
 });
