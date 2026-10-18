@@ -241,3 +241,70 @@ export function crossCheckCli(tgt, pending) {
     cliPending.length === pending.length && cliPending.every((v, i) => v === pending[i]);
   return { checked: true, agrees, cliPending, detail: agrees ? "agrees" : `CLI pending=${cliPending.join(",")}` };
 }
+
+/**
+ * What must be true of the ledger AFTER one migration was applied and recorded.
+ * ---------------------------------------------------------------------------
+ * PURE. Takes the repository list, a fresh `reconcile`, and the version just
+ * applied; returns human-readable findings. Empty means the post-record state
+ * is healthy. Lives here, beside the structural model it enforces, so the model
+ * and its enforcement cannot drift apart.
+ *
+ * WHY THIS EXISTS (CUSTOMS-REF-PROD-MIGRATE-152-155). The runner's step 5 used
+ * to require `pending.length === 0` — that NOTHING remained pending after a
+ * successful run. That is only true when the migration applied happened to be
+ * the last one authored, so applying the first of four pending migrations
+ * reported POST_RECORD_MISMATCH on a database that was perfectly healthy. It
+ * fired on #152 of #152–155: the SQL was applied, the verifier returned 36/36,
+ * the ledger was correctly written, and the runner still exited 40.
+ *
+ * That check also contradicted this module's own stated model — "PENDING IS NOT
+ * CORRUPTION … what corruption looks like is a hole in the PREFIX" — and the
+ * `classify` function two definitions above, which has always judged a pending
+ * suffix healthy. The runner was the only place that disagreed.
+ *
+ * WHAT REPLACES IT IS STRICTER, NOT WEAKER. Requiring the remaining pending set
+ * to be EXACTLY the repository's suffix above the applied version still refuses
+ * every condition the old check refused, and refuses two more besides:
+ *   · the applied version still pending     → applied but NOT recorded;
+ *   · a pending version at or below it      → a hole in the applied prefix;
+ *   · any other set than the exact suffix   → a migration appeared, vanished,
+ *                                             or was recorded out of turn.
+ * The only state it newly admits is the one that was never wrong: later
+ * migrations still awaiting their own approval.
+ */
+export function postRecordFindings({ repo, after, version }) {
+  const findings = [];
+
+  // The most dangerous outcome first, named rather than inferred: the SQL ran
+  // and the ledger does not know. September 2026 happened sixteen times.
+  if (after.pending.includes(version)) {
+    findings.push(`${version} is still pending after recording — applied but NOT recorded`);
+  }
+
+  // The ledger's maximum must be the version just applied: nothing above it may
+  // have been recorded by this run or any other.
+  if (after.remoteMax !== version) {
+    findings.push(`ledger maximum is ${after.remoteMax || "(empty)"}, expected ${version}`);
+  }
+
+  // The remaining pending set must be EXACTLY the repository's suffix above the
+  // applied version, in repository order. Anything else is a disagreement
+  // between production and the repository about what has happened.
+  const expected = repo.filter((m) => m.version > version).map((m) => m.version);
+  const matches =
+    after.pending.length === expected.length && after.pending.every((v, i) => v === expected[i]);
+  if (!matches) {
+    findings.push(
+      `pending suffix is [${after.pending.join(", ")}], expected exactly [${expected.join(", ")}]`,
+    );
+  }
+
+  // And every structural finding `reconcile` already knows how to spot —
+  // holes behind the maximum, unknown remote versions, duplicates.
+  if (after.hard.length) {
+    findings.push(`integrity findings after recording: ${after.hard.map((h) => h.code).join(", ")}`);
+  }
+
+  return findings;
+}

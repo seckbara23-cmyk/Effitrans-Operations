@@ -27,7 +27,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { target, applyFile, queryFile, repair, query } from "./migration/exec.mjs";
-import { repoMigrations, remoteLedger, reconcile, validateTarget, crossCheckCli, classify, LEDGER_STATUS } from "./migration/ledger.mjs";
+import { repoMigrations, remoteLedger, reconcile, validateTarget, crossCheckCli, classify, LEDGER_STATUS, postRecordFindings } from "./migration/ledger.mjs";
 import { proveFormat, recordOne, statementsOf, isRecorded } from "./migration/ledger-record.mjs";
 
 const STATE = {
@@ -359,10 +359,12 @@ function main() {
   // ---- step 5: post-record verification -----------------------------------
   log("[migrate] step 5 — post-record verification");
   const after = reconcile(repo, remoteLedger(tgt));
-  const post = [];
-  if (after.remoteMax !== version) post.push(`ledger maximum is ${after.remoteMax}, expected ${version}`);
-  if (after.pending.length !== 0) post.push(`${after.pending.length} migration(s) still pending: ${after.pending.join(", ")}`);
-  if (after.hard.length) post.push(`integrity findings after recording: ${after.hard.map((h) => h.code).join(", ")}`);
+  // CUSTOMS-REF-PROD-MIGRATE-152-155 — the post-record invariant lives in
+  // ledger.mjs beside the structural model it enforces. It used to be spelled
+  // out here and required `pending.length === 0`, which made applying anything
+  // but the LAST authored migration report POST_RECORD_MISMATCH on a healthy
+  // database. The replacement is strictly stronger; see `postRecordFindings`.
+  const post = postRecordFindings({ repo, after, version });
   try {
     const rows = queryFile(tgt, m.verifier);
     if (!(rows.length === 1 && rows[0].ok === true)) post.push("the verifier no longer passes after recording");
@@ -378,7 +380,10 @@ function main() {
 
   log("");
   log(`[migrate] ✓ ${STATE.OK.name} — ${version} applied, verified, recorded, re-verified.`);
-  log(`[migrate]   ledger now ${after.ledgerCount} rows, max ${after.remoteMax}, 0 pending.`);
+  log(
+    `[migrate]   ledger now ${after.ledgerCount} rows, max ${after.remoteMax}, `
+    + `${after.pending.length} pending${after.pending.length ? ` (${after.pending.join(", ")})` : ""}.`,
+  );
   process.exit(0);
 }
 
