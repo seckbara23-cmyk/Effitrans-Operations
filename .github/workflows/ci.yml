@@ -1316,8 +1316,10 @@ jobs:
           ANON=$(supabase status -o env | sed -n 's/^ANON_KEY=//p' | tr -d '"')
           if [ -z "$KEY" ]; then echo "::error::could not resolve SERVICE_ROLE_KEY"; exit 1; fi
           if [ -z "$ANON" ]; then echo "::error::could not resolve ANON_KEY"; exit 1; fi
-          # The env guard requires the anon key even where the harness never uses
-          # an anon client — it is validated at module load, not at first use.
+          # The anon key is needed twice over: the env guard validates it at
+          # module load, and the REF-2 journey block places its bytes with a REAL
+          # anon client, because a signed upload performed with the service role
+          # would have proven nothing about what the ticket grants.
           SUPABASE_SERVICE_ROLE_KEY="$KEY" NEXT_PUBLIC_SUPABASE_ANON_KEY="$ANON"             npx vitest run --config vitest.journey.config.ts
 
       # ---- EVERY VERIFIER, AGAINST A DATABASE THAT HAS ITS MIGRATION -------
