@@ -26,6 +26,7 @@ import {
   MAX_SWEEP_DELETIONS,
   SWEEP_LIST_LIMIT,
   isAbandonedStagingObject,
+  mayShortenRetention,
   stagingPrefix,
   stagingTtlHours,
 } from "@/lib/customs/reference/staging-sweep";
@@ -36,6 +37,11 @@ const ACTOR = "00000000-0000-0000-0000-00000000aa03";
 const OBJECT_A = "11111111-2222-4333-8444-555555555551";
 const OBJECT_B = "11111111-2222-4333-8444-555555555552";
 const FAKE_TOKEN = "FAKE-UPLOAD-TOKEN-NOT-A-CREDENTIAL";
+
+/** CI's disposable stack: what `supabase start` hands the journey harness. */
+const LOCAL_DB = "http://127.0.0.1:54321";
+/** This project's PRODUCTION Supabase project — the one a Preview is bound to. */
+const PRODUCTION_DB = "https://xtppqrstuvwxyzabhdlc.supabase.co";
 
 type Entry = { name: string; created_at: string | null; metadata: { size: number } | null };
 
@@ -135,6 +141,11 @@ async function ticket(): Promise<Response> {
 const savedEnv = { ...process.env };
 
 beforeEach(() => {
+  // The route tests stand in for CI, so the process must look like CI: pointed
+  // at a disposable stack, and not called production by Vercel. Without this
+  // the sub-24h override is REFUSED, which is the whole point of the guard.
+  process.env.NEXT_PUBLIC_SUPABASE_URL = LOCAL_DB;
+  delete process.env.VERCEL_ENV;
   world.staged = []; world.listCalls = []; world.removeCalls = [];
   world.listThrows = false; world.removeThrows = false; world.listReturnsError = false;
   world.auditCalls = 0;
@@ -155,9 +166,12 @@ describe("F-2 — the retention threshold cannot be shortened by accident", () =
     }
   });
 
-  it("2 — honours an explicit integer, including the 0 that CI needs", () => {
-    expect(stagingTtlHours({ CUSTOMS_STAGING_TTL_HOURS: "0" })).toBe(0);
-    expect(stagingTtlHours({ CUSTOMS_STAGING_TTL_HOURS: "1" })).toBe(1);
+  it("2 — honours an explicit integer against a disposable database", () => {
+    const ci = { NEXT_PUBLIC_SUPABASE_URL: LOCAL_DB };
+    expect(stagingTtlHours({ ...ci, CUSTOMS_STAGING_TTL_HOURS: "0" })).toBe(0);
+    expect(stagingTtlHours({ ...ci, CUSTOMS_STAGING_TTL_HOURS: "1" })).toBe(1);
+    // A LONGER window needs no permission anywhere: keeping files is not
+    // destructive, so it is honoured even with no database configured at all.
     expect(stagingTtlHours({ CUSTOMS_STAGING_TTL_HOURS: " 72 " })).toBe(72);
   });
 });
@@ -407,6 +421,94 @@ describe("F-2 — only a publisher can make the system delete anything", () => {
 
     expect((await ticket()).status).toBe(403);
     expect(world.listCalls).toEqual([]);
+    expect(world.removeCalls).toEqual([]);
+    expect(world.staged).toHaveLength(1);
+  });
+});
+
+// ===========================================================================
+describe("F-2 — production can never be told to sweep aggressively", () => {
+  it("21 — a production deployment ignores a short override, whatever it points at", () => {
+    for (const url of [PRODUCTION_DB, LOCAL_DB, undefined]) {
+      for (const ttl of ["0", "1", "23"]) {
+        expect(
+          stagingTtlHours({ VERCEL_ENV: "production", NEXT_PUBLIC_SUPABASE_URL: url, CUSTOMS_STAGING_TTL_HOURS: ttl }),
+          `${String(url)} / ${ttl}`,
+        ).toBe(DEFAULT_STAGING_TTL_HOURS);
+      }
+    }
+    expect(mayShortenRetention({ VERCEL_ENV: "production", NEXT_PUBLIC_SUPABASE_URL: LOCAL_DB })).toBe(false);
+  });
+
+  it("22 — a PREVIEW bound to the production project cannot activate it either", () => {
+    // THE CASE THIS GUARD EXISTS FOR. There is one Vercel project and no
+    // Supabase branching, so a Preview talks to the PRODUCTION database. A
+    // guard keyed on NODE_ENV or VERCEL_ENV alone would have honoured `0` here
+    // and deleted live uploads.
+    const preview = { VERCEL_ENV: "preview", NEXT_PUBLIC_SUPABASE_URL: PRODUCTION_DB };
+    expect(stagingTtlHours({ ...preview, CUSTOMS_STAGING_TTL_HOURS: "0" })).toBe(DEFAULT_STAGING_TTL_HOURS);
+    expect(mayShortenRetention(preview)).toBe(false);
+
+    // …and a developer's shell pointed at production is refused for the same
+    // reason, with no VERCEL_ENV at all.
+    expect(stagingTtlHours({ NEXT_PUBLIC_SUPABASE_URL: PRODUCTION_DB, CUSTOMS_STAGING_TTL_HOURS: "0" }))
+      .toBe(DEFAULT_STAGING_TTL_HOURS);
+  });
+
+  it("23 — CI's disposable stack may use the zero-hour threshold", () => {
+    for (const host of [
+      "http://127.0.0.1:54321", "http://localhost:54321",
+      "http://kong:8000", "http://host.docker.internal:54321",
+    ]) {
+      expect(
+        stagingTtlHours({ NEXT_PUBLIC_SUPABASE_URL: host, CUSTOMS_STAGING_TTL_HOURS: "0" }),
+        host,
+      ).toBe(0);
+      expect(mayShortenRetention({ NEXT_PUBLIC_SUPABASE_URL: host }), host).toBe(true);
+    }
+    // Still refused where Vercel calls it production, local database or not.
+    expect(mayShortenRetention({ VERCEL_ENV: "production", NEXT_PUBLIC_SUPABASE_URL: LOCAL_DB })).toBe(false);
+  });
+
+  it("24 — a database it cannot vouch for is treated as production", () => {
+    // Unparseable, absent, self-hosted, a custom domain: `classifyTarget`
+    // reports `unknown` or `unconfigured` rather than guessing, and neither is
+    // `local`. Every uncertainty keeps the long window.
+    for (const url of [undefined, "", "   ", "not a url", "https://db.effitrans.example", "postgres://x/y"]) {
+      expect(
+        stagingTtlHours({ NEXT_PUBLIC_SUPABASE_URL: url, CUSTOMS_STAGING_TTL_HOURS: "0" }),
+        String(url),
+      ).toBe(DEFAULT_STAGING_TTL_HOURS);
+      expect(mayShortenRetention({ NEXT_PUBLIC_SUPABASE_URL: url }), String(url)).toBe(false);
+    }
+  });
+
+  it("25 — a malformed override falls back even on a disposable database", () => {
+    for (const raw of ["", "  ", "-1", "1.5", "abc", "0x0", "1e1", "true"]) {
+      expect(
+        stagingTtlHours({ NEXT_PUBLIC_SUPABASE_URL: LOCAL_DB, CUSTOMS_STAGING_TTL_HOURS: raw }),
+        raw,
+      ).toBe(DEFAULT_STAGING_TTL_HOURS);
+    }
+  });
+
+  it("26 — a LONGER window is always allowed, including in production", () => {
+    expect(stagingTtlHours({ VERCEL_ENV: "production", NEXT_PUBLIC_SUPABASE_URL: PRODUCTION_DB, CUSTOMS_STAGING_TTL_HOURS: "48" })).toBe(48);
+    expect(stagingTtlHours({ VERCEL_ENV: "production", NEXT_PUBLIC_SUPABASE_URL: PRODUCTION_DB, CUSTOMS_STAGING_TTL_HOURS: "24" })).toBe(24);
+    expect(stagingTtlHours({ VERCEL_ENV: "production", NEXT_PUBLIC_SUPABASE_URL: PRODUCTION_DB, CUSTOMS_STAGING_TTL_HOURS: "168" })).toBe(168);
+  });
+
+  it("27 — the production default really is what the route uses when nothing is set", async () => {
+    // End to end through the route, with the guard in its production posture.
+    process.env.VERCEL_ENV = "production";
+    process.env.NEXT_PUBLIC_SUPABASE_URL = PRODUCTION_DB;
+    process.env.CUSTOMS_STAGING_TTL_HOURS = "0";
+    // 23 hours old: inside the window the guard restores.
+    world.staged = [entry(OBJECT_A, 23)];
+
+    expect((await ticket()).status).toBe(201);
+    // Listed and considered — and kept, because the override was refused.
+    expect(world.listCalls).toHaveLength(1);
     expect(world.removeCalls).toEqual([]);
     expect(world.staged).toHaveLength(1);
   });

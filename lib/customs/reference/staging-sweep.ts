@@ -49,6 +49,9 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { reportError } from "@/lib/observability/report";
 import { buildStagingPath } from "@/lib/customs/reference/validate";
+// The SAME classifiers the deployment-binding guard uses, so "is this a
+// disposable database?" has one answer in this system rather than two.
+import { classifyEnvironment, classifyTarget } from "@/lib/env/project-binding.mjs";
 
 const BUCKET = "customs-reference";
 
@@ -78,6 +81,10 @@ export const SWEEP_LIST_LIMIT = 100;
 export type SweepEnv = {
   [key: string]: string | undefined;
   CUSTOMS_STAGING_TTL_HOURS?: string;
+  /** Which database this process is pointed at. The isolation boundary. */
+  NEXT_PUBLIC_SUPABASE_URL?: string;
+  /** Vercel's own name for this deployment: production, preview, development. */
+  VERCEL_ENV?: string;
 };
 
 /** Exactly what `buildStagingPath` writes: a v4-shaped uuid and `.pdf`. */
@@ -111,25 +118,62 @@ export function stagingPrefix(tenantId: string): string {
 }
 
 /**
+ * The configured override, or null when there is nothing usable to read.
+ *
+ * PLAIN DECIMAL DIGITS ONLY. `Number()` alone is too generous for a value that
+ * can shorten a destructive window: it reads `0x0` as 0 and `1e1` as 10, both
+ * of which are integers by every later check and neither of which is how anyone
+ * means to write a number of hours. Absent, blank, signed, fractional or
+ * otherwise notated is nothing at all, and nothing means the default.
+ */
+function parseOverride(raw: string | undefined): number | null {
+  if (typeof raw !== "string") return null;
+  const text = raw.trim();
+  if (!/^\d+$/.test(text)) return null;
+  const value = Number(text);
+  return Number.isFinite(value) ? value : null;
+}
+
+/**
+ * May a window SHORTER than the default be honoured in this process?
+ *
+ * FAIL-CLOSED, AND KEYED ON THE DATABASE, NOT ON `NODE_ENV`. `NODE_ENV` says
+ * what kind of build this is; it says nothing about which database the build is
+ * pointed at — and in this project a Vercel Preview is bound to the PRODUCTION
+ * Supabase project (docs/customs-ref-uat/uat-02-environment.md). A guard that
+ * trusted `NODE_ENV` would let a Preview, or a developer's shell pointed at
+ * production, delete live uploads. So the question asked here is "is this
+ * database a disposable one?", and it is asked with the same classifiers the
+ * deployment-binding guard uses.
+ *
+ * Both of these must hold, and each refuses on its own:
+ *   - Vercel does not call this deployment production;
+ *   - the Supabase URL is a loopback host, i.e. a `supabase start` stack.
+ *
+ * `classifyTarget` answers `unknown` for a URL it cannot parse and
+ * `unconfigured` for one that is absent, and neither is `local`, so every
+ * uncertainty lands on NO.
+ */
+export function mayShortenRetention(env: SweepEnv = process.env): boolean {
+  if (classifyEnvironment(env.VERCEL_ENV) === "production") return false;
+  return classifyTarget(env.NEXT_PUBLIC_SUPABASE_URL).kind === "local";
+}
+
+/**
  * The retention threshold, in hours.
  *
- * `CUSTOMS_STAGING_TTL_HOURS` exists so CI can set `0` and watch an object
- * disappear. It is NOT set in production: `0` is safe for correctness — it can
- * only ever reach the caller's own staging prefix, and a concurrent finalise
- * then answers a clean `upload_not_found` — but it would delete a colleague's
- * upload seconds before they finalised it.
- *
- * Anything absent, blank, non-numeric, fractional or negative falls back to the
- * default. A typo must not be able to shorten the window.
+ * `CUSTOMS_STAGING_TTL_HOURS` exists so CI can set `0` against its disposable
+ * stack and watch an object disappear. A LONGER window is always honoured —
+ * keeping more files is never destructive. A SHORTER one is honoured only where
+ * `mayShortenRetention` says the database is disposable, so the variable is
+ * inert in production whether or not anybody sets it, and no production
+ * environment change is needed to make it safe.
  */
 export function stagingTtlHours(env: SweepEnv = process.env): number {
-  const raw = env.CUSTOMS_STAGING_TTL_HOURS;
-  if (typeof raw !== "string" || raw.trim().length === 0) return DEFAULT_STAGING_TTL_HOURS;
-  const value = Number(raw.trim());
-  if (!Number.isFinite(value) || !Number.isInteger(value) || value < 0) {
-    return DEFAULT_STAGING_TTL_HOURS;
-  }
-  return value;
+  const override = parseOverride(env.CUSTOMS_STAGING_TTL_HOURS);
+  if (override === null) return DEFAULT_STAGING_TTL_HOURS;
+  if (override >= DEFAULT_STAGING_TTL_HOURS) return override;
+  return mayShortenRetention(env) ? override : DEFAULT_STAGING_TTL_HOURS;
 }
 
 /**
@@ -242,8 +286,8 @@ export async function sweepAbandonedStaging(
   // operational event, and a line on every ticket request would bury the ones
   // that matter. Counts and timestamps only — no name, no id, no token, no URL.
   console.info(
-    `[customs-ref] staging sweep tenant=${tenantId} scanned=${scanned} `
-      + `removed=${doomed.length} oldest=${oldestIso ?? "-"}`,
+    `[customs-ref] staging sweep tenant=${tenantId} ttl=${ttlHours}h `
+      + `scanned=${scanned} removed=${doomed.length} oldest=${oldestIso ?? "-"}`,
   );
 
   return { scanned, removed: doomed.length, oldest: oldestIso, failedAt: null };

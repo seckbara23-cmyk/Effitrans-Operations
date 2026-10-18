@@ -691,3 +691,28 @@ describe("REF-2 F-2 — the sweep adds no infrastructure and no authority", () =
     expect(ref1).not.toContain("_staging");
   });
 });
+
+// ===========================================================================
+describe("REF-2 F-2 — the production threshold guard is keyed on the DATABASE", () => {
+  const sweep = strip(read("lib/customs/reference/staging-sweep.ts"));
+
+  it("71 — a shorter window is gated on the target, not on NODE_ENV", () => {
+    // `NODE_ENV` says what kind of build this is. It says nothing about which
+    // database the build talks to — and here a Preview talks to PRODUCTION.
+    expect(sweep).not.toContain("NODE_ENV");
+    expect(sweep).toContain("classifyTarget(env.NEXT_PUBLIC_SUPABASE_URL).kind === \"local\"");
+    expect(sweep).toContain('classifyEnvironment(env.VERCEL_ENV) === "production"');
+    // Reuses the deployment-binding guard's own classifiers rather than a
+    // second opinion about what "local" means.
+    expect(sweep).toContain('from "@/lib/env/project-binding.mjs"');
+  });
+
+  it("72 — the override can only ever LENGTHEN the window outside a disposable stack", () => {
+    expect(sweep).toContain("if (override >= DEFAULT_STAGING_TTL_HOURS) return override;");
+    expect(sweep).toContain("return mayShortenRetention(env) ? override : DEFAULT_STAGING_TTL_HOURS;");
+    // Plain decimals only: `Number()` alone reads 0x0 as 0 and 1e1 as 10.
+    // Asserted without re-spelling the regex: a backslash in an expected
+    // string is one more place for the assertion itself to be wrong.
+    expect(sweep).toContain(".test(text)) return null;");
+  });
+});
