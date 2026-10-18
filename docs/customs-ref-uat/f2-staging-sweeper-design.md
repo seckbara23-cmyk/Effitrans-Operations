@@ -161,12 +161,26 @@ there would double the code path for no new coverage.
 5. Return `{ scanned, removed, oldest }` for logging. Never throw.
 
 **The threshold.** Default **24 hours**, overridable by
-`CUSTOMS_STAGING_TTL_HOURS` for tests. A malformed or absent value falls back to
-24. `0` is honoured, because CI needs it — and `0` is *correctness*-safe (it can
-only delete objects in the caller's own staging prefix, and a concurrent
-finalize then returns a clean `404`), but it is not *UX*-safe, because it would
-delete a colleague's upload that is seconds from being finalised. **The variable
-must not be set in production.**
+`CUSTOMS_STAGING_TTL_HOURS`. A malformed, absent, signed, fractional or
+otherwise-notated value falls back to 24 — plain decimal digits only, because
+`Number()` reads `0x0` as 0 and `1e1` as 10 and neither is how anyone writes a
+number of hours.
+
+**A shorter window is gated on the DATABASE, not on `NODE_ENV`** — implemented
+after this document's first draft, and now the load-bearing safety property.
+`NODE_ENV` says what kind of build this is; it says nothing about which database
+the build talks to, and in this project a Preview is bound to the **production**
+Supabase project. So a window shorter than the default is honoured only when
+Vercel does not call this deployment production **and** the Supabase URL is a
+loopback host. Each refuses on its own, both answers come from
+`classifyEnvironment` / `classifyTarget` in `lib/env/project-binding.mjs` — the
+same classifiers the deployment-binding guard uses — and that function reports
+`unknown` for a URL it cannot parse and `unconfigured` for one that is absent,
+so every uncertainty keeps the long window. A **longer** window needs no
+permission anywhere: keeping more files is not destructive.
+
+The variable is therefore **inert in production whether or not anybody sets it**,
+and no production environment change is needed to make it safe.
 
 24 h is chosen for margin, not from measurement: the actual exposure window
 between bytes landing and `/finalize` being called is a single client round trip.
@@ -189,6 +203,7 @@ backstop.
 | S-7 | No new authority | no new permission, no new role, no new grant, no migration, no RLS change. The service-role client is the one both routes already use |
 | S-8 | No secret or path is disclosed | the sweep logs counts and timestamps only — never names, uploadIds, tokens, signed URLs or raw error objects (§5) |
 | S-9 | No new attack surface | no new route, no new webhook, no scheduled invocation, no new dependency |
+| S-10 | Production can never sweep aggressively | a sub-default threshold needs a non-production deployment **and** a loopback database; a Preview bound to the production project is refused by the second condition even though it passes nothing else |
 
 **Concurrency, case by case.**
 
@@ -343,8 +358,10 @@ new dependency, no Finance or dossier surface.
 2. **Ratification of §5's no-audit decision.** It is consistent with test 38 and
    with the absence of any entity, but it is a boundary call about the audit
    trail and belongs to the owner, not to the implementer.
-3. **Agreement on the 24 h default** and on the rule that
-   `CUSTOMS_STAGING_TTL_HOURS` is never set in production.
+3. **Agreement on the 24 h default.** The rule that
+   `CUSTOMS_STAGING_TTL_HOURS` must not be set in production is now *enforced*
+   rather than documented (S-10), so this is a decision about the number, not
+   about operational discipline.
 4. **Acceptance of limitation 7.1** — that debris persists during inactivity,
    and that the operator query is the compensating control.
 
