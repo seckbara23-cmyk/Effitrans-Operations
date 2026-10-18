@@ -77,9 +77,9 @@ exercise three distinct gates:
 - [components/customs/reference-library-panel.tsx:131](../../components/customs/reference-library-panel.tsx) — `{!scannerConfigured && canPublish && …}`
 - [components/customs/reference-search.tsx:87](../../components/customs/reference-search.tsx) — the publication-state select
 
-None of those three gates has an automated regression test. Until one exists, P-3
-is the only thing standing between a future edit and a read-only role being offered
-an upload form. See §6.
+At the time of this round, none of those three gates had an automated regression
+test, which made P-3 the only thing standing between a future edit and a read-only
+role being offered an upload form. That gap is being closed — see §6.
 
 ### 3.3 Search and filtering
 
@@ -145,16 +145,33 @@ sources — migration #152's grant, the role templates, and production's live st
 subset of `{SYSTEM_ADMIN, CHIEF_OF_TRANSIT}`, verified live at 36/36). **No defect.**
 Closed.
 
-## 6. Open item carried forward
+## 6. Open item carried forward — and how it was addressed
 
-**The three UI authorization gates in §3.2 have no automated regression test.** The
-service layer, the API gates and the migration grants are all pinned by tests; the
-component render gates are not. P-3, P-5 and P-7 are currently their only
-verification, and a manual browser check does not survive a refactor.
+**What this round found.** When UAT-01B ran, the three UI authorization gates in
+§3.2 had **no automated regression test.** The service layer, the API gates and the
+migration grants were all pinned by tests; the component render gates were not.
+P-3, P-5 and P-7 were their only verification, and a manual browser check does not
+survive a refactor. That is the gap this record was written to raise, and it is
+preserved here as the state of affairs at the time.
 
-Recommended: a structural test asserting `UploadForm` appears nowhere outside a
-`canPublish` guard, and that the scanner notice and the publication-state select are
-likewise gated. Small, and it converts this round's best finding into a permanent one.
+**What was done about it.** CUSTOMS-REF-RBAC-REGRESSION-01 implemented the coverage
+in `tests/customs-reference-rbac-gates.test.ts` — 24 tests, proposed in
+[PR #40](https://github.com/seckbara23-cmyk/Effitrans-Operations/pull/40)
+(`test/customs-ref-rbac-gates`). The path is given as text rather than a link
+because that file does not exist on this branch; it arrives with PR #40.
+
+It went further than the structural assertion recommended above. The tests *render*
+the components with `renderToStaticMarkup` and assert on semantic controls — a file
+input, a named select, the count of `role="note"` regions — so they describe what a
+browser would receive rather than the shape of a JSX expression. `canPublish` is
+derived through the real permission chain, and the role→permission fixture is parsed
+out of migration #152, so widening the publish grant breaks the tests rather than
+slipping past them. Mutation-checked: breaking the upload gate fails 5 tests, the
+scanner-notice gate 3, the state-filter gate 3.
+
+> **Status: PR #40 is open and NOT merged.** Until it merges, the gap described
+> above remains open in `main`, and P-3/P-5/P-7 remain the only verification those
+> gates have. This note records the proposed remedy, not a completed one.
 
 ## 7. Closure
 
