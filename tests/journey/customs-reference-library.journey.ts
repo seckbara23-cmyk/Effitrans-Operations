@@ -18,12 +18,17 @@
  * reference document belongs to no dossier, so the journey needs none.
  */
 import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { createHash, randomUUID } from "node:crypto";
+import { createClient } from "@supabase/supabase-js";
 import { as } from "./identity";
 import { identity, db, auditFor, TENANT_A } from "./fixtures";
 import type { CurrentUser } from "@/lib/auth/current-user";
 
 import { POST as uploadRoute } from "@/app/api/customs/reference/upload/route";
 import { GET as viewRoute } from "@/app/api/customs/reference/[id]/pdf/route";
+// REF-2 — the two halves of the direct-to-storage path.
+import { POST as ticketRoute } from "@/app/api/customs/reference/upload-url/route";
+import { POST as finalizeRoute } from "@/app/api/customs/reference/finalize/route";
 import {
   publishDocument,
   recordLicenceRuling,
@@ -33,6 +38,7 @@ import {
   withdrawDocument,
 } from "@/lib/customs/reference/actions";
 import { getLibrary, getReferenceDocument, getVersionHistory } from "@/lib/customs/reference/service";
+import { MAX_REGIMES, MAX_REGIME_LENGTH } from "@/lib/customs/reference/validate";
 
 const FOREIGN_TENANT = "00000000-0000-0000-0000-0000000000f2";
 
@@ -1260,5 +1266,644 @@ describe("R19 — SCANNER-01: outage and a lost scan", () => {
     await as(chief, () => withdrawDocument(id, "motif"));
     expect(await as(chief, () => requestScan(id)))
       .toEqual({ ok: false, error: "withdrawn" });
+  });
+});
+
+// ===========================================================================
+// REF-2 — THE DIRECT-TO-STORAGE UPLOAD, END TO END.
+// ===========================================================================
+// WHY THESE TESTS EXIST. REF-2 added a SECOND way for a reference document to
+// come into existence. Every test above posts a file to the REF-1 route, which
+// carries the bytes itself and is therefore bounded by the platform's request
+// limit. The Tarif Extérieur Commun does not fit through it. So REF-2 mints a
+// signed, single-path ticket, the browser puts the bytes straight into the
+// private bucket, and the application decides AFTERWARDS whether a document
+// exists. That means there is a moment when the bucket holds a file nothing
+// has validated — and until this block, nothing had ever run that moment.
+//
+// CUSTOMS-REF-UAT-02-CI-01. This is the transactional half of UAT-02, and it
+// lives here rather than in a browser because this project has no isolated
+// Supabase environment to point a browser at: Vercel Previews are bound to the
+// PRODUCTION project (docs/customs-ref-uat/uat-02-environment.md), and the
+// owner has set a $0 ceiling on new infrastructure. CI's disposable
+// `supabase start` database is the only real, isolated, free environment that
+// exists, so the matrix is proven against that.
+//
+// THE TICKET IS USED THE WAY A BROWSER USES IT — WITH AN ANON CLIENT. A
+// service-role client can write into the bucket whether a ticket authorised it
+// or not, so staging the bytes with one would have made every test below pass
+// while proving nothing about the ticket. Every byte placed in these tests is
+// placed by a client holding no privilege at all.
+
+const BUCKET = "customs-reference";
+
+/**
+ * The bucket's own ceiling, declared by migration 152. The ticket advertises a
+ * limit to the browser, and a ticket that advertised more than storage accepts
+ * would invite a 50 MB transfer that storage then refuses.
+ */
+const BUCKET_CEILING = 50 * 1024 * 1024;
+
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+function sha256Of(bytes: Uint8Array): string {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+/**
+ * A client with NO privilege — the operator's browser credentials.
+ *
+ * Deliberately separate from `db()`: `db()` holds the service role, which
+ * bypasses every storage policy. The direct upload must be performed without
+ * privilege or it demonstrates nothing about what the ticket grants.
+ */
+function anonDb() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !key) {
+    throw new Error(
+      "the REF-2 block requires NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY: "
+        + "the direct upload is only meaningful from an UNPRIVILEGED client.",
+    );
+  }
+  return createClient(url, key, { auth: { persistSession: false } });
+}
+
+function jsonPost(url: string, payload: Record<string, unknown>): Request {
+  return new Request(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+type TicketBody = {
+  ok?: boolean;
+  uploadId?: string;
+  path?: string;
+  token?: string;
+  signedUrl?: string;
+  maxBytes?: number;
+  error?: string;
+};
+
+type FinalizeBody = {
+  ok?: boolean;
+  id?: string;
+  status?: string;
+  sha256?: string;
+  sizeBytes?: number;
+  error?: string;
+};
+
+/** Step 1 of 2 — ask for an upload ticket through the real route. */
+async function ticket(actor: CurrentUser, overrides: Record<string, unknown> = {}) {
+  const payload: Record<string, unknown> = {
+    category: "LEGISLATION",
+    title: "Tarif Extérieur Commun",
+    sourceAuthority: "Direction Générale des Douanes",
+    referenceCode: `DIRECT-${(seq += 1)}`,
+    declaredSize: 4096,
+    ...overrides,
+  };
+  const res = await as(actor, () =>
+    ticketRoute(jsonPost("http://localhost/api/customs/reference/upload-url", payload)),
+  );
+  return { status: res.status, body: (await res.json().catch(() => ({}))) as TicketBody };
+}
+
+/** Step 2 of 2 — ask the application to accept the staged bytes. */
+async function finalize(actor: CurrentUser, overrides: Record<string, unknown>) {
+  const payload: Record<string, unknown> = {
+    category: "LEGISLATION",
+    title: "Tarif Extérieur Commun",
+    sourceAuthority: "Direction Générale des Douanes",
+    ...overrides,
+  };
+  const res = await as(actor, () =>
+    finalizeRoute(jsonPost("http://localhost/api/customs/reference/finalize", payload)),
+  );
+  return { status: res.status, body: (await res.json().catch(() => ({}))) as FinalizeBody };
+}
+
+/**
+ * The browser's whole first half: take a ticket, then PUT the bytes with it
+ * from an unprivileged client. Returns what a caller needs to finalise — or to
+ * assert that a refusal left the right things behind.
+ */
+async function stage(
+  actor: CurrentUser,
+  opts: { bytes?: Uint8Array; overrides?: Record<string, unknown> } = {},
+) {
+  const bytes = opts.bytes ?? pdf();
+  const referenceCode = `DIRECT-${(seq += 1)}`;
+  const t = await ticket(actor, {
+    referenceCode,
+    declaredSize: bytes.length,
+    ...(opts.overrides ?? {}),
+  });
+  expect(t.status, `ticket refused: ${t.body.error}`).toBe(201);
+
+  const put = await anonDb().storage
+    .from(BUCKET)
+    .uploadToSignedUrl(t.body.path!, t.body.token!, new File([bytes], "tec.pdf", {
+      type: "application/pdf",
+    }));
+  expect(put.error, `signed upload failed: ${put.error?.message}`).toBeNull();
+
+  return { ...t.body, bytes, referenceCode, sha256: sha256Of(bytes) };
+}
+
+/** Is there a staged object for this ticket, in this tenant's prefix? */
+async function stagedObject(tenantId: string, uploadId: string) {
+  const { data } = await db()
+    .storage.from(BUCKET)
+    .list(`${tenantId}/_staging`, { search: `${uploadId}.pdf`, limit: 1 });
+  return (data ?? []).find((o) => o.name === `${uploadId}.pdf`) ?? null;
+}
+
+/** Is there a document object under tenant A's own prefix? */
+async function storedObject(name: string) {
+  const { data } = await db().storage.from(BUCKET).list(TENANT_A, { search: name, limit: 1 });
+  return (data ?? []).find((o) => o.name === name) ?? null;
+}
+
+/**
+ * How many reference documents exist. Every refusal below asserts against this
+ * rather than against "my row is absent": a route that refused the request but
+ * wrote SOME row would otherwise pass.
+ */
+async function documentCount(): Promise<number> {
+  const { count } = await db()
+    .from("customs_reference_document")
+    .select("id", { count: "exact", head: true })
+    .eq("tenant_id", TENANT_A);
+  return count ?? 0;
+}
+
+async function uploadAuditCount(): Promise<number> {
+  const { count } = await db()
+    .from("audit_log")
+    .select("action", { count: "exact", head: true })
+    .eq("action", "customs.reference.uploaded");
+  return count ?? 0;
+}
+
+// ===========================================================================
+describe("R20 — REF-2: the ticket authorises bytes, and nothing else", () => {
+  it("an authorised publisher is issued a ticket, and the ticket alone creates nothing", async () => {
+    const documentsBefore = await documentCount();
+    const auditBefore = await uploadAuditCount();
+
+    const { status, body } = await ticket(chief);
+    expect(status).toBe(201);
+    expect(body.ok).toBe(true);
+    expect(body.uploadId).toMatch(UUID_SHAPE);
+    // The key is derived from the SESSION's tenant and a server-generated uuid:
+    // the caller named no part of it.
+    expect(body.path).toBe(`${TENANT_A}/_staging/${body.uploadId}.pdf`);
+    expect(String(body.token ?? "").length).toBeGreaterThan(0);
+    expect(body.signedUrl).toContain(`/${BUCKET}/${TENANT_A}/_staging/${body.uploadId}.pdf`);
+    // What the route advertises is the bucket's own ceiling, not a larger number
+    // the browser would discover to be a lie after a 50 MB transfer.
+    expect(body.maxBytes).toBe(BUCKET_CEILING);
+
+    // A ticket is not a document. Nothing exists yet — not a row, not an audit
+    // event, and not even an object: a ticket nobody uses must leave no trace
+    // of a document that never was.
+    expect(await documentCount()).toBe(documentsBefore);
+    expect(await uploadAuditCount()).toBe(auditBefore);
+    expect(await stagedObject(TENANT_A, body.uploadId!)).toBeNull();
+  });
+
+  it("a reader is issued no ticket at all", async () => {
+    const reader = await ticket(declarant);
+    expect([reader.status, reader.body.error]).toEqual([403, "forbidden"]);
+    // And nothing usable leaked with the refusal.
+    expect(reader.body.token).toBeUndefined();
+    expect(reader.body.path).toBeUndefined();
+    expect(reader.body.signedUrl).toBeUndefined();
+
+    const outsider = await ticket(driver);
+    expect([outsider.status, outsider.body.error]).toEqual([403, "forbidden"]);
+  });
+
+  it("the ticket refuses what it should before a single byte moves", async () => {
+    const refusals: Array<[Record<string, unknown>, string]> = [
+      [{ category: "NOT_A_CATEGORY" }, "category_invalid"],
+      [{ title: "   " }, "title_required"],
+      [{ sourceAuthority: "" }, "authority_required"],
+      [{ referenceCode: "" }, "reference_code_required"],
+      [{ publishedOn: "17/10/2026" }, "published_on_invalid"],
+      [{ customsRegimes: "X".repeat(MAX_REGIME_LENGTH + 1) }, "regime_too_long"],
+      [
+        {
+          customsRegimes: Array.from({ length: MAX_REGIMES + 1 }, (_, i) => `REGIME ${i}`).join(","),
+        },
+        "too_many_regimes",
+      ],
+      [{ declaredSize: 0 }, "missing_file"],
+      [{ declaredSize: null }, "missing_file"],
+      [{ declaredSize: -1 }, "missing_file"],
+      [{ declaredSize: 4096.5 }, "missing_file"],
+      [{ declaredSize: 512 }, "too_small"],
+      [{ declaredSize: BUCKET_CEILING + 1 }, "too_large"],
+    ];
+    for (const [overrides, error] of refusals) {
+      const r = await ticket(chief, overrides);
+      expect([JSON.stringify(overrides), r.status, r.body.error]).toEqual([
+        JSON.stringify(overrides),
+        400,
+        error,
+      ]);
+      // A refused ticket is not a half-issued one.
+      expect(r.body.token).toBeUndefined();
+    }
+  });
+
+  it("a body that is not JSON is bad input, not a server error", async () => {
+    const res = await as(chief, () =>
+      ticketRoute(new Request("http://localhost/api/customs/reference/upload-url", {
+        method: "POST",
+        body: "{ not json",
+      })),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe("invalid_input");
+  });
+});
+
+// ===========================================================================
+describe("R21 — REF-2: the bytes travel on their own, and become one document", () => {
+  it("the ticket places the bytes in the private staging prefix, and authorises nothing else", async () => {
+    const bytes = pdf(9000);
+    const t = await ticket(chief, { declaredSize: bytes.length });
+    expect(t.status).toBe(201);
+    const anon = anonDb();
+
+    // (a) the ticket works for its own path, from a client with no privilege.
+    const ok = await anon.storage
+      .from(BUCKET)
+      .uploadToSignedUrl(t.body.path!, t.body.token!, new File([bytes], "tec.pdf", {
+        type: "application/pdf",
+      }));
+    expect(ok.error).toBeNull();
+
+    const staged = await stagedObject(TENANT_A, t.body.uploadId!);
+    expect(staged).toBeTruthy();
+    expect(Number((staged!.metadata as { size?: number } | null)?.size)).toBe(bytes.length);
+
+    // (b) a ticket does not authorise a second path. "Single-path" is the
+    // whole security claim of a signed upload URL, so it is asserted rather
+    // than assumed — with a FRESH ticket rather than the one just spent, so
+    // that a refusal can only be explained by the path.
+    const other = await ticket(chief, { declaredSize: bytes.length });
+    expect(other.status).toBe(201);
+    const elsewhere = await anon.storage
+      .from(BUCKET)
+      .uploadToSignedUrl(
+        `${TENANT_A}/_staging/${randomUUID()}.pdf`,
+        other.body.token!,
+        new File([bytes], "x.pdf", { type: "application/pdf" }),
+      );
+    expect(elsewhere.error).toBeTruthy();
+    // …and the path it WAS minted for stayed empty: the refusal did not quietly
+    // write the bytes to the key the token names.
+    expect(await stagedObject(TENANT_A, other.body.uploadId!)).toBeNull();
+
+    // (c) and with no ticket, that client has nothing: the bucket is private
+    // and `storage.objects` carries no policy granting it a write.
+    const unticketed = await anon.storage
+      .from(BUCKET)
+      .upload(`${TENANT_A}/_staging/${randomUUID()}.pdf`, new File([bytes], "x.pdf", {
+        type: "application/pdf",
+      }));
+    expect(unticketed.error).toBeTruthy();
+
+    // (d) it cannot even read back what it just wrote.
+    const readback = await anon.storage.from(BUCKET).download(t.body.path!);
+    expect(readback.error).toBeTruthy();
+    expect(readback.data).toBeNull();
+  });
+
+  it("finalisation creates exactly one quarantined document whose checksum describes the bytes that arrived", async () => {
+    const bytes = pdf(12_288);
+    const s = await stage(chief, { bytes });
+    const before = await documentCount();
+
+    const { status, body } = await finalize(chief, {
+      uploadId: s.uploadId,
+      referenceCode: s.referenceCode,
+      title: "Tarif Extérieur Commun — R21",
+      declaredSize: bytes.length,
+      sha256: s.sha256,
+    });
+    expect(status).toBe(201);
+    expect(body.ok).toBe(true);
+    expect(body.status).toBe("QUARANTINE");
+    expect(body.sha256).toBe(s.sha256);
+    expect(body.sizeBytes).toBe(bytes.length);
+    // Exactly one, not two: the move writes a document, not a document per
+    // attempt at one.
+    expect(await documentCount()).toBe(before + 1);
+
+    const r = await row(body.id!);
+    expect(r).toBeTruthy();
+    // The same safety defaults R1 pins for the office route. A second way in
+    // must not be a second set of defaults.
+    expect(r!.status).toBe("QUARANTINE");
+    expect(r!.scan_status).toBe("UNSCANNED");
+    expect(r!.licence_status).toBe("RESTRICTED");
+    expect(r!.redistribution_allowed).toBe(false);
+    expect(r!.provenance_verified).toBe(false);
+    expect(r!.legal_version_verified).toBe(false);
+    expect(r!.published_by).toBeNull();
+    expect(r!.published_at).toBeNull();
+    expect(r!.version).toBe(1);
+    expect(r!.tenant_id).toBe(TENANT_A);
+    expect(r!.uploaded_by).toBe(chief.id);
+    expect(r!.mime_type).toBe("application/pdf");
+    expect(r!.size_bytes).toBe(bytes.length);
+    expect(r!.content_sha256).toBe(s.sha256);
+    // The document's home is derived from its id, and carries no filename.
+    expect(r!.storage_path).toBe(`${TENANT_A}/${body.id}.pdf`);
+
+    // THE MOVE PRESERVED THE BYTES. The checksum in the row is computed by the
+    // route; this reads the object back out of the bucket and hashes it again,
+    // so a route that recorded a hash of something else would fail here.
+    const { data: blob } = await db().storage.from(BUCKET).download(String(r!.storage_path));
+    expect(blob).toBeTruthy();
+    const stored = new Uint8Array(await blob!.arrayBuffer());
+    expect(stored.length).toBe(bytes.length);
+    expect(sha256Of(stored)).toBe(s.sha256);
+
+    const audit = await auditFor("customs.reference.uploaded", body.id!);
+    expect(audit.length).toBe(1);
+    expect(audit[0].actor_id).toBe(chief.id);
+    // Which door it came through is part of the record.
+    expect((audit[0].after as { via?: string } | null)?.via).toBe("direct_upload");
+    expect((audit[0].after as { sha256?: string } | null)?.sha256).toBe(s.sha256);
+    expect((audit[0].after as { size_bytes?: number } | null)?.size_bytes).toBe(bytes.length);
+  });
+
+  it("the staging copy does not outlive a successful finalisation", async () => {
+    const s = await stage(chief);
+    expect(await stagedObject(TENANT_A, s.uploadId!)).toBeTruthy();
+
+    const { status, body } = await finalize(chief, {
+      uploadId: s.uploadId,
+      referenceCode: s.referenceCode,
+      declaredSize: s.bytes.length,
+      sha256: s.sha256,
+    });
+    expect(status).toBe(201);
+
+    // Swept. An unvalidated copy of a document's bytes is exactly what should
+    // not be left lying in the bucket.
+    expect(await stagedObject(TENANT_A, s.uploadId!)).toBeNull();
+    // …and the document's own object is there, under its own key.
+    expect(await storedObject(`${body.id}.pdf`)).toBeTruthy();
+  });
+
+  it("a ticket cannot be finalised twice", async () => {
+    const s = await stage(chief);
+    const fields = {
+      uploadId: s.uploadId,
+      referenceCode: s.referenceCode,
+      declaredSize: s.bytes.length,
+      sha256: s.sha256,
+    };
+    expect((await finalize(chief, fields)).status).toBe(201);
+
+    const before = await documentCount();
+    const replay = await finalize(chief, fields);
+    // The bytes are gone, so the replay has nothing to accept. The important
+    // part is the count: a replayed request must not mint a second document
+    // from the same upload.
+    expect([replay.status, replay.body.error]).toEqual([404, "upload_not_found"]);
+    expect(await documentCount()).toBe(before);
+  });
+
+  it("a document created by the direct path is quarantined exactly like an office one", async () => {
+    const s = await stage(chief);
+    const { body } = await finalize(chief, {
+      uploadId: s.uploadId,
+      referenceCode: s.referenceCode,
+      title: "Quarantaine directe — R21e",
+      declaredSize: s.bytes.length,
+      sha256: s.sha256,
+    });
+    const id = body.id!;
+
+    const reader = await as(declarant, () => getLibrary());
+    expect(reader.documents.map((d) => d.id)).not.toContain(id);
+    expect(await as(declarant, () => getReferenceDocument(id))).toBeNull();
+    const res = await as(declarant, () =>
+      viewRoute(new Request("http://localhost/x"), { params: { id } }),
+    );
+    expect(res.status).toBe(404);
+
+    // The publisher sees their own quarantined upload, as before.
+    const publisher = await as(chief, () => getLibrary());
+    expect(publisher.documents.map((d) => d.id)).toContain(id);
+  });
+});
+
+// ===========================================================================
+describe("R22 — REF-2: a refusal leaves no document and no stray bytes", () => {
+  it("a declared checksum that does not describe the bytes is refused, and the bytes are dropped", async () => {
+    const s = await stage(chief);
+    const before = await documentCount();
+
+    const r = await finalize(chief, {
+      uploadId: s.uploadId,
+      referenceCode: s.referenceCode,
+      declaredSize: s.bytes.length,
+      sha256: "b".repeat(64),
+    });
+    expect([r.status, r.body.error]).toEqual([400, "sha256_mismatch"]);
+    expect(r.body.id).toBeUndefined();
+    expect(await documentCount()).toBe(before);
+    // Bytes whose integrity could not be established never outlive the refusal.
+    expect(await stagedObject(TENANT_A, s.uploadId!)).toBeNull();
+  });
+
+  it("a declared size that does not describe the bytes is refused the same way", async () => {
+    const s = await stage(chief);
+    const before = await documentCount();
+
+    const r = await finalize(chief, {
+      uploadId: s.uploadId,
+      referenceCode: s.referenceCode,
+      declaredSize: s.bytes.length + 1,
+      sha256: s.sha256,
+    });
+    expect([r.status, r.body.error]).toEqual([400, "size_mismatch"]);
+    expect(await documentCount()).toBe(before);
+    expect(await stagedObject(TENANT_A, s.uploadId!)).toBeNull();
+  });
+
+  it("bytes that are not a PDF are refused, whatever the ticket said they would be", async () => {
+    // A ZIP's signature. The ticket is metadata-only, so this is the first
+    // moment anything looks at the bytes — and the moment that must refuse.
+    const notPdf = new Uint8Array(2048);
+    notPdf.set([0x50, 0x4b, 0x03, 0x04], 0);
+    const s = await stage(chief, { bytes: notPdf });
+    const before = await documentCount();
+
+    const r = await finalize(chief, {
+      uploadId: s.uploadId,
+      referenceCode: s.referenceCode,
+      declaredSize: notPdf.length,
+      sha256: s.sha256,
+    });
+    expect([r.status, r.body.error]).toEqual([400, "not_a_pdf"]);
+    expect(await documentCount()).toBe(before);
+    expect(await stagedObject(TENANT_A, s.uploadId!)).toBeNull();
+  });
+
+  it("a malformed upload identifier is refused before any path is built", async () => {
+    const before = await documentCount();
+    const malformed = [
+      "",
+      "   ",
+      "not-a-uuid",
+      "../../secret",
+      `${TENANT_A}/_staging/x`,
+      "00000000-0000-0000-0000-00000000000",
+      `${randomUUID()}/`,
+      `${randomUUID()}.pdf`,
+      `${randomUUID()}%2F..%2F`,
+    ];
+    for (const bad of malformed) {
+      const r = await finalize(chief, {
+        uploadId: bad,
+        referenceCode: `BAD-${(seq += 1)}`,
+        declaredSize: 4096,
+      });
+      expect([bad, r.status, r.body.error]).toEqual([bad, 400, "invalid_upload_id"]);
+    }
+    expect(await documentCount()).toBe(before);
+  });
+
+  it("a well-formed identifier for bytes nobody staged is simply not found", async () => {
+    const before = await documentCount();
+    const r = await finalize(chief, {
+      uploadId: randomUUID(),
+      referenceCode: `GHOST-${(seq += 1)}`,
+      declaredSize: 4096,
+      sha256: sha256Of(pdf()),
+    });
+    // 404, not 500: the identifier is well-formed, there are simply no bytes.
+    expect([r.status, r.body.error]).toEqual([404, "upload_not_found"]);
+    expect(await documentCount()).toBe(before);
+  });
+
+  it("a reader cannot finalise a publisher's upload, and the refusal does not touch their bytes", async () => {
+    const s = await stage(chief);
+    const fields = {
+      uploadId: s.uploadId,
+      referenceCode: s.referenceCode,
+      declaredSize: s.bytes.length,
+      sha256: s.sha256,
+    };
+    const before = await documentCount();
+
+    const reader = await finalize(declarant, fields);
+    expect([reader.status, reader.body.error]).toEqual([403, "forbidden"]);
+    const outsider = await finalize(driver, fields);
+    expect([outsider.status, outsider.body.error]).toEqual([403, "forbidden"]);
+    expect(await documentCount()).toBe(before);
+
+    // A refusal is a refusal, not a deletion: the publisher's staged bytes are
+    // still there, and still finalise. Someone else's failed attempt must not
+    // destroy work in progress.
+    expect(await stagedObject(TENANT_A, s.uploadId!)).toBeTruthy();
+    const mine = await finalize(chief, fields);
+    expect(mine.status).toBe(201);
+    expect(mine.body.sha256).toBe(s.sha256);
+  });
+});
+
+// ===========================================================================
+describe("R23 — REF-2: the regime axis, and whose staging prefix it is", () => {
+  const MESSY = " transit ,MISE EN CONSOMMATION;transit\nexportation,";
+  const TIDY = ["EXPORTATION", "MISE EN CONSOMMATION", "TRANSIT"];
+
+  it("regimes are normalised, de-duplicated, sorted and persisted", async () => {
+    const s = await stage(chief, { overrides: { customsRegimes: MESSY } });
+    const { status, body } = await finalize(chief, {
+      uploadId: s.uploadId,
+      referenceCode: s.referenceCode,
+      title: "Régimes — R23",
+      declaredSize: s.bytes.length,
+      sha256: s.sha256,
+      customsRegimes: MESSY,
+    });
+    expect(status).toBe(201);
+
+    const r = await row(body.id!);
+    expect(r!.customs_regimes).toEqual(TIDY);
+    // The service hands the same axis back to a reader of its own output…
+    const doc = await as(chief, () => getReferenceDocument(body.id!));
+    expect(doc!.customsRegimes).toEqual(TIDY);
+    // …and the audit records what was STORED, not what was typed.
+    const audit = await auditFor("customs.reference.uploaded", body.id!);
+    expect((audit[0].after as { customs_regimes?: string[] } | null)?.customs_regimes)
+      .toEqual(TIDY);
+  });
+
+  it("a published document is findable by a regime it carries, and not by one it does not", async () => {
+    const s = await stage(chief, { overrides: { customsRegimes: "ADMISSION TEMPORAIRE" } });
+    const { body } = await finalize(chief, {
+      uploadId: s.uploadId,
+      referenceCode: s.referenceCode,
+      title: "Admission temporaire — R23b",
+      declaredSize: s.bytes.length,
+      sha256: s.sha256,
+      // Typed in lower case by the operator: the normaliser is what makes the
+      // search work, not the operator's shift key.
+      customsRegimes: "admission temporaire",
+    });
+    const id = body.id!;
+    expect(await publishFully(id)).toEqual({ ok: true, id });
+
+    // UAT-01B recorded search accuracy as NOT TESTABLE because the library was
+    // empty. This is that test: a real document, matched by a real filter.
+    const hit = await as(declarant, () => getLibrary({ regime: "admission temporaire" }));
+    expect(hit.documents.map((d) => d.id)).toContain(id);
+
+    const miss = await as(declarant, () => getLibrary({ regime: "RÉEXPORTATION" }));
+    expect(miss.documents.map((d) => d.id)).not.toContain(id);
+  });
+
+  it("another tenant's staged bytes are unreachable, and untouched by the attempt", async () => {
+    // Staged under a FOREIGN tenant's prefix with privilege, because no ticket
+    // this application mints could ever name that path.
+    const foreignId = randomUUID();
+    const foreignPath = `${FOREIGN_TENANT}/_staging/${foreignId}.pdf`;
+    const bytes = pdf();
+    const put = await db()
+      .storage.from(BUCKET)
+      .upload(foreignPath, bytes, { contentType: "application/pdf" });
+    expect(put.error).toBeNull();
+
+    try {
+      const before = await documentCount();
+      // `/finalize` builds the path from the SESSION's tenant, so this uuid
+      // resolves to a path in tenant A that holds nothing.
+      const r = await finalize(chief, {
+        uploadId: foreignId,
+        referenceCode: `FOREIGN-${(seq += 1)}`,
+        declaredSize: bytes.length,
+        sha256: sha256Of(bytes),
+      });
+      expect([r.status, r.body.error]).toEqual([404, "upload_not_found"]);
+      expect(await documentCount()).toBe(before);
+      // And it did not delete what it was not allowed to read.
+      expect(await stagedObject(FOREIGN_TENANT, foreignId)).toBeTruthy();
+    } finally {
+      await db().storage.from(BUCKET).remove([foreignPath]);
+    }
   });
 });
