@@ -43,6 +43,7 @@ import {
   parseRegimeInput,
   validateReferenceMetadata,
 } from "@/lib/customs/reference/validate";
+import { sweepAbandonedStaging } from "@/lib/customs/reference/staging-sweep";
 
 export const dynamic = "force-dynamic";
 
@@ -102,6 +103,16 @@ export async function POST(request: Request) {
   const stagingPath = buildStagingPath(user.tenantId, uploadId);
 
   const supabase = getAdminSupabaseClient();
+
+  // REF-2 F-2 — reclaim this tenant's abandoned staging bytes before minting
+  // another ticket. There is no scheduler in this system to hang a sweeper on,
+  // and this is the one door where somebody has already proved authority over
+  // this tenant's staging prefix. AWAITED, because a serverless function stops
+  // executing once it has answered; and best-effort by contract, so a janitorial
+  // failure can never be the reason an authorized upload is refused. The ticket
+  // minted below has no object yet, so the sweep cannot reach it.
+  await sweepAbandonedStaging(supabase, user.tenantId);
+
   const { data, error } = await supabase.storage
     .from(BUCKET)
     .createSignedUploadUrl(stagingPath);

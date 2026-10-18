@@ -629,3 +629,65 @@ describe("REF-2 — the development stub cannot become a production bypass", () 
     expect(stub).not.toContain('SCANNER_VERSION = "clamav');
   });
 });
+
+// ===========================================================================
+describe("REF-2 F-2 — the sweep adds no infrastructure and no authority", () => {
+  const sweep = strip(read("lib/customs/reference/staging-sweep.ts"));
+
+  it("65 — the ticket route sweeps AFTER authorization, not before", () => {
+    const perm = ticketRoute.indexOf("hasPermission(permissions");
+    const sweepCall = ticketRoute.indexOf("sweepAbandonedStaging(");
+    const ticket = ticketRoute.indexOf("createSignedUploadUrl");
+    expect(perm).toBeGreaterThan(-1);
+    // Authorized first, swept second, ticket third. An unauthenticated or
+    // unauthorized caller must not be able to make the system delete anything.
+    expect(sweepCall).toBeGreaterThan(perm);
+    expect(ticket).toBeGreaterThan(sweepCall);
+    // Awaited: a serverless function stops executing once it has answered.
+    expect(ticketRoute).toContain("await sweepAbandonedStaging(supabase, user.tenantId)");
+  });
+
+  it("66 — it writes no audit event and touches no table", () => {
+    // A staging object is not a document: there is no entity to attach an event
+    // to. Test 38 already forbids `writeAudit` in the route; this says the same
+    // of the module the route now calls.
+    expect(sweep).not.toContain("writeAudit");
+    expect(sweep).not.toContain(".insert(");
+    expect(sweep).not.toContain(".update(");
+    expect(sweep).not.toContain(".rpc(");
+  });
+
+  it("67 — it never lists the bucket, only one tenant's staging prefix", () => {
+    expect(sweep).toContain("stagingPrefix(tenantId)");
+    expect(sweep).toContain("`${tenantId}/_staging`");
+    // The path it removes is rebuilt by the function that wrote it, so a name
+    // from the listing can decide WHICH object but never WHERE.
+    expect(sweep).toContain("buildStagingPath(tenantId, uploadId)");
+  });
+
+  it("68 — it adds no scheduler, and there is still none to add one to", () => {
+    // F-2's design turns on this absence. If a cron or a scheduled workflow
+    // ever appears, this test is where that decision has to be argued.
+    expect(read("vercel.json")).not.toContain("crons");
+    for (const wf of ["ci.yml", "migrate-production.yml"]) {
+      expect(read(`.github/workflows/${wf}`), wf).not.toMatch(/^\s*schedule:/m);
+    }
+  });
+
+  it("69 — it adds no dependency", () => {
+    // Only the house observability reporter and the path builder that already
+    // existed. A janitorial sweep is not a reason to grow the dependency tree.
+    const pkg = JSON.parse(read("package.json")) as { dependencies: Record<string, string> };
+    expect(Object.keys(pkg.dependencies)).not.toContain("node-cron");
+    expect(sweep).toContain('from "@/lib/observability/report"');
+    expect(sweep).toContain('from "@/lib/customs/reference/validate"');
+  });
+
+  it("70 — the REF-1 route and finalize's own cleanup are untouched by F-2", () => {
+    expect(finalizeRoute).toContain("dropStaging");
+    expect(finalizeRoute).not.toContain("sweepAbandonedStaging");
+    const ref1 = strip(read("app/api/customs/reference/upload/route.ts"));
+    expect(ref1).not.toContain("sweepAbandonedStaging");
+    expect(ref1).not.toContain("_staging");
+  });
+});

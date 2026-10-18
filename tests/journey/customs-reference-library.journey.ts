@@ -39,6 +39,10 @@ import {
 } from "@/lib/customs/reference/actions";
 import { getLibrary, getReferenceDocument, getVersionHistory } from "@/lib/customs/reference/service";
 import { MAX_REGIMES, MAX_REGIME_LENGTH } from "@/lib/customs/reference/validate";
+import {
+  DEFAULT_STAGING_TTL_HOURS,
+  isAbandonedStagingObject,
+} from "@/lib/customs/reference/staging-sweep";
 
 const FOREIGN_TENANT = "00000000-0000-0000-0000-0000000000f2";
 
@@ -1905,5 +1909,178 @@ describe("R23 — REF-2: the regime axis, and whose staging prefix it is", () =>
     } finally {
       await db().storage.from(BUCKET).remove([foreignPath]);
     }
+  });
+});
+
+// ===========================================================================
+// REF-2 F-2 — the staging sweep, against real Storage.
+// ===========================================================================
+// WHAT THE UNIT SUITE CANNOT SHOW. `tests/customs-reference-f2-sweep.test.ts`
+// proves the rule and the failure behaviour against an in-memory stand-in. It
+// cannot prove that Supabase Storage returns a `created_at` the rule can use,
+// that a prefix listing really cannot see a finalised document's object, or
+// that a swept object is really gone. Those are facts about the service, so
+// they are asserted against the service.
+//
+// THE LOAD-BEARING TEST HERE IS "a fresh object survives". A sweeper that eats
+// an upload somebody is seconds from finalising is worse than the debris it was
+// written to remove, so that case is asserted with the PRODUCTION threshold and
+// followed through to a successful finalisation.
+
+/** How many staging objects this tenant currently holds. */
+async function stagingCount(tenantId = TENANT_A): Promise<number> {
+  const { data } = await db().storage.from(BUCKET).list(`${tenantId}/_staging`, { limit: 100 });
+  return (data ?? []).filter((o) => o.name.endsWith(".pdf")).length;
+}
+
+describe("R24 — REF-2 F-2: abandoned staging bytes are reclaimed, live ones are not", () => {
+  const savedEnv = { ...process.env };
+  afterEach(() => {
+    process.env = { ...savedEnv };
+  });
+
+  it("an abandoned staging object is reclaimed by the next ticket request", async () => {
+    // Nothing is older than a day in a run that started minutes ago, so the
+    // threshold is lowered rather than the clock moved.
+    process.env.CUSTOMS_STAGING_TTL_HOURS = "0";
+
+    const s = await stage(chief);
+    expect(await stagedObject(TENANT_A, s.uploadId!)).toBeTruthy();
+
+    // The next ticket request is the door the sweep runs at.
+    const next = await ticket(chief);
+    expect(next.status).toBe(201);
+
+    expect(await stagedObject(TENANT_A, s.uploadId!)).toBeNull();
+    // And the backlog really drains: this also reclaims the object R21
+    // deliberately abandoned, which is the whole point of a backstop.
+    expect(await stagingCount()).toBe(0);
+
+    // The ticket it issued is a real one — the sweep did not cost the caller
+    // anything, and the object for THIS ticket does not exist yet.
+    expect(next.body.path).toBe(`${TENANT_A}/_staging/${next.body.uploadId}.pdf`);
+    expect(await stagedObject(TENANT_A, next.body.uploadId!)).toBeNull();
+  });
+
+  it("a FRESH staging object survives, and still finalises", async () => {
+    // The production default. No override: this is the configuration that runs.
+    delete process.env.CUSTOMS_STAGING_TTL_HOURS;
+
+    const s = await stage(chief);
+    const next = await ticket(chief);
+    expect(next.status).toBe(201);
+
+    // Still there, seconds old, untouched.
+    expect(await stagedObject(TENANT_A, s.uploadId!)).toBeTruthy();
+
+    // …and still usable, which is the claim that matters. A sweep that left the
+    // object but damaged the upload would pass the assertion above.
+    const done = await finalize(chief, {
+      uploadId: s.uploadId,
+      referenceCode: s.referenceCode,
+      title: "Survivant — R24b",
+      declaredSize: s.bytes.length,
+      sha256: s.sha256,
+    });
+    expect([done.status, done.body.error]).toEqual([201, undefined]);
+    expect(done.body.sha256).toBe(s.sha256);
+  });
+
+  it("another tenant's staging objects are untouched", async () => {
+    const foreignId = randomUUID();
+    const foreignPath = `${FOREIGN_TENANT}/_staging/${foreignId}.pdf`;
+    const put = await db()
+      .storage.from(BUCKET)
+      .upload(foreignPath, pdf(), { contentType: "application/pdf" });
+    expect(put.error).toBeNull();
+
+    try {
+      process.env.CUSTOMS_STAGING_TTL_HOURS = "0";
+      // Tenant A sweeps as hard as it can.
+      expect((await ticket(chief)).status).toBe(201);
+      expect(await stagingCount(TENANT_A)).toBe(0);
+
+      // The other tenant's prefix is not reachable from this session, whatever
+      // the threshold says.
+      expect(await stagedObject(FOREIGN_TENANT, foreignId)).toBeTruthy();
+    } finally {
+      await db().storage.from(BUCKET).remove([foreignPath]);
+    }
+  });
+
+  it("a finalised document's object is never swept", async () => {
+    const s = await stage(chief);
+    const { status, body } = await finalize(chief, {
+      uploadId: s.uploadId,
+      referenceCode: s.referenceCode,
+      title: "Protégé — R24d",
+      declaredSize: s.bytes.length,
+      sha256: s.sha256,
+    });
+    expect(status).toBe(201);
+    const id = body.id!;
+    expect(await storedObject(`${id}.pdf`)).toBeTruthy();
+
+    process.env.CUSTOMS_STAGING_TTL_HOURS = "0";
+    expect((await ticket(chief)).status).toBe(201);
+
+    // The document's object lives one level above `_staging/`, so a prefix
+    // listing cannot even see it. Note both basenames are `<uuid>.pdf`: it is
+    // the PREFIX that protects a document, never the name.
+    expect(await storedObject(`${id}.pdf`)).toBeTruthy();
+    const r = await row(id);
+    expect(r!.status).toBe("QUARANTINE");
+    expect(r!.storage_path).toBe(`${TENANT_A}/${id}.pdf`);
+    // Still readable by its publisher: the bytes are really there.
+    const res = await as(chief, () =>
+      viewRoute(new Request("http://localhost/x"), { params: { id } }),
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it("a finalisation racing the sweep fails cleanly instead of corrupting anything", async () => {
+    process.env.CUSTOMS_STAGING_TTL_HOURS = "0";
+    const s = await stage(chief);
+    const before = await documentCount();
+
+    // The sweep wins the race — the worst case, forced deterministically.
+    expect((await ticket(chief)).status).toBe(201);
+    expect(await stagedObject(TENANT_A, s.uploadId!)).toBeNull();
+
+    const late = await finalize(chief, {
+      uploadId: s.uploadId,
+      referenceCode: s.referenceCode,
+      declaredSize: s.bytes.length,
+      sha256: s.sha256,
+    });
+    // 404, not 500, and not a half-made document.
+    expect([late.status, late.body.error]).toEqual([404, "upload_not_found"]);
+    expect(late.body.id).toBeUndefined();
+    expect(await documentCount()).toBe(before);
+  });
+
+  it("Storage gives the sweep a timestamp it can actually use", async () => {
+    // The one assumption the whole design rests on: an object's `created_at` is
+    // a real, parseable, recent timestamp — so an age computed from it means
+    // "time since these bytes landed". If Supabase ever changed that, this fails
+    // loudly rather than the sweep deleting live uploads quietly.
+    delete process.env.CUSTOMS_STAGING_TTL_HOURS;
+
+    const s = await stage(chief);
+    const staged = await stagedObject(TENANT_A, s.uploadId!);
+    expect(staged).toBeTruthy();
+
+    const createdAt = staged!.created_at;
+    expect(typeof createdAt).toBe("string");
+    const created = Date.parse(String(createdAt));
+    expect(Number.isFinite(created)).toBe(true);
+    const ageMs = Date.now() - created;
+    expect(ageMs).toBeGreaterThanOrEqual(0);
+    expect(ageMs).toBeLessThan(120_000);
+
+    // And the REAL predicate agrees with the REAL metadata, both ways round.
+    const entry = { name: `${s.uploadId}.pdf`, created_at: createdAt };
+    expect(isAbandonedStagingObject(entry, Date.now(), DEFAULT_STAGING_TTL_HOURS)).toBe(false);
+    expect(isAbandonedStagingObject(entry, Date.now(), 0)).toBe(true);
   });
 });
