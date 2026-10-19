@@ -155,10 +155,10 @@ survive a refactor. That is the gap this record was written to raise, and it is
 preserved here as the state of affairs at the time.
 
 **What was done about it.** CUSTOMS-REF-RBAC-REGRESSION-01 implemented the coverage
-in `tests/customs-reference-rbac-gates.test.ts` — 24 tests, proposed in
+in [tests/customs-reference-rbac-gates.test.ts](../../tests/customs-reference-rbac-gates.test.ts)
+— 24 tests, delivered by
 [PR #40](https://github.com/seckbara23-cmyk/Effitrans-Operations/pull/40)
-(`test/customs-ref-rbac-gates`). The path is given as text rather than a link
-because that file does not exist on this branch; it arrives with PR #40.
+(`test/customs-ref-rbac-gates`).
 
 It went further than the structural assertion recommended above. The tests *render*
 the components with `renderToStaticMarkup` and assert on semantic controls — a file
@@ -169,9 +169,17 @@ out of migration #152, so widening the publish grant breaks the tests rather tha
 slipping past them. Mutation-checked: breaking the upload gate fails 5 tests, the
 scanner-notice gate 3, the state-filter gate 3.
 
-> **Status: PR #40 is open and NOT merged.** Until it merges, the gap described
-> above remains open in `main`, and P-3/P-5/P-7 remain the only verification those
-> gates have. This note records the proposed remedy, not a completed one.
+> **Status: CLOSED.** PR #40 was **merged** on 2026-10-18 as
+> **`d4da0238b441533076d1b025581930fec8684629`**, so the authorization-UI
+> regression gap is closed on `main`. Post-merge CI on the release reported 400
+> test files and 10 230 tests passing, with the 24 gate tests confirmed executing.
+>
+> The three gates in §3.2 now have automated coverage, and P-3/P-5/P-7 are no
+> longer their only verification. **Nothing above this line changes:** the
+> observations, verdicts and limitations recorded for UAT-01B stand exactly as
+> they were, including every non-claim in §4. This note records that the gap the
+> round raised was subsequently closed — not that the round tested more than it
+> did.
 
 ## 7. Closure
 
