@@ -96,6 +96,10 @@ document.
 Reversibility column: **No** means the row, bytes and audit persist permanently and
 can only be withdrawn.
 
+> **Read §11 first.** Rows C, D and E are now executed in CI against a real
+> database on every push (PR #42, merged 2026-10-18). What is left for a
+> production round is listed in §11.3.
+
 ### B — small PDF upload (≤ 4 MB)
 
 | | |
@@ -117,7 +121,7 @@ can only be withdrawn.
 | Production objects | 1 row; 1 final object; 1 transient `<tenant>/_staging/<uploadId>.pdf` that must be gone afterwards |
 | Audit | `CUSTOMS_REFERENCE_UPLOADED` with `via: direct_upload` |
 | Reversible | **No** — withdraw only |
-| Watch | If finalisation is abandoned mid-flight the staging object is orphaned and nothing sweeps it (known open finding REF-2 F-2). Do not abandon this upload |
+| Watch | An abandoned finalisation used to orphan the staging object forever (REF-2 F-2). **Closed by PR #43**: the next ticket request from a publisher in the same tenant reclaims anything older than 24 h. Abandoning this upload is no longer permanent — see §11.4 |
 
 ### D — byte-signature and size validation
 
@@ -288,3 +292,126 @@ Not in UAT-02, and a GO here is not a GO for any of it:
 **NO-GO if:** any precondition fails, a scanner is configured, no genuine
 non-publisher account exists (G becomes untestable and G is the point), or the
 permanence in §0 has not been explicitly accepted.
+
+## 11. What CI now proves — CUSTOMS-REF-UAT-02-CI-01 (PR #42, PR #43)
+
+**Merged 2026-10-18 and 2026-10-19.** Most of §4 no longer needs a production
+round, and the one finding that §4 told operators to work around is closed.
+
+The REF-2 direct-to-storage path — the one this plan was written to observe, and
+the one that could only ever be observed in production because Previews are
+bound to the production database — is now **executed on every push** by 18
+journey tests, against the disposable PostgreSQL and Storage that CI starts.
+That costs nothing, leaves no residue, and makes §0's irreversible fact
+inapplicable to everything it covers.
+
+The design choice that makes it worth anything: **the bytes are placed by an
+unprivileged anon client.** A service-role client can write into
+`customs-reference` whether a ticket authorised it or not, so staging the bytes
+with one would have made every test pass while proving nothing about the ticket.
+
+### 11.1 Evidence
+
+| | |
+|---|---|
+| Merge commit | `cf26d62d14ee9c0cc3b9cfabe4004cf9f9372d77` — the tip of `main` |
+| Reviewed head | `42d03b9592bf63bb56533bdc9580eb3ec54c6427`; both merged blobs byte-identical to what CI validated |
+| Changed | `tests/journey/customs-reference-library.journey.ts` (+645, purely additive) and six comment lines of `.github/workflows/ci.yml`. **No runtime, migration, RBAC or Finance change**; no `supabase/` tree change |
+| Pre-merge CI | run `39172014957` (`pull_request`) — build 9/9 steps, `rls-tests` **132/132, zero skips** |
+| Post-merge CI | run `39174173455` (`push` to `main`) — build 12/12, `rls-tests` **132/132, zero skips** |
+| Journey result | `customs-reference-library.journey.ts` **(79 tests)**; suite **265 passed (265)**, 0 skipped, 0 failed |
+| Delta, observed not assumed | base run `39159904335` at `5440af9` read **(61 tests)** and 247 — **+18 exactly** |
+| Unit suite on Linux | 400/400 files, 10 230 passed / 1 skipped / **0 failed**. The nine Windows failures are CRLF artifacts and do not reproduce |
+| Production | `dpl_Fe1hAszwdurnUbPAwotSFERF7WtG` **READY** at the merge SHA; `/api/version` serves `cf26d62…`; fingerprint **`7bc7cb666973`** unchanged |
+| Ledger | 155 repo / 155 applied through `20261019000001` / **0 pending / CLEAN**, CLI cross-check agrees |
+
+And for **PR #43**, the F-2 cleanup (merged 2026-10-19T00:43:55Z):
+
+| | |
+|---|---|
+| Merge commit | `d3682c68f30cb3743dbeb28310e51eabb3ecbadb` — the tip of `main` |
+| Changed | the sweep, its integration in `/upload-url`, 27 unit + 6 journey + 8 structural claims, and the design document. **No migration, no permission, no RLS, no dependency, no scheduler** |
+| PR CI | run `39178699877` — build 12/12, `rls-tests` **132/132, zero skips** |
+| Post-merge CI | run `39182088275` (`push` to `main`) — build **12/12**, `rls-tests` **132/132, zero skips** |
+| Journey | `customs-reference-library.journey.ts` **(85 tests)**; suite **271 passed (271)**, 0 skipped — the six R24 claims ran for the first time, and again on `main` |
+| Observed, not asserted | the sweep's own sanitised log lines appear in both runs — `ttl=0h scanned=1 removed=1`, carrying no object name, upload id, token or URL. One of them reclaimed the object journey R21 deliberately abandons earlier in the same run |
+| Production | `dpl_F2d2b5wLfNexUcveiS6dVHHTNfHe` **READY** at the merge SHA; `/api/version` serves `d3682c68…`; fingerprint **`7bc7cb666973`** unchanged |
+| Threshold in production | 24 h, and **not reducible there**: a shorter window needs a non-production deployment *and* a loopback database, so `CUSTOMS_STAGING_TTL_HOURS` is inert in production whether or not it is set |
+
+### 11.2 Matrix coverage after PR #42
+
+| Row | Where it now runs | What CI still cannot show |
+|---|---|---|
+| **B** small upload | Covered **before** PR #42 (journey R1): `201`, QUARANTINE / UNSCANNED / RESTRICTED, one `customs.reference.uploaded` row, `<tenant>/<id>.pdf` | the browser's own form |
+| **C** large / direct upload | **New in PR #42** (R20–R21): ticket minted, bytes placed by an unprivileged client, finalisation `201`, same quarantine defaults, **staging object removed**, audit carries `via: direct_upload`, and the stored object is re-downloaded and re-hashed to prove the move preserved the bytes | that the **browser** switches to this path above 4 MB, and a genuinely **> 4 MB transfer** — the tests exercise the path, not the volume |
+| **D-1** `not_a_pdf` | R22, on the direct path, with the staging object dropped | — |
+| **D-2** `too_large` | R20, refused on the declared size before a ticket exists | a real 50 MB payload |
+| **D-3** `too_small` | R20 | — |
+| **D-4** `size_mismatch` | R22, real bytes against a wrong declared size | — |
+| **E-1…E-4, E-6, E-7** | R20's refusal table, through the real route | — |
+| **E-5** regime normalisation | R23: asserted on the row, through the service DTO **and** in the audit payload — and a published document is then found by its regime, which UAT-01B had to record as NOT TESTABLE | the normalisation of an **update** to an existing document |
+| **F** quarantine / publisher-only visibility | R21 and the pre-existing R2 | the rendered page |
+| **G** declarant isolation | R21, R2, R6, R7 — reader and driver refused at both new routes, `404` not `403` | the rendered page |
+| **H** audit evidence and private storage | R21: exactly one audit row carrying `via`, `sha256` and `size_bytes`. R21 also proves the bucket is closed to an unprivileged client — it cannot read back even the object it just wrote | — |
+
+Also proven, and not previously in the matrix: a ticket creates **no row, no audit
+event and no object**; a ticket authorises **one** object key and no other; a ticket
+cannot be **replayed** into a second document; a reader's refused finalisation does
+**not** destroy the publisher's staged bytes; and another tenant's staged bytes are
+unreachable **and untouched by the attempt**.
+
+### 11.3 What a production round would now be for
+
+Three things, and nothing else from §4:
+
+1. the browser's own path selection and progress UI above 4 MB;
+2. one genuinely large (> 4 MB) transfer, end to end;
+3. everything in §9, which is unchanged.
+
+D and E no longer need to run in production. That matters beyond effort: probing
+the refusals on the direct path **creates and then drops staging objects in the
+production bucket**, and there is no reason to do that now.
+
+### 11.4 F-2 — closed by PR #43
+
+**This section recorded F-2 as open. It is now closed.** The probe below is kept
+because it is the measurement the fix was designed against, and because it is
+still the query an operator should run.
+
+Read-only probe of production, taken for this record on 2026-10-18:
+
+- **0** staging objects, **0** document objects, **0** document rows — the library
+  is empty and the direct path has never been used in production;
+- the bucket is private, limited to 52 428 800 bytes and `{application/pdf}`;
+- `storage.objects` carries **0 policies**, which is why an unprivileged client
+  cannot read the bucket at all;
+- **pg_cron, pg_net, pgmq and http are all absent**, no Vercel cron is configured
+  and no workflow has a `schedule:` trigger — there is no scheduler anywhere to
+  reuse.
+
+`dropStaging()` in `/finalize` was the only cleanup that existed, and it is still
+the fast path: it runs on every refusal and after success, deliberately
+best-effort. What it never got to run for — a finalisation that never came — now
+has a backstop.
+
+**What PR #43 added.** A tenant-scoped sweep at `/upload-url`, after the
+`customs:reference:publish` check: one page oldest-first, at most 50 objects,
+paths rebuilt by the function that wrote them, every failure swallowed so a
+janitorial sweep can never deny an authorized upload. An object is aged from its
+own `created_at`, so an upload still in flight — which has no object row at all —
+cannot be swept, and the signed URL's lifetime never enters the argument. No
+scheduler was added, because there is still none to add one to; the absence is
+now pinned by a test.
+
+**No audit row is written**, and that is deliberate: a staging object is not a
+document, nothing ever referenced it, and `writeAudit` needs a UUID entity id.
+Counts and timestamps are logged instead, and only when something was reclaimed.
+
+**What it does not change.** Cleanup still only happens when a publisher asks for
+a ticket, so debris can persist while nobody uploads; at most 50 objects go per
+request; and a tenant's debris needs one of its own publishers to act. Those are
+accepted limitations, not oversights — `f2-staging-sweeper-design.md` §7 carries
+them.
+
+Case C's **Watch** line is updated accordingly: abandoning that upload is no
+longer permanent.
