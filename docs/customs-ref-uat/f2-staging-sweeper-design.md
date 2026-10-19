@@ -1,6 +1,12 @@
 # REF-2 F-2 — abandoned staging objects: design
 
-**Status: DESIGN ONLY. Nothing is implemented.** §9 is the authorization gate.
+**Status: IMPLEMENTED AND LIVE** — PR #43, merged 2026-10-19 as `d3682c6`, production READY on it. §9's gate was satisfied before the work began; it is kept as the record of what was required.
+
+> This document was written as a design, and the rest of it is left in that
+> voice on purpose: it is the argument the implementation was reviewed
+> against, not a description written afterwards. Where the implementation
+> went further than the design, the design says so — §3's threshold gate and
+> §4's S-10 were added during implementation.
 
 Finding F-2 was raised when REF-2 shipped: the direct-to-storage upload puts
 bytes into the private bucket *before* the application decides a document
@@ -108,9 +114,14 @@ guarantee — another reason the design must not depend on it.
 **U-2 — `created_at` is assumed to be the moment the upload completed**, not the
 moment it started. This follows from how a plain signed `PUT` works: the object
 row appears when the bytes have been stored. It matters because it is what makes
-an in-flight upload invisible to the sweep. It is cheap to verify in CI (§5,
-test 13) and would need re-checking if the client ever moved to resumable/TUS
-uploads, which track progress separately.
+an in-flight upload invisible to the sweep.
+
+**Now verified.** §6's journey test 13 shipped as `R24` case 6 and passes in CI
+against real Storage: the object's `created_at` is present, parseable and within
+seconds of the upload, and the real predicate agrees with the real metadata both
+ways round. It would still need re-checking if the client ever moved to
+resumable/TUS uploads, which track progress separately — and that test is where
+such a change would surface.
 
 **U-3 — the server's maximum batch size for `remove`** is not documented in the
 client. §3 caps the batch at 50 regardless, so the limit is never approached.
@@ -350,9 +361,11 @@ new dependency, no Finance or dossier surface.
 
 ---
 
-## 9. Implementation authorization gate
+## 9. Implementation authorization gate — SATISFIED
 
-**This document authorizes nothing.** Implementation requires all of:
+**Kept as the record of what implementation required.** All four were met before
+any code was written, and the owner's authorization named this document.
+Implementation required all of:
 
 1. **Owner authorization naming this document.**
 2. **Ratification of §5's no-audit decision.** It is consistent with test 38 and

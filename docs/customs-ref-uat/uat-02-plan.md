@@ -121,7 +121,7 @@ can only be withdrawn.
 | Production objects | 1 row; 1 final object; 1 transient `<tenant>/_staging/<uploadId>.pdf` that must be gone afterwards |
 | Audit | `CUSTOMS_REFERENCE_UPLOADED` with `via: direct_upload` |
 | Reversible | **No** — withdraw only |
-| Watch | If finalisation is abandoned mid-flight the staging object is orphaned and nothing sweeps it (known open finding REF-2 F-2). Do not abandon this upload |
+| Watch | An abandoned finalisation used to orphan the staging object forever (REF-2 F-2). **Closed by PR #43**: the next ticket request from a publisher in the same tenant reclaims anything older than 24 h. Abandoning this upload is no longer permanent — see §11.4 |
 
 ### D — byte-signature and size validation
 
@@ -293,9 +293,10 @@ Not in UAT-02, and a GO here is not a GO for any of it:
 non-publisher account exists (G becomes untestable and G is the point), or the
 permanence in §0 has not been explicitly accepted.
 
-## 11. What CI now proves — CUSTOMS-REF-UAT-02-CI-01 (PR #42)
+## 11. What CI now proves — CUSTOMS-REF-UAT-02-CI-01 (PR #42, PR #43)
 
-**Merged 2026-10-18.** Most of §4 no longer needs a production round.
+**Merged 2026-10-18 and 2026-10-19.** Most of §4 no longer needs a production
+round, and the one finding that §4 told operators to work around is closed.
 
 The REF-2 direct-to-storage path — the one this plan was written to observe, and
 the one that could only ever be observed in production because Previews are
@@ -323,6 +324,19 @@ with one would have made every test pass while proving nothing about the ticket.
 | Unit suite on Linux | 400/400 files, 10 230 passed / 1 skipped / **0 failed**. The nine Windows failures are CRLF artifacts and do not reproduce |
 | Production | `dpl_Fe1hAszwdurnUbPAwotSFERF7WtG` **READY** at the merge SHA; `/api/version` serves `cf26d62…`; fingerprint **`7bc7cb666973`** unchanged |
 | Ledger | 155 repo / 155 applied through `20261019000001` / **0 pending / CLEAN**, CLI cross-check agrees |
+
+And for **PR #43**, the F-2 cleanup (merged 2026-10-19T00:43:55Z):
+
+| | |
+|---|---|
+| Merge commit | `d3682c68f30cb3743dbeb28310e51eabb3ecbadb` — the tip of `main` |
+| Changed | the sweep, its integration in `/upload-url`, 27 unit + 6 journey + 8 structural claims, and the design document. **No migration, no permission, no RLS, no dependency, no scheduler** |
+| PR CI | run `39178699877` — build 12/12, `rls-tests` **132/132, zero skips** |
+| Post-merge CI | run `39182088275` (`push` to `main`) — build **12/12**, `rls-tests` **132/132, zero skips** |
+| Journey | `customs-reference-library.journey.ts` **(85 tests)**; suite **271 passed (271)**, 0 skipped — the six R24 claims ran for the first time, and again on `main` |
+| Observed, not asserted | the sweep's own sanitised log lines appear in both runs — `ttl=0h scanned=1 removed=1`, carrying no object name, upload id, token or URL. One of them reclaimed the object journey R21 deliberately abandons earlier in the same run |
+| Production | `dpl_F2d2b5wLfNexUcveiS6dVHHTNfHe` **READY** at the merge SHA; `/api/version` serves `d3682c68…`; fingerprint **`7bc7cb666973`** unchanged |
+| Threshold in production | 24 h, and **not reducible there**: a shorter window needs a non-production deployment *and* a loopback database, so `CUSTOMS_STAGING_TTL_HOURS` is inert in production whether or not it is set |
 
 ### 11.2 Matrix coverage after PR #42
 
@@ -358,9 +372,13 @@ D and E no longer need to run in production. That matters beyond effort: probing
 the refusals on the direct path **creates and then drops staging objects in the
 production bucket**, and there is no reason to do that now.
 
-### 11.4 F-2 is still open, and here is its exact size
+### 11.4 F-2 — closed by PR #43
 
-Read-only probe of production, taken for this record:
+**This section recorded F-2 as open. It is now closed.** The probe below is kept
+because it is the measurement the fix was designed against, and because it is
+still the query an operator should run.
+
+Read-only probe of production, taken for this record on 2026-10-18:
 
 - **0** staging objects, **0** document objects, **0** document rows — the library
   is empty and the direct path has never been used in production;
@@ -371,7 +389,29 @@ Read-only probe of production, taken for this record:
   and no workflow has a `schedule:` trigger — there is no scheduler anywhere to
   reuse.
 
-`dropStaging()` in `/finalize` is the only cleanup that exists, it runs on every
-refusal path and after success, and it is deliberately **best-effort**. Nothing
-sweeps a ticket whose bytes were uploaded and never finalised. Case C's **Watch**
-line therefore still stands for any production round: do not abandon that upload.
+`dropStaging()` in `/finalize` was the only cleanup that existed, and it is still
+the fast path: it runs on every refusal and after success, deliberately
+best-effort. What it never got to run for — a finalisation that never came — now
+has a backstop.
+
+**What PR #43 added.** A tenant-scoped sweep at `/upload-url`, after the
+`customs:reference:publish` check: one page oldest-first, at most 50 objects,
+paths rebuilt by the function that wrote them, every failure swallowed so a
+janitorial sweep can never deny an authorized upload. An object is aged from its
+own `created_at`, so an upload still in flight — which has no object row at all —
+cannot be swept, and the signed URL's lifetime never enters the argument. No
+scheduler was added, because there is still none to add one to; the absence is
+now pinned by a test.
+
+**No audit row is written**, and that is deliberate: a staging object is not a
+document, nothing ever referenced it, and `writeAudit` needs a UUID entity id.
+Counts and timestamps are logged instead, and only when something was reclaimed.
+
+**What it does not change.** Cleanup still only happens when a publisher asks for
+a ticket, so debris can persist while nobody uploads; at most 50 objects go per
+request; and a tenant's debris needs one of its own publishers to act. Those are
+accepted limitations, not oversights — `f2-staging-sweeper-design.md` §7 carries
+them.
+
+Case C's **Watch** line is updated accordingly: abandoning that upload is no
+longer permanent.
