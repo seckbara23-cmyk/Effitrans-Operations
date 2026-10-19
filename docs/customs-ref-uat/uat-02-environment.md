@@ -7,6 +7,14 @@ Companion to [uat-02-plan.md](./uat-02-plan.md) (what to test) and
 [uat-01b-closure.md](./uat-01b-closure.md) (what is already closed). This document
 answers only: *where should UAT-02 run, and what stops it touching Production?*
 
+> **Since this design — what changed, and what did not.** Written 2026-10-18.
+> UAT-02's transactional matrix no longer waits on an isolated project: it runs on
+> every pull request against CI's disposable Supabase stack (**PR #42**, plus
+> **PR #43** for the F-2 cleanup). §6's recommendation still stands for what it
+> actually argues — Production cannot forget a test, and F-6 remains open — but what
+> provisioning would now unblock is a **browser-level** round, not the transactional
+> one. See [uat-02-plan.md §11](./uat-02-plan.md).
+
 ---
 
 ## 1. The architecture already exists — do not rebuild it

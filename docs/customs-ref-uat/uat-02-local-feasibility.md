@@ -5,6 +5,19 @@ account created, no migration run.**
 
 Budget ceiling: **$0 additional recurring or usage charges.**
 
+> **Since this audit — read §0 and §5 with this in mind.** Written 2026-10-18, and
+> its recommendation was carried out. The one gap §5.2 and §9 name — that no
+> transactional test drove REF-2's `upload-url` → `finalize` sequence — was closed
+> by **PR #42** in exactly the way Option A describes, and the abandoned-staging
+> finding F-2 that §5.3 refers to was closed by **PR #43**, live on `main` as
+> `d3682c6`. The figures quoted below are therefore the figures at `5440af9`, not
+> today's: that journey file now runs **85 tests**, the journey suite **271**, and
+> REF-2's unit suite **74**. Nothing else in the verdict changed — Docker was not
+> installed, no container was started, and no money was spent.
+>
+> The audit is left exactly as written, because it records what was knowable on its
+> date. The closure record is [uat-02-plan.md §11](./uat-02-plan.md).
+
 ---
 
 ## 0. The finding that should be read before the rest
