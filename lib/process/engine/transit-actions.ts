@@ -30,7 +30,7 @@ import { AuditActions } from "@/lib/audit/events";
 import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-server";
 import { roleCanonicalDepartment, departmentLabelFr } from "@/lib/organization/departments";
 import { roleLabel, ROLE_DISPLAY_PRIORITY } from "@/lib/navigation/roles";
-import { createNotification } from "@/lib/notifications/create";
+import { createNotification, createNotifications } from "@/lib/notifications/create";
 import { activateStep, receiveHandoff, submitStep } from "./actions";
 import {
   DECLARANT_ASSIGNMENT_STEP,
@@ -1051,16 +1051,17 @@ export async function dispatchToField(
       .returns<{ id: string }[]>();
     const { data: fileRow } = await admin
       .from("operational_file").select("file_number").eq("id", fileId).eq("tenant_id", ctx.tenantId).maybeSingle();
-    for (const m of active ?? []) {
-      await createNotification({
+    // A team dispatch IS an assignment, so FILE_ASSIGNED is the honest label.
+    await createNotifications(
+      (active ?? []).map((m) => ({
         tenantId: ctx.tenantId,
         userId: m.id,
-        type: "FILE_ASSIGNED",
+        type: "FILE_ASSIGNED" as const,
         fileId,
         title: `Dossier à traiter — équipe ${team} — ${fileRow?.file_number ?? ""}`.trim(),
         body: "Un dossier a été dispatché à votre équipe pour l'exécution terrain.",
-      });
-    }
+      })),
+    );
   }
   return res;
 }
@@ -1085,14 +1086,15 @@ async function notifyRoles(ctx: Ctx, fileId: string, roleCodes: string[], title:
     .returns<{ id: string }[]>();
   const { data: fileRow } = await admin
     .from("operational_file").select("file_number").eq("id", fileId).eq("tenant_id", ctx.tenantId).maybeSingle();
-  for (const r of active ?? []) {
-    await createNotification({
+  // Generic role notifier, several callers: type unchanged on purpose.
+  await createNotifications(
+    (active ?? []).map((r) => ({
       tenantId: ctx.tenantId,
       userId: r.id,
-      type: "FILE_ASSIGNED",
+      type: "FILE_ASSIGNED" as const,
       fileId,
       title: `${title} — ${fileRow?.file_number ?? ""}`.trim(),
       body,
-    });
-  }
+    })),
+  );
 }

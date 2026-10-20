@@ -19,9 +19,27 @@ import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
 import { driverMobileTrackingEnabled } from "@/lib/tracking/config";
 import type { TrackingActionResult, TrackingSessionStatus } from "@/lib/tracking/types";
+import { resolveVehicleIdentity } from "@/lib/transport/vehicle-identity";
 import { LIVE_SESSION_STATUSES } from "./mission-gates";
+import { notifyDispatchers } from "./mission-auth";
 
 type Admin = ReturnType<typeof getAdminSupabaseClient>;
+
+/**
+ * The transport row `startMission` reads, including the embedded fleet vehicle.
+ * Declared because the generated types do not describe the `vehicle_id` join,
+ * and an un-typed embed collapses the whole row to `never`.
+ */
+type StartMissionTransport = {
+  id: string;
+  /** `not null` in the schema — a transport always belongs to a dossier. */
+  file_id: string;
+  /** `not null`, CHECK-constrained. */
+  status: string;
+  vehicle_plate: string | null;
+  driver_user_id: string | null;
+  vehicle: { registration: string | null } | null;
+};
 export type SessionActionResult = TrackingActionResult & { sessionId?: string; status?: TrackingSessionStatus };
 
 async function driverCtx(): Promise<CurrentUser | null> {
@@ -54,11 +72,17 @@ export async function startMission(transportId: string): Promise<SessionActionRe
 
   const { data: tr } = await supabase
     .from("transport_record")
-    .select("id, file_id, status, vehicle_plate, driver_user_id")
+    // `vehicle:vehicle_id(registration)` is embedded because the notification
+    // below has to NAME the vehicle, and the free-text plate is not where a
+    // fleet vehicle's identity lives (TRN-VEHICLE-01). An embed needs its row
+    // type stated — the generated types do not carry the join — which is the
+    // same shape lib/transport/service.ts declares for the same embed.
+    .select("id, file_id, status, vehicle_plate, driver_user_id, vehicle:vehicle_id(registration)")
     .eq("id", transportId)
     .eq("tenant_id", user.tenantId)
     .is("deleted_at", null)
-    .maybeSingle();
+    .maybeSingle()
+    .returns<StartMissionTransport>();
   if (!tr || tr.driver_user_id !== user.id) return { ok: false, error: "forbidden" };
   if (tr.status === "CANCELLED" || tr.status === "POD_RECEIVED") return { ok: false, error: "invalid_state" };
 
@@ -123,6 +147,38 @@ export async function startMission(transportId: string): Promise<SessionActionRe
     customer_visible: false,
     created_by: user.id,
   });
+
+  // 01B-B4 — tell the office a mission is under way.
+  //
+  // PLACED HERE DELIBERATELY. This function has three successful exits: an
+  // ALREADY-live session is returned above without inserting, a duplicate-key
+  // race re-reads and returns the winner, and only this path actually opened a
+  // session. Notifying at the top would re-notify on every repeated tap of
+  // « Démarrer » — which is exactly what the idempotent early return exists to
+  // make harmless. One new session, one notification.
+  //
+  // Non-blocking by contract: `notifyDispatchers` cannot throw into the mission,
+  // so a notification problem never costs the driver her start.
+  if (tr.file_id) {
+    // ⚠ NOT `vehicle_plate` ALONE (TRN-VEHICLE-01). A mission run on an
+    // Effitrans fleet truck has `vehicle_id` set and `vehicle_plate` correctly
+    // NULL, so reading the free text by itself would announce
+    // « véhicule non renseigné » for the fleet's own vehicles — precisely the
+    // misread `resolveVehicleIdentity` exists to end. The plate remains the
+    // fallback for an external or hired vehicle.
+    const vehicle = resolveVehicleIdentity({
+      registration: tr.vehicle?.registration,
+      plate: tr.vehicle_plate,
+    });
+    await notifyDispatchers(
+      supabase,
+      user.tenantId,
+      tr.file_id,
+      "Mission démarrée",
+      vehicle ? `Suivi en cours — véhicule ${vehicle}.` : "Suivi en cours — aucun véhicule enregistré.",
+      "MISSION_STARTED",
+    );
+  }
   revalidate(transportId);
   return { ok: true, id: data.id, sessionId: data.id, status: "ACTIVE" };
 }
@@ -218,12 +274,51 @@ export async function stopMission(sessionId: string): Promise<SessionActionResul
     return { ok: false, error: "invalid_state" };
   }
 
-  const { error } = await supabase.from("tracking_session").update({ status: "COMPLETED", ended_at: new Date().toISOString() }).eq("id", sessionId).eq("tenant_id", user.tenantId);
+  // COMPARE-AND-SET, NOT A BLIND WRITE.
+  //
+  // The guard above READ the status; this writes it. Two taps of « Terminer »
+  // landing together both read a live session, and without a predicate on the
+  // write both would succeed — producing two TRACKING_STOPPED events and, once
+  // 01B-B4 notifies below, two « Mission terminée » alerts to every dispatcher.
+  // PostgREST reports no error for an UPDATE that matches nothing, so the
+  // predicate has to be paired with `.select()` to find out who actually won.
+  // The status list is the gate's own, so the CAS cannot drift from the guard.
+  const { data: stopped, error } = await supabase
+    .from("tracking_session")
+    .update({ status: "COMPLETED", ended_at: new Date().toISOString() })
+    .eq("id", sessionId)
+    .eq("tenant_id", user.tenantId)
+    .in("status", [...LIVE_SESSION_STATUSES])
+    .select("id");
   if (error) return { ok: false, error: error.message };
+
+  // Lost the race: the mission IS completed, by the other caller, which is the
+  // outcome this one asked for — so it succeeds, and stays silent. Everything
+  // below is the consequence of having been the one to close the session.
+  const closedItHere = (stopped ?? []).length > 0;
+  if (!closedItHere) return { ok: true, id: sessionId, sessionId };
+
   await writeAudit({ action: AuditActions.TRACKING_SESSION_COMPLETED, actorId: user.id, tenantId: user.tenantId, entity: "tracking_session", entityId: sessionId });
   if (s.transport_id) {
     await supabase.from("tracking_event").insert({ tenant_id: user.tenantId, file_id: s.file_id, transport_id: s.transport_id, tracking_session_id: sessionId, type: "TRACKING_STOPPED", source: "driver_mobile", customer_visible: false, created_by: user.id });
     revalidate(s.transport_id);
+  }
+
+  // 01B-B4 — and tell them it finished.
+  //
+  // Reached only by the caller that actually moved the row, so a repeat — whether
+  // sequential (the guard returns `invalid_state`) or concurrent (the CAS matches
+  // nothing) — cannot notify twice. Idempotency is the state machine's and the
+  // database's, not a flag of ours.
+  if (s.file_id) {
+    await notifyDispatchers(
+      supabase,
+      user.tenantId,
+      s.file_id,
+      "Mission terminée",
+      "Le suivi de la mission est clôturé.",
+      "MISSION_COMPLETED",
+    );
   }
   return { ok: true, id: sessionId, sessionId };
 }

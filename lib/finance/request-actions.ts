@@ -31,7 +31,7 @@ import { isFileVisible } from "@/lib/authz/visibility";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
 import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-server";
-import { createNotification } from "@/lib/notifications/create";
+import { createNotification, createNotifications } from "@/lib/notifications/create";
 import { sendHandoff } from "@/lib/process/engine/actions";
 // STEP20-INVOICE-02 — the canonical invoice total, shared with issuance, the
 // invoice card and the closure loader. Never a second calculation.
@@ -882,14 +882,17 @@ async function notifyRoles(ctx: Ctx, fileId: string, roleCodes: string[], title:
     .returns<{ id: string }[]>();
   const { data: fileRow } = await admin
     .from("operational_file").select("file_number").eq("id", fileId).eq("tenant_id", ctx.tenantId).maybeSingle();
-  for (const r of active ?? []) {
-    await createNotification({
+  // Type deliberately UNCHANGED: this helper serves several different finance
+  // events through one title/body, so relabelling it would mislabel most of
+  // them. Bounded fan-out only.
+  await createNotifications(
+    (active ?? []).map((r) => ({
       tenantId: ctx.tenantId,
       userId: r.id,
-      type: "FILE_ASSIGNED",
+      type: "FILE_ASSIGNED" as const,
       fileId,
       title: `${title} — ${fileRow?.file_number ?? ""}`.trim(),
       body,
-    });
-  }
+    })),
+  );
 }

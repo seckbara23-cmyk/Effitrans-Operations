@@ -25,7 +25,7 @@ import { isFileVisible } from "@/lib/authz/visibility";
 import { globalKillSwitch, getTenantProcessFlags } from "@/lib/process/rollout-server";
 import { roleCanonicalDepartment, departmentLabelFr } from "@/lib/organization/departments";
 import { roleLabel, ROLE_DISPLAY_PRIORITY } from "@/lib/navigation/roles";
-import { createNotification } from "@/lib/notifications/create";
+import { createNotification, createNotifications } from "@/lib/notifications/create";
 import { notifyCustomer } from "@/lib/customer-notify/service";
 import {
   validateIntake,
@@ -688,16 +688,17 @@ export async function handDossierToTransit(fileId: string): Promise<HandoffActio
       .eq("id", fileId)
       .eq("tenant_id", ctx.tenantId)
       .maybeSingle();
-    for (const r of activeRecipients ?? []) {
-      await createNotification({
+    // 01B-B3 — this is the Operations → Transit handoff, so it says so.
+    await createNotifications(
+      (activeRecipients ?? []).map((r) => ({
         tenantId: ctx.tenantId,
         userId: r.id,
-        type: "FILE_ASSIGNED",
+        type: "HANDOFF_RECEIVED" as const,
         fileId,
         title: `Dossier transmis au Transit — ${fileRow?.file_number ?? ""}`.trim(),
         body: "Réception à confirmer : le dossier attend la prise en charge Transit.",
-      });
-    }
+      })),
+    );
   }
 
   return { ok: true, handoffId: sent.id! };

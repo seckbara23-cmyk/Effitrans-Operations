@@ -8,7 +8,14 @@ export type NotificationType =
   | "FILE_ASSIGNED"
   // Phase 8.7 — Effitrans Messaging Center.
   | "MESSAGE_RECEIVED"
-  | "CONVERSATION_ASSIGNED";
+  | "CONVERSATION_ASSIGNED"
+  // 01B-B3 — workflow events that used to arrive labelled FILE_ASSIGNED.
+  // ⚠ Each of these requires migration 20261020000001. A producer emitting one
+  // against a database without it fails the CHECK, and `createNotification`
+  // swallows that error by design — so the notification would vanish silently.
+  | "HANDOFF_RECEIVED"
+  | "MISSION_STARTED"
+  | "MISSION_COMPLETED";
 
 export type NotificationItem = {
   id: string;

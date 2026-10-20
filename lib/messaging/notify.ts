@@ -10,7 +10,7 @@
  */
 import "server-only";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
-import { createNotification } from "@/lib/notifications/create";
+import { createNotifications } from "@/lib/notifications/create";
 import { reportError } from "@/lib/observability/report";
 
 type Admin = ReturnType<typeof getAdminSupabaseClient>;
@@ -51,18 +51,23 @@ export async function notifyStaffOfMessage(input: {
   body: string;
 }): Promise<void> {
   const recipients = new Set(input.recipientUserIds.filter((id) => id !== input.excludeUserId));
-  for (const userId of recipients) {
-    try {
-      await createNotification({
-        tenantId: input.tenantId,
-        userId,
-        type: "MESSAGE_RECEIVED",
-        title: input.title,
-        body: input.body,
-      });
-    } catch (e) {
-      reportError(e, { scope: "action", event: "messaging.notify_staff" });
-    }
+  // The per-recipient try/catch is gone because `createNotifications` cannot
+  // throw — it settles every attempt — but the REPORTING is kept: a partial
+  // fan-out is still worth a line in the observability stream.
+  const fan = await createNotifications(
+    [...recipients].map((userId) => ({
+      tenantId: input.tenantId,
+      userId,
+      type: "MESSAGE_RECEIVED" as const,
+      title: input.title,
+      body: input.body,
+    })),
+  );
+  if (fan.failed > 0) {
+    reportError(new Error(`${fan.failed}/${fan.attempted} message notifications not created`), {
+      scope: "action",
+      event: "messaging.notify_staff",
+    });
   }
 }
 

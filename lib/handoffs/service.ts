@@ -16,7 +16,7 @@ import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
 import { writeAudit } from "@/lib/audit/log";
 import { AuditActions } from "@/lib/audit/events";
-import { createNotification } from "@/lib/notifications/create";
+import { createNotifications } from "@/lib/notifications/create";
 import { reportError } from "@/lib/observability/report";
 import { t } from "@/lib/i18n";
 import {
@@ -168,17 +168,21 @@ async function notifyRole(
     .returns<{ user_id: string }[]>();
   const deptLabel = (t.lifecycle.departments as Record<string, string>)[msg.targetDept] ?? msg.targetDept;
   const body = t.handoffs.notifyBody.replace("{file}", msg.fileNumber).replace("{dept}", deptLabel);
-  for (const uid of new Set((members ?? []).map((m) => m.user_id))) {
-    await createNotification({
+  // 01B-B3 — HANDOFF_RECEIVED, not TASK_ASSIGNED. The recipient's subject is
+  // the dossier that just arrived in their department, which is also why the
+  // bell sends them to the dossier rather than to a task list. `taskId` is
+  // still carried, because the task is real and worth keeping on the row.
+  await createNotifications(
+    [...new Set((members ?? []).map((m) => m.user_id))].map((uid) => ({
       tenantId,
       userId: uid,
-      type: "TASK_ASSIGNED",
+      type: "HANDOFF_RECEIVED" as const,
       taskId: msg.taskId,
       fileId: msg.fileId,
       title: msg.title,
       body,
-    });
-  }
+    })),
+  );
 }
 
 // ------------------------------------------------------- dept dashboard reads ----
