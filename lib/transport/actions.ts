@@ -359,7 +359,39 @@ async function runUpdateTransport(
   if (!(await isFileVisible(user.id, user.tenantId, rec.file_id))) return { ok: false, error: "forbidden" };
 
   const patch = buildTransportPatch(input, TRANSPORT_PLANNING_FIELDS, input.clearFields) as TransportPatch;
-  if (input.customsOverride !== undefined) patch.customs_override = input.customsOverride;
+
+  // ---- SEC-PICKUP-01 — the customs derogation needs its own authority ------
+  //
+  // THE DEFECT THIS CLOSES. `canPickup()` is the only thing standing between a
+  // dossier and goods leaving the customs zone before BAE, and
+  // `customs_override` switches it off. Both this write and the `PICKED_UP`
+  // transition used to ask for `transport:update` — the same permission that
+  // edits a pickup address — so one holder could disable the gate and then walk
+  // through it. PICKUP_AGENT holds exactly that permission and neither
+  // `transport:manage` nor `transport:complete`: the role physically collecting
+  // the cargo could authorise its own collection.
+  //
+  // ON AN EFFECTIVE CHANGE, NOT ON THE FIELD'S PRESENCE. The transport panel
+  // submits a checkbox, so EVERY ordinary save carries a boolean here — never
+  // `undefined`. Gating on presence would refuse a Pickup Agent editing a
+  // delivery date, which is legitimate work and must keep working. Gating on a
+  // real transition of the value is both the security contract ("set, clear or
+  // modify") and the smallest change that preserves planning.
+  //
+  // Checked BEFORE the write, server-side, on the value READ FROM THE ROW — not
+  // on anything the client sent — so a crafted payload cannot talk its way past
+  // it, and the field is simply not added to the patch when unauthorised.
+  const overrideFrom = rec.customs_override === true;
+  const overrideTo = input.customsOverride;
+  const overrideChanges = overrideTo !== undefined && overrideTo !== overrideFrom;
+  if (overrideChanges) {
+    try {
+      await assertPermission("transport:manage");
+    } catch {
+      return { ok: false, error: "forbidden_customs_override" };
+    }
+    patch.customs_override = overrideTo;
+  }
   // Nothing to write — succeed without touching the row or the audit log.
   // PERF-UX-01 — but revalidate like every other success, so the response
   // carries the re-rendered dossier and the panel needs no refresh of its own.
@@ -372,6 +404,22 @@ async function runUpdateTransport(
   if (cas.status === "refused") return { ok: false, error: refusalReason(cas) };
   if (cas.status === "stale") {
     return { ok: false, error: "stale_write" }; // rejected -> no success audit
+  }
+
+  // SEC-PICKUP-01 — written FIRST, and only after the compare-and-set reported
+  // `ok`, so this record exists if and only if the row actually moved: a refused
+  // or stale write returns above and claims nothing. It carries both values,
+  // because "the override field changed" is not evidence of WHICH WAY.
+  if (overrideChanges) {
+    await writeAudit({
+      action: AuditActions.TRANSPORT_CUSTOMS_OVERRIDE_CHANGED,
+      actorId: user.id,
+      tenantId: user.tenantId,
+      entity: "transport_record",
+      entityId: id,
+      before: { customs_override: overrideFrom },
+      after: { customs_override: overrideTo, file_id: rec.file_id },
+    });
   }
 
   await writeAudit({
