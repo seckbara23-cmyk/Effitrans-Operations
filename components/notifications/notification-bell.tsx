@@ -5,8 +5,19 @@
  * ---------------------------------------------------------------------------
  * Loads the caller's feed via server actions (self-scoped, no service role in
  * the client bundle). Shows an unread badge; the popover lists recent items,
- * each linking to its dossier and marking itself read on click. "Mark all read"
- * clears the badge. Popover-only — no full /notifications page this phase.
+ * each marking itself read on click. "Mark all read" clears the badge.
+ * Popover-only — no full /notifications page this phase.
+ *
+ * 01B-B1 — EVERY ITEM GOES SOMEWHERE IT CAN GO. This component used to link
+ * `fileId` and nothing else, so a task or a message notification was a dead
+ * item: it marked itself read and left the operator where they were. The rule
+ * now lives in `notificationHref` (pure, tested), and an item with no usable
+ * destination still marks read — as a button, not a broken link.
+ *
+ * 01B-B5 — NEAR-LIVE WITHOUT A SOCKET. The count refreshes when the operator
+ * returns to the tab and on a 60-second tick while the tab is visible. A hidden
+ * tab polls nothing, and one request is in flight at a time, so focus,
+ * visibility and the interval firing together cannot stack round trips.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -17,6 +28,7 @@ import {
   markAllNotificationsRead,
   markNotificationRead,
 } from "@/lib/notifications/actions";
+import { notificationHref } from "@/lib/notifications/links";
 import type { NotificationFeed } from "@/lib/notifications/types";
 
 export function NotificationBell() {
@@ -24,14 +36,40 @@ export function NotificationBell() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
+  /** One request at a time — see 01B-B5 in the header. */
+  const inFlight = useRef(false);
+
   const load = useCallback(() => {
+    if (inFlight.current) return;
+    inFlight.current = true;
     fetchNotifications()
       .then(setFeed)
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        inFlight.current = false;
+      });
   }, []);
 
   useEffect(() => {
     load();
+  }, [load]);
+
+  // Refresh on return-to-tab, and poll gently while the tab is actually being
+  // looked at. Both listeners and the interval are torn down together.
+  useEffect(() => {
+    function onVisibility() {
+      if (document.visibilityState === "visible") load();
+    }
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") load();
+    }, 60_000);
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("focus", load);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("focus", load);
+    };
   }, [load]);
 
   // Close the popover on an outside click.
@@ -110,10 +148,11 @@ export function NotificationBell() {
                     </div>
                   </div>
                 );
+                const href = notificationHref(n);
                 return (
                   <li key={n.id}>
-                    {n.fileId ? (
-                      <Link href={`/files/${n.fileId}`} onClick={() => onItem(n.id)} className="block">
+                    {href ? (
+                      <Link href={href} onClick={() => onItem(n.id)} className="block">
                         {inner}
                       </Link>
                     ) : (
