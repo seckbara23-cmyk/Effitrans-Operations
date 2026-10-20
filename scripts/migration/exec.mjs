@@ -36,7 +36,7 @@
  * extended query protocol and rejects one. The two are not interchangeable.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { validatePoolerUrl, writeLinkContext } from "./link-context.mjs";
@@ -73,8 +73,25 @@ const NPX = npxInvocation();
  */
 export function target(spec) {
   if (!spec || typeof spec !== "object") throw new Error("[exec] a target is required");
-  if (spec.kind === "linked") return { kind: "linked", flags: ["--linked"], label: "LINKED (production)" };
-  if (spec.kind === "local") return { kind: "local", flags: ["--local"], label: "local stack" };
+  // `multiStatement` — CAN THIS TRANSPORT TAKE A WHOLE FILE AT ONCE?
+  //
+  // Not a preference; a protocol fact, and the reason `measure-atomicity.mjs`
+  // exists. `--db-url` drives the CLI with the extended query protocol — one
+  // command per prepared statement — and rejects a multi-statement body with
+  // "cannot insert multiple commands into a prepared statement". `--linked` is
+  // a direct pooler connection that accepts the file whole, which is also why
+  // the body arrives as ONE implicit transaction there.
+  //
+  // Anything that prepends SQL to a migration body (see `applyFile`'s `guard`)
+  // is therefore only legal on a transport that is true here. `local` is false
+  // because nothing has measured it, not because it is known to fail: claiming
+  // a capability nobody tested is how a guard turns into a protocol error.
+  if (spec.kind === "linked") {
+    return { kind: "linked", flags: ["--linked"], label: "LINKED (production)", multiStatement: true };
+  }
+  if (spec.kind === "local") {
+    return { kind: "local", flags: ["--local"], label: "local stack", multiStatement: false };
+  }
   if (spec.kind === "project-ref") {
     // ⚠⚠ THIS TARGET EMITTED A FLAG THE PINNED CLI DOES NOT HAVE.
     //
@@ -109,6 +126,9 @@ export function target(spec) {
       kind: "project-ref",
       flags: ["--linked", "--workdir", dir],
       label: `project ${spec.ref} (direct pooler connection)`,
+      // Same `--linked` transport as production, which is the entire point of
+      // this target: a measurement here is a measurement of that executor.
+      multiStatement: true,
     };
   }
   if (spec.kind === "db-url") {
@@ -119,7 +139,12 @@ export function target(spec) {
     // versions deliberately do not live in the real one.
     const flags = ["--db-url", spec.url];
     if (spec.workdir) flags.push("--workdir", spec.workdir);
-    return { kind: "db-url", flags, label: `db-url ${redact(spec.url)}${spec.workdir ? ` (workdir ${spec.workdir})` : ""}` };
+    return {
+      kind: "db-url",
+      flags,
+      label: `db-url ${redact(spec.url)}${spec.workdir ? ` (workdir ${spec.workdir})` : ""}`,
+      multiStatement: false,
+    };
   }
   throw new Error(`[exec] unknown target kind: ${spec.kind}`);
 }
@@ -219,16 +244,97 @@ export function queryFile(tgt, file, opts) {
 }
 
 /**
+ * THE APPLY GUARD — prepended to the migration body for the real apply only.
+ * ---------------------------------------------------------------------------
+ * `lock_timeout` IS THE BOUND THAT WAS MISSING. On this platform it is unset
+ * (`0`, source `default`), while `statement_timeout` is 120 s from
+ * `/etc/postgresql-custom/platform-defaults.conf`. `statement_timeout` does
+ * count lock-wait time, so the wait was never unbounded — but 120 s is the
+ * wrong bound for a DDL lock. `ALTER TABLE` wants ACCESS EXCLUSIVE, and a
+ * request that is QUEUED blocks every reader of that table behind it until it
+ * is granted or gives up. Two minutes of that on a table the notification bell
+ * polls is an outage; three seconds is a retry. The migration is re-runnable,
+ * so failing fast costs nothing it does not give back.
+ *
+ * `statement_timeout` IS PINNED, NOT TIGHTENED. 120 s is restated at exactly
+ * the platform's own value so the apply cannot silently inherit a different
+ * one if that config changes. Lowering it would be the dangerous edit: this
+ * guard applies to every future migration through this path, and some will
+ * legitimately run longer than a notification-type widening. A migration that
+ * needs more should say so, the way it already declares its executor.
+ *
+ * WHY `set local` IS THE RIGHT SCOPE, AND WHY IT WORKS HERE. Measured against
+ * production through this exact path: a `set local` in the first statement of
+ * the file is still in effect for the last one (3 s / 45 s read back), with no
+ * "SET LOCAL can only be used in transaction blocks" warning, and a fresh
+ * invocation afterwards reads `0` / `2min` again. So the body is ONE implicit
+ * transaction on ONE connection, the setting binds this apply, and it is
+ * discarded with the transaction — `queryFile` for the verifier and
+ * `migration repair` for the ledger are separate CLI invocations on separate
+ * connections and cannot inherit it.
+ *
+ * ⚠ `db-query` ONLY. Under `psql-no-transaction` there is no surrounding
+ * transaction, so `set local` would warn and protect nothing. Step 0 already
+ * refuses any executor but `db-query`, which is what makes this sound; if that
+ * ever changes, this guard has to change with it.
+ *
+ * ON FAILURE THERE IS NOTHING TO UNDO. A lock timeout aborts the statement,
+ * which aborts the implicit transaction, which rolls back the whole body —
+ * including a `drop constraint` that had already succeeded. `applyFile` then
+ * returns `{ ok: false }` and step 2 stops at NOT_APPLIED with the ledger
+ * unwritten. That atomicity is the reason a timeout is safe to add at all.
+ */
+export const APPLY_GUARD = "set local lock_timeout = '3s';\nset local statement_timeout = '120s';\n";
+
+/**
  * Apply a migration's SQL. Returns `{ ok, message }` rather than throwing,
  * because the CALLER must decide what an apply failure means — and the answer
  * differs sharply depending on whether the ledger was written yet.
+ *
+ * `opts.guard` is SQL prepended to the body for THIS apply only — see
+ * `APPLY_GUARD` just above. Without it this function behaves
+ * exactly as it always has, byte for byte, which is what keeps the rehearsal,
+ * the security probe and the atomicity measurement unaffected.
+ *
+ * The guard is prepended to the SQL TEXT rather than sent as a separate
+ * command, and that is the whole point: `set local` only survives inside a
+ * transaction, and a second `supabase db query` invocation is a second
+ * connection where it would already be gone.
  */
 export function applyFile(tgt, file, opts) {
-  const r = run(["db", "query", ...tgt.flags, "-f", abs(file)], { timeoutMs: 900_000, ...opts });
-  const j = parseJson(r.stdout, r.stderr, r.stdout + r.stderr);
-  if (j && j._tag === "Error") return { ok: false, message: j.error?.message ?? "unknown error" };
-  if (r.code !== 0) return { ok: false, message: (r.stderr || r.stdout).slice(-2000) };
-  return { ok: true, message: "" };
+  const { guard, ...rest } = opts ?? {};
+  const exec = (f) => {
+    const r = run(["db", "query", ...tgt.flags, "-f", abs(f)], { timeoutMs: 900_000, ...rest });
+    const j = parseJson(r.stdout, r.stderr, r.stdout + r.stderr);
+    if (j && j._tag === "Error") return { ok: false, message: j.error?.message ?? "unknown error" };
+    if (r.code !== 0) return { ok: false, message: (r.stderr || r.stdout).slice(-2000) };
+    return { ok: true, message: "" };
+  };
+  if (!guard) return exec(file);
+  // A REQUESTED GUARD THAT CANNOT BE ENFORCED IS AN ERROR, NEVER A SILENT
+  // DOWNGRADE. On a single-statement transport the prepended `set local` would
+  // be rejected by the protocol rather than honoured, so there is no way to
+  // half-honour the request: either the caller gets the guard it asked for, or
+  // it gets a failure it can see. Applying unguarded instead would be the one
+  // outcome nobody asked for — the caller believes a timeout is in force while
+  // an ACCESS EXCLUSIVE request can queue readers for the whole
+  // statement_timeout.
+  //
+  // Checked BEFORE the body is read or any process is spawned, so a refusal
+  // costs nothing and cannot be confused with a database error.
+  if (!tgt.multiStatement) {
+    return {
+      ok: false,
+      message:
+        `[exec] refused: an apply guard was requested, but target ${tgt.label} cannot take a ` +
+        `multi-statement body — a prepended "set local" would be rejected by the protocol, ` +
+        `not honoured. Nothing was applied. Use a transport that accepts a whole file ` +
+        `(--linked), or call applyFile without a guard if an unguarded apply is genuinely intended.`,
+    };
+  }
+  // The body is read, never rewritten: the migration file on disk is the one
+  // CI tested and is not touched.
+  return withTempSql(guard + readFileSync(abs(file), "utf8"), exec);
 }
 
 /**

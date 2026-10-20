@@ -1381,6 +1381,18 @@ jobs:
       - name: Migration-integrity guard (read-only)
         run: node scripts/migration-integrity.mjs --db-url "postgresql://postgres:postgres@127.0.0.1:54322/postgres"
 
+      # MIG-LOCK-GUARD. The production apply prepends `set local lock_timeout`
+      # to the migration body so a DDL lock wait fails in 3s instead of queueing
+      # every reader of the table behind an ACCESS EXCLUSIVE request for the
+      # 120s statement_timeout. Three claims hold that up and none can be read
+      # off the source: that the setting governs DDL later in the same body,
+      # that a timeout rolls back a `drop constraint` which had already
+      # succeeded, and that a failed apply writes no ledger row. This needs two
+      # concurrent sessions, so it uses psql rather than the CLI, in a scratch
+      # schema it creates and drops.
+      - name: Apply-guard behaviour — lock contention, timeout, rollback
+        run: node scripts/migration-lock-guard-probe.mjs --db-url "postgresql://postgres:postgres@127.0.0.1:54322/postgres"
+
       # ---- the promotion walk (MIGRATION-GATE-139-141-REPAIR §14) ----------
       # THE ONE TEST THAT USES THE REAL MIGRATIONS ON THE REAL SEQUENCE.
       #

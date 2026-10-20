@@ -26,7 +26,7 @@
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { target, applyFile, queryFile, repair, query } from "./migration/exec.mjs";
+import { target, applyFile, queryFile, repair, query, APPLY_GUARD } from "./migration/exec.mjs";
 import { repoMigrations, remoteLedger, reconcile, validateTarget, crossCheckCli, classify, LEDGER_STATUS, postRecordFindings } from "./migration/ledger.mjs";
 import { proveFormat, recordOne, statementsOf, isRecorded } from "./migration/ledger-record.mjs";
 
@@ -131,6 +131,37 @@ function main() {
       `${m.file} declares executor "${executor}", which this runner does not apply automatically.`,
       `Concurrent DDL and long operations must be run by an operator per the runbook,`,
       `then recorded through this runner's --version step once verified.`,
+    ]);
+  }
+  // THE GUARD IS A PRECONDITION, NOT A COURTESY.
+  //
+  // Sibling of the executor check above, and for the same reason: both decide
+  // whether THIS runner may apply THIS file at all. `APPLY_GUARD` bounds the
+  // DDL lock wait at 3s, and it is prepended to the body — which only a
+  // transport that accepts a multi-statement body can carry (`--linked` and
+  // the project-ref target; `--db-url` answers "cannot insert multiple
+  // commands into a prepared statement").
+  //
+  // On such a transport the guard cannot be enforced, and the choice is to
+  // apply unguarded or not to apply. A governed apply does not silently drop a
+  // safety measure and continue, so it refuses. REFUSED IN DRY RUN TOO: a dry
+  // run exists to answer "would the real apply work?", and reporting "every
+  // precondition passed" when one did not is the failure mode the dry run is
+  // supposed to prevent.
+  //
+  // `record_only` is exempt because it applies no SQL, so there is no lock to
+  // bound.
+  if (!args.recordOnly && !tgt.multiStatement) {
+    stop(STATE.PREFLIGHT, [
+      `target ${tgt.label} cannot carry the apply guard, so it will not be applied here.`,
+      `The guard (${APPLY_GUARD.replace(/\s+/g, " ").trim()}) is prepended to the`,
+      `migration body, and this transport takes one statement per round trip —`,
+      `it would reject the body outright rather than honour the timeout.`,
+      `Applying unguarded would leave an ACCESS EXCLUSIVE request able to queue`,
+      `readers of the table for the full statement_timeout, so this runner refuses.`,
+      `Use the --linked path (Actions → Migrate production), which is the only`,
+      `sanctioned way to apply to production anyway. To rehearse the toolchain`,
+      `against a scratch database, use scripts/migration-rehearsal.mjs.`,
     ]);
   }
   log(`[migrate]   file ${m.file} · verifier present · executor ${executor} · tree clean`);
@@ -307,12 +338,31 @@ function main() {
 
   // ---- step 2: apply ------------------------------------------------------
   log("[migrate] step 2 — apply SQL");
-  const applied = applyFile(tgt, m.path);
+  // Unconditional: step 0 refused the run outright if this target could not
+  // carry the guard, so by here it is always in force. Logged because the
+  // timeout is part of what was done to production and belongs in the record.
+  log(`[migrate]   guard: ${APPLY_GUARD.replace(/\s+/g, " ").trim()}`);
+  const applied = applyFile(tgt, m.path, { guard: APPLY_GUARD });
   if (!applied.ok) {
+    const lockTimeout = /lock_timeout|canceling statement due to lock timeout|55P03/i.test(
+      String(applied.message),
+    );
     stop(STATE.NOT_APPLIED, [
       `the migration SQL was rejected; the ledger was NOT written.`,
-      `Production should be unchanged (the body runs as one implicit transaction),`,
-      `but that is an expectation, not a guarantee — confirm with the verifier before retrying.`,
+      ...(lockTimeout
+        ? [
+            // Extracted defensively: this runs on the error path, and a crash
+            // here would bury the database's own message.
+            `CAUSE: the ${(/lock_timeout = '([^']+)'/.exec(APPLY_GUARD)?.[1] ?? "configured")} lock timeout fired — something else`,
+            `held a conflicting lock on a table this migration alters. NOTHING was applied:`,
+            `the timeout aborted the implicit transaction and rolled the whole body back.`,
+            `This is the guard working. Find the holder (pg_locks / pg_stat_activity) or`,
+            `pick a quieter window, then dispatch the same run again — it is re-runnable.`,
+          ]
+        : [
+            `Production should be unchanged (the body runs as one implicit transaction),`,
+            `but that is an expectation, not a guarantee — confirm with the verifier before retrying.`,
+          ]),
       `database said: ${String(applied.message).replace(/\s+/g, " ").slice(0, 500)}`,
     ]);
   }
