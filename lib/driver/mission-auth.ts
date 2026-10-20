@@ -9,7 +9,8 @@
 import "server-only";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { getCurrentUser, type CurrentUser } from "@/lib/auth/current-user";
-import { createNotification } from "@/lib/notifications/create";
+import { createNotifications } from "@/lib/notifications/create";
+import type { NotificationType } from "@/lib/notifications/types";
 import { isDriver } from "./auth";
 import { isLiveSession, sessionBlock, type SessionBlock } from "./mission-gates";
 
@@ -73,7 +74,22 @@ export async function liveSessionOrError(
 }
 
 /** Notify the dossier's dispatch owners (account manager / coordinator / creator). */
-export async function notifyDispatchers(supabase: Admin, tenantId: string, fileId: string, title: string, body: string): Promise<void> {
+/**
+ * Tell the office. The recipient set is resolved server-side from the dossier's
+ * own people — account manager, coordinator, creator — and de-duplicated.
+ *
+ * 01B — `type` is a parameter so a caller can say what actually happened
+ * instead of every alert arriving labelled FILE_ASSIGNED. It defaults to
+ * FILE_ASSIGNED so the existing delay and incident callers are unchanged.
+ */
+export async function notifyDispatchers(
+  supabase: Admin,
+  tenantId: string,
+  fileId: string,
+  title: string,
+  body: string,
+  type: NotificationType = "FILE_ASSIGNED",
+): Promise<void> {
   const { data: file } = await supabase
     .from("operational_file")
     .select("account_manager_id, coordinator_id, created_by")
@@ -84,8 +100,9 @@ export async function notifyDispatchers(supabase: Admin, tenantId: string, fileI
   const targets = new Set<string>(
     [file.account_manager_id, file.coordinator_id, file.created_by].filter((x): x is string => Boolean(x)),
   );
-  for (const uid of targets) {
-    // Reuse the existing in-app inbox (FILE_ASSIGNED category); title conveys the alert.
-    await createNotification({ tenantId, userId: uid, type: "FILE_ASSIGNED", fileId, title, body });
-  }
+  // Bounded concurrency, every target attempted — see 01B-B2 in
+  // lib/notifications/create.ts.
+  await createNotifications(
+    [...targets].map((uid) => ({ tenantId, userId: uid, type, fileId, title, body })),
+  );
 }
