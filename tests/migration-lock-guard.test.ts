@@ -22,7 +22,7 @@ import { describe, it, expect } from "vitest";
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { APPLY_GUARD, target } from "../scripts/migration/exec.mjs";
+import { APPLY_GUARD, applyFile, target } from "../scripts/migration/exec.mjs";
 
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(`../${rel}`, import.meta.url)), "utf8");
 
@@ -94,14 +94,79 @@ describe("2 — it is only applied where it can work", () => {
 
   it("2.4 — applyFile checks the capability before prepending", () => {
     expect(exec).toContain("if (!tgt.multiStatement)");
-    // And it says so rather than skipping a safety measure in silence.
-    expect(exec).toContain("apply guard NOT applied");
+  });
+});
+
+// ===========================================================================
+describe("2b — a guard that cannot be enforced is REFUSED, never dropped", () => {
+  // The dangerous outcome is not "no guard". It is a caller that believes a
+  // timeout is in force while an ACCESS EXCLUSIVE request can queue every
+  // reader of the table for the full 120 s statement_timeout. So neither layer
+  // may apply unguarded when a guard was asked for.
+
+  const dbUrl = { kind: "db-url" as const, url: "postgresql://u:p@127.0.0.1:54322/postgres" };
+
+  it("2b.1 — applyFile REFUSES rather than applying unguarded", () => {
+    // Functional, not structural: the refusal lands before the body is read or
+    // any process is spawned, so this runs with no database and no CLI.
+    const tgt = target(dbUrl);
+    const r = applyFile(tgt, "supabase/migrations/20261020000001_notification_workflow_types.sql", {
+      guard: APPLY_GUARD,
+    });
+    expect(r.ok).toBe(false);
+    expect(r.message).toContain("refused");
+    expect(r.message).toContain("Nothing was applied");
   });
 
-  it("2.5 — the runner's log reflects whether the guard actually applied", () => {
-    // A log that claims a guard that was skipped is worse than no log.
-    expect(runner).toContain("tgt.multiStatement");
-    expect(runner).toContain("guard: NOT APPLIED");
+  it("2b.2 — …and it refuses BEFORE touching the filesystem or spawning anything", () => {
+    // A path that cannot be read: if the capability check ran late, this would
+    // surface as ENOENT (or a CLI error) instead of the refusal.
+    const r = applyFile(target(dbUrl), "no/such/migration-does-not-exist.sql", { guard: APPLY_GUARD });
+    expect(r.ok).toBe(false);
+    expect(r.message).toContain("cannot take a multi-statement body");
+    expect(r.message).not.toMatch(/ENOENT|no such file/i);
+  });
+
+  it("2b.3 — it does NOT warn-and-continue", () => {
+    // The first draft of this change logged a warning and applied the body
+    // anyway. That is the fail-open behaviour this test exists to prevent.
+    expect(exec).not.toContain("Applying the body unguarded.");
+    const guardBranch = exec.slice(exec.indexOf("if (!tgt.multiStatement)"));
+    expect(guardBranch).toContain("ok: false");
+    expect(guardBranch.slice(0, guardBranch.indexOf("}"))).not.toContain("return exec(file)");
+  });
+
+  it("2b.4 — the runner refuses the run in step 0, before any apply", () => {
+    const step0 = runner.slice(runner.indexOf("step 0"), runner.indexOf("step 1 — validate"));
+    expect(step0).toContain("!tgt.multiStatement");
+    expect(step0).toContain("STATE.PREFLIGHT");
+    expect(step0).toContain("cannot carry the apply guard");
+  });
+
+  it("2b.5 — the refusal covers the DRY RUN too", () => {
+    // A dry run answers "would the real apply work?". Reporting "every
+    // precondition passed" when one did not is exactly what it exists to stop.
+    const step0 = runner.slice(runner.indexOf("step 0"), runner.indexOf("step 1 — validate"));
+    expect(step0).not.toContain("args.dryRun");
+    expect(runner.indexOf("cannot carry the apply guard")).toBeLessThan(runner.indexOf("if (args.dryRun)"));
+  });
+
+  it("2b.6 — record-only is exempt, because it applies no SQL", () => {
+    expect(runner).toContain("!args.recordOnly && !tgt.multiStatement");
+  });
+
+  it("2b.7 — step 2 no longer pretends an unguarded apply is possible", () => {
+    // With step 0 refusing, a "guard: NOT APPLIED" log line could only ever
+    // contradict the refusal above it.
+    expect(runner).not.toContain("guard: NOT APPLIED");
+    expect(runner).toContain("applyFile(tgt, m.path, { guard: APPLY_GUARD })");
+  });
+
+  it("2b.8 — the capable transport is NOT refused", () => {
+    // The refusal must be about the transport, not about guards in general.
+    expect(target({ kind: "linked" }).multiStatement).toBe(true);
+    const step0 = runner.slice(runner.indexOf("step 0"), runner.indexOf("step 1 — validate"));
+    expect(step0).toContain("if (!args.recordOnly && !tgt.multiStatement) {");
   });
 });
 

@@ -311,18 +311,26 @@ export function applyFile(tgt, file, opts) {
     return { ok: true, message: "" };
   };
   if (!guard) return exec(file);
-  // A guard on a single-statement transport would not protect anything — it
-  // would turn a working apply into "cannot insert multiple commands into a
-  // prepared statement". Skipping is the safe direction, but silently skipping
-  // a safety measure is not, so say so: the caller's log claims the guard is
-  // on, and this is the one place that knows it is not.
+  // A REQUESTED GUARD THAT CANNOT BE ENFORCED IS AN ERROR, NEVER A SILENT
+  // DOWNGRADE. On a single-statement transport the prepended `set local` would
+  // be rejected by the protocol rather than honoured, so there is no way to
+  // half-honour the request: either the caller gets the guard it asked for, or
+  // it gets a failure it can see. Applying unguarded instead would be the one
+  // outcome nobody asked for — the caller believes a timeout is in force while
+  // an ACCESS EXCLUSIVE request can queue readers for the whole
+  // statement_timeout.
+  //
+  // Checked BEFORE the body is read or any process is spawned, so a refusal
+  // costs nothing and cannot be confused with a database error.
   if (!tgt.multiStatement) {
-    console.warn(
-      `[exec] apply guard NOT applied: target ${tgt.label} cannot take a multi-statement ` +
-        `body, so a prepended "set local" would be rejected by the protocol, not honoured. ` +
-        `Applying the body unguarded.`,
-    );
-    return exec(file);
+    return {
+      ok: false,
+      message:
+        `[exec] refused: an apply guard was requested, but target ${tgt.label} cannot take a ` +
+        `multi-statement body — a prepended "set local" would be rejected by the protocol, ` +
+        `not honoured. Nothing was applied. Use a transport that accepts a whole file ` +
+        `(--linked), or call applyFile without a guard if an unguarded apply is genuinely intended.`,
+    };
   }
   // The body is read, never rewritten: the migration file on disk is the one
   // CI tested and is not touched.

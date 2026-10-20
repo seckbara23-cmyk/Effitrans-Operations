@@ -133,6 +133,37 @@ function main() {
       `then recorded through this runner's --version step once verified.`,
     ]);
   }
+  // THE GUARD IS A PRECONDITION, NOT A COURTESY.
+  //
+  // Sibling of the executor check above, and for the same reason: both decide
+  // whether THIS runner may apply THIS file at all. `APPLY_GUARD` bounds the
+  // DDL lock wait at 3s, and it is prepended to the body — which only a
+  // transport that accepts a multi-statement body can carry (`--linked` and
+  // the project-ref target; `--db-url` answers "cannot insert multiple
+  // commands into a prepared statement").
+  //
+  // On such a transport the guard cannot be enforced, and the choice is to
+  // apply unguarded or not to apply. A governed apply does not silently drop a
+  // safety measure and continue, so it refuses. REFUSED IN DRY RUN TOO: a dry
+  // run exists to answer "would the real apply work?", and reporting "every
+  // precondition passed" when one did not is the failure mode the dry run is
+  // supposed to prevent.
+  //
+  // `record_only` is exempt because it applies no SQL, so there is no lock to
+  // bound.
+  if (!args.recordOnly && !tgt.multiStatement) {
+    stop(STATE.PREFLIGHT, [
+      `target ${tgt.label} cannot carry the apply guard, so it will not be applied here.`,
+      `The guard (${APPLY_GUARD.replace(/\s+/g, " ").trim()}) is prepended to the`,
+      `migration body, and this transport takes one statement per round trip —`,
+      `it would reject the body outright rather than honour the timeout.`,
+      `Applying unguarded would leave an ACCESS EXCLUSIVE request able to queue`,
+      `readers of the table for the full statement_timeout, so this runner refuses.`,
+      `Use the --linked path (Actions → Migrate production), which is the only`,
+      `sanctioned way to apply to production anyway. To rehearse the toolchain`,
+      `against a scratch database, use scripts/migration-rehearsal.mjs.`,
+    ]);
+  }
   log(`[migrate]   file ${m.file} · verifier present · executor ${executor} · tree clean`);
 
   // ---- step 1: validate ---------------------------------------------------
@@ -307,11 +338,10 @@ function main() {
 
   // ---- step 2: apply ------------------------------------------------------
   log("[migrate] step 2 — apply SQL");
-  log(
-    tgt.multiStatement
-      ? `[migrate]   guard: ${APPLY_GUARD.replace(/\s+/g, " ").trim()}`
-      : `[migrate]   guard: NOT APPLIED — ${tgt.label} takes one statement per round trip`,
-  );
+  // Unconditional: step 0 refused the run outright if this target could not
+  // carry the guard, so by here it is always in force. Logged because the
+  // timeout is part of what was done to production and belongs in the record.
+  log(`[migrate]   guard: ${APPLY_GUARD.replace(/\s+/g, " ").trim()}`);
   const applied = applyFile(tgt, m.path, { guard: APPLY_GUARD });
   if (!applied.ok) {
     const lockTimeout = /lock_timeout|canceling statement due to lock timeout|55P03/i.test(
