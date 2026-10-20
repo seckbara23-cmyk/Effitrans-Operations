@@ -155,6 +155,30 @@ describe("3 — MISSION_COMPLETED cannot notify twice", () => {
     const after = stop.slice(stop.indexOf("closedItHere"));
     expect(after).toContain('type: "TRACKING_STOPPED"');
   });
+
+  it("3.5 — it announces the TRACKING closing, not a delivery", () => {
+    // Approved wording. « Mission terminée » would read as the mission itself
+    // being complete, which this event does not establish: the driver stopped
+    // recording. Delivery is the transport record's own state and a POD is
+    // verified by the platform's predicate — neither is implied here.
+    expect(stop).toContain('"Suivi de mission terminé"');
+    expect(stop).toContain('"Le suivi de la mission est clôturé."');
+    expect(stop).not.toContain('"Mission terminée"');
+  });
+
+  it("3.6 — and claims nothing about delivery, POD or receipt", () => {
+    // Scoped to the two strings the recipient actually reads — the title and
+    // body handed to notifyDispatchers — not to every literal in the function,
+    // which legitimately mentions POD_RECEIVED and other states.
+    const call = stop.slice(stop.indexOf("notifyDispatchers("), stop.indexOf('"MISSION_COMPLETED"'));
+    const text = [...call.matchAll(/"([^"\\]+)"/g)].map((m) => m[1]).join(" ").toLowerCase();
+    expect(text).toContain("suivi de mission terminé");
+    // A guard on the vocabulary, not just on today's string: each of these
+    // would assert a fact this event has no evidence for.
+    for (const claim of ["livr", "pod", "réceptionn", "bon de livraison", "confirmé"]) {
+      expect(text, claim).not.toContain(claim);
+    }
+  });
 });
 
 // ===========================================================================

@@ -315,7 +315,13 @@ export async function stopMission(sessionId: string): Promise<SessionActionResul
       supabase,
       user.tenantId,
       s.file_id,
-      "Mission terminée",
+      // « Suivi de mission terminé », NOT « Mission terminée ». This event says
+      // the TRACKING SESSION closed — the driver stopped recording — and it must
+      // not be read as confirmed physical delivery or a validated POD. Those are
+      // separate facts with their own evidence: delivery is the transport
+      // record's own state, and a POD is verified by the platform's predicate,
+      // not by a driver closing an app.
+      "Suivi de mission terminé",
       "Le suivi de la mission est clôturé.",
       "MISSION_COMPLETED",
     );
