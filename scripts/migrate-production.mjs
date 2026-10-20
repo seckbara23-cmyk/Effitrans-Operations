@@ -26,7 +26,7 @@
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { target, applyFile, queryFile, repair, query } from "./migration/exec.mjs";
+import { target, applyFile, queryFile, repair, query, APPLY_GUARD } from "./migration/exec.mjs";
 import { repoMigrations, remoteLedger, reconcile, validateTarget, crossCheckCli, classify, LEDGER_STATUS, postRecordFindings } from "./migration/ledger.mjs";
 import { proveFormat, recordOne, statementsOf, isRecorded } from "./migration/ledger-record.mjs";
 
@@ -307,12 +307,32 @@ function main() {
 
   // ---- step 2: apply ------------------------------------------------------
   log("[migrate] step 2 — apply SQL");
-  const applied = applyFile(tgt, m.path);
+  log(
+    tgt.multiStatement
+      ? `[migrate]   guard: ${APPLY_GUARD.replace(/\s+/g, " ").trim()}`
+      : `[migrate]   guard: NOT APPLIED — ${tgt.label} takes one statement per round trip`,
+  );
+  const applied = applyFile(tgt, m.path, { guard: APPLY_GUARD });
   if (!applied.ok) {
+    const lockTimeout = /lock_timeout|canceling statement due to lock timeout|55P03/i.test(
+      String(applied.message),
+    );
     stop(STATE.NOT_APPLIED, [
       `the migration SQL was rejected; the ledger was NOT written.`,
-      `Production should be unchanged (the body runs as one implicit transaction),`,
-      `but that is an expectation, not a guarantee — confirm with the verifier before retrying.`,
+      ...(lockTimeout
+        ? [
+            // Extracted defensively: this runs on the error path, and a crash
+            // here would bury the database's own message.
+            `CAUSE: the ${(/lock_timeout = '([^']+)'/.exec(APPLY_GUARD)?.[1] ?? "configured")} lock timeout fired — something else`,
+            `held a conflicting lock on a table this migration alters. NOTHING was applied:`,
+            `the timeout aborted the implicit transaction and rolled the whole body back.`,
+            `This is the guard working. Find the holder (pg_locks / pg_stat_activity) or`,
+            `pick a quieter window, then dispatch the same run again — it is re-runnable.`,
+          ]
+        : [
+            `Production should be unchanged (the body runs as one implicit transaction),`,
+            `but that is an expectation, not a guarantee — confirm with the verifier before retrying.`,
+          ]),
       `database said: ${String(applied.message).replace(/\s+/g, " ").slice(0, 500)}`,
     ]);
   }
