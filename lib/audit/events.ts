@@ -141,6 +141,10 @@ export const AuditActions = {
   TRANSPORT_UPDATED: "transport.updated",
   TRANSPORT_ASSIGNED: "transport.assigned",
   TRANSPORT_STATUS_CHANGED: "transport.status_changed",
+  // SEC-PICKUP-01 — the customs derogation is its own act, not a field edit.
+  // `transport.updated` records only WHICH fields moved, so an override was
+  // indistinguishable from a change of pickup address in the audit stream.
+  TRANSPORT_CUSTOMS_OVERRIDE_CHANGED: "transport.customs_override_changed",
   TRANSPORT_PICKED_UP: "transport.picked_up",
   TRANSPORT_DELIVERED: "transport.delivered",
   TRANSPORT_POD_RECEIVED: "transport.pod_received",

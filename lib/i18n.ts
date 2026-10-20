@@ -943,6 +943,8 @@ export const t = {
         "Ce sous-traitant ne peut pas être affecté : il n'est pas agréé ou il est retiré du répertoire.",
       customs_not_released: "Enlèvement bloqué : dédouanement non libéré (BAE).",
       pod_required: "Un bon de livraison approuvé est requis pour le POD.",
+      forbidden_customs_override:
+        "La dérogation douane ne peut être modifiée que par un responsable transport. Les autres champs du transport restent modifiables.",
       stale_write:
         "Le transport a été modifié par un autre utilisateur. Actualisez la page avant de réessayer.",
       protected_completed:
