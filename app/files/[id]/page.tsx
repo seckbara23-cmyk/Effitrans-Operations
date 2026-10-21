@@ -1,5 +1,9 @@
 import { getCanonicalDossierState } from "@/lib/workflow/dossier-state";
 import { serviceScopeStored } from "@/lib/files/service-scope-140";
+import { openingFieldsStored } from "@/lib/files/opening-fields-158";
+import { openingAdvisories } from "@/lib/files/opening";
+import { OpeningAdvisories } from "@/components/files/opening-advisories";
+import { expiryGovernanceAvailable } from "@/lib/documents/expiry-governance-161";
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import Link from "next/link";
@@ -203,6 +207,8 @@ async function renderFileDetailPage(params: { id: string }) {
     openHandoff,
     customsControlVerdicts,
     servicesAvailable,
+    openingAvailable,
+    expiryAvailable,
     clients,
     parentOptions,
     fleetOptions,
@@ -364,6 +370,10 @@ async function renderFileDetailPage(params: { id: string }) {
           )
         : {},
     servicesAvailable: () => serviceScopeStored(),
+    // CEO-ALIGNMENT WP1-B1/C — can the PO client / expected regime be stored?
+    openingAvailable: () => openingFieldsStored(),
+    // CEO-ALIGNMENT WP1-E — can expiry changes be governed (migration #161)?
+    expiryAvailable: () => expiryGovernanceAvailable(),
   });
   const taskAssignees = eligible.assignees;
 
@@ -541,6 +551,18 @@ async function renderFileDetailPage(params: { id: string }) {
           it belongs to cannot offer different things. */}
       <div id="resume" className="scroll-mt-24">
         <DossierWorkSummary fileId={file.id} view={workView} />
+        {/* CEO-ALIGNMENT WP1-B1 — « Information à compléter » derived from a
+            DOSSIER fact (a missing PO client on an import dossier), not from
+            step evidence: it is shown here and nowhere in the engine, so no
+            button and no queue can treat it as missing evidence. */}
+        <OpeningAdvisories
+          items={openingAdvisories({
+            stored: openingAvailable,
+            type: file.type,
+            status: file.status,
+            clientPoReference: file.clientPoReference,
+          })}
+        />
       </div>
       <DossierSectionNav />
       {/* Phase 5.0E-1 (D10) — renders nothing when the engine is dark or this
@@ -618,6 +640,13 @@ async function renderFileDetailPage(params: { id: string }) {
         <h2 className="mb-3 text-sm font-semibold text-navy-900">Identification du dossier</h2>
         <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Fact label="Référence client" value={file.clientReference} />
+          {/* CEO-ALIGNMENT WP1-B1/C — shown only once the platform can store
+              them; « Régime douanier prévu » is preliminary information, the
+              declared regime lives in the customs panel. */}
+          {openingAvailable && <Fact label="PO client" value={file.clientPoReference} />}
+          {openingAvailable && (
+            <Fact label="Régime douanier prévu" value={file.customsRegimeDeclared} />
+          )}
           <Fact label="Pour le compte de" value={file.onBehalfOf} />
           <Fact label="Dossier mère" value={file.parentFileNumber} />
           <Fact label="Échéance de traitement" value={file.processingDueDate} />
@@ -669,7 +698,7 @@ async function renderFileDetailPage(params: { id: string }) {
           </p>
         )}
       </section>
-      <FileForm mode="edit" fileId={file.id} initial={file} clients={clients} parents={parentOptions} canUpdate={canUpdate} ports={geo.ports} airports={geo.airports} servicesAvailable={servicesAvailable} />
+      <FileForm mode="edit" fileId={file.id} initial={file} clients={clients} parents={parentOptions} canUpdate={canUpdate} ports={geo.ports} airports={geo.airports} servicesAvailable={servicesAvailable} openingFieldsAvailable={openingAvailable} />
       {canReadTasks && (
         <TaskPanel
           currentUserId={user.id}
@@ -693,6 +722,11 @@ async function renderFileDetailPage(params: { id: string }) {
             canApprove={hasPermission(permissions, "document:approve")}
             canDelete={hasPermission(permissions, "document:delete")}
             canEmail={canEmail}
+            // CEO-ALIGNMENT WP1-E — governed expiry changes. Drawn per the
+            // viewer's authority; the actions and the database re-check it.
+            canUpdate={hasPermission(permissions, "document:update")}
+            currentUserId={user.id}
+            expiryGovernance={expiryAvailable}
           />
         </div>
       )}
@@ -720,6 +754,8 @@ async function renderFileDetailPage(params: { id: string }) {
             canCorrect={hasPermission(permissions, "customs:correct")}
             canRevalidate={hasPermission(permissions, "customs:revalidate")}
             awaitingRevalidation={customsAwaitingRevalidation}
+            // CEO-ALIGNMENT WP1-C — read-only context for Transit; never written here.
+            regimeDeclared={file.customsRegimeDeclared ?? null}
           />
         </div>
       )}

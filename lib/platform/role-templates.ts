@@ -151,8 +151,10 @@ export const TENANT_ROLE_TEMPLATES: readonly TenantRoleTemplate[] = [
   },
   {
     key: "QUOTATION_MANAGER",
-    labelFr: "Responsable des cotations",
-    labelEn: "Quotation Manager",
+    // DEC-CEO-01 (2026-10-21, CEO-001) — « Business Development Manager » is
+    // the name people read; the key, permissions and assignments are unchanged.
+    labelFr: "Business Development Manager",
+    labelEn: "Business Development Manager",
     genericName: "QUOTATION_MANAGER",
     description:
       "Pricing/quotation lead — owns official step 1 (Cotation). EC-3C activates the authorities ratified as DEC-C32: this role PREPARES, SENDS and records the customer's ACCEPTANCE. It deliberately does NOT hold quotation:validate — internal validation belongs to OPS_SUPERVISOR, and `validated_by <> prepared_by` is enforced by the database besides.",

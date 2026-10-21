@@ -10,6 +10,8 @@ import { t } from "@/lib/i18n";
 import { CARGO_FORMS, CARGO_FORM_LABELS_FR } from "@/lib/files/taxonomy";
 import { INCOTERMS, incotermOptionLabel } from "@/lib/files/incoterms";
 import { createFile, updateFile } from "@/lib/files/actions";
+import { CLIENT_PO_MAX, REGIME_DECLARED_MAX } from "@/lib/files/opening";
+import { CUSTOMS_REGIME_SUGGESTIONS } from "@/lib/customs/regime-suggestions";
 import type {
   ActionResult,
   FileDetail,
@@ -55,6 +57,7 @@ export function FileForm({
   ports = [],
   airports = [],
   servicesAvailable = false,
+  openingFieldsAvailable = false,
 }: {
   mode: "create" | "edit";
   fileId?: string;
@@ -84,6 +87,13 @@ export function FileForm({
    * rendered at all rather than rendered and discarded.
    */
   servicesAvailable?: boolean;
+  /**
+   * CEO-ALIGNMENT WP1-B1/C — can the platform STORE the PO client and the
+   * expected regime? Probed on the server (migration 20261021000002). Same
+   * rule as `servicesAvailable`: a field whose value cannot be stored is not
+   * rendered.
+   */
+  openingFieldsAvailable?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -123,6 +133,9 @@ export function FileForm({
   const [clientReference, setClientReference] = useState(initial?.clientReference ?? "");
   const [onBehalfOf, setOnBehalfOf] = useState(initial?.onBehalfOf ?? "");
   const [processingDueDate, setProcessingDueDate] = useState(initial?.processingDueDate ?? "");
+  // CEO-ALIGNMENT WP1-B1/C — the customer PO and the expected regime.
+  const [clientPoReference, setClientPoReference] = useState(initial?.clientPoReference ?? "");
+  const [customsRegimeDeclared, setCustomsRegimeDeclared] = useState(initial?.customsRegimeDeclared ?? "");
   // OPS-SERVICE-SCOPE-01 — seeded from what the dossier already records. An
   // existing dossier with no stored scope stays unrecorded: opening the edit
   // form must not silently assign one.
@@ -179,6 +192,9 @@ export function FileForm({
       clientReference,
       onBehalfOf,
       processingDueDate: processingDueDate || null,
+      // Sent only when the platform can store them; `undefined` leaves the
+      // stored values untouched on update.
+      ...(openingFieldsAvailable ? { clientPoReference, customsRegimeDeclared } : {}),
     };
   }
 
@@ -423,6 +439,43 @@ export function FileForm({
             <Field label="Référence client">
               <input className={input} value={clientReference} disabled={!editable} onChange={(e) => setClientReference(e.target.value)} />
             </Field>
+            {/* CEO-ALIGNMENT WP1-B1 (CEO-003, DEC-CEO-02) — the customer PO.
+                Optional at creation; for an import dossier it is due at the
+                opening (step 3) and shown as « Information à compléter »
+                until recorded. Nothing here blocks a save. */}
+            {openingFieldsAvailable && (
+              <Field label={t.files.form.clientPoReference}>
+                <input
+                  className={input}
+                  value={clientPoReference}
+                  maxLength={CLIENT_PO_MAX}
+                  disabled={!editable}
+                  onChange={(e) => setClientPoReference(e.target.value)}
+                />
+                <span className="mt-1 block text-[11px] text-slate-500">{t.files.form.clientPoReferenceHint}</span>
+              </Field>
+            )}
+            {/* CEO-ALIGNMENT WP1-C (CEO-003, DEC-CEO-03) — the regime EXPECTED
+                at opening. Preliminary information only: the declared regime
+                is entered by the Déclarant in the customs panel. */}
+            {openingFieldsAvailable && (
+              <Field label={t.files.form.customsRegimeDeclared}>
+                <input
+                  className={input}
+                  list="file-regime-declared"
+                  value={customsRegimeDeclared}
+                  maxLength={REGIME_DECLARED_MAX}
+                  disabled={!editable}
+                  onChange={(e) => setCustomsRegimeDeclared(e.target.value)}
+                />
+                <datalist id="file-regime-declared">
+                  {CUSTOMS_REGIME_SUGGESTIONS.map((r) => (
+                    <option key={r} value={r} />
+                  ))}
+                </datalist>
+                <span className="mt-1 block text-[11px] text-slate-500">{t.files.form.customsRegimeDeclaredHint}</span>
+              </Field>
+            )}
             <Field label="Pour le compte de">
               <input className={input} value={onBehalfOf} disabled={!editable} onChange={(e) => setOnBehalfOf(e.target.value)} />
             </Field>

@@ -81,6 +81,13 @@ export const AuditActions = {
   DOCUMENT_REJECTED: "document.rejected",
   DOCUMENT_EXPIRED: "document.expired", // reserved — set by the deferred scheduler
   DOCUMENT_DELETED: "document.deleted",
+  // CEO-ALIGNMENT WP1-E — a governed change to a document's expiry date. The
+  // REQUEST is either applied directly (unverified document) or recorded as a
+  // proposal (verified document); the DECISION confirms or rejects a proposal.
+  // The append-only `document_expiry_change` row is the evidence; these are
+  // the attributed audit entries beside it.
+  DOCUMENT_EXPIRY_CHANGE_REQUESTED: "document.expiry_change_requested",
+  DOCUMENT_EXPIRY_CHANGE_DECIDED: "document.expiry_change_decided",
   // Phase 1.9 — Customs
   CUSTOMS_CREATED: "customs.created",
   CUSTOMS_UPDATED: "customs.updated",
@@ -196,6 +203,11 @@ export const AuditActions = {
   // TIMELINE entry for that document comes from the DOCUMENT_UPLOADED trigger;
   // this records the ingestion decision, which is a different fact.
   EC_ATTACHMENT_INGESTED: "ec.attachment.ingested",
+  // CEO-ALIGNMENT WP1-D — the customer's instructing MESSAGE filed on a dossier
+  // as an « Ordre de transit / instruction client ». Same discipline as the
+  // attachment: one audit entry, the timeline entry comes from the
+  // DOCUMENT_UPLOADED trigger, and no address or subject is written here.
+  EC_MESSAGE_INGESTED: "ec.message.ingested",
   // EMP-4A — mailbox membership and operator-assisted provisioning. Each records
   // a decision a person made; the platform performs no external provisioning and
   // so never reports one of its own.

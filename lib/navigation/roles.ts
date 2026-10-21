@@ -13,7 +13,8 @@ const ROLE_LABELS: Record<string, string> = {
   OPS_SUPERVISOR: "Superviseur des opérations",
   COORDINATOR: "Coordinateur",
   ACCOUNT_MANAGER: "Account Manager",
-  QUOTATION_MANAGER: "Responsable cotation",
+  // DEC-CEO-01 (CEO-001) — the displayed name; the code is unchanged.
+  QUOTATION_MANAGER: "Business Development Manager",
   CHIEF_OF_TRANSIT: "Chef de Transit",
   CUSTOMS_DECLARANT: "Déclarant en douane",
   CUSTOMS_FINANCE_OFFICER: "Chargé finance douane",

@@ -5,6 +5,7 @@
 import type { FileInput, FileType, TransportMode } from "./types";
 import { isCargoForm } from "./taxonomy";
 import { isIncoterm } from "./incoterms";
+import { validateOpeningFacts } from "./opening";
 
 const FILE_TYPES: FileType[] = ["IMP", "EXP", "TRP", "HND"];
 const MODES: TransportMode[] = ["SEA", "AIR", "ROAD", "MULTIMODAL"];
@@ -50,6 +51,11 @@ export function validateFile(input: FileInput): string | null {
   // A parent is a dossier id; the database proves tenant, self-parent and
   // cycle — this only rejects a malformed value before the round trip.
   if (input.parentFileId && !UUID_RE.test(input.parentFileId)) return "invalid_parent";
+
+  // CEO-ALIGNMENT WP1-B1/C — both optional; bounded to the database CHECKs so
+  // an oversized value is refused with a sentence, not by Postgres mid-save.
+  const opening = validateOpeningFacts(input);
+  if (opening) return opening;
 
   return null;
 }

@@ -35,6 +35,9 @@ export function DocumentsPanel({
   canApprove,
   canDelete,
   canEmail = false,
+  canUpdate = false,
+  currentUserId = null,
+  expiryGovernance = false,
 }: {
   fileId: string;
   documents: DocumentItem[];
@@ -44,6 +47,12 @@ export function DocumentsPanel({
   canApprove: boolean;
   canDelete: boolean;
   canEmail?: boolean;
+  /** CEO-ALIGNMENT WP1-E — `document:update` (expiry change / proposal). */
+  canUpdate?: boolean;
+  /** WP1-E — the viewer, so a proposer is never offered their own confirmation. */
+  currentUserId?: string | null;
+  /** WP1-E — migration #161 applied. */
+  expiryGovernance?: boolean;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -147,7 +156,16 @@ export function DocumentsPanel({
       ) : (
         <div className="space-y-2">
           {documents.map((doc) => (
-            <DocumentRow key={doc.id} doc={doc} canApprove={canApprove} canDelete={canDelete} canEmail={canEmail} />
+            <DocumentRow
+              key={doc.id}
+              doc={doc}
+              canApprove={canApprove}
+              canDelete={canDelete}
+              canEmail={canEmail}
+              canUpdateExpiry={canUpdate}
+              currentUserId={currentUserId}
+              expiryGovernance={expiryGovernance}
+            />
           ))}
         </div>
       )}

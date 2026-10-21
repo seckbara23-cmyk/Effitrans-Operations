@@ -110,6 +110,17 @@ const KNOWN_UNSCOPED_READS: Record<string, string> = {
   //     applied.
   "lib/users/identity-141.ts::workforce_profile":
     "zero-row schema probe: does the #141 column exist? returns no data at all",
+  // --- CEO-ALIGNMENT WP1 — three probes of the same shape, one per migration
+  //     whose objects the application reads before the governed run applies
+  //     them (#158 opening columns, #160 message provenance, #161 the expiry
+  //     history table). `.limit(0)` each: PostgREST validates the projection
+  //     and returns nothing. Delete each with its file once applied.
+  "lib/files/opening-fields-158.ts::operational_file":
+    "zero-row schema probe: does the #158 column exist? returns no data at all",
+  "lib/ec/ingest/message-provenance-160.ts::document":
+    "zero-row schema probe: does the #160 column exist? returns no data at all",
+  "lib/documents/expiry-governance-161.ts::document_expiry_change":
+    "zero-row schema probe: does the #161 table exist? returns no data at all",
   // --- Self-identity lookups by auth.users id (globally unique; no tenant
   //     context to filter on — the read RESOLVES which identity/tenant the
   //     caller is). Safe: an auth id maps to exactly one identity row.

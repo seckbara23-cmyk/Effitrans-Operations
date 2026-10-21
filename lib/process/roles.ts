@@ -55,7 +55,7 @@ export const ROLE_MAPPINGS: RoleMapping[] = [
     tenantRole: "QUOTATION_MANAGER",
     status: "inert",
     auditStatus: "inert",
-    note: "Role exists ('Responsable des cotations') but holds only profile:read:self and profile:update:self. The pricing module was deferred. Grant quotation:* in Phase 5.0D — do not rename.",
+    note: "Role exists (displayed « Business Development Manager » since DEC-CEO-01, 2026-10-21; formerly 'Responsable des cotations') but holds only profile:read:self and profile:update:self. The pricing module was deferred. Grant quotation:* in Phase 5.0D — do not rename the CODE: only the label changed.",
   },
   {
     officialRole: "OPERATIONS_MANAGER",

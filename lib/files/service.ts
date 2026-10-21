@@ -11,6 +11,7 @@
  */
 import "server-only";
 import { serviceScopeStored } from "./service-scope-140";
+import { openingFieldsStored } from "./opening-fields-158";
 import { normalizeServices, type ServiceKey } from "@/lib/process/service-scope";
 import { getServerSupabaseClient } from "@/lib/supabase/server";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
@@ -318,6 +319,22 @@ export async function getFile(id: string): Promise<FileDetail | null> {
     services = normalizeServices((row as { services?: string[] | null } | null)?.services);
   }
 
+  // CEO-ALIGNMENT WP1-B1/C — the PO client and the expected regime, read the
+  // same way and for the same reason: their own narrow select, on the SAME
+  // RLS-scoped client, and only once migration 20261021000002 is applied.
+  let clientPoReference: string | null = null;
+  let customsRegimeDeclared: string | null = null;
+  if (await openingFieldsStored()) {
+    const { data: row } = await supabase
+      .from("operational_file")
+      .select("client_po_reference, customs_regime_declared" as never)
+      .eq("id", id)
+      .maybeSingle();
+    const r = row as { client_po_reference?: string | null; customs_regime_declared?: string | null } | null;
+    clientPoReference = r?.client_po_reference ?? null;
+    customsRegimeDeclared = r?.customs_regime_declared ?? null;
+  }
+
   // MAYA-P0.5-B — the parent's HUMAN key for display. Same RLS-enforced client:
   // a parent in another tenant is unreadable here exactly as it is unlinkable
   // in the database.
@@ -399,6 +416,8 @@ export async function getFile(id: string): Promise<FileDetail | null> {
     clientReference: file.client_reference,
     onBehalfOf: file.on_behalf_of,
     processingDueDate: file.processing_due_date,
+    clientPoReference,
+    customsRegimeDeclared,
     provenance: file.provenance,
     legacyReference: file.legacy_reference,
     shipment: shipment
