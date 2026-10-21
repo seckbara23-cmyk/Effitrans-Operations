@@ -295,6 +295,10 @@ $$;
 revoke execute on function public.record_document_expiry_change(uuid, uuid, uuid, date, text) from public;
 revoke execute on function public.record_document_expiry_change(uuid, uuid, uuid, date, text) from anon;
 revoke execute on function public.record_document_expiry_change(uuid, uuid, uuid, date, text) from authenticated;
+-- The server's own client is service_role. Granted EXPLICITLY, never left to
+-- default privileges: a database without them (the local stack the promotion
+-- walk applies to) would otherwise refuse the server too (CI-REPAIR-01).
+grant  execute on function public.record_document_expiry_change(uuid, uuid, uuid, date, text) to service_role;
 
 create or replace function public.decide_document_expiry_change(
   p_proposal uuid,
@@ -377,6 +381,7 @@ $$;
 revoke execute on function public.decide_document_expiry_change(uuid, uuid, uuid, text, text) from public;
 revoke execute on function public.decide_document_expiry_change(uuid, uuid, uuid, text, text) from anon;
 revoke execute on function public.decide_document_expiry_change(uuid, uuid, uuid, text, text) from authenticated;
+grant  execute on function public.decide_document_expiry_change(uuid, uuid, uuid, text, text) to service_role;
 
 -- ---------------------------------------------------------------------------
 -- 5. Self-assertions, exercised at migration time.
@@ -414,6 +419,19 @@ begin
      where tgrelid = 'public.document'::regclass and tgname = 'trg_document_expiry_governed'
   ) then
     raise exception 'MIGRATION FAILED: the governing trigger on document is missing';
+  end if;
+
+  -- The same matrix the verifier proves, refused HERE so a mismatch aborts the
+  -- migration instead of applying it and leaving the ledger unwritten.
+  if exists (
+    select 1 from pg_proc p
+     where p.pronamespace = 'public'::regnamespace
+       and p.proname in ('record_document_expiry_change', 'decide_document_expiry_change')
+       and (   (to_regrole('service_role')  is not null and not has_function_privilege('service_role', p.oid, 'EXECUTE'))
+            or (to_regrole('authenticated') is not null and has_function_privilege('authenticated', p.oid, 'EXECUTE'))
+            or (to_regrole('anon')          is not null and has_function_privilege('anon', p.oid, 'EXECUTE')))
+  ) then
+    raise exception 'MIGRATION FAILED: the expiry RPCs must be executable by service_role only';
   end if;
 
   raise notice 'WP1-E document expiry governance installed';

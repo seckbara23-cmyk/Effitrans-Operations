@@ -141,7 +141,12 @@ describe("WP1-E — the database contract (migration #161)", () => {
       for (const role of ["public", "anon", "authenticated"]) {
         expect(MIG).toContain(`revoke execute on function public.${fn} from ${role};`);
       }
+      // …and granted to service_role EXPLICITLY: a database without Supabase's
+      // default privileges otherwise refuses the server too (CI-REPAIR-01).
+      expect(MIG).toContain(`grant  execute on function public.${fn} to service_role;`);
     }
+    expect(MIG).not.toMatch(/grant\s+execute\s+on\s+function\s+public\.(record|decide)_document_expiry_change[^;]*\bto\s+(public|anon|authenticated)\b/i);
+    expect(MIG).toMatch(/raise exception 'MIGRATION FAILED: the expiry RPCs must be executable by service_role only'/);
   });
 
   it("maker ≠ checker: the proposer can never decide their own proposal", () => {
