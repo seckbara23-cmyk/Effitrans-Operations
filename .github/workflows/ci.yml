@@ -197,6 +197,16 @@ jobs:
           PGPASSWORD: postgres
         run: psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/rls_document_test.sql
 
+      # CEO-ALIGNMENT WP1 (migrations 157–161). The verifiers prove the shape;
+      # this proves the behaviour: the opening columns' bounds, a silent expiry
+      # rewrite refused at the database, unverified vs verified expiry changes,
+      # maker ≠ checker on confirmation, an append-only history, and what an
+      # authenticated session may (only read) and may not (insert, execute) do.
+      - name: Run RLS WP1 dossier-opening test (CEO-ALIGNMENT)
+        env:
+          PGPASSWORD: postgres
+        run: psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/rls_wp1_opening_test.sql
+
       - name: Run RLS customs test (Phase 1.9)
         env:
           PGPASSWORD: postgres

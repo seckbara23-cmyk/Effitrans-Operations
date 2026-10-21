@@ -207,6 +207,9 @@ export const TENANT_SCOPED_TABLES = new Set<string>([
   // restricted free-text explanation, so an unscoped read would leak review
   // prose across tenants.
   "document_review",
+  // CEO-ALIGNMENT WP1-E — append-only history of governed expiry changes
+  // (migration 20261021000005). Carries reasons about a colleague's evidence.
+  "document_expiry_change",
   // append-only evidence consumption (Phase WES-5D).
   "evidence_consumption",
   // MAYA migration staging (MAYA-P0.5-C). All three carry tenant_id and are
