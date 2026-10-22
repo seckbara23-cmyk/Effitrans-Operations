@@ -20,7 +20,9 @@ import { MessageEvidence } from "@/components/ec/message-evidence";
 import { getCaptureEvidence } from "@/lib/ec/mailboxes/service";
 import { readDecisionPlane } from "@/lib/unified-timeline/decision-plane";
 import { AttachmentIngest } from "@/components/ec/attachment-ingest";
+import { MessageIngest } from "@/components/ec/message-ingest";
 import { lookupIngestedDocument } from "@/lib/ec/ingest/actions";
+import { lookupIngestedMessage, messageFilingAvailable } from "@/lib/ec/ingest/message-actions";
 import { listDocumentTypes } from "@/lib/documents/service";
 
 export const metadata: Metadata = { title: "Message entrant — tri" };
@@ -71,6 +73,12 @@ export default async function TriageDetailPage({ params }: { params: { id: strin
     : [];
   const ingestedByAttachment = new Map(ingestState.map((s) => [s.id, s.ingested]));
 
+  // CEO-ALIGNMENT WP1-D — the message itself as « Ordre de transit /
+  // instruction client ». Same two authorities as attachment ingestion, and
+  // offered only once migration #160 can record its provenance.
+  const canFileMessage = canIngest && (await messageFilingAvailable());
+  const messageFiled = canFileMessage ? await lookupIngestedMessage(item.messageId) : null;
+
   return (
     <div className="animate-fade-in space-y-6">
       <PageHeader
@@ -115,6 +123,27 @@ export default async function TriageDetailPage({ params }: { params: { id: strin
         currentUserId={user.id}
         dossiers={dossiers}
       />
+
+      {/* CEO-ALIGNMENT WP1-D (CEO-004) — « rattacher le mail du client qui
+          confie le dossier a Effitrans ». Outside the triage studio for the
+          same reason as attachments: EC-2's surfaces create nothing. */}
+      {canFileMessage ? (
+        <section className="surface p-4" aria-labelledby="wp1d-message">
+          <h2 id="wp1d-message" className="mb-2 text-sm font-semibold text-navy-900">
+            Instruction client — rattachement du message au dossier
+          </h2>
+          <MessageIngest
+            messageId={item.messageId}
+            alreadyIngested={messageFiled}
+            dossiers={dossiers}
+          />
+          <p className="mt-3 border-t border-slate-100 pt-3 text-[11px] text-slate-500">
+            Le dossier reçoit un PDF du message (expéditeur, destinataires, date, objet, texte et
+            empreinte SHA-256 du message original). Le message capturé reste inchangé. Le document
+            suit la vérification documentaire habituelle : il n&apos;est pas validé automatiquement.
+          </p>
+        </section>
+      ) : null}
 
       {/* EMP-4 — attachment ingestion. Rendered here rather than inside the
           triage studio: EC-2 guarantees its own surfaces create nothing

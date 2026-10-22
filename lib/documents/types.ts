@@ -2,6 +2,7 @@
  * Documents shared types (Phase 1.8). Client + server safe.
  */
 import type { ExpiryState } from "./expiry";
+import type { ExpiryHistoryEntry, ExpiryProposal } from "./expiry-change";
 
 export type DocumentStatus =
   | "UPLOADED"
@@ -36,6 +37,12 @@ export type DocumentItem = {
   reviewNote: string | null;
   sharedWithClient: boolean;
   createdAt: string;
+  /**
+   * CEO-ALIGNMENT WP1-E — the last few governed expiry changes and the open
+   * proposal, if any. Absent while migration #161 is unapplied.
+   */
+  expiryHistory?: ExpiryHistoryEntry[];
+  pendingExpiryProposal?: ExpiryProposal | null;
 };
 
 /** A required document type with no APPROVED instance on the dossier. */

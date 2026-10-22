@@ -14,7 +14,63 @@ import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/auth/require-permission";
 import { isFileVisible } from "@/lib/authz/visibility";
 import { classifyExpiry } from "./expiry";
+import { expiryGovernanceAvailable } from "./expiry-governance-161";
+import { summarizeExpiryHistory, type ExpiryHistoryEntry } from "./expiry-change";
 import type { DocumentItem, DocumentStatus, DocumentTypeItem, MissingDocument } from "./types";
+
+type ExpiryRow = {
+  id: string;
+  document_id: string;
+  kind: ExpiryHistoryEntry["kind"];
+  proposal_id: string | null;
+  old_expiry: string | null;
+  new_expiry: string | null;
+  reason: string | null;
+  actor_id: string;
+  occurred_at: string;
+  actor: { email: string | null } | null;
+};
+
+/**
+ * CEO-ALIGNMENT WP1-E — the governed expiry history for a dossier's documents,
+ * keyed by document. One batched read for the whole dossier, tenant- and
+ * dossier-scoped, and only once migration #161 is applied. The table is not in
+ * lib/db/types.ts until then, hence the structural cast.
+ */
+async function expiryHistoryByDocument(
+  tenantId: string,
+  fileId: string,
+): Promise<Map<string, ReturnType<typeof summarizeExpiryHistory>>> {
+  const out = new Map<string, ReturnType<typeof summarizeExpiryHistory>>();
+  if (!(await expiryGovernanceAvailable())) return out;
+  const supabase = getAdminSupabaseClient();
+  const { data, error } = await supabase
+    .from("document_expiry_change" as never)
+    .select("id, document_id, kind, proposal_id, old_expiry, new_expiry, reason, actor_id, occurred_at, actor:actor_id(email)")
+    .eq("tenant_id" as never, tenantId as never)
+    .eq("file_id" as never, fileId as never)
+    .order("occurred_at" as never, { ascending: false })
+    .limit(500);
+  if (error) throw new Error(`[documents] expiry history failed: ${error.message}`);
+  const byDoc = new Map<string, (ExpiryHistoryEntry & { proposalId: string | null })[]>();
+  for (const r of (data ?? []) as unknown as ExpiryRow[]) {
+    const list = byDoc.get(r.document_id) ?? [];
+    list.push({
+      id: r.id,
+      kind: r.kind,
+      proposalId: r.proposal_id,
+      oldExpiry: r.old_expiry,
+      newExpiry: r.new_expiry,
+      reason: r.reason,
+      actorId: r.actor_id,
+      actorEmail: r.actor?.email ?? null,
+      occurredAt: r.occurred_at,
+    });
+    byDoc.set(r.document_id, list);
+  }
+  for (const [docId, rows] of byDoc) out.set(docId, summarizeExpiryHistory(rows));
+  return out;
+}
 
 type DocRow = {
   id: string;
@@ -75,6 +131,8 @@ export async function listDocuments(fileId: string): Promise<DocumentItem[]> {
     .returns<DocRow[]>();
   if (error) throw new Error(`[documents] list failed: ${error.message}`);
 
+  const expiry = await expiryHistoryByDocument(user.tenantId, fileId);
+
   const now = new Date();
   return (data ?? []).map((d) => ({
     id: d.id,
@@ -93,6 +151,8 @@ export async function listDocuments(fileId: string): Promise<DocumentItem[]> {
     reviewNote: d.review_note,
     sharedWithClient: d.shared_with_client,
     createdAt: d.created_at,
+    expiryHistory: expiry.get(d.id)?.recent ?? [],
+    pendingExpiryProposal: expiry.get(d.id)?.pending ?? null,
   }));
 }
 

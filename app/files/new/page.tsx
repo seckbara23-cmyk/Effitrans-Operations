@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { serviceScopeStored } from "@/lib/files/service-scope-140";
+import { openingFieldsStored } from "@/lib/files/opening-fields-158";
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/page-header";
 import { requireUser } from "@/lib/auth/require-user";
@@ -51,6 +52,9 @@ export default async function NewFilePage() {
   // actually store the answer. Migration 20261002000001 is written and not
   // applied, so today they do not appear and the scope stays type-derived.
   const servicesAvailable = await serviceScopeStored();
+  // CEO-ALIGNMENT WP1-B1/C — the PO client and the expected regime, offered at
+  // creation only once migration 20261021000002 can store them.
+  const openingFieldsAvailable = await openingFieldsStored();
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -58,7 +62,7 @@ export default async function NewFilePage() {
       <Link href="/files" className="text-sm text-teal-700 hover:underline">
         ← {t.files.backToList}
       </Link>
-      <FileForm mode="create" clients={clients} parents={parents} ports={geo.ports} airports={geo.airports} servicesAvailable={servicesAvailable} />
+      <FileForm mode="create" clients={clients} parents={parents} ports={geo.ports} airports={geo.airports} servicesAvailable={servicesAvailable} openingFieldsAvailable={openingFieldsAvailable} />
     </div>
   );
 }

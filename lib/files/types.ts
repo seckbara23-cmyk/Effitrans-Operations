@@ -80,6 +80,17 @@ export type FileInput = {
   clientReference?: string | null;
   onBehalfOf?: string | null;
   processingDueDate?: string | null;
+  /**
+   * CEO-ALIGNMENT WP1-B1 (DEC-CEO-02) — the customer PO. Optional at creation.
+   * `undefined` = not sent (left as is on update); stored only once migration
+   * 20261021000002 is applied (lib/files/opening-fields-158.ts).
+   */
+  clientPoReference?: string | null;
+  /**
+   * CEO-ALIGNMENT WP1-C (DEC-CEO-03) — the regime EXPECTED at opening.
+   * Preliminary information, never the declared regime.
+   */
+  customsRegimeDeclared?: string | null;
 };
 
 export type FileListItem = {
@@ -225,6 +236,13 @@ export type FileDetail = {
   clientReference: string | null;
   onBehalfOf: string | null;
   processingDueDate: string | null;
+  /**
+   * CEO-ALIGNMENT WP1-B1/C — `null` both when nobody recorded it and while
+   * migration 20261021000002 is unapplied. Optional so callers that build a
+   * FileDetail by hand (tests, fixtures) are not forced to know about it.
+   */
+  clientPoReference?: string | null;
+  customsRegimeDeclared?: string | null;
   provenance: string;
   legacyReference: string | null;
   shipment: {

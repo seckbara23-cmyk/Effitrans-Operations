@@ -30,6 +30,8 @@ import {
   type ReceivabilityOutcome,
 } from "@/lib/customs/receivability";
 import { GovernedCustomsFields } from "./governed-fields";
+import { CUSTOMS_REGIME_SUGGESTIONS } from "@/lib/customs/regime-suggestions";
+import { regimeDeclaredNoticeFr } from "@/lib/files/opening";
 import type { ActionResult, CustomsRecord, MissingCustomsDoc } from "@/lib/customs/types";
 import type { GaindeTaxLine } from "@/lib/customs/actions";
 
@@ -98,14 +100,9 @@ const RECEIVABILITY_STYLE: Record<ReceivabilityOutcome, string> = {
 /** MAYA-P1.11 — the two systems Effitrans named, and both together. */
 const ATTACHMENT_SYSTEM_SETS: string[][] = [["GAINDE"], ["ORBUS"], ["GAINDE", "ORBUS"]];
 
-const REGIMES = [
-  "Mise à la consommation",
-  "Exportation",
-  "Transit",
-  "Admission temporaire",
-  "Entrepôt",
-  "Réexportation",
-];
+// CEO-ALIGNMENT WP1-C — shared with the Account Manager's « Régime douanier
+// prévu » so both fields propose the same words (suggestions, never a rule).
+const REGIMES = CUSTOMS_REGIME_SUGGESTIONS;
 
 export function CustomsPanel({
   fileId,
@@ -122,6 +119,7 @@ export function CustomsPanel({
   canCorrect,
   canRevalidate,
   awaitingRevalidation,
+  regimeDeclared = null,
 }: {
   fileId: string;
   record: CustomsRecord | null;
@@ -145,7 +143,15 @@ export function CustomsPanel({
   canRevalidate: boolean;
   /** D4 — corrected and not yet recertified. */
   awaitingRevalidation: boolean;
+  /**
+   * CEO-ALIGNMENT WP1-C — the regime the Account Manager EXPECTED at opening
+   * (operational_file.customs_regime_declared). READ-ONLY here, for the
+   * Déclarant and the Chef de Transit to see. It is never pre-filled into the
+   * governed « Régime » field and never written by this panel.
+   */
+  regimeDeclared?: string | null;
 }) {
+  const regimeNotice = regimeDeclaredNoticeFr(regimeDeclared);
   /**
    * Is this control DRAWN for this viewer? Permission says the role has
    * business with it at all; ownership says this particular work is theirs.
@@ -208,6 +214,7 @@ export function CustomsPanel({
     return (
       <section className="space-y-3">
         {header}
+        {regimeNotice && <p className="text-xs text-slate-600">{regimeNotice}</p>}
         <div className="surface flex items-center justify-between p-4 text-sm text-slate-500">
           <span>{c.empty}</span>
           {canCreate && owns("customs.create") && (
@@ -248,6 +255,7 @@ export function CustomsPanel({
   return (
     <section className="space-y-3">
       {header}
+      {regimeNotice && <p className="text-xs text-slate-600">{regimeNotice}</p>}
 
       <div className="surface space-y-3 p-4">
         <div className="flex flex-wrap items-center gap-2">

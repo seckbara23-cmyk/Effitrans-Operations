@@ -15,7 +15,7 @@
  * emission sits, which is what decides whether a retry notifies twice.
  */
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { resolveVehicleIdentity } from "@/lib/transport/vehicle-identity";
@@ -281,9 +281,22 @@ describe("6 — scope: this slice ships no migration and no schema change", () =
     for (const t of emitted) expect(permitted.has(t), `${t} not permitted by #156`).toBe(true);
   });
 
-  it("6.2 — the build-info migration pins are untouched at 156", () => {
-    const bi = read("lib/platform/ops/build-info.ts");
-    expect(bi).toContain("MIGRATION_COUNT = 156");
-    expect(bi).toContain('LATEST_MIGRATION = "20261020000001_notification_workflow_types"');
+  // 6.2 RE-EXPRESSED (CEO-ALIGNMENT WP1, 2026-10-21). This used to pin
+  // `MIGRATION_COUNT = 156` literally, which proved « this slice ships no
+  // migration » only until the NEXT slice shipped one — every later migration
+  // would have failed it for a reason unrelated to notifications. The claim is
+  // kept, stated durably: #156 is still the notification migration, and no
+  // migration after it redefines the notification type CHECK. (The 64 suites
+  // that read build-info for the CURRENT count are unaffected.)
+  it("6.2 — no migration after #156 redefines notification.type (the slice shipped no schema change)", () => {
+    const dir = fileURLToPath(new URL("../supabase/migrations/", import.meta.url));
+    const files = readdirSync(dir).filter((f) => /^\d{14}_.*\.sql$/.test(f)).sort();
+    expect(files).toContain("20261020000001_notification_workflow_types.sql");
+    const later = files.filter((f) => f > "20261020000001_notification_workflow_types.sql");
+    for (const f of later) {
+      const sqlNoComments = read(`supabase/migrations/${f}`).replace(/--[^\n]*/g, "");
+      expect(sqlNoComments, f).not.toMatch(/notification_type_check/i);
+      expect(sqlNoComments, f).not.toMatch(/alter\s+table\s+(public\.)?notification\b/i);
+    }
   });
 });

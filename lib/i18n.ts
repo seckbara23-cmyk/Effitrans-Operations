@@ -2191,10 +2191,20 @@ export const t = {
       vesselFlight: "Navire / vol",
       blAwb: "Réf. BL / LTA",
       container: "Réf. conteneur",
+      // CEO-ALIGNMENT WP1-B1/C (CEO-003).
+      clientPoReference: "PO client",
+      clientPoReferenceHint:
+        "Référence du bon de commande du client. Facultatif à la création ; attendu à l'ouverture d'un dossier import.",
+      customsRegimeDeclared: "Régime douanier prévu",
+      customsRegimeDeclaredHint:
+        "Information préliminaire du client ou des Opérations. Le régime déclaré reste saisi par le Déclarant.",
     },
     errors: {
       forbidden: "Action non autorisée.",
       invalid_type: "Type de dossier invalide.",
+      // CEO-ALIGNMENT WP1-B1/C — bounded to the database CHECKs (#158).
+      invalid_client_po_reference: "Le PO client ne peut pas dépasser 64 caractères.",
+      invalid_customs_regime_declared: "Le régime douanier prévu ne peut pas dépasser 80 caractères.",
       client_required: "Un client valide est obligatoire.",
       invalid_mode: "Mode de transport invalide.",
       invalid_incoterm: "Incoterm invalide.",

@@ -70,6 +70,14 @@ export const DOCUMENT_DOCTRINE: readonly DocumentTypeDoctrine[] = [
   { code: "DELIVERY_NOTE",         category: "EXTERNAL_EVIDENCE", labelFr: "Bordereau de Livraison signé (POD)", clientSafe: true,  earliestStage: "transport" },
   { code: "PAYMENT_RECEIPT",       category: "EXTERNAL_EVIDENCE", labelFr: "Reçu de paiement",           clientSafe: true,  earliestStage: "finance" },
   { code: "OTHER",                 category: "EXTERNAL_EVIDENCE", labelFr: "Autre document",             clientSafe: false, earliestStage: "documentation" },
+  // CEO-ALIGNMENT WP1-D (CEO-004) — the customer's instruction: a scanned
+  // ordre de transit, or the rendition of the e-mail that entrusted the
+  // dossier to Effitrans. EXTERNAL evidence — the customer authored it.
+  //   clientSafe FALSE: a rendered e-mail carries Effitrans' internal
+  //               recipients and copies; nothing about it is addressed back
+  //               to the customer.
+  //   stage      `open`: it is what the dossier is opened ON (step 3).
+  { code: "ORDRE_DE_TRANSIT",      category: "EXTERNAL_EVIDENCE", labelFr: "Ordre de transit / instruction client", clientSafe: false, earliestStage: "open" },
 
   // ---------------------------------------------------------- category B
   // Currently uploadable — the doctrine violation the audit found. Classified

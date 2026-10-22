@@ -57,7 +57,9 @@ select '00000000-0000-0000-0000-000000000001', r.code, r.label_fr, r.label_en, t
 from (values
   ('SYSTEM_ADMIN',          'Administrateur système',    'System Administrator'),
   ('CEO',                   'Direction générale',        'CEO / Owner'),
-  ('QUOTATION_MANAGER',     'Responsable des cotations',  'Quotation Manager'),
+  -- DEC-CEO-01 (2026-10-21): displayed as « Business Development Manager »;
+  -- the code stays QUOTATION_MANAGER (migration 20261021000001).
+  ('QUOTATION_MANAGER',     'Business Development Manager', 'Business Development Manager'),
   ('ACCOUNT_MANAGER',       'Account Manager',            'Account Manager'),
   ('COORDINATOR',           'Coordinateur des opérations','Operations Coordinator'),
   ('CHIEF_OF_TRANSIT',      'Chef de transit',            'Chief of Transit'),

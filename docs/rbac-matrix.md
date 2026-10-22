@@ -60,7 +60,7 @@ no tenant filter.
 |---|---|---|
 | `SYSTEM_ADMIN` | Administrateur système (IT) | Governance — technical only |
 | `CEO` | Direction générale | Governance — full visibility |
-| `QUOTATION_MANAGER` | Responsable des cotations | Pricing (Phase 2 module; role exists now) |
+| `QUOTATION_MANAGER` | Business Development Manager *(libellé depuis DEC-CEO-01, 2026-10-21 ; anciennement « Responsable des cotations » — code inchangé)* | Pricing (Phase 2 module; role exists now) |
 | `ACCOUNT_MANAGER` | Account Manager / Responsable de dossier | **File owner, end-to-end** |
 | `COORDINATOR` | Coordinateur des opérations | Control tower |
 | `CHIEF_OF_TRANSIT` | Chef de transit | Customs authority (validation gate) |

@@ -13,6 +13,8 @@
 import { closureBlockers } from "./closure";
 import { normalizeServices } from "@/lib/process/service-scope";
 import { serviceScopeStored } from "./service-scope-140";
+import { openingFieldsStored } from "./opening-fields-158";
+import { normalizeOpeningText } from "./opening";
 import { invoiceTotals, paidAmount, balanceDue } from "@/lib/finance/calc";
 import { revalidatePath } from "next/cache";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
@@ -123,6 +125,28 @@ function fileFacts(input: FileInput) {
   };
 }
 
+/**
+ * CEO-ALIGNMENT WP1-B1/C — the two opening facts, as columns.
+ *
+ * `undefined` is « not sent » and writes NOTHING (an update leaves the stored
+ * value as it is); an empty string is « cleared » and writes NULL — never ''.
+ * The caller spreads this only when `openingFieldsStored()` says the columns
+ * exist: naming them against schema 157 would fail the whole statement.
+ *
+ * Nothing here touches `customs_record`. The expected regime is a fact of the
+ * DOSSIER; the declared regime stays the Déclarant's governed value (D4).
+ */
+function openingFacts(input: FileInput): Record<string, string | null> {
+  const out: Record<string, string | null> = {};
+  if (input.clientPoReference !== undefined) {
+    out.client_po_reference = normalizeOpeningText(input.clientPoReference);
+  }
+  if (input.customsRegimeDeclared !== undefined) {
+    out.customs_regime_declared = normalizeOpeningText(input.customsRegimeDeclared);
+  }
+  return out;
+}
+
 export async function createFile(input: FileInput): Promise<ActionResult> {
   let admin;
   try {
@@ -140,6 +164,9 @@ export async function createFile(input: FileInput): Promise<ActionResult> {
   // dossier number. `null` means nothing was chosen, which stays unrecorded.
   const chosenServices = normalizeServices(input.services);
   const scopeStored = await serviceScopeStored();
+  // CEO-ALIGNMENT WP1-B1/C — the same N-1 discipline as `services` below.
+  const openingStored = await openingFieldsStored();
+  const opening = openingStored ? openingFacts(input) : {};
 
   const supabase = getAdminSupabaseClient();
 
@@ -189,6 +216,9 @@ export async function createFile(input: FileInput): Promise<ActionResult> {
       // lib/db/types.ts would assert a column production does not have.
       ...((scopeStored && chosenServices ? { services: chosenServices } : {}) as object),
       ...fileFacts(input),
+      // Cast for the same reason as `services`: the generated types describe
+      // the DEPLOYED schema, and these columns are not in it until #158 lands.
+      ...(opening as object),
     })
     .select("id")
     .single();
@@ -218,6 +248,9 @@ export async function createFile(input: FileInput): Promise<ActionResult> {
       // Recorded in the audit whether or not the column exists, so the choice
       // an operator made is traceable even on a schema that could not store it.
       services: chosenServices,
+      // WP1-B1/C — only what was actually stored (the form does not offer
+      // the fields on a schema that cannot hold them).
+      ...opening,
     },
   });
 
@@ -253,6 +286,22 @@ export async function updateFile(id: string, input: FileInput): Promise<ActionRe
     .eq("tenant_id", admin.tenantId)
     .maybeSingle();
 
+  // CEO-ALIGNMENT WP1-B1/C — read the stored opening facts on their OWN narrow
+  // select, and only once #158 is applied: the select above must stay one
+  // literal (typed), and must never name a column production may lack.
+  const openingStored = await openingFieldsStored();
+  const opening = openingStored ? openingFacts(input) : {};
+  let existingOpening: Record<string, unknown> | null = null;
+  if (openingStored) {
+    const { data: o } = await supabase
+      .from("operational_file")
+      .select("client_po_reference, customs_regime_declared" as never)
+      .eq("id", id)
+      .eq("tenant_id", admin.tenantId)
+      .maybeSingle();
+    existingOpening = (o as Record<string, unknown> | null) ?? null;
+  }
+
   // A dossier may never be its own parent; the database also proves it, but
   // refusing here keeps the message specific.
   if (input.parentFileId && input.parentFileId === id) return { ok: false, error: "invalid_parent" };
@@ -268,6 +317,7 @@ export async function updateFile(id: string, input: FileInput): Promise<ActionRe
       client_id: input.clientId,
       priority: input.priority ?? "normal",
       ...fileFacts(input),
+      ...(opening as object),
     })
     .eq("id", id)
     .eq("tenant_id", admin.tenantId);
@@ -291,6 +341,7 @@ export async function updateFile(id: string, input: FileInput): Promise<ActionRe
     client_id: input.clientId,
     priority: input.priority ?? "normal",
     ...fileFacts(input),
+    ...opening,
   };
   const nextShipment = shipmentRow(admin.tenantId, id, input.shipment) as Record<string, unknown>;
   const before: Record<string, unknown> = {};
@@ -305,7 +356,7 @@ export async function updateFile(id: string, input: FileInput): Promise<ActionRe
       after[`${prefix}${k}`] = now;
     }
   };
-  diff(existing as Record<string, unknown>, nextFile, "");
+  diff({ ...(existing as Record<string, unknown>), ...(existingOpening ?? {}) }, nextFile, "");
   diff((existingShipment as Record<string, unknown> | null) ?? null, nextShipment, "shipment.");
 
   await writeAudit({

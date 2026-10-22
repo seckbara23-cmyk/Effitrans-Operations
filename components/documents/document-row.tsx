@@ -9,6 +9,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { t } from "@/lib/i18n";
 import { RejectControl } from "./reject-control";
+import { ExpiryControl } from "./expiry-control";
 import {
   verifyDocument,
   createDocumentDownloadUrl,
@@ -38,11 +39,20 @@ export function DocumentRow({
   canApprove,
   canDelete,
   canEmail = false,
+  canUpdateExpiry = false,
+  currentUserId = null,
+  expiryGovernance = false,
 }: {
   doc: DocumentItem;
   canApprove: boolean;
   canDelete: boolean;
   canEmail?: boolean;
+  /** CEO-ALIGNMENT WP1-E — `document:update`: may change / propose an expiry. */
+  canUpdateExpiry?: boolean;
+  /** WP1-E — needed so the proposer is never offered « Confirmer ». */
+  currentUserId?: string | null;
+  /** WP1-E — migration #161 applied (probed on the server). */
+  expiryGovernance?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -158,6 +168,15 @@ export function DocumentRow({
       </div>
 
       {doc.reviewNote && <p className="mt-1 text-xs text-red-600">{doc.reviewNote}</p>}
+      {/* CEO-ALIGNMENT WP1-E (CEO-010) — governed expiry changes. */}
+      {expiryGovernance && currentUserId && (
+        <ExpiryControl
+          doc={doc}
+          canUpdate={canUpdateExpiry}
+          canApprove={canApprove}
+          currentUserId={currentUserId}
+        />
+      )}
       {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
     </div>
   );
