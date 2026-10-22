@@ -96,14 +96,16 @@ Claude Fable 5.1 audited PR #51 at `5ea636d` (CONDITIONAL PASS, no BLOCKER, no H
 
 | Finding | Severity | What changed |
 |---|---|---|
-| F-1 / F-8 / F-13 | MEDIUM / INFO | #161 revokes every privilege on `document_expiry_change` from PUBLIC, `anon`, `authenticated` and `service_role`, grants SELECT back to `authenticated` and `service_role`, adds a statement-level BEFORE TRUNCATE `prevent_mutation()` trigger, and refuses to finish on any other matrix. Same result with or without default privileges. |
+| F-1 / F-8 / F-13 | MEDIUM / INFO | #161 revokes every privilege on `document_expiry_change` from PUBLIC, `anon`, `authenticated` and `service_role`, grants SELECT back to `authenticated` and `service_role`, adds a statement-level BEFORE TRUNCATE `prevent_mutation()` trigger, and refuses to finish on any other matrix. Same result with or without default privileges. Since CI-REPAIR-02 the integrity trigger also refuses a direct INSERT by `anon`, `authenticated` or `service_role` (EFX04), so no API role can write the history even if a later broad GRANT gives the privilege back. |
 | F-3 | LOW | `decide_document_expiry_change` answers `proposal_stale` when the document has left the verified statuses, instead of raising. |
 | F-2 | MEDIUM | The e-mail rendition wraps in linear time (same lines, byte for byte), and bounds header values (2 000 characters) and body lines (1 500); renderer `wp1d-2`. |
 | F-5 | LOW | The inbox names the dossier a message was filed on only to someone who can see that dossier. |
 | F-4 / F-12 | LOW / INFO | Documented above (§7), with regression tests; no behaviour change. |
 | F-7 | LOW | The CI promotion walk starts from production's real baseline, `20261020000001`. |
 
-The verifier for #161 grew from 14 to 18 checks; the RLS suite gained E8–E10.
+The verifier for #161 grew from 14 to 18 checks; the RLS suite gained E8–E10 (E8b: the INSERT guard holds with the grant given back).
+
+**CI-REPAIR-02.** CI run `39860665072` failed the verifier sweep: CI's journey fixture (`supabase/tests/journey_identities.sql`, CI-only) grants `service_role` INSERT/UPDATE/DELETE on every table after the RLS suites, and a verifier check asserted the ABSENCE of those grants. The migration was correct; the check asked a layer later tooling may change (the 2026-09-24 incident's lesson). It is replaced by a structural, grant-independent guarantee (the INSERT guard above) that the verifier asserts instead.
 
 ## 10. UAT
 

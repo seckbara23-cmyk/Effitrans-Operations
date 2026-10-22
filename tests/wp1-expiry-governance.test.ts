@@ -241,6 +241,14 @@ describe("WP1-E — AUDIT-HARDENING-01 (independent audit of PR #51)", () => {
     );
   });
 
+  it("CI-REPAIR-02: no API role inserts into the history whatever its grants (EFX04), before any other check", () => {
+    const c = fnBody("check_document_expiry_change");
+    const guard = c.search(/if current_user in \('anon', 'authenticated', 'service_role'\) then\s+raise exception[^;]*using errcode = 'EFX04';/);
+    expect(guard).toBeGreaterThan(-1);
+    expect(guard).toBeLessThan(c.indexOf("EFX02"));
+    expect(MIG).toMatch(/create trigger trg_document_expiry_change_check\s+before insert on public\.document_expiry_change\s+for each row execute function public\.check_document_expiry_change\(\);/);
+  });
+
   it("the migration refuses to finish on any other privilege matrix", () => {
     expect(MIG).toContain("raise exception 'MIGRATION FAILED: TRUNCATE on the history is not refused';");
     expect(MIG).toContain(
@@ -272,7 +280,10 @@ describe("WP1-E — AUDIT-HARDENING-01 (independent audit of PR #51)", () => {
   it("the verifier asserts each hardening property", () => {
     const v = read("supabase/verifiers/20261021000005_document_expiry_change.verify.sql");
     expect(v).toContain("TRUNCATE on the history is refused by prevent_mutation() (statement level)");
-    expect(v).toContain("no API role can write the history");
+    expect(v).toContain("no API role can INSERT into the history, whatever its grants");
+    // CI-REPAIR-02: a verifier must not assert the ABSENCE of a grant — CI's
+    // journey fixture grants service_role DML on every table after the RLS suites.
+    expect(v.replace(/--[^\n]*/g, "")).not.toMatch(/not has_table_privilege/);
     expect(v).toContain("authenticated and service_role can read the history (SELECT)");
     expect(v).toContain("confirms only onto a document still in the verified tier");
   });

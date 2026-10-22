@@ -26,6 +26,8 @@
 --     E8  service_role READS the history but cannot INSERT, UPDATE, DELETE or
 --         TRUNCATE it (no privilege); an authenticated session cannot
 --         TRUNCATE it; even the owner's TRUNCATE is refused by the trigger;
+--     E8b WHATEVER THE GRANTS: with INSERT granted back to service_role (as
+--         CI's journey fixture does), a direct insert is still refused (EFX04);
 --     E9  a proposal whose document left the verified tier answers
 --         proposal_stale instead of raising; within the tier (EXPIRED) a
 --         confirmation still applies;
@@ -392,6 +394,22 @@ begin
   if v_auth_trunc <> '42501' then v_fail := v_fail || ' E8_authenticated_truncate:' || v_auth_trunc; end if;
   if v_owner_trunc = 'accepted' then v_fail := v_fail || ' E8_owner_truncate:' || v_owner_trunc; end if;
   if v_n <> 3 then v_fail := v_fail || ' E8_history_count:' || v_n; end if;
+
+  -- E8b — the grant is not the only layer. Give service_role INSERT back, as a
+  -- broad GRANT would (rolled back with this transaction), and try again.
+  grant insert on public.document_expiry_change to service_role;
+  perform set_config('role', 'service_role', true);
+  begin
+    insert into public.document_expiry_change (tenant_id, file_id, document_id, kind, old_expiry, new_expiry, reason, actor_id)
+    values (v_tenant, v_file, v_doc1, 'APPLIED', '2027-06-30', '2028-01-01', 'forgé malgré le GRANT', v_ops);
+    v_state := 'accepted';
+  exception when others then
+    get stacked diagnostics v_state = returned_sqlstate;
+  end;
+  perform set_config('role', 'postgres', true);
+  revoke insert on public.document_expiry_change from service_role;
+  insert into _r values ('E8b_insert_with_grant_sqlstate', v_state);
+  if v_state <> 'EFX04' then v_fail := v_fail || ' E8b_guard:' || v_state; end if;
 
   -- E9 — the document leaves the verified tier while a proposal is open.
   v_res := public.record_document_expiry_change(v_doc3, v_tenant, v_ops, '2027-05-31', 'Prolongation annoncée');

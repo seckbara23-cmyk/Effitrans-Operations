@@ -8,11 +8,16 @@
 --      `prevent_mutation()`, the function that protects audit_log. Asserted on
 --      the trigger→function binding, not on a trigger name alone.
 --   2. NO SIDE DOOR. RLS is on, there is exactly one policy and it is SELECT,
---      and no API role — service_role included — holds a write privilege on
---      the table, so the only writers are the definer RPCs. (The migration
---      REVOKES these privileges itself, so asserting their absence is sound
---      here; on a table the platform leaves to default privileges it would
---      not be — see docs/incidents/2026-09-24-parallel-activity-owning-roles.md.)
+--      the readers hold SELECT, and no API role can write the history WHATEVER
+--      ITS GRANTS: the BEFORE INSERT integrity trigger refuses anon,
+--      authenticated and service_role, and (1) refuses UPDATE, DELETE and
+--      TRUNCATE to everyone. The ABSENCE of write privileges is deliberately
+--      NOT asserted: CI's journey fixture (supabase/tests/journey_identities.sql)
+--      grants service_role DML on every table after the RLS suites, and a
+--      grant-absence check turned a correctly migrated database red there
+--      (CI-REPAIR-02) — the lesson of docs/incidents/2026-09-24-parallel-
+--      activity-owning-roles.md. The migration proves the privilege matrix
+--      itself, at apply time.
 --   3. COMPLETE BY CONSTRUCTION. `document` carries a BEFORE UPDATE OF
 --      expiry_date trigger whose function consults the history — so a silent
 --      rewrite of an expiry is refused at the database.
@@ -87,11 +92,12 @@ checks(label, ok) as (
     ('exactly one policy on the history, and it is SELECT', (
       select count(*) = 1 and bool_and(cmd = 'SELECT') from pol
     )),
-    ('no API role can write the history: anon, authenticated and service_role hold no INSERT, UPDATE, DELETE or TRUNCATE', (
-      select bool_and(case when to_regrole(r.role) is null then true
-                           else not has_table_privilege(r.role, (select oid from tbl), p.priv) end)
-        from (values ('anon'), ('authenticated'), ('service_role')) r(role)
-        cross join (values ('INSERT'), ('UPDATE'), ('DELETE'), ('TRUNCATE')) p(priv)
+    ('no API role can INSERT into the history, whatever its grants: the BEFORE INSERT trigger refuses anon, authenticated and service_role', (
+      select count(*) = 1 from trg
+       where tgrelid = (select oid from tbl) and proname = 'check_document_expiry_change'
+         and (tgtype & 1) <> 0 and (tgtype & 2) <> 0 and (tgtype & 4) <> 0
+         and body ~* 'current_user\s+in\s*\(\s*''anon''\s*,\s*''authenticated''\s*,\s*''service_role''\s*\)'
+         and body ~* 'EFX04'
     )),
     ('authenticated and service_role can read the history (SELECT)', (
       select bool_and(case when to_regrole(r.role) is null then true
@@ -166,7 +172,7 @@ select
   case
     when bool_and(coalesce(c.ok, false))
       then 'CEO-ALIGNMENT WP1-E #161 verified: ' || count(*) || '/' || count(*)
-           || ' postconditions hold — append-only history (prevent_mutation on UPDATE, DELETE and TRUNCATE), SELECT-only policy and privileges (no API role can write it), expiry changes governed at the database, service-role definer RPCs re-proving document:update / document:approve, no self-approval, confirmation only onto verified evidence, document status never written'
+           || ' postconditions hold — append-only history (prevent_mutation on UPDATE, DELETE and TRUNCATE), SELECT-only policy, no API role can write it whatever its grants, expiry changes governed at the database, service-role definer RPCs re-proving document:update / document:approve, no self-approval, confirmation only onto verified evidence, document status never written'
     else 'CEO-ALIGNMENT WP1-E #161 FAILED: '
          || string_agg(c.label, '; ') filter (where not coalesce(c.ok, false))
   end as detail

@@ -130,6 +130,18 @@ language plpgsql
 set search_path = public, pg_temp
 as $$
 begin
+  -- No API role writes the history by hand, WHATEVER ITS GRANTS. The definer
+  -- RPCs insert as the table's owner; the anon key, a session or the service
+  -- key inserting directly is refused here. UPDATE, DELETE and TRUNCATE are
+  -- already refused for everyone by prevent_mutation(), so with this the
+  -- guarantee no longer rests on a REVOKE that a later broad GRANT could undo
+  -- — CI's journey fixture grants service_role DML on every table
+  -- (CI-REPAIR-02). The REVOKE below stays as the first layer.
+  if current_user in ('anon', 'authenticated', 'service_role') then
+    raise exception 'document_expiry_change: written only through record_/decide_document_expiry_change'
+      using errcode = 'EFX04';
+  end if;
+
   if not exists (
     select 1 from public.document d
      where d.id = new.document_id
