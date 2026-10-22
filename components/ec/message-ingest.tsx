@@ -34,13 +34,21 @@ export function MessageIngest({
   dossiers,
 }: {
   messageId: string;
-  alreadyIngested: { id: string; fileId: string } | null;
+  alreadyIngested: { id: string; fileId: string | null } | null;
   dossiers: MessageIngestTarget[];
 }) {
   const [fileId, setFileId] = useState(dossiers[0]?.id ?? "");
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState<{ id: string; fileId: string } | null>(alreadyIngested);
+  const [done, setDone] = useState<{ id: string; fileId: string | null } | null>(alreadyIngested);
+
+  if (done && done.fileId === null) {
+    return (
+      <p className="text-[11px] text-slate-600">
+        Message déjà rattaché comme ordre de transit, à un dossier que vous ne pouvez pas consulter.
+      </p>
+    );
+  }
 
   if (done) {
     return (

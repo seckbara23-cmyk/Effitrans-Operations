@@ -4,18 +4,23 @@
 -- (ok boolean, detail text).
 --
 -- WHAT IT DEFENDS — the four claims WP1-E makes, each as a property:
---   1. APPEND-ONLY. The history refuses UPDATE and DELETE through
+--   1. APPEND-ONLY. The history refuses UPDATE, DELETE and TRUNCATE through
 --      `prevent_mutation()`, the function that protects audit_log. Asserted on
 --      the trigger→function binding, not on a trigger name alone.
 --   2. NO SIDE DOOR. RLS is on, there is exactly one policy and it is SELECT,
---      so the only writers are the definer RPCs.
+--      and no API role — service_role included — holds a write privilege on
+--      the table, so the only writers are the definer RPCs. (The migration
+--      REVOKES these privileges itself, so asserting their absence is sound
+--      here; on a table the platform leaves to default privileges it would
+--      not be — see docs/incidents/2026-09-24-parallel-activity-owning-roles.md.)
 --   3. COMPLETE BY CONSTRUCTION. `document` carries a BEFORE UPDATE OF
 --      expiry_date trigger whose function consults the history — so a silent
 --      rewrite of an expiry is refused at the database.
 --   4. AUTHORITY AND MAKER ≠ CHECKER. Both RPCs are SECURITY DEFINER with a
 --      pinned search_path, are executable by the service role only, re-prove
 --      their actor through assert_actor_authority with the right permission,
---      and the decider refuses its own proposal.
+--      the decider refuses its own proposal, and it confirms only onto a
+--      document that is still verified evidence (a result, not an exception).
 --
 -- Bodies are read with `--` comments stripped (`[^\n]*`, so a comment never
 -- swallows the code after it), because a check that matched a comment would
@@ -66,6 +71,11 @@ checks(label, ok) as (
        where tgrelid = (select oid from tbl) and proname = 'prevent_mutation'
          and (tgtype & 2) <> 0 and (tgtype & 8) <> 0
     )),
+    ('TRUNCATE on the history is refused by prevent_mutation() (statement level)', (
+      select count(*) >= 1 from trg
+       where tgrelid = (select oid from tbl) and proname = 'prevent_mutation'
+         and (tgtype & 2) <> 0 and (tgtype & 32) <> 0 and (tgtype & 1) = 0
+    )),
     ('one decision per proposal is enforced by a partial UNIQUE index', (
       select count(*) = 1
         from pg_index i join pg_class ic on ic.oid = i.indexrelid
@@ -76,6 +86,17 @@ checks(label, ok) as (
     -- ---- 2. no side door -----------------------------------------------------
     ('exactly one policy on the history, and it is SELECT', (
       select count(*) = 1 and bool_and(cmd = 'SELECT') from pol
+    )),
+    ('no API role can write the history: anon, authenticated and service_role hold no INSERT, UPDATE, DELETE or TRUNCATE', (
+      select bool_and(case when to_regrole(r.role) is null then true
+                           else not has_table_privilege(r.role, (select oid from tbl), p.priv) end)
+        from (values ('anon'), ('authenticated'), ('service_role')) r(role)
+        cross join (values ('INSERT'), ('UPDATE'), ('DELETE'), ('TRUNCATE')) p(priv)
+    )),
+    ('authenticated and service_role can read the history (SELECT)', (
+      select bool_and(case when to_regrole(r.role) is null then true
+                           else has_table_privilege(r.role, (select oid from tbl), 'SELECT') end)
+        from (values ('authenticated'), ('service_role')) r(role)
     )),
     -- ---- 3. complete by construction ---------------------------------------
     ('document has a BEFORE UPDATE OF expiry_date trigger that consults the history', (
@@ -130,6 +151,11 @@ checks(label, ok) as (
          and body ~* 'v_prop\.actor_id\s*=\s*p_actor'
          and body ~* 'self_approval_forbidden'
     )),
+    ('decide_… confirms only onto a document still in the verified tier, answering proposal_stale otherwise', (
+      select count(*) = 1 from fn
+       where proname = 'decide_document_expiry_change'
+         and body ~* 'v_doc\.status\s+not\s+in\s*\(\s*''VERIFIED''\s*,\s*''APPROVED''\s*,\s*''CONSUMED_AS_EVIDENCE''\s*,\s*''EXPIRED''\s*\)\s*then\s+return\s+''proposal_stale'''
+    )),
     ('neither RPC writes document.status', (
       select count(*) = 0 from fn
        where body ~* 'set\s+[^;]*\ystatus\y\s*='
@@ -140,7 +166,7 @@ select
   case
     when bool_and(coalesce(c.ok, false))
       then 'CEO-ALIGNMENT WP1-E #161 verified: ' || count(*) || '/' || count(*)
-           || ' postconditions hold — append-only history (prevent_mutation), SELECT-only access, expiry changes governed at the database, service-role definer RPCs re-proving document:update / document:approve, no self-approval, document status never written'
+           || ' postconditions hold — append-only history (prevent_mutation on UPDATE, DELETE and TRUNCATE), SELECT-only policy and privileges (no API role can write it), expiry changes governed at the database, service-role definer RPCs re-proving document:update / document:approve, no self-approval, confirmation only onto verified evidence, document status never written'
     else 'CEO-ALIGNMENT WP1-E #161 FAILED: '
          || string_agg(c.label, '; ') filter (where not coalesce(c.ok, false))
   end as detail

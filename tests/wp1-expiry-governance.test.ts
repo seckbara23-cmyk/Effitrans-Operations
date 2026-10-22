@@ -223,3 +223,57 @@ describe("WP1-E — the action boundary", () => {
     expect(ui).toMatch(/\{mayDecide && \(/);
   });
 });
+
+describe("WP1-E — AUDIT-HARDENING-01 (independent audit of PR #51)", () => {
+  it("F-1/F-8: the history is SELECT-only for every API role — explicitly, whatever the default privileges", () => {
+    expect(MIG).toContain("revoke all on public.document_expiry_change from public, anon, authenticated, service_role;");
+    expect(MIG).toContain("grant select on public.document_expiry_change to authenticated, service_role;");
+    // The grant must follow the revoke, or the revoke would take it back.
+    expect(MIG.indexOf("grant select on public.document_expiry_change")).toBeGreaterThan(
+      MIG.indexOf("revoke all on public.document_expiry_change"),
+    );
+    expect(MIG).not.toMatch(/grant\s+(all|insert|update|delete|truncate)[^;]*\bon\s+(table\s+)?public\.document_expiry_change\b/i);
+  });
+
+  it("F-1/F-13: TRUNCATE is refused at statement level by the same prevent_mutation()", () => {
+    expect(MIG).toMatch(
+      /create trigger trg_document_expiry_change_no_truncate\s+before truncate on public\.document_expiry_change\s+for each statement execute function public\.prevent_mutation\(\);/,
+    );
+  });
+
+  it("the migration refuses to finish on any other privilege matrix", () => {
+    expect(MIG).toContain("raise exception 'MIGRATION FAILED: TRUNCATE on the history is not refused';");
+    expect(MIG).toContain(
+      "raise exception 'MIGRATION FAILED: the history must be readable by authenticated and service_role and writable by no API role';",
+    );
+  });
+
+  it("F-3: confirming onto a document that left the verified tier is a result code, decided before any write", () => {
+    const d = fnBody("decide_document_expiry_change");
+    const guard = d.search(
+      /if v_doc\.status not in \('VERIFIED', 'APPROVED', 'CONSUMED_AS_EVIDENCE', 'EXPIRED'\) then\s+return 'proposal_stale';/,
+    );
+    expect(guard).toBeGreaterThan(-1);
+    expect(guard).toBeLessThan(d.indexOf("'CONFIRMED', p_proposal"));
+    // The REJECT path is decided earlier, so a stale proposal can still be closed.
+    expect(d.indexOf("return 'rejected';")).toBeLessThan(guard);
+    // The database's verified tier is exactly the application's PROPOSAL tier.
+    for (const s of ["VERIFIED", "APPROVED", "CONSUMED_AS_EVIDENCE", "EXPIRED"]) expect(expiryTierFor(s)).toBe("PROPOSAL");
+    expect(EXPIRY_MESSAGES_FR.proposal_stale).toMatch(/vérification du document/);
+  });
+
+  it("F-4: the proposer cannot withdraw — a self-REJECT is refused like a self-CONFIRM, and the limit is documented", () => {
+    const d = fnBody("decide_document_expiry_change");
+    expect(d.indexOf("self_approval_forbidden")).toBeGreaterThan(-1);
+    expect(d.indexOf("self_approval_forbidden")).toBeLessThan(d.indexOf("if p_decision = 'REJECTED' then"));
+    expect(read("docs/releases/WP1/release-manifest.md")).toMatch(/cannot withdraw/);
+  });
+
+  it("the verifier asserts each hardening property", () => {
+    const v = read("supabase/verifiers/20261021000005_document_expiry_change.verify.sql");
+    expect(v).toContain("TRUNCATE on the history is refused by prevent_mutation() (statement level)");
+    expect(v).toContain("no API role can write the history");
+    expect(v).toContain("authenticated and service_role can read the history (SELECT)");
+    expect(v).toContain("confirms only onto a document still in the verified tier");
+  });
+});

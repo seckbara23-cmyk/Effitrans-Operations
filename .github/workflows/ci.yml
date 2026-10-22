@@ -1426,7 +1426,7 @@ jobs:
       # it leaves behind.
       - name: Promotion walk — the real migrations, from the real baseline (§14)
         run: |
-          node scripts/migration-promotion-walk.mjs             --db-url "postgresql://postgres:postgres@127.0.0.1:54322/postgres"             --baseline 20260930000001
+          node scripts/migration-promotion-walk.mjs             --db-url "postgresql://postgres:postgres@127.0.0.1:54322/postgres"             --baseline 20261020000001
 
       - name: Stop local Supabase
         if: always()

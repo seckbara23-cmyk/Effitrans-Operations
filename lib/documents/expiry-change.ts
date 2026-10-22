@@ -96,7 +96,8 @@ export const EXPIRY_MESSAGES_FR: Readonly<Record<string, string>> = {
   proposal_pending: "Une proposition d'échéance attend déjà une décision sur ce document.",
   self_approval_forbidden: "Vous ne pouvez pas confirmer votre propre proposition.",
   already_decided: "Cette proposition a déjà été traitée.",
-  proposal_stale: "L'échéance a changé depuis la proposition : elle ne peut plus être confirmée.",
+  proposal_stale:
+    "Cette proposition ne peut plus être confirmée : l'échéance ou la vérification du document a changé depuis. Refusez-la pour la clore.",
   invalid_decision: "Décision invalide.",
   generic: "La modification n'a pas pu être enregistrée.",
 };

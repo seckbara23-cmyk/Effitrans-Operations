@@ -27,9 +27,17 @@
  */
 import { PdfDoc, textWidth, type RGB } from "@/lib/reports/pdf";
 
-export const MESSAGE_RENDERER_VERSION = "wp1d-1";
+export const MESSAGE_RENDERER_VERSION = "wp1d-2";
 /** Characters of body text rendered; beyond this the page says so. */
 export const MAX_BODY_CHARS = 20_000;
+/**
+ * Wrapped lines of body text rendered (about 27 A4 pages). 20 000 characters
+ * of ordinary prose wrap to a few hundred lines; only a pathological body (a
+ * character per line) reaches this, and the page then says it was cut.
+ */
+export const MAX_BODY_LINES = 1_500;
+/** Characters of any one header value (sender, recipients, subject, attachments). */
+export const MAX_FIELD_CHARS = 2_000;
 
 export type MessageRenderInput = {
   fileNumber: string | null;
@@ -121,31 +129,62 @@ export function bodyFor(input: Pick<MessageRenderInput, "textBody" | "htmlBody">
   return { text: raw.text.slice(0, MAX_BODY_CHARS), source: raw.source, truncated: true };
 }
 
-/** Greedy word wrap to a width in points, breaking over-long words. */
+/**
+ * A string's advance in thousandths of an em — the integer `textWidth` sums
+ * before scaling. Widths are additive per character, so a prefix's width is a
+ * running sum and never needs re-measuring.
+ */
+function advance(s: string): number {
+  return Math.round(textWidth(s, 1000));
+}
+
+/**
+ * Greedy word wrap to a width in points, breaking over-long words. LINEAR in
+ * the line's length: each word is measured once and a token wider than the
+ * line is hard-broken in a single pass. The previous version re-measured the
+ * remainder after every one-character step — cubic, 42 s of CPU for one
+ * 20 000-character token (AUDIT-HARDENING-01, F-2). Same lines out, byte for
+ * byte: the comparison below is textWidth's own arithmetic on the same sums.
+ */
 export function wrapLine(line: string, maxWidth: number, size: number): string[] {
   if (line === "") return [""];
+  const fits = (units: number) => (units / 1000) * size <= maxWidth;
   const out: string[] = [];
   let current = "";
+  let currentUnits = 0;
   for (const word of line.split(/(\s+)/)) {
     if (word === "") continue;
-    const candidate = current + word;
-    if (textWidth(candidate, size) <= maxWidth) {
-      current = candidate;
+    const wordUnits = advance(word);
+    if (fits(currentUnits + wordUnits)) {
+      current += word;
+      currentUnits += wordUnits;
       continue;
     }
     if (current.trim() !== "") out.push(current.trimEnd());
-    // A single token wider than the line (a URL, a hash) is hard-broken.
-    let rest = word.trimStart();
-    while (textWidth(rest, size) > maxWidth && rest.length > 1) {
-      let cut = rest.length;
-      while (cut > 1 && textWidth(rest.slice(0, cut), size) > maxWidth) cut--;
-      out.push(rest.slice(0, cut));
-      rest = rest.slice(cut);
+    // A single token wider than the line (a URL, a hash) is hard-broken: each
+    // piece takes as many characters as fit, and at least one.
+    const rest = word.trimStart();
+    let start = 0;
+    let units = 0;
+    for (let i = 0; i < rest.length; i++) {
+      const u = advance(rest[i]);
+      if (i > start && !fits(units + u)) {
+        out.push(rest.slice(start, i));
+        start = i;
+        units = 0;
+      }
+      units += u;
     }
-    current = rest;
+    current = rest.slice(start);
+    currentUnits = units;
   }
   if (current.trim() !== "" || out.length === 0) out.push(current.trimEnd());
   return out;
+}
+
+/** A header value, bounded: the page says when it was cut. */
+export function capField(value: string): string {
+  return value.length <= MAX_FIELD_CHARS ? value : `${value.slice(0, MAX_FIELD_CHARS)} … [tronqué]`;
 }
 
 /** UTC, minute precision, never locale- or clock-dependent. */
@@ -180,16 +219,22 @@ export function renderInstructionMessage(input: MessageRenderInput): Uint8Array 
       y = M;
     }
   };
-  const para = (s: string, size: number, color: RGB, bold = false, lead = 1.35) => {
+  // `budget` bounds the lines one paragraph may print; it reports whether it
+  // ran out, so the caller can say so on the page.
+  const para = (s: string, size: number, color: RGB, bold = false, lead = 1.35, budget = Infinity): boolean => {
+    let left = budget;
     for (const raw of s.split("\n")) {
       for (const line of wrapLine(raw, width, size)) {
+        if (left <= 0) return true;
+        left--;
         ensure(size * lead);
         doc.text(M, y, line, { size, color, bold });
         y += size * lead;
       }
     }
+    return false;
   };
-  const field = (label: string, value: string) => para(`${label} : ${value}`, 9, INK);
+  const field = (label: string, value: string) => para(`${label} : ${capField(value)}`, 9, INK);
 
   doc.text(M, y, "EFFITRANS — INSTRUCTION CLIENT (MESSAGE CAPTURÉ)", { size: 13, bold: true, color: NAVY });
   y += 20;
@@ -226,11 +271,11 @@ export function renderInstructionMessage(input: MessageRenderInput): Uint8Array 
       para("Texte extrait de la version HTML du message (aucun contenu distant n'a été chargé).", 8, GREY);
       y += 4;
     }
-    para(body.text, 10, INK);
-    if (body.truncated) {
+    const cutByLines = para(body.text, 10, INK, false, 1.35, MAX_BODY_LINES);
+    if (body.truncated || cutByLines) {
       y += 6;
       para(
-        `[Texte tronqué à ${MAX_BODY_CHARS} caractères. Le message original complet reste conservé dans la capture ; son empreinte figure ci-dessus.]`,
+        `[Texte tronqué (au plus ${MAX_BODY_CHARS} caractères et ${MAX_BODY_LINES} lignes). Le message original complet reste conservé dans la capture ; son empreinte figure ci-dessus.]`,
         8, GREY,
       );
     }

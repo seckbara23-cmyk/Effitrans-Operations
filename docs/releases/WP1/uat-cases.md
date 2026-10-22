@@ -31,5 +31,7 @@ Evidence per case (SOP v2.0 §6 sheet): UTC timestamp · dossier · actor and ro
 | UAT-WP1-16 | CEO-010 | Chef de Transit, then Responsable Opérations | Propose again; the second approver presses « Refuser » without a reason | Refused: « Indiquez le motif de la modification. »; with a reason → « Proposition d'échéance refusée. » | exact texts |
 | UAT-WP1-17 | CEO-006 | Pickup Agent | Open the document list | No « Modifier l'échéance » (no `document:update`) | screenshot |
 | UAT-WP1-18 | CEO-002 | Any | Evidence sheet | Every row carries date AND time (UTC) | sheet |
+| UAT-WP1-19 | CEO-010 | Chef de Transit, then Responsable Opérations | Propose a new date on a VERIFIED document; have the document re-reviewed and rejected; then press « Confirmer » | « Cette proposition ne peut plus être confirmée… »; the date does not move; « Refuser » with a reason closes the proposal | exact text + history |
+| UAT-WP1-20 | CEO-010 | Chef de Transit (the proposer) | Look for a way to withdraw your own open proposal | None is offered; the proposal stays until another approver decides (documented limitation, release manifest §7) | screenshot |
 
 Sign-off per seat: Business Development Manager, Account Manager, Déclarant, Chef de Transit, Administrateur. GO (synthetic) / NO-GO (real) scoping per `docs/releases/smoke-tests-and-uat.md`.

@@ -22,6 +22,15 @@
 --     E7  an authenticated session can READ the history only with
 --         document:read on a visible dossier, cannot INSERT into it, and
 --         cannot EXECUTE either RPC directly.
+--   AUDIT-HARDENING-01 (independent audit of PR #51):
+--     E8  service_role READS the history but cannot INSERT, UPDATE, DELETE or
+--         TRUNCATE it (no privilege); an authenticated session cannot
+--         TRUNCATE it; even the owner's TRUNCATE is refused by the trigger;
+--     E9  a proposal whose document left the verified tier answers
+--         proposal_stale instead of raising; within the tier (EXPIRED) a
+--         confirmation still applies;
+--     E10 the proposer cannot withdraw their own proposal either (no
+--         self-REJECT); another approver closes a stale one.
 -- Expected: the final DO block raises on any mismatch; otherwise the result
 -- table is printed and the transaction rolled back.
 
@@ -71,7 +80,12 @@ insert into public.document (id, tenant_id, file_id, type_code, status, storage_
   ('00000000-0000-0000-0000-0000000ed001', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000ef001',
    'CERTIFICATE_OF_ORIGIN', 'UPLOADED', 't/wp1/d001.pdf', '2026-12-31'),
   ('00000000-0000-0000-0000-0000000ed002', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000ef001',
-   'CERTIFICATE_OF_ORIGIN', 'VERIFIED', 't/wp1/d002.pdf', '2026-12-31')
+   'CERTIFICATE_OF_ORIGIN', 'VERIFIED', 't/wp1/d002.pdf', '2026-12-31'),
+  -- doc3 / doc4 VERIFIED, for the transitions out of (and within) the tier.
+  ('00000000-0000-0000-0000-0000000ed003', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000ef001',
+   'CERTIFICATE_OF_ORIGIN', 'VERIFIED', 't/wp1/d003.pdf', '2026-12-31'),
+  ('00000000-0000-0000-0000-0000000ed004', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000ef001',
+   'CERTIFICATE_OF_ORIGIN', 'VERIFIED', 't/wp1/d004.pdf', '2026-12-31')
 on conflict (id) do nothing;
 
 create temp table _r (check_name text, value text) on commit drop;
@@ -86,6 +100,15 @@ declare
   v_file     uuid := '00000000-0000-0000-0000-0000000ef001';
   v_doc1     uuid := '00000000-0000-0000-0000-0000000ed001';
   v_doc2     uuid := '00000000-0000-0000-0000-0000000ed002';
+  v_doc3     uuid := '00000000-0000-0000-0000-0000000ed003';
+  v_doc4     uuid := '00000000-0000-0000-0000-0000000ed004';
+  v_prop3    uuid;
+  v_prop4    uuid;
+  v_sr_reads int;
+  v_sr       text := '';
+  v_auth_trunc  text;
+  v_owner_trunc text;
+  v_msg      text;
   v_state    text;
   v_res      text;
   v_prop     uuid;
@@ -271,6 +294,139 @@ begin
 
   perform set_config('role', 'postgres', true);
   insert into _r values ('E7_reader_sees', v_reader::text), ('E7_no_document_read_sees', v_noread::text);
+
+  -- ================================================ AUDIT-HARDENING-01 ===
+  -- E8 — the history's privileges. service_role bypasses RLS, so only the
+  -- missing PRIVILEGE stands between the service key and a forged or emptied
+  -- history. Each refusal must be 42501 ON THE HISTORY ITSELF: a 42501 about
+  -- another table (the integrity trigger reads `document`) means the statement
+  -- got past the history's privilege check, and counts as reached. Results are
+  -- held in variables (the temp result table belongs to postgres).
+  perform set_config('request.jwt.claims', '', true);
+  perform set_config('role', 'service_role', true);
+  select count(*) into v_sr_reads from public.document_expiry_change where document_id in (v_doc1, v_doc2);
+  begin
+    insert into public.document_expiry_change (tenant_id, file_id, document_id, kind, old_expiry, new_expiry, reason, actor_id)
+    values (v_tenant, v_file, v_doc1, 'APPLIED', '2027-06-30', '2028-01-01', 'forgé avec la clé de service', v_ops);
+    v_sr := v_sr || ' insert';
+  exception
+    when insufficient_privilege then
+      get stacked diagnostics v_msg = message_text;
+      if v_msg not like '%document_expiry_change%' then
+        v_sr := v_sr || ' insert(reached:' || v_msg || ')';
+      end if;
+    when others then
+      get stacked diagnostics v_state = returned_sqlstate;
+      v_sr := v_sr || ' insert(reached:' || v_state || ')';
+  end;
+  begin
+    update public.document_expiry_change set reason = 'réécrit' where document_id = v_doc1;
+    v_sr := v_sr || ' update';
+  exception
+    when insufficient_privilege then
+      get stacked diagnostics v_msg = message_text;
+      if v_msg not like '%document_expiry_change%' then
+        v_sr := v_sr || ' update(reached:' || v_msg || ')';
+      end if;
+    when others then
+      get stacked diagnostics v_state = returned_sqlstate;
+      v_sr := v_sr || ' update(reached:' || v_state || ')';
+  end;
+  begin
+    delete from public.document_expiry_change where document_id = v_doc1;
+    v_sr := v_sr || ' delete';
+  exception
+    when insufficient_privilege then
+      get stacked diagnostics v_msg = message_text;
+      if v_msg not like '%document_expiry_change%' then
+        v_sr := v_sr || ' delete(reached:' || v_msg || ')';
+      end if;
+    when others then
+      get stacked diagnostics v_state = returned_sqlstate;
+      v_sr := v_sr || ' delete(reached:' || v_state || ')';
+  end;
+  begin
+    truncate public.document_expiry_change;
+    v_sr := v_sr || ' truncate';
+  exception
+    when insufficient_privilege then
+      get stacked diagnostics v_msg = message_text;
+      if v_msg not like '%document_expiry_change%' then
+        v_sr := v_sr || ' truncate(reached:' || v_msg || ')';
+      end if;
+    when others then
+      get stacked diagnostics v_state = returned_sqlstate;
+      v_sr := v_sr || ' truncate(reached:' || v_state || ')';
+  end;
+
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_ops::text, 'role', 'authenticated')::text, true);
+  begin
+    truncate public.document_expiry_change;
+    v_auth_trunc := 'accepted';
+  exception when others then
+    get stacked diagnostics v_auth_trunc = returned_sqlstate;
+  end;
+
+  perform set_config('role', 'postgres', true);
+  perform set_config('request.jwt.claims', '', true);
+  -- The owner holds every privilege; the statement trigger still refuses
+  -- (P0001). Where this session is not the owner and holds no TRUNCATE, the
+  -- refusal is 42501 instead — still a refusal; the verifier asserts the trigger.
+  begin
+    truncate public.document_expiry_change;
+    v_owner_trunc := 'accepted';
+  exception when others then
+    get stacked diagnostics v_owner_trunc = returned_sqlstate;
+  end;
+  select count(*) into v_n from public.document_expiry_change where document_id in (v_doc1, v_doc2);
+  insert into _r values
+    ('E8_service_role_reads', v_sr_reads::text),
+    ('E8_service_role_writes', case when v_sr = '' then 'all refused (42501)' else 'ACCEPTED:' || v_sr end),
+    ('E8_authenticated_truncate_sqlstate', v_auth_trunc),
+    ('E8_owner_truncate_sqlstate', v_owner_trunc),
+    ('E8_history_intact', v_n::text);
+  if v_sr_reads <> 3 then v_fail := v_fail || ' E8_service_role_reads:' || v_sr_reads; end if;
+  if v_sr <> '' then v_fail := v_fail || ' E8_service_role_wrote:' || v_sr; end if;
+  if v_auth_trunc <> '42501' then v_fail := v_fail || ' E8_authenticated_truncate:' || v_auth_trunc; end if;
+  if v_owner_trunc = 'accepted' then v_fail := v_fail || ' E8_owner_truncate:' || v_owner_trunc; end if;
+  if v_n <> 3 then v_fail := v_fail || ' E8_history_count:' || v_n; end if;
+
+  -- E9 — the document leaves the verified tier while a proposal is open.
+  v_res := public.record_document_expiry_change(v_doc3, v_tenant, v_ops, '2027-05-31', 'Prolongation annoncée');
+  if v_res <> 'proposed' then v_fail := v_fail || ' E9_propose:' || v_res; end if;
+  select id into v_prop3 from public.document_expiry_change where document_id = v_doc3 and kind = 'PROPOSED';
+  update public.document set status = 'REJECTED' where id = v_doc3;  -- re-reviewed meanwhile
+  v_res := public.decide_document_expiry_change(v_prop3, v_tenant, v_chief, 'CONFIRMED', null);
+  insert into _r values ('E9_confirm_after_leaving_tier', v_res);
+  if v_res <> 'proposal_stale' then v_fail := v_fail || ' E9_stale:' || v_res; end if;
+  select expiry_date into v_date from public.document where id = v_doc3;
+  if v_date <> '2026-12-31' then v_fail := v_fail || ' E9_date_moved'; end if;
+  select count(*) into v_n from public.document_expiry_change where proposal_id = v_prop3;
+  if v_n <> 0 then v_fail := v_fail || ' E9_decision_recorded:' || v_n; end if;
+
+  -- E10 — no withdrawal by the proposer: a self-REJECT is refused as well…
+  v_res := public.decide_document_expiry_change(v_prop3, v_tenant, v_ops, 'REJECTED', 'je retire ma proposition');
+  insert into _r values ('E10_self_withdraw', v_res);
+  if v_res <> 'self_approval_forbidden' then v_fail := v_fail || ' E10_self_withdraw:' || v_res; end if;
+  -- …so another approver closes the stale proposal.
+  v_res := public.decide_document_expiry_change(v_prop3, v_tenant, v_chief, 'REJECTED', 'Document rejeté entre-temps');
+  insert into _r values ('E10_other_approver_closes', v_res);
+  if v_res <> 'rejected' then v_fail := v_fail || ' E10_close:' || v_res; end if;
+
+  -- E9b — within the tier: EXPIRED is still verified evidence.
+  v_res := public.record_document_expiry_change(v_doc4, v_tenant, v_ops, '2027-08-31', 'Renouvellement reçu');
+  if v_res <> 'proposed' then v_fail := v_fail || ' E9b_propose:' || v_res; end if;
+  select id into v_prop4 from public.document_expiry_change where document_id = v_doc4 and kind = 'PROPOSED';
+  update public.document set status = 'EXPIRED' where id = v_doc4;
+  v_res := public.decide_document_expiry_change(v_prop4, v_tenant, v_chief, 'CONFIRMED', null);
+  insert into _r values ('E9b_confirm_within_tier', v_res);
+  if v_res <> 'confirmed' then v_fail := v_fail || ' E9b_confirm:' || v_res; end if;
+  select expiry_date, status into v_date, v_status from public.document where id = v_doc4;
+  if v_date <> '2027-08-31' or v_status <> 'EXPIRED' then
+    v_fail := v_fail || ' E9b_state:' || coalesce(v_date::text, 'null') || '/' || v_status;
+  end if;
 
   if v_fail <> '' then
     raise exception 'RLS WP1 OPENING FAIL:%', v_fail;

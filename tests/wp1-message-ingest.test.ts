@@ -12,7 +12,10 @@ import { fileURLToPath } from "node:url";
 import { describe, it, expect } from "vitest";
 import {
   MAX_BODY_CHARS,
+  MAX_BODY_LINES,
+  MAX_FIELD_CHARS,
   bodyFor,
+  capField,
   htmlToText,
   normalizeText,
   renderInstructionMessage,
@@ -21,6 +24,7 @@ import {
   type MessageRenderInput,
 } from "@/lib/ec/ingest/message-render";
 import { documentDoctrine } from "@/lib/documents/doctrine";
+import { textWidth } from "@/lib/reports/pdf";
 import { AuditActions } from "@/lib/audit/events";
 import { validateAuditEvent } from "@/lib/audit/validate";
 
@@ -189,5 +193,110 @@ describe("WP1-D — the ingestion boundary", () => {
     const page = code("app/mail/inbox/[id]/page.tsx");
     expect(page).toContain("const canFileMessage = canIngest && (await messageFilingAvailable());");
     expect(page).toContain("{canFileMessage ? (");
+  });
+});
+
+describe("WP1-D — AUDIT-HARDENING-01: bounded, linear rendering (F-2) and no dossier disclosure (F-5)", () => {
+  // The wp1d-1 implementation, verbatim. The linear one must produce the same lines.
+  function wrapLineReference(line: string, maxWidth: number, size: number): string[] {
+    if (line === "") return [""];
+    const out: string[] = [];
+    let current = "";
+    for (const word of line.split(/(\s+)/)) {
+      if (word === "") continue;
+      const candidate = current + word;
+      if (textWidth(candidate, size) <= maxWidth) {
+        current = candidate;
+        continue;
+      }
+      if (current.trim() !== "") out.push(current.trimEnd());
+      let rest = word.trimStart();
+      while (textWidth(rest, size) > maxWidth && rest.length > 1) {
+        let cut = rest.length;
+        while (cut > 1 && textWidth(rest.slice(0, cut), size) > maxWidth) cut--;
+        out.push(rest.slice(0, cut));
+        rest = rest.slice(cut);
+      }
+      current = rest;
+    }
+    if (current.trim() !== "" || out.length === 0) out.push(current.trimEnd());
+    return out;
+  }
+  const pages = (b: Uint8Array) => Number(/\/Type \/Pages \/Kids \[[^\]]*\] \/Count (\d+)/.exec(latin1(b))?.[1]);
+
+  it("wraps exactly as the previous version did, on seeded random lines", () => {
+    let seed = 0x5eed;
+    const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+    const alphabet = ["a", "b", "i", "l", "W", "M", "@", "é", "€", " ", "  ", " ", "‮", "🙂", "-", "/", "日"];
+    for (let n = 0; n < 200; n++) {
+      const words: string[] = [];
+      const count = 1 + Math.floor(rnd() * 25);
+      for (let w = 0; w < count; w++) {
+        const len = rnd() < 0.15 ? 30 + Math.floor(rnd() * 60) : 1 + Math.floor(rnd() * 12);
+        let word = "";
+        for (let k = 0; k < len; k++) word += alphabet[Math.floor(rnd() * alphabet.length)];
+        words.push(word);
+      }
+      const line = words.join(rnd() < 0.5 ? " " : "");
+      for (const [width, size] of [[60, 10], [200, 9], [499.28, 10], [499.28, 7.5], [30, 13]] as const) {
+        expect(wrapLine(line, width, size)).toEqual(wrapLineReference(line, width, size));
+      }
+    }
+  });
+
+  it("hard-breaks a 20 000-character token in linear time, every piece within the line", () => {
+    const token = "A".repeat(MAX_BODY_CHARS);
+    const t0 = performance.now();
+    const lines = wrapLine(token, 499.28, 10);
+    expect(performance.now() - t0).toBeLessThan(1000); // the cubic version took ~40 s
+    expect(lines.join("")).toBe(token);
+    for (const l of lines) expect(textWidth(l, 10)).toBeLessThanOrEqual(499.28);
+    const t1 = performance.now();
+    wrapLine("x".repeat(1_000_000), 499.28, 10);
+    expect(performance.now() - t1).toBeLessThan(2000);
+  });
+
+  it("bounds the PDF whatever the message: pathological bodies and hostile header values", () => {
+    const lines = renderInstructionMessage(input({ textBody: "a\n\n".repeat(7_000) }));
+    expect(latin1(lines)).toContain("Texte tronqu");
+    expect(pages(lines)).toBeLessThanOrEqual(Math.ceil(MAX_BODY_LINES / 50) + 2);
+    const subject = renderInstructionMessage(input({ subject: "S".repeat(1_000_000) }));
+    expect(pages(subject)).toBe(1);
+    expect(latin1(subject)).toContain("[tronqu");
+    const recipients = renderInstructionMessage(input({ to: Array.from({ length: 10_000 }, (_, i) => `u${i}@x.example`) }));
+    expect(pages(recipients)).toBe(1);
+    expect(capField("x".repeat(MAX_FIELD_CHARS))).toBe("x".repeat(MAX_FIELD_CHARS));
+    expect(capField("x".repeat(MAX_FIELD_CHARS + 1))).toBe(`${"x".repeat(MAX_FIELD_CHARS)} … [tronqué]`);
+  });
+
+  it("renders URLs, base64-like strings, non-Latin text and bidi controls deterministically, as visible marks", () => {
+    const b64 = Array.from({ length: MAX_BODY_CHARS }, (_, i) =>
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"[(i * 7919) % 64]).join("");
+    for (const body of [
+      b64,
+      "https://x.example/" + "a/b?c=d&e=".repeat(2_000),
+      "Payez ‮ecnerefer‬ 🙂 ".repeat(800),
+      "日本語のテキスト ".repeat(500),
+    ]) {
+      const a = renderInstructionMessage(input({ textBody: body }));
+      const b = renderInstructionMessage(input({ textBody: body }));
+      expect(Buffer.compare(Buffer.from(a), Buffer.from(b))).toBe(0);
+    }
+    // A direction override cannot reorder the evidence: it prints as a visible mark.
+    const pdf = latin1(renderInstructionMessage(input({ textBody: "Payez ‮ecnerefer‬ ici" })));
+    expect(pdf).toContain("Payez ?ecnerefer? ici");
+  });
+
+  it("F-5: the inbox lookup names the dossier only to someone who can see it", () => {
+    const actions = code("lib/ec/ingest/message-actions.ts");
+    const fn = actions.slice(
+      actions.indexOf("export async function lookupIngestedMessage"),
+      actions.indexOf("export async function messageFilingAvailable"),
+    );
+    expect(fn).toContain("isFileVisible(user.id, user.tenantId, filed.fileId)");
+    expect(fn).toContain("fileId: visible ? filed.fileId : null");
+    expect(fn).not.toMatch(/return findIngestedMessageDocument\(/);
+    const ui = code("components/ec/message-ingest.tsx");
+    expect(ui).toContain("done.fileId === null");
   });
 });

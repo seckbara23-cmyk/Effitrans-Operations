@@ -26,7 +26,7 @@
 | 158 | `20261021000002` | `file_client_po_and_regime` | db-query | no | 6 checks |
 | 159 | `20261021000003` | `document_type_ordre_de_transit` | db-query | 1 catalogue row (`document_type`, global) | 4 checks |
 | 160 | `20261021000004` | `document_source_message` | db-query | no | 6 checks |
-| 161 | `20261021000005` | `document_expiry_change` | db-query | no (table, triggers, 2 RPCs) | 14 checks |
+| 161 | `20261021000005` | `document_expiry_change` | db-query | no (table, triggers, 2 RPCs) | 18 checks |
 
 All additive. No backfill. No historical dossier, step execution, document status or audit row is read-and-rewritten. `build-info.ts` pins `LATEST_MIGRATION = 20261021000005_document_expiry_change`, `MIGRATION_COUNT = 161`.
 
@@ -41,10 +41,11 @@ All additive. No backfill. No historical dossier, step execution, document statu
 | `npm run lint:migrations` | OK |
 | `tsc --noEmit` | 0 errors |
 | `next build` (no secrets, as CI) | success; only warning pre-dates WP1 (supabase-js in Edge middleware) |
-| Unit suite (Windows) | 10 459 tests: 10 449 passed, 1 skipped, **9 failed = exactly the base commit's 9 (Windows-only CRLF debt, same 7 files)** |
-| New WP1 suites | 60 / 60 |
-| Focused regression (40 coupled suites) | 1 229 / 1 229 |
-| Disposable-DB rehearsal (PGlite, PostgreSQL in WASM) | 161/161 migrations from empty · seed OK · **24/24 verifiers** · existing `rls_document_test` PASS (harness control) · `rls_wp1_opening_test` PASS · WP1 migrations re-apply idempotently · **7/7 negative controls caught** |
+| Unit suite (Windows) | 10 470 tests: 10 460 passed, 1 skipped, **9 failed = exactly the base commit's 9 (Windows-only CRLF debt, same 7 files)** |
+| New WP1 suites | 71 / 71 |
+| Focused regression (40 coupled suites, before the audit) | 1 229 / 1 229 |
+| Disposable-DB rehearsal (PGlite, PostgreSQL in WASM), in TWO privilege shapes — hosted defaults and none | 161/161 migrations from empty · seed OK · **24/24 verifiers** · existing `rls_document_test` PASS (harness control) · `rls_wp1_opening_test` PASS (E1–E10) · WP1 migrations re-apply idempotently · **14/14 negative controls caught** · schema states 156→161 walked one migration at a time |
+| CI on GitHub (`5ea636d`, before the audit hardening) | run 39688713565 green: build 12/12, rls-tests 134/134 incl. the promotion walk — the hardening commit needs its own run |
 
 Rehearsal adaptation, declared: PGlite 0.2.17 has no pgcrypto loader, so the single `create extension if not exists pgcrypto` (foundation migration) was neutralised; no migration or seed calls a pgcrypto function.
 
@@ -60,7 +61,8 @@ Rehearsal adaptation, declared: PGlite 0.2.17 has no pgcrypto loader, so the sin
 ## 6. Production smoke tests (read-only)
 
 - Ledger = 161; each of the five verifiers returns `ok = true` against production.
-- `role` row `QUOTATION_MANAGER` reads « Business Development Manager »; its code unchanged.
+- **Before run 157**, read the `QUOTATION_MANAGER` row's `label_fr` / `label_en` and record them; **after**, read again: « Business Development Manager », code unchanged. (Verifier 157 cannot tell on a seeded database, where the seed already writes the new label — on production the before/after read is the proof.)
+- **After run 161**, read the privilege matrix: `document_expiry_change` grants SELECT to `authenticated` and `service_role` and nothing else to any API role (`has_table_privilege` false for INSERT/UPDATE/DELETE/TRUNCATE for `anon`, `authenticated`, `service_role`); both RPCs EXECUTE for `service_role` only; trigger `trg_document_expiry_change_no_truncate` present.
 - `document_type` has `ORDRE_DE_TRANSIT` (active, `required_for = {}`, no validity).
 - `document_expiry_change` exists, RLS on, one SELECT policy; both RPCs not executable by `authenticated`.
 - An existing dossier page renders (200) with « PO client — » and « Régime douanier prévu — » in its identification block; the customs panel renders.
@@ -72,6 +74,10 @@ Rehearsal adaptation, declared: PGlite 0.2.17 has no pgcrypto loader, so the sin
 2. **The PO is not enforced.** Deliberately (DEC-CEO-02 / DEC-CEO-19). PR-2 must first make the department queue read the leniency classifier — today `lib/process/queues/service.ts` marks a step `blocked` on ANY missing evidence, which would have made even a non-blocking PO read « Pièces manquantes ».
 3. **Client portal visibility.** `operational_file`'s portal SELECT policy is row-level, so a customer user can read the PO and the expected regime of THEIR OWN dossiers. Both are the customer's own information; stated, not hidden.
 4. **No validity durations** are defined (DEC-CEO-04/05 pending with the Chef de Transit).
+5. **A proposer cannot withdraw their own expiry proposal.** Maker ≠ checker applies to refusing as well as confirming, so only another `document:approve` holder can close it; while it is open, every other expiry change on that document answers « proposition en attente ». With a single available approver the document's date stays as it is until someone else decides. Letting the proposer withdraw is a business decision, not taken here (independent audit F-4).
+6. **A proposal can go stale.** If the document leaves the verified statuses (re-reviewed, rejected) or its date changes before the decision, « Confirmer » answers « Cette proposition ne peut plus être confirmée… » and changes nothing; the approver refuses it to close it (F-3).
+7. **The history stays readable after a document is soft-deleted**, to the readers of its dossier: it is evidence of decisions taken, and it remains (F-12).
+8. **What the database cannot stop is its own owner.** No API role — `service_role` included — can write, update, delete or truncate the history; a direct SQL session as the table's owner (`postgres`) still could, exactly as for `audit_log` (F-1).
 
 ## 8. Rollback and recovery
 
@@ -84,6 +90,21 @@ Rehearsal adaptation, declared: PGlite 0.2.17 has no pgcrypto loader, so the sin
 
 A failed governed run leaves its migration unrecorded and the runner refuses to continue — report and stop.
 
-## 9. UAT
+## 9. Independent audit and its remediation
+
+Claude Fable 5.1 audited PR #51 at `5ea636d` (CONDITIONAL PASS, no BLOCKER, no HIGH). AUDIT-HARDENING-01 then changed, in this release candidate:
+
+| Finding | Severity | What changed |
+|---|---|---|
+| F-1 / F-8 / F-13 | MEDIUM / INFO | #161 revokes every privilege on `document_expiry_change` from PUBLIC, `anon`, `authenticated` and `service_role`, grants SELECT back to `authenticated` and `service_role`, adds a statement-level BEFORE TRUNCATE `prevent_mutation()` trigger, and refuses to finish on any other matrix. Same result with or without default privileges. |
+| F-3 | LOW | `decide_document_expiry_change` answers `proposal_stale` when the document has left the verified statuses, instead of raising. |
+| F-2 | MEDIUM | The e-mail rendition wraps in linear time (same lines, byte for byte), and bounds header values (2 000 characters) and body lines (1 500); renderer `wp1d-2`. |
+| F-5 | LOW | The inbox names the dossier a message was filed on only to someone who can see that dossier. |
+| F-4 / F-12 | LOW / INFO | Documented above (§7), with regression tests; no behaviour change. |
+| F-7 | LOW | The CI promotion walk starts from production's real baseline, `20261020000001`. |
+
+The verifier for #161 grew from 14 to 18 checks; the RLS suite gained E8–E10.
+
+## 10. UAT
 
 See `uat-cases.md`. **Transactional UAT is blocked until DEC-CEO-18** (UAT environment) is decided: Preview writes production; production records need explicit authorisation and the isolation/cleanup plan in that file.

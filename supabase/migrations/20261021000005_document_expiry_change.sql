@@ -24,8 +24,10 @@
 --        PROPOSED   a requested change to a VERIFIED document (changes nothing)
 --        CONFIRMED  an independent approver applied a proposal
 --        REJECTED   an independent approver refused a proposal
---      UPDATE and DELETE are refused by the foundation's `prevent_mutation()`,
---      the same function that makes `audit_log` append-only.
+--      UPDATE, DELETE and TRUNCATE are refused by the foundation's
+--      `prevent_mutation()`, the function that makes `audit_log` append-only,
+--      and no API role — service_role included — holds a write privilege on
+--      it: SELECT is all anyone but the owner can do (AUDIT-HARDENING-01).
 --   2. `record_document_expiry_change` / `decide_document_expiry_change` — the
 --      only writers. SECURITY DEFINER, executable by the service role only,
 --      and each re-proves its actor through `assert_actor_authority` (SERVICE
@@ -35,8 +37,11 @@
 --      the history COMPLETE BY CONSTRUCTION rather than by convention: an
 --      UPDATE that moves `expiry_date` is refused unless, in the SAME
 --      transaction, a history row records exactly that move — and on a
---      verified document only a CONFIRMED row qualifies. A silent rewrite of
---      approved evidence becomes impossible, whoever holds the service key.
+--      verified document only a CONFIRMED row qualifies. Since only the two
+--      RPCs can write that row, the service key cannot rewrite approved
+--      evidence silently either. What stays outside this control is the
+--      table's OWNER — direct SQL as `postgres` — exactly as for audit_log:
+--      a database cannot defend itself against its own owner.
 --
 -- WHAT IT DOES NOT DO.
 --   * No validity durations, no new document types, no `has_validity` change:
@@ -111,6 +116,13 @@ create trigger trg_document_expiry_change_no_delete
   before delete on public.document_expiry_change
   for each row execute function public.prevent_mutation();
 
+-- …and TRUNCATE, which neither RLS nor a row trigger ever sees. A TRUNCATE
+-- trigger exists only at statement level (AUDIT-HARDENING-01, F-1).
+drop trigger if exists trg_document_expiry_change_no_truncate on public.document_expiry_change;
+create trigger trg_document_expiry_change_no_truncate
+  before truncate on public.document_expiry_change
+  for each statement execute function public.prevent_mutation();
+
 -- Integrity: the row's tenant and dossier are the document's, never a caller's.
 create or replace function public.check_document_expiry_change()
 returns trigger
@@ -162,7 +174,16 @@ create policy document_expiry_change_select on public.document_expiry_change
     and public.can_read_file(file_id)
   );
 
-grant select on public.document_expiry_change to authenticated;
+-- Privileges: SELECT for the two roles that read it, and nothing else. On a
+-- hosted project the default privileges hand anon, authenticated AND
+-- service_role every privilege on a new table; RLS refuses a session's
+-- INSERT/UPDATE/DELETE but not its TRUNCATE, and service_role bypasses RLS
+-- altogether — left in place, the service key could forge a CONFIRMED row or
+-- empty the table. The definer RPCs write as the table's owner and need none
+-- of them. Stated both ways so the result is the same with or without default
+-- privileges (AUDIT-HARDENING-01, F-1/F-8/F-13).
+revoke all on public.document_expiry_change from public, anon, authenticated, service_role;
+grant select on public.document_expiry_change to authenticated, service_role;
 
 -- ---------------------------------------------------------------------------
 -- 3. The governing control on `document`.
@@ -362,6 +383,14 @@ begin
   end if;
   -- The date the proposal was made against must still be the date on file.
   if v_doc.expiry_date is distinct from v_prop.old_expiry then return 'proposal_stale'; end if;
+  -- …and the document must still be verified evidence. A proposal made on a
+  -- verified document cannot be confirmed onto one that has since left that
+  -- tier (re-reviewed, rejected): the governing trigger would refuse the
+  -- CONFIRMED move. Said as a result, not raised (AUDIT-HARDENING-01, F-3);
+  -- another approver can still refuse the proposal to close it.
+  if v_doc.status not in ('VERIFIED', 'APPROVED', 'CONSUMED_AS_EVIDENCE', 'EXPIRED') then
+    return 'proposal_stale';
+  end if;
 
   insert into public.document_expiry_change
     (tenant_id, file_id, document_id, kind, proposal_id, old_expiry, new_expiry, reason, actor_id)
@@ -432,6 +461,31 @@ begin
             or (to_regrole('anon')          is not null and has_function_privilege('anon', p.oid, 'EXECUTE')))
   ) then
     raise exception 'MIGRATION FAILED: the expiry RPCs must be executable by service_role only';
+  end if;
+
+  if not exists (
+    select 1 from pg_trigger
+     where tgrelid = 'public.document_expiry_change'::regclass
+       and tgname = 'trg_document_expiry_change_no_truncate'
+  ) then
+    raise exception 'MIGRATION FAILED: TRUNCATE on the history is not refused';
+  end if;
+
+  -- The history's own matrix: readable by authenticated and service_role,
+  -- writable by no API role (AUDIT-HARDENING-01).
+  if exists (
+    select 1
+      from (values ('anon'), ('authenticated'), ('service_role')) r(role)
+      cross join (values ('INSERT'), ('UPDATE'), ('DELETE'), ('TRUNCATE')) p(priv)
+     where to_regrole(r.role) is not null
+       and has_table_privilege(r.role, 'public.document_expiry_change', p.priv)
+  ) or exists (
+    select 1
+      from (values ('authenticated'), ('service_role')) r(role)
+     where to_regrole(r.role) is not null
+       and not has_table_privilege(r.role, 'public.document_expiry_change', 'SELECT')
+  ) then
+    raise exception 'MIGRATION FAILED: the history must be readable by authenticated and service_role and writable by no API role';
   end if;
 
   raise notice 'WP1-E document expiry governance installed';

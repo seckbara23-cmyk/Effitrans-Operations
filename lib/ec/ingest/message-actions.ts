@@ -106,15 +106,22 @@ export async function ingestMessageToDossier(input: {
   return { ok: true, documentId: outcome.documentId };
 }
 
-/** Whether a message has already been filed — for rendering, not control. */
+/**
+ * Whether a message has already been filed — for rendering, not control. The
+ * dossier it was filed on is named only to someone who can see that dossier;
+ * anyone else learns that it was filed, not where (AUDIT-HARDENING-01, F-5).
+ */
 export async function lookupIngestedMessage(
   messageId: string,
-): Promise<{ id: string; fileId: string } | null> {
+): Promise<{ id: string; fileId: string | null } | null> {
   const user = await requireUser();
   const permissions = await getEffectivePermissions(user.id);
   if (!hasPermission(permissions, "communication:inbound:read")) return null;
   if (!(await messageProvenanceStored())) return null;
-  return findIngestedMessageDocument(user.tenantId, messageId);
+  const filed = await findIngestedMessageDocument(user.tenantId, messageId);
+  if (!filed) return null;
+  const visible = await isFileVisible(user.id, user.tenantId, filed.fileId);
+  return { id: filed.id, fileId: visible ? filed.fileId : null };
 }
 
 /** Can the platform file messages at all (migration #160 applied)? */
