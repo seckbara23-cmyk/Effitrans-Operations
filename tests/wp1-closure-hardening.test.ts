@@ -240,6 +240,49 @@ describe("N-1 — the inbound e-mail reduction is linear and bounded", () => {
     expect(htmlToText("<p>vu</p><script>reste visible")).toBe("vu\nreste visible");
   });
 
+  it("at the source cap: the unread rest is searched too, not only the seam", () => {
+    // the closing tag lies far past the cut — outside the 32-character seam —
+    // so only the search of the rest can find it (re-review: this branch was
+    // untested, and a mutant that skipped it passed)
+    const far = "<p>vu</p><script>" + "s".repeat(MAX_SOURCE_CHARS) + "t".repeat(5_000) + "</script><p>après</p>";
+    expect(bodyFor({ textBody: null, htmlBody: far }).text).toBe("vu");
+    const farStyle = "<p>vu</p><STYLE>" + "s".repeat(MAX_SOURCE_CHARS) + "t".repeat(5_000) + "</Style ><p>après</p>";
+    expect(bodyFor({ textBody: null, htmlBody: farStyle }).text).toBe("vu");
+    // a closing tag of ANOTHER element in the rest does not count
+    const other = "<p>vu</p><script>" + "texte ".repeat(MAX_SOURCE_CHARS / 6 + 10) + "</style>";
+    expect(bodyFor({ textBody: null, htmlBody: other }).text.startsWith("vu\ntexte texte")).toBe(true);
+  });
+
+  it("reads end tags as the HTML tokenizer does: `</style x>` closes, `</stylex>` and NBSP do not", () => {
+    // `</style x>` closes the element in every browser, so the prose after it
+    // is visible mail; the old rule `</name\s*>` hid it up to the next `</style>`
+    expect(htmlToText("<style>.a{}</style x><p>Instruction : payer 5000</p><style>b{}</style>fin")).toBe(
+      "Instruction : payer 5000\nfin",
+    );
+    expect(htmlToText("<script>a()</script/><p>visible</p>")).toBe("visible");
+    expect(htmlToText("<script>a()</script\t\n>visible")).toBe("visible");
+    // not end tags of the element: the content runs on to the real one
+    expect(htmlToText("<style>a</stylex>b</style>c")).toBe("c");
+    expect(htmlToText("<style>a</style >b</style>c")).toBe("c");
+  });
+
+  it("at the source cap: a comment closed past the cut goes; one never closed stays as text", () => {
+    const far = "<p>vu</p><!--" + "s".repeat(MAX_SOURCE_CHARS) + "-->" + "<p>après</p>";
+    expect(bodyFor({ textBody: null, htmlBody: far }).text).toBe("vu");
+    const split = "<p>vu</p><!--" + "x".repeat(MAX_SOURCE_CHARS - 13 - 1) + "-->" + "<p>après</p>";
+    expect(split.slice(0, MAX_SOURCE_CHARS).endsWith("-")).toBe(true);
+    expect(bodyFor({ textBody: null, htmlBody: split }).text).toBe("vu");
+    const never = "<p>vu</p><!-- " + "texte ".repeat(MAX_SOURCE_CHARS / 6 + 10);
+    expect(bodyFor({ textBody: null, htmlBody: never }).text.startsWith("vu\n<!-- texte texte")).toBe(true);
+    // a comment that ran to the cut must not let the raw-text rule read a seam
+    // that is no longer at the cut: "</sc" (before the comment) + "ript>" (after
+    // the cut) is not a closing tag in the message — the old reducer, on the
+    // whole body, kept "a()</sc" too
+    const both = "<p>vu</p><script>a()</sc" + "<!--" + "z".repeat(MAX_SOURCE_CHARS - 28) + "ript>-->";
+    expect(both.slice(MAX_SOURCE_CHARS)).toBe("ript>-->");
+    expect(bodyFor({ textBody: null, htmlBody: both }).text).toBe("vu\na()</sc");
+  });
+
   it("stays linear when many unclosed openers meet a large unread rest", () => {
     const rep = (u: string, n: number) => u.repeat(Math.ceil(n / u.length)).slice(0, n);
     for (const [name, html] of [

@@ -105,23 +105,41 @@ function decodeEntities(s: string): string {
  * pins the literal `<`, the ASCII-only case folding and the cap's edge.
  */
 export function htmlToText(html: string, beyondCut = ""): string {
-  return normalizeText(decodeEntities(reduceTags(stripRawTextElements(stripComments(html), beyondCut))));
+  const uncommented = stripComments(html, beyondCut);
+  // A comment that ran to the cut took the end of the text with it: what is
+  // left no longer ends AT the cut, so the raw-text rule must not read a seam.
+  const rest = uncommented.ranToCut ? "" : beyondCut;
+  return normalizeText(decodeEntities(reduceTags(stripRawTextElements(uncommented.text, rest))));
 }
 
-/** `<!-- … -->` removed; an unclosed comment stays as text, as before. */
-function stripComments(s: string): string {
+/**
+ * `<!-- … -->` removed. A comment that never closes stays as text, as before —
+ * unless the source was cut and its `-->` lies past the cut (or is split by
+ * it): then it runs to the cut and goes, as it did on the whole body.
+ */
+function stripComments(s: string, beyondCut: string): { text: string; ranToCut: boolean } {
   const out: string[] = [];
   let i = 0;
+  let ranToCut = false;
   for (;;) {
     const open = s.indexOf("<!--", i);
     if (open < 0) break;
     const close = s.indexOf("-->", open + 4);
-    if (close < 0) break; // no comment ends after here, so none can be removed
+    if (close < 0) {
+      // no comment ends in what was read, so none further can be removed here
+      const seam = s.slice(Math.max(open + 4, s.length - 2)) + beyondCut.slice(0, 2);
+      if (beyondCut !== "" && (seam.includes("-->") || beyondCut.includes("-->"))) {
+        out.push(s.slice(i, open));
+        i = s.length;
+        ranToCut = true;
+      }
+      break;
+    }
     out.push(s.slice(i, open));
     i = close + 3;
   }
   out.push(s.slice(i));
-  return out.join("");
+  return { text: out.join(""), ranToCut };
 }
 
 const RAW_TEXT_OPENER = /<(script|style|head|noscript|template)\b/gi;
@@ -140,7 +158,7 @@ function asciiLower(s: string): string {
 
 /**
  * script/style/head/noscript/template removed WITH their content, up to the
- * first `</name>` (whitespace allowed before `>`). An element that never closes
+ * end tag that closes them (closingTagEnd). An element that never closes
  * loses only its opening tag, as before — UNLESS the source was cut
  * (MAX_SOURCE_CHARS) and the element's closing tag lies beyond the cut
  * (`beyondCut` is the unread rest): then it runs to the cut and is removed,
@@ -179,13 +197,15 @@ function stripRawTextElements(s: string, beyondCut: string): string {
   return out.join("");
 }
 
+/** Whitespace as the HTML tokenizer defines it — not JS `\s`, which also takes NBSP. */
+const HTML_SPACE = /[\t\n\f\r ]/;
+
 /**
  * Does the element opened at `at` close past the cut? Two bounded questions:
  * a closing tag SPLIT by the cut (the last 32 characters read + the first 32
  * unread), and one anywhere in the unread rest — searched once per element
  * name and remembered, so many unclosed openers never rescan it. Each search is
- * linear: `<\/name\s*>` backtracks only over the whitespace after a `</name`
- * it has already matched.
+ * linear: `<\/name[\t\n\f\r />]` is a fixed-length pattern.
  */
 function closesBeyondCut(
   s: string,
@@ -194,7 +214,7 @@ function closesBeyondCut(
   beyondCut: string,
   closesInRest: Map<string, boolean>,
 ): boolean {
-  const closer = new RegExp("<\\/" + name + "\\s*>", "i");
+  const closer = new RegExp("<\\/" + name + "[\\t\\n\\f\\r />]", "i");
   if (closer.test(s.slice(Math.max(at + 1, s.length - 32)) + beyondCut.slice(0, 32))) return true;
   let inRest = closesInRest.get(name);
   if (inRest === undefined) {
@@ -204,13 +224,25 @@ function closesBeyondCut(
   return inRest;
 }
 
-/** Index just past the first `</name\s*>` at or after `from`, or -1. */
+/**
+ * Index just past the end tag that closes `name`, at or after `from`, or -1 —
+ * read as the HTML tokenizer reads a raw-text element: `</name` followed by
+ * `>`, `/` or HTML whitespace closes it, and the tag ends at the next `>`.
+ * So `</style x>` closes (attributes on an end tag are an error browsers
+ * ignore) and `</stylex>` or `</style` + NBSP does not. The previous rule,
+ * `</name\s*>`, missed the first — letting a sender hide the prose after it
+ * from the rendition while every mail client shows it — and accepted the last.
+ * (Closure security re-review, LOW, pre-existing.)
+ */
 function closingTagEnd(lower: string, name: string, from: number): number {
   const needle = "</" + name;
   for (let at = lower.indexOf(needle, from); at >= 0; at = lower.indexOf(needle, at + 1)) {
-    let k = at + needle.length;
-    while (k < lower.length && /\s/.test(lower[k])) k++; // stops at the next '<' at the latest
-    if (lower[k] === ">") return k + 1;
+    const next = lower.charAt(at + needle.length);
+    if (next === ">") return at + needle.length + 1;
+    if (next === "/" || HTML_SPACE.test(next)) {
+      const gt = lower.indexOf(">", at + needle.length);
+      return gt < 0 ? -1 : gt + 1; // no '>' left: nothing can close it
+    }
   }
   return -1;
 }
