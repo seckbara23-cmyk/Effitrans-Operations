@@ -1,7 +1,7 @@
 # WP1 — Security findings and remediation evidence
 
 **Scope:** every security finding raised against WP1 (CEO-ALIGNMENT, PR #51) and the WP1 closure-hardening pull request, from discovery to its current state.
-**Sources:** the independent audit of PR #51 at `5ea636d` (Claude Fable 5.1: CONDITIONAL PASS, no BLOCKER, no HIGH), the independent re-review at `ddfcd43` (findings N-1, R-1, R-2, I-1 to I-3), the two CI repairs, and the closure-hardening inspection (AL-1, AL-2).
+**Sources:** the independent audit of PR #51 at `5ea636d` (Claude Fable 5.1: CONDITIONAL PASS, no BLOCKER, no HIGH), the independent re-review at `ddfcd43` (findings N-1, R-1, R-2, I-1 to I-3), the two CI repairs, the closure-hardening inspection (AL-1, AL-2), and the independent security review of the first closure commit `a9bec55` (CR-1 to CR-4, §5).
 **Production state when this was written (2026-10-23):** `main` = `2c3acc8` (PR #51), Vercel `dpl_DzSdDCaGUgUqBMpSDmmpPQdTtwwQ`, ledger **161**. The closure items marked *this PR* are **not in production** until that PR is merged and migration #162 goes through its own governed run.
 
 Status vocabulary: **Fixed (production)** = merged and live, verified against production · **Fixed (this PR)** = in the closure pull request, not yet merged or applied · **Documented** = behaviour kept by design and written down · **Accepted** = residual, judged not worth a change, stated · **Open** = needs a decision or a follow-up.
@@ -37,26 +37,33 @@ Status vocabulary: **Fixed (production)** = merged and live, verified against pr
 | I-3 | INFO | Both lookups still return the *document* id to an inbox reader who cannot see the dossier. | **Accepted** | An opaque UUID; the re-review found no route that resolves a document id without dossier visibility. The dossier id is the disclosure that mattered (F-5, R-1). |
 | AL-1 | MEDIUM (latent) | `audit_log` could be emptied by TRUNCATE. | **Fixed (this PR)** — migration #162, **not applied to production** | See §4. |
 | AL-2 | LOW (follow-up) | 20 other append-only tables refuse UPDATE/DELETE through `prevent_mutation()` but have no TRUNCATE guard. | **Open** | See §4.4. |
+| CR-1 | HIGH | The first N-1 fix lower-cased the body with `toLowerCase()` and used the index it found in the original; « İ » (U+0130) lower-cases to two code units, so each one before a `<style>`/`<script>` shifted the cut — real text after it was dropped, or script text surfaced as prose. Introduced by `a9bec55` (never pushed). | **Fixed (this PR)** | ASCII-only case fold that keeps every index; « İ » added to the differential corpus. See §2. |
+| CR-2 | MEDIUM | R-1 was moot on its own page: the triage outcome (`outcomeFileId`) still linked the dossier on the inbox message page and the conversation page, with no visibility check (pre-existing, EC-2). | **Fixed (this PR)** | Both pages apply `isFileVisible` before rendering. See §3. |
+| CR-3 | LOW | When the 500 000-character cut fell inside a well-formed `<script>`/`<style>`, its body was printed as prose. | **Fixed (this PR)** | See §2. |
+| CR-4 | LOW | `docs/migration-policy.md` still listed production at `20260930000001` with #139–#141 pending. | **Fixed (this PR)** | The hand-kept table is replaced by where to read the state. |
 
 ---
 
 ## 2. N-1 — the inbound e-mail reduction is linear and bounded
 
-**What was wrong.** `htmlToText` used three regular expressions (`<(script|style|…)\b[\s\S]*?<\/\1\s*>`, `<!--[\s\S]*?-->`, `<[^>]*>`) and a whitespace normaliser whose trailing-space rule backtracks. On unclosed constructs each is quadratic. Measured on the old code: 64 KB of `<` without `>` took 663 ms; a 64 KB whitespace run in `normalizeText` took 1.2 s, and that path is reached by **plain-text** bodies too. The reduction ran on the whole stored body, and only the result was capped at 20 000 characters.
+**What was wrong.** `htmlToText` used three regular expressions (`<(script|style|…)\b[\s\S]*?<\/\1\s*>`, `<!--[\s\S]*?-->`, `<[^>]*>`) and a whitespace normaliser whose trailing-space rule backtracks. On unclosed constructs each is quadratic. Measured on the old code: unclosed `<` — 1.2 s for 64 KB, 3.0 s for 100 KB; a whitespace run in `normalizeText` — 1.2 s for 64 KB, 2.8 s for 100 KB (the time grows with the square of the size), and that path is reached by **plain-text** bodies too. The reduction ran on the whole stored body, and only the result was capped at 20 000 characters.
 
 **What changed** (`lib/ec/ingest/message-render.ts`, renderer `wp1d-3`).
 - The source is cut to `MAX_SOURCE_CHARS` = 500 000 characters **before** any reduction; the rendition says so in its truncation note.
 - Comments, raw-text elements (`script`, `style`, `head`, `noscript`, `template`) and tags are removed by forward `indexOf` scans: every character is visited a bounded number of times. An unclosed element drops only its opening tag, never the rest of the message.
+- Tag names are matched through an **ASCII-only** case fold, which keeps the string's length — so an index found in the folded copy is the same index in the original (CR-1). HTML matches tag names ASCII-case-insensitively, so this is also the correct fold.
+- At the cut: a raw-text element whose closing tag lies **past** the cut (or is split by it) is removed up to the cut, as the old reducer removed it on the whole body (CR-3). The unread rest is searched at most once per element name, so this stays linear.
 - A `<` that cannot open a tag (`a < b`, `<3`) is kept as text, as a browser does.
 - Trailing whitespace is trimmed per line with `trimEnd()` instead of a backtracking pattern.
 
 **Evidence** (`tests/wp1-closure-hardening.test.ts`, N-1 block).
-- Differential: 3 000 generated well-formed messages produce byte-identical text under the old reducer and the new one (400 in the committed test, seeded).
-- Malformed input: 1 000 messages with stray `<` — every word kept.
-- Hostile shapes at 200 000 characters (unclosed `<`, `<script`, `<!--`, `<br`, `<li`; closing-tag lookalikes; a closing-tag prefix followed by whitespace runs) each finish under 500 ms in the test; measured at ≤ 11 ms on 488 KB locally.
+- Differential (committed, seeded): 400 generated well-formed messages — the corpus now includes « İ », « DİYARBAKIR » and other non-ASCII case pairs — give byte-identical text under the new reducer and a verbatim copy of the old one. Two runs made during development are **not** committed: 3 000 messages (identical, but without « İ » — which is how CR-1 got through) and 1 000 messages with stray `<` (every word kept).
+- « İ » cases pinned explicitly (1, 7, 10, 30, 200 occurrences before a raw-text element), and the cut cases: element closed past the cut → removed; closing tag split by the cut → removed; never closed → its text kept.
+- Hostile shapes at 200 000 characters (unclosed `<`, `<script`, `<!--`, `<br`, `<li`; closing-tag lookalikes; a closing-tag prefix followed by whitespace runs) and three at the cap with a 2–3 MB unread rest each finish under 500 ms in the test; measured locally at ≤ 12 ms.
+- Each fix was checked against its own defect: re-introducing `toLowerCase()`, removing the cut rule, or un-sanitising either page makes the new tests fail.
 - Provenance unchanged: the envelope, the SHA-256 of the original and the renderer version are still written into the rendition; the version string moved to `wp1d-3`, so a rendition says which reducer produced it.
 
-**Residual.** None known for the reducer. The feature stays dark: `communication:inbound:read` is held by no role (RATIFY-EC1-1, DEC-CEO-20 pending).
+**Residual.** In a body under the cap, an element that never closes still shows its content as text — the evidence rule (show rather than hide), where a browser would hide it to the end. The feature stays dark: `communication:inbound:read` is held by no role (RATIFY-EC1-1, DEC-CEO-20 pending).
 
 ## 3. R-1 — the attachment lookup names the dossier only to someone who can see it
 
@@ -65,6 +72,8 @@ Status vocabulary: **Fixed (production)** = merged and live, verified against pr
 **What changed** (`lib/ec/ingest/actions.ts`, `components/ec/attachment-ingest.tsx`). The lookup asks `isFileVisible(user, tenant, fileId)` — the platform's dossier-visibility predicate, the one F-5 gave the message lookup — and returns `fileId: null` when the answer is no. The component then says « Déjà rattachée, à un dossier que vous ne pouvez pas consulter. » with no link. Tenant scoping is unchanged: `findIngestedDocument` reads within the caller's tenant only.
 
 **Evidence** (behavioural, collaborators mocked — `tests/wp1-closure-hardening.test.ts`, R-1 block): visible dossier → `fileId` returned, the predicate having been asked with the caller's own id and tenant; dossier not visible → `fileId: null`; no inbox permission → `null`, and neither the store nor the predicate is called; attachment not filed → `null`. The F-5 message lookup is re-asserted beside it. The authorised filing path itself (`ingestAttachment`) is not touched; its 31 existing tests pass.
+
+**Completed after the independent review (CR-2).** The same inbox message page — and the conversation page — still linked the dossier through the triage outcome (`outcomeFileId`: « Dossier rattaché », « Ouvrir le dossier rattaché »), with no visibility check; that was EC-2 behaviour, not introduced here, but it made R-1 moot on its own page. `app/mail/inbox/[id]/page.tsx` now blanks `outcomeFileId` before anything renders when `isFileVisible` says no, and `app/mail/threads/[messageId]/page.tsx` does the same per message. `tests/wp1-closure-outcome-visibility.test.ts` runs both pages with their collaborators mocked: a reader of the dossier gets the link; anyone else finds the dossier id **nowhere** in the rendered page; an unrouted message asks nothing.
 
 ## 4. AL-1 — `audit_log` refuses TRUNCATE (migration #162)
 
@@ -109,7 +118,15 @@ These tables refuse UPDATE (and most DELETE) through `prevent_mutation()` and ha
 
 ---
 
-## 5. What stays dark, and why
+## 5. Independent security review of the closure commit
+
+An independent reviewer (Claude Fable 5.1, read-only, no production access) reviewed `a9bec55` and tried to break it. Verdicts: N-1 **FAIL** (CR-1), R-1 **CONDITIONAL PASS** (CR-2), AL-1 **PASS**, R-2 **PASS**, docs **CONDITIONAL PASS** (CR-4 and the evidence wording now corrected in §2). Its measurements — the CR-1 reproduction and the lock modes were re-run independently here; the rest is as the reviewer reported it:
+- N-1: 26 hostile shapes at 500 000 characters, worst 44.7 ms, doubling the size doubles the time; bodies of 1 M characters rendered end to end in ≤ 20 ms; both bodies capped.
+- AL-1, on PGlite: lock modes as stated (CREATE OR REPLACE TRIGGER = SHARE ROW EXCLUSIVE, REVOKE = no relation lock, DROP TRIGGER = ACCESS EXCLUSIVE); 15 bypass attempts — refused: the owner's `TRUNCATE audit_log, expense_visa` and `TRUNCATE ONLY … CASCADE`, a SECURITY DEFINER truncate, `service_role` DISABLE/DROP TRIGGER, DROP TABLE, replacing `prevent_mutation()`, `session_replication_role`; `authenticated` TRUNCATE and INHERITS. Accepted only the documented owner paths (DISABLE TRIGGER then TRUNCATE; DROP TABLE CASCADE). No legitimate truncation found; the writers (`lib/audit/log.ts`, three migration INSERTs) are unaffected. Not verifiable off the hosted platform: `postgres`'s exact capabilities under Supabase's `supautils`.
+- R-2: CI's walk for this branch promotes exactly #162; the pin cannot catch a baseline set above production's real maximum — that stays a reviewer's check.
+- Public-repository sweep: no secret, credential or personal data. The pre-#162 TRUNCATE CASCADE weakness and the AL-2 table list are published here; exploiting either needs database credentials.
+
+## 6. What stays dark, and why
 
 | Capability | Gate | Before it can be opened |
 |---|---|---|

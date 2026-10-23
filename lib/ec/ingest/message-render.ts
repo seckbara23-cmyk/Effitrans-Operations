@@ -97,12 +97,15 @@ function decodeEntities(s: string): string {
  * LINEAR in the input (AUDIT-HARDENING N-1). The previous version was seven
  * regular-expression passes; on markup that never closes (`<a<a<a…`,
  * `<script ` repeated, `<!--` repeated) each pass restarted its search at every
- * `<` and scanned to the end — quadratic, 11 s for 100 KB. Here each pass is a
- * single left-to-right scan with `indexOf`, and a search that found nothing is
- * never repeated. On well-formed HTML the result is the same text as before.
+ * `<` and scanned to the end — quadratic, 3 s for 100 KB of unclosed `<`
+ * (measured). Here each pass is a single left-to-right scan with `indexOf`, and
+ * a search that found nothing is never repeated. On well-formed HTML the result
+ * is the same text as before. `beyondCut` is the unread rest of a body cut at
+ * MAX_SOURCE_CHARS (see stripRawTextElements); tests/wp1-closure-hardening.test.ts
+ * pins the literal `<`, the ASCII-only case folding and the cap's edge.
  */
-export function htmlToText(html: string): string {
-  return normalizeText(decodeEntities(reduceTags(stripRawTextElements(stripComments(html)))));
+export function htmlToText(html: string, beyondCut = ""): string {
+  return normalizeText(decodeEntities(reduceTags(stripRawTextElements(stripComments(html), beyondCut))));
 }
 
 /** `<!-- … -->` removed; an unclosed comment stays as text, as before. */
@@ -124,14 +127,31 @@ function stripComments(s: string): string {
 const RAW_TEXT_OPENER = /<(script|style|head|noscript|template)\b/gi;
 
 /**
+ * ASCII letters lower-cased, every other character untouched: the result has
+ * the SAME LENGTH as the input, so an index found in it is an index in the
+ * input. `toLowerCase()` does not have that property — « İ » (U+0130) becomes
+ * two code units — and every « İ » before a `<style>` shifted the cut, eating
+ * real text after it (closure security review, HIGH). Tag names are ASCII and
+ * HTML matches them ASCII-case-insensitively, so this is also the right fold.
+ */
+function asciiLower(s: string): string {
+  return s.replace(/[A-Z]+/g, (run) => run.toLowerCase());
+}
+
+/**
  * script/style/head/noscript/template removed WITH their content, up to the
  * first `</name>` (whitespace allowed before `>`). An element that never closes
- * loses only its opening tag, as before. The input is lower-cased once; an
- * element name found to have no closing tag left is never searched again.
+ * loses only its opening tag, as before — UNLESS the source was cut
+ * (MAX_SOURCE_CHARS) and the element's closing tag lies beyond the cut
+ * (`beyondCut` is the unread rest): then it runs to the cut and is removed,
+ * which is what the reducer did on the whole body before the cap existed.
+ * An element name found to have no closing tag left is never searched again,
+ * and the unread rest is searched at most once per element name.
  */
-function stripRawTextElements(s: string): string {
-  const lower = s.toLowerCase();
+function stripRawTextElements(s: string, beyondCut: string): string {
+  const lower = asciiLower(s);
   const unclosed = new Set<string>();
+  const closesInRest = new Map<string, boolean>();
   const out: string[] = [];
   const opener = new RegExp(RAW_TEXT_OPENER.source, "gi");
   let i = 0;
@@ -145,6 +165,11 @@ function stripRawTextElements(s: string): string {
       continue;
     }
     unclosed.add(name);
+    if (beyondCut !== "" && closesBeyondCut(s, at, name, beyondCut, closesInRest)) {
+      out.push(s.slice(i, at));
+      i = s.length;
+      break;
+    }
     const gt = s.indexOf(">", at);
     if (gt < 0) break; // no '>' after here: nothing further can be a tag
     out.push(s.slice(i, at));
@@ -152,6 +177,31 @@ function stripRawTextElements(s: string): string {
   }
   out.push(s.slice(i));
   return out.join("");
+}
+
+/**
+ * Does the element opened at `at` close past the cut? Two bounded questions:
+ * a closing tag SPLIT by the cut (the last 32 characters read + the first 32
+ * unread), and one anywhere in the unread rest — searched once per element
+ * name and remembered, so many unclosed openers never rescan it. Each search is
+ * linear: `<\/name\s*>` backtracks only over the whitespace after a `</name`
+ * it has already matched.
+ */
+function closesBeyondCut(
+  s: string,
+  at: number,
+  name: string,
+  beyondCut: string,
+  closesInRest: Map<string, boolean>,
+): boolean {
+  const closer = new RegExp("<\\/" + name + "\\s*>", "i");
+  if (closer.test(s.slice(Math.max(at + 1, s.length - 32)) + beyondCut.slice(0, 32))) return true;
+  let inRest = closesInRest.get(name);
+  if (inRest === undefined) {
+    inRest = closer.test(beyondCut);
+    closesInRest.set(name, inRest);
+  }
+  return inRest;
 }
 
 /** Index just past the first `</name\s*>` at or after `from`, or -1. */
@@ -226,12 +276,13 @@ export function bodyFor(input: Pick<MessageRenderInput, "textBody" | "htmlBody">
 } {
   // The stored body is read up to MAX_SOURCE_CHARS; past that, the page says so.
   const cap = (b: string) => (b.length > MAX_SOURCE_CHARS ? b.slice(0, MAX_SOURCE_CHARS) : b);
+  const rest = (b: string) => (b.length > MAX_SOURCE_CHARS ? b.slice(MAX_SOURCE_CHARS) : "");
   const sourceCut =
     (input.textBody && input.textBody.trim() !== "" ? input.textBody : input.htmlBody ?? "").length > MAX_SOURCE_CHARS;
   const raw = input.textBody && input.textBody.trim() !== ""
     ? { text: normalizeText(cap(input.textBody)), source: "text" as const }
     : input.htmlBody && input.htmlBody.trim() !== ""
-      ? { text: htmlToText(cap(input.htmlBody)), source: "html" as const }
+      ? { text: htmlToText(cap(input.htmlBody), rest(input.htmlBody)), source: "html" as const }
       : { text: "", source: "none" as const };
   if (raw.text.length <= MAX_BODY_CHARS) return { ...raw, truncated: sourceCut };
   return { text: raw.text.slice(0, MAX_BODY_CHARS), source: raw.source, truncated: true };

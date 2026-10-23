@@ -343,15 +343,20 @@ names a real repository migration strictly older than the newest one.
 
 ### The pending sequence, as it stands
 
-Production is at `20260930000001` with three approved-in-repository, **not yet
-deployed** migrations. Each needs its own business approval, and they can only
-go in this order:
+This table is not maintained by hand any more — it went stale (it still showed
+production at `20260930000001` long after #141 shipped). Read the state instead:
 
-| # | version | what it carries | due |
-|---|---|---|---|
-| 139 | `20261001000001` | GAINDE declaration reference + Finance tax payment. ⚠ Also swaps a live RPC and changes the step-10/11 receiver projection — it touches the paused operational UAT. | **next** |
-| 140 | `20261002000001` | dossier service scope. Additive and inert: proven to change nothing for an existing IMP dossier. | after 139 |
-| 141 | `20261003000001` | canonical staff professional identity. Additive; unlocks Prénom/Nom/Fonction in Administration → Users. | after 140 |
+* **Production's ledger** — the *Migrate production* workflow's preflight prints
+  it, and `node scripts/migration-integrity.mjs` classifies it (`CLEAN`,
+  `CLEAN_WITH_PENDING`, …).
+* **What is pending** — every repository migration above that maximum, in
+  version order; only the earliest may be applied (*Ordering*, above).
+* **The record of each release** — its manifest under `docs/releases/`
+  (WP1: `docs/releases/WP1/release-manifest.md` §11).
+
+As of 2026-10-23: production at `20261021000005` (#161), nothing pending on
+`main`; `20261023000001` (#162, `audit_log` TRUNCATE guard) is proposed in the
+WP1 closure pull request and needs its own approval and governed run.
 
 ## Failure states
 

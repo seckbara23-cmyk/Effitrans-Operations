@@ -169,7 +169,10 @@ describe("N-1 — the inbound e-mail reduction is linear and bounded", () => {
     const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
     const pick = <T,>(a: readonly T[]) => a[Math.floor(rnd() * a.length)];
     const WORDS = ["Bonjour", "dédouanement", "MSKU1234567", "&amp;", "&eacute;t&eacute;", "&#233;", "&#x20AC;",
-      "&nbsp;", "PO-4500123", "«&nbsp;urgent&nbsp;»", "a &lt; b", "x > y", "  ", "\t", "🙂", "日本"];
+      "&nbsp;", "PO-4500123", "«&nbsp;urgent&nbsp;»", "a &lt; b", "x > y", "  ", "\t", "🙂", "日本",
+      // « İ » lower-cases to TWO code units: the corpus that missed the
+      // index-drift defect had none (closure security review, HIGH)
+      "İstanbul", "DİYARBAKIR", "İİİ", "ǅ", "ẞ"];
     const text = (n: number) => Array.from({ length: n }, () => pick(WORDS)).join(pick([" ", "", "\n"]));
     const el = (depth: number): string => {
       if (depth > 3 || rnd() < 0.3) return text(1 + Math.floor(rnd() * 6));
@@ -197,6 +200,59 @@ describe("N-1 — the inbound e-mail reduction is linear and bounded", () => {
     expect(htmlToText("<div><3 merci</div>")).toBe("<3 merci");
   });
 
+  it("never shifts a cut on a character whose lower case is longer (« İ », U+0130)", () => {
+    expect(htmlToText("İstanbul <style>p{}</style>Bonjour tout le monde")).toBe("İstanbul Bonjour tout le monde");
+    expect(htmlToText("İ".repeat(10) + "<script>x</script><p>Texte</p>")).toBe("İ".repeat(10) + "Texte");
+    // with the drift, the tail of the script body surfaced as prose and « gras » was lost
+    expect(htmlToText("İ".repeat(30) + "<script>a(1)</script><b>gras</b> fin")).toBe("İ".repeat(30) + "gras fin");
+    for (const k of [1, 7, 200]) {
+      const html = "İ".repeat(k) + "<STYLE>.x{}</style>" + "phrase cachée? non: visible";
+      expect(htmlToText(html)).toBe("İ".repeat(k) + "phrase cachée? non: visible");
+      expect(htmlToText(html)).toBe(referenceHtmlToText(html));
+    }
+  });
+
+  it("no code point, in any number, moves a cut: every BMP character before a raw-text element", () => {
+    // The property the HIGH finding broke: the folded copy searched for closing
+    // tags must index the original exactly. Checked end to end, not on a helper.
+    const bad: string[] = [];
+    for (let cp = 0; cp <= 0xffff; cp++) {
+      const c = String.fromCharCode(cp);
+      // mixed markers: no character repeated three times can spell one
+      const out = htmlToText(c.repeat(3) + "<style>Qw7</style><Script>Rv8</SCRIPT>Zy9");
+      if (out.includes("Qw7") || out.includes("Rv8") || !out.endsWith("Zy9")) bad.push(cp.toString(16));
+    }
+    expect(bad).toEqual([]);
+  });
+
+  it("at the source cap: an element closed past the cut is removed, one never closed is kept", () => {
+    // a well-formed script straddling the cut: its body is not prose
+    const straddling = "<p>vu</p><script>" + "s".repeat(MAX_SOURCE_CHARS) + "</script><p>après</p>";
+    expect(bodyFor({ textBody: null, htmlBody: straddling })).toMatchObject({ text: "vu", truncated: true });
+    // the closing tag split by the cut itself
+    const split = "<p>vu</p><script>" + "x".repeat(MAX_SOURCE_CHARS - 22) + "</scr" + "ipt><p>après</p>";
+    expect(split.slice(0, MAX_SOURCE_CHARS).endsWith("</scr")).toBe(true);
+    expect(bodyFor({ textBody: null, htmlBody: split }).text).toBe("vu");
+    // never closed anywhere: the evidence rule keeps the text (only the tag goes)
+    const never = "<p>vu</p><script>" + "texte ".repeat(MAX_SOURCE_CHARS / 6 + 10);
+    expect(bodyFor({ textBody: null, htmlBody: never }).text.startsWith("vu\ntexte texte")).toBe(true);
+    // under the cap nothing changes: an unclosed element loses only its tag
+    expect(htmlToText("<p>vu</p><script>reste visible")).toBe("vu\nreste visible");
+  });
+
+  it("stays linear when many unclosed openers meet a large unread rest", () => {
+    const rep = (u: string, n: number) => u.repeat(Math.ceil(n / u.length)).slice(0, n);
+    for (const [name, html] of [
+      ["'<script ' × cap + 3 MB rest", rep("<script ", MAX_SOURCE_CHARS) + "y".repeat(3_000_000)],
+      ["'<STYLE ' × cap + whitespace rest", rep("<STYLE ", MAX_SOURCE_CHARS) + "</style" + " ".repeat(2_000_000)],
+      ["'İ<style ' × cap", rep("İ<style ", MAX_SOURCE_CHARS) + "</style>"],
+    ] as const) {
+      const t0 = performance.now();
+      bodyFor({ textBody: null, htmlBody: html });
+      expect(performance.now() - t0, name).toBeLessThan(500);
+    }
+  });
+
   it("is linear on every hostile shape, up to the source cap", () => {
     const rep = (u: string, n: number) => u.repeat(Math.ceil(n / u.length)).slice(0, n);
     const N = 200_000;
@@ -212,7 +268,7 @@ describe("N-1 — the inbound e-mail reduction is linear and bounded", () => {
     for (const [name, html] of shapes) {
       const t0 = performance.now();
       htmlToText(html);
-      // the quadratic version took ~11 s for 100 KB of unclosed '<'
+      // the quadratic version took ~3 s for 100 KB of unclosed '<' (measured)
       expect(performance.now() - t0, name).toBeLessThan(500);
     }
     const t1 = performance.now();
