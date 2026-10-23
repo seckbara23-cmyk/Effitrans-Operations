@@ -98,12 +98,20 @@ export async function ingestAttachmentToDossier(input: {
   return { ok: true, documentId: outcome.documentId };
 }
 
-/** Whether an attachment has already been ingested — for rendering, not control. */
+/**
+ * Whether an attachment has already been ingested — for rendering, not control.
+ * The dossier it was filed on is named only to someone who can see that
+ * dossier; anyone else learns that it was filed, not where (AUDIT-HARDENING
+ * R-1 — the same rule as the message lookup, F-5).
+ */
 export async function lookupIngestedDocument(
   attachmentId: string,
-): Promise<{ id: string; fileId: string } | null> {
+): Promise<{ id: string; fileId: string | null } | null> {
   const user = await requireUser();
   const permissions = await getEffectivePermissions(user.id);
   if (!hasPermission(permissions, "communication:inbound:read")) return null;
-  return findIngestedDocument(user.tenantId, attachmentId);
+  const filed = await findIngestedDocument(user.tenantId, attachmentId);
+  if (!filed) return null;
+  const visible = await isFileVisible(user.id, user.tenantId, filed.fileId);
+  return { id: filed.id, fileId: visible ? filed.fileId : null };
 }

@@ -27,9 +27,16 @@
  */
 import { PdfDoc, textWidth, type RGB } from "@/lib/reports/pdf";
 
-export const MESSAGE_RENDERER_VERSION = "wp1d-2";
+export const MESSAGE_RENDERER_VERSION = "wp1d-3";
 /** Characters of body text rendered; beyond this the page says so. */
 export const MAX_BODY_CHARS = 20_000;
+/**
+ * Characters of the stored body (text or HTML) read at all. Everything the
+ * reduction does is linear, so this is defence in depth, not the fix: a
+ * captured body can be up to the 25 MiB webhook limit, and nothing useful for a
+ * 20 000-character rendition lies beyond the first half-million characters.
+ */
+export const MAX_SOURCE_CHARS = 500_000;
 /**
  * Wrapped lines of body text rendered (about 27 A4 pages). 20 000 characters
  * of ordinary prose wrap to a few hundred lines; only a pathological body (a
@@ -86,21 +93,118 @@ function decodeEntities(s: string): string {
  * HTML → plain text, by string operations only. Drops `<script>`, `<style>`,
  * `<head>` and comments WITH their content, turns block boundaries into line
  * breaks, strips every remaining tag, decodes entities.
+ *
+ * LINEAR in the input (AUDIT-HARDENING N-1). The previous version was seven
+ * regular-expression passes; on markup that never closes (`<a<a<a…`,
+ * `<script ` repeated, `<!--` repeated) each pass restarted its search at every
+ * `<` and scanned to the end — quadratic, 11 s for 100 KB. Here each pass is a
+ * single left-to-right scan with `indexOf`, and a search that found nothing is
+ * never repeated. On well-formed HTML the result is the same text as before.
  */
 export function htmlToText(html: string): string {
-  let s = html;
-  s = s.replace(/<!--[\s\S]*?-->/g, "");
-  s = s.replace(/<(script|style|head|noscript|template)\b[\s\S]*?<\/\1\s*>/gi, "");
-  s = s.replace(/<(script|style|head|noscript|template)\b[^>]*\/?>/gi, "");
-  s = s.replace(/<br\s*\/?>/gi, "\n");
-  s = s.replace(/<\/(p|div|li|tr|h[1-6]|blockquote|table|ul|ol)\s*>/gi, "\n");
-  s = s.replace(/<li\b[^>]*>/gi, "• ");
-  s = s.replace(/<[^>]*>/g, "");
-  s = decodeEntities(s);
-  return normalizeText(s);
+  return normalizeText(decodeEntities(reduceTags(stripRawTextElements(stripComments(html)))));
 }
 
-/** Line endings normalised, control characters removed, blank runs collapsed. */
+/** `<!-- … -->` removed; an unclosed comment stays as text, as before. */
+function stripComments(s: string): string {
+  const out: string[] = [];
+  let i = 0;
+  for (;;) {
+    const open = s.indexOf("<!--", i);
+    if (open < 0) break;
+    const close = s.indexOf("-->", open + 4);
+    if (close < 0) break; // no comment ends after here, so none can be removed
+    out.push(s.slice(i, open));
+    i = close + 3;
+  }
+  out.push(s.slice(i));
+  return out.join("");
+}
+
+const RAW_TEXT_OPENER = /<(script|style|head|noscript|template)\b/gi;
+
+/**
+ * script/style/head/noscript/template removed WITH their content, up to the
+ * first `</name>` (whitespace allowed before `>`). An element that never closes
+ * loses only its opening tag, as before. The input is lower-cased once; an
+ * element name found to have no closing tag left is never searched again.
+ */
+function stripRawTextElements(s: string): string {
+  const lower = s.toLowerCase();
+  const unclosed = new Set<string>();
+  const out: string[] = [];
+  const opener = new RegExp(RAW_TEXT_OPENER.source, "gi");
+  let i = 0;
+  for (let m = opener.exec(s); m !== null; m = opener.exec(s)) {
+    const at = m.index;
+    const name = m[1].toLowerCase();
+    const end = unclosed.has(name) ? -1 : closingTagEnd(lower, name, at + 1 + name.length);
+    if (end >= 0) {
+      out.push(s.slice(i, at));
+      i = opener.lastIndex = end;
+      continue;
+    }
+    unclosed.add(name);
+    const gt = s.indexOf(">", at);
+    if (gt < 0) break; // no '>' after here: nothing further can be a tag
+    out.push(s.slice(i, at));
+    i = opener.lastIndex = gt + 1;
+  }
+  out.push(s.slice(i));
+  return out.join("");
+}
+
+/** Index just past the first `</name\s*>` at or after `from`, or -1. */
+function closingTagEnd(lower: string, name: string, from: number): number {
+  const needle = "</" + name;
+  for (let at = lower.indexOf(needle, from); at >= 0; at = lower.indexOf(needle, at + 1)) {
+    let k = at + needle.length;
+    while (k < lower.length && /\s/.test(lower[k])) k++; // stops at the next '<' at the latest
+    if (lower[k] === ">") return k + 1;
+  }
+  return -1;
+}
+
+const BREAK_TAG = /^<br\s*\/?>$/i;
+const BLOCK_END_TAG = /^<\/(p|div|li|tr|h[1-6]|blockquote|table|ul|ol)\s*>$/i;
+const LIST_ITEM_TAG = /^<li\b/i;
+const TAG_START = /[A-Za-z/!?]/;
+
+/**
+ * Every remaining tag, in one pass: a line break, a bullet, or nothing. As in
+ * a browser, `<` opens a tag only when a letter, `/`, `!` or `?` follows it;
+ * otherwise it is text (« a < b », « <3 ») and is kept — the previous version
+ * deleted everything from such a `<` to the next `>`.
+ */
+function reduceTags(s: string): string {
+  const out: string[] = [];
+  let i = 0;
+  let from = 0;
+  for (;;) {
+    const lt = s.indexOf("<", from);
+    if (lt < 0) break;
+    if (!TAG_START.test(s.charAt(lt + 1))) {
+      from = lt + 1;
+      continue;
+    }
+    const gt = s.indexOf(">", lt);
+    if (gt < 0) break; // a '<' that never closes is text, as before
+    out.push(s.slice(i, lt));
+    const tag = s.slice(lt, gt + 1);
+    if (BREAK_TAG.test(tag) || BLOCK_END_TAG.test(tag)) out.push("\n");
+    else if (LIST_ITEM_TAG.test(tag)) out.push("• ");
+    i = from = gt + 1;
+  }
+  out.push(s.slice(i));
+  return out.join("");
+}
+
+/**
+ * Line endings normalised, control characters removed, blank runs collapsed.
+ * Trailing whitespace is cut with `trimEnd()` — the same characters `\s+$`
+ * matched, without the regex restarting at every space of a long run
+ * (quadratic, 1.2 s for 64 KB of spaces — on plain-text bodies too).
+ */
 export function normalizeText(s: string): string {
   return s
     .replace(/\r\n?/g, "\n")
@@ -108,7 +212,7 @@ export function normalizeText(s: string): string {
     // eslint-disable-next-line no-control-regex
     .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "")
     .split("\n")
-    .map((l) => l.replace(/\s+$/g, ""))
+    .map((l) => l.trimEnd())
     .join("\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
@@ -120,12 +224,16 @@ export function bodyFor(input: Pick<MessageRenderInput, "textBody" | "htmlBody">
   source: "text" | "html" | "none";
   truncated: boolean;
 } {
+  // The stored body is read up to MAX_SOURCE_CHARS; past that, the page says so.
+  const cap = (b: string) => (b.length > MAX_SOURCE_CHARS ? b.slice(0, MAX_SOURCE_CHARS) : b);
+  const sourceCut =
+    (input.textBody && input.textBody.trim() !== "" ? input.textBody : input.htmlBody ?? "").length > MAX_SOURCE_CHARS;
   const raw = input.textBody && input.textBody.trim() !== ""
-    ? { text: normalizeText(input.textBody), source: "text" as const }
+    ? { text: normalizeText(cap(input.textBody)), source: "text" as const }
     : input.htmlBody && input.htmlBody.trim() !== ""
-      ? { text: htmlToText(input.htmlBody), source: "html" as const }
+      ? { text: htmlToText(cap(input.htmlBody)), source: "html" as const }
       : { text: "", source: "none" as const };
-  if (raw.text.length <= MAX_BODY_CHARS) return { ...raw, truncated: false };
+  if (raw.text.length <= MAX_BODY_CHARS) return { ...raw, truncated: sourceCut };
   return { text: raw.text.slice(0, MAX_BODY_CHARS), source: raw.source, truncated: true };
 }
 
@@ -275,7 +383,7 @@ export function renderInstructionMessage(input: MessageRenderInput): Uint8Array 
     if (body.truncated || cutByLines) {
       y += 6;
       para(
-        `[Texte tronqué (au plus ${MAX_BODY_CHARS} caractères et ${MAX_BODY_LINES} lignes). Le message original complet reste conservé dans la capture ; son empreinte figure ci-dessus.]`,
+        `[Texte tronqué (au plus ${MAX_BODY_CHARS} caractères et ${MAX_BODY_LINES} lignes, lus dans les ${MAX_SOURCE_CHARS} premiers caractères du message). Le message original complet reste conservé dans la capture ; son empreinte figure ci-dessus.]`,
         8, GREY,
       );
     }

@@ -195,6 +195,36 @@ One row per open blocker. `Proposed` = a documented default is in force; `Open` 
 | DEC-C54 | Architecture | **APP-NAVIGATION-01 — Précédent / Suivant dans l'en-tête applicatif.** Navigation **uniquement** : `router.back()` / `router.forward()`, Alt+← et Alt+→. N'annule aucune action de workflow, ne réinitialise aucun état d'étape, ne resoumet aucun formulaire — le fichier n'a aucun mécanisme par lequel il le pourrait, et un test l'épingle. L'historique est un fil **par onglet** reconnu par URL, donc il se recale quel que soit l'auteur de la navigation (ces boutons, le clavier, ou la barre du navigateur) et n'invente aucune entrée d'historique. | Management | 2026-09-07 | **Approved** | — | components/shell/history-nav.tsx |
 | DEC-C31 | RBAC | **Visa signer grants + concurrency backstop.** `finance:expense:sign` (in the catalog since 11.0B, granted to nobody) goes to exactly the six seats that sign THIS chain — FINANCE_OFFICER (identity-bound Demandeur), CHIEF_OF_TRANSIT, COORDINATOR, TREASURER, DAF, CEO — plus `finance:expense:read` to CHIEF_OF_TRANSIT/COORDINATOR/CEO, who could not otherwise see what they sign. **NOT granted:** CASHIER (execution-only, DEC-C21) · SYSTEM_ADMIN (finance convention — an administrator must never manufacture an approval) · ACCOUNTANT/DGA (they sign the *Bon's* chain; withheld until wired) · nothing for VISA_OPERATIONS (BLK-FIN-2). **Governance:** the DG visa is CEO's first write-class finance capability — the change 11.0A §4 flagged to surface. **Backstop refinement:** the approved unique index `(authorization_id, version_id, step_ordinal)` would have blocked the legitimate correction path (a fresh attempt re-collecting step 1 on the same version); shipped as **`(attempt_id, step_ordinal)`** — same no-double-sign guarantee on the append-only ledger, correction path preserved, and it covers the Bon's chain for free. | Management | 2026-07-26 | **Approved** | DEC-C11, DEC-C12, DEC-C21 | phase-11.0d §2 |
 
+
+### CEO-ALIGNMENT series (programme EFFITRANS-CEO-ALIGNMENT-01; raised 2026-10-21; entered here 2026-10-23)
+
+Source of the wording: the programme's own decision register (`CEO-DECISION-REGISTER.md`, the owner's working copy, not committed to this repository). These rows make the series visible in the tracked register (re-review finding I-2); **where the two disagree, the owner's register governs** and this table is corrected. Status mapping: the programme's *APPROVED* → `Approved` (`Implemented` once merged and verified in production); *OPEN* with a platform recommendation → `Proposed` (the recommendation is the candidate, **not** ratified); *OPEN* with no recommendation → `Open`; *PENDING* → `Proposed`. Nothing below is decided by this entry.
+
+| Decision ID | Category | Decision | Owner | Date | Status | Related Blocker | Documents Impacted |
+|---|---|---|---|---|---|---|---|
+| DEC-CEO-01 | RBAC | « Quotation Manager » is renamed **« Business Development Manager » — label only**; the code `QUOTATION_MANAGER`, its permissions and assignments are kept | CEO / Owner | 2026-10-21 | **Implemented** (migration #157, production 2026-10-23) | — | releases/WP1/release-manifest.md, rbac-matrix.md |
+| DEC-CEO-02 | Workflow | « PO client » = a new `client_po_reference` (option B); optional at creation, **required before step-3 completion for import dossiers**, with an exception policy (DEC-CEO-19) | CEO / Operations | 2026-10-21 | **Approved** — capture and the non-blocking « Information à compléter » are **Implemented** (#158, production 2026-10-23); the **HARD requirement is deferred to WP1 PR-2, not cancelled** | DEC-CEO-19 | releases/WP1/release-manifest.md, SOP v2.0 |
+| DEC-CEO-03 | Workflow | « Régime douanier prévu » at opening is free text by the Account Manager (option A), separate from the governed `customs_record.regime` | Chief of Transit | 2026-10-21 | **Implemented** (#158, production 2026-10-23) | — | releases/WP1/release-manifest.md, SOP v2.0 |
+| DEC-CEO-04 | Documents | What a **sommier** is for the platform (document type, register entity, or out of scope) | Chief of Transit | 2026-10-21 | `Open` — no recommendation until the Chief of Transit gives one example | — | document-catalog.md |
+| DEC-CEO-05 | Documents | Customs expiry-bearing catalogue and validity values (closes DEC-B03 / BLK-3) | Chief of Transit | 2026-10-21 | Proposed — start from `document-catalog.md` §2.3; values are Customs' to give | BLK-3 | document-catalog.md |
+| DEC-CEO-06 | Workflow | Itemised receivability checklist: HARD or SOFT | Chief of Transit | 2026-10-21 | Proposed — SOFT for the pilot, HARD after two months of data | — | state-machine.md |
+| DEC-CEO-07 | Workflow | Finance → Coordination handoff after step 9: implicit, or explicit with reception | Finance douane lead / Owner | 2026-10-21 | Proposed — implicit for the pilot | — | state-machine.md |
+| DEC-CEO-08 | Notifications | Recipients, lead days and channel for expiring / missing document alerts | Chief of Transit / Owner | 2026-10-21 | Proposed — Déclarant + Chief, 30 days default, bell until e-mail is restored | — | requirements.md |
+| DEC-CEO-09 | Documents | One BAE code: keep `BAE`, retire `BON_A_ENLEVER` | Owner | 2026-10-21 | Proposed — keep `BAE` | — | document-catalog.md |
+| DEC-CEO-10 | Notifications | Who is notified when BAD / Pre-Gate / BAE are approved; SOP corrected to say they are in-platform artefacts | Operations / Owner | 2026-10-21 | Proposed — new notification type; correct the SOP | — | SOP v2.0 |
+| DEC-CEO-11 | Workflow | QR payload and sticker content; printing | CEO / Operations | 2026-10-21 | Proposed — opaque token; no client name on the sticker | — | requirements.md |
+| DEC-CEO-12 | Workflow | Delivery with an incomplete QR scan set: block or flag | Operations | 2026-10-21 | Proposed — allow with a mandatory reason, flagged for office review | — | state-machine.md |
+| DEC-CEO-13 | Finance | Billing document rules scope (per file type, or per file type + client + regime; HARD or SOFT) | Finance / Billing lead | 2026-10-21 | Proposed — rules table, SOFT default | — | requirements.md |
+| DEC-CEO-14 | Integration | Corpus publication path while no malware scanner exists | Owner (cost) | 2026-10-21 | Proposed — fund a small scanner worker | — | architecture.md |
+| DEC-CEO-15 | Integration | AI provider and data policy for customs assistance | CEO / Owner | 2026-10-21 | Proposed — minimal payload, written « avis non contraignant » policy, human acceptance required | — | architecture.md |
+| DEC-CEO-16 | Commercial | Client SLA fields for invoicing | Finance / Commercial | 2026-10-21 | Proposed — five fields to start | — | requirements.md |
+| DEC-CEO-17 | Integration | WCO Explanatory Notes licence | Owner / Legal | 2026-10-21 | Proposed — excluded from retrieval until ruled | — | — |
+| DEC-CEO-18 | Hosting | UAT environment for the programme | Owner | 2026-10-21 | Proposed — a separate project; **unresolved**, so transactional UAT stays blocked (Preview uses the production database) | — | releases/WP1/uat-cases.md |
+| DEC-CEO-19 | Workflow | PO client exception policy — who may declare a missing PO and with which categories (the relief that must ship with DEC-CEO-02's HARD rule) | Owner + Operations lead | 2026-10-21 | Proposed — **PENDING**; blocks WP1 PR-2 | DEC-CEO-02 | releases/WP1/release-manifest.md |
+| DEC-CEO-20 | Security | Inbox access for filing a client's instructing e-mail — grant `communication:inbound:read` to a role (revisits RATIFY-EC1-1) | Owner | 2026-10-21 | Proposed — **PENDING**; recommendation: keep closed for now. Code conditions set by the re-review (N-1, R-1) are fixed in the WP1 closure PR and must be merged and deployed before any grant | — | releases/WP1/security-findings.md, rbac-matrix.md |
+
+**Not yet a decision row, recorded so it is not lost:** whether the proposer of an expiry-date change may **withdraw** their own proposal (audit finding F-4). Today only another `document:approve` holder can close it; see `releases/WP1/release-manifest.md` §7.5.
+
 ---
 
 ## D. How to use this register
@@ -217,6 +247,8 @@ One row per open blocker. `Proposed` = a documented default is in force; `Open` 
 | `Open` (intake — pre-lifecycle) | 10 | DEC-B02, B03, B07, B09, B10, B11, B12, B14, B18, B19 |
 
 **Total decisions tracked: 35** (+ 11 intake items awaiting formulation).
+
+> The counts above pre-date the Phase 10.0, Phase 11.0 and CEO-ALIGNMENT series, which carry their status in their own rows.
 
 > **The 4 hard S0 gates live in this register as:** DEC-B01 (BLK-1), DEC-B03 (BLK-3), DEC-B06 (BLK-6), DEC-B09 (BLK-9). When all four reach `Approved`, S0's blocker-dependent work is cleared to start.
 
