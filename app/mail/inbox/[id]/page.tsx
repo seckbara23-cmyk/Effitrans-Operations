@@ -11,6 +11,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui/page-header";
 import { requireUser } from "@/lib/auth/require-user";
+import { isFileVisible } from "@/lib/authz/visibility";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { getUserRoleCodes } from "@/lib/workflow/access/roles";
 import { getTriageDetail } from "@/lib/ec/triage/service";
@@ -35,8 +36,15 @@ export default async function TriageDetailPage({ params }: { params: { id: strin
   const canTriage = hasPermission(permissions, "communication:triage");
   const roles = await getUserRoleCodes(user.id, user.tenantId);
 
-  const item = await getTriageDetail(user.tenantId, params.id);
-  if (!item) notFound();
+  const triaged = await getTriageDetail(user.tenantId, params.id);
+  if (!triaged) notFound();
+  // R-1 / F-5, the same rule for the triage outcome: the dossier a message was
+  // routed to is named — linked — only to someone who can see that dossier.
+  // Everything below reads `item`, so no surface of this page can link it.
+  const item =
+    triaged.outcomeFileId && !(await isFileVisible(user.id, user.tenantId, triaged.outcomeFileId))
+      ? { ...triaged, outcomeFileId: null }
+      : triaged;
 
   // Only dossiers this user may read are offered — listFiles applies
   // resolveFileScope, and the action re-validates with isFileVisible. A triager

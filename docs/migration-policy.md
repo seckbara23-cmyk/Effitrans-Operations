@@ -306,29 +306,57 @@ suggesting otherwise is describing something Supabase does not offer for PATs.
    `APPLIED_AND_RECORDED — <version> applied, verified, recorded, re-verified.`
 8. **Repeat from step 2 for the next migration.** One per approved action —
    there is no batch mode, and requesting a later version is refused by name.
-9. **When the sequence is finished, advance the promotion walk’s baseline.**
-   In `.github/workflows/ci.yml`, the step *Promotion walk — the real
-   migrations, from the real baseline* carries `--baseline <version>`. That
-   literal is production’s maximum applied version, and the walk rebuilds the
-   database at it before promoting everything above it. Set it to the version
-   you just deployed.
+9. **Do not advance the promotion walk’s baseline after a deploy.** It advances
+   in the pull request that adds the *next* migration — see *The walk baseline*
+   below. Deploying changes nothing in CI.
 
-   Leaving it stale makes the walk test a promotion that already happened. If
-   it falls to or above the newest repository migration the walk fails with
-   *nothing to promote*, which is deliberate: a walk over an empty set proves
-   nothing and must not read green.
+### The walk baseline — advance the promotion walk in the PR that adds a migration
+
+In `.github/workflows/ci.yml`, the step *Promotion walk — the real migrations,
+from the real baseline* carries `--baseline <version>`. The walk rebuilds the
+database at that version, then promotes every repository migration above it,
+in order, asking the real validator and the real verifiers at each state.
+
+**The rule (WP1 closure, 2026-10-23):** the baseline is production’s maximum
+applied version **as of the pull request that adds the next migration**, and it
+moves **only in such a pull request** — never as a separate step after a deploy.
+
+| situation | baseline | what the walk proves |
+|---|---|---|
+| a PR adds migration *N+1* while production is at *N* | set to *N* in that PR | *N+1* promotes from the state production is really in |
+| a PR adds *N+2* while *N+1* is merged but not yet deployed | stays at *N* | *N+1* then *N+2*, in order, from production’s state |
+| everything is deployed and the PR adds no migration | unchanged (the previous production maximum) | it re-walks the last deployed window — a promotion that already happened, stated as such |
+
+Why: the walk fails on purpose when nothing sits above the baseline (*nothing to
+walk*: a walk over an empty set proves nothing and must not read green). The
+old rule — set the baseline to the version you just deployed — made that the
+normal state the moment a sequence finished, so every later pull request
+without a migration would have gone red, and in practice the baseline was left
+behind instead (it stayed at `20261020000001` through all five WP1 deploys).
+Under this rule there is always at least one migration above the baseline, and
+the literal is only ever written by someone who can see production’s ledger in
+the same change that needs it.
+
+Never set it to the newest repository migration; never set it to a version
+production has not applied. `tests/wp1-closure-hardening.test.ts` pins that it
+names a real repository migration strictly older than the newest one.
 
 ### The pending sequence, as it stands
 
-Production is at `20260930000001` with three approved-in-repository, **not yet
-deployed** migrations. Each needs its own business approval, and they can only
-go in this order:
+This table is not maintained by hand any more — it went stale (it still showed
+production at `20260930000001` long after #141 shipped). Read the state instead:
 
-| # | version | what it carries | due |
-|---|---|---|---|
-| 139 | `20261001000001` | GAINDE declaration reference + Finance tax payment. ⚠ Also swaps a live RPC and changes the step-10/11 receiver projection — it touches the paused operational UAT. | **next** |
-| 140 | `20261002000001` | dossier service scope. Additive and inert: proven to change nothing for an existing IMP dossier. | after 139 |
-| 141 | `20261003000001` | canonical staff professional identity. Additive; unlocks Prénom/Nom/Fonction in Administration → Users. | after 140 |
+* **Production's ledger** — the *Migrate production* workflow's preflight prints
+  it, and `node scripts/migration-integrity.mjs` classifies it (`CLEAN`,
+  `CLEAN_WITH_PENDING`, …).
+* **What is pending** — every repository migration above that maximum, in
+  version order; only the earliest may be applied (*Ordering*, above).
+* **The record of each release** — its manifest under `docs/releases/`
+  (WP1: `docs/releases/WP1/release-manifest.md` §11).
+
+As of 2026-10-23: production at `20261021000005` (#161), nothing pending on
+`main`; `20261023000001` (#162, `audit_log` TRUNCATE guard) is proposed in the
+WP1 closure pull request and needs its own approval and governed run.
 
 ## Failure states
 

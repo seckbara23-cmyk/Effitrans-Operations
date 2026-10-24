@@ -48,7 +48,7 @@ export function AttachmentIngest({
   attachmentId: string;
   filename: string;
   stored: boolean;
-  alreadyIngested: { id: string; fileId: string } | null;
+  alreadyIngested: { id: string; fileId: string | null } | null;
   dossiers: IngestTarget[];
   documentTypes: IngestDocType[];
   canIngest: boolean;
@@ -57,12 +57,19 @@ export function AttachmentIngest({
   const [typeCode, setTypeCode] = useState("");
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState<{ id: string; fileId: string } | null>(
+  const [done, setDone] = useState<{ id: string; fileId: string | null } | null>(
     alreadyIngested,
   );
 
   // Already done: say so and link to it, rather than offering an action that
-  // would be refused.
+  // would be refused. The dossier is named only to someone who can see it.
+  if (done && done.fileId === null) {
+    return (
+      <p className="text-[11px] text-slate-600">
+        Déjà rattachée, à un dossier que vous ne pouvez pas consulter.
+      </p>
+    );
+  }
   if (done) {
     return (
       <p className="text-[11px] text-slate-600">

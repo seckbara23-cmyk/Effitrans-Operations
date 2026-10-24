@@ -207,6 +207,14 @@ jobs:
           PGPASSWORD: postgres
         run: psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/rls_wp1_opening_test.sql
 
+      # WP1 closure (#162): audit_log refuses TRUNCATE — the API roles by privilege,
+      # every role (the owner included, with CASCADE) by trigger — and its write
+      # path still works.
+      - name: Run audit_log TRUNCATE guard test (WP1 closure)
+        env:
+          PGPASSWORD: postgres
+        run: psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/rls_audit_log_truncate_test.sql
+
       - name: Run RLS customs test (Phase 1.9)
         env:
           PGPASSWORD: postgres
@@ -1416,17 +1424,20 @@ jobs:
       # and then walks them forward one at a time, asking the runner's own
       # validator at every state whether a later migration may jump the queue.
       #
-      # ⚠ `--baseline` IS PRODUCTION'S CURRENT MAXIMUM APPLIED VERSION, and it
-      # must advance as production advances: the deploy runbook makes bumping it
-      # the last step of every promotion (docs/migration-policy.md). If it goes
-      # stale the walk fails with "nothing to promote", which is the correct
-      # signal — a walk over an empty set proves nothing and must not read green.
+      # ⚠ `--baseline` is production's maximum applied version AS OF THE PR THAT
+      # ADDS THE NEXT MIGRATION — it advances in that PR, never after a deploy
+      # (docs/migration-policy.md, step 9 and "The walk baseline"). So there is
+      # always at least one migration above it: while something is pending the
+      # walk promotes exactly that; once everything is deployed it re-walks the
+      # last deployed window. Setting it to the newest repository migration
+      # empties the walk, which fails with "nothing to walk" — deliberately: a
+      # walk over an empty set proves nothing and must not read green.
       #
       # Runs last: it resets the database, so nothing may depend on the state
       # it leaves behind.
       - name: Promotion walk — the real migrations, from the real baseline (§14)
         run: |
-          node scripts/migration-promotion-walk.mjs             --db-url "postgresql://postgres:postgres@127.0.0.1:54322/postgres"             --baseline 20261020000001
+          node scripts/migration-promotion-walk.mjs             --db-url "postgresql://postgres:postgres@127.0.0.1:54322/postgres"             --baseline 20261021000005
 
       - name: Stop local Supabase
         if: always()

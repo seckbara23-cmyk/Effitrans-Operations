@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui/page-header";
 import { requireUser } from "@/lib/auth/require-user";
+import { isFileVisible } from "@/lib/authz/visibility";
 import { getEffectivePermissions, hasPermission } from "@/lib/rbac/permissions";
 import { getThreadForMessage } from "@/lib/ec/threads/service";
 import { listTriageQueue } from "@/lib/ec/triage/service";
@@ -36,6 +37,16 @@ export default async function ThreadPage({ params }: { params: { messageId: stri
   // link. Reusing the queue reader keeps one definition of what an outcome is.
   const rowIds = new Set(thread.messages.map((m) => m.rowId));
   const triage = (await listTriageQueue(user.tenantId, {}, 400)).filter((t) => rowIds.has(t.messageId));
+  // R-1 / F-5: a routed message names its dossier only to someone who can see
+  // it. One scope read per request (resolveFileScope is request-memoised).
+  const visibleOutcome = new Map(
+    await Promise.all(
+      triage.map(async (t) => [
+        t.id,
+        t.outcomeFileId && (await isFileVisible(user.id, user.tenantId, t.outcomeFileId)) ? t.outcomeFileId : null,
+      ] as const),
+    ),
+  );
 
   // Correspondence events for every triage item in the conversation, read
   // through the Decision Plane under the UT-1 subject policy. No new stream.
@@ -69,7 +80,7 @@ export default async function ThreadPage({ params }: { params: { messageId: stri
           triageId: t.id,
           status: t.status,
           outcome: t.outcome,
-          outcomeFileId: t.outcomeFileId,
+          outcomeFileId: visibleOutcome.get(t.id) ?? null,
           attachmentCount: t.attachmentCount,
           mailboxAddress: t.mailboxAddress,
         }))}

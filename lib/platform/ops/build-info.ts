@@ -13,10 +13,10 @@
  */
 
 /** The latest migration shipped in this build (pinned to the directory by test). */
-export const LATEST_MIGRATION = "20261021000005_document_expiry_change";
+export const LATEST_MIGRATION = "20261023000001_audit_log_truncate_guard";
 
 /** Total migrations shipped in this build (pinned by test). */
-export const MIGRATION_COUNT = 161;
+export const MIGRATION_COUNT = 162;
 
 /** Newest DATA-probeable migration marker: this permission row proves migrations ≥ this point. */
 export const MIGRATION_PROBE = {
